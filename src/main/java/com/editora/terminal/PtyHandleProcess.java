@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import com.editora.process.ProcessRegistry;
 import com.pty4j.PtyProcess;
 
 /**
@@ -15,9 +16,25 @@ import com.pty4j.PtyProcess;
  * the process after a crash, and its descendants to end a shell's whole tree. The pid is real, so the handle
  * is the operating system's own; everything else is the pty4j process's.
  */
-final class PtyHandleProcess extends Process {
+class PtyHandleProcess extends Process {
 
     private final PtyProcess pty;
+
+    /** An interactive shell: ended by hanging up its terminal, so its detached jobs live on. */
+    static final class Shell extends PtyHandleProcess implements ProcessRegistry.HangsUp {
+
+        private final Runnable hangUp;
+
+        Shell(PtyProcess pty, Runnable hangUp) {
+            super(pty);
+            this.hangUp = hangUp;
+        }
+
+        @Override
+        public void hangUp() {
+            hangUp.run();
+        }
+    }
 
     PtyHandleProcess(PtyProcess pty) {
         this.pty = pty;

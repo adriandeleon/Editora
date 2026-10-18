@@ -8,7 +8,6 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -23,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** The polling fallback reports what a native watcher would, and a refused native watcher falls back to it. */
 class PollingWatchServiceTest {
@@ -64,16 +62,13 @@ class PollingWatchServiceTest {
     }
 
     /**
-     * A save renames a new file over the old one; same size, maybe the same millisecond — still a change.
-     * Only the file key can tell, and Windows has none (creation time does not help either: Windows "tunnels"
-     * the replaced file's creation time onto the new one), so this holds where the file system gives a key.
+     * A save renames a new file over the old one; same size, maybe the same millisecond — still a change. The file
+     * key tells on Linux and macOS; Windows has none, but a replacing rename (ATOMIC_MOVE) leaves the new file's own
+     * creation time. Windows "tunnels" the old creation time only onto a file renamed in after a delete.
      */
     @Test
     void aFileReplacedByARenameIsReported(@TempDir Path dir) throws Exception {
         Path file = Files.writeString(dir.resolve("open.txt"), "v1");
-        assumeTrue(
-                Files.readAttributes(file, BasicFileAttributes.class).fileKey() != null,
-                "no file key on this file system");
         try (PollingWatchService ws = new PollingWatchService(30)) {
             ws.register(dir, ALL);
             Path tmp = Files.writeString(dir.resolve("open.txt.tmp"), "v2");

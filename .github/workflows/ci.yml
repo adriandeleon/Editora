@@ -331,6 +331,107 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # A real tty on a real host, for every pull request that touches the terminal: the remote probe's terminal
+  # steps against dropbear on the runner (a shell on a pty channel, its size and a resize, a program's exit code,
+  # shell integration, a dropped connection) and the container probe's terminal test against Docker. The unit
+  # and FX suites stop at a fake connector; this is where a broken pty-req or `exec -it` shows. Its check passes
+  # at once when nothing terminal-related changed, so it can be required (adl, 2026-10-18).
+  terminal-probe:
+    name: Terminal probe
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Did the terminal change?
+        id: changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if printf '%s\n' "$files" | grep -qE '^(src/main/java/com/editora/(terminal|container|wsl)/|src/main/java/com/editora/ui/Terminal|src/main/java/com/editora/vfs/SshTerminal|src/main/java/com/editora/process/(PosixShell|TerminalChannel|TerminalSpec|ProcessRegistry)|src/main/resources/com/editora/terminal/|src/test/java/com/editora/ui/RealSshdProbeFxTest|src/test/java/com/editora/container/ContainerProbeFxTest|\.github/workflows/ci\.yml)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing terminal-related changed: no probe needed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up JDK 25
+        if: steps.changed.outputs.run == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      # As remote-probe.yml's dropbear lane: an unprivileged server on a high port, the runner's own account.
+      - name: Private dropbear
+        if: steps.changed.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="$RUNNER_TEMP/server"
+          mkdir -p "$S/work"
+          cd "$S"
+          ssh-keygen -q -t ecdsa -N '' -f client_ecdsa
+          ssh-keygen -q -t ed25519 -N '' -f client_ed25519
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends dropbear-bin openssh-sftp-server
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          chmod go-w "$HOME"
+          cat client_ecdsa.pub client_ed25519.pub >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+          dropbearkey -t ed25519 -f host_ed25519 >/dev/null
+          dropbearkey -t ecdsa -f host_ecdsa >/dev/null
+          nohup dropbear -F -E -s -p 127.0.0.1:22523 -P "$S/server.pid" \
+            -r "$S/host_ed25519" -r "$S/host_ecdsa" > "$S/server.log" 2>&1 &
+          for i in $(seq 20); do [ -s "$S/server.pid" ] && break; sleep 0.5; done
+          echo "server pid $(cat "$S/server.pid")"
+
+      - name: Terminal on an SSH host
+        if: steps.changed.outputs.run == 'true'
+        shell: bash
+        run: |
+          S="$RUNNER_TEMP/server"
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -Dgroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest=RealSshdProbeFxTest \
+            -Dremote.probe="$(id -un)@127.0.0.1:22523" \
+            -Dremote.probe.key="$S/client_ecdsa" \
+            -Dremote.probe.ed25519Key="$S/client_ed25519" \
+            -Dremote.probe.dir="$S/work" \
+            -Dremote.probe.sshdPid="$(cat "$S/server.pid")" \
+            -Dremote.probe.only='terminal,shell integration,dropped connection' \
+            test | tee probe.log
+          status=${PIPESTATUS[0]}
+          { echo "### Terminal probe (SSH)"; echo '```'; sed -n '/PROBE REPORT/,/^\[/p' probe.log | sed '$d'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Terminal in a container
+        if: steps.changed.outputs.run == 'true'
+        shell: bash
+        run: |
+          docker pull --quiet eclipse-temurin:25-jdk
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -Dgroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest='ContainerProbeFxTest#aTerminal*' \
+            -Dcontainer.probe=docker \
+            -Dcontainer.probe.image=eclipse-temurin:25-jdk \
+            test
+
+      - name: Server log
+        if: failure() && steps.changed.outputs.run == 'true'
+        shell: bash
+        run: tail -n 200 "$RUNNER_TEMP/server/server.log" || true
+
   # The headless Glass platform ships inside JavaFX, so the FX suite can run on macOS without a display.
   # The pure lane above reaches under half the code; this one covers the rest on a second operating
   # system. It is advisory (13 failures in 36 runs on 12-13 October 2026): make it blocking once it has

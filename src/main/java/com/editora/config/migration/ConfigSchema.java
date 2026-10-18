@@ -279,9 +279,13 @@ public enum ConfigSchema {
                     // v133→134: + aiModelCodex (Codex's model, which shared the Anthropic field: the shared value is
                     // copied so Codex keeps its model) and aiApiKeysInKeychain (additive; absent = keys in this file).
                     Map.entry(133, (Migration) ConfigMigrations::splitCodexModel),
-                    // v134→135: + groovyLspCommand ("" = not installed) and groovyLspEnabled (on); additive, absent
+                    // v134→135: + terminalMacOptionIsMeta (off: Option composes, as in Terminal.app) and
+                    // terminalConfirmMultilinePaste (on), both additive; the scrollback maximum drops from 100,000
+                    // to 50,000 lines (about 94 MB a tab at the old cap), so a larger value is clamped to it.
+                    Map.entry(134, (Migration) ConfigMigrations::clampTerminalScrollback),
+                    // v135→136: + groovyLspCommand ("" = not installed) and groovyLspEnabled (on); additive, absent
                     // is the default.
-                    Map.entry(134, (Migration) ConfigMigrations::identity)),
+                    Map.entry(135, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

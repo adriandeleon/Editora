@@ -21,6 +21,10 @@ import static com.editora.i18n.Messages.tr;
  * The Terminal's find bar: a query, match case, the count, previous/next and close. It searches the selected
  * tab's scrollback ({@link TerminalView#search}); Enter goes to the next hit up (older output, as a terminal is
  * read bottom-up), Shift+Enter down, Escape closes it and gives the keyboard back to the shell.
+ *
+ * <p>Typing searches once the query has held still for {@link #TYPING_SETTLE}, and the scan runs off the FX thread
+ * ({@link TerminalView#searchAsync}): a scrollback of 100,000 lines takes a tenth of a second or more to scan, which
+ * on every keystroke made typing in the field stutter.
  */
 final class TerminalFindBar extends HBox {
 
@@ -29,6 +33,11 @@ final class TerminalFindBar extends HBox {
     private final Label count = new Label();
     private TerminalView view;
     private Runnable onClose = () -> {};
+
+    /** How long the query must hold still before it is searched. */
+    static final javafx.util.Duration TYPING_SETTLE = javafx.util.Duration.millis(150);
+
+    private final javafx.animation.PauseTransition typing = new javafx.animation.PauseTransition(TYPING_SETTLE);
 
     TerminalFindBar() {
         getStyleClass().addAll("find-bar", "terminal-find-bar");
@@ -47,7 +56,8 @@ final class TerminalFindBar extends HBox {
         newer.setOnAction(e -> step(false));
         close.setOnAction(e -> close());
 
-        query.textProperty().addListener((o, was, now) -> run());
+        typing.setOnFinished(e -> run());
+        query.textProperty().addListener((o, was, now) -> typing.playFromStart());
         matchCase.selectedProperty().addListener((o, was, now) -> run());
         query.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ENTER) {
@@ -98,6 +108,7 @@ final class TerminalFindBar extends HBox {
     }
 
     void close() {
+        typing.stop();
         setVisible(false);
         setManaged(false);
         if (view != null) {
@@ -115,16 +126,25 @@ final class TerminalFindBar extends HBox {
     }
 
     private void run() {
+        typing.stop();
         if (view == null || !isVisible()) {
             return;
         }
-        show(view.search(query.getText(), matchCase.isSelected()));
+        String text = query.getText();
+        view.searchAsync(text, matchCase.isSelected(), result -> {
+            if (text.equals(query.getText())) show(result);
+        });
     }
 
     private void step(boolean older) {
-        if (view != null) {
-            show(view.findNext(older));
+        if (view == null) {
+            return;
         }
+        if (typing.getStatus() == javafx.animation.Animation.Status.RUNNING) {
+            run(); // Enter before the query settled: search what was typed, then step from there
+            return;
+        }
+        view.findNextAsync(older, this::show);
     }
 
     private void show(TerminalView.SearchResult result) {

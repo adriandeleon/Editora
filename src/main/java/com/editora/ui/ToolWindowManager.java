@@ -1039,6 +1039,8 @@ public class ToolWindowManager {
         if (owner.getScene() != null) {
             scene.getStylesheets().setAll(owner.getScene().getStylesheets());
         }
+        // The window's keys work in the stage too: a floating Terminal still gives M-x and its own toggle back.
+        floatingSceneSetup.accept(scene);
         stage.setScene(scene);
         applyFloatingBounds(tw, stage, owner);
         // Closing the stage closes the tool window: floating is a state of an open window, not a mode it
@@ -1056,6 +1058,13 @@ public class ToolWindowManager {
         if (tw.getContent() instanceof ToolWindowContent content) {
             Platform.runLater(content::focusFirstItem);
         }
+    }
+
+    private java.util.function.Consumer<javafx.scene.Scene> floatingSceneSetup = scene -> {};
+
+    /** What a floating tool window's new scene gets, as the window's own did: its key dispatcher. */
+    public void setFloatingSceneSetup(java.util.function.Consumer<javafx.scene.Scene> setup) {
+        this.floatingSceneSetup = setup == null ? scene -> {} : setup;
     }
 
     /** Returns a floating tool window to its side, where it lands as that side's primary. */

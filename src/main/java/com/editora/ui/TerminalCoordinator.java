@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
+import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -33,12 +34,14 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The integrated terminal in a window: the Terminal tool window's panel, the {@code tool.terminal},
- * {@code terminal.new} and {@code terminal.close} commands, and the settings and theme it follows.
+ * {@code terminal.new}, {@code terminal.close}, {@code terminal.find}, {@code terminal.next} and
+ * {@code terminal.previous} commands, and the settings and theme it follows.
  * {@code MainController} keeps the {@code ToolWindow} (built with {@link #panel()}) and calls the apply hooks.
  *
  * <p>A shell runs where the project is: on its SSH host for a remote project (a PTY channel of the window's own
  * connection, through {@code ExecTarget.startTerminal}), else on this machine — in the project's folder, beside
- * the active file, or in the home folder. Containers and WSL come later (ADR 0014).
+ * the active file, or in the home folder. A folder a dev container mounts or a WSL distribution shares gets its
+ * shell there, through the same {@code ExecTarget.startTerminal} (ADR 0014).
  */
 final class TerminalCoordinator {
 
@@ -55,6 +58,9 @@ final class TerminalCoordinator {
         /** Closes the Terminal tool window. */
         void hideToolWindow();
 
+        /** Gives the keyboard to the editor, leaving the tool windows as they are. */
+        default void focusEditor() {}
+
         /** Editora's config folder, where the shell-integration scripts for this machine go. */
         Path configDir();
 
@@ -68,8 +74,6 @@ final class TerminalCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private TerminalPanel panel;
-    /** Whether the panel has opened its first shell: once, on first show, so a stripe click gets a prompt. */
-    private boolean started;
 
     TerminalCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -88,9 +92,24 @@ final class TerminalCoordinator {
                 here.setOnAction(e -> panel.newTerminalHere());
                 MenuItem find = new MenuItem(tr("terminal.menu.find"));
                 find.setOnAction(e -> panel.find());
+                find.setAccelerator(com.editora.terminal.TerminalView.chord(
+                        System.getProperty("os.name", "")
+                                        .toLowerCase(java.util.Locale.ROOT)
+                                        .startsWith("mac")
+                                ? "Meta+F"
+                                : "Ctrl+Shift+F"));
                 return List.of(here, find);
             });
             panel.setOnError(host::setError);
+            panel.setPasteGuard(this::confirmMultilinePaste);
+            panel.setRenamer((current, onName) ->
+                    host.promptText(tr("terminal.tab.rename.title"), tr("terminal.tab.rename.label"), current, onName));
+            // The last shell gone, the window goes too (as in IntelliJ and VS Code), and the editor has the keys.
+            panel.setOnLastClosed(() -> {
+                if (ops.isToolWindowOpen()) {
+                    ops.hideToolWindow();
+                }
+            });
             panel.setLinkActions(new LinkActions() {
                 @Override
                 public void openUrl(String url) {
@@ -103,14 +122,21 @@ final class TerminalCoordinator {
                 }
             });
             panel.apply(config(host.settings()));
-            // The first time the panel reaches a scene the theme can be read, and a shell started: opening the
-            // window from its stripe should give a prompt, not a "New Terminal" button.
+            // Each time the panel reaches a scene the theme can be read, and with no shell one is started: opening
+            // the window from its stripe should give a prompt, not a "New Terminal" button.
             panel.sceneProperty().addListener((o, was, scene) -> {
                 if (scene != null) {
                     applyTheme();
-                    if (!started && !panel.hasTerminals()) {
-                        started = true;
-                        panel.newTerminal();
+                    if (!panel.hasTerminals()) {
+                        // Without the keyboard: this is also how a terminal left open comes back at startup, and
+                        // the editor keeps it then. Every path that shows the window on purpose focuses it itself.
+                        // A pulse later, so a window being restored has its files back and the shell starts where
+                        // the active one is rather than in the home folder.
+                        Platform.runLater(() -> {
+                            if (!panel.hasTerminals()) {
+                                panel.newTerminalQuietly();
+                            }
+                        });
                     }
                 }
             });
@@ -123,18 +149,39 @@ final class TerminalCoordinator {
         registry.register(Command.of("terminal.new", this::newTerminal));
         registry.register(Command.of("terminal.close", this::closeTerminal));
         registry.register(Command.of("terminal.find", this::find));
+        registry.register(Command.of("terminal.next", () -> {
+            if (panel != null) panel.selectNext(true);
+        }));
+        registry.register(Command.of("terminal.previous", () -> {
+            if (panel != null) panel.selectNext(false);
+        }));
+        // Back to the editor with the terminal left open (IntelliJ's Escape, VS Code's Ctrl+1): Escape itself is the
+        // shell's, so it is Shift+Escape, which a terminal program cannot tell from Escape anyway.
+        registry.register(Command.of("terminal.focusEditor", ops::focusEditor));
+        registry.register(Command.of("terminal.rename", () -> {
+            if (panel != null) panel.renameActive();
+        }));
+        registry.register(Command.of("terminal.moveTabLeft", () -> {
+            if (panel != null) panel.moveActive(-1);
+        }));
+        registry.register(Command.of("terminal.moveTabRight", () -> {
+            if (panel != null) panel.moveActive(1);
+        }));
     }
 
-    /** {@code tool.terminal}: hides an open terminal, or shows it with a shell ready and focused. */
+    /**
+     * {@code tool.terminal}: shows the terminal with a shell ready and focused; hides it when it already has the
+     * keyboard. An open terminal the keyboard is elsewhere gets the keyboard, as IntelliJ's Alt+F12 does: a
+     * keyboard user who can see it has no other way in.
+     */
     void toggle() {
-        if (ops.isToolWindowOpen() && panel != null) {
+        if (ops.isToolWindowOpen() && panel != null && panel.hasFocusWithin()) {
             ops.hideToolWindow();
             return;
         }
         ops.showToolWindow();
         TerminalPanel p = panel();
         if (!p.hasTerminals()) {
-            started = true;
             p.newTerminal();
         } else {
             p.focusActive();
@@ -148,7 +195,6 @@ final class TerminalCoordinator {
         TerminalPanel p = panel();
         // Showing the window may already have started the first shell; a second one would be a surprise.
         if (!fresh || !p.hasTerminals()) {
-            started = true;
             p.newTerminal();
         }
     }
@@ -158,23 +204,21 @@ final class TerminalCoordinator {
      * its own is skipped, so the window does not open with a second tab in the project folder.
      */
     void openAt(Path dir) {
-        started = true;
         ops.showToolWindow();
         panel().newTerminal(dir);
     }
 
-    /** {@code terminal.close}: closes the selected terminal, asking if its shell is running a program. */
     /** {@code terminal.find}: the find bar over the selected terminal (opening the window, and a shell, if needed). */
     void find() {
         ops.showToolWindow();
         TerminalPanel p = panel();
         if (!p.hasTerminals()) {
-            started = true;
             p.newTerminal();
         }
         p.find();
     }
 
+    /** {@code terminal.close}: closes the selected terminal, asking if its shell is running a program. */
     void closeTerminal() {
         if (panel != null) {
             panel.closeActive();
@@ -195,6 +239,41 @@ final class TerminalCoordinator {
         }
     }
 
+    /** How long a window close waits for terminals on other machines to say whether they are busy. */
+    private static final java.time.Duration BUSY_REMOTE_WAIT = java.time.Duration.ofSeconds(2);
+
+    /** This window's terminals that are running something (see {@link TerminalPanel#busyTabs}); empty when off. */
+    List<String> busyTerminals() {
+        if (panel == null || !host.settings().isTerminalConfirmClose()) {
+            return List.of();
+        }
+        return panel.busyTabs(BUSY_REMOTE_WAIT);
+    }
+
+    /**
+     * Asks before the window closes when its terminals are running programs — vim with unsaved text, a build, an
+     * ssh session — which the close ends. True closes. Closing one such tab already asked; closing the window did
+     * not.
+     */
+    boolean confirmCloseWithBusyTerminals() {
+        List<String> busy = busyTerminals();
+        return busy.isEmpty() || confirmEndingTerminals(host.window(), busy, tr("terminal.closeWindow.confirm"));
+    }
+
+    /** One question listing every busy terminal; {@code action} names the button that ends them. */
+    static boolean confirmEndingTerminals(javafx.stage.Window owner, List<String> busy, String action) {
+        ButtonType end = new ButtonType(action, ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = Dialogs.styled(
+                new Alert(Alert.AlertType.CONFIRMATION, "• " + String.join("\n• ", busy), end, ButtonType.CANCEL));
+        confirm.initOwner(owner);
+        confirm.setTitle(tr("terminal.close.title"));
+        confirm.setHeaderText(tr("terminal.closeWindow.header"));
+        ((Button) confirm.getDialogPane().lookupButton(end)).setDefaultButton(false);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        MainController.styleQuitButtonAsDanger(confirm, end);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == end;
+    }
+
     /** Ends every shell (window closing). */
     void shutdown() {
         if (panel != null) {
@@ -209,7 +288,9 @@ final class TerminalCoordinator {
             case "bar" -> TerminalCursor.BAR;
             default -> TerminalCursor.BLOCK;
         };
-        int size = s.getTerminalFontSize() > 0 ? s.getTerminalFontSize() : s.getFontSize();
+        // The text zoom applies to terminals as to editors: zooming in for a demo used to leave them behind, and
+        // Ctrl+wheel over a terminal zoomed only the editors.
+        double size = (s.getTerminalFontSize() > 0 ? s.getTerminalFontSize() : s.getFontSize()) * s.getFontZoom();
         return new TerminalPanel.Config(
                 s.getFontFamily(),
                 size,
@@ -219,7 +300,9 @@ final class TerminalCoordinator {
                 s.getTerminalShell(),
                 s.getTerminalIdeCommands(),
                 s.isTerminalConfirmClose(),
-                s.isTerminalTypeAhead());
+                s.isTerminalTypeAhead(),
+                s.isTerminalMacOptionIsMeta(),
+                s.isTerminalConfirmMultilinePaste());
     }
 
     /**
@@ -319,9 +402,17 @@ final class TerminalCoordinator {
             return List.of();
         }
         var result = com.editora.process.ProcessRunner.run(
-                directory, REMOTE_PROGRAMS_TIMEOUT, List.of("ps", "-A", "-o", "ppid=,comm="));
+                directory, REMOTE_PROGRAMS_TIMEOUT, List.of("/bin/sh", "-c", PROGRAMS_SCRIPT));
         return result.ok() ? childrenOf(result.out(), pid) : List.of();
     }
+
+    /**
+     * Every process's parent and name, as {@code ps -A -o ppid=,comm=} prints them; read from {@code /proc} where
+     * there is no {@code ps} (debian-slim and python-slim images ship none), with shell builtins only.
+     */
+    static final String PROGRAMS_SCRIPT = "ps -A -o ppid=,comm= 2>/dev/null || "
+            + "for f in /proc/[0-9]*/stat; do { read -r l < \"$f\"; } 2>/dev/null || continue; "
+            + "c=${l#*\\(}; c=${c%\\)*}; set -- ${l##*\\) }; echo \"$2 $c\"; done";
 
     /** {@code ps -A -o ppid=,comm=} output → the names of {@code pid}'s children, innermost-first order kept. Pure. */
     static List<String> childrenOf(String psOutput, long pid) {
@@ -365,10 +456,17 @@ final class TerminalCoordinator {
         return colon > 0 && host.indexOf(':') == colon ? host.substring(0, colon) : host;
     }
 
-    /** A shell on this machine, tracked so it ends with Editora even when Editora does not end cleanly. */
+    /**
+     * A shell on this machine, tracked so it ends with Editora even when Editora does not end cleanly. Started off
+     * the FX thread: the fork, and the first time loading pty4j's native library, held it for up to half a second.
+     */
     private TerminalConnector.Factory localShell(Path directory, String shell) {
-        return (columns, rows) -> {
+        return TerminalConnector.Factory.background((columns, rows) -> {
             List<String> command = shell == null || shell.isBlank() ? List.of() : LocalShell.shellCommand(shell);
+            String problem = LocalShell.overrideProblem(shell);
+            if (problem != null) {
+                Platform.runLater(() -> host.setStatus(tr("terminal.shellNotFound", problem)));
+            }
             LocalPtyConnector connector = LocalShell.start(
                     command, directory == null ? null : directory.toString(), columns, rows, localIntegration());
             try {
@@ -379,7 +477,7 @@ final class TerminalCoordinator {
                         .warning("terminal shell " + connector.pid() + " is not tracked: " + e);
             }
             return connector;
-        };
+        });
     }
 
     /**
@@ -395,22 +493,26 @@ final class TerminalCoordinator {
             java.util.Map<String, String> env,
             java.util.function.IntConsumer onExit)
             throws IOException {
-        started = true; // the window opening for a program does not also start a shell
         ops.showToolWindow();
         String program = argv.isEmpty() ? title : RunningProgram.displayName(argv.getFirst());
         return panel().runProgram(title, program, directory, programConnector(directory, argv, env), onExit);
     }
 
-    /** Opens {@code argv} on a pseudo-terminal where {@code directory}'s commands run. */
+    /**
+     * Opens {@code argv} on a pseudo-terminal where {@code directory}'s commands run. Elsewhere it opens off the FX
+     * thread: an SSH channel waits on the host (and on a free long-lived slot), which froze the editor.
+     */
     static TerminalConnector.Factory programConnector(
             Path directory, List<String> argv, java.util.Map<String, String> env) {
-        return (columns, rows) -> {
-            ExecTarget target = directory == null ? null : ExecTargets.forPath(directory);
-            if (target != null && !target.isLocal()) {
+        ExecTarget remote = directory == null ? null : ExecTargets.forPath(directory);
+        if (remote != null && !remote.isLocal()) {
+            return TerminalConnector.Factory.slow((columns, rows) -> {
                 TerminalChannel channel =
-                        target.startTerminal(TerminalSpec.program(directory, columns, rows, argv, env));
-                return new ChannelConnector(channel, target.id());
-            }
+                        remote.startTerminal(TerminalSpec.program(directory, columns, rows, argv, env));
+                return new ChannelConnector(channel, remote.id());
+            });
+        }
+        return (columns, rows) -> {
             LocalPtyConnector connector =
                     LocalShell.startProgram(argv, directory == null ? null : directory.toString(), columns, rows, env);
             try {
@@ -421,6 +523,35 @@ final class TerminalCoordinator {
             }
             return connector;
         };
+    }
+
+    /**
+     * Asks before pasting several lines into a program without bracketed paste, where each line runs as it arrives.
+     * "Don't ask again" turns the question off in Settings.
+     */
+    private boolean confirmMultilinePaste(String text) {
+        long lines = text.strip().lines().count();
+        ButtonType paste = new ButtonType(tr("terminal.paste.confirm"), ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = Dialogs.styled(
+                new Alert(Alert.AlertType.CONFIRMATION, tr("terminal.paste.lines", lines), paste, ButtonType.CANCEL));
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("terminal.paste.title"));
+        confirm.setHeaderText(null);
+        javafx.scene.control.CheckBox dontAsk = new javafx.scene.control.CheckBox(tr("terminal.paste.dontAsk"));
+        confirm.getDialogPane().setExpandableContent(null);
+        confirm.getDialogPane()
+                .setContent(new javafx.scene.layout.VBox(
+                        10, new javafx.scene.control.Label(tr("terminal.paste.lines", lines)), dontAsk));
+        ((Button) confirm.getDialogPane().lookupButton(paste)).setDefaultButton(false);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        boolean ok = confirm.showAndWait().orElse(ButtonType.CANCEL) == paste;
+        if (ok && dontAsk.isSelected()) {
+            host.settings().setTerminalConfirmMultilinePaste(false);
+            host.requestSave();
+            host.syncSettingsWindow();
+            applySettings();
+        }
+        return ok;
     }
 
     /** Asks before ending a shell that is running something; Cancel is the default, so Enter keeps it. */
@@ -435,6 +566,7 @@ final class TerminalCoordinator {
         confirm.setTitle(tr("terminal.close.title"));
         confirm.setHeaderText(null);
         ((Button) confirm.getDialogPane().lookupButton(close)).setDefaultButton(false);
+        MainController.styleQuitButtonAsDanger(confirm, close);
         ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
         return confirm.showAndWait().orElse(ButtonType.CANCEL) == close;
     }
