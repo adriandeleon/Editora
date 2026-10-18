@@ -277,7 +277,9 @@ class RunConfigurationsWindowFxTest {
         assertEquals(Path.of("bin", "deploy.sh").toString(), added.target());
         javafx.scene.Node mainClass = stage.getScene().lookup("#run-config-main-class");
         javafx.scene.Node browse = stage.getScene().lookup("#run-config-browse");
-        assertFalse(FxTestSupport.callOnFx(mainClass::isVisible), "Java-only rows are hidden, not just greyed");
+        assertFalse(
+                FxTestSupport.callOnFx(() -> mainClass.getParent().isVisible()),
+                "Java-only rows are hidden, not just greyed");
         assertTrue(FxTestSupport.callOnFx(browse::isVisible), "a script can be browsed for");
         // No label is cut short ("Program arg…", "Working dire…").
         FxTestSupport.runOnFx(() -> {
@@ -299,6 +301,58 @@ class RunConfigurationsWindowFxTest {
         assertEquals(
                 Path.of("tools", "x.py").toString(),
                 RunConfigurationsWindow.chosenTarget("python", root.resolve("tools/x.py"), root));
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    /**
+     * A main class is picked as its .java file: nobody should have to work out {@code test.App} from
+     * {@code src/main/java/test/App.java} by hand. A configuration still called "New Configuration" is renamed
+     * after the class; one the user named keeps its name.
+     */
+    @Test
+    void browsingForAJavaFileFillsTheFullyQualifiedMainClass(@TempDir Path dir) throws Exception {
+        Path root = dir.resolve("project");
+        Path app = root.resolve("src/main/java/test/App.java");
+        java.nio.file.Files.createDirectories(app.getParent());
+        java.nio.file.Files.writeString(app, """
+                package test;
+
+                public class App {
+                    public static void main(String[] args) {
+                        System.out.println("Hello World!");
+                    }
+                }
+                """);
+        ConfigManager config = new ConfigManager(dir.resolve("config"));
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(
+                        new RunConfiguration(tr("settings.runConfig.newName"), "", "", "", "", ""),
+                        new RunConfiguration("Mine", "", "", "", "", "")));
+        RunConfigurationsWindow window = FxTestSupport.callOnFx(
+                () -> new RunConfigurationsWindow(config, () -> null, () -> null, () -> root, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show(tr("settings.runConfig.newName"), null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        @SuppressWarnings("unchecked")
+        ListView<RunConfiguration> list = FxTestSupport.field(window, "list");
+        javafx.scene.control.TextField name =
+                (javafx.scene.control.TextField) stage.getScene().lookup("#run-config-name");
+        javafx.scene.control.TextField mainClass =
+                (javafx.scene.control.TextField) stage.getScene().lookup("#run-config-main-class");
+        javafx.scene.Node browse = stage.getScene().lookup("#run-config-browse-main-class");
+        assertTrue(FxTestSupport.callOnFx(browse::isVisible), "a Java configuration can browse for its class");
+
+        FxTestSupport.runOnFx(() -> {
+            window.pickMainClass(app, name, mainClass);
+            mainClass.getOnAction().handle(new javafx.event.ActionEvent());
+        });
+        assertEquals("test.App", persisted(config, "App").mainClass());
+
+        FxTestSupport.runOnFx(() -> list.getSelectionModel().select(1));
+        FxTestSupport.runOnFx(() -> {
+            window.pickMainClass(app, name, mainClass);
+            mainClass.getOnAction().handle(new javafx.event.ActionEvent());
+        });
+        assertEquals("test.App", persisted(config, "Mine").mainClass(), "a typed name is kept");
         FxTestSupport.runOnFx(stage::close);
     }
 

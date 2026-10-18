@@ -204,6 +204,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The text is not part of the file: it is never copied, searched, saved or undone.
   - Settings → Web → HTTP Client → **Show results after each request line** (on), or `HTTP: Toggle Results After
     Request Lines`.
+- **Run Configurations → Main class has a Browse… button**: pick the `.java` file and the fully qualified class
+  name is filled in (`src/main/java/test/App.java` → `test.App`), from the file's `main` method or else its
+  package and name. A configuration still called "New Configuration" is renamed after the class.
 
 ### Changed
 
