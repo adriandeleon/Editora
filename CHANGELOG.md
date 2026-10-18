@@ -348,6 +348,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A submenu's › arrow sat in the middle of its menu** (VCS → Changes, Branches, …), just past the longest
+  submenu name. It now sits at the menu's right edge, past the shortcut column.
 - **A Markdown code span after a stray double backtick rendered as plain text** (``` `` `a` `c` ``` showed
   `` `c` `` literally): commonmark-java 0.30.1 fixes the regression 0.30.0 brought in.
 - **With a dark UI theme and a light editor theme, the Welcome and Doctor tabs were white blocks** with
