@@ -131,6 +131,20 @@ class PromptCommandsFxTest {
         });
     }
 
+    /** The palette command used to save any registry URL; only the Settings field refused a non-https one. */
+    @Test
+    void theRegistryCommandRefusesAnAddressThatIsNotHttps() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            String before = settings.getPluginRegistryUrlRaw();
+            for (String bad : List.of("http://plugins.example.org/index.json", "not a url at all")) {
+                run("plugins.setRegistryUrl");
+                OverlayDriver.answer(controller, bad);
+                assertEquals(before, settings.getPluginRegistryUrlRaw(), bad + " is not saved");
+                assertEquals(tr("settings.plugins.registryNotHttps"), echo(), bad);
+            }
+        });
+    }
+
     private AiProvider provider() {
         return AiProvider.from(settings.getAiProvider());
     }

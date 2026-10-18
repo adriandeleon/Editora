@@ -439,4 +439,72 @@ class SyncEngineTest {
                 SyncEngine.withoutCredentials("https://me@bitbucket.org/me/sync.git"));
         assertEquals(null, SyncEngine.withoutCredentials(null));
     }
+
+    /**
+     * S2: Cancel during a sync, after the fetch but before this computer's files are written: nothing changes
+     * here or in the repository, and the next sync runs in full.
+     */
+    @Test
+    void aSyncCancelledBeforeItWritesChangesNothingAndTheNextOneRunsInFull() throws Exception {
+        a.write("snippets/java.json", snippet("main", "psvm"));
+        assertOk(a.sync());
+        b.write("dictionary.txt", "zim\n");
+        String remoteBefore = git(remote, "rev-parse", "main");
+
+        java.util.concurrent.atomic.AtomicReference<SyncEngine> engine =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        FileSyncTarget files = new FileSyncTarget(b.config);
+        SyncTarget pressingCancel = new SyncTarget() {
+            @Override
+            public Map<String, String> read(Set<SyncCategory> categories) throws IOException {
+                Map<String, String> mine = files.read(categories);
+                assertTrue(engine.get().cancel(), "still cancellable: nothing written yet");
+                return mine;
+            }
+
+            @Override
+            public boolean apply(Map<String, String> expected, Map<String, String> changes) throws IOException {
+                throw new AssertionError("a cancelled sync writes nothing here");
+            }
+        };
+        engine.set(b.engine(remote.toString(), pressingCancel));
+        SyncReport cancelled = engine.get().run(ALL, false);
+
+        assertEquals(SyncReport.Status.CANCELLED, cancelled.status());
+        assertEquals(null, b.read("snippets/java.json"), "nothing arrived");
+        assertEquals(remoteBefore, git(remote, "rev-parse", "main"), "nothing was sent");
+
+        SyncReport next = b.sync();
+        assertOk(next);
+        assertEquals(snippet("main", "psvm"), b.read("snippets/java.json"));
+        assertTrue(git(remote, "show", "main:dictionary.txt").contains("zim"));
+    }
+
+    /** S2: a fetch that hangs (a slow network) is stopped by Cancel; git is killed, nothing is written. */
+    @Test
+    @org.junit.jupiter.api.Timeout(30)
+    void cancelStopsAFetchThatIsStillRunning() throws Exception {
+        assumeTrue(
+                !System.getProperty("os.name")
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .contains("win"),
+                "POSIX sh");
+        assumeTrue(System.getenv("GIT_SSH_COMMAND") == null && System.getenv("GIT_SSH") == null, "ssh is ours");
+        Path started = tmp.resolve("ssh-started");
+        // The "ssh" git runs for the fetch: says it started, then hangs as an unreachable host would.
+        QuietGit git = new QuietGit(b.config.resolve("sync").resolve("repo"), true)
+                .with(List.of("-c", "core.sshCommand=sh -c 'touch \"" + started + "\"; sleep 60' --"));
+        b.write("dictionary.txt", "zim\n");
+        SyncEngine engine =
+                new SyncEngine(git, "ssh://example.invalid/sync.git", "main", new FileSyncTarget(b.config), "b");
+        java.util.concurrent.CompletableFuture<SyncReport> run =
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> engine.run(ALL, false));
+        while (!Files.exists(started)) { // waits for the fetch to be under way
+            java.util.concurrent.locks.LockSupport.parkNanos(10_000_000L);
+        }
+        assertTrue(engine.cancel());
+        SyncReport report = run.get(25, TimeUnit.SECONDS);
+        assertEquals(SyncReport.Status.CANCELLED, report.status(), report.detail());
+        assertEquals("zim\n", b.read("dictionary.txt"));
+    }
 }

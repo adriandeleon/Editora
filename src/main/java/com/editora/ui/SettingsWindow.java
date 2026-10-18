@@ -181,6 +181,13 @@ public class SettingsWindow {
     private final Consumer<Boolean> onToggleExpert;
     private final Consumer<Path> onOpenFile;
     private final Runnable onExportConfig;
+    /** Import Configuration… (the {@code config.import} command); null until wired. */
+    private Runnable onImportConfig;
+
+    void setImportConfig(Runnable importConfig) {
+        this.onImportConfig = importConfig;
+    }
+
     private final Runnable onShowDebugLog;
     /** Spell Check page: open the bundled technical dictionary (read-only) / the personal dictionary file. */
     private Runnable onOpenTechnicalDictionary;
@@ -4278,13 +4285,19 @@ public class SettingsWindow {
             }
         });
         syncCancelButton = new Button(tr("settings.sync.cancel"));
-        syncCancelButton.setOnAction(
-                e -> { // stops waiting; git finishes (or times out) on its own, unused
-                    syncConnectRun++;
-                    syncChecking = false;
-                    syncConnectMessage = null;
-                    showSyncNotice(tr("settings.sync.cancelled"));
-                });
+        syncCancelButton.setOnAction(e -> {
+            if (!syncChecking) { // a sync under way: stopped before it writes anything here, or let finish
+                if (settingsSync != null && !settingsSync.cancelSync()) {
+                    showSyncNotice(tr("settings.sync.cancelTooLate"));
+                }
+                return;
+            }
+            // Connect's look: stops waiting; git finishes (or times out) on its own, unused
+            syncConnectRun++;
+            syncChecking = false;
+            syncConnectMessage = null;
+            showSyncNotice(tr("settings.sync.cancelled"));
+        });
         Button openFolder = new Button(tr("settings.sync.openFolder"));
         openFolder.setOnAction(e -> openSyncFolder());
         cardRow(
@@ -4412,8 +4425,8 @@ public class SettingsWindow {
                 && state.report().status() == com.editora.sync.SyncReport.Status.NEEDS_CONFIRMATION;
         syncAnywayButton.setVisible(needsConfirmation);
         syncAnywayButton.setManaged(needsConfirmation);
-        syncCancelButton.setVisible(syncChecking);
-        syncCancelButton.setManaged(syncChecking);
+        syncCancelButton.setVisible(syncChecking || syncing);
+        syncCancelButton.setManaged(syncChecking || syncing);
         boolean secret = com.editora.sync.SyncEngine.hasCredentials(settings.getSyncRepoUrl())
                 && settingsSync != null
                 && !settingsSync.storedCredentialsKept;
@@ -6271,7 +6284,9 @@ public class SettingsWindow {
             header.setAlignment(Pos.CENTER_LEFT);
             VBox entry = new VBox(2, header);
             if (d.loadError() != null) {
-                Label err = new Label(d.loadError());
+                Label err = new Label(PluginLoadProblems.text(d));
+                String detail = PluginLoadProblems.detail(d);
+                err.setTooltip(detail == null ? null : new Tooltip(detail));
                 err.getStyleClass().add("settings-git-missing");
                 err.setWrapText(true);
                 err.setMaxWidth(420);
@@ -7500,7 +7515,20 @@ public class SettingsWindow {
         Label exportHint = note(tr("settings.exportConfig.hint"));
         exportHint.setWrapText(true);
         VBox exportBox = new VBox(4, exportConfig, exportHint);
-        cardRow(ioSection, Category.ADVANCED, exportBox, "import export backup settings config zip archive");
+        cardRow(ioSection, Category.ADVANCED, exportBox, "export backup settings config zip archive");
+        Button importConfig = new Button(tr("settings.importConfig"));
+        importConfig.setOnAction(e -> {
+            if (onImportConfig != null) {
+                onImportConfig.run();
+            }
+        });
+        Label importHint = note(tr("settings.importConfig.hint"));
+        importHint.setWrapText(true);
+        cardRow(
+                ioSection,
+                Category.ADVANCED,
+                new VBox(4, importConfig, importHint),
+                "import restore backup settings config zip archive move computer");
 
         Card debugSection = card(p, tr("settings.section.debug"));
         Button debugLog = new Button(tr("settings.debugLog"));

@@ -381,6 +381,8 @@ final class WindowCommandRegistrar {
 
         void exportConfig();
 
+        void importConfig();
+
         void cancel();
 
         SelectionPolicy selPolicy();
@@ -799,7 +801,10 @@ final class WindowCommandRegistrar {
                                         "plugins.setRegistryUrl",
                                         () -> host.config().getSettings().getPluginRegistryUrl(),
                                         v -> host.config().getSettings().setPluginRegistryUrl(v),
-                                        null)));
+                                        null,
+                                        v -> v.isEmpty() || com.editora.plugin.PluginRegistry.isHttps(v)
+                                                ? null // blank goes back to the built-in registry
+                                                : tr("settings.plugins.registryNotHttps"))));
         host.registry().register(Command.of("lsp.toggleServer", host.lspCoordinator()::chooseServerToggle));
         host.registry().register(Command.of("lsp.setServerCommand", host.lspCoordinator()::chooseServerCommand));
         host.registry().register(Command.of("lsp.trustProjectSettings", host.lspCoordinator()::trustProjectSettings));
@@ -891,6 +896,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("workspace.manageTrust", host::showTrustedFolders));
         host.registry().register(Command.of("workspace.revokeTrust", host::revokeTrustForActiveRoot));
         host.registry().register(Command.of("config.export", host::exportConfig));
+        host.registry().register(Command.of("config.import", host::importConfig));
         // Settings sync is one service for the whole process; each window's Settings window holds it.
         host.registry()
                 .register(Command.of("sync.setup", () -> host.settingsWindow().showSync(host.stage())));

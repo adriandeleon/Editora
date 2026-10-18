@@ -146,6 +146,7 @@ class CommandSweepFxTest {
      * a chooser fails the sweep, and so does a listed one that no longer reaches one in any state.
      */
     private static final Set<String> NATIVE_CHOOSER = Set.of(
+            "config.import", // the zip chooser
             "diff.compareDirectories",
             "editor.exportPdf",
             "editor.exportSelectionPdf",
