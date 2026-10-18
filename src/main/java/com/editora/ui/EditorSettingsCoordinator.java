@@ -984,21 +984,22 @@ final class EditorSettingsCoordinator {
         boolean zen = host.chrome().zenActive() || host.chrome().diffUiActive();
         boolean focus = zen || host.chrome().expertActive();
         boolean simple = host.chrome().simpleModeActive();
-        buffer.setRulerColumns(s.getRulers(), s.getLanguageRulers());
+        ProjectScope scope = projectScope(); // the project's values in a trusted folder, else the user's
+        buffer.setRulerColumns(scope.rulers(s), scope.languageRulers(s));
         buffer.setColumnRulerVisible(Chrome.columnRuler(s.isShowColumnRuler(), zen));
         buffer.setIndentGuidesVisible(Chrome.indentGuides(s.isShowIndentGuides(), zen, simple));
         buffer.setNoteIndicatorsVisible(s.isNotesSupport() && s.isShowNoteIndicators());
         buffer.setLineHighlightOn(Chrome.lineHighlight(s.isHighlightCurrentLine(), zen));
         buffer.setLineNumbersVisible(Chrome.lineNumbers(s.isShowLineNumbers(), zen, simple));
         buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
-        buffer.wrap().setPreference(s.isWordWrap(), s.isWordWrapProse()); // applied by the buffer's language
+        buffer.wrap().setPreference(scope.wordWrap(s), scope.wordWrapProse(s)); // applied by the buffer's language
         buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
         buffer.setSimpleMenu(simple); // ... and trims the right-click menu to the editing actions
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
         }
         buffer.setWhitespaceVisible(Chrome.whitespace(s.isShowWhitespace(), focus));
-        buffer.setTabSize(s.getTabSize());
+        buffer.setTabSize(scope.tabSize(s));
         buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
         buffer.setMinimapColors(
                 EditorThemes.minimapTextFor(s.getEditorTheme()), EditorThemes.minimapViewportFor(s.getEditorTheme()));
@@ -1136,7 +1137,8 @@ final class EditorSettingsCoordinator {
         buffer.setEditorConfigProps(p);
         applyEffectiveIndent(buffer, p);
         if (p.insertSpaces() != null || p.tabWidth() != null || p.indentSize() != null) {
-            buffer.setTabSize(p.effectiveTabWidth(host.config().getSettings().getTabSize()));
+            buffer.setTabSize(
+                    p.effectiveTabWidth(projectScope().tabSize(host.config().getSettings())));
         }
         // Unconditional, so a file that leaves an end_of_line rule behind (Save As, EditorConfig switched off)
         // goes back to its own line ending. A manual conversion lives on the buffer, not in this override.
@@ -1152,15 +1154,31 @@ final class EditorSettingsCoordinator {
      * auto-detection ({@code Indenter.detectUnit}). For {@code space}, the size falls back to the global tab size
      * when {@code .editorconfig} didn't specify {@code indent_size}.
      */
+    /** This window's project scope (the user's values without a project or in an untrusted folder). */
+    ProjectScope projectScope() {
+        CoordinatorHost h = host.coordinatorHost();
+        ProjectScope scope = h == null ? ProjectScope.NONE : h.projectScope();
+        if (scope != ProjectScope.NONE && scope != listenedScope) {
+            listenedScope = scope;
+            // An edited .editora/settings.json, a trust decision or a Project-scope change in Settings re-lays
+            // out this window's buffers with the values that now apply.
+            scope.addChangeListener(
+                    () -> applyViewSettingsToAllBuffers(host.config().getSettings()));
+        }
+        return scope;
+    }
+
+    private ProjectScope listenedScope;
+
     void applyEffectiveIndent(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties p) {
         Boolean insertSpaces = p.insertSpaces();
         Integer size = p.indentSize();
         if (insertSpaces == null) {
-            String style = host.config().getSettings().getIndentStyle();
+            String style = projectScope().indentStyle(host.config().getSettings());
             if ("space".equals(style)) {
                 insertSpaces = Boolean.TRUE;
                 if (size == null) {
-                    size = host.config().getSettings().getTabSize();
+                    size = projectScope().tabSize(host.config().getSettings());
                 }
             } else if ("tab".equals(style)) {
                 insertSpaces = Boolean.FALSE;

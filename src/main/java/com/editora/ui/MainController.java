@@ -5072,6 +5072,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public ProjectScope projectScope() {
+            return lspCoordinator.projectScope();
+        }
+
+        @Override
         public boolean appThemeDark() {
             return MainController.this.appThemeDark();
         }
