@@ -23,6 +23,11 @@ class DoctorNeedsTest {
         assertEquals(Set.of("terraform"), DoctorNeeds.serversForRootFiles(List.of("main.tf")));
         assertEquals(Set.of("astro"), DoctorNeeds.serversForRootFiles(List.of("astro.config.mjs")));
         assertEquals(Set.of("dockerfile"), DoctorNeeds.serversForRootFiles(List.of("Dockerfile")));
+        assertEquals(Set.of("groovy"), DoctorNeeds.serversForRootFiles(List.of("Jenkinsfile")));
+        assertEquals(
+                Set.of("java"),
+                DoctorNeeds.serversForRootFiles(List.of("build.gradle")),
+                "a Groovy-DSL build alone is a Java project");
         assertTrue(
                 DoctorNeeds.serversForRootFiles(List.of("notes.md", "LICENSE")).isEmpty());
         assertTrue(DoctorNeeds.serversForRootFiles(null).isEmpty());

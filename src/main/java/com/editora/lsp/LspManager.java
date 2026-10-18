@@ -3812,6 +3812,9 @@ public final class LspManager {
             case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting, jdks);
             case "go" -> Map.of("semanticTokens", true);
             case "json", "css", "html" -> Map.of("provideFormatter", true);
+            // gvy reads a flat map of its VS Code settings. CodeNarc's style rules flag nearly every line of
+            // ordinary Groovy at Information level; compiler errors are what an editor needs by default.
+            case "groovy" -> Map.of("groovy.codenarc.enabled", false);
             case ASTRO_SERVER_ID ->
                 astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->

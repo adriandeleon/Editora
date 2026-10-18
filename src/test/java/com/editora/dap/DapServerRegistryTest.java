@@ -13,8 +13,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DapServerRegistryTest {
 
     @Test
-    void languageIdsForDebugAreJavaPythonJavascript() {
-        assertEquals(Set.of("java", "python", "javascript"), DapServerRegistry.languageIdsForDebug());
+    void languageIdsForDebugAreJavaPythonJavascriptAndGroovy() {
+        assertEquals(Set.of("java", "python", "javascript", "groovy"), DapServerRegistry.languageIdsForDebug());
+    }
+
+    @Test
+    void groovyIsDebuggedByEditorasOwnJvmAdapter() {
+        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("groovy");
+        assertEquals(DapServerRegistry.Kind.JVM, spec.kind());
+        assertEquals(DapServerRegistry.JVM_LAUNCH_TYPE, spec.launchType());
+        assertEquals(List.of(), spec.adapterArgs(), "nothing to start: it runs in-process");
     }
 
     @Test
@@ -22,6 +30,7 @@ class DapServerRegistryTest {
         assertTrue(DapServerRegistry.isDebuggable("java"));
         assertTrue(DapServerRegistry.isDebuggable("python"));
         assertTrue(DapServerRegistry.isDebuggable("javascript"));
+        assertTrue(DapServerRegistry.isDebuggable("groovy"));
         assertFalse(DapServerRegistry.isDebuggable("typescript"));
         assertFalse(DapServerRegistry.isDebuggable("ruby"));
         assertFalse(DapServerRegistry.isDebuggable(null));

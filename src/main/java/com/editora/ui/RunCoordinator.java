@@ -384,6 +384,10 @@ final class RunCoordinator {
             runPythonConfig(cfg, cwd, script, args, env, remote);
             return;
         }
+        if (ScriptRunCommand.GROOVY.equals(cfg.type())) {
+            runJvmScriptConfig(cfg, cwd, script, args, env, elsewhere);
+            return;
+        }
         if (!ScriptRunCommand.SHELL.equals(cfg.type())) {
             streamRun(cfg.name(), cwd, ScriptRunCommand.build(cfg.type(), cfg.target(), args), env, script);
             return;
@@ -488,6 +492,42 @@ final class RunCoordinator {
     /** For a run on this machine, whether an absolute interpreter path exists; null (as written) on a host. */
     private static java.util.function.Predicate<String> existsHere(boolean remote) {
         return remote ? null : p -> java.nio.file.Files.isExecutable(Path.of(p));
+    }
+
+    /**
+     * Runs a Groovy script configuration: its tool on the configuration's JDK (else the Settings one), with the
+     * configuration's VM arguments in {@code JAVA_OPTS} — the variable Groovy's launcher hands its JVM.
+     */
+    private void runJvmScriptConfig(
+            RunConfiguration cfg,
+            Path cwd,
+            Path script,
+            List<String> args,
+            java.util.Map<String, String> env,
+            boolean elsewhere) {
+        String language = cfg.type();
+        String tool = elsewhere
+                ? com.editora.run.JvmScriptRun.tool(language)
+                : com.editora.run.JvmTools.locate(com.editora.run.JvmScriptRun.tool(language));
+        if (tool == null) {
+            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey(language)));
+            return;
+        }
+        String jdkHome = !cfg.jdkHome().isBlank()
+                ? cfg.jdkHome()
+                : elsewhere ? remoteJdkHome(cwd) : host.settings().getMavenJdkHome();
+        java.util.Map<String, String> launch = new java.util.LinkedHashMap<>(
+                elsewhere ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath()));
+        launch.putAll(env);
+        launch = com.editora.run.JvmScriptRun.withJvmOption(
+                launch,
+                elsewhere ? java.util.Map.of() : System.getenv(),
+                com.editora.run.JvmScriptRun.jvmOptionsVariable(language),
+                cfg.vmArgs().strip());
+        String target = script != null
+                ? com.editora.process.ExecTargets.forPath(script).toTargetPath(script)
+                : cfg.target().strip();
+        streamRun(cfg.name(), cwd, com.editora.run.JvmScriptRun.argv(tool, target, args), launch, script);
     }
 
     /**
@@ -1262,18 +1302,25 @@ final class RunCoordinator {
         if (path == null) {
             return;
         }
-        boolean javaSource = !buffer.isPython() && !buffer.isShell();
+        // A Groovy (and later Kotlin, Scala, Clojure) file runs through its own tool, on the same JDK as Java.
+        boolean jvmScript = com.editora.run.JvmScriptRun.supports(buffer.getLanguage());
+        boolean javaSource = !buffer.isPython() && !buffer.isShell() && !jvmScript;
+        boolean onJdk = javaSource || jvmScript;
         // On a remote host the program runs with the host's own java and environment: this machine's JDK
         // setting is a path here, and its PATH means nothing there. A host can name its JDK (jdk.home).
         boolean remote = !com.editora.process.ExecTargets.runsHere(path);
-        String jdkHome = !javaSource
-                ? ""
-                : remote ? remoteJdkHome(path) : host.settings().getMavenJdkHome();
+        String jdkHome =
+                !onJdk ? "" : remote ? remoteJdkHome(path) : host.settings().getMavenJdkHome();
         String selectedJava = JdkToolchain.javaExecutable(jdkHome);
         String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;
-        java.util.Map<String, String> launchEnv = !javaSource
+        java.util.Map<String, String> launchEnv = !onJdk
                 ? java.util.Map.of()
                 : remote ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath());
+        if (jvmScript && !remote && jvmTool(buffer) == null) {
+            // Said here, not as the shell's "groovy: command not found" in the Run console.
+            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey(buffer.getLanguage())));
+            return;
+        }
         Runnable proceed = () -> {
             String stored = ops.programArgs(path);
             if (promptArgs) {
@@ -1376,12 +1423,35 @@ final class RunCoordinator {
         return nl >= 0 ? head.substring(0, nl) : head;
     }
 
+    /**
+     * The tool that runs {@code buffer}'s JVM language ({@code groovy}): this machine's install for a local file,
+     * the bare name (the host's PATH) for a remote one; null when it is not installed here.
+     */
+    private static String jvmTool(EditorBuffer buffer) {
+        String tool = com.editora.run.JvmScriptRun.tool(buffer.getLanguage());
+        if (tool == null) {
+            return null;
+        }
+        Path path = buffer.getPath();
+        if (path != null && !com.editora.process.ExecTargets.runsHere(path)) {
+            return tool;
+        }
+        return com.editora.run.JvmTools.locate(tool);
+    }
+
     /** The launcher argv for the buffer's language: interpreter + file + {@code args}. */
     private List<String> buildRunCommand(
             EditorBuffer buffer, Path path, String javaExecutable, List<String> args, ShellCommand.Launch shell) {
         if (shell != null) {
             return ShellCommand.argv(
                     shell, com.editora.process.ExecTargets.forPath(path).toTargetPath(path), args);
+        }
+        if (com.editora.run.JvmScriptRun.supports(buffer.getLanguage())) {
+            String tool = jvmTool(buffer);
+            return com.editora.run.JvmScriptRun.argv(
+                    tool == null ? com.editora.run.JvmScriptRun.tool(buffer.getLanguage()) : tool,
+                    com.editora.process.ExecTargets.forPath(path).toTargetPath(path),
+                    args);
         }
         List<String> command = new ArrayList<>();
         command.add(javaExecutable); // (Python is planned by PythonRunLauncher)

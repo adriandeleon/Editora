@@ -15,10 +15,19 @@ class RunConfigFieldsTest {
 
     @Test
     void scriptTypesUseTheTargetAndNoJavaFields() {
-        for (String type : new String[] {"python", "shell", "make", "npm"}) {
+        for (String type : new String[] {"python", "shell", "make", "npm", "groovy"}) {
             assertTrue(RunConfigFields.usesTarget(type), type);
             assertFalse(RunConfigFields.usesJavaFields(type), type);
         }
+    }
+
+    @Test
+    void groovyKeepsTheJdkAndVmArgumentsAndBrowsesForItsScript() {
+        assertTrue(RunConfigFields.usesJvmFields("groovy"));
+        assertTrue(RunConfigFields.usesJvmFields("java"));
+        assertFalse(RunConfigFields.usesJvmFields("python"));
+        assertTrue(RunConfigFields.usesScriptFile("groovy"));
+        assertFalse(RunConfigFields.usesInterpreter("groovy"), "its tool is found, not configured per entry");
     }
 
     @Test

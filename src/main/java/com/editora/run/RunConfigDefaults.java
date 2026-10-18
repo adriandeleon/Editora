@@ -47,7 +47,9 @@ public final class RunConfigDefaults {
     public static com.editora.config.RunConfiguration forScript(
             String type, java.nio.file.Path script, java.nio.file.Path projectRoot) {
         if (script == null
-                || !(ScriptRunCommand.PYTHON.equals(type) || ScriptRunCommand.SHELL.equals(type))
+                || !(ScriptRunCommand.PYTHON.equals(type)
+                        || ScriptRunCommand.SHELL.equals(type)
+                        || ScriptRunCommand.GROOVY.equals(type))
                 || script.getFileName() == null) {
             return null;
         }

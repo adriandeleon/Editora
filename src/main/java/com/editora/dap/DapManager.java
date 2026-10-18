@@ -406,6 +406,8 @@ public final class DapManager {
             case "java" -> javaDebugUsable();
             case "python" -> pythonAvailable;
             case "javascript" -> jsAvailable;
+            // Editora's own adapter: nothing to install, only the debugging switch (the tool is checked at start).
+            case "groovy" -> enabled;
             default -> false;
         };
     }
@@ -585,6 +587,7 @@ public final class DapManager {
      */
     public void startLaunch(
             Path file, String language, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
+        jvmCwd = null; // a file's own debug runs in its folder
         if ("java".equals(language)) {
             startLaunch(file, picker, javaExecOverride, projectRoot);
         } else if (DapServerRegistry.isDebuggable(language)) {
@@ -592,6 +595,19 @@ public final class DapManager {
         } else {
             listener.onError(tr("debug.error.notSupported"));
         }
+    }
+
+    /** The folder a JVM-language program runs in; null for its file's folder. */
+    private volatile Path jvmCwd;
+
+    /**
+     * Debugs JVM-language script {@code file} ({@code groovy}) in {@code cwd} — a run configuration's folder —
+     * with the arguments and environment set beforehand. Restart repeats it.
+     */
+    public void startJvmScript(Path file, String language, Path cwd) {
+        jvmCwd = cwd;
+        startProgram(file, language);
+        restartAction = () -> startJvmScript(file, language, cwd);
     }
 
     /** Program arguments for the next launch (shared with the Run feature's per-file args). */
@@ -1619,6 +1635,8 @@ public final class DapManager {
                     } else {
                         startStdio(file, spec, bps, filters, epoch, module);
                     }
+                } else if (spec.kind() == DapServerRegistry.Kind.JVM && !remote) {
+                    startJvm(file, spec, bps, filters, epoch);
                 } else if (spec.kind() == DapServerRegistry.Kind.SOCKET) {
                     if (remote) {
                         startRemoteSocket(file, spec, bps, filters, epoch);
@@ -1933,6 +1951,68 @@ public final class DapManager {
                 cwdOf(file),
                 nodeExe,
                 null);
+    }
+
+    /**
+     * Editora's own JVM adapter ({@link com.editora.dap.jvm.JvmDebugAdapter}), served in this process on a
+     * loopback port: the program runs as Run runs it ({@code groovy Script.groovy args…} on the session's JDK),
+     * with the JDWP agent in the variable its launcher hands the JVM, started by this client
+     * ({@code runInTerminal}) so its output, input and exit code are the Debug console's.
+     */
+    private void startJvm(
+            Path file,
+            DapServerRegistry.DapServerSpec spec,
+            List<DapModels.FileBreakpoints> bps,
+            List<String> filters,
+            long epoch)
+            throws java.io.IOException {
+        String language = spec.language();
+        String tool = com.editora.run.JvmTools.locate(com.editora.run.JvmScriptRun.tool(language));
+        if (tool == null) {
+            fail(epoch, tr(com.editora.run.JvmScriptRun.missingToolKey(language)));
+            return;
+        }
+        List<String> argv = com.editora.run.JvmScriptRun.argv(tool, file.toString(), programArgs);
+        Map<String, String> programEnv = env;
+        Map<String, Object> launch = new java.util.LinkedHashMap<>();
+        launch.put("argv", argv);
+        Path folder = jvmCwd;
+        launch.put("cwd", folder != null ? folder.toString() : cwdOf(file));
+        launch.put("env", programEnv);
+        launch.put("language", language);
+        launch.put("jvmOptionsVariable", com.editora.run.JvmScriptRun.jvmOptionsVariable(language));
+        onOutput(epoch, com.editora.run.RunService.commandLine(argv) + "\n", COMMAND_CATEGORY);
+        int port = com.editora.dap.jvm.JvmDebugServer.start(new com.editora.dap.jvm.JvmDebugAdapter());
+        DapClient c = new DapClient(sessionHost(epoch));
+        c.setPaths(DapPaths.LOCAL);
+        c.setBreakpoints(bps);
+        c.setExceptionFilters(filters);
+        c.setRunsDebuggee(true); // the program is this client's: the Debug console's output, input and exit code
+        if (!publishClient(epoch, c)) {
+            c.dispose();
+            return;
+        }
+        c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
+            if (e != null) {
+                fail(epoch, tr("debug.error.connectFailed", msg(e)));
+                return;
+            }
+            if (!isCurrent(epoch)) {
+                c.dispose();
+                return;
+            }
+            c.launch(launch).whenComplete((v, le) -> {
+                if (le != null) {
+                    fail(epoch, tr("debug.error.launchFailed", msg(le)));
+                }
+            });
+            Platform.runLater(() -> {
+                if (isCurrent(epoch, c)) {
+                    setState(State.RUNNING);
+                    listener.onDebuggeeRuntime(List.of(tool), runtimeWhere(file), programEnv);
+                }
+            });
+        });
     }
 
     /**

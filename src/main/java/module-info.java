@@ -52,6 +52,8 @@ module com.editora {
     requires org.eclipse.lsp4j.jsonrpc;
     // Debug Adapter Protocol client (LSP4J DAP). Automatic module, moditect-patched like lsp4j above.
     requires org.eclipse.lsp4j.debug;
+    // JDI, the JDK's debugger API: Editora's JVM debug adapter (com.editora.dap.jvm) attaches to the program.
+    requires jdk.jdi;
     // Gson (already a transitive module via jsonrpc) — the DAP layer parses jdtls's untyped
     // workspace/executeCommand results, which lsp4j hands back as gson JsonElements.
     requires com.google.gson;
@@ -119,6 +121,9 @@ module com.editora {
     // Same as com.editora.lsp: the DAP client (com.editora.dap) receives events via reflection and Gson
     // reflectively reads the DAP DTOs — UNQUALIFIED opens for the unnamed-module Gson under javafx:run.
     opens com.editora.dap;
+    // Editora's own JVM debug adapter (Groovy, and the other JVM languages java-debug cannot map): lsp4j's DAP
+    // server endpoint reaches it by reflection, and it drives the debugged JVM through JDI.
+    opens com.editora.dap.jvm;
 
     exports com.editora;
     exports com.editora.command;

@@ -27,13 +27,17 @@ public final class ScriptRunCommand {
     public static final String SHELL = "shell";
     public static final String MAKE = "make";
     public static final String NPM = "npm";
+
+    /** A Groovy script, run by {@code groovy} on the configuration's JDK ({@link JvmScriptRun}). */
+    public static final String GROOVY = "groovy";
+
     public static final String JAVA = "java";
 
     private ScriptRunCommand() {}
 
     /** Whether {@code type} is a script type this builder can launch (i.e. anything but {@code java}). */
     public static boolean isScript(String type) {
-        return isPython(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type);
+        return isPython(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type) || GROOVY.equals(type);
     }
 
     /** Whether {@code type} is a Python script or module (launched through {@code PythonRunPlan}). */
@@ -48,7 +52,7 @@ public final class ScriptRunCommand {
      * {@code make} does, so it is a valid configuration rather than an incomplete one.
      */
     public static boolean needsTarget(String type) {
-        return isPython(type) || SHELL.equals(type) || NPM.equals(type);
+        return isPython(type) || SHELL.equals(type) || NPM.equals(type) || GROOVY.equals(type);
     }
 
     /**
@@ -90,6 +94,14 @@ public final class ScriptRunCommand {
                     return List.of();
                 }
                 argv.addAll(shell == null ? List.of(ShellCommand.defaultInterpreter(t)) : shell.interpreter());
+                argv.add(t);
+            }
+            case GROOVY -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                // The shape only: the real tool and JDK come from JvmTools and the configuration's JDK.
+                argv.add(JvmScriptRun.tool(GROOVY));
                 argv.add(t);
             }
             case MAKE -> {

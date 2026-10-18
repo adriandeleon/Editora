@@ -62,11 +62,18 @@ not new logic:
 
 1. A `ServerDef` in [`lsp/LspServerRegistry.java`](../src/main/java/com/editora/lsp/LspServerRegistry.java):
    the command tokenization, the language ids it serves, and its root markers.
-2. The server id in `MainController.LSP_SERVER_IDS`.
+2. The server id in `LspCoordinator.SERVER_IDS` and its four per-server switches (enabled, command, set
+   enabled, set command); `LspCoordinatorServerIdsTest` checks the list.
 3. The served language id(s) in `EditorBuffer.LSP_LANGUAGES` (kept in sync with the registry;
    `isLspLanguage()` reads it).
 4. A `Settings.lspSupport`-style per-server `…LspCommand` + `…LspEnabled` pair, and an entry in
-   `SettingsWindow.lspServerUis()` (the LSP page is data-driven over that descriptor list).
+   `SettingsWindow.lspServerUis()` (the LSP page is data-driven over that descriptor list), plus the
+   `settings-controls.properties` rows, a schema bump with an additive migration, and the i18n keys in
+   all six catalogs.
+5. An installer, if it has one: `InstallCatalog.serverInstall` (`ARCHIVE` for a per-OS binary,
+   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle), and the
+   persist case in `InstallCoordinator.applyServerCommand`. A server run by `java` gets the Settings JDK
+   through `JvmServerCommand.withJdk`.
 
 `LspManager.configure(enabled, Map<serverId, command>)` is map-based, so it never needs a
 signature change. If the language has no bundled grammar, also do
@@ -76,11 +83,16 @@ signature change. If the language has no bundled grammar, also do
 
 Mirrors the LSP recipe. The language→adapter spec is
 [`dap/DapServerRegistry.java`](../src/main/java/com/editora/dap/DapServerRegistry.java)
-(`Kind` = `JDTLS` / `STDIO` / `SOCKET`), `languageIdsForDebug()` gates the breakpoint gutter +
+(`Kind` = `JDTLS` / `STDIO` / `SOCKET` / `JVM`), `languageIdsForDebug()` gates the breakpoint gutter +
 debug commands, and the Settings → Debugging page is data-driven over
 `SettingsWindow.debugAdapterUis()`. Java rides the jdtls session; Python (debugpy) is stdio;
-JavaScript (vscode-js-debug) is a socket. Adapters are never bundled — they're located by
+JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by
 `dap/DebugAdapterLocator` and installed by the `scripts/install-*.sh` helpers.
+
+A JVM language other than Java (Groovy today) uses `Kind.JVM`: Editora's own JDI adapter
+([ADR 0016](decisions/0016-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
+the variable its launcher passes JVM options in), a `run/JvmTools` home variable, a `DapServerRegistry`
+`Def`, its `RunScan` branch, and its runtime-internal packages in `JvmSourceMap.stepFilters`.
 
 ## Add a language / TextMate grammar
 

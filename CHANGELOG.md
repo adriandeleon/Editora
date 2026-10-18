@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Groovy: language server, Run and Debug.** Groovy files get completion, diagnostics, outline, rename and
+  formatting from the gvy language server, installed in one click (a pinned jar, run on the JDK chosen in Settings).
+  Run File, the gutter ▶ and a new Groovy script run configuration run a script with `groovy` on that JDK, and the
+  Run window shows the Groovy and Java versions. Debug stops at breakpoints in scripts, classes and closures, steps
+  over Groovy's own runtime, shows locals and fields, and stops on uncaught exceptions — through a new debugger
+  built into Editora, so there is nothing else to install. Settings schema 135.
 - **Settings shows what you changed.** A row whose value differs from the default carries a marker, the sidebar counts
   them per page, each row has **Reset to default**, and the **Modified** toggle (or `@modified` in the search) lists
   only the changed settings.
