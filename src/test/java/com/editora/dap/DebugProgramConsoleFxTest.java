@@ -64,6 +64,7 @@ class DebugProgramConsoleFxTest {
     @BeforeAll
     static void bootToolkit() throws Exception {
         FxToolkit.registerPrimaryStage();
+        com.editora.i18n.Messages.init("en"); // the terminal tab's title
     }
 
     @TempDir
@@ -304,6 +305,87 @@ class DebugProgramConsoleFxTest {
             assertFalse(dap.programInputAvailable());
             assertFalse(dap.sendProgramInput("late"));
         });
+    }
+
+    @Test
+    void withATerminalTheProgramRunsThereAndItsExitEndsTheSession() throws Exception {
+        List<String> asked = new CopyOnWriteArrayList<>();
+        java.util.concurrent.atomic.AtomicReference<java.util.function.IntConsumer> exit =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(true);
+        java.util.concurrent.atomic.AtomicInteger stops = new java.util.concurrent.atomic.AtomicInteger();
+        onFx(() -> dap.setProgramTerminal((title, where, argv, env, exited) -> {
+            asked.add(title + " | " + where + " | " + argv + " | " + env.get("EDITORA_TEST_SET"));
+            exit.set(exited);
+            return new com.editora.terminal.ProgramRun() {
+                @Override
+                public long pid() {
+                    return 4242;
+                }
+
+                @Override
+                public boolean isRunning() {
+                    return running.get();
+                }
+
+                @Override
+                public void stop() {
+                    stops.incrementAndGet();
+                }
+            };
+        }));
+        FakeDebugAdapter.Session session = launch();
+        Map<String, String> env = new java.util.HashMap<>();
+        env.put("EDITORA_TEST_SET", "yes");
+        env.put("EDITORA_TEST_UNSET", null);
+        Integer pid = session.runInTerminal(dir.resolve("work").toString(), List.of(javaExec(), echo.toString()), env)
+                .get(20, TimeUnit.SECONDS)
+                .getProcessId();
+
+        assertEquals(4242, pid, "the reply names the terminal program's pid");
+        assertEquals(
+                List.of("Debug: Echo.java | " + dir.resolve("work") + " | " + List.of(javaExec(), echo.toString())
+                        + " | yes"),
+                asked,
+                "the adapter's command, folder and environment, untouched");
+        assertFalse(events.contains("input=true"), "the terminal takes the input, not the Debug console");
+
+        onFx(() -> {
+            running.set(false);
+            exit.get().accept(5);
+        });
+        await("the program's exit", () -> events.contains("exit=5"));
+        await("the session's end", () -> events.contains("INACTIVE"));
+        assertEquals(List.of(), errors);
+    }
+
+    @Test
+    void stoppingASessionWhoseProgramRunsInATerminalStopsThatProgram() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger stops = new java.util.concurrent.atomic.AtomicInteger();
+        onFx(() -> dap.setProgramTerminal((title, where, argv, env, exited) -> new com.editora.terminal.ProgramRun() {
+            @Override
+            public long pid() {
+                return -1; // on another machine, before its pid line
+            }
+
+            @Override
+            public boolean isRunning() {
+                return true;
+            }
+
+            @Override
+            public void stop() {
+                stops.incrementAndGet();
+            }
+        }));
+        FakeDebugAdapter.Session session = launch();
+        Integer pid = session.runInTerminal(
+                        dir.resolve("work").toString(), List.of(javaExec(), echo.toString()), Map.of())
+                .get(20, TimeUnit.SECONDS)
+                .getProcessId();
+        assertEquals(null, pid, "no pid yet: the reply names none rather than -1");
+        onFx(dap::stop);
+        await("the terminal program stopped", () -> stops.get() > 0);
     }
 
     @Test

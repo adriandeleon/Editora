@@ -2651,6 +2651,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                 });
         debugToolWindow = toolWindow("debug", ToolWindow.Side.BOTTOM, Icons::debug, debugCoordinator::panel);
+        debugCoordinator.setProgramTerminal(terminalCoordinator::runProgram); // Settings → Debug → in the Terminal
         debugToolWindow.setFirstOpenShare(0.42); // stack, variables and console need rows (review C4)
         externalToolToolWindow = toolWindow(
                 "externalTool",

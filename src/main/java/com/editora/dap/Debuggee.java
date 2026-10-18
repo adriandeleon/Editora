@@ -31,6 +31,27 @@ final class Debuggee {
     private final RunService service = new RunService();
     private boolean inputClosed;
 
+    /** Where the program runs instead of {@link #service}: a Terminal tab; null for the Debug console. */
+    private final ProgramTerminal terminal;
+
+    private final String title;
+    private com.editora.terminal.ProgramRun run;
+
+    Debuggee() {
+        this(null, "");
+    }
+
+    /** A program that runs in a Terminal tab titled {@code title} when {@code terminal} is given. */
+    Debuggee(ProgramTerminal terminal, String title) {
+        this.terminal = terminal;
+        this.title = title == null ? "" : title;
+    }
+
+    /** Whether the program runs in a Terminal tab, which then owns its input and output. */
+    boolean inTerminal() {
+        return terminal != null;
+    }
+
     /**
      * Starts {@code argv} in {@code cwd} with {@code env} over the user's environment (a null value unsets
      * that variable). Returns the process id, or throws with the reason the program could not be started.
@@ -44,6 +65,10 @@ final class Debuggee {
      * Run does.
      */
     long start(Path dir, List<String> argv, Map<String, String> env, Sink sink) throws java.io.IOException {
+        if (terminal != null) {
+            run = terminal.start(title, dir, argv, env == null ? Map.of() : env, sink::exited);
+            return run.pid(); // -1 on another machine until its pid line arrives: the reply then names none
+        }
         String[] failure = {null};
         service.runInDir(dir, argv, env, new RunService.Listener() {
             @Override
@@ -78,17 +103,17 @@ final class Debuggee {
 
     /** True until the program's exit has been delivered to the sink (its last output included). */
     boolean isRunning() {
-        return service.isRunning();
+        return run != null ? run.isRunning() : service.isRunning();
     }
 
     /** Whether a typed line can still reach the program: it is alive and its input has not been ended. */
     boolean acceptsInput() {
-        return service.isRunning() && !inputClosed;
+        return run == null && service.isRunning() && !inputClosed;
     }
 
     /** False once {@link #closeInput} has ended the program's input. */
     boolean inputOpen() {
-        return !inputClosed;
+        return run == null && !inputClosed;
     }
 
     void sendInput(String line) {
@@ -100,16 +125,26 @@ final class Debuggee {
     /** Ends the program's standard input: whatever reads it sees end of file. */
     void closeInput() {
         inputClosed = true;
-        service.closeInput();
+        if (run == null) {
+            service.closeInput();
+        }
     }
 
     /** Ends the program but keeps listening: its remaining output and its exit are still delivered. */
     void terminate() {
-        service.stop();
+        if (run != null) {
+            run.stop();
+        } else {
+            service.stop();
+        }
     }
 
     /** Ends the program and forgets it: nothing more is delivered (Stop, Restart, the window closing). */
     void kill() {
-        service.shutdown();
+        if (run != null) {
+            run.stop(); // its tab stays, with what it printed
+        } else {
+            service.shutdown();
+        }
     }
 }
