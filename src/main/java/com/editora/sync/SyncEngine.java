@@ -56,6 +56,13 @@ public final class SyncEngine {
     private final SyncTarget target;
     private final String machine;
 
+    /** Set by {@link #cancel()} while nothing here has been written yet. */
+    private boolean cancelled;
+    /** Past the point where this computer's files are written: a cancel no longer stops the run. */
+    private boolean committed;
+    /** The network command in flight (fetch), which a cancel kills. */
+    private ProcessRunner.Cancellation inFlight;
+
     /**
      * @param git a runner whose directory is {@code clone}
      * @param machine this computer's name, for the commit message
@@ -124,6 +131,55 @@ public final class SyncEngine {
         return user.matches("(ghp|gho|ghu|ghs|ghr)_\\w+|github_pat_\\w+|glpat-[\\w-]+") || user.matches("[\\w-]{30,}");
     }
 
+    /**
+     * Stops the run at the next safe point: before the fetch, during it (git is stopped with SIGTERM, so it
+     * removes its own lock files), or after it, before anything on this computer is written. Once the merged
+     * files are being written, the run finishes (writes, commit and push) and this returns false. Any thread.
+     */
+    public synchronized boolean cancel() {
+        if (committed) {
+            return false;
+        }
+        cancelled = true;
+        if (inFlight != null) {
+            inFlight.cancel();
+        }
+        return true;
+    }
+
+    private synchronized boolean stopHere() {
+        return cancelled;
+    }
+
+    /** Commits to finishing the run, unless it was cancelled first. */
+    private synchronized boolean commit() {
+        if (!cancelled) {
+            committed = true;
+        }
+        return committed;
+    }
+
+    private ProcessRunner.Result fetch() {
+        ProcessRunner.Cancellation c = new ProcessRunner.Cancellation();
+        synchronized (this) {
+            if (cancelled) {
+                return null;
+            }
+            inFlight = c;
+        }
+        try {
+            return git.network(c, "fetch", "--prune", "--quiet", "origin");
+        } finally {
+            synchronized (this) {
+                inFlight = null;
+            }
+        }
+    }
+
+    private static SyncReport cancelledReport() {
+        return SyncReport.failure(SyncReport.Status.CANCELLED, "");
+    }
+
     /** Whether {@code branch} is a plain branch name. */
     public static boolean isUsableBranch(String branch) {
         return branch != null
@@ -165,6 +221,9 @@ public final class SyncEngine {
                 categories.isEmpty() ? EnumSet.noneOf(SyncCategory.class) : EnumSet.copyOf(categories);
         List<SyncReport.Change> received = new ArrayList<>();
         try {
+            if (stopHere()) {
+                return cancelledReport();
+            }
             prepareClone();
             for (int attempt = 1; ; attempt++) {
                 SyncReport report = cycle(enabled, allowLargeRemoval, previewOnly, received);
@@ -186,7 +245,10 @@ public final class SyncEngine {
     private SyncReport cycle(
             Set<SyncCategory> enabled, boolean allowLargeRemoval, boolean previewOnly, List<SyncReport.Change> received)
             throws IOException, GitFailure {
-        ProcessRunner.Result fetch = git.network("fetch", "--prune", "--quiet", "origin");
+        ProcessRunner.Result fetch = fetch();
+        if (fetch == null || fetch.cancelled() || stopHere()) {
+            return cancelledReport(); // nothing written: the clone's refs are git's to keep consistent
+        }
         if (!fetch.ok()) {
             return SyncReport.failure(SyncReport.Status.FETCH_FAILED, GitOutcome.transcript(fetch));
         }
@@ -251,6 +313,9 @@ public final class SyncEngine {
         }
         if (previewOnly) {
             return new SyncReport(SyncReport.Status.OK, List.copyOf(received), sent, conflicts, skipped, "");
+        }
+        if (!commit()) {
+            return cancelledReport(); // the last point before this computer's files change
         }
         if (!liveChanges.isEmpty() && !target.apply(mine, liveChanges)) {
             return SyncReport.failure(SyncReport.Status.LOCAL_BUSY, "");

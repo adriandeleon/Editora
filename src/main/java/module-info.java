@@ -80,6 +80,9 @@ module com.editora {
     // readable by this one.
     requires com.sun.jna;
 
+    // The keychain bindings (secrets/) pass JNA Structures, which JNA reads and writes by reflection.
+    opens com.editora.secrets to
+            com.sun.jna;
     opens com.editora to
             javafx.fxml;
     opens com.editora.ui to

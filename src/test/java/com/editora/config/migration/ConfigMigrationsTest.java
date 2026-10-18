@@ -34,6 +34,7 @@ class ConfigMigrationsTest {
         // v126→127 gives the OpenAI-compatible provider its own endpoint and model.
         expected.put("aiModel", "").put("aiModelOpenai", "local-model");
         expected.put("aiEndpoint", "").put("aiEndpointOpenai", "http://localhost:1234/v1/chat/completions");
+        expected.put("aiModelCodex", ""); // v133→134 copies aiModel, which v126→127 had moved to the OpenAI field
         assertEquals(expected, ConfigMigrations.upgrade(ConfigSchema.SETTINGS, previous, mapper));
     }
 
@@ -87,6 +88,23 @@ class ConfigMigrationsTest {
         ObjectNode proxy = (ObjectNode) mapper.readTree("""
                 {"aiEndpoint":"https://proxy.example/v1/messages","aiModel":"claude-x"}""");
         assertEquals(proxy.deepCopy(), ConfigMigrations.splitOpenaiEndpoint(proxy));
+    }
+
+    /** v133→134: Codex gets its own model field, starting from the value it shared with Anthropic. */
+    @Test
+    void codexKeepsTheModelItSharedWithAnthropic() throws Exception {
+        ObjectNode shared = (ObjectNode) mapper.readTree("{\"aiProvider\":\"codex\",\"aiModel\":\"gpt-5-codex\"}");
+        ObjectNode out = (ObjectNode) ConfigMigrations.splitCodexModel(shared);
+        assertEquals("gpt-5-codex", out.get("aiModelCodex").asText());
+        assertEquals("gpt-5-codex", out.get("aiModel").asText(), "Anthropic keeps its own copy");
+        out.put("aiModelCodex", "later");
+        assertEquals(
+                "later",
+                ConfigMigrations.splitCodexModel(out).get("aiModelCodex").asText(),
+                "safe to repeat");
+        com.editora.config.Settings s = mapper.treeToValue(out, com.editora.config.Settings.class);
+        s.setAiModelFor(com.editora.ai.AiProvider.ANTHROPIC, "claude-x");
+        assertEquals("later", s.getAiModelFor(com.editora.ai.AiProvider.CODEX), "no sharing any more");
     }
 
     @Test

@@ -265,7 +265,7 @@ Settings → Terminal (Languages & Tools), schema 130: `terminalShell` (blank = 
 `terminalScrollback`, `terminalIdeCommands`, `terminalConfirmClose`. Font, cursor, bell and the key list apply
 to open terminals. Scrollback and shell apply from the next tab. Schema 131 adds `terminalUseExternal`; 132
 adds `terminalShellIntegration`, which applies from the next tab; 133 adds `terminalTypeAhead` (applies at
-once) and Debug's `debugProgramInTerminal`. 134 adds `terminalMacOptionIsMeta` and
+once) and Debug's `debugProgramInTerminal`. 135 adds `terminalMacOptionIsMeta` and
 `terminalConfirmMultilinePaste`, and lowers the scrollback maximum to 50,000 lines (about 94 MB a tab at the old
 100,000); the migration clamps a larger value. The terminal's font size follows the editor's text zoom.
 

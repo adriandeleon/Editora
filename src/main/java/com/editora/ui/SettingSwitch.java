@@ -18,6 +18,9 @@ import atlantafx.base.controls.ToggleSwitch;
  */
 final class SettingSwitch extends ToggleSwitch {
 
+    /** Property key of the {@link CheckBox} a switch made by {@link #boundTo} views. */
+    static final Object CHECK = new Object();
+
     SettingSwitch() {
         setAccessibleRole(AccessibleRole.TOGGLE_BUTTON);
         setFocusTraversable(true);
@@ -40,6 +43,7 @@ final class SettingSwitch extends ToggleSwitch {
         if (check.getText() != null && !check.getText().isBlank()) {
             sw.setAccessibleText(check.getText()); // a row title replaces this when the row supplies one
         }
+        sw.getProperties().put(CHECK, check); // the checkbox the row's setting lives on (SettingsModified)
         sw.selectedProperty().bindBidirectional(check.selectedProperty());
         sw.disableProperty().bind(check.disableProperty());
         return sw;

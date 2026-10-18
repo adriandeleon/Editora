@@ -134,6 +134,7 @@ public class WindowManager {
             HostServices hostServices,
             com.editora.plugin.PluginManager discoveredPlugins) {
         this.shared = shared;
+        RestartPending.captureStart(shared.getSettings()); // what this run uses of the restart-only settings
         this.keymap = keymap;
         this.hostServices = hostServices;
         this.recovery =

@@ -91,7 +91,7 @@ class LspFormatSyncsFirstFxTest {
             assertEquals(1, fake.rangeFormattings.size(), "Tab asked the server to format the line");
             assertEquals(1, fake.changed.size(), "after sending it the line it is being asked about");
         } finally {
-            manager.shutdownAll();
+            manager.close(); // close, not shutdownAll: it also stops the folder watchers (inotify instances)
         }
     }
 }

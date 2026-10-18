@@ -39,6 +39,12 @@ class DoctorCatalogFxTest {
     private static final class Host extends CoordinatorHostStub {
         final Settings settings = new Settings();
         boolean simple;
+        ProjectScope scope = ProjectScope.NONE;
+
+        @Override
+        public ProjectScope projectScope() {
+            return scope;
+        }
 
         @Override
         public Settings settings() {
@@ -256,6 +262,32 @@ class DoctorCatalogFxTest {
         DoctorCheck row = spec(specs(host, ops), "run.python").probe().get();
         assertEquals(DoctorStatus.OK, row.status());
         assertEquals("/home/u/proj/.venv/bin/python (.venv)", row.detail());
+    }
+
+    /** A file watcher the system refuses (Linux: the inotify instances used up) is a warning with the reason. */
+    @Test
+    void theFileWatchingRowSaysWhenTheSystemRefusesAWatcher() throws Exception {
+        String limit = "User limit of inotify instances reached or too many open files";
+        com.editora.io.WatchServices.Opener previous = com.editora.io.WatchServices.setOpenerForTest(() -> {
+            throw new java.io.IOException(limit);
+        });
+        try {
+            DoctorCheck row =
+                    spec(specs(new Host(), new Ops()), "fileWatch").probe().get();
+            assertEquals(com.editora.doctor.DoctorStatus.WARN, row.status());
+            assertEquals(limit, row.detail());
+            assertEquals("doctor.tip.fileWatchPolling", row.tipKey());
+        } finally {
+            com.editora.io.WatchServices.setOpenerForTest(previous);
+        }
+        com.editora.io.WatchServices.setOpenerForTest(() -> new com.editora.io.PollingWatchService());
+        try {
+            DoctorCheck row =
+                    spec(specs(new Host(), new Ops()), "fileWatch").probe().get();
+            assertEquals(com.editora.doctor.DoctorStatus.OK, row.status(), "a watcher the system gives is fine");
+        } finally {
+            com.editora.io.WatchServices.setOpenerForTest(previous);
+        }
     }
 
     private static List<DoctorService.CheckSpec> specs(Host host, Ops ops) throws Exception {
@@ -637,5 +669,32 @@ class DoctorCatalogFxTest {
         host.settings.setHttpScriptsEnabled(false);
         FxTestSupport.runOnFx(() -> doctor.enableFeature("httpScripts"));
         assertTrue(host.settings.isHttpScriptsEnabled());
+    }
+
+    /** A trusted project's build command and debugger program are what the Doctor checks (F4). */
+    @Test
+    void buildAndDebugRowsCheckATrustedProjectsCommands(@TempDir Path dir) throws Exception {
+        Path project = Files.createDirectories(dir.resolve("project"));
+        Path file = com.editora.config.ProjectSettings.fileFor(project);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, """
+                {"buildCommands": {"maven": "/opt/team/mvn"}, "debugTools": {"python": "/opt/team/python"}}
+                """);
+        com.editora.config.ConfigManager config =
+                new com.editora.config.ConfigManager(Files.createDirectories(dir.resolve("config")));
+        Host host = new Host();
+        host.scope = new ProjectScope(() -> project, () -> config);
+        Ops ops = new Ops();
+        ops.root = project;
+        ops.debug = true;
+
+        assertFalse(
+                spec(specs(host, ops), "build.maven").placeholder().command().contains("/opt/team/mvn"),
+                "untrusted: the user's command");
+        config.getTrustStore().trust(project);
+        host.scope.reload();
+        List<DoctorService.CheckSpec> trusted = specs(host, ops);
+        assertTrue(spec(trusted, "build.maven").placeholder().command().contains("/opt/team/mvn"));
+        assertTrue(spec(trusted, "debug.python").placeholder().command().contains("/opt/team/python"));
     }
 }

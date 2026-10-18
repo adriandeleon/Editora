@@ -351,6 +351,7 @@ public class App extends Application {
     }
 
     public static void main(String[] args) {
+        Relaunch.awaitPreviousInstance(); // a "Restart now": let the editor being replaced finish quitting first
         // Run AWT/Java2D headless. The Markdown preview rasterizes SVG badges via JSVG, which uses
         // java.awt (BufferedImage/Graphics2D). On macOS, AWT's native toolkit (the AppKit/Metal Java2D
         // pipeline) contends with JavaFX's Glass/Prism for the single AppKit run loop — an intermittent
@@ -499,6 +500,8 @@ public class App extends Application {
                         loadGate.await();
                         ConfigManager manager = new ConfigManager(configDir);
                         Settings settings = manager.load();
+                        // The AI keys live in the system keychain; asking it may block, so it happens here.
+                        manager.shared().useSecretStore(com.editora.secrets.SecretStores.forThisMachine());
                         // The message catalog (a few hundred KB of properties) is parsed here too rather than
                         // on the FX thread: this thread already has the setting that selects the language.
                         // Completing the future publishes it — start() reads no message before join().
@@ -585,8 +588,10 @@ public class App extends Application {
             }
         }
         ConfigManager manager = new ConfigManager(configDir);
+        Settings settings = manager.load();
+        manager.shared().useSecretStore(com.editora.secrets.SecretStores.forThisMachine());
         // null language: the catalog is still to be loaded; null plugins/project window: read on FX as before
-        return new Bootstrap(manager, manager.load(), null, null, null);
+        return new Bootstrap(manager, settings, null, null, null);
     }
 
     /**

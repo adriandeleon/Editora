@@ -21,6 +21,11 @@ interface CoordinatorHost {
 
     Settings settings();
 
+    /** This window's project scope: the effective value of each project-scopable setting (see ProjectScope). */
+    default ProjectScope projectScope() {
+        return ProjectScope.NONE;
+    }
+
     boolean simpleModeActive();
 
     /** Whether the app/editor theme is dark (e.g. Mermaid renders a dark diagram to match). */

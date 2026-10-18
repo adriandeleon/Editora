@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -300,5 +301,50 @@ class StyleContrastTest {
             }
         }
         assertTrue(problems.isEmpty(), "chord chips under 4.5:1:\n" + String.join("\n", problems));
+    }
+
+    @Test
+    void theModifiedMarkerStandsOutFromItsCard() throws Exception {
+        String app = read("app.css");
+        assertTrue(rules(app, ".settings-row:modified").get(0).contains("-color-accent-emphasis"));
+        for (String base : List.of("editora-light", "editora-dark")) {
+            Map<String, String> p = palette(base);
+            assertTrue(contrast(color(p, "-color-accent-emphasis"), color(p, "-color-bg-default")) >= 3, base);
+        }
+    }
+
+    /**
+     * Settings ▸ Sync's status pill — green Connected, amber Not connected, red Sync failing — reads on its tint
+     * (4.5:1) and stands out from the card (3:1) in Editora's own light and dark themes.
+     */
+    @Test
+    void theSyncStatusPillsReadInLightAndDark() throws Exception {
+        String app = read("app.css");
+        Map<String, String[]> pills = new LinkedHashMap<>();
+        pills.put(".settings-git-found", new String[] {"-state-green", "-color-success-fg", "-color-success-subtle"});
+        pills.put(".settings-git-warn", new String[] {"-state-amber", "-color-warning-fg", "-color-warning-subtle"});
+        pills.put(".settings-git-missing", new String[] {"-state-red", "-color-danger-fg", "-color-danger-subtle"});
+        List<String> problems = new ArrayList<>();
+        for (Map.Entry<String, String[]> pill : pills.entrySet()) {
+            String rule = rules(app, pill.getKey()).get(0);
+            assertTrue(
+                    rule.contains(pill.getValue()[0] + ";") && rule.contains(pill.getValue()[0] + "-bg;"),
+                    pill.getKey());
+            for (String name : List.of("editora-light", "editora-dark")) {
+                Map<String, String> p = palette(name);
+                Color ink = color(p, pill.getValue()[1]);
+                Color card = color(p, "-color-bg-default");
+                Color raw = color(p, pill.getValue()[2]);
+                Color tint =
+                        card.interpolate(Color.color(raw.getRed(), raw.getGreen(), raw.getBlue()), raw.getOpacity());
+                double onTint = contrast(ink, tint);
+                double onCard = contrast(ink, card);
+                if (onTint < 4.5 || onCard < 3) {
+                    problems.add(String.format(
+                            "%s %s: %.2f on its tint, %.2f on the card", name, pill.getKey(), onTint, onCard));
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), String.join("\n", problems));
     }
 }

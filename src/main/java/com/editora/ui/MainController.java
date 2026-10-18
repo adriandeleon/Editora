@@ -807,6 +807,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setTemplateRegistry(
                 templateActions.templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
+        this.settingsWindow.setOnRestart(() -> registry.run("app.restart")); // footer's Restart now
+        this.settingsWindow.setImportConfig(() -> registry.run("config.import")); // Advanced → Import…
         this.settingsWindow.setMcpActions(new SettingsWindow.McpActions( // the MCP page's status and buttons
                 () -> mcpServer == null || !mcpServer.isRunning() ? "" : mcpServer.url(), this::copyMcpEndpoint, () -> {
                     mcpServer.newToken(); // the buttons only show while it runs
@@ -835,7 +837,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 searchCoordinator::probeRipgrep); // Settings → Search found/not-found status
         this.settingsWindow.setAiConnectionProbe(
                 aiCoordinator::checkConnection); // Settings → AI Actions green/red connection status
-        this.settingsWindow.setLspProjectNotes(id -> lspCoordinator.projectOverrideNote(id)); // project overrides
+        this.settingsWindow.setProjectLsp(lspCoordinator); // project scope (User / Project) + LSP override notes
         this.settingsWindow.setOnKeymapChanged(editorSettings::reloadKeymap); // picker/combo → live keymap switch
         this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
             @Override
@@ -5074,6 +5076,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public ProjectScope projectScope() {
+            return lspCoordinator.projectScope();
+        }
+
+        @Override
         public boolean appThemeDark() {
             return MainController.this.appThemeDark();
         }
@@ -8949,16 +8956,15 @@ public class MainController implements com.editora.mcp.McpBridge {
      * unsaved buffers and their whole session. {@link WindowManager#confirmCloseAllWindows} does that (and
      * disposes each window's services); the null case is the unit-test/standalone controller.
      */
-    void onQuit() {
+    boolean onQuit() {
         // One question: quitting, and which terminals that ends (in every window).
         List<String> busy = windowManager != null ? windowManager.busyTerminals() : terminalCoordinator.busyTerminals();
-        if (!closes.confirmQuit(busy)) {
-            return;
-        }
-        boolean ok = windowManager != null ? windowManager.confirmCloseAllWindows() : closes.confirmCloseAll();
+        boolean ok = closes.confirmQuit(busy)
+                && (windowManager != null ? windowManager.confirmCloseAllWindows() : closes.confirmCloseAll());
         if (ok) {
             Platform.exit();
         }
+        return ok;
     }
 
     static void styleQuitButtonAsDanger(Alert alert, ButtonType quit) {
@@ -9793,6 +9799,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             terminalCoordinator.applySettings();
             terminalCoordinator.applyTheme();
         }
+        ExtendedWindow.matchButtonsToTheme(stage, appThemeDark()); // also every apply: cheap, and idempotent
         Color highlight = EditorThemes.lineHighlightFor(themeName);
         Color mmText = EditorThemes.minimapTextFor(themeName);
         Color mmViewport = EditorThemes.minimapViewportFor(themeName);

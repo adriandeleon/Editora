@@ -273,6 +273,61 @@ class SettingsLangsPagesFxTest {
         });
     }
 
+    /**
+     * AI Actions says where the API key is kept: the system keychain (a fake one here) once the keys moved there,
+     * or settings.json when there is none. The key field shows the keychain's key, and a key typed into it goes
+     * to the keychain, not to settings.json.
+     */
+    @Test
+    void theAiPageSaysWhereTheKeyIsKept() throws Exception {
+        com.editora.secrets.FakeSecretStore store = new com.editora.secrets.FakeSecretStore();
+        FxTestSupport.runOnFx(() -> {
+            rig.settings.setApiKeyFor(com.editora.ai.AiProvider.ANTHROPIC, "sk-ant-FAKE");
+            rig.config.shared().useSecretStore(store);
+            rig.settings.setAiEnabled(true);
+            rig.show();
+            Label note = rig.control("aiKeyNote");
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    tr("settings.ai.apiKeyInKeychain", "Fake Keychain"), note.getText());
+            TextField key = rig.control("aiApiKeyField");
+            org.junit.jupiter.api.Assertions.assertEquals("sk-ant-FAKE", key.getText());
+            SettingsRig.typeAndEnter(key, "sk-ant-TYPED");
+            org.junit.jupiter.api.Assertions.assertEquals("sk-ant-TYPED", store.items.get("ai-api-key.anthropic"));
+            org.junit.jupiter.api.Assertions.assertEquals("", rig.settings.getAiApiKey(), "not in settings.json");
+        });
+    }
+
+    @Test
+    void withoutAKeychainTheAiPageSaysTheKeyIsInSettingsJson() throws Exception {
+        com.editora.secrets.FakeSecretStore store = new com.editora.secrets.FakeSecretStore();
+        store.available = false;
+        FxTestSupport.runOnFx(() -> {
+            rig.config.shared().useSecretStore(store);
+            rig.show();
+            Label note = rig.control("aiKeyNote");
+            org.junit.jupiter.api.Assertions.assertEquals(tr("settings.ai.apiKeyNote"), note.getText());
+        });
+    }
+
+    /** Codex has its own model: picking it shows Codex's model, and an edit there leaves Anthropic's alone. */
+    @Test
+    void codexKeepsItsOwnModel() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.settings.setAiEnabled(true);
+            rig.settings.setAiModelFor(com.editora.ai.AiProvider.ANTHROPIC, "claude-x");
+            rig.settings.setAiModelFor(com.editora.ai.AiProvider.CODEX, "gpt-x");
+            rig.show();
+            ComboBox<String> provider = rig.control("aiProviderCombo");
+            TextField model = rig.control("aiModelField");
+            provider.setValue("codex");
+            org.junit.jupiter.api.Assertions.assertEquals("gpt-x", model.getText());
+            SettingsRig.typeAndEnter(model, "gpt-y");
+            provider.setValue("anthropic");
+            org.junit.jupiter.api.Assertions.assertEquals("claude-x", model.getText(), "Anthropic kept its model");
+            org.junit.jupiter.api.Assertions.assertEquals("gpt-y", rig.settings.getAiModelCodex());
+        });
+    }
+
     private static javafx.scene.Node cardOf(javafx.scene.Node n) {
         javafx.scene.Node c = n;
         while (c != null && !c.getStyleClass().contains("settings-card")) {

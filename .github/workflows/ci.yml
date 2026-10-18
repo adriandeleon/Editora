@@ -286,6 +286,12 @@ jobs:
       - name: Test (pure suite)
         timeout-minutes: 26
         shell: bash
+        # SystemKeychainProbeTest writes one throw-away item to this runner's real keychain (service "Editora
+        # probe") and deletes it: the macOS Keychain and Windows Credential Manager bindings run for real here,
+        # since no developer machine checks them. It builds its store directly, so the pom's
+        # -Deditora.secretStore=none (the app's own tests stay off the keychain) does not apply to it.
+        env:
+          EDITORA_REAL_KEYCHAIN_PROBE: '1'
         run: |
           scripts/dump-stuck-jvms.sh 1380 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
           dumper=$!
@@ -301,6 +307,16 @@ jobs:
         if: always()
         shell: bash
         run: ${{ runner.os == 'Windows' && 'python' || 'python3' }} scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
+
+      # The keychain probe must have run, not skipped: macOS and Windows always have a keychain, so a skip here
+      # means the probe stopped testing anything.
+      - name: Check that the keychain probe ran
+        if: success()
+        shell: bash
+        run: |
+          report=target/surefire-reports/TEST-com.editora.secrets.SystemKeychainProbeTest.xml
+          test -f "$report" || { echo "::error::SystemKeychainProbeTest did not run"; exit 1; }
+          grep -q 'skipped="0"' "$report" || { echo "::error::SystemKeychainProbeTest was skipped on ${{ runner.os }}"; exit 1; }
 
       # The log names a failed test; the XML and text reports hold its output and stack trace, and the dump
       # file, when there is one, where a hung run stuck. Also when the job was cancelled: its log may be gone.

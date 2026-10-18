@@ -1742,6 +1742,7 @@ final class FileWorkflowCoordinator {
     }
 
     private void updateTocForExplicitSave(EditorBuffer buffer) {
+        host.editorSettings().applyPendingView(buffer); // a hidden tab's view settings (TOC levels) before saving
         if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
             buffer.markdown().updateTocForSave(); // an explicit Save only: autosave never edits the buffer
         }
@@ -2206,6 +2207,7 @@ final class FileWorkflowCoordinator {
                 host.editorSettings().editorConfigEnabled()
                         ? buffer.getEditorConfigProps()
                         : com.editora.editorconfig.EditorConfigProperties.EMPTY;
+        p = host.lspCoordinator().projectScope().saveRules(p); // the project's trim/final newline under .editorconfig
         String text = com.editora.editorconfig.EditorConfigTransform.transform(content, p);
         if (com.editora.editor.LineEndings.labelOf(p.endOfLine()) == null) {
             // No end_of_line rule: write the file's own line ending back. The document only ever holds '\n',

@@ -80,7 +80,7 @@ class JavaEditingResponsesFxTest {
             FxTestSupport.call(coordinator, "hideSignaturePopup", new Class<?>[] {});
             FxTestSupport.call(coordinator, "hideHoverPopup", new Class<?>[] {});
             buffer.dispose();
-            manager.shutdownAll();
+            manager.close(); // close, not shutdownAll: it also stops the folder watchers (inotify instances)
             stage.close();
         }));
     }
