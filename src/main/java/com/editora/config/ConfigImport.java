@@ -268,6 +268,24 @@ public final class ConfigImport {
         return new Scan(zip, entries, leftOut, settings, keys);
     }
 
+    /** {@link #scan(Path, ObjectMapper)} with the live configuration's JSON settings. */
+    public static Scan scan(Path zip, SharedConfig shared) throws Refused, IOException {
+        return scan(zip, shared.json());
+    }
+
+    /**
+     * Imports {@code parts} of {@code scan} into the live configuration's folder: waits for its pending writes,
+     * makes the backup, then applies. Returns the backup. Off the FX thread.
+     */
+    public static Path apply(Scan scan, Set<Part> parts, SharedConfig shared) throws IOException, Refused {
+        if (!shared.flushWrites()) {
+            throw new IOException("Timed out waiting for pending configuration writes");
+        }
+        Path backup = backup(shared.getConfigDir(), LocalDateTime.now());
+        apply(scan, parts, shared.getConfigDir(), shared.json());
+        return backup;
+    }
+
     /** {@code settings.json} from the zip, at this build's schema; the keys it names go into {@code keys}. */
     private static ObjectNode migratedSettings(byte[] bytes, ObjectMapper json, Set<String> keys)
             throws Refused, IOException {

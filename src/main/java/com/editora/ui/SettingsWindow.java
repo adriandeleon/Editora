@@ -181,6 +181,13 @@ public class SettingsWindow {
     private final Consumer<Boolean> onToggleExpert;
     private final Consumer<Path> onOpenFile;
     private final Runnable onExportConfig;
+    /** Import Configuration… (the {@code config.import} command); null until wired. */
+    private Runnable onImportConfig;
+
+    void setImportConfig(Runnable importConfig) {
+        this.onImportConfig = importConfig;
+    }
+
     private final Runnable onShowDebugLog;
     /** Spell Check page: open the bundled technical dictionary (read-only) / the personal dictionary file. */
     private Runnable onOpenTechnicalDictionary;
@@ -7460,7 +7467,20 @@ public class SettingsWindow {
         Label exportHint = note(tr("settings.exportConfig.hint"));
         exportHint.setWrapText(true);
         VBox exportBox = new VBox(4, exportConfig, exportHint);
-        cardRow(ioSection, Category.ADVANCED, exportBox, "import export backup settings config zip archive");
+        cardRow(ioSection, Category.ADVANCED, exportBox, "export backup settings config zip archive");
+        Button importConfig = new Button(tr("settings.importConfig"));
+        importConfig.setOnAction(e -> {
+            if (onImportConfig != null) {
+                onImportConfig.run();
+            }
+        });
+        Label importHint = note(tr("settings.importConfig.hint"));
+        importHint.setWrapText(true);
+        cardRow(
+                ioSection,
+                Category.ADVANCED,
+                new VBox(4, importConfig, importHint),
+                "import restore backup settings config zip archive move computer");
 
         Card debugSection = card(p, tr("settings.section.debug"));
         Button debugLog = new Button(tr("settings.debugLog"));

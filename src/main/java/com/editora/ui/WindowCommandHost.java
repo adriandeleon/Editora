@@ -857,6 +857,14 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void importConfig() {
+        if (mc.windowManager != null) {
+            new ConfigImportFlow(mc.stage, mc.config.shared(), mc.windowManager, mc::setStatus, mc.backgroundTasks())
+                    .start();
+        }
+    }
+
+    @Override
     public void cancel() {
         mc.cancel();
     }
