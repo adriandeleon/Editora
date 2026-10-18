@@ -237,7 +237,7 @@ class PluginRegistryFetchTest {
                 "plugins.example.org/index.json",
                 "",
                 null)) {
-            assertError(registry.fetchSync(url), "registry url must be https");
+            assertError(registry.fetchSync(url), "address must be https");
         }
         assertEquals(List.of(), web.requests());
     }
@@ -313,5 +313,19 @@ class PluginRegistryFetchTest {
         assertTrue(result.ok(), String.valueOf(result.error()));
         assertTrue(result.signed());
         assertEquals(2, result.entries().size());
+    }
+
+    /** A body that is not an index, and an index in a format newer than this build reads, say so by kind. */
+    @Test
+    void anInvalidOrTooNewIndexIsRefusedByKind() {
+        web.serve(INDEX_URL, "{ not json".getBytes(StandardCharsets.UTF_8));
+        PluginRegistry.Result invalid = registry.fetchSync(INDEX_URL);
+        assertFalse(invalid.ok());
+        assertEquals(PluginProblem.Kind.INDEX_INVALID, invalid.problem().kind());
+
+        web.serve(INDEX_URL, "{\"schemaVersion\":2,\"plugins\":[]}".getBytes(StandardCharsets.UTF_8));
+        PluginRegistry.Result tooNew = registry.fetchSync(INDEX_URL);
+        assertEquals(PluginProblem.Kind.INDEX_TOO_NEW, tooNew.problem().kind());
+        assertEquals(java.util.List.of("2"), tooNew.problem().args());
     }
 }

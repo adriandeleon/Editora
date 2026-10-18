@@ -470,4 +470,14 @@ class AppArgsTest {
         assertEquals(
                 1, App.fileTargets(List.of("f:99999999999"), NOTHING_EXISTS).size());
     }
+
+    /** D1: a way out of a plugin that hangs at startup: off for this session, never handed to the running editor. */
+    @Test
+    void disablePluginsIsAKnownFlagThatIsNeverForwarded() {
+        assertTrue(App.disablePluginsFlag(List.of("--disable-plugins", "/src/Foo.java")));
+        assertFalse(App.disablePluginsFlag(List.of("/src/Foo.java")));
+        assertFalse(App.shouldForwardLaunch(List.of("--disable-plugins", "/src/Foo.java")));
+        assertTrue(App.isEditoraOption("--disable-plugins"));
+        assertTrue(App.helpText().contains("--disable-plugins"));
+    }
 }

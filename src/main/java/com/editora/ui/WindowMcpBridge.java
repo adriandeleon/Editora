@@ -208,7 +208,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         return mcpOnFx(() -> {
             java.util.List<CommandInfo> out = new java.util.ArrayList<>();
             for (com.editora.command.Command c : host.registry().all()) {
-                out.add(new CommandInfo(c.id(), c.title(), c.description()));
+                if (McpAccess.commandRefusal(c.id()) == null) {
+                    out.add(new CommandInfo(c.id(), c.title(), c.description()));
+                }
             }
             return out;
         });
@@ -216,7 +218,15 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
 
     @Override
     public boolean executeCommand(String id) {
+        if (McpAccess.commandRefusal(id) != null) {
+            return false; // McpTools asks commandRefusal first; this is the backstop
+        }
         return mcpOnFx(() -> host.registry().run(id));
+    }
+
+    @Override
+    public String commandRefusal(String id) {
+        return McpAccess.commandRefusal(id);
     }
 
     @Override

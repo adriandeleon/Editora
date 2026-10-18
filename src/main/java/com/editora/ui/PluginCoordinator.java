@@ -15,11 +15,10 @@ import java.util.logging.Logger;
 
 import javafx.application.Platform;
 import javafx.scene.Node;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.MenuItem;
 import javafx.scene.layout.Region;
 import javafx.stage.FileChooser;
+import javafx.stage.Window;
 
 import com.editora.AppInfo;
 import com.editora.command.Command;
@@ -34,6 +33,7 @@ import com.editora.plugin.PluginDescriptor;
 import com.editora.plugin.PluginInstaller;
 import com.editora.plugin.PluginManager;
 import com.editora.plugin.PluginManifest;
+import com.editora.plugin.PluginProblem;
 import com.editora.plugin.PluginRegistry;
 import com.editora.plugin.RegistryEntry;
 import com.editora.plugin.ToolWindowSide;
@@ -44,28 +44,35 @@ import com.editora.template.TemplateRegistry;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * Plugin support — discovery/apply/install/uninstall + the per-window {@link PluginContext} adapter that
- * lets a plugin contribute commands, keybindings, tool windows, status-bar segments, and editor menu items.
- * Extracted from {@link MainController} via the {@link CoordinatorHost} pattern. The {@link PluginManager}
- * itself is shared (owned by {@link WindowManager}, classes load once) and passed in; this coordinator owns
- * the per-window {@link PluginRegistry}/{@link PluginInstaller}, the started-plugin instances, the
- * plugin-contributed tool windows + editor menu items, and the "Browse Plugins" picker. {@code MainController}
- * keeps the {@code pluginManager} field (set by {@code WindowManager} before init + passed here) and thin
- * delegates: {@code disposePlugins()} (the window-close contract) and {@code pluginsEnabled()}.
+ * Plugin support — apply/install/uninstall + the per-window {@link PluginContext} adapter that lets a plugin
+ * contribute commands, keybindings, tool windows, status-bar segments, and editor menu items. Extracted from
+ * {@link MainController} via the {@link CoordinatorHost} pattern. The {@link PluginManager} itself is shared
+ * (owned by {@link WindowManager}, classes load once) and passed in; this coordinator owns the per-window
+ * {@link PluginRegistry}/{@link PluginInstaller}, the started-plugin instances, the plugin-contributed tool
+ * windows + editor menu items, and the "Browse Plugins" picker.
+ *
+ * <p>What runs: {@link #applyPlugins} applies the session's {@linkplain PluginManager#launchSet() launch set},
+ * so nothing installed, updated, enabled or disabled during the session runs before a restart. Each plugin's
+ * contributions are recorded, and taken back when its {@code start()} throws. Installing goes stage → consent →
+ * commit: the archive is unpacked beside the plugins, the user is shown what it can do, and only an accepted
+ * install replaces anything (see {@link PluginInstaller}).
  */
 final class PluginCoordinator {
 
     private static final Logger LOG = Logger.getLogger(PluginCoordinator.class.getName());
 
+    /** A {@code start()} slower than this on the UI thread is named in the Message Log and on its Settings row. */
+    static final long SLOW_START_MS = 250;
+
     /** A plugin-contributed editor menu item: a label + an action over the {@link ActiveEditor}. */
-    private record EditorMenuContribution(String label, Consumer<ActiveEditor> action) {}
+    private record EditorMenuContribution(String pluginName, String label, Consumer<ActiveEditor> action) {}
 
     /** Window hooks beyond the injected collaborators that the plugin flows need. */
     interface Ops {
         /** Opens (or focuses) the tab for {@code file}. */
         void openPath(Path file);
 
-        /** Shows a scrollable error dialog (summary + multi-line detail) — reuses the Git error dialog. */
+        /** Shows a scrollable error dialog (summary + multi-line detail), titled "Plugins". */
         void showError(String summary, String detail);
     }
 
@@ -84,8 +91,6 @@ final class PluginCoordinator {
     private final PluginRegistry pluginRegistry;
     private final PluginInstaller pluginInstaller;
     private final List<Plugin> startedPlugins = new ArrayList<>();
-    /** The class loaders this window pinned (one per started Java plugin), released on window close (#442). */
-    private final List<ClassLoader> pinnedLoaders = new ArrayList<>();
 
     private final List<EditorMenuContribution> pluginMenuItems = new ArrayList<>();
     private final List<ToolWindow> pluginToolWindows = new ArrayList<>();
@@ -93,6 +98,10 @@ final class PluginCoordinator {
     private final QuickOpen<RegistryEntry> browsePalette;
     private List<RegistryEntry> browseEntries = List.of();
     private boolean browseSigned;
+    /** Settings stepped aside for the picker: shown again when the picker closes and the flow it started ends. */
+    private boolean settingsHiddenForPicker;
+    /** An install is between "staging" and its answer: a second one waits for it. */
+    private boolean installing;
 
     PluginCoordinator(
             CoordinatorHost host,
@@ -151,7 +160,6 @@ final class PluginCoordinator {
         this.config = config;
         this.pluginManager = pluginManager;
         this.ops = ops;
-        // Per-window registry/installer over the shared manager (mirrors the old setPluginManager wiring).
         this.pluginRegistry = pluginRegistry;
         this.pluginInstaller = pluginInstaller;
         this.browsePalette = new QuickOpen<>(
@@ -159,17 +167,28 @@ final class PluginCoordinator {
                 tr("plugins.browsePrompt"),
                 () -> browseEntries,
                 this::browseEntryLabel,
-                e -> e.description == null ? "" : e.description,
-                e -> (e.name == null ? "" : e.name) + " " + e.id + " "
-                        + (e.description == null ? "" : e.description), // search name+id+desc
+                this::browseEntryDetail,
+                e -> (e.name == null ? "" : e.name) + " " + e.id + " " + (e.author == null ? "" : e.author) + " "
+                        + (e.description == null ? "" : e.description), // search name+id+author+desc
                 this::confirmAndInstall);
-        this.browsePalette.setPreferredSize(960, 10); // wide — registry rows carry a name + a long description
+        this.browsePalette.setPreferredSize(960, 10); // wide — registry rows carry a name + a description
         this.browsePalette.setOverlayHost(host.overlayHost());
+        this.browsePalette.setItemStyleClass(e -> meetsMinEditora(e) ? null : "plugin-browse-unavailable");
+        // Esc (no choice): Settings comes back if it stepped aside for the picker.
+        this.browsePalette.setPreview(e -> {}, this::restoreSettings);
     }
 
-    /** Whether plugins may load — the master gate (also off in Simple UI mode). */
+    /** Whether Browse and Install may be used now — the master switch as set (also off in Simple UI mode). */
     boolean isEnabled() {
         return pluginManager != null && config.getSettings().isPluginSupport() && !host.simpleModeActive();
+    }
+
+    /** Why {@link #isEnabled()} is false, as the status to show. */
+    private String disabledReason() {
+        if (host.simpleModeActive()) {
+            return tr("status.plugins.simpleMode");
+        }
+        return tr("status.plugins.disabled");
     }
 
     /** Stops this window's plugins (window close). Each {@code stop()} is isolated. */
@@ -182,12 +201,6 @@ final class PluginCoordinator {
             }
         }
         startedPlugins.clear();
-        // Release this window's loader pins; a loader with no remaining pins that a re-discover superseded is
-        // closed now, freeing its jar handles (#442).
-        for (ClassLoader l : pinnedLoaders) {
-            pluginManager.release(l);
-        }
-        pinnedLoaders.clear();
         // The catalogue and install workers are this window's: without this each closed window left two
         // parked threads (and, once used, two HTTP clients) behind for the life of the process.
         if (pluginRegistry != null) {
@@ -211,16 +224,12 @@ final class PluginCoordinator {
             return List.of();
         }
         List<MenuItem> items = new ArrayList<>();
+        items.add(new javafx.scene.control.SeparatorMenuItem()); // apart from Print / Export to PDF above
         for (EditorMenuContribution c : pluginMenuItems) {
             MenuItem mi = new MenuItem(c.label());
             mi.setGraphic(Icons.plugin());
-            mi.setOnAction(e -> {
-                try {
-                    c.action().accept(new ActiveEditorImpl(buffer));
-                } catch (Throwable t) {
-                    LOG.log(Level.WARNING, "Plugin menu action failed", t);
-                }
-            });
+            mi.setOnAction(
+                    e -> guarded(c.pluginName(), c.label(), () -> c.action().accept(new ActiveEditorImpl(buffer))));
             items.add(mi);
         }
         return items;
@@ -235,21 +244,54 @@ final class PluginCoordinator {
         host.setStatus(tr("status.toggle.plugins", tr(s.isPluginSupport() ? "common.on" : "common.off")));
     }
 
+    // --- applying the launch set -----------------------------------------------------------------
+
+    /** What one plugin added to this window, so a failed start can take it back. */
+    private final class Contributions {
+        final PluginDescriptor plugin;
+        final List<String> commands = new ArrayList<>();
+        final List<ToolWindow> toolWindowsAdded = new ArrayList<>();
+        final List<EditorMenuContribution> menuItems = new ArrayList<>();
+        final List<Node> segments = new ArrayList<>();
+        /** chord → what it ran before this plugin bound it (null: nothing), to restore on a rollback. */
+        final Map<String, String> replacedChords = new java.util.LinkedHashMap<>();
+
+        Contributions(PluginDescriptor plugin) {
+            this.plugin = plugin;
+        }
+
+        void rollBack() {
+            commands.forEach(registry::remove);
+            for (ToolWindow tw : toolWindowsAdded) {
+                toolWindows.setAvailable(tw, false);
+                pluginToolWindows.remove(tw);
+            }
+            pluginMenuItems.removeAll(menuItems);
+            segments.forEach(statusBar::removePluginSegment);
+            Map<String, String> restore = new java.util.LinkedHashMap<>();
+            replacedChords.forEach((chord, previous) -> restore.put(chord, previous == null ? "" : previous));
+            keymap.applyOverrides(restore);
+        }
+    }
+
     /**
-     * Applies every enabled, error-free plugin to <em>this</em> window: declarative snippet/template source
-     * dirs + keymap bindings + external-command palette entries, then each Java plugin's {@code start(ctx)}.
-     * Runs once during init (off no hot path). One {@code try/catch} per plugin → DebugLog, so a misbehaving
-     * plugin never breaks the window.
+     * Applies the session's launch set to <em>this</em> window: every enabled, error-free plugin's snippet and
+     * template dirs, keymap (for the active keymap), declared external commands, then each Java plugin's
+     * {@code start(ctx)}, timed. One {@code try/catch} per plugin: a plugin that cannot be built or whose
+     * {@code start} throws is reported (Message Log, Settings row), its contributions are taken back and its
+     * {@code stop()} is called, so a misbehaving plugin never breaks the window or leaves half of itself
+     * behind. Simple UI mode applies nothing.
      */
     void applyPlugins() {
-        if (!isEnabled()) {
+        if (pluginManager == null || host.simpleModeActive()) {
             return;
         }
         boolean addedAssets = false;
-        for (PluginDescriptor d : pluginManager.descriptors()) {
+        for (PluginDescriptor d : pluginManager.launchSet()) {
             if (!d.enabled() || d.loadError() != null) {
                 continue;
             }
+            Contributions c = new Contributions(d);
             try {
                 // Declarative: snippet/template source dirs (per-window registries) + keymap (shared).
                 Path snDir = d.dir().resolve("snippets");
@@ -262,33 +304,67 @@ final class PluginCoordinator {
                     templates.addExtraSourceDir(tplDir);
                     addedAssets = true;
                 }
-                if (d.manifest().keymap != null && !d.manifest().keymap.isEmpty()) {
-                    keymap.applyOverrides(d.manifest().keymap); // shared keymap → applies to every window
+                Map<String, String> chords = d.manifest().qualifiedKeymapFor(keymap.activeName());
+                for (Map.Entry<String, String> chord : chords.entrySet()) {
+                    bindChord(c, chord.getKey(), chord.getValue());
                 }
                 // Declarative external commands → palette commands.
-                for (PluginManifest.DeclaredCommand c : d.manifest().commands) {
-                    if (c == null || c.id == null || c.id.isBlank()) {
+                for (PluginManifest.DeclaredCommand cmd : d.manifest().commands) {
+                    if (cmd == null || cmd.id == null || cmd.id.isBlank()) {
                         continue;
                     }
-                    String cid = "plugin." + d.id() + "." + c.id;
-                    String title = c.title == null || c.title.isBlank() ? cid : c.title;
-                    registry.register(Command.of(cid, title, () -> runDeclaredCommand(d, c)));
+                    String cid = ownId(d, cmd.id);
+                    String title =
+                            cmd.title == null || cmd.title.isBlank() ? d.displayName() + ": " + cmd.id : cmd.title;
+                    register(c, cid, title, () -> runDeclaredCommand(d, cmd));
                 }
                 // Java plugin.
                 if (d.hasJavaEntry() && d.classLoader() != null) {
                     Plugin plugin = pluginManager.instantiate(d);
-                    if (plugin != null) {
-                        plugin.start(new PluginContextImpl(d));
-                        startedPlugins.add(plugin);
-                        // Pin the shared loader so a re-discover (Reload/uninstall) can't close it out from
-                        // under this running plugin; released in disposePlugins on window close (#442).
-                        pluginManager.pin(d.classLoader());
-                        pinnedLoaders.add(d.classLoader());
+                    if (plugin == null) {
+                        // A wrong main class used to be logged and nothing else: a ticked, error-free row
+                        // that did nothing. The manager recorded why; the Settings row says it.
+                        c.rollBack();
+                        host.setError(tr("status.plugins.failed", d.displayName()));
+                        continue;
                     }
+                    long t0 = System.nanoTime();
+                    try {
+                        plugin.start(new PluginContextImpl(d, c));
+                    } catch (Throwable t) {
+                        LOG.log(Level.WARNING, "Plugin " + d.id() + " start failed", t);
+                        c.rollBack();
+                        try {
+                            plugin.stop(); // give it the chance to release what it opened before throwing
+                        } catch (Throwable ignored) {
+                            // already failing; the start failure is what is reported
+                        }
+                        pluginManager.recordRuntimeProblem(
+                                d.id(),
+                                new PluginDescriptor.LoadProblem(
+                                        PluginDescriptor.LoadProblem.Kind.START_FAILED, List.of(), String.valueOf(t)));
+                        host.setError(tr("status.plugins.startFailed", d.displayName(), String.valueOf(t)));
+                        continue;
+                    }
+                    long ms = (System.nanoTime() - t0) / 1_000_000;
+                    if (ms >= SLOW_START_MS) {
+                        LOG.warning("Plugin " + d.id() + " start() took " + ms + " ms on the UI thread");
+                        pluginManager.recordRuntimeProblem(
+                                d.id(),
+                                new PluginDescriptor.LoadProblem(
+                                        PluginDescriptor.LoadProblem.Kind.SLOW_START, List.of(String.valueOf(ms)), ""));
+                        host.setStatus(tr("status.plugins.slowStart", d.displayName(), ms));
+                    }
+                    startedPlugins.add(plugin);
                 }
             } catch (Throwable t) {
                 LOG.log(Level.WARNING, "Plugin " + d.id() + " failed to apply", t);
-                host.setStatus(tr("status.plugins.failed", d.id()));
+                c.rollBack();
+                pluginManager.recordRuntimeProblem(
+                        d.id(),
+                        new PluginDescriptor.LoadProblem(
+                                PluginDescriptor.LoadProblem.Kind.START_FAILED, List.of(), String.valueOf(t)));
+                host.setError(tr("status.plugins.failed", d.displayName()));
             }
         }
         if (addedAssets) {
@@ -296,6 +372,55 @@ final class PluginCoordinator {
             templates.reload();
         }
         reapplyUserBindings();
+    }
+
+    /** {@code id} in plugin {@code d}'s namespace ({@code plugin.<id>.…}), unless it is there already. */
+    static String ownId(PluginDescriptor d, String id) {
+        String prefix = "plugin." + d.id() + ".";
+        String bare = id == null ? "" : id.strip();
+        return bare.startsWith(prefix) ? bare : prefix + bare;
+    }
+
+    /**
+     * Registers a plugin command through one guard: a throwing action is reported with the plugin's name
+     * (status + Message Log), not left to the uncaught-exception log.
+     */
+    private void register(Contributions c, String id, String title, Runnable action) {
+        String name = c.plugin.displayName();
+        registry.register(Command.of(id, title, () -> guarded(name, title, action)));
+        c.commands.add(id);
+    }
+
+    /** Runs a plugin action; a failure is told to the user with the plugin and action named. */
+    private void guarded(String pluginName, String what, Runnable action) {
+        try {
+            action.run();
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "Plugin " + pluginName + " action " + what + " failed", t);
+            host.setError(tr("status.plugins.actionFailed", pluginName, what, String.valueOf(t)));
+        }
+    }
+
+    /**
+     * Binds {@code chord} for plugin {@code c} in the shared keymap, remembering what it ran before (for a
+     * rollback) and saying so in the Message Log when it takes a chord another command had.
+     */
+    private void bindChord(Contributions c, String chord, String commandId) {
+        String before = keymap.commandFor(chord);
+        if (!c.replacedChords.containsKey(chord)) {
+            c.replacedChords.put(chord, before);
+        }
+        keymap.applyOverrides(Map.of(chord, commandId == null ? "" : commandId));
+        boolean usersOwn = KeymapLayers.userBindings(
+                        config.getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac()))
+                .containsKey(chord); // the user's binding is put back on top: nothing was taken from them
+        if (before != null
+                && !usersOwn
+                && !before.equals(commandId)
+                && !before.startsWith("plugin." + c.plugin.id() + ".")) {
+            String title = registry.get(before).map(Command::title).orElse(before);
+            host.setStatus(tr("status.plugins.chordReplaced", c.plugin.displayName(), keymap.display(chord), title));
+        }
     }
 
     /**
@@ -315,82 +440,140 @@ final class PluginCoordinator {
         Path cwd = (c.dir == null || c.dir.isBlank())
                 ? d.dir()
                 : d.dir().resolve(c.dir).normalize();
-        host.setStatus(tr("status.plugins.running", c.title == null || c.title.isBlank() ? c.id : c.title));
+        String title = c.title == null || c.title.isBlank() ? d.displayName() + ": " + c.id : c.title;
+        host.setStatus(tr("status.plugins.running", title));
         Thread t = new Thread(
                 () -> {
                     ProcessRunner.Result r;
                     try {
                         r = ProcessRunner.runInUserLocale(cwd, Duration.ofSeconds(120), new ArrayList<>(c.run));
                     } catch (RuntimeException e) {
-                        Platform.runLater(() -> host.setStatus(tr("status.plugins.cmdFailed", e.getMessage())));
+                        Platform.runLater(() -> host.setError(tr("status.plugins.cmdFailed", e.getMessage())));
                         return;
                     }
                     String out = (r.out() + "\n" + r.err()).strip();
                     if (!out.isBlank()) {
                         LOG.info("[plugin " + d.id() + "] " + out);
                     }
-                    Platform.runLater(() -> host.setStatus(
-                            r.ok()
-                                    ? tr("status.plugins.cmdDone", c.id)
-                                    : tr("status.plugins.cmdFailed", "exit " + r.exit())));
+                    // What it printed reaches the user: the last line in the status, all of it in the Message Log.
+                    String shown = out.length() > 4000 ? out.substring(0, 4000) + "…" : out;
+                    Platform.runLater(() -> {
+                        if (r.ok()) {
+                            host.setStatus(
+                                    shown.isBlank()
+                                            ? tr("status.plugins.cmdDone", title)
+                                            : tr("status.plugins.cmdOutput", title, shown));
+                        } else {
+                            host.setError(tr("status.plugins.cmdFailedOutput", title, String.valueOf(r.exit()), shown));
+                        }
+                    });
                 },
                 "plugin-cmd-" + d.id());
         t.setDaemon(true); // created off the non-daemon FX thread; don't let a running command block JVM exit
         t.start();
     }
 
+    // --- feedback where the user is ------------------------------------------------------------------
+
+    /** A plugin-flow status: in the main window's status bar and, while Settings is open, on its Plugins page. */
+    private void report(String message) {
+        host.setStatus(message);
+        if (settingsWindow != null) {
+            settingsWindow.showPluginStatus(message, false);
+        }
+    }
+
+    /** {@link #report} for a failure (flagged in the Message Log, red on the page). */
+    private void reportError(String message) {
+        host.setError(message);
+        if (settingsWindow != null) {
+            settingsWindow.showPluginStatus(message, true);
+        }
+    }
+
+    /** Shows {@code problem} as an error dialog headed {@code summaryKey} (with the problem's sentence). */
+    private void showProblem(String summaryKey, PluginProblem problem) {
+        String sentence = PluginProblems.text(problem);
+        reportError(tr(summaryKey, sentence));
+        String detail = problem.detail().isBlank() ? sentence : sentence + "\n\n" + problem.detail();
+        ops.showError(tr(summaryKey, sentence), detail);
+    }
+
+    /** Brings Settings back when it stepped aside for the picker and the flow the picker started is over. */
+    private void restoreSettings() {
+        if (settingsHiddenForPicker && !installing) {
+            settingsHiddenForPicker = false;
+            settingsWindow.restoreAfterPicker();
+        }
+    }
+
     // --- plugin registry (browse / install / uninstall) -----------------------------------------
 
     /**
      * Fetches the configured registry index off-thread and shows the "Browse Plugins" picker. No-op (with a
-     * status hint) when plugins are disabled or no registry URL is set.
+     * reason) when plugins are off or no registry URL is set; a second click while a fetch runs joins it.
      */
     void browse() {
         if (!isEnabled() || pluginRegistry == null) {
-            host.setStatus(tr("status.plugins.disabled"));
+            report(disabledReason());
             return;
         }
         String url = config.getSettings().getPluginRegistryUrl();
         if (!com.editora.plugin.PluginRegistry.isHttps(url)) { // a hand-edited settings.json can still hold one
-            host.setStatus(tr("settings.plugins.registryNotHttps"));
+            report(tr("settings.plugins.registryNotHttps"));
             return;
         }
-        host.setStatus(tr("status.plugins.fetching"));
+        if (pluginRegistry.fetching(url)) {
+            return; // already on its way; the answer comes once
+        }
+        report(tr("status.plugins.fetching"));
         boolean requireSig = config.getSettings().isPluginRequireSignature();
         pluginRegistry.fetch(url, r -> {
             if (!r.ok()) {
-                host.setStatus(tr("status.plugins.fetchFailed", r.error()));
+                PluginProblem p = r.problem() != null
+                        ? r.problem()
+                        : new PluginProblem(PluginProblem.Kind.FAILED, List.of(), r.error());
+                reportError(tr("status.plugins.fetchFailed", PluginProblems.text(p)));
                 return;
             }
-            // Signature gate: when "require signed plugins" is on, refuse an unsigned/unverified registry.
+            // Signature gate: when "require a signed registry" is on, refuse an unsigned/unverified registry.
             if (requireSig && !r.signed()) {
+                reportError(tr("status.plugins.unsigned"));
                 ops.showError(tr("status.plugins.unsigned"), tr("dialog.plugins.unsignedDetail"));
                 return;
             }
             browseSigned = r.signed();
             browseEntries = r.entries();
             if (browseEntries.isEmpty()) {
-                host.setStatus(tr("status.plugins.empty"));
+                report(tr("status.plugins.empty"));
                 return;
             }
-            if (!browseSigned) {
-                host.setStatus(tr("status.plugins.unsignedAllowed"));
-            }
-            if (settingsWindow != null) {
-                settingsWindow.hideForMainWindowPicker(); // it would cover the picker
+            report(browseSigned ? "" : tr("status.plugins.unsignedAllowed"));
+            if (settingsWindow != null && settingsWindow.hideForMainWindowPicker()) {
+                settingsHiddenForPicker = true; // it would cover the picker; it comes back when the flow ends
             }
             browsePalette.show(host.window());
         });
     }
 
-    /** The picker label: "Name  version — Installed/Update available/Install/Requires Editora ≥ x". */
+    /** The picker label: "Name  version — Installed/Update/Install/Requires Editora ≥ x". */
     private String browseEntryLabel(RegistryEntry e) {
         String ver = e.version == null ? "" : e.version;
-        return (e.name == null || e.name.isBlank() ? e.id : e.name) + (ver.isBlank() ? "" : "  " + ver) + " — "
-                + browseEntryStatus(e);
+        return PluginDisclosure.clean(e.name == null || e.name.isBlank() ? e.id : e.name, 80)
+                + (ver.isBlank() ? "" : "  " + PluginDisclosure.clean(ver, 40)) + " — " + browseEntryStatus(e);
     }
 
-    /** Installed / Update available / Install / Requires-newer, comparing to the installed descriptor. */
+    /** The picker detail: the author and a description short enough not to push the other rows' off-screen. */
+    private String browseEntryDetail(RegistryEntry e) {
+        String desc = e.description == null ? "" : e.description.strip();
+        String deprecated = e.deprecated == null || e.deprecated.isBlank()
+                ? ""
+                : tr("plugins.status.deprecated", PluginDisclosure.clean(e.deprecated, 80)) + " ";
+        String author = e.author == null || e.author.isBlank() ? "" : PluginDisclosure.clean(e.author, 40) + " · ";
+        return deprecated + author + PluginDisclosure.clean(desc, 90);
+    }
+
+    /** Installed / Update available / Reinstall-able / Install / Requires-newer, against the installed copy. */
     private String browseEntryStatus(RegistryEntry e) {
         if (!meetsMinEditora(e)) {
             return tr("plugins.status.requiresNewer", e.minEditoraVersion);
@@ -400,13 +583,19 @@ final class PluginCoordinator {
             return tr("plugins.status.install");
         }
         int cmp = PluginInstaller.compareVersions(e.version, installed);
-        return cmp > 0 ? tr("plugins.status.updateAvailable") : tr("plugins.status.installed");
+        return cmp > 0
+                ? tr("plugins.status.updateAvailable", installed)
+                : cmp < 0 ? tr("plugins.status.newerInstalled", installed) : tr("plugins.status.installed");
     }
 
     /** The installed plugin's manifest version, or null when not installed. */
     private String installedVersion(String id) {
         if (pluginManager == null || id == null) {
             return null;
+        }
+        String pending = pluginManager.pendingUpdate(id);
+        if (pending != null) {
+            return pending; // what will run after the restart
         }
         for (PluginDescriptor d : pluginManager.descriptors()) {
             if (id.equals(d.id())) {
@@ -425,84 +614,239 @@ final class PluginCoordinator {
         return PluginInstaller.compareVersions(AppInfo.VERSION, min) >= 0;
     }
 
-    /** Confirms (showing name/version/author/source + the trust warning) then installs from the registry. */
+    /**
+     * Confirms (name, version, author, source, the trust warning — and whether this is an update, a reinstall
+     * or a downgrade) then downloads and stages the plugin; the capability consent follows.
+     */
     private void confirmAndInstall(RegistryEntry e) {
         if (e == null) {
+            restoreSettings();
             return;
         }
         if (!meetsMinEditora(e)) {
-            host.setStatus(tr("plugins.status.requiresNewer", e.minEditoraVersion));
+            report(tr("plugins.status.requiresNewer", e.minEditoraVersion));
+            restoreSettings();
             return;
         }
-        String body = tr(
-                "dialog.plugins.installBody",
-                (e.name == null || e.name.isBlank() ? e.id : e.name),
-                (e.version == null ? "" : e.version),
-                // The message runs version and author together ("{1}{2}"), so the author brings its own
-                // separator — it used to read "Install Greeter 1.0Ada?".
-                (e.author == null || e.author.isBlank() ? "" : " (" + e.author.strip() + ")"),
-                e.download);
+        String name = PluginDisclosure.clean(e.name == null || e.name.isBlank() ? e.id : e.name, 80);
+        String version = PluginDisclosure.clean(e.version == null ? "" : e.version, 40);
+        String installed = installedVersion(e.id);
+        String header;
+        if (installed == null) {
+            header = tr("dialog.plugins.installHeaderNew", name, version);
+        } else {
+            int cmp = PluginInstaller.compareVersions(e.version, installed);
+            String from = PluginDisclosure.clean(installed, 40);
+            header = cmp > 0
+                    ? tr("dialog.plugins.installHeaderUpdate", name, from, version)
+                    : cmp < 0
+                            ? tr("dialog.plugins.installHeaderDowngrade", name, from, version)
+                            : tr("dialog.plugins.installHeaderReinstall", name, version);
+        }
+        StringBuilder body = new StringBuilder();
         if (!browseSigned) {
-            body = tr("dialog.plugins.unsignedWarn") + "\n\n" + body; // reached only when the gate is off
+            body.append(tr("dialog.plugins.unsignedWarn")).append("\n\n"); // reached only when the gate is off
         }
-        if (!confirm.test(new Question(
-                Question.Kind.INSTALL, tr("dialog.plugins.installTitle"), tr("dialog.plugins.installHeader"), body))) {
+        if (e.deprecated != null && !e.deprecated.isBlank()) {
+            body.append(tr("plugins.status.deprecated", PluginDisclosure.clean(e.deprecated, 300)))
+                    .append("\n\n");
+        }
+        String author = e.author == null || e.author.isBlank() ? "" : PluginDisclosure.clean(e.author.strip(), 80);
+        if (!author.isEmpty()) {
+            body.append(tr("dialog.plugins.installAuthor", author)).append('\n');
+        }
+        body.append(tr("dialog.plugins.installFrom", PluginDisclosure.clean(e.download, 300)));
+        String registryUrl = config.getSettings().getPluginRegistryUrl();
+        if (registryUrl != null && !registryUrl.strip().equals(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY)) {
+            body.append('\n').append(tr("dialog.plugins.installRegistry", PluginProblem.hostOf(registryUrl)));
+        }
+        if (!confirm.test(
+                new Question(Question.Kind.INSTALL, header, body.toString(), "", tr("dialog.plugins.download")))) {
+            restoreSettings();
             return;
         }
-        host.setStatus(tr("status.plugins.installing", e.name == null || e.name.isBlank() ? e.id : e.name));
-        pluginInstaller.installFromUrl(e, this::onPluginInstalled);
+        installing = true;
+        report(tr("status.plugins.installing", name));
+        pluginInstaller.stageFromUrl(e, this::onStaged);
     }
 
-    /** Install-from-disk: pick a {@code .zip}, then install it (no checksum — the user chose the file). */
+    /** Install-from-disk: pick a {@code .zip}, then stage it (no checksum — the user chose the file). */
     void installFromDisk() {
         if (!isEnabled() || pluginInstaller == null) {
-            host.setStatus(tr("status.plugins.disabled"));
+            report(disabledReason());
+            return;
+        }
+        if (installing) {
             return;
         }
         File f = zipChooser.get();
         if (f == null) {
             return;
         }
-        host.setStatus(tr("status.plugins.installing", f.getName()));
-        pluginInstaller.installFromZip(f.toPath(), this::onPluginInstalled);
+        installing = true;
+        report(tr("status.plugins.installing", f.getName()));
+        pluginInstaller.stageFromZip(f.toPath(), this::onStaged);
     }
 
     private File chooseZipDialog() {
         FileChooser fc = new FileChooser();
         fc.setTitle(tr("dialog.plugins.installFileTitle"));
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("dialog.plugins.zipFilter"), "*.zip"));
-        return fc.showOpenDialog(host.window());
+        return fc.showOpenDialog(dialogOwner());
     }
 
-    /** Common post-install handling: disclose capabilities + confirm enable, persist, refresh, report. */
-    private void onPluginInstalled(PluginInstaller.Result r) {
-        if (!r.ok()) {
-            ops.showError(tr("status.plugins.installFailed", r.error() == null ? "" : r.error()), r.error());
+    /**
+     * The archive is unpacked beside the plugins: show what it can do — and what it replaces — and put it in
+     * place only on Enable. Declining leaves the plugins folder as it was, so a declined update keeps the
+     * version that was installed (and enabled). A plugin running in this session is replaced at the next start.
+     */
+    private void onStaged(PluginInstaller.Staging s) {
+        installing = false;
+        if (!s.ok()) {
+            showProblem("status.plugins.installFailed", s.problem());
+            restoreSettings();
             return;
         }
-        pluginRegistry.invalidate(); // status labels (Installed/Update) may change
-        if (pluginManager != null) {
-            // Re-scan first: the disclosure below must describe what was just written to disk — a new plugin
-            // has no descriptor yet, and an update's old one lists the previous version's capabilities.
-            pluginManager.discover();
+        PluginInstaller.Staged st = s.staged();
+        boolean running = pluginManager.running(st.id()) != null;
+        if (!confirm.test(consentQuestion(st))) {
+            PluginInstaller.discard(st);
+            report(
+                    st.previous() == null
+                            ? tr("status.plugins.notInstalled", st.name())
+                            : tr("status.plugins.updateDeclined", st.name(), versionOf(st.previous())));
+            restoreSettings();
+            return;
         }
-        // Arming gate: the plugin is now on disk; show exactly what it can do before enabling it.
-        if (confirmEnablePlugin(r.id())) {
-            config.getPluginStore().setEnabled(r.id(), true);
-            config.savePlugins();
-            host.setStatus(tr("status.plugins.installed", r.name()));
-        } else {
-            // Declining must DISABLE it: installBytes already moved the new code into place before this gate,
-            // so an *update* whose new capabilities the user rejected would otherwise stay enabled and run the
-            // rejected code on the next launch.
-            config.getPluginStore().setEnabled(r.id(), false);
-            config.savePlugins();
-            host.setStatus(tr("status.plugins.notEnabled", r.name()));
+        PluginInstaller.Commit c = pluginInstaller.commit(st, running);
+        if (!c.ok()) {
+            showProblem("status.plugins.installFailed", c.problem());
+            restoreSettings();
+            return;
         }
+        config.getPluginStore().enable(st.id(), st.digest());
+        config.savePlugins();
+        pluginRegistry.invalidate(); // status labels (Installed/Update) changed
+        pluginManager.discover(); // the Settings list; what runs waits for the restart
+        report(
+                c.pending()
+                        ? tr("status.plugins.updatePending", st.name(), st.version())
+                        : tr("status.plugins.installed", st.name()));
         settingsWindow.syncPluginsCheck(); // rebuilds the per-plugin list
+        restoreSettings();
     }
 
-    /** The descriptor with this {@code id}, or null — the "can we disclose what it does?" lookup. Pure. */
+    private static String versionOf(PluginManifest m) {
+        return m == null || m.version == null ? "" : m.version.strip();
+    }
+
+    /** The consent for a staged install: an install, an update, a downgrade, a reinstall, or a replacement. */
+    private Question consentQuestion(PluginInstaller.Staged st) {
+        String name = PluginDisclosure.clean(st.name(), 80);
+        String version = PluginDisclosure.clean(st.version(), 40);
+        PluginManifest prev = st.previous();
+        String header;
+        String intro = tr("dialog.plugins.consentIntro");
+        if (prev == null) {
+            header = tr("dialog.plugins.enableHeaderNamed", name, version).strip();
+        } else {
+            String prevName =
+                    PluginDisclosure.clean(prev.name == null || prev.name.isBlank() ? st.id() : prev.name.strip(), 80);
+            String prevVersion = PluginDisclosure.clean(versionOf(prev), 40);
+            if (!prevName.equalsIgnoreCase(name)) {
+                // Another plugin under the same id: say so before it gets that one's place and saved data.
+                header = tr("dialog.plugins.replaceHeader", prevName, prevVersion, name, version);
+                intro = tr("dialog.plugins.replaceIntro", PluginDisclosure.clean(st.id(), 80)) + "\n\n" + intro;
+            } else {
+                int cmp = PluginInstaller.compareVersions(st.version(), versionOf(prev));
+                header = cmp > 0
+                        ? tr("dialog.plugins.updateHeader", name, prevVersion, version)
+                        : cmp < 0
+                                ? tr("dialog.plugins.downgradeHeader", name, prevVersion, version)
+                                : tr("dialog.plugins.reinstallHeader", name, version);
+            }
+            if (pluginManager.running(st.id()) != null) {
+                intro = intro + "\n\n" + tr("dialog.plugins.afterRestart");
+            }
+        }
+        String caps = PluginDisclosure.capabilities(
+                st.manifest(),
+                st.jars(),
+                Files.isDirectory(st.root().resolve("snippets")),
+                Files.isDirectory(st.root().resolve("templates")),
+                keymap.activeName(),
+                keys(st.manifest()));
+        return new Question(Question.Kind.ENABLE, header, intro, caps, tr("dialog.plugins.enable"));
+    }
+
+    /**
+     * Settings → Plugins: the user ticked {@code d}. Shows what it can do and, on Enable, stores the consent
+     * with the fingerprint of what was shown. Refuses a plugin that failed to load: what it would do cannot
+     * be shown, and a "no executable code" summary of an unreadable manifest is not consent.
+     */
+    boolean enableFromSettings(PluginDescriptor d) {
+        if (d == null || d.loadError() != null) {
+            return false;
+        }
+        String caps = PluginDisclosure.capabilities(
+                d.manifest(),
+                d.jars(),
+                Files.isDirectory(d.dir().resolve("snippets")),
+                Files.isDirectory(d.dir().resolve("templates")),
+                keymap.activeName(),
+                keys(d.manifest()));
+        String version = PluginDisclosure.clean(d.manifest().version == null ? "" : d.manifest().version, 40);
+        if (!confirm.test(new Question(
+                Question.Kind.ENABLE,
+                tr("dialog.plugins.enableHeaderNamed", PluginDisclosure.clean(d.displayName(), 80), version)
+                        .strip(),
+                tr("dialog.plugins.consentIntro"),
+                caps,
+                tr("dialog.plugins.enable")))) {
+            return false;
+        }
+        config.getPluginStore().enable(d.id(), d.digest());
+        config.savePlugins();
+        return true;
+    }
+
+    /** Settings → Plugins: the user unticked {@code d} (no question: switching off is always safe). */
+    void disableFromSettings(PluginDescriptor d) {
+        config.getPluginStore().setEnabled(d.id(), false);
+        config.savePlugins();
+    }
+
+    /** How the disclosure names chords and commands in this window. */
+    private PluginDisclosure.Keys keys(PluginManifest m) {
+        return new PluginDisclosure.Keys() {
+            @Override
+            public String display(String chord) {
+                return keymap.display(chord);
+            }
+
+            @Override
+            public String boundTitle(String chord) {
+                String now = keymap.commandFor(chord);
+                return now == null
+                        ? null
+                        : registry.get(now).map(Command::title).orElse(now);
+            }
+
+            @Override
+            public String commandTitle(String id) {
+                for (PluginManifest.DeclaredCommand c : m.commands) {
+                    if (c != null
+                            && c.id != null
+                            && PluginManifest.qualify(m.id, c.id).equals(id)) {
+                        return c.title == null || c.title.isBlank() ? id : c.title;
+                    }
+                }
+                return registry.get(id).map(Command::title).orElse(id);
+            }
+        };
+    }
+
+    /** The descriptor with this {@code id}, or null. Pure. */
     static PluginDescriptor descriptorFor(List<PluginDescriptor> descriptors, String id) {
         for (PluginDescriptor c : descriptors) {
             if (c.id().equals(id)) {
@@ -513,33 +857,19 @@ final class PluginCoordinator {
     }
 
     /**
-     * Shows a capability-disclosure confirm before a plugin is <em>enabled</em> (the real arming point —
-     * code loads on next launch): whether it ships executable code, the external commands it declares, and
-     * any keybindings it remaps. Returns whether the user accepted. <b>Fails closed</b>: when the descriptor
-     * can't be found there is nothing to disclose, so the plugin is not enabled (the caller leaves it
-     * installed but disabled, and it can be enabled from Settings once it is listed).
+     * A question asked before a plugin is installed, enabled or removed: {@code header} (escaped manifest
+     * values), {@code body} above the capability list, {@code capabilities} (may be blank), the accept button.
      */
-    private boolean confirmEnablePlugin(String id) {
-        PluginDescriptor d = descriptorFor(pluginManager == null ? List.of() : pluginManager.descriptors(), id);
-        if (d == null) {
-            return false;
-        }
-        String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
-        String body = tr(
-                "dialog.plugins.enableBody",
-                name,
-                d.manifest().version == null ? "" : d.manifest().version,
-                pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
-        return confirm.test(new Question(
-                Question.Kind.ENABLE, tr("dialog.plugins.enableTitle"), tr("dialog.plugins.enableHeader"), body));
-    }
-
-    /** A yes/no question asked before a plugin is installed, enabled or removed. */
-    record Question(Kind kind, String title, String header, String body) {
+    record Question(Kind kind, String header, String body, String capabilities, String acceptLabel) {
         enum Kind {
             INSTALL,
             ENABLE,
             UNINSTALL
+        }
+
+        /** Everything the dialog says, for tests. */
+        String text() {
+            return header + "\n" + body + "\n" + capabilities;
         }
     }
 
@@ -559,113 +889,160 @@ final class PluginCoordinator {
         this.zipChooser = java.util.Objects.requireNonNull(chooser, "chooser");
     }
 
+    /** Settings, when the user is working there; else this window. */
+    private Window dialogOwner() {
+        Window settings = settingsWindow == null ? null : settingsWindow.stageIfShowing();
+        return settings != null ? settings : host.window();
+    }
+
     private boolean confirmDialog(Question q) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, q.body(), ButtonType.OK, ButtonType.CANCEL);
-        alert.initOwner(host.window());
-        alert.setTitle(q.title());
-        alert.setHeaderText(q.header());
         if (q.kind() == Question.Kind.ENABLE) {
-            alert.getDialogPane().setMinWidth(480); // the capability list is wide
+            return PluginDialogs.consent(dialogOwner(), q.header(), q.body(), q.capabilities(), q.acceptLabel());
         }
-        return alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        return PluginDialogs.confirm(dialogOwner(), q.header(), q.body(), q.acceptLabel());
     }
 
-    /**
-     * A human-readable, localized list of what a plugin can do, from its manifest: executable code (a jar),
-     * declared external commands (with their argv), and keybinding remaps. Used by the enable-confirm dialogs
-     * (here and in {@link SettingsWindow}). Pure aside from {@code tr(...)}.
-     */
-    public static String pluginCapabilitySummary(PluginManifest m, boolean hasJar) {
-        StringBuilder sb = new StringBuilder();
-        if (hasJar) {
-            sb.append(tr("plugins.cap.code")).append('\n');
-        }
-        if (m.commands != null && !m.commands.isEmpty()) {
-            sb.append(tr("plugins.cap.commands")).append('\n');
-            for (PluginManifest.DeclaredCommand c : m.commands) {
-                String argv = c.run == null ? "" : String.join(" ", c.run);
-                sb.append("    ").append(argv).append('\n');
-            }
-        }
-        if (m.keymap != null && !m.keymap.isEmpty()) {
-            sb.append(tr("plugins.cap.keymap")).append('\n');
-            m.keymap.forEach((chord, cmd) ->
-                    sb.append("    ").append(chord).append(" → ").append(cmd).append('\n'));
-        }
-        if (sb.length() == 0) {
-            sb.append(tr("plugins.cap.assetsOnly"));
-        }
-        return sb.toString().strip();
-    }
-
-    /** Uninstalls a plugin: deletes its folder + drops it from the enabled store (Settings-page Remove). */
+    /** Uninstalls the plugin with this id (the palette path); see {@link #uninstall(PluginDescriptor)}. */
     void uninstall(String id) {
         if (pluginManager == null || id == null || id.isBlank()) {
             return;
         }
-        if (!confirm.test(new Question(
-                Question.Kind.UNINSTALL,
-                tr("dialog.plugins.uninstallTitle"),
-                null,
-                tr("dialog.plugins.uninstallBody", id)))) {
-            return;
+        PluginDescriptor d = descriptorFor(pluginManager.descriptors(), id);
+        if (d != null) {
+            uninstall(d);
         }
-        if (!removeInstalled(id)) {
-            return;
-        }
-        config.getPluginStore().setEnabled(id, false);
-        config.savePlugins();
-        pluginManager.discover();
-        settingsWindow.syncPluginsCheck();
-        host.setStatus(tr("status.plugins.uninstalled", id));
     }
 
     /**
-     * Deletes the folder of the installed plugin {@code id} — the directory it was discovered in, and only
-     * when that is a direct child of the plugins folder (see {@link PluginInstaller#removableDir}). The id is
-     * never turned into a path: it comes from {@code plugin.json}, which anyone can write.
+     * Removes plugin {@code d} — the row the user clicked, not whatever plugin first declares its id — after
+     * naming it and the saved data that goes with it. A plugin running in this session is removed at the next
+     * start (its jar is open; Windows cannot delete it); it is switched off at once either way.
      */
-    private boolean removeInstalled(String id) {
-        PluginDescriptor plugin = descriptorFor(pluginManager.descriptors(), id);
+    void uninstall(PluginDescriptor d) {
+        if (pluginManager == null || d == null) {
+            return;
+        }
+        String name = PluginDisclosure.clean(d.displayName(), 80);
+        StringBuilder body =
+                new StringBuilder(tr("dialog.plugins.uninstallBody", d.dir().toString()));
+        if (Files.isDirectory(d.dir().resolve("data"))) {
+            body.append("\n\n").append(tr("dialog.plugins.uninstallData"));
+        }
+        if (!confirm.test(new Question(
+                Question.Kind.UNINSTALL,
+                tr("dialog.plugins.uninstallHeader", name),
+                body.toString(),
+                "",
+                tr("dialog.plugins.removeButton")))) {
+            return;
+        }
+        boolean running = pluginManager.running(d.id()) != null;
+        if (running) {
+            if (!PluginInstaller.markForRemoval(pluginManager.pluginsDir(), d.id())) {
+                reportError(tr("status.plugins.uninstallFailed", name));
+                ops.showError(
+                        tr("status.plugins.uninstallFailed", name), d.dir().toString());
+                return;
+            }
+        } else if (!removeInstalled(d, name)) {
+            return;
+        }
+        config.getPluginStore().forget(d.id());
+        config.savePlugins();
+        pluginManager.discover();
+        settingsWindow.syncPluginsCheck();
+        report(running ? tr("status.plugins.removalPending", name) : tr("status.plugins.uninstalled", name));
+    }
+
+    /**
+     * Deletes the folder of plugin {@code plugin} — the directory it was discovered in, and only when that is a
+     * direct child of the plugins folder (see {@link PluginInstaller#removableDir}).
+     */
+    private boolean removeInstalled(PluginDescriptor plugin, String name) {
         Path dir = PluginInstaller.removableDir(pluginManager.pluginsDir(), plugin);
         if (dir == null) {
-            ops.showError(tr("status.plugins.uninstallFailed", id), String.valueOf(plugin == null ? id : plugin.dir()));
+            reportError(tr("status.plugins.uninstallFailed", name));
+            ops.showError(tr("status.plugins.uninstallFailed", name), String.valueOf(plugin.dir()));
             return false;
         }
         if (!PluginInstaller.deleteInstalled(pluginManager.pluginsDir(), plugin)) {
-            ops.showError(tr("status.plugins.uninstallFailed", id), dir.toString());
-            pluginManager.discover(); // show what is left
+            reportError(tr("status.plugins.uninstallFailed", name));
+            ops.showError(tr("status.plugins.uninstallFailed", name), dir.toString());
+            pluginManager.discover(); // show what is left (its manifest is deleted last: still listed)
             settingsWindow.syncPluginsCheck();
             return false;
         }
         return true;
     }
 
+    /** Whether the caller is on the FX thread; plugin API calls touch JavaFX state. */
+    private static boolean onFx() {
+        return Platform.isFxApplicationThread();
+    }
+
+    /** Runs {@code r} now on the FX thread, or posts it there from another thread. */
+    private static void fx(Runnable r) {
+        if (onFx()) {
+            r.run();
+        } else {
+            Platform.runLater(r);
+        }
+    }
+
+    /** A read that must happen on the FX thread: from another thread it throws instead of racing the editor. */
+    private static void requireFx(String method) {
+        if (!onFx()) {
+            throw new IllegalStateException(
+                    method + " must be called on the JavaFX application thread" + " (use Platform.runLater)");
+        }
+    }
+
     /** A window-scoped {@link PluginContext}; one per plugin per window. */
     private final class PluginContextImpl implements PluginContext {
         private final PluginDescriptor desc;
+        private final Contributions contributions;
 
-        PluginContextImpl(PluginDescriptor desc) {
+        PluginContextImpl(PluginDescriptor desc, Contributions contributions) {
             this.desc = desc;
+            this.contributions = contributions;
         }
 
-        /** Namespaces a bare command id (no dot) to this plugin; a dotted id (a built-in) is used as-is. */
-        private String fullId(String id) {
-            return id != null && id.indexOf('.') < 0 ? "plugin." + desc.id() + "." + id : id;
+        /**
+         * The id a chord or a status segment targets: a bare id is this plugin's own command, a dotted one a
+         * built-in (or another plugin's), as written.
+         */
+        private String target(String id) {
+            return PluginManifest.qualify(desc.id(), id);
         }
 
         @Override
         public void registerCommand(String id, String title, Runnable action) {
-            String cid = fullId(id);
-            registry.register(Command.of(cid, title == null || title.isBlank() ? cid : title, action));
+            if (id == null || id.isBlank() || action == null) {
+                return;
+            }
+            fx(() -> {
+                // Always this plugin's namespace: a dotted id used to be taken as written, so a plugin could
+                // replace a built-in command (or another plugin's) without a word.
+                String cid = ownId(desc, id);
+                register(
+                        contributions,
+                        cid,
+                        title == null || title.isBlank() ? desc.displayName() + ": " + id : title,
+                        action);
+            });
         }
 
         @Override
         public void bindKey(String chord, String commandId) {
-            if (chord != null && !chord.isBlank() && commandId != null) {
-                keymap.applyOverrides(Map.of(chord, fullId(commandId)));
-                reapplyUserBindings();
+            if (chord == null || chord.isBlank() || commandId == null) {
+                return;
             }
+            fx(() -> {
+                String target = target(commandId);
+                bindChord(contributions, chord, target);
+                pluginManager.recordCodeBinding(desc.id(), chord, target); // kept by keymap rebuilds
+                reapplyUserBindings();
+            });
         }
 
         @Override
@@ -677,48 +1054,70 @@ final class PluginCoordinator {
                 String commandId,
                 Supplier<Node> icon,
                 boolean needsBuffer) {
-            String twId = fullId(id);
-            String cmd = commandId == null || commandId.isBlank() ? twId : fullId(commandId);
-            ToolWindow.Side s = switch (side == null ? ToolWindowSide.BOTTOM : side) {
-                case LEFT -> ToolWindow.Side.LEFT;
-                case RIGHT -> ToolWindow.Side.RIGHT;
-                case BOTTOM -> ToolWindow.Side.BOTTOM;
-            };
-            // A null supplier (or one returning null) falls back to the default plugin (jigsaw) icon. The
-            // factory is invoked per window/repaint, so it must yield a fresh node each time.
-            Supplier<Node> iconFactory = icon == null
-                    ? Icons::plugin
-                    : () -> {
-                        Node n = icon.get();
-                        return n != null ? n : Icons.plugin();
-                    };
-            ToolWindow tw = new ToolWindow(twId, title == null ? twId : title, s, iconFactory, content, cmd);
-            toolWindows.register(tw);
-            if (needsBuffer) {
-                // Acts on the active editor — track it so updateBufferToolWindows() keeps its stripe gated on
-                // an open buffer (hidden on a non-buffer tab like Welcome).
-                pluginToolWindows.add(tw);
-                toolWindows.setAvailable(tw, host.activeBuffer() != null);
+            if (id == null || id.isBlank()) {
+                return;
             }
-            // needsBuffer == false: a self-contained tool window (scratchpad, calculator, …) — never gated.
-            registry.register(Command.of(cmd, title == null ? twId : title, () -> toolWindows.toggle(tw)));
+            fx(() -> {
+                String twId = ownId(desc, id);
+                String cmd = commandId == null || commandId.isBlank() ? twId : ownId(desc, commandId);
+                ToolWindow.Side s = switch (side == null ? ToolWindowSide.BOTTOM : side) {
+                    case LEFT -> ToolWindow.Side.LEFT;
+                    case RIGHT -> ToolWindow.Side.RIGHT;
+                    case BOTTOM -> ToolWindow.Side.BOTTOM;
+                };
+                // A null supplier (or one returning null) falls back to the default plugin (jigsaw) icon. The
+                // factory is invoked per window/repaint, so it must yield a fresh node each time.
+                Supplier<Node> iconFactory = icon == null
+                        ? Icons::plugin
+                        : () -> {
+                            Node n = icon.get();
+                            return n != null ? n : Icons.plugin();
+                        };
+                String shown = title == null || title.isBlank() ? desc.displayName() : title;
+                ToolWindow tw = new ToolWindow(twId, shown, s, iconFactory, content, cmd);
+                toolWindows.register(tw);
+                contributions.toolWindowsAdded.add(tw);
+                if (needsBuffer) {
+                    // Acts on the active editor — track it so updateBufferToolWindows() keeps its stripe gated
+                    // on an open buffer (hidden on a non-buffer tab like Welcome).
+                    pluginToolWindows.add(tw);
+                    toolWindows.setAvailable(tw, host.activeBuffer() != null);
+                }
+                // needsBuffer == false: a self-contained tool window (scratchpad, calculator, …) — never gated.
+                // Titled like the built-in toggles ("Tool Window: Problems").
+                register(contributions, cmd, tr("plugins.toolWindowCommand", shown), () -> toolWindows.toggle(tw));
+            });
         }
 
         @Override
         public void addEditorMenuItem(String label, Consumer<ActiveEditor> action) {
             if (label != null && action != null) {
-                pluginMenuItems.add(new EditorMenuContribution(label, action));
+                fx(() -> {
+                    EditorMenuContribution item = new EditorMenuContribution(desc.displayName(), label, action);
+                    pluginMenuItems.add(item);
+                    contributions.menuItems.add(item);
+                });
             }
         }
 
         @Override
         public void addStatusBarSegment(String label, String commandId) {
-            statusBar.addPluginSegment(label, commandId == null ? null : fullId(commandId));
+            fx(() -> {
+                String cmd = commandId == null || commandId.isBlank() ? null : target(commandId);
+                String hint = cmd == null
+                        ? desc.displayName()
+                        : desc.displayName() + ": "
+                                + registry.get(cmd).map(Command::title).orElse(cmd);
+                contributions.segments.add(statusBar.addPluginSegment(label, cmd, hint));
+            });
         }
 
         @Override
         public ActiveEditor activeEditor() {
-            return new ActiveEditorImpl(null); // tracks the live active buffer
+            requireFx("PluginContext.activeEditor()");
+            // Bound to the buffer active now: a plugin that finishes later (a formatter on a worker) writes
+            // into the file it started on — or, if that tab is closed, nowhere — never the tab active then.
+            return new ActiveEditorImpl(host.activeBuffer());
         }
 
         @Override
@@ -749,82 +1148,112 @@ final class PluginCoordinator {
 
         @Override
         public void setStatus(String message) {
-            host.setStatus(message);
+            fx(() -> host.setStatus(message));
         }
 
         @Override
         public void openUrl(String url) {
             if (url != null && !url.isBlank()) {
-                host.openExternalUrl(url);
+                fx(() -> host.openExternalUrl(url));
             }
         }
     }
 
-    /** An {@link ActiveEditor} over a fixed buffer, or the live active buffer when null. */
+    /**
+     * An {@link ActiveEditor} over one buffer: the one active when it was asked for (or the one a menu item
+     * was opened on). Once that buffer is closed it reads as empty and ignores writes.
+     */
     private final class ActiveEditorImpl implements ActiveEditor {
-        private final EditorBuffer fixed;
+        private final EditorBuffer bound;
 
-        ActiveEditorImpl(EditorBuffer fixed) {
-            this.fixed = fixed;
+        ActiveEditorImpl(EditorBuffer bound) {
+            this.bound = bound;
         }
 
+        /** The buffer, while it is open; null after it was closed (or when there was none). */
         private EditorBuffer buf() {
-            return fixed != null ? fixed : host.activeBuffer();
+            return bound == null || bound.isDisposed() ? null : bound;
         }
 
         @Override
         public Path filePath() {
+            requireFx("ActiveEditor.filePath()");
             EditorBuffer b = buf();
             return b == null ? null : b.getPath();
         }
 
         @Override
         public String text() {
+            requireFx("ActiveEditor.text()");
             EditorBuffer b = buf();
             return b == null ? "" : b.getContent();
         }
 
         @Override
         public String selectedText() {
+            requireFx("ActiveEditor.selectedText()");
             EditorBuffer b = buf();
             return b == null ? "" : b.getArea().getSelectedText();
         }
 
         @Override
         public int caretLine() {
+            requireFx("ActiveEditor.caretLine()");
             EditorBuffer b = buf();
-            return b == null ? -1 : b.getArea().getCurrentParagraph() + 1; // 1-based
+            if (b == null) {
+                return -1;
+            }
+            // Of the whole file, like text(): a narrowed buffer's area starts at its region's first line.
+            int line = b.getArea().getCurrentParagraph() + 1;
+            if (b.isNarrowed()) {
+                String content = b.getContent();
+                int start = Math.min(b.narrowStart(), content.length());
+                line += (int) content.substring(0, start)
+                        .chars()
+                        .filter(ch -> ch == '\n')
+                        .count();
+            }
+            return line;
         }
 
         @Override
         public void replaceSelection(String replacement) {
-            EditorBuffer b = buf();
-            if (b != null && b.isEditable() && replacement != null && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
-                b.getArea().replaceSelection(replacement);
-            }
+            fx(() -> {
+                EditorBuffer b = buf();
+                if (b != null
+                        && b.isEditable()
+                        && replacement != null
+                        && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
+                    b.getArea().replaceSelection(replacement);
+                }
+            });
         }
 
         @Override
         public void insertAtCaret(String text) {
-            EditorBuffer b = buf();
-            if (b != null && b.isEditable() && text != null) {
-                b.getArea().insertText(b.getArea().getCaretPosition(), text);
-            }
+            fx(() -> {
+                EditorBuffer b = buf();
+                if (b != null && b.isEditable() && text != null && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
+                    b.getArea().insertText(b.getArea().getCaretPosition(), text);
+                }
+            });
         }
 
         @Override
         public void setText(String text) {
-            EditorBuffer b = buf();
-            if (b != null && b.isEditable() && text != null && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
-                // text() is the whole file, so this widens a narrowed buffer first (undoable, marks dirty).
-                b.replaceWholeDocument(text);
-            }
+            fx(() -> {
+                EditorBuffer b = buf();
+                if (b != null && b.isEditable() && text != null && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
+                    // text() is the whole file, so this widens a narrowed buffer first (undoable, marks dirty).
+                    b.replaceWholeDocument(text);
+                }
+            });
         }
 
         @Override
         public void openPath(Path path) {
             if (path != null) {
-                ops.openPath(path);
+                fx(() -> ops.openPath(path));
             }
         }
     }
