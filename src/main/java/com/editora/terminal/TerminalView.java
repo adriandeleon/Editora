@@ -692,12 +692,12 @@ public final class TerminalView extends Region {
             if (codePoint != 0 && c != ' ') {
                 g.fillText(new String(Character.toChars(codePoint)), x + cell * charWidth, baseline);
             }
-            // One column per code point, whatever its UTF-16 length. Advancing by the number of
-            // array slots instead gave every astral character — every Nerd Font icon in an `ls`
-            // listing — a second, empty column, pushing the rest of the line out of alignment with
-            // the lines around it.  A genuinely double-width glyph gets its second column from the
-            // DWC placeholder above, not from here.
-            cell++;
+            // Columns per code point, not per UTF-16 slot. Advancing by slots gave every narrow
+            // astral character — every Nerd Font icon in an `ls` listing — a second, empty column,
+            // pushing the rest of the line out of alignment with the lines around it. A wide BMP
+            // glyph gets its second column from the DWC placeholder above; a wide astral one (an
+            // emoji) has none, and takes its two columns here (see CellWidth).
+            cell += CellWidth.of(codePoint);
             i += slots;
         }
     }
@@ -769,9 +769,13 @@ public final class TerminalView extends Region {
         // JediTerm reports the cursor row 1-based against the live screen; scrolling back moves it
         // out of view rather than dragging it along.
         int row = display.getCursorY() - 1 - scrollOrigin;
-        int column = session != null && session.typeAheadPrediction() != null
-                ? session.typeAheadCursorColumn()
-                : display.getCursorX();
+        TypeAheadOverlay.Prediction p = session == null ? null : session.typeAheadPrediction();
+        // The emulator's cursor is a slot of its row's text, which is a column only while nothing
+        // to its left is astral: an emoji is two slots and two columns, a Nerd Font icon two slots
+        // and one. Mapped through the row's text, as every other overlay is.
+        String text = p == null ? lineTextAt(display.getCursorY() - 1) : p.text();
+        int slot = p == null ? display.getCursorX() : session.typeAheadCursorColumn();
+        int column = ColumnMap.columnAt(text, slot);
         if (row < 0 || row >= rows || column < 0 || column >= columns) return;
 
         double x = column * charWidth;
@@ -782,21 +786,30 @@ public final class TerminalView extends Region {
             case UNDERLINE -> g.fillRect(x, y + lineHeight - 2, charWidth, 2);
             case BAR -> g.fillRect(x, y, 2, lineHeight);
             default -> {
-                g.fillRect(x, y, charWidth, lineHeight);
+                // The cell the cursor sits on: two wide for a wide glyph.
+                int codePoint = glyphAt(text, slot);
+                int width = codePoint > 0 && slot + 1 < text.length() && text.charAt(slot + 1) == CharUtils.DWC
+                        ? 2
+                        : codePoint > 0 ? CellWidth.of(codePoint) : 1;
+                g.fillRect(x, y, width * charWidth, lineHeight);
                 // Re-draw the glyph underneath in the background colour so a block cursor does not
                 // hide the character it is sitting on.
-                TypeAheadOverlay.Prediction p = session == null ? null : session.typeAheadPrediction();
-                char ch = p == null
-                        ? buffer.getCharAt(column, display.getCursorY() - 1)
-                        : column < p.text().length() ? p.text().charAt(column) : ' ';
-                if (ch != '\0' && ch != ' ') {
+                if (codePoint > 0 && codePoint != ' ') {
                     g.setFill(palette.background());
                     g.setFont(font);
                     g.setTextBaseline(VPos.BASELINE);
-                    g.fillText(String.valueOf(ch), x, y + ascent);
+                    g.fillText(new String(Character.toChars(codePoint)), x, y + ascent);
                 }
             }
         }
+    }
+
+    /** The code point that starts at {@code slot} of a row's text, or 0 for none (past the end, a placeholder). */
+    static int glyphAt(String text, int slot) {
+        if (slot < 0 || slot >= text.length()) return 0;
+        char c = text.charAt(slot);
+        if (c == '\0' || c == CharUtils.DWC || Character.isLowSurrogate(c)) return 0;
+        return text.codePointAt(slot);
     }
 
     /**

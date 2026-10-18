@@ -202,6 +202,28 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void anEmojiTakesTheTwoColumnsTheShellCountsAndTheCursorStaysOnItsText() throws Exception {
+        open();
+        // What bash's line editor does after `echo 😀😀 end` and moving left three columns: its cursor is on the e.
+        connector.emit("echo \uD83D\uDE00\uD83D\uDE00 end\u001b[3D");
+        await(() -> screen().contains("end"), "the line");
+        String text = fx(() -> {
+            var buffer = view.getSession().getTextBuffer();
+            buffer.lock();
+            try {
+                return buffer.getLine(0).getText();
+            } finally {
+                buffer.unlock();
+            }
+        });
+        int slot = fx(() -> view.getDisplay().getCursorX());
+        assertEquals(10, ColumnMap.columnAt(text, slot), "the cursor's column is the shell's");
+        assertEquals('e', text.charAt(slot), "and it sits on the e");
+        assertEquals(0, TerminalView.glyphAt(text, 6), "never half an emoji");
+        assertEquals(0x1F600, TerminalView.glyphAt(text, 5));
+    }
+
+    @Test
     void selectAllSelectsAndTypingDropsTheSelection() throws Exception {
         open();
         connector.emit("one\r\ntwo\r\n");
