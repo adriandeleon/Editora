@@ -117,6 +117,7 @@ class ChildLocalePolicyTest {
             RUNNER, // the login-shell PATH probe
             "run/RunService.java",
             "terminal/LocalShell.java", // pty4j's PtyProcessBuilder, with applyUserEnv
+            "terminal/PtyChannel.java", // pty4j's PtyProcessBuilder, with its caller's applyUserEnv environment
             "terminal/TerminalImageCheck.java", // pty4j's PtyProcessBuilder, with applyUserEnv
             "web/HtmlPreviewService.java");
 

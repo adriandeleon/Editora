@@ -19,6 +19,9 @@ import com.editora.process.RelayPortForward;
 import com.editora.process.RemoteEnv;
 import com.editora.process.ShellTargetCache;
 import com.editora.process.TargetCache;
+import com.editora.process.TerminalChannel;
+import com.editora.process.TerminalSpec;
+import com.editora.terminal.PtyChannel;
 
 /**
  * A running container whose bind-mounted folders of this machine have their tools run inside it, with
@@ -81,6 +84,50 @@ public final class ContainerExecTarget implements ExecTarget {
                 info.id(), info.user(), PosixShell.argv(spec, cwd, known.path(), known.locale(), known.profile()));
         Process client = client(argv).start();
         return LauncherProcess.start(id(), client, START_TIMEOUT, this::signal, this::orphanRecord);
+    }
+
+    /**
+     * A login shell on a pseudo-terminal in the container, for the integrated terminal: {@code exec -it} run here on
+     * a pseudo-terminal of its own. Closing it hangs the shell up in the container ({@link #hangUp}), because the
+     * engine keeps a program whose {@code exec} client went.
+     */
+    @Override
+    public TerminalChannel startTerminal(TerminalSpec spec) throws IOException {
+        if (!running) {
+            throw new IOException("the container " + info.name() + " is not running");
+        }
+        String cwd = spec.workingDir() == null ? null : toTargetPath(spec.workingDir());
+        List<String> argv = engine.terminalArgv(
+                info.id(), info.user(), List.of("/bin/sh", "-c", PosixShell.terminalScript(cwd, true)));
+        return PtyChannel.start(
+                com.editora.process.ProcessRunner.resolveExecutable(argv),
+                com.editora.process.ProcessRunner.applyUserEnv(new java.util.HashMap<>(System.getenv()), Map.of()),
+                spec.columns(),
+                spec.rows(),
+                this::hangUp);
+    }
+
+    /** SIGHUP to the shell {@code pid} in the container — what a terminal window closing sends its shell. */
+    void hangUp(long pid) {
+        try {
+            Process kill = client(engine.execArgv(info.id(), info.user(), hangUpArgv(pid)))
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            kill.getOutputStream().close();
+            if (!kill.waitFor(5, TimeUnit.SECONDS)) {
+                kill.destroyForcibly();
+            }
+        } catch (IOException e) {
+            // The container went with it.
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** {@code kill -s HUP -- <pid>}: an interactive shell passes the hang-up on to its jobs and exits. */
+    static List<String> hangUpArgv(long pid) {
+        return List.of("kill", "-s", "HUP", "--", Long.toString(pid));
     }
 
     /** {@link #orphanRecord}'s kind, and the reaper {@code App} registers for it. */

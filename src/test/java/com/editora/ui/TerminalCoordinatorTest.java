@@ -15,4 +15,11 @@ class TerminalCoordinatorTest {
         assertEquals("::1", TerminalCoordinator.hostOf("ana@[::1]:2222"));
         assertEquals("fe80::1", TerminalCoordinator.hostOf("fe80::1"), "a bare IPv6 address has no port to cut");
     }
+
+    @Test
+    void aContainerOrDistributionChipSaysItsName() {
+        assertEquals("web", TerminalCoordinator.labelOf("container:web"));
+        assertEquals("Ubuntu-24.04", TerminalCoordinator.labelOf("wsl:Ubuntu-24.04"));
+        assertEquals("plain", TerminalCoordinator.labelOf("plain"));
+    }
 }

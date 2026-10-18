@@ -1,8 +1,8 @@
 # Integrated terminal
 
 Status: **in progress** ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
-runs shells on this machine and on SSH hosts, Open Terminal Here opens one, and links in the output open in
-the editor. Container and WSL terminals follow.
+runs shells where a project's commands run: this machine, an SSH host, a dev container or a WSL distribution.
+Open Terminal Here opens one, and links in the output open in the editor.
 
 ## Terminals on an SSH host
 
@@ -47,6 +47,32 @@ the editor. Container and WSL terminals follow.
   turn it off). Local shells are tracked by `ProcessRegistry` so a crash does not orphan them. pty4j's
   `UnixPtyProcess` throws from `toHandle()`, which the registry needs, so `LocalPtyConnector.trackableProcess()`
   wraps it (`PtyHandleProcess`). Before that wrapper, tracking threw after the shell had started.
+
+## Terminals in a container or a WSL distribution
+
+A container's mounted folder and a `\\wsl.localhost` folder are paths of this machine that `ExecTargets` maps to a
+target, so the coordinator asks `ExecTargets.forPath(dir).isLocal()`, not `Vfs`, whether a folder's shell
+belongs elsewhere.
+
+- **`terminal.PtyChannel`:** the target's own launcher run here on a pty4j PTY. That is `docker|podman exec -i -t
+  [-u user] <id> /bin/sh -c <script>` (`ContainerEngine.terminalArgv`; the engine's client wants a tty of its own
+  for `-t`, and forwards SIGWINCH), or `wsl.exe -d <distro> --exec /bin/sh -c …`, through
+  `WslExecTarget.windowsSafe`, on ConPTY.
+- **The script** is `PosixShell.terminalScript(cwd, markPid)`, shared with SSH. It prints a pid line
+  (`TERMINAL_PID_MARK`), exports `TERM`/`COLORTERM`/`TERM_PROGRAM`, changes to the folder, and execs the login
+  shell: `$SHELL`, else bash, else sh, since containers often set none. `PidMarkStream` takes the pid line out
+  of the output and keeps the pid.
+- **Closing:** Docker and Podman keep a program whose `exec` client died (measured: without the hang-up the
+  probe's `sleep` stays in the container). So close sends `kill -s HUP -- <pid>` through the target first,
+  then ends the launcher. SIGTERM alone does not end an interactive shell, so the PTY is closed too, with a
+  forced kill if anything is left after 2 s. WSL 1 ends the shell with `wsl.exe`; the hang-up covers WSL 2.
+- No lost-connection state: when the container stops, the shell ends and the tab closes. The chip names the
+  container or the distribution (`TerminalCoordinator.labelOf`).
+- **Tests:** `PtyChannelTest` (the script on a local PTY: pid line hidden and kept, resize, hang-up on close),
+  `PidMarkStreamTest`, `ContainerEngineTerminalTest`. Two opt-in steps: `ContainerProbeFxTest`'s terminal test
+  (a tty in the container, `stty size` before and after a resize, the folder, the program gone after close;
+  passes under Podman 5.4, and is the docker job of the Remote probe workflow) and `WslProbeTest`'s (the
+  Windows job).
 
 ## Open Terminal Here and links
 

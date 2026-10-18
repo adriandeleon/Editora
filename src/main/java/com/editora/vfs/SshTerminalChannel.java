@@ -117,13 +117,7 @@ final class SshTerminalChannel implements TerminalChannel {
      * or csh.
      */
     static String commandLine(String cwd) {
-        StringBuilder script = new StringBuilder("export COLORTERM=truecolor TERM_PROGRAM=Editora; ");
-        if (cwd != null && !cwd.isBlank()) {
-            script.append("cd -- ")
-                    .append(com.editora.process.PosixShell.quote(cwd))
-                    .append(" 2>/dev/null || cd; ");
-        }
-        script.append("exec \"${SHELL:-/bin/sh}\" -l");
-        return "exec /bin/sh -c " + com.editora.process.PosixShell.quote(script.toString());
+        return "exec /bin/sh -c "
+                + com.editora.process.PosixShell.quote(com.editora.process.PosixShell.terminalScript(cwd, false));
     }
 }

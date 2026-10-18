@@ -203,10 +203,14 @@ final class TerminalCoordinator {
         if (directory != null && !Vfs.isLocal(directory)) {
             return remoteShell(directory);
         }
+        // A folder of this machine can still run elsewhere: a dev container's mount, a WSL distribution's share.
+        if (directory != null && !ExecTargets.forPath(directory).isLocal()) {
+            return remoteShell(directory);
+        }
         return localShell(directory, shell);
     }
 
-    /** The login shell of a remote folder's host, through its execution target. */
+    /** The login shell where a folder's commands run (its SSH host, container or WSL distribution). */
     static TerminalConnector.Factory remoteShell(Path directory) {
         return (columns, rows) -> {
             ExecTarget target = ExecTargets.forPath(directory);
@@ -215,10 +219,20 @@ final class TerminalCoordinator {
         };
     }
 
-    /** What a tab's chip says: "Local", or the host of a remote folder. */
+    /** What a tab's chip says: "Local", the host of a remote folder, or the container or WSL distribution. */
     static String targetLabel(Path directory) {
         String authority = directory == null ? null : Vfs.authorityOf(directory);
-        return authority == null ? tr("terminal.target.local") : hostOf(authority);
+        if (authority != null) {
+            return hostOf(authority);
+        }
+        ExecTarget target = directory == null ? null : ExecTargets.forPath(directory);
+        return target == null || target.isLocal() ? tr("terminal.target.local") : labelOf(target.id());
+    }
+
+    /** {@code container:web} → {@code web}, {@code wsl:Ubuntu} → {@code Ubuntu}: the chip says the place. */
+    static String labelOf(String targetId) {
+        int colon = targetId.indexOf(':');
+        return colon > 0 && colon < targetId.length() - 1 ? targetId.substring(colon + 1) : targetId;
     }
 
     /** {@code user@host:port} → {@code host}: the chip is narrow, and the port is almost always 22. */
