@@ -54,8 +54,8 @@ public final class DirectoryDiff {
         // unfollowed.
         leftRoot = leftRoot.toRealPath();
         rightRoot = rightRoot.toRealPath();
-        GitignoreFilter leftIgnore = GitignoreFilter.load(leftRoot);
-        GitignoreFilter rightIgnore = GitignoreFilter.load(rightRoot);
+        GitignoreFilter leftIgnore = GitignoreFilter.load(leftRoot, false);
+        GitignoreFilter rightIgnore = GitignoreFilter.load(rightRoot, false);
         TreeMap<String, FilePair> files = new TreeMap<>();
         Scan left = scan(leftRoot, limit, leftIgnore, rightIgnore, true, files);
         Scan right = scan(rightRoot, limit, leftIgnore, rightIgnore, false, files);

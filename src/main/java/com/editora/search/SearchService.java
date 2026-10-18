@@ -392,7 +392,7 @@ public final class SearchService {
             Set<Path> openKeys,
             BooleanSupplier cancelled) {
         Set<Path> candidates = new LinkedHashSet<>();
-        GitignoreFilter gitignore = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
+        GitignoreFilter gitignore = walkerFilter(root, respectGitignore, include);
         boolean truncated = collect(root, candidates, gitignore, exclude, openKeys, cancelled);
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> out = new ArrayList<>();
@@ -505,7 +505,6 @@ public final class SearchService {
             }
         }
         all.sort((a, b) -> a.file().toString().compareToIgnoreCase(b.file().toString()));
-
         List<FileResult> results = new ArrayList<>();
         int total = 0;
         boolean truncated = sourceTruncated;
@@ -524,6 +523,19 @@ public final class SearchService {
             }
         }
         return new Outcome(results, total, results.size(), truncated);
+    }
+
+    /**
+     * The built-in walker's ignore rules: the project's {@code .gitignore} files plus the built-in
+     * {@code node_modules} rule while {@code respect} is on, minus that rule when an include glob names
+     * {@code node_modules} (the user asked to look inside it). Matches {@link RipgrepArgs}.
+     */
+    static GitignoreFilter walkerFilter(Path root, boolean respect, List<String> include) {
+        if (!respect) {
+            return GitignoreFilter.NONE;
+        }
+        GitignoreFilter loaded = GitignoreFilter.load(root);
+        return DependencyDirs.namedBy(include) ? loaded.withoutDependencyPruning() : loaded;
     }
 
     /** Collects the on-disk candidates through the shared pruned walk; true when the tree was not fully covered. */
