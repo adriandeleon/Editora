@@ -49,7 +49,8 @@ public final class RunConfigDefaults {
         if (script == null
                 || !(ScriptRunCommand.PYTHON.equals(type)
                         || ScriptRunCommand.SHELL.equals(type)
-                        || ScriptRunCommand.GROOVY.equals(type))
+                        || ScriptRunCommand.GROOVY.equals(type)
+                        || ScriptRunCommand.CLOJURE.equals(type))
                 || script.getFileName() == null) {
             return null;
         }

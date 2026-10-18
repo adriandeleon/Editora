@@ -148,6 +148,25 @@ class RuntimeVersionTest {
     }
 
     @Test
+    void theClojureToolsSayTheirOwnVersions() {
+        assertEquals(
+                List.of("/usr/local/bin/clojure", "--version"),
+                RuntimeVersion.probeFor(List.of("/usr/local/bin/clojure", "-M", "x.clj"))
+                        .argv());
+        assertEquals(
+                "Clojure CLI 1.12.6.1673",
+                parse(List.of("clojure", "-M", "x.clj"), "Clojure CLI version 1.12.6.1673\n")
+                        .label());
+        assertEquals(
+                "Leiningen 2.13.0",
+                parse(List.of("lein", "run"), "Leiningen 2.13.0 on Java 25.0.4 OpenJDK 64-Bit Server VM\n")
+                        .label());
+        assertEquals(
+                "Babashka 1.13.226",
+                parse(List.of("bb.exe", "x.bb"), "babashka v1.13.226\n").label());
+    }
+
+    @Test
     void groovySaysItsOwnVersionAndItsJava() {
         assertEquals(
                 List.of("/sdk/groovy/bin/groovy", "--version"),

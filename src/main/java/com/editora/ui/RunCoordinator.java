@@ -384,7 +384,7 @@ final class RunCoordinator {
             runPythonConfig(cfg, cwd, script, args, env, remote);
             return;
         }
-        if (ScriptRunCommand.GROOVY.equals(cfg.type())) {
+        if (com.editora.run.JvmScriptRun.supports(cfg.type())) {
             runJvmScriptConfig(cfg, cwd, script, args, env, elsewhere);
             return;
         }
@@ -495,8 +495,10 @@ final class RunCoordinator {
     }
 
     /**
-     * Runs a Groovy script configuration: its tool on the configuration's JDK (else the Settings one), with the
-     * configuration's VM arguments in {@code JAVA_OPTS} — the variable Groovy's launcher hands its JVM.
+     * Runs a Groovy or Clojure script configuration: its tool on the configuration's JDK (else the Settings one),
+     * with the configuration's VM arguments where the tool hands them to its JVM ({@code JAVA_OPTS} for Groovy,
+     * {@code -J} arguments for the Clojure CLI, {@code JVM_OPTS} for Leiningen). A Clojure file runs in its
+     * project's folder when the configuration names none.
      */
     private void runJvmScriptConfig(
             RunConfiguration cfg,
@@ -506,11 +508,10 @@ final class RunCoordinator {
             java.util.Map<String, String> env,
             boolean elsewhere) {
         String language = cfg.type();
-        String tool = elsewhere
-                ? com.editora.run.JvmScriptRun.tool(language)
-                : com.editora.run.JvmTools.locate(com.editora.run.JvmScriptRun.tool(language));
+        String toolName = com.editora.run.JvmScriptRun.tool(language, script);
+        String tool = elsewhere ? toolName : com.editora.run.JvmTools.locate(toolName);
         if (tool == null) {
-            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey(language)));
+            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(toolName)));
             return;
         }
         String jdkHome = !cfg.jdkHome().isBlank()
@@ -519,15 +520,22 @@ final class RunCoordinator {
         java.util.Map<String, String> launch = new java.util.LinkedHashMap<>(
                 elsewhere ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath()));
         launch.putAll(env);
-        launch = com.editora.run.JvmScriptRun.withJvmOption(
-                launch,
-                elsewhere ? java.util.Map.of() : System.getenv(),
-                com.editora.run.JvmScriptRun.jvmOptionsVariable(language),
-                cfg.vmArgs().strip());
         String target = script != null
                 ? com.editora.process.ExecTargets.forPath(script).toTargetPath(script)
                 : cfg.target().strip();
-        streamRun(cfg.name(), cwd, com.editora.run.JvmScriptRun.argv(tool, target, args), launch, script);
+        com.editora.run.JvmScriptRun.Launch how = com.editora.run.JvmScriptRun.launch(
+                language,
+                toolName,
+                tool,
+                script,
+                target,
+                args,
+                cfg.vmArgs(),
+                false,
+                launch,
+                elsewhere ? java.util.Map.of() : System.getenv());
+        Path dir = cfg.workingDir().isBlank() && how.directory() != null ? how.directory() : cwd;
+        streamRun(cfg.name(), dir, how.argv(), how.env(), script);
     }
 
     /**
@@ -1337,7 +1345,8 @@ final class RunCoordinator {
                 : remote ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath());
         if (jvmScript && !remote && jvmTool(buffer) == null) {
             // Said here, not as the shell's "groovy: command not found" in the Run console.
-            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey(buffer.getLanguage())));
+            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(
+                    com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path))));
             return;
         }
         Runnable proceed = () -> {
@@ -1420,6 +1429,25 @@ final class RunCoordinator {
             }
             env = shellEnvironment(shell, java.util.Map.of(), remote);
         }
+        if (com.editora.run.JvmScriptRun.supports(buffer.getLanguage())) {
+            // The tool decides the folder too: a Clojure file runs in its project's, where deps.edn is read.
+            String toolName = com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
+            String tool = jvmTool(buffer);
+            com.editora.run.JvmScriptRun.Launch how = com.editora.run.JvmScriptRun.launch(
+                    buffer.getLanguage(),
+                    toolName,
+                    tool == null ? toolName : tool,
+                    path,
+                    com.editora.process.ExecTargets.forPath(path).toTargetPath(path),
+                    args,
+                    "",
+                    false,
+                    env,
+                    com.editora.process.ExecTargets.runsHere(path) ? System.getenv() : java.util.Map.of());
+            Path where = how.directory() != null ? how.directory() : path.getParent();
+            streamRun(path.getFileName().toString(), where, how.argv(), how.env(), path);
+            return;
+        }
         Path dir = shell == null
                 ? path.getParent()
                 : shebangDir(shell, path.getParent(), com.editora.vfs.Vfs.isRemote(path));
@@ -1447,11 +1475,11 @@ final class RunCoordinator {
      * the bare name (the host's PATH) for a remote one; null when it is not installed here.
      */
     private static String jvmTool(EditorBuffer buffer) {
-        String tool = com.editora.run.JvmScriptRun.tool(buffer.getLanguage());
+        Path path = buffer.getPath();
+        String tool = com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
         if (tool == null) {
             return null;
         }
-        Path path = buffer.getPath();
         if (path != null && !com.editora.process.ExecTargets.runsHere(path)) {
             return tool;
         }
@@ -1464,13 +1492,6 @@ final class RunCoordinator {
         if (shell != null) {
             return ShellCommand.argv(
                     shell, com.editora.process.ExecTargets.forPath(path).toTargetPath(path), args);
-        }
-        if (com.editora.run.JvmScriptRun.supports(buffer.getLanguage())) {
-            String tool = jvmTool(buffer);
-            return com.editora.run.JvmScriptRun.argv(
-                    tool == null ? com.editora.run.JvmScriptRun.tool(buffer.getLanguage()) : tool,
-                    com.editora.process.ExecTargets.forPath(path).toTargetPath(path),
-                    args);
         }
         List<String> command = new ArrayList<>();
         command.add(javaExecutable); // (Python is planned by PythonRunLauncher)

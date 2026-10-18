@@ -407,7 +407,7 @@ public final class DapManager {
             case "python" -> pythonAvailable;
             case "javascript" -> jsAvailable;
             // Editora's own adapter: nothing to install, only the debugging switch (the tool is checked at start).
-            case "groovy" -> enabled;
+            case "groovy", "clojure" -> enabled;
             default -> false;
         };
     }
@@ -601,7 +601,8 @@ public final class DapManager {
     private volatile Path jvmCwd;
 
     /**
-     * Debugs JVM-language script {@code file} ({@code groovy}) in {@code cwd} — a run configuration's folder —
+     * Debugs JVM-language script {@code file} ({@code groovy}, {@code clojure}) in {@code cwd} — a run
+     * configuration's folder, or null for the one the tool runs it in —
      * with the arguments and environment set beforehand. Restart repeats it.
      */
     public void startJvmScript(Path file, String language, Path cwd) {
@@ -1967,20 +1968,36 @@ public final class DapManager {
             long epoch)
             throws java.io.IOException {
         String language = spec.language();
-        String tool = com.editora.run.JvmTools.locate(com.editora.run.JvmScriptRun.tool(language));
-        if (tool == null) {
-            fail(epoch, tr(com.editora.run.JvmScriptRun.missingToolKey(language)));
+        String toolName = com.editora.run.JvmScriptRun.tool(language, file);
+        if (!com.editora.run.JvmScriptRun.debuggable(toolName)) {
+            // Babashka is a native program: there is no JVM for a debugger to attach to.
+            fail(epoch, tr("debug.error.notDebuggable." + toolName));
             return;
         }
-        List<String> argv = com.editora.run.JvmScriptRun.argv(tool, file.toString(), programArgs);
-        Map<String, String> programEnv = env;
+        String tool = com.editora.run.JvmTools.locate(toolName);
+        if (tool == null) {
+            fail(epoch, tr(com.editora.run.JvmScriptRun.missingToolKeyFor(toolName)));
+            return;
+        }
+        // The configuration's VM arguments go where the tool hands them to its JVM, beside the debugger's agent.
+        com.editora.run.JvmScriptRun.Launch how = com.editora.run.JvmScriptRun.launch(
+                language, toolName, tool, file, file.toString(), programArgs, vmArgs, true, env, System.getenv());
+        List<String> argv = how.argv();
+        Map<String, String> programEnv = how.env();
         Map<String, Object> launch = new java.util.LinkedHashMap<>();
         launch.put("argv", argv);
-        Path folder = jvmCwd;
+        Path folder = jvmCwd != null ? jvmCwd : how.directory();
         launch.put("cwd", folder != null ? folder.toString() : cwdOf(file));
         launch.put("env", programEnv);
         launch.put("language", language);
-        launch.put("jvmOptionsVariable", com.editora.run.JvmScriptRun.jvmOptionsVariable(language));
+        launch.put("jvmOptionsVariable", com.editora.run.JvmScriptRun.jvmOptionsVariable(language, toolName));
+        String prefix = com.editora.run.JvmScriptRun.jvmOptionPrefix(toolName);
+        if (prefix != null) {
+            launch.put("jvmOptionPrefix", prefix);
+        }
+        if (how.directory() != null) {
+            launch.put("sourceRoots", List.of(how.directory().toString()));
+        }
         onOutput(epoch, com.editora.run.RunService.commandLine(argv) + "\n", COMMAND_CATEGORY);
         int port = com.editora.dap.jvm.JvmDebugServer.start(new com.editora.dap.jvm.JvmDebugAdapter());
         DapClient c = new DapClient(sessionHost(epoch));

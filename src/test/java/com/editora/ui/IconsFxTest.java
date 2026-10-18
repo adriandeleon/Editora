@@ -37,6 +37,9 @@ class IconsFxTest {
         assertRenders("cargo", Icons::cargo);
         assertRenders("go", Icons::go);
         assertRenders("gradle", Icons::gradle);
+        assertRenders("clojure", Icons::clojureCli);
+        assertRenders("lein", Icons::leiningen);
+        assertRenders("babashka", Icons::babashka);
     }
 
     /**

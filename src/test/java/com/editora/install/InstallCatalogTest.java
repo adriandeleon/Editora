@@ -329,6 +329,32 @@ class InstallCatalogTest {
     }
 
     @Test
+    void clojureLspIsAPinnedNativeBinaryForEveryDesktopPlatform() {
+        assertTrue(InstallCatalog.installableServerIds().contains("clojure"));
+        Step s = InstallCatalog.serverInstall("clojure").orElseThrow().get(0);
+        assertEquals(Kind.PINNED_TOOL, s.kind());
+        assertEquals(java.util.Set.of(), s.prereqs(), "a zip, unpacked in-process: nothing to have installed");
+        assertEquals("plugins/lsp/clojure", s.destSubpath());
+        InstallCatalog.PinnedTool tool = InstallCatalog.pinnedTool(s.id()).orElseThrow();
+        assertEquals(InstallCatalog.CLOJURE_LSP_VERSION, tool.version());
+        assertEquals("clojure-lsp", tool.binaryName());
+        assertFalse(InstallCatalog.PINNED_TOOL_IDS.contains(s.id()), "a language server, not a shell tool");
+        for (Platform p : Platform.values()) {
+            InstallCatalog.PinnedAsset asset = tool.assetFor(p);
+            assertNotNull(asset, p.toString());
+            assertTrue(
+                    asset.url()
+                            .startsWith("https://github.com/clojure-lsp/clojure-lsp/releases/download/"
+                                    + InstallCatalog.CLOJURE_LSP_VERSION + "/clojure-lsp-native-"),
+                    asset.url());
+            assertFalse(asset.url().contains("static"), "the glibc build, as clojure-lsp's own installer picks");
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), p + " is pinned by its SHA-256");
+            assertEquals(InstallCatalog.Packing.ZIP, asset.packing());
+            assertTrue(InstallCatalog.isTrustedDownloadUrl(asset.url()));
+        }
+    }
+
+    @Test
     void groovyServerIsAPinnedJarNeedingJava() {
         assertTrue(InstallCatalog.installableServerIds().contains("groovy"));
         Step s = InstallCatalog.serverInstall("groovy").orElseThrow().get(0);

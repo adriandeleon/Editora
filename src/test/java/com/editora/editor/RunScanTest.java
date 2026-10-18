@@ -37,6 +37,29 @@ class RunScanTest {
     }
 
     @Test
+    void aClojureFileRunsFromItsMainOrTheTopButDataAndClojureScriptNeverRun() {
+        RunScan.Result ns = RunScan.scan(
+                inputs("clojure", "core.clj"), "(ns my-app.core)\n\n(defn -main [& args]\n  (println args))\n");
+        assertTrue(ns.runnable());
+        assertEquals(2, ns.line(), "the marker sits on (defn -main");
+        RunScan.Result script = RunScan.scan(inputs("clojure", "tally.clj"), "(println (+ 1 2))\n");
+        assertTrue(script.runnable());
+        assertEquals(0, script.line());
+        assertEquals(
+                0, RunScan.scan(inputs("clojure", "tasks.bb"), "(println 1)\n").line());
+        assertEquals(
+                0,
+                RunScan.scan(inputs("clojure", "deploy"), "#!/usr/bin/env bb\n(println 1)\n")
+                        .line());
+        for (String data : List.of("deps.edn", "bb.edn", "project.clj", "app.cljs", "config.edn")) {
+            assertFalse(
+                    RunScan.scan(inputs("clojure", data), "{:paths [\"src\"]}\n")
+                            .runnable(),
+                    data);
+        }
+    }
+
+    @Test
     void aGroovyScriptRunsFromTheTopOrItsMainButABuildScriptNeverRuns() {
         RunScan.Result script = RunScan.scan(inputs("groovy", "report.groovy"), "println 'hi'\n");
         assertTrue(script.runnable());

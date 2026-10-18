@@ -285,7 +285,11 @@ public enum ConfigSchema {
                     Map.entry(134, (Migration) ConfigMigrations::clampTerminalScrollback),
                     // v135→136: + groovyLspCommand ("" = not installed) and groovyLspEnabled (on); additive, absent
                     // is the default.
-                    Map.entry(135, (Migration) ConfigMigrations::identity)),
+                    Map.entry(135, (Migration) ConfigMigrations::identity),
+                    // v136→137: + clojureLspCommand ("" = clojure-lsp on PATH) and clojureLspEnabled (on), and the
+                    // Clojure CLI, Leiningen and Babashka build tools' {clojureCli,leiningen,babashka}Support (on) +
+                    // …Command (""); additive, absent is the default.
+                    Map.entry(136, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

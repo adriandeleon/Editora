@@ -31,13 +31,24 @@ public final class ScriptRunCommand {
     /** A Groovy script, run by {@code groovy} on the configuration's JDK ({@link JvmScriptRun}). */
     public static final String GROOVY = "groovy";
 
+    /**
+     * A Clojure file, run by the Clojure CLI, Leiningen or Babashka ({@link ClojureRun}) on the configuration's
+     * JDK.
+     */
+    public static final String CLOJURE = "clojure";
+
     public static final String JAVA = "java";
 
     private ScriptRunCommand() {}
 
     /** Whether {@code type} is a script type this builder can launch (i.e. anything but {@code java}). */
     public static boolean isScript(String type) {
-        return isPython(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type) || GROOVY.equals(type);
+        return isPython(type)
+                || SHELL.equals(type)
+                || MAKE.equals(type)
+                || NPM.equals(type)
+                || GROOVY.equals(type)
+                || CLOJURE.equals(type);
     }
 
     /** Whether {@code type} is a Python script or module (launched through {@code PythonRunPlan}). */
@@ -52,7 +63,7 @@ public final class ScriptRunCommand {
      * {@code make} does, so it is a valid configuration rather than an incomplete one.
      */
     public static boolean needsTarget(String type) {
-        return isPython(type) || SHELL.equals(type) || NPM.equals(type) || GROOVY.equals(type);
+        return isPython(type) || SHELL.equals(type) || NPM.equals(type) || GROOVY.equals(type) || CLOJURE.equals(type);
     }
 
     /**
@@ -102,6 +113,15 @@ public final class ScriptRunCommand {
                 }
                 // The shape only: the real tool and JDK come from JvmTools and the configuration's JDK.
                 argv.add(JvmScriptRun.tool(GROOVY));
+                argv.add(t);
+            }
+            case CLOJURE -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                // The shape only: the real tool (clojure, lein or bb) comes from the file and its project.
+                argv.add(JvmScriptRun.tool(CLOJURE));
+                argv.add("-M");
                 argv.add(t);
             }
             case MAKE -> {

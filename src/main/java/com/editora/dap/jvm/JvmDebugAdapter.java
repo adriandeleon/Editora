@@ -249,12 +249,18 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             String address = connector.startListening(connect);
             String port = address.substring(address.lastIndexOf(':') + 1);
             String agent = "-agentlib:jdwp=transport=dt_socket,server=n,suspend=y,address=127.0.0.1:" + port;
-            String variable = string(args.get("jvmOptionsVariable"));
-            if (variable.isBlank()) {
-                variable = "JAVA_TOOL_OPTIONS";
+            String prefix = string(args.get("jvmOptionPrefix"));
+            if (!prefix.isBlank()) {
+                // The Clojure CLI takes JVM options as arguments (-J<option>) after its own name.
+                argv = withArgument(argv, prefix + agent);
+            } else {
+                String variable = string(args.get("jvmOptionsVariable"));
+                if (variable.isBlank()) {
+                    variable = "JAVA_TOOL_OPTIONS";
+                }
+                String inherited = env.containsKey(variable) ? env.get(variable) : System.getenv(variable);
+                env.put(variable, inherited == null || inherited.isBlank() ? agent : inherited.strip() + " " + agent);
             }
-            String inherited = env.containsKey(variable) ? env.get(variable) : System.getenv(variable);
-            env.put(variable, inherited == null || inherited.isBlank() ? agent : inherited.strip() + " " + agent);
             startProgram(argv, cwd, env);
             Process own = process;
             if (own != null) {
@@ -285,6 +291,13 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         if (c != null) {
             c.initialized(); // breakpoints, exception filters, then configurationDone — which starts the program
         }
+    }
+
+    /** {@code argv} with {@code argument} right after the executable. */
+    static List<String> withArgument(List<String> argv, String argument) {
+        List<String> out = new ArrayList<>(argv);
+        out.add(Math.min(1, out.size()), argument);
+        return List.copyOf(out);
     }
 
     private static void setArgument(Map<String, Connector.Argument> args, String name, String value) {
@@ -952,7 +965,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 StackFrame f = new StackFrame();
                 f.setId(handle(new FrameHandle(thread, i)));
                 f.setName(JvmSourceMap.frameName(
-                        at.declaringType().name(), at.method().name()));
+                        at.declaringType().name(), at.method().name(), language));
                 f.setLine(Math.max(0, at.lineNumber()));
                 f.setColumn(1);
                 Path file = sourceOf(at, known);

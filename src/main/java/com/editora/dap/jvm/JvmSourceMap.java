@@ -32,10 +32,22 @@ public final class JvmSourceMap {
      * {@code /} or the platform's separator) was compiled from {@code file}: the path's segments end the file's.
      * A class in the default package ({@code Script.groovy}) matches any file of that name — the scripts a
      * debug session runs are named on its command line, so two of the same name in one program are rare.
+     *
+     * <p>An absolute source path is the file's own: Clojure records the path a script was loaded from
+     * ({@code clojure -M /work/tally.clj}) rather than a classpath-relative one.
      */
     public static boolean compiledFrom(String classSourcePath, Path file) {
         if (classSourcePath == null || classSourcePath.isBlank() || file == null) {
             return false;
+        }
+        if (isAbsolute(classSourcePath)) {
+            try {
+                return Path.of(classSourcePath)
+                        .normalize()
+                        .equals(file.toAbsolutePath().normalize());
+            } catch (java.nio.file.InvalidPathException e) {
+                return false;
+            }
         }
         String[] parts = classSourcePath.replace('\\', '/').split("/");
         int n = file.getNameCount();
@@ -50,6 +62,16 @@ public final class JvmSourceMap {
             }
         }
         return true;
+    }
+
+    /** Whether {@code path} is absolute on any platform: {@code /work/x.clj}, {@code C:\\work\\x.clj}, a UNC path. */
+    static boolean isAbsolute(String path) {
+        return path.startsWith("/")
+                || path.startsWith("\\\\")
+                || (path.length() > 2
+                        && Character.isLetter(path.charAt(0))
+                        && path.charAt(1) == ':'
+                        && (path.charAt(2) == '\\' || path.charAt(2) == '/'));
     }
 
     /**
@@ -90,7 +112,9 @@ public final class JvmSourceMap {
     /**
      * Class patterns a step never stops in for {@code language} — the runtime between two lines of the
      * program. JDK internals for every language; for Groovy its dynamic dispatch (call sites, meta classes,
-     * closures' plumbing), which sits between nearly every two calls a script makes.
+     * closures' plumbing), which sits between nearly every two calls a script makes; for Clojure its runtime
+     * ({@code clojure.lang}: vars, functions' {@code invoke} plumbing, persistent collections), {@code clojure.core}'s
+     * own functions and {@code clojure.main}, which loads the program.
      */
     public static List<String> stepFilters(String language) {
         List<String> filters = new ArrayList<>(
@@ -98,6 +122,11 @@ public final class JvmSourceMap {
         if ("groovy".equals(language == null ? "" : language.toLowerCase(Locale.ROOT))) {
             // groovyjarjar* is the parser, ASM and picocli Groovy bundles under renamed packages.
             filters.addAll(List.of("groovyjarjar*", "org.apache.groovy.*", "groovy.runtime.*"));
+        }
+        if ("clojure".equals(language == null ? "" : language.toLowerCase(Locale.ROOT))) {
+            // clojure.core* covers clojure.core$map… and the core libraries (clojure.core.server,
+            // clojure.core.protocols).
+            filters.addAll(List.of("clojure.lang.*", "clojure.core*", "clojure.main*", "clojure.spec.*"));
         }
         return List.copyOf(filters);
     }
@@ -108,6 +137,22 @@ public final class JvmSourceMap {
      * {@code Script.run { closure }}).
      */
     public static String frameName(String className, String methodName) {
+        return frameName(className, methodName, "");
+    }
+
+    /**
+     * {@link #frameName(String, String)} for a frame of a {@code language} program: a Clojure function's class
+     * reads as the function, demunged ({@code my_app.core$greet.invokeStatic} → {@code my-app.core/greet},
+     * {@code my_app.core$valid_QMARK_.invoke} → {@code my-app.core/valid?}); its other frames as Java's.
+     */
+    public static String frameName(String className, String methodName, String language) {
+        if ("clojure".equals(language) && className != null && CLOJURE_FN_METHODS.contains(methodName)) {
+            int dollar = className.indexOf('$');
+            if (dollar > 0 && dollar < className.length() - 1) {
+                return demunge(className.substring(0, dollar)) + "/"
+                        + demunge(className.substring(dollar + 1).replace('$', '/'));
+            }
+        }
         String cls = className == null ? "" : className;
         int dot = cls.lastIndexOf('.');
         String simple = dot >= 0 ? cls.substring(dot + 1) : cls;
@@ -120,5 +165,62 @@ public final class JvmSourceMap {
             return outer + "." + enclosing + " { closure }";
         }
         return simple + "." + (methodName == null ? "" : methodName);
+    }
+
+    /** The methods through which Clojure calls a function's body. */
+    private static final java.util.Set<String> CLOJURE_FN_METHODS =
+            java.util.Set.of("invoke", "invokeStatic", "doInvoke", "invokePrim", "applyTo");
+
+    /** Clojure's munged names for the characters a JVM name cannot hold ({@code clojure.lang.Compiler.CHAR_MAP}). */
+    private static final List<String[]> MUNGED = List.of(
+            new String[] {"_QMARK_", "?"},
+            new String[] {"_BANG_", "!"},
+            new String[] {"_STAR_", "*"},
+            new String[] {"_PLUS_", "+"},
+            new String[] {"_GT_", ">"},
+            new String[] {"_LT_", "<"},
+            new String[] {"_EQ_", "="},
+            new String[] {"_SLASH_", "/"},
+            new String[] {"_COLON_", ":"},
+            new String[] {"_SINGLEQUOTE_", "'"},
+            new String[] {"_AMPERSAND_", "&"},
+            new String[] {"_PERCENT_", "%"},
+            new String[] {"_CARET_", "^"},
+            new String[] {"_BAR_", "|"},
+            new String[] {"_TILDE_", "~"},
+            new String[] {"_AT_", "@"},
+            new String[] {"_SHARP_", "#"},
+            new String[] {"_DOT_", "."},
+            new String[] {"_LBRACK_", "["},
+            new String[] {"_RBRACK_", "]"},
+            new String[] {"_LBRACE_", "{"},
+            new String[] {"_RBRACE_", "}"},
+            new String[] {"_DOUBLEQUOTE_", "\""},
+            new String[] {"_BSLASH_", "\\"});
+
+    /**
+     * A munged Clojure name as written: the character names back to characters, then each remaining {@code _}
+     * a {@code -} ({@code valid_QMARK_} → {@code valid?}, {@code my_app} → {@code my-app}). Pure.
+     */
+    static String demunge(String munged) {
+        StringBuilder out = new StringBuilder();
+        int i = 0;
+        outer:
+        while (i < munged.length()) {
+            if (munged.charAt(i) == '_') {
+                for (String[] m : MUNGED) {
+                    if (munged.startsWith(m[0], i)) {
+                        out.append(m[1]);
+                        i += m[0].length();
+                        continue outer;
+                    }
+                }
+                out.append('-');
+            } else {
+                out.append(munged.charAt(i));
+            }
+            i++;
+        }
+        return out.toString();
     }
 }
