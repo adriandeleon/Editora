@@ -944,7 +944,13 @@ public final class TerminalView extends Region {
     private final OscTap.Listener shellIntegration = new OscTap.Listener() {
         @Override
         public void cwd(String url) {
-            String path = ShellIntegration.pathOfCwdUrl(url);
+            ShellIntegration.CwdReport report = ShellIntegration.parseCwdUrl(url);
+            // A local tab takes a report only from this machine (see ShellIntegration.isThisMachine); a remote
+            // tab's shell is on its host, and its paths are mapped.
+            if (report != null && shellPaths == null && !ShellIntegration.isThisMachine(report.host())) {
+                return;
+            }
+            String path = report == null ? null : report.path();
             if (path != null) {
                 shellReportsCwd = true;
                 display.setCwd(path);
