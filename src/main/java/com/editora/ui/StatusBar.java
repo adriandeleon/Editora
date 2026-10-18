@@ -492,6 +492,11 @@ public final class StatusBar extends HBox {
         return truncated ? line + " …" : line;
     }
 
+    /** Gives the message-log popup an "Open Doctor" button running {@code action}. */
+    public void setOnOpenDoctor(Runnable action) {
+        messageLogPopup.setOnOpenDoctor(action);
+    }
+
     /** Injects the shared in-scene overlay host into the message-log popup. */
     public void setOverlayHost(OverlayHost overlayHost) {
         messageLogPopup.setOverlayHost(overlayHost);
@@ -689,13 +694,12 @@ public final class StatusBar extends HBox {
      * {@code ○ #12 Checks 5/9} (how many of the checks that will run have finished). Pure.
      */
     static String checksText(int prNumber, com.editora.github.ChecksParser.ChecksSummary summary, String word) {
-        String glyph =
-                switch (summary.overall()) {
-                    case PASS -> "✓"; // ✓
-                    case FAIL -> "✗"; // ✗
-                    case PENDING -> "○"; // ○
-                    case NONE -> "";
-                };
+        String glyph = switch (summary.overall()) {
+            case PASS -> "✓"; // ✓
+            case FAIL -> "✗"; // ✗
+            case PENDING -> "○"; // ○
+            case NONE -> "";
+        };
         StringBuilder text = new StringBuilder(glyph);
         if (prNumber > 0) {
             text.append(" #").append(prNumber);

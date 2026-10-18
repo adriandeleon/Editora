@@ -177,12 +177,11 @@ final class TerminalCoordinator {
 
     /** The settings snapshot a panel works from. */
     static TerminalPanel.Config config(Settings s) {
-        TerminalCursor cursor =
-                switch (s.getTerminalCursor()) {
-                    case "underline" -> TerminalCursor.UNDERLINE;
-                    case "bar" -> TerminalCursor.BAR;
-                    default -> TerminalCursor.BLOCK;
-                };
+        TerminalCursor cursor = switch (s.getTerminalCursor()) {
+            case "underline" -> TerminalCursor.UNDERLINE;
+            case "bar" -> TerminalCursor.BAR;
+            default -> TerminalCursor.BLOCK;
+        };
         int size = s.getTerminalFontSize() > 0 ? s.getTerminalFontSize() : s.getFontSize();
         return new TerminalPanel.Config(
                 s.getFontFamily(),

@@ -181,6 +181,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Installing the Java language server gets Eclipse JDT LS 1.62.0** (was 1.60.0): Java 27 support,
+  per-parameter signature help, a quick fix to change a field's access modifier, and Javadoc rendering fixes. An
+  existing install keeps its version until it is installed again.
+- **Doctor tells the truth about a healthy machine and puts problems first.** A missing tool is red only when
+  something in the window needs it: a file of that language is open, the project has its marker file
+  (`pom.xml`, `go.mod`, `Cargo.toml`, `package.json`…), or you set its command. Everything else is a neutral
+  "Not installed" that keeps its Install… button and is not counted. Turning LSP on used to show about fifteen
+  red rows for languages never opened.
+  - Problems and warnings move to a "Needs attention" group at the top; a section that is all OK folds to one
+    line, and the not-installed tools of a section fold together. The summary counts in words ("1 problem")
+    and its counts jump to the group.
+  - Rows show a status pill like the Settings pages, the tool with its command under it, and the version or
+    path in one column. Settings… sits on every row (shown on hover where nothing is wrong); a turned-off
+    feature has **Turn on**; the Python formatter has **How to install**; right-click copies a row or its path,
+    or reveals the path.
+  - **Copy Report** puts a plain-text report (Editora version, OS, Java, every row) on the clipboard.
+  - Rows update in place, so the keyboard focus no longer jumps to the toolbar as each result arrives.
+    Refresh and Install… keep the last results on screen while checking again, the summary shows the progress,
+    the header says when the check ran, and an install's button reads "Installing…".
+  - Tips match the problem: Java debugging with LSP off offers Turn on (not Install…), a server with no command
+    says so, and debugpy is named as a Python module with its `pip install` line.
+  - Build-tool rows check the command set in Settings or the project's wrapper, not just `mvn`/`go`/… on PATH.
+  - Graphviz and PlantUML show their versions (`dot -V`, `plantuml -version`).
+  - New rows: the AI provider (is a key set), the container engine, and WSL on Windows. New sections:
+    Formatting & Linting, HTTP Client, Remote & Containers.
+  - In a project on an SSH host, WSL or a container, the header says the rows describe this computer.
+  - The message log has an **Open Doctor** button.
 - **The Welcome page was reworked** after a UI review:
   - **Recent Projects** are listed above Recent Files, newest first, each opening (or focusing) its project's window. A project
     whose folder is gone is not offered.
@@ -277,9 +304,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Before-launch steps** of a Java run configuration run in the project root (Run and Debug).
 - **Settings schema 129** adds the hot code replace, step filter, static fields and exception class settings;
   workspace schema 19 keeps the exception toggles per project.
+- **Syntax highlighting for C#, CSS, dotenv, PowerShell and SQL is updated** to the shiki tm-grammars 1.32.22
+  grammars (from 1.31.15).
+  - CSS colours nested rules (`&`, `> h2` inside a rule), `@layer` name lists, `@import … layer(…)` and the
+    operators inside `calc()`.
+  - C# knows `union` declarations and the `#:ref` directive of file-based apps, and an interpolation that opens
+    at the end of a line no longer ends the string.
+  - SQL colours a `[bracketed identifier]` and its `]]` escape; a numeric dotenv value (`PORT=8080`) is a number.
+  - PowerShell colours automatic variables (`$Error`, `$Host`, `$PSHome`…) as variables, not constants.
+- **IBM Plex Mono is updated from 2.3 to 2.5.** The ASCII control pictures (␀ ␉ ␊ ␛, U+2400–2421) now come from
+  Plex itself instead of a fallback font, so they keep the editor's column width, and Plex covers more
+  transliteration letters and combining marks. The four font files add about 145 KB to the package.
 
 ### Fixed
 
+- **A Markdown code span after a stray double backtick rendered as plain text** (``` `` `a` `c` ``` showed
+  `` `c` `` literally): commonmark-java 0.30.1 fixes the regression 0.30.0 brought in.
 - **With a dark UI theme and a light editor theme, the Welcome and Doctor tabs were white blocks** with
   near-invisible titles; their selected tab now takes the page's own background.
 

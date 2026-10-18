@@ -54,6 +54,8 @@ public final class MessageLogPopup {
             javafx.collections.FXCollections.observableArrayList();
 
     private final javafx.scene.control.TextField filter = new javafx.scene.control.TextField();
+    private final Button doctor = new Button(tr("messagelog.doctor"));
+    private Runnable onOpenDoctor;
     private final VBox root;
     private MessageLog log;
 
@@ -132,11 +134,24 @@ public final class MessageLogPopup {
             }
             refreshItems();
         });
+        // A message about a missing tool or a server that would not start is where Doctor helps, and messages
+        // carry no actions of their own, so the log offers it (review C4).
+        doctor.setGraphic(Icons.doctor());
+        doctor.getStyleClass().addAll("flat", "message-log-doctor");
+        doctor.setFocusTraversable(false);
+        doctor.managedProperty().bind(doctor.visibleProperty());
+        doctor.setVisible(false);
+        doctor.setOnAction(e -> {
+            hide();
+            if (onOpenDoctor != null) {
+                onOpenDoctor.run();
+            }
+        });
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         Label hint = new Label(tr("messagelog.hint"));
         hint.getStyleClass().add("message-log-hint");
-        HBox footer = new HBox(8, copy, clear, spacer, hint);
+        HBox footer = new HBox(8, copy, clear, doctor, spacer, hint);
         footer.getStyleClass().add("message-log-footer");
         footer.setAlignment(Pos.CENTER_LEFT);
 
@@ -170,6 +185,12 @@ public final class MessageLogPopup {
     }
 
     /** Injects the shared overlay host used to show the message-log card. */
+    /** Shows an "Open Doctor" button in the footer that runs {@code action} (null hides it). */
+    public void setOnOpenDoctor(Runnable action) {
+        onOpenDoctor = action;
+        doctor.setVisible(action != null);
+    }
+
     public void setOverlayHost(OverlayHost overlayHost) {
         this.overlayHost = overlayHost;
     }

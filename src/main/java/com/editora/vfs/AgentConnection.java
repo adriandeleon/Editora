@@ -49,11 +49,10 @@ final class AgentConnection extends AbstractAgentProxy {
 
     /** Connects to the agent at {@code location}; throws if nothing answers there. */
     static AgentConnection open(AgentLocation location, PromptClock clock) throws IOException {
-        Transport transport =
-                switch (location.kind()) {
-                    case UNIX_SOCKET -> unixSocket(location.where());
-                    case NAMED_PIPE -> namedPipe(location.where());
-                };
+        Transport transport = switch (location.kind()) {
+            case UNIX_SOCKET -> unixSocket(location.where());
+            case NAMED_PIPE -> namedPipe(location.where());
+        };
         return new AgentConnection(transport, clock);
     }
 

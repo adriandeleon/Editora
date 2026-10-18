@@ -102,12 +102,13 @@ public final class InstallCatalog {
      * change has to be a deliberate bump, not whatever landed last night.
      *
      * <p>Bump this and {@link #JDTLS_BUILD} together (each milestone dir holds exactly one tarball) and re-check
-     * those behaviours; the milestone list is at {@code https://download.eclipse.org/jdtls/milestones/}.
+     * those behaviours with {@code JdtlsUpgradeProbeTest} (opt-in; it measures all three against the new
+     * tarball); the milestone list is at {@code https://download.eclipse.org/jdtls/milestones/}.
      */
-    public static final String JDTLS_VERSION = "1.60.0";
+    public static final String JDTLS_VERSION = "1.62.0";
 
     /** The build stamp of the {@link #JDTLS_VERSION} tarball. */
-    public static final String JDTLS_BUILD = "202606262232";
+    public static final String JDTLS_BUILD = "202610131109";
 
     /** Eclipse JDT-LS pinned milestone; extracts to top-level {@code bin/ config/ features/ plugins/}. */
     public static final String JDTLS_TARBALL_URL = "https://download.eclipse.org/jdtls/milestones/"

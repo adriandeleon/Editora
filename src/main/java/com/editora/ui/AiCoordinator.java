@@ -332,13 +332,12 @@ final class AiCoordinator {
     }
 
     static String explanationProvenance(AiProvider provider, String model) {
-        String agent =
-                switch (provider) {
-                    case LMSTUDIO -> "LM Studio / Bionic";
-                    case CODEX -> "Codex";
-                    case ANTHROPIC -> "Anthropic";
-                    case OPENAI -> "OpenAI-compatible";
-                };
+        String agent = switch (provider) {
+            case LMSTUDIO -> "LM Studio / Bionic";
+            case CODEX -> "Codex";
+            case ANTHROPIC -> "Anthropic";
+            case OPENAI -> "OpenAI-compatible";
+        };
         String usedModel = model == null || model.isBlank() ? tr("ai.explanation.unknownModel") : model.trim();
         return "\n\n---\n\n**" + tr("ai.explanation.agent") + ":** " + agent + "  \n**" + tr("ai.explanation.model")
                 + ":** " + usedModel + "\n";

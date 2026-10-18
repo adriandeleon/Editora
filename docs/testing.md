@@ -351,6 +351,23 @@ same-file type/import conflict when evaluating a JDT LS upgrade. See the
 For the full client pipeline, add `-Deditora.completion.trace=true` to the editor JVM or to
 `JavaTypingCompletionFxTest`; timings contain stage names and durations, never source text.
 
+## jdtls upgrade probe
+
+`JdtlsUpgradeProbeTest` measures the jdtls behaviours Editora's code depends on and that a new milestone
+could change: the code actions `extendedClientCapabilities` adds at a field, the inlay-hint range that
+reaches past the last line (#715), and every `java/…` request Editora sends without a capability to check.
+It also checks that the `workspace/executeCommand` ids Editora gates on are still advertised. It creates its
+own Maven project. Run it against the new tarball before bumping `InstallCatalog.JDTLS_VERSION`:
+
+```
+./mvnw test -Dtest=JdtlsUpgradeProbeTest -Dgroups=probe -Dlsp.probe=true -Dlsp.probe.jdtls=/path/to/jdtls/bin/jdtls
+```
+
+The other `Jdtls*ProbeTest` classes look for jdtls under `~/.editora/plugins/lsp/java`. To run them against an
+unpacked tarball without touching your own install, point `user.home` at a folder holding
+`.editora/plugins/lsp/java` (and `.editora/plugins/dap/java` for the debug probes) and keep the real Maven
+repository: `-Duser.home=/tmp/probe-home -Dmaven.repo.local=$HOME/.m2/repository`.
+
 `JavaProjectEditingProbeTest` proves sibling-module resolution in generated two-module projects before
 running chained completion in a 75 KB source file and repeated structural/import edits. Project and
 Eclipse workspace must be siblings: putting the workspace inside the project prevents Maven import.

@@ -809,15 +809,14 @@ final class EditorSettingsCoordinator {
                 id -> tr("settings.todo.part." + id),
                 part -> {
                     Settings s = host.config().getSettings();
-                    String current =
-                            switch (part) {
-                                case "tag" -> s.getTodoTagColor();
-                                case "critical" -> s.getTodoPriorityCriticalColor();
-                                case "high" -> s.getTodoPriorityHighColor();
-                                case "medium" -> s.getTodoPriorityMediumColor();
-                                case "low" -> s.getTodoPriorityLowColor();
-                                default -> "";
-                            };
+                    String current = switch (part) {
+                        case "tag" -> s.getTodoTagColor();
+                        case "critical" -> s.getTodoPriorityCriticalColor();
+                        case "high" -> s.getTodoPriorityHighColor();
+                        case "medium" -> s.getTodoPriorityMediumColor();
+                        case "low" -> s.getTodoPriorityLowColor();
+                        default -> "";
+                    };
                     host.promptText(
                             commandTitle("todo.setPartColor"),
                             tr("settings.todo.part." + part),

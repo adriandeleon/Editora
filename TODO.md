@@ -406,8 +406,9 @@ A backlog of planned features and improvements. Unordered within each section.
       3 debug adapters, run interpreters, build tools, agent CLI, installer prereqs) with fresh
       off-thread probes, versions, tips, and Install…/Settings… fix actions. Pure `doctor/` package
       (model + rules + probes + service, unit-tested) + `ui/DoctorPane`/`DoctorCoordinator`; disabled
-      features are gray terminal rows and never probed. *Deferred: an AI endpoint reachability row
-      (network ping, not a CLI), copy-report-to-clipboard, per-row re-check.*
+      features are gray terminal rows and never probed. Review pass 2026-10-17: needed-vs-optional state,
+      problems first, in-place rows (focus kept), Copy Report, Turn on, AI provider/container/WSL rows.
+      *Deferred: probing a remote project's host, per-row re-check.*
 - [x] **jdt:// chained navigation** (#684) — deferred from #665: the read-only library-source tab has no
       filesystem path, so `M-.` inside it was dead. `LspCoordinator.librarySources` (weak-keyed) records
       each library tab's own jdt URI + the workspace anchor file whose session produced it;
