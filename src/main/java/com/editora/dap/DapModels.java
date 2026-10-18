@@ -147,6 +147,20 @@ public final class DapModels {
     }
 
     /** One call the debugger can step into on the current line ({@code stepInTargets}): its id and label. */
+    /**
+     * One answer of DAP {@code completions}: {@code label} shown, {@code text} inserted (null: the label), its
+     * {@code type} ("method", "field", "variable", … lower case, "" when not said), and the 0-based {@code start}
+     * and {@code length} of the text it replaces (-1: the word before the caret).
+     */
+    public record CompletionTarget(
+            String label, String text, String type, String detail, String sortText, int start, int length) {
+
+        /** What accepting it inserts. */
+        public String insert() {
+            return text == null || text.isEmpty() ? label : text;
+        }
+    }
+
     public record StepTarget(int id, String label, int line) {
 
         public StepTarget {

@@ -4470,6 +4470,11 @@ public class EditorBuffer implements TabContent {
         debugHover.setActive(on && !hugeFile);
     }
 
+    /** Shows debugger values as an expandable popup (null: a one-line tooltip) — see {@link DebugValuePresenter}. */
+    public void setDebugValuePresenter(DebugValuePresenter presenter) {
+        debugHover.setPresenter(presenter);
+    }
+
     /** Show Value at Caret: the value of the name at the caret, in the value popup; false when there is none. */
     public boolean showDebugValueAtCaret() {
         return debugHover.showAtCaret(focusedArea);

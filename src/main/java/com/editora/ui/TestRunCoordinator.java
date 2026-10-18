@@ -748,7 +748,12 @@ final class TestRunCoordinator implements TestRunHook {
             host.setStatus(ops.debugUnavailableMessage());
             return;
         }
-        List<String> args = TestDebug.debugTaskArgs(tool, target.className(), target.methodName());
+        com.editora.editor.EditorBuffer active = host.activeBuffer();
+        List<String> args = TestDebug.debugTaskArgs(
+                tool,
+                target.className(),
+                target.methodName(),
+                gradleDebugInit(tool, active == null ? null : active.getPath()));
         if (args.isEmpty()) {
             host.setStatus(tr("status.testrunner.debugUnsupported"));
             return;
@@ -775,7 +780,8 @@ final class TestRunCoordinator implements TestRunHook {
         BuildTool tool = currentRun.tool();
         String method = node.kind() == TestNodeKind.TEST ? node.methodName() : null;
         List<String> args = debug
-                ? TestDebug.debugTaskArgs(tool, node.className(), method)
+                ? TestDebug.debugTaskArgs(
+                        tool, node.className(), method, gradleDebugInit(tool, currentRun.workingDir()))
                 : TestRunRecognizer.singleTestTask(tool, node.className(), method);
         if (args.isEmpty()) {
             host.setStatus(tr(debug ? "status.testrunner.debugUnsupported" : "status.testrunner.rerunUnsupported"));
@@ -788,6 +794,18 @@ final class TestRunCoordinator implements TestRunHook {
         } else {
             ops.runTest(tool, dir, args, toggles);
         }
+    }
+
+    /**
+     * The init script that debugs a Gradle test run's JVMs on ports the system picks (each fork its own, all
+     * attached in turn), or null for {@code --debug-jvm}'s 5005: not Gradle, or a project whose build runs on
+     * another machine, where a file written here does not exist.
+     */
+    private static Path gradleDebugInit(BuildTool tool, Path where) {
+        if (tool != BuildTool.GRADLE || where == null || !com.editora.process.ExecTargets.runsHere(where)) {
+            return null;
+        }
+        return com.editora.build.GradleDebugInit.write(List.of(TestDebug.GRADLE_TEST_TASK));
     }
 
     private void startDebugRun(BuildTool tool, Path dir, List<String> args, List<String> toggles, String className) {
