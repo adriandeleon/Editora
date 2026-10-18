@@ -3111,12 +3111,11 @@ final class FileWorkflowCoordinator {
     }
 
     void toggleAutoSave() {
-        String next =
-                switch (autoSaveMode()) {
-                    case AUTOSAVE_OFF -> AUTOSAVE_DELAY;
-                    case AUTOSAVE_DELAY -> AUTOSAVE_FOCUS;
-                    default -> AUTOSAVE_OFF;
-                };
+        String next = switch (autoSaveMode()) {
+            case AUTOSAVE_OFF -> AUTOSAVE_DELAY;
+            case AUTOSAVE_DELAY -> AUTOSAVE_FOCUS;
+            default -> AUTOSAVE_OFF;
+        };
         host.config().getSettings().setAutoSave(next);
         host.requestSave();
         applyAutoSave();

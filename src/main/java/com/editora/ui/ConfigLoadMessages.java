@@ -31,15 +31,14 @@ final class ConfigLoadMessages {
                             ? ""
                             : problem.backup().getFileName().toString());
         }
-        String what =
-                switch (problem.kind()) {
-                    case VALUES_SKIPPED ->
-                        tr("status.config.valuesReset", problem.skipped().size(), name, names(problem.skipped()));
-                    case UNREADABLE -> tr("status.config.unreadable", name);
-                    case NEWER_VERSION -> tr("status.config.newerVersion", name);
-                    case NOT_UTF8 -> tr("status.config.notUtf8", name);
-                    case NEWER_COPY_RESTORED, NEWER_COPY_KEPT -> name; // returned above
-                };
+        String what = switch (problem.kind()) {
+            case VALUES_SKIPPED ->
+                tr("status.config.valuesReset", problem.skipped().size(), name, names(problem.skipped()));
+            case UNREADABLE -> tr("status.config.unreadable", name);
+            case NEWER_VERSION -> tr("status.config.newerVersion", name);
+            case NOT_UTF8 -> tr("status.config.notUtf8", name);
+            case NEWER_COPY_RESTORED, NEWER_COPY_KEPT -> name; // returned above
+        };
         if (problem.backup() != null) {
             return tr(
                     "status.config.backupAt",

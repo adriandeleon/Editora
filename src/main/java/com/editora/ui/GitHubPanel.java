@@ -170,13 +170,12 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     }
 
     private static String urlOf(Object item) {
-        String url =
-                switch (item) {
-                    case PullRequest pr -> pr.url();
-                    case Issue issue -> issue.url();
-                    case WorkflowRun run -> run.url();
-                    default -> "";
-                };
+        String url = switch (item) {
+            case PullRequest pr -> pr.url();
+            case Issue issue -> issue.url();
+            case WorkflowRun run -> run.url();
+            default -> "";
+        };
         return url == null ? "" : url;
     }
 
@@ -581,12 +580,11 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             if (e.isAltDown() || e.isMetaDown() || e.isShiftDown()) {
                 return;
             }
-            int delta =
-                    switch (e.getCode()) {
-                        case N -> 1;
-                        case P -> -1;
-                        default -> 0;
-                    };
+            int delta = switch (e.getCode()) {
+                case N -> 1;
+                case P -> -1;
+                default -> 0;
+            };
             if (delta == 0) {
                 return;
             }

@@ -679,12 +679,11 @@ final class PluginCoordinator {
                 boolean needsBuffer) {
             String twId = fullId(id);
             String cmd = commandId == null || commandId.isBlank() ? twId : fullId(commandId);
-            ToolWindow.Side s =
-                    switch (side == null ? ToolWindowSide.BOTTOM : side) {
-                        case LEFT -> ToolWindow.Side.LEFT;
-                        case RIGHT -> ToolWindow.Side.RIGHT;
-                        case BOTTOM -> ToolWindow.Side.BOTTOM;
-                    };
+            ToolWindow.Side s = switch (side == null ? ToolWindowSide.BOTTOM : side) {
+                case LEFT -> ToolWindow.Side.LEFT;
+                case RIGHT -> ToolWindow.Side.RIGHT;
+                case BOTTOM -> ToolWindow.Side.BOTTOM;
+            };
             // A null supplier (or one returning null) falls back to the default plugin (jigsaw) icon. The
             // factory is invoked per window/repaint, so it must yield a fresh node each time.
             Supplier<Node> iconFactory = icon == null

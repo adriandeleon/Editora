@@ -444,12 +444,11 @@ public final class BranchPopup {
         for (int pass = query.isEmpty() ? 0 : 1; pass < 3; pass++) {
             for (int i = 0; i < items.size(); i++) {
                 Row row = items.get(i);
-                boolean wanted =
-                        switch (pass) {
-                            case 0 -> row instanceof BranchRow branch && branch.current();
-                            case 1 -> !(row instanceof Header);
-                            default -> selectable(row);
-                        };
+                boolean wanted = switch (pass) {
+                    case 0 -> row instanceof BranchRow branch && branch.current();
+                    case 1 -> !(row instanceof Header);
+                    default -> selectable(row);
+                };
                 if (wanted) {
                     list.getSelectionModel().select(i);
                     list.scrollTo(0); // from the top: the section header above the first row stays in view

@@ -272,84 +272,64 @@ class IndentWindowTest {
      * stretches, wrapped statements, very long lines, unbalanced brackets and closer keywords.
      */
     private static String generated(String language, Random random, int round) {
-        String[] words =
-                switch (language) {
-                    case "shell" ->
-                        new String[] {
-                            "if x; then",
-                            "fi",
-                            "done",
-                            "for i in a b; do",
-                            "echo hi \\",
-                            "cmd arg,",
-                            "esac",
-                            "else",
-                            ";;",
-                            "{",
-                            "}"
-                        };
-                    case "ruby" ->
-                        new String[] {
-                            "def m(a,",
-                            "end",
-                            "if x",
-                            "else",
-                            "foo(a,",
-                            "b)",
-                            "x.each do |i|",
-                            "rescue",
-                            "}",
-                            "{",
-                            "puts 1"
-                        };
-                    case "lua" ->
-                        new String[] {
-                            "function f(a,",
-                            "end",
-                            "if x then",
-                            "else",
-                            "until y",
-                            "foo(function()",
-                            "local t = {",
-                            "}",
-                            "x = 1"
-                        };
-                    case "python" ->
-                        new String[] {
-                            "def f(a,", "b):", "if x:", "else:", "return [", "]", "x = (1,", "2)", "pass", "except E:"
-                        };
-                    case "xml", "html" ->
-                        new String[] {
-                            "<div>",
-                            "</div>",
-                            "<br>",
-                            "<a href=\"x\">",
-                            "</a>",
-                            "text",
-                            "<p",
-                            "class=\"x\">",
-                            "<!-- c -->"
-                        };
-                    case "markdown" -> new String[] {"- item", "text here", "```", "| a | b |", "> quote", "1. one"};
-                    default ->
-                        new String[] {
-                            "if (a) {",
-                            "}",
-                            "foo(a,",
-                            "b);",
-                            "return x",
-                            ".chain()",
-                            "#define X",
-                            "int[] a = {",
-                            "};",
-                            "} else {",
-                            "call(",
-                            ")",
-                            "// note {",
-                            "String s = \"{(\";",
-                            "x = y;"
-                        };
+        String[] words = switch (language) {
+            case "shell" ->
+                new String[] {
+                    "if x; then",
+                    "fi",
+                    "done",
+                    "for i in a b; do",
+                    "echo hi \\",
+                    "cmd arg,",
+                    "esac",
+                    "else",
+                    ";;",
+                    "{",
+                    "}"
                 };
+            case "ruby" ->
+                new String[] {
+                    "def m(a,", "end", "if x", "else", "foo(a,", "b)", "x.each do |i|", "rescue", "}", "{", "puts 1"
+                };
+            case "lua" ->
+                new String[] {
+                    "function f(a,",
+                    "end",
+                    "if x then",
+                    "else",
+                    "until y",
+                    "foo(function()",
+                    "local t = {",
+                    "}",
+                    "x = 1"
+                };
+            case "python" ->
+                new String[] {"def f(a,", "b):", "if x:", "else:", "return [", "]", "x = (1,", "2)", "pass", "except E:"
+                };
+            case "xml", "html" ->
+                new String[] {
+                    "<div>", "</div>", "<br>", "<a href=\"x\">", "</a>", "text", "<p", "class=\"x\">", "<!-- c -->"
+                };
+            case "markdown" -> new String[] {"- item", "text here", "```", "| a | b |", "> quote", "1. one"};
+            default ->
+                new String[] {
+                    "if (a) {",
+                    "}",
+                    "foo(a,",
+                    "b);",
+                    "return x",
+                    ".chain()",
+                    "#define X",
+                    "int[] a = {",
+                    "};",
+                    "} else {",
+                    "call(",
+                    ")",
+                    "// note {",
+                    "String s = \"{(\";",
+                    "x = y;"
+                };
+        };
         StringBuilder sb = new StringBuilder();
         int depth = 0;
         int lines = 700 + random.nextInt(500);

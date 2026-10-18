@@ -23,7 +23,9 @@ public record DoctorCheck(
         List<String> tipArgs,
         Install install,
         String installArg,
-        String settingsKey) {
+        String settingsKey,
+        String enableKey,
+        String helpUrl) {
 
     /** Which in-app installer (if any) can fix a missing tool; {@code installArg} carries its argument. */
     public enum Install {
@@ -38,6 +40,11 @@ public record DoctorCheck(
         TOOL
     }
 
+    /**
+     * The row's main fix, in the order the pane offers it: an in-app {@link Install}, turning a switched-off
+     * feature on ({@code enableKey}, e.g. {@code lsp}), or a page saying how to install a tool Editora cannot
+     * fetch ({@code helpUrl}). {@code settingsKey} is always offered beside it.
+     */
     public DoctorCheck {
         command = command == null ? "" : command;
         detail = detail == null ? "" : detail;
@@ -46,12 +53,18 @@ public record DoctorCheck(
         install = install == null ? Install.NONE : install;
         installArg = installArg == null ? "" : installArg;
         settingsKey = settingsKey == null ? "" : settingsKey;
+        enableKey = enableKey == null ? "" : enableKey;
+        helpUrl = helpUrl == null ? "" : helpUrl;
+    }
+
+    /** The id-to-label core every row starts from; outcome, actions and keys are added by the copies below. */
+    public DoctorCheck(String id, String sectionKey, String label, String command, DoctorStatus status) {
+        this(id, sectionKey, label, command, status, "", "", List.of(), Install.NONE, "", "", "", "");
     }
 
     /** A fresh row in the transient {@link DoctorStatus#CHECKING} state (shown while its probe runs). */
     public static DoctorCheck checking(String id, String sectionKey, String label, String command) {
-        return new DoctorCheck(
-                id, sectionKey, label, command, DoctorStatus.CHECKING, "", "", List.of(), Install.NONE, "", "");
+        return new DoctorCheck(id, sectionKey, label, command, DoctorStatus.CHECKING);
     }
 
     /** Resolved healthy, with an optional version/path {@code detail}. */
@@ -64,29 +77,138 @@ public record DoctorCheck(
         return withOutcome(DoctorStatus.WARN, detail, tipKey, List.of(tipArgs));
     }
 
-    /** Resolved absent while its feature is enabled — the red, fix-me state. */
+    /**
+     * Resolved absent, but nothing in this window needs it (a server for a language not open, an optional
+     * accelerator) — the neutral state; any Install action is kept.
+     */
+    public DoctorCheck optional(String tipKey, String... tipArgs) {
+        return withOutcome(DoctorStatus.OPTIONAL, "", tipKey, List.of(tipArgs));
+    }
+
+    /** Resolved absent while its feature is enabled and needed here — the red, fix-me state. */
     public DoctorCheck missing(String tipKey, String... tipArgs) {
         return withOutcome(DoctorStatus.MISSING, "", tipKey, List.of(tipArgs));
     }
 
     /** The gray informational state for a feature that is switched off (never probed). */
     public DoctorCheck disabled() {
-        return withOutcome(DoctorStatus.DISABLED, "", "doctor.tip.disabled", List.of());
+        return disabled("doctor.tip.disabled");
+    }
+
+    /** As {@link #disabled()} with another tip ({@code ""}: none — a "Turned off" row that says it all). */
+    public DoctorCheck disabled(String tipKey) {
+        return withOutcome(DoctorStatus.DISABLED, "", tipKey, List.of());
     }
 
     /** Copy carrying an in-app install action the pane renders as an Install… button. */
     public DoctorCheck withInstall(Install kind, String arg) {
-        return new DoctorCheck(id, sectionKey, label, command, status, detail, tipKey, tipArgs, kind, arg, settingsKey);
+        return new DoctorCheck(
+                id,
+                sectionKey,
+                label,
+                command,
+                status,
+                detail,
+                tipKey,
+                tipArgs,
+                kind,
+                arg,
+                settingsKey,
+                enableKey,
+                helpUrl);
+    }
+
+    /** Copy without an install action (its fix is something else, such as turning on another feature). */
+    public DoctorCheck withoutInstall() {
+        return withInstall(Install.NONE, "");
     }
 
     /** Copy carrying the Settings page this row's "Settings…" action opens. */
     public DoctorCheck withSettings(String key) {
         return new DoctorCheck(
-                id, sectionKey, label, command, status, detail, tipKey, tipArgs, install, installArg, key);
+                id,
+                sectionKey,
+                label,
+                command,
+                status,
+                detail,
+                tipKey,
+                tipArgs,
+                install,
+                installArg,
+                key,
+                enableKey,
+                helpUrl);
+    }
+
+    /** Copy carrying the feature a "Turn on" action switches on ({@code lsp}, {@code debug}, …). */
+    public DoctorCheck withEnable(String key) {
+        return new DoctorCheck(
+                id,
+                sectionKey,
+                label,
+                command,
+                status,
+                detail,
+                tipKey,
+                tipArgs,
+                install,
+                installArg,
+                settingsKey,
+                key,
+                helpUrl);
+    }
+
+    /** Copy carrying a "How to install" page, for a tool Editora has no installer for. */
+    public DoctorCheck withHelp(String url) {
+        return new DoctorCheck(
+                id,
+                sectionKey,
+                label,
+                command,
+                status,
+                detail,
+                tipKey,
+                tipArgs,
+                install,
+                installArg,
+                settingsKey,
+                enableKey,
+                url);
+    }
+
+    /** Copy with a different command column (e.g. none, for a server with no command configured). */
+    public DoctorCheck withCommand(String newCommand) {
+        return new DoctorCheck(
+                id,
+                sectionKey,
+                label,
+                newCommand,
+                status,
+                detail,
+                tipKey,
+                tipArgs,
+                install,
+                installArg,
+                settingsKey,
+                enableKey,
+                helpUrl);
     }
 
     private DoctorCheck withOutcome(DoctorStatus status, String detail, String tipKey, List<String> tipArgs) {
         return new DoctorCheck(
-                id, sectionKey, label, command, status, detail, tipKey, tipArgs, install, installArg, settingsKey);
+                id,
+                sectionKey,
+                label,
+                command,
+                status,
+                detail,
+                tipKey,
+                tipArgs,
+                install,
+                installArg,
+                settingsKey,
+                enableKey,
+                helpUrl);
     }
 }

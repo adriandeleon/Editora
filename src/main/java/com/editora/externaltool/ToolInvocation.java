@@ -34,12 +34,11 @@ public record ToolInvocation(List<String> argv, Path workingDir, String stdin, S
         String dir = ToolMacros.expand(tool.getWorkingDir(), ctx);
         Path workingDir = (dir != null && !dir.isBlank()) ? Path.of(dir.trim()) : defaultDir;
 
-        String stdin =
-                switch (tool.getStdin()) {
-                    case NONE -> null;
-                    case SELECTION -> ns(ctx.selectedText());
-                    case BUFFER -> ns(ctx.bufferText());
-                };
+        String stdin = switch (tool.getStdin()) {
+            case NONE -> null;
+            case SELECTION -> ns(ctx.selectedText());
+            case BUFFER -> ns(ctx.bufferText());
+        };
 
         return new ToolInvocation(List.copyOf(argv), workingDir, stdin, String.join(" ", argv));
     }
