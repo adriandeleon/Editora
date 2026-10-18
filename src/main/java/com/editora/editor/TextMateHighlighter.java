@@ -46,15 +46,16 @@ public final class TextMateHighlighter {
     static final Duration LINE_TIMEOUT = Duration.ofMillis(1000);
 
     /** A line this long counts against {@link #LONG_LINE_BUDGET}; ordinary code lines never do. */
-    static final int BUDGETED_LINE = 1_000;
+    static final int BUDGETED_LINE = 2_000;
 
     /**
-     * Tokenizer time one pass may spend on {@link #BUDGETED_LINE long} lines before it leaves the rest of them
-     * plain. Minified JavaScript is the case: forty 19,000-character lines took ~30 s, all of it holding the
-     * per-grammar lock, so every other JavaScript/TypeScript tab waited that long for its colours too. The
-     * budget is time, not characters, so a grammar that handles long lines cheaply (JSON) never reaches it.
+     * Tokenizer time one pass may spend on {@link #BUDGETED_LINE long} lines; a long line gets only what is left
+     * (it stops part-way, unstyled after that), and once it is spent the remaining long lines stay plain.
+     * Minified JavaScript is the case: forty 19,000-character lines took ~30 s, all of it holding the per-grammar
+     * lock, so every other JavaScript/TypeScript tab waited that long for its colours too. The budget is time,
+     * not characters, so a grammar that handles long lines cheaply (JSON) never reaches it.
      */
-    static final Duration LONG_LINE_BUDGET = Duration.ofMillis(1500);
+    static final Duration LONG_LINE_BUDGET = Duration.ofMillis(500);
 
     private static final Logger LOG = Logger.getLogger(TextMateHighlighter.class.getName());
     private static final Set<String> REPORTED_FAILURES = ConcurrentHashMap.newKeySet();
@@ -271,7 +272,13 @@ public final class TextMateHighlighter {
                 // must never let that escape onto the JavaFX thread, so degrade that line to plain text
                 // and carry the last good state forward.
                 try {
-                    ITokenizeLineResult<IToken[]> result = grammar.tokenizeLine(line, state, lineTimeout);
+                    // A long line may use only what is left of the pass's budget: a superseded pass still had to
+                    // finish the line in flight, and one 19,000-character line takes ~0.7 s.
+                    Duration timeout = longLine
+                            ? Duration.ofNanos(Math.max(
+                                    1_000_000, Math.min(lineTimeout.toNanos(), longLineBudgetNanos - longLineNanos)))
+                            : lineTimeout;
+                    ITokenizeLineResult<IToken[]> result = grammar.tokenizeLine(line, state, timeout);
                     IToken[] tokens = result.getTokens();
                     int count = tokens.length;
                     if (result.isStoppedEarly()) {
