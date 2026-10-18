@@ -47,6 +47,7 @@ public final class Shebang {
             Map.entry("bun", "ts"),
             Map.entry("ts-node", "ts"),
             Map.entry("tsx", "ts"),
+            Map.entry("zx", "js"), // Google's zx: JavaScript with shell helpers
             Map.entry("ruby", "rb"),
             Map.entry("php", "php"),
             Map.entry("lua", "lua"),
@@ -107,6 +108,12 @@ public final class Shebang {
         if (interpreter.equals("busybox") && idx + 1 < tokens.length) {
             interpreter = basename(tokens[++idx]);
         }
+        // A package runner (`npx tsx`, `pnpm exec ts-node`, `yarn dlx zx`, `bunx tsx`): the tool it runs decides.
+        int tool = packageRunnerTool(interpreter, tokens, idx + 1);
+        if (tool > 0) {
+            idx = tool;
+            interpreter = basename(tokens[idx]);
+        }
         String canonical = stripVersion(interpreter);
         // python3.14t (free-threaded), python3.12-dbg, pypy3.10, and `uv run --script` / `poetry run python`.
         if (isPython(interpreter) || runsPython(interpreter, tokens, idx + 1)) {
@@ -156,6 +163,36 @@ public final class Shebang {
             }
         }
         return false;
+    }
+
+    /**
+     * Index of the tool a JavaScript package runner runs ({@code npx [-y] tsx}, {@code pnpm exec|dlx tsx},
+     * {@code yarn [dlx|exec] tsx}, {@code bunx tsx}, {@code pnpx tsx}), skipping its options; -1 when
+     * {@code runner} is not one or names no tool.
+     */
+    private static int packageRunnerTool(String runner, String[] tokens, int from) {
+        int i = from;
+        switch (runner) {
+            case "npx", "bunx", "pnpx" -> {}
+            case "pnpm" -> {
+                if (i >= tokens.length || !(tokens[i].equals("exec") || tokens[i].equals("dlx"))) {
+                    return -1;
+                }
+                i++;
+            }
+            case "yarn" -> {
+                if (i < tokens.length && (tokens[i].equals("dlx") || tokens[i].equals("exec"))) {
+                    i++;
+                }
+            }
+            default -> {
+                return -1;
+            }
+        }
+        while (i < tokens.length && tokens[i].startsWith("-")) {
+            i++; // `npx -y tsx`, `npx --yes ts-node`
+        }
+        return i < tokens.length && !tokens[i].isEmpty() ? i : -1;
     }
 
     /** The last path segment of {@code token} (an interpreter path), lower-cased. */

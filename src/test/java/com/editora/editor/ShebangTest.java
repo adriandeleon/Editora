@@ -27,6 +27,19 @@ class ShebangTest {
     }
 
     @Test
+    void javaScriptPackageRunnersAndZx() {
+        assertEquals("ts", ext("#!/usr/bin/env -S npx tsx"));
+        assertEquals("ts", ext("#!/usr/bin/env -S npx -y ts-node --esm"));
+        assertEquals("ts", ext("#!/usr/bin/env -S pnpm exec tsx"));
+        assertEquals("ts", ext("#!/usr/bin/env -S yarn dlx tsx"));
+        assertEquals("ts", ext("#!/usr/bin/env -S bunx tsx"));
+        assertEquals("js", ext("#!/usr/bin/env zx"));
+        assertEquals("js", ext("#!/usr/bin/env -S npx zx"));
+        assertNull(ext("#!/usr/bin/env -S npx"), "a runner with no tool names nothing");
+        assertNull(ext("#!/usr/bin/env -S pnpm install"), "pnpm without exec/dlx runs no tool");
+    }
+
+    @Test
     void envLookup() {
         assertEquals("py", ext("#!/usr/bin/env python3"));
         assertEquals("sh", ext("#!/usr/bin/env bash"));

@@ -206,6 +206,15 @@ public final class ConfigFileType {
             case ".stylelintrc":
             case ".swcrc":
             case ".bowerrc":
+            // Node test, coverage and release tools: JSON (or YAML, which the JSON grammar reads acceptably), not
+            // the INI the generic *rc rule below would make them.
+            case ".mocharc":
+            case ".nycrc":
+            case ".c8rc":
+            case ".lintstagedrc":
+            case ".huskyrc":
+            case ".releaserc":
+            case ".jshintrc":
                 return "json";
             default:
                 break;
