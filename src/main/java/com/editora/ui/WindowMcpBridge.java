@@ -137,7 +137,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                 return null;
             }
             if (b.encryption().isEncrypted()) {
-                throw new IllegalStateException(ENCRYPTED); // ADR 0016: its text stays in Editora
+                throw new IllegalStateException(ENCRYPTED); // ADR 0017: its text stays in Editora
             }
             String text = b.getContent();
             served.served(b, text);

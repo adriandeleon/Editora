@@ -1,6 +1,6 @@
 # Encrypted files
 
-Why this design: [ADR 0016](../decisions/0016-encrypted-files.md). This page is the map of the code.
+Why this design: [ADR 0017](../decisions/0017-encrypted-files.md). This page is the map of the code.
 
 ## Packages
 

@@ -39,7 +39,7 @@ import com.editora.process.ProcessRunner;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * Encrypted files (ADR 0016): an OpenPGP-encrypted file ({@code .gpg}, {@code .asc}, {@code .pgp}) opens as the
+ * Encrypted files (ADR 0017): an OpenPGP-encrypted file ({@code .gpg}, {@code .asc}, {@code .pgp}) opens as the
  * text inside it and saves encrypted again, for the same people and in the same format, through the {@code gpg}
  * command line run on this machine.
  *

@@ -154,16 +154,16 @@ class ReleaseSupplyChainTest {
         assertTrue(
                 release.contains("tags: ['v[0-9]+.[0-9]+.[0-9]+*']"), "only version-shaped tags may start a release");
         Map<String, String> jobs = jobs(release);
-        assertTrue(jobs.get("preflight").contains("check-release.py version"), "the tag/pom preflight is gone");
+        assertTrue(jobs.get("preflight").contains("CheckRelease.java version"), "the tag/pom preflight is gone");
         assertTrue(
-                jobs.get("preflight").contains("check-release.py ci")
+                jobs.get("preflight").contains("CheckRelease.java ci")
                         && jobs.get("preflight").contains("--mode enforce"),
                 "the preflight no longer refuses a commit that CI did not pass");
         for (String job : List.of("build", "native-experimental")) {
             assertTrue(jobs.get(job).contains("needs: preflight"), job + " must wait for the preflight");
         }
         String publish = jobs.get("release");
-        int check = publish.indexOf("check-release.py assets");
+        int check = publish.indexOf("CheckRelease.java assets");
         int jreleaser = publish.indexOf("jreleaser/release-action@");
         assertTrue(check >= 0, "the release job no longer verifies the expected assets");
         assertTrue(check < jreleaser, "the asset check must run BEFORE JReleaser publishes an immutable release");

@@ -137,7 +137,7 @@ delegation. There is **no `ServiceLoader`, no `ModuleLayer`** — compile your p
 A registry plugin whose feature moved into Editora is *retired* (`plugin/RetiredPlugins`): an installed copy is
 removed at startup — after what it remembered that the built-in feature can use is carried over — and the id is
 never discovered, installed or listed again, so the two never run side by side. Today: `gpg-tools`, replaced by
-built-in encrypted files ([ADR 0016](decisions/0016-encrypted-files.md)).
+built-in encrypted files ([ADR 0017](decisions/0017-encrypted-files.md)).
 
 ## Building a plugin
 

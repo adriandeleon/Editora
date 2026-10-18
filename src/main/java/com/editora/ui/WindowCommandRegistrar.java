@@ -169,6 +169,8 @@ final class WindowCommandRegistrar {
 
         RunConfigurationCoordinator runConfigurations();
 
+        DeploymentCoordinator deployments();
+
         GitCoordinator git();
 
         DiffCoordinator diffCoordinator();
@@ -1982,6 +1984,10 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("run.editConfigs", host.runConfigurations()::editRunConfigs));
         host.registry().register(Command.of("run.exportConfigs", host.runConfigurations()::exportRunConfigs));
         host.registry().register(Command.of("run.importConfigs", host.runConfigurations()::importRunConfigs));
+        host.registry().register(Command.of("deploy.now", host.deployments()::deployNow));
+        host.registry().register(Command.of("deploy.edit", host.deployments()::editDeployments));
+        host.registry().register(Command.of("deploy.compare", host.deployments()::compareWithDeployed));
+        host.registry().register(Command.of("deploy.terminal", host.deployments()::openTerminal));
         host.registry().register(Command.of("run.rerun", host.runCoordinator()::rerunLast));
         host.registry().register(Command.of("run.stop", host.runCoordinator()::stopRun));
         host.registry().register(Command.of("run.clear", host.runCoordinator()::clearConsole));
@@ -3265,7 +3271,7 @@ final class WindowCommandRegistrar {
         });
     }
 
-    /** Tools ▸ Encryption: encrypted files (ADR 0016). */
+    /** Tools ▸ Encryption: encrypted files (ADR 0017). */
     private void registerEncryptionCommands() {
         EncryptionCoordinator e = host.encryption();
         host.registry().register(Command.of(EncryptionCoordinator.ENCRYPT_FILE, e::encryptFile));

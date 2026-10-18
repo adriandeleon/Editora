@@ -993,6 +993,52 @@ final class RemoteCoordinator {
         }
     }
 
+    /**
+     * Holds a connection to {@code conn}'s host in this window <em>without</em> opening a folder of it: what a
+     * deployment of the local project runs over. Logs in when there is no live connection yet (asking what the
+     * login needs as it runs), then makes sure the host may run commands — asking now if it was never agreed,
+     * since running the deployed program is what the user just asked for. {@code onReady} gets the host's
+     * {@code /} on that connection, or null (said why on the status bar), on the FX thread.
+     */
+    void holdForDeployment(RemoteConnection conn, java.util.function.Consumer<Path> onReady) {
+        com.editora.config.Settings settings = host.settings();
+        if (settings != null && !settings.isRemoteExecution()) {
+            host.setStatus(tr("status.deploy.remoteExecutionOff"));
+            onReady.accept(null);
+            return;
+        }
+        SftpUri top = new SftpUri(conn.user(), conn.host(), conn.port(), "/");
+        Path live = remoteFs().isConnected(conn.id()) ? remoteFs().pathFor(top) : null;
+        if (live != null && !RemoteFileSystems.isDisconnected(live)) {
+            onReady.accept(allowedToRun(conn) ? live : null);
+            return;
+        }
+        host.setStatus(tr("status.remote.connecting", conn.displayLabel()));
+        remoteFs().connect(conn, null, r -> {
+            if (!r.ok()) {
+                reportConnectFailure(conn, r);
+                onReady.accept(null);
+                return;
+            }
+            Path root = remoteFs().pathFor(top);
+            onReady.accept(root != null && allowedToRun(conn) ? root : null);
+        });
+    }
+
+    /** Whether {@code conn}'s host may run commands: agreed before, or agreed now when asked. */
+    private boolean allowedToRun(RemoteConnection conn) {
+        if (ops.remoteExecAllowed(conn.id())) {
+            return true;
+        }
+        if (!execConsent.test(conn)) {
+            host.setStatus(tr("status.deploy.notAllowed", conn.host()));
+            return false;
+        }
+        ops.allowRemoteExec(conn.id());
+        ops.remoteExecChanged();
+        return true;
+    }
+
     private boolean askToRunCommands(RemoteConnection conn) {
         ButtonType allow = new ButtonType(tr("dialog.remoteExec.allow"), ButtonBar.ButtonData.OK_DONE);
         ButtonType notNow = new ButtonType(tr("dialog.remoteExec.notNow"), ButtonBar.ButtonData.CANCEL_CLOSE);

@@ -615,6 +615,69 @@ class RealSshdProbeFxTest {
             return "latest local = " + (target().latestLocalTime(mtime) - mtime) + " ms from host time";
         });
 
+        step("a local project deploys to the host (one tar stream), redeploys nothing, removes its own file", () -> {
+            Path local = Files.createTempDirectory("editora-deploy-probe");
+            String longName = "deep/" + "n".repeat(110) + "/Ñandú.txt";
+            for (String f : List.of("run.sh", "src/notes.txt", "with space/a.txt", longName, "gone.txt")) {
+                Path p = local.resolve(f);
+                Files.createDirectories(p.getParent());
+                Files.writeString(p, f.equals("run.sh") ? "#!/bin/sh\necho \"deployed $(pwd -P)\"\n" : f);
+            }
+            Files.setPosixFilePermissions(
+                    local.resolve("run.sh"), java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+            Path home = target().homeDir();
+            com.editora.config.Deployment d = new com.editora.config.Deployment(
+                    "probe",
+                    conn.host(),
+                    conn.port(),
+                    conn.user(),
+                    conn.auth(),
+                    conn.keyPath(),
+                    hostWork + "/deployed app",
+                    "",
+                    false,
+                    true,
+                    false);
+            Path remoteRoot = work.resolve("deployed app");
+            Path manifest = local.resolveSibling(local.getFileName() + ".manifest");
+            java.util.function.Supplier<com.editora.deploy.Deployer.Outcome> deploy =
+                    () -> com.editora.deploy.Deployer.deploy(
+                            new com.editora.deploy.Deployer.Request(
+                                    local,
+                                    d,
+                                    remoteRoot,
+                                    target(),
+                                    home == null ? null : target().toTargetPath(home),
+                                    manifest,
+                                    () -> false),
+                            null,
+                            null);
+            com.editora.deploy.Deployer.Outcome first = deploy.get();
+            check(first.ok(), "deployed: " + first.error() + " " + first.rootProblem());
+            check(first.sent() == 5, "five files sent: " + first);
+            check(Files.readString(remoteRoot.resolve(longName)).equals(longName), "a long, non-ASCII name arrives");
+            check(
+                    Files.getPosixFilePermissions(remoteRoot.resolve("run.sh"))
+                            .contains(java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE),
+                    "the script stays executable");
+            com.editora.deploy.Deployer.Outcome again = deploy.get();
+            check(again.ok() && again.sent() == 0 && again.unchanged() == 5, "the host's listing matches: " + again);
+            Files.delete(local.resolve("gone.txt"));
+            Files.writeString(remoteRoot.resolve("host.log"), "the host's own");
+            com.editora.deploy.Deployer.Outcome removed = deploy.get();
+            check(removed.ok() && removed.deleted() == 1, "removed one: " + removed);
+            check(!Files.exists(remoteRoot.resolve("gone.txt")), "gone from the host");
+            check(Files.exists(remoteRoot.resolve("host.log")), "the host's own file stays");
+            ProcessRunner.Result ran = ProcessRunner.run(remoteRoot, Duration.ofSeconds(30), List.of("./run.sh"));
+            check(ran.ok() && ran.out().contains("deployed "), "the copy runs on the host: " + ran.out() + ran.err());
+            try (var walk = Files.walk(local)) { // the local stand-in project and its manifest
+                walk.sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> p.toFile().delete());
+            }
+            Files.deleteIfExists(manifest);
+            return first.bytes() + " bytes in the first deploy";
+        });
+
         step("pyright on the host: diagnostics for a remote file", () -> {
             Path py = Files.writeString(app.resolve("bad.py"), "x: int = 'text'\n");
             Map<Path, List<LspDiagnostic>> diags = new ConcurrentHashMap<>();

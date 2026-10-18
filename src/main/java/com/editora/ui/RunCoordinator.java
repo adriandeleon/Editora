@@ -140,6 +140,24 @@ final class RunCoordinator {
         default boolean runHttpFile(EditorBuffer buffer) {
             return false;
         }
+
+        /**
+         * Brings the deployment {@code name} up to date (see {@link DeploymentCoordinator#deployThen}), then hands
+         * its copy to {@code then}. A window without deployments says so and ends {@code console}.
+         */
+        default void deployThen(
+                String name, DeploymentCoordinator.Console console, Consumer<DeploymentCoordinator.Deployed> then) {
+            console.ended(false, null);
+        }
+
+        /** Stops a running deploy of this window. */
+        default void cancelDeploy() {}
+
+        /**
+         * Attaches the Java debugger to a JVM waiting on this machine's {@code port} (a tunnel to a deployed
+         * program), anchored at the open Java file {@code anchor}; {@code stopOwner} ends the program.
+         */
+        default void attachJavaDebugger(Path anchor, int port, Runnable stopOwner) {}
     }
 
     private final CoordinatorHost host;
@@ -170,6 +188,33 @@ final class RunCoordinator {
     private Path lastRunScript;
     /** Stop was pressed for the running program, so its exit is reported as stopped, not as an exit code. */
     private boolean stopRequested;
+
+    /**
+     * The project root a configuration's launch resolves against while it runs on a deployment: the
+     * deployment's folder on its host. Null for every launch on this machine (each one sets it).
+     */
+    private Path launchRoot;
+
+    /** The deployment the current configuration launch runs on, or null. */
+    private DeploymentCoordinator.Deployed deployed;
+
+    /** A deploy is running before a launch: Stop ends it, and a second Run waits. */
+    private boolean deploying;
+
+    /** What the deploy before this launch did: the first line of its console, once. */
+    private String pendingDeploySummary;
+
+    /** Watches the next program's output (a deployed program's JDWP banner); null for most runs. */
+    private java.util.function.BiConsumer<String, Boolean> pendingOutputWatcher;
+
+    /** What Rerun repeats for the next program (a deployed configuration: deploy, then run); null for most. */
+    private Runnable pendingRerun;
+
+    /** {@link #pendingRerun} of the last program. */
+    private Runnable lastConfigRerun;
+
+    /** The tunnel to a deployed program's debug port, closed when the program ends. */
+    private com.editora.process.PortForward debugTunnel;
 
     /** What a test run streamed in this console reports to: its output lines, then its exit. */
     interface TestStream {
@@ -261,6 +306,10 @@ final class RunCoordinator {
             lastTestRerun.run();
             return;
         }
+        if (lastConfigRerun != null) {
+            lastConfigRerun.run();
+            return;
+        }
         streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv, lastRunScript);
     }
 
@@ -347,7 +396,7 @@ final class RunCoordinator {
             }
             return;
         }
-        Path cwd = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
+        Path cwd = RunConfigWorkingDirectory.resolve(cfg, configRoot());
         if (cwd == null) {
             reportIncomplete(cfg, "status.run.configNeedsWorkingDir");
             return;
@@ -357,7 +406,7 @@ final class RunCoordinator {
         // executables mean nothing.
         boolean remote = com.editora.vfs.Vfs.isRemote(cwd);
         boolean elsewhere = !com.editora.process.ExecTargets.runsHere(cwd);
-        Path script = RunConfigWorkingDirectory.script(cfg, ops.projectRoot(), cwd);
+        Path script = RunConfigWorkingDirectory.script(cfg, configRoot(), cwd);
         if (!remote) {
             // Checked here, so the message names what is missing: a missing directory used to surface as
             // "Cannot run program /usr/bin/bash … No such file or directory", blaming bash.
@@ -458,7 +507,7 @@ final class RunCoordinator {
                 : com.editora.process.ExecTargets.forPath(script).toTargetPath(script);
         com.editora.run.PythonRunPlan.Request request = new com.editora.run.PythonRunPlan.Request(
                 module ? null : script,
-                ops.projectRoot(),
+                configRoot(),
                 target,
                 module,
                 args,
@@ -537,7 +586,7 @@ final class RunCoordinator {
      * console's, or a configuration's running in a Terminal tab.
      */
     boolean isRunning() {
-        return consoleRunning() || terminalProgramRunning();
+        return consoleRunning() || terminalProgramRunning() || deploying; // a deploy before a launch counts
     }
 
     /** Whether the console is busy: a program, or the build before one. */
@@ -571,9 +620,27 @@ final class RunCoordinator {
         return consoleUsed || consoleRunning();
     }
 
+    /** The root a configuration resolves against: its deployment's folder on the host, else the project's. */
+    private Path configRoot() {
+        return launchRoot != null ? launchRoot : ops.projectRoot();
+    }
+
+    /** {@code local} (a folder of the project) as the launch sees it: its copy on the host when deployed. */
+    private Path onLaunchHost(Path local) {
+        if (deployed == null || local == null) {
+            return local;
+        }
+        Path copy = deployed.paths().toHost(local);
+        return copy != null ? copy : deployed.remoteRoot();
+    }
+
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
     void runConfig(RunConfiguration cfg) {
         if (!beginRunRequest()) {
+            return;
+        }
+        if (cfg.isDeployed()) {
+            runDeployedConfig(cfg, false);
             return;
         }
         terminalRun = cfg.runInTerminal(); // read where the launch is built (streamRun), after any build
@@ -597,8 +664,250 @@ final class RunCoordinator {
 
     /** A script configuration's script file, resolved as its run will resolve it; null when it has none. */
     private Path configScript(RunConfiguration cfg) {
-        Path cwd = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
-        return cwd == null ? null : RunConfigWorkingDirectory.script(cfg, ops.projectRoot(), cwd);
+        Path cwd = RunConfigWorkingDirectory.resolve(cfg, configRoot());
+        return cwd == null ? null : RunConfigWorkingDirectory.script(cfg, configRoot(), cwd);
+    }
+
+    /**
+     * Runs or debugs {@code cfg} on its deployment: every open file of the project is saved, the copy on the
+     * host brought up to date, and then the configuration runs there as it would in a remote project — its
+     * before-launch step, its working directory, its interpreter or JDK are the host's. Paths in the
+     * configuration that name files of the project name their copies.
+     */
+    void runDeployedConfig(RunConfiguration given, boolean debug) {
+        Path localRoot = ops.projectRoot();
+        if (localRoot == null) {
+            host.setStatus(tr("status.run.configsNeedProjectWindow"));
+            return;
+        }
+        if (debug && !given.isJava()) {
+            host.setStatus(tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type." + given.type())));
+            return;
+        }
+        if (!saveProjectBuffers(localRoot)) {
+            return; // a deploy sends what is on disk: an unsaved edit would not reach the host
+        }
+        com.editora.deploy.DeployPaths mapping = new com.editora.deploy.DeployPaths(localRoot, localRoot);
+        RunConfiguration cfg = new RunConfiguration(
+                given.name(),
+                given.type(),
+                mapping.hostField(given.target()),
+                given.mainClass(),
+                given.projectName(),
+                given.args(),
+                given.vmArgs(),
+                mapping.hostField(given.workingDir()),
+                given.env(),
+                given.beforeLaunch(),
+                "", // a JDK of this machine means nothing on the host: its jdk.home tool, else its java
+                given.interpreter(),
+                given.interpreterOptions(),
+                given.runInTerminal(),
+                given.deployment());
+        deploying = true;
+        ops.onRunStateChanged();
+        ops.deployThen(cfg.deployment(), deployConsole(), d -> {
+            pendingRerun = () -> runDeployedConfig(given, debug); // Rerun deploys again: the copy may be stale
+            deployed = d;
+            launchRoot = d.remoteRoot();
+            pendingDeploySummary = d.summary();
+            terminalRun = cfg.runInTerminal();
+            withBeforeLaunch(cfg, () -> {
+                if (cfg.isJava()) {
+                    runDeployedJava(cfg, debug);
+                } else {
+                    runScriptConfig(cfg);
+                }
+            });
+        });
+    }
+
+    /** Debugs {@code cfg} on its deployment (Debug's entry): refused while something already runs, as Run is. */
+    void debugDeployedConfig(RunConfiguration cfg) {
+        if (beginRunRequest()) {
+            runDeployedConfig(cfg, true);
+        }
+    }
+
+    /** Saves every open, edited file of the project at {@code root}; false when a save was refused. */
+    private boolean saveProjectBuffers(Path root) {
+        List<EditorBuffer> dirty = new java.util.ArrayList<>();
+        host.forEachBuffer(b -> {
+            if (b.isDirty()
+                    && b.getPath() != null
+                    && com.editora.deploy.DeployPaths.relative(root, b.getPath()) != null) {
+                dirty.add(b);
+            }
+        });
+        for (EditorBuffer b : dirty) {
+            if (!ops.saveBuffer(b)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The Run console as a deploy's: its progress while it runs, its failure if it fails. */
+    private DeploymentCoordinator.Console deployConsole() {
+        return new DeploymentCoordinator.Console() {
+            @Override
+            public void started(String title) {
+                consoleUsed = true;
+                consoleDir = ops.projectRoot();
+                panel().started(title);
+                runtimeGeneration++;
+                panel().setRuntime(null);
+            }
+
+            @Override
+            public void line(String text) {
+                panel().appendOutput(text, false);
+            }
+
+            @Override
+            public void ended(boolean ok, String message) {
+                deploying = false;
+                if (!ok && message != null) {
+                    panel().appendOutput(message, true);
+                    panel().failed(message);
+                }
+                ops.onRunStateChanged();
+            }
+        };
+    }
+
+    /**
+     * A deployed Java configuration: built on the host with its Maven or Gradle (the copy has sources, not
+     * classes), then started there with the host's JDK. Debug starts it under a JDWP agent on the host's
+     * loopback, tunnels that port here, and attaches the debugger through the local project — whose sources
+     * are the same files.
+     */
+    private void runDeployedJava(RunConfiguration cfg, boolean debug) {
+        if (cfg.missingMainClass()) {
+            reportIncomplete(cfg);
+            return;
+        }
+        if (cfg.mainClassLooksLikeAFile()) {
+            host.setStatus(tr("status.run.mainClassIsAFile", cfg.mainClass()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        Path localRoot = deployed.localRoot();
+        Path routing = routingFor(host, cfg);
+        if (debug && routing == null) {
+            host.setStatus(tr("status.run.configNeedsJavaFile")); // the debugger is attached through it
+            return;
+        }
+        Path localModule = routing == null ? null : ops.javaProjectRoot(routing);
+        if (localModule == null || com.editora.deploy.DeployPaths.relative(localRoot, localModule) == null) {
+            localModule = localRoot;
+        }
+        boolean maven = ops.mavenProjectAt(localModule);
+        boolean gradle = !maven && ops.gradleProjectAt(localModule);
+        if (!maven && !gradle) {
+            host.setStatus(tr("status.deploy.javaNeedsBuild", cfg.name()));
+            return;
+        }
+        Path hostModule = onLaunchHost(localModule);
+        com.editora.run.JavaLaunchPlan.Result planned = com.editora.run.JavaLaunchPlan.forConfiguration(
+                cfg, com.editora.run.JavaLaunchPlan.Inputs.of(hostModule, "", maven));
+        if (!planned.ok()) {
+            reportPlanProblem(cfg, planned.problem());
+            return;
+        }
+        com.editora.run.JavaLaunchPlan plan = planned.plan();
+        List<String> vm = new java.util.ArrayList<>(plan.vmArgs());
+        if (debug) {
+            vm.add(0, "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:0");
+        }
+        String java = plan.javaExecutable().isBlank() ? "java" : plan.javaExecutable();
+        String label = shortName(cfg.mainClass());
+        Consumer<List<String>> launch = cp -> {
+            if (cp == null || cp.isEmpty()) {
+                return;
+            }
+            if (debug) {
+                pendingOutputWatcher = debugAttacher(routing, hostModule);
+            }
+            streamRun(
+                    label,
+                    plan.cwd(),
+                    JavaRunCommand.build(java, List.of(), cp, cfg.mainClass(), vm, plan.args()),
+                    plan.environment());
+        };
+        host.setStatus(tr("status.deploy.building", deployed.deployment().name()));
+        if (maven) {
+            ops.resolveMavenClasspath(hostModule, plan.jdkHome(), cp -> {
+                if (cp == null || cp.isEmpty()) {
+                    host.setStatus(tr("status.deploy.buildFailed", cfg.name()));
+                }
+                launch.accept(cp);
+            });
+            return;
+        }
+        Path gradleRoot = onLaunchHost(gradleBuildRoot(localRoot, localModule));
+        Thread.ofVirtual().name("deploy-gradle-cp").start(() -> {
+            String[] error = new String[1];
+            List<String> cp =
+                    com.editora.build.GradleHostClasspath.resolve(gradleRoot, hostModule, plan.jdkHome(), error);
+            javafx.application.Platform.runLater(() -> {
+                if (cp == null || cp.isEmpty()) {
+                    host.setStatus(tr(
+                            "status.deploy.gradleFailed",
+                            cfg.name(),
+                            error[0] == null || error[0].isBlank() ? "gradle" : error[0]));
+                }
+                launch.accept(cp);
+            });
+        });
+    }
+
+    /** The Gradle build {@code module} belongs to: the topmost folder up to {@code root} with a settings file. */
+    static Path gradleBuildRoot(Path root, Path module) {
+        Path found = module;
+        for (Path dir = module; dir != null && dir.startsWith(root); dir = dir.getParent()) {
+            if (java.nio.file.Files.isRegularFile(dir.resolve("settings.gradle"))
+                    || java.nio.file.Files.isRegularFile(dir.resolve("settings.gradle.kts"))) {
+                found = dir;
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Watches a deployed program's output for the JDWP agent's "Listening" line, tunnels that port of the host
+     * to this machine, and attaches the debugger to it through {@code anchor}.
+     */
+    private java.util.function.BiConsumer<String, Boolean> debugAttacher(Path anchor, Path onHost) {
+        boolean[] attached = {false};
+        return (line, stderr) -> {
+            int port = com.editora.test.TestDebug.jdwpPort(line);
+            if (port <= 0 || attached[0]) {
+                return;
+            }
+            attached[0] = true;
+            Thread.ofVirtual().name("deploy-debug-tunnel").start(() -> {
+                try {
+                    com.editora.process.PortForward tunnel =
+                            com.editora.process.ExecTargets.forPath(onHost).forwardLocal("127.0.0.1", port);
+                    javafx.application.Platform.runLater(() -> {
+                        closeDebugTunnel();
+                        debugTunnel = tunnel;
+                        ops.attachJavaDebugger(anchor, tunnel.localPort(), this::stopRun);
+                    });
+                } catch (java.io.IOException | RuntimeException e) {
+                    javafx.application.Platform.runLater(
+                            () -> host.setStatus(tr("status.deploy.tunnelFailed", String.valueOf(e.getMessage()))));
+                }
+            });
+        };
+    }
+
+    private void closeDebugTunnel() {
+        if (debugTunnel != null) {
+            debugTunnel.close();
+            debugTunnel = null;
+        }
     }
 
     /**
@@ -684,7 +993,7 @@ final class RunCoordinator {
     private void withBeforeLaunch(RunConfiguration cfg, Runnable then) {
         Path cwd = beforeLaunchDir(cfg);
         Path routing = routingFor(host, cfg);
-        Path project = routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing);
+        Path project = onLaunchHost(routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing));
         String jdkHome = project == null ? effectiveMavenJdk(null, cfg) : jdkHomeFor(project, cfg);
         beforeLaunch.run(
                 host,
@@ -724,8 +1033,8 @@ final class RunCoordinator {
 
     /** Where a before-launch command runs: the configuration's working directory, else the project root. */
     Path beforeLaunchDir(RunConfiguration cfg) {
-        if (cfg.workingDir().isBlank() && ScriptRunCommand.PYTHON.equals(cfg.type()) && ops.projectRoot() != null) {
-            return ops.projectRoot(); // the script runs in its own folder; a build/setup step stays at the root
+        if (cfg.workingDir().isBlank() && ScriptRunCommand.PYTHON.equals(cfg.type()) && configRoot() != null) {
+            return configRoot(); // the script runs in its own folder; a build/setup step stays at the root
         }
         // A Java configuration's step is a build (mvn compile, gradle classes): it belongs in the project root
         // whatever folder the program runs in — in a working directory of "sub" Maven found no pom (review A12).
@@ -736,10 +1045,10 @@ final class RunCoordinator {
                 project = ops.projectRoot();
             }
             if (project != null) {
-                return project;
+                return onLaunchHost(project);
             }
         }
-        Path configured = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
+        Path configured = RunConfigWorkingDirectory.resolve(cfg, configRoot());
         if (configured != null) {
             return configured;
         }
@@ -1458,6 +1767,8 @@ final class RunCoordinator {
      */
     private boolean beginRunRequest() {
         terminalRun = false; // only a configuration that asks for it, and only its own launch
+        launchRoot = null; // and only a deployed configuration's launch resolves on its host
+        deployed = null;
         ops.openToolWindow();
         if (!consoleRunning()) { // a before-launch build counts: a second Run must not start a second build
             return true;
@@ -1485,28 +1796,46 @@ final class RunCoordinator {
             String label, Path workingDir, List<String> command, java.util.Map<String, String> env, Path script) {
         if (terminalRun) {
             terminalRun = false;
+            pendingDeploySummary = null; // the console's extras do not apply to a Terminal tab
+            pendingOutputWatcher = null;
+            pendingRerun = null;
             runInTerminal(label, workingDir, command, env);
             return;
         }
         lastRunScript = script;
         TestStream tests = pendingTestStream;
         pendingTestStream = null;
+        java.util.function.BiConsumer<String, Boolean> watcher = pendingOutputWatcher;
+        pendingOutputWatcher = null;
+        String deploySummary = pendingDeploySummary;
+        pendingDeploySummary = null;
+        lastConfigRerun = pendingRerun;
+        pendingRerun = null;
+        com.editora.deploy.DeployPaths deployedPaths = deployed == null ? null : deployed.paths();
         lastTestRerun = null;
         stopRequested = false;
         lastRunDir = workingDir;
-        consoleDir = workingDir;
+        // A deployed program's files are the project's: its console links open those, not the host's copies.
+        Path localDir = deployedPaths == null ? null : deployedPaths.toLocal(workingDir);
+        consoleDir = localDir != null ? localDir : workingDir;
         lastRunLabel = label;
         lastRunCommand = command;
         lastRunEnv = env;
         consoleUsed = true;
         ops.openToolWindow();
         panel().started(label);
+        if (deploySummary != null) {
+            panel().showCommandLine(deploySummary);
+        }
         showRuntime(command, workingDir, env);
         host.setStatus(tr("status.run.started", label));
         service.runInDir(workingDir, command, env, new RunService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 panel().started(commandLine);
+                if (deploySummary != null) {
+                    panel().showCommandLine(deploySummary); // started() cleared it: the deploy comes first
+                }
                 if (script != null || tests != null) {
                     // Which interpreter ran, and how: the first thing to check when a script behaves oddly.
                     panel().showCommandLine(commandLine);
@@ -1519,6 +1848,9 @@ final class RunCoordinator {
                 if (tests != null) {
                     tests.line(line, stderr);
                 }
+                if (watcher != null) {
+                    watcher.accept(line, stderr);
+                }
             }
 
             @Override
@@ -1528,6 +1860,7 @@ final class RunCoordinator {
 
             @Override
             public void onExit(int code) {
+                closeDebugTunnel();
                 if (tests != null) {
                     tests.exit(stopRequested ? -1 : code);
                 }
@@ -1545,6 +1878,7 @@ final class RunCoordinator {
 
             @Override
             public void onError(String message) {
+                closeDebugTunnel();
                 if (tests != null) {
                     tests.exit(-1);
                 }
@@ -1609,6 +1943,11 @@ final class RunCoordinator {
 
     /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */
     void stopRun() {
+        if (deploying) {
+            ops.cancelDeploy(); // after the file being sent; the launch it gated never happens
+            host.setStatus(tr("status.deploy.stopping"));
+            return;
+        }
         if (beforeLaunch.isActive()) {
             beforeLaunch.stop(); // its exit reports "stopped" and the launch it gated never happens
             return;

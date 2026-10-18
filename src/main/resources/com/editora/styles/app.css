@@ -2142,8 +2142,9 @@
 
 /* A disclosure inside a dialog form: its title names a group of fields, so it should read at the same
    size as the labels beside it. AtlantaFX sizes a TitledPane title up as a heading, which in a form makes
-   the optional section louder than the fields it belongs to. */
-.dialog-advanced > .title {
+   the optional section louder than the fields it belongs to. The theme puts the 1.25em on the title's
+   `.text` node, not on `.title`, so that is the node to reset. */
+.dialog-advanced > .title > .text {
     -fx-font-size: 1em;
 }
 
@@ -5508,7 +5509,7 @@
     -fx-text-fill: -color-fg-muted;
 }
 
-/* ---- Encrypted files (ADR 0016) -------------------------------------------------------------------
+/* ---- Encrypted files (ADR 0017) -------------------------------------------------------------------
    The lock is the accent hue (the app offering something it holds for you), not amber: an encrypted file
    is not a state that wants attention. Red is kept for "Not saved.", amber for an unverified key. */
 .encryption-lock {
