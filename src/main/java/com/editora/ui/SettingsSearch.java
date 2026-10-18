@@ -296,8 +296,31 @@ final class SettingsSearch {
      * Shows the rows, headings and cards {@code query} matches and marks the rows whose title or description shows
      * a query word. A blank query shows everything and returns null.
      */
+    /** The word that, typed in the search, lists only modified rows (as the "Modified" toggle does). */
+    static final String MODIFIED_TOKEN = "@modified";
+
+    /** Whether {@code query} asks for modified rows only. Pure. */
+    static boolean wantsModified(String query) {
+        return query != null
+                && List.of(query.strip().toLowerCase(Locale.ROOT).split("\\s+")).contains(MODIFIED_TOKEN);
+    }
+
+    /** {@code query} without the {@link #MODIFIED_TOKEN} word. Pure. */
+    static String withoutModifiedToken(String query) {
+        return query == null
+                ? ""
+                : query.replaceAll("(?i)(^|\\s)" + MODIFIED_TOKEN + "(?=\\s|$)", " ")
+                        .strip();
+    }
+
+    private Predicate<Row> onlyRows; // a row filter on top of the query ("Show modified only"); null for none
+
+    void setRowFilter(Predicate<Row> filter) {
+        this.onlyRows = filter;
+    }
+
     Result filter(String query) {
-        boolean searching = query != null && !query.isBlank();
+        boolean searching = query != null && !query.isBlank() || onlyRows != null;
         if (!searching) {
             rows.forEach(r -> {
                 setShown(r.node(), true);
@@ -310,17 +333,23 @@ final class SettingsSearch {
         Map<Object, Integer> pageScores = new LinkedHashMap<>();
         Set<Label> visibleSections = new HashSet<>();
         Set<VBox> visibleCards = new HashSet<>();
-        boolean listHit = list != null && list.matches().test(query.strip());
+        boolean anyWord = query != null && !query.isBlank();
+        boolean listHit =
+                anyWord && onlyRows == null && list != null && list.matches().test(query.strip());
         for (Row r : rows) {
             Texts t = textsOf(r);
-            int s = score(query, t);
+            int s = !anyWord ? KEYWORD : score(query, t);
+            if (onlyRows != null && !onlyRows.test(r)) {
+                s = 0;
+            }
             if (s == 0 && listHit && r.page() == list.page() && isUnder(list.inside(), r.node())) {
                 s = KEYWORD; // a command name in the list: the weakest hit, a setting named so outranks it
             }
             setShown(r.node(), s > 0);
             r.node()
                     .pseudoClassStateChanged(
-                            HIT, s > 0 && score(query, new Texts(t.title(), t.description(), "", "", "")) > 0);
+                            HIT,
+                            s > 0 && anyWord && score(query, new Texts(t.title(), t.description(), "", "", "")) > 0);
             if (s > 0) {
                 pageScores.merge(r.page(), s, Math::max);
                 if (r.section() != null) {

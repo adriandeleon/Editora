@@ -301,4 +301,14 @@ class StyleContrastTest {
         }
         assertTrue(problems.isEmpty(), "chord chips under 4.5:1:\n" + String.join("\n", problems));
     }
+
+    @Test
+    void theModifiedMarkerStandsOutFromItsCard() throws Exception {
+        String app = read("app.css");
+        assertTrue(rules(app, ".settings-row:modified").get(0).contains("-color-accent-emphasis"));
+        for (String base : List.of("editora-light", "editora-dark")) {
+            Map<String, String> p = palette(base);
+            assertTrue(contrast(color(p, "-color-accent-emphasis"), color(p, "-color-bg-default")) >= 3, base);
+        }
+    }
 }

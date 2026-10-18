@@ -351,6 +351,7 @@ public class App extends Application {
     }
 
     public static void main(String[] args) {
+        Relaunch.awaitPreviousInstance(); // a "Restart now": let the editor being replaced finish quitting first
         // Run AWT/Java2D headless. The Markdown preview rasterizes SVG badges via JSVG, which uses
         // java.awt (BufferedImage/Graphics2D). On macOS, AWT's native toolkit (the AppKit/Metal Java2D
         // pipeline) contends with JavaFX's Glass/Prism for the single AppKit run loop — an intermittent
