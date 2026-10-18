@@ -2713,12 +2713,36 @@ public class Settings {
      * Sets the registry URL. The built-in URL is stored as blank ("follow the default"), whether it comes
      * from the Settings field (which shows the URL in force and hands it back) or from a file an earlier
      * build froze it into — otherwise such an install would keep the old address after the default moves.
+     *
+     * <p>Anything that is not blank and not an {@code https://} address with a host is refused here, for every
+     * caller: the registry in use stays. The Settings field checked this itself, but the palette's "Plugins: Set
+     * Registry URL…" saved {@code http://…} or plain text, which Browse then refused.
      */
     @JsonProperty("pluginRegistryUrl")
     public void setPluginRegistryUrl(String pluginRegistryUrl) {
+        if (!isAcceptableRegistryUrl(pluginRegistryUrl)) {
+            return;
+        }
         this.pluginRegistryUrl = pluginRegistryUrl != null && DEFAULT_PLUGIN_REGISTRY.equals(pluginRegistryUrl.strip())
                 ? ""
                 : pluginRegistryUrl;
+    }
+
+    /** Whether {@link #setPluginRegistryUrl} takes {@code url}: blank (the default), or https with a host. */
+    public static boolean isAcceptableRegistryUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return true;
+        }
+        String u = url.strip();
+        if (!u.toLowerCase(java.util.Locale.ROOT).startsWith("https://")) {
+            return false;
+        }
+        try {
+            String host = java.net.URI.create(u).getHost();
+            return host != null && !host.isBlank();
+        } catch (IllegalArgumentException notAUri) {
+            return false;
+        }
     }
 
     public boolean isPluginRequireSignature() {

@@ -67,4 +67,23 @@ final class McpAccess {
         }
         return null;
     }
+
+    /**
+     * Why an MCP client may not run command {@code id}, or null. A prompt-injected agent with the MCP token
+     * could otherwise turn plugins on (re-arming every earlier consent at the next launch), turn off the
+     * registry signature check, install or remove plugins, or trust a folder's settings — each a security
+     * decision that is the user's alone, made in Settings or the palette.
+     */
+    static String commandRefusal(String id) {
+        if (id == null) {
+            return null;
+        }
+        boolean security = id.equals("view.togglePlugins")
+                || id.startsWith("plugins.")
+                || id.toLowerCase(java.util.Locale.ROOT).contains("trust");
+        return security
+                ? "Refused: " + id + " changes a security setting (plugins or trust), which is not done on an MCP"
+                        + " client's behalf. Ask the user to run it."
+                : null;
+    }
 }

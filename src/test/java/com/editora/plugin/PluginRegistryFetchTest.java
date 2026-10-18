@@ -237,7 +237,7 @@ class PluginRegistryFetchTest {
                 "plugins.example.org/index.json",
                 "",
                 null)) {
-            assertError(registry.fetchSync(url), "registry url must be https");
+            assertError(registry.fetchSync(url), "address must be https");
         }
         assertEquals(List.of(), web.requests());
     }

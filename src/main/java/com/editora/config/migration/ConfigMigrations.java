@@ -637,6 +637,28 @@ public final class ConfigMigrations {
         return n;
     }
 
+    /**
+     * v1 → v2 for {@code plugins.json}: every enabled plugin gets {@code consent: "*"}, which the next launch
+     * replaces with the fingerprint of the plugin installed under that id (the one the user enabled), or drops
+     * when its folder is gone.
+     */
+    static JsonNode pluginConsentAdopt(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        ObjectNode consent = o.get("consent") instanceof ObjectNode c ? c : JsonNodeFactory.instance.objectNode();
+        JsonNode enabled = o.get("enabled");
+        if (enabled instanceof ObjectNode e) {
+            e.properties().forEach(entry -> {
+                if (entry.getValue().isBoolean() && entry.getValue().booleanValue() && !consent.has(entry.getKey())) {
+                    consent.put(entry.getKey(), com.editora.config.PluginStore.ADOPT);
+                }
+            });
+        }
+        o.set("consent", consent);
+        return o;
+    }
+
     static JsonNode seedOpenProjectIds(JsonNode input) {
         if (!(input instanceof ObjectNode o) || o.has("openProjectIds")) {
             return input;

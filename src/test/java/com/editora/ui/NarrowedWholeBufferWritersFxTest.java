@@ -103,7 +103,7 @@ class NarrowedWholeBufferWritersFxTest {
         var ctor = Class.forName("com.editora.ui.PluginCoordinator$ActiveEditorImpl")
                 .getDeclaredConstructor(PluginCoordinator.class, EditorBuffer.class);
         ctor.setAccessible(true);
-        ActiveEditor editor = (ActiveEditor) ctor.newInstance(coordinator, null); // the live active buffer
+        ActiveEditor editor = (ActiveEditor) ctor.newInstance(coordinator, b); // what activeEditor() binds to
         FxTestSupport.runOnFx(() -> {
             String text = editor.text();
             assertEquals(DOC, text, "ActiveEditor.text() is the whole file");

@@ -778,7 +778,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 pluginManager,
                 pluginOps());
         this.settingsWindow.setPluginActions(
-                pluginCoordinator::browse, pluginCoordinator::installFromDisk, pluginCoordinator::uninstall);
+                pluginCoordinator::browse,
+                pluginCoordinator::installFromDisk,
+                pluginCoordinator::uninstall,
+                pluginCoordinator::enableFromSettings,
+                pluginCoordinator::disableFromSettings);
         this.settingsWindow.setDictionaryActions(
                 this::openTechnicalDictionary, this::openPersonalDictionary); // Spell Check file links
         this.settingsWindow.setInstallActions(
@@ -929,6 +933,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupProjects();
         pluginCoordinator
                 .applyPlugins(); // register plugin commands/tool windows/hooks (before restore, so visibility restores)
+        palette.refreshBindings(); // built before the plugins bound their chords: show theirs, drop the replaced
         snippetCoordinator.checkUserFilesAtStartup(); // a broken user snippet file is reported now, not on first use
         toolWindows.restore();
         // Honor a persisted Zen/Expert state on launch: the view options + chrome already read the flags via
@@ -1012,9 +1017,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.pluginManager = pm; // the per-window PluginRegistry/PluginInstaller are built in PluginCoordinator
     }
 
-    /** Whether plugins may load — the master gate (also off in Simple UI mode). */
+    /** Whether plugins may be browsed and installed — the master gate (also off in Simple UI mode). */
     private boolean pluginsEnabled() {
-        return pluginManager != null && config.getSettings().isPluginSupport() && !chrome.simpleModeActive();
+        return pluginCoordinator != null && pluginCoordinator.isEnabled();
     }
 
     /** Stops this window's plugins (window close); WindowManager calls this by name. */
@@ -1024,7 +1029,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** Window hooks for {@link PluginCoordinator} (open-path + the shared Git error dialog). */
+    /** Window hooks for {@link PluginCoordinator} (open-path + the plugins' error dialog). */
     private PluginCoordinator.Ops pluginOps() {
         return new PluginCoordinator.Ops() {
             @Override
@@ -1034,7 +1039,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void showError(String summary, String detail) {
-                git.gitError(summary, detail);
+                // Owned by Settings while the user works there; titled "Plugins", not "Git".
+                javafx.stage.Window settings = settingsWindow.stageIfShowing();
+                PluginDialogs.error(settings != null ? settings : stage, summary, detail);
             }
         };
     }
@@ -1586,6 +1593,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> exports.shutdown(),
                 () -> runCoordinator.shutdown(),
                 () -> terminalCoordinator.shutdown(), // end every terminal's shell
+                // The WindowManager-wide Settings Sync held this window's Settings listener — and through it the
+                // whole closed window (about 21 MB, its plugins' panes and command closures too) — for good.
+                () -> settingsWindow.setSettingsSync(null),
                 () -> testRunCoordinator.shutdown(), // stop the report poller + elapsed timer
                 installCoordinator == null ? null : () -> installCoordinator.shutdown(),
                 () -> fileWorkflows.shutdown(),
@@ -6874,6 +6884,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public com.editora.plugin.PluginManager plugins() {
+                    return pluginManager;
+                }
+
+                @Override
                 public java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
                         pythonInterpreter() {
                     return lspCoordinator.pythonInterpreterForDoctor();
@@ -9719,10 +9734,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     void exportConfig() {
         // Saved HTTP responses (bodies, URLs) and AI API keys are asked about, off by default.
         boolean askHttp = config.shared().hasHttpHistory(),
-                askKeys = config.shared().hasApiKeys();
-        var choice = askHttp || askKeys
-                ? ExportConfigDialog.ask(stage, askHttp, askKeys)
-                : java.util.Optional.of(new ExportConfigDialog.Choice(false, false));
+                askKeys = config.shared().hasApiKeys(),
+                askPluginData = config.shared().hasPluginData();
+        var choice = askHttp || askKeys || askPluginData
+                ? ExportConfigDialog.ask(stage, askHttp, askKeys, askPluginData)
+                : java.util.Optional.of(new ExportConfigDialog.Choice(false, false, false));
         if (choice.isEmpty()) {
             return;
         }
@@ -9731,7 +9747,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Off the FX thread: the export waits for pending writes and compresses the whole config directory.
         config.shared()
                 .exportConfigAsync(
-                        choice.get().includeHttpHistory(), choice.get().includeApiKeys())
+                        choice.get().includeHttpHistory(),
+                        choice.get().includeApiKeys(),
+                        choice.get().includePluginData())
                 .whenComplete((zip, failure) -> Platform.runLater(() -> {
                     task.done();
                     String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());
