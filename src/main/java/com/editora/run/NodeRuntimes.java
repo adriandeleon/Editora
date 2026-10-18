@@ -242,7 +242,7 @@ public final class NodeRuntimes {
         return path;
     }
 
-    private static final Pattern VERSION = Pattern.compile("v?(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?");
+    private static final Pattern VERSION = Pattern.compile("v?(\\d{1,9})(?:\\.(\\d{1,9}))?(?:\\.(\\d{1,9}))?");
 
     /** {@code [major, minor, patch]} from {@code "v24.18.1"}, {@code "Node.js 22.6"} or {@code "20"}; empty if none. */
     public static Optional<int[]> parseVersion(String text) {
