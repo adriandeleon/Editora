@@ -36,7 +36,21 @@ final class DeclarationRules {
      * signature shape on top of it just rejects real declarations: Python's {@code def render(self):}
      * ends in a colon and Ruby's {@code def run!} ends in the name itself.
      */
-    record Rule(Pattern pattern, SymbolKind kind, boolean needsSignatureShape) {}
+    record Rule(Pattern pattern, SymbolKind kind, boolean needsSignatureShape, String mustContain) {
+
+        Rule(Pattern pattern, SymbolKind kind, boolean needsSignatureShape) {
+            this(pattern, kind, needsSignatureShape, null);
+        }
+
+        /**
+         * Whether the rule can match {@code line} at all: a plain {@code contains} of text every match holds, so the
+         * regex runs only where it might succeed. Every line used to run every rule, and JavaScript's eleven
+         * rules made a 20,000-line file's scan (at each save, on the FX thread) four times slower.
+         */
+        boolean mayMatch(String line) {
+            return mustContain == null || line.contains(mustContain);
+        }
+    }
 
     /** Identifiers that a call-shaped pattern would otherwise mistake for a declaration. */
     static final java.util.Set<String> CONTROL_KEYWORDS = java.util.Set.of(
@@ -89,6 +103,11 @@ final class DeclarationRules {
 
     private static Rule rule(String regex, SymbolKind kind) {
         return new Rule(Pattern.compile(unicodeWords(regex)), kind, false);
+    }
+
+    /** {@link #rule(String, SymbolKind)} that can only match a line containing {@code mustContain}. */
+    private static Rule rule(String regex, SymbolKind kind, String mustContain) {
+        return new Rule(Pattern.compile(unicodeWords(regex)), kind, false, mustContain);
     }
 
     /** A rule whose pattern has no declaring keyword, so the line's shape must confirm it. */
@@ -168,32 +187,37 @@ final class DeclarationRules {
 
     /** A JavaScript/TypeScript function value on the right of {@code =} or {@code :}. */
     private static final String JS_FUNCTION_VALUE =
-            "(?:async\\s*)?(?:function\\b|\\([^)]*\\)\\s*(?::[^=]+)?=>|" + ID + "\\s*=>)";
+            "(?:async\\s*)?(?:function\\b|\\([^)]*+\\)\\s*(?::[^=]++)?=>|" + ID + "\\s*=>)";
 
     private static final List<Rule> JS = List.of(
-            rule("(?:^|\\s)class\\s+(?<n>" + ID + ")", SymbolKind.TYPE),
-            rule("(?:^|\\s)interface\\s+(?<n>" + ID + ")", SymbolKind.INTERFACE),
-            rule("(?:^|\\s)enum\\s+(?<n>" + ID + ")", SymbolKind.ENUM),
-            rule("(?:^|\\s)type\\s+(?<n>" + ID + ")\\s*=", SymbolKind.TYPE),
+            rule("(?:^|\\s)class\\s+(?<n>" + ID + ")", SymbolKind.TYPE, "class"),
+            rule("(?:^|\\s)interface\\s+(?<n>" + ID + ")", SymbolKind.INTERFACE, "interface"),
+            rule("(?:^|\\s)enum\\s+(?<n>" + ID + ")", SymbolKind.ENUM, "enum"),
+            rule("(?:^|\\s)type\\s+(?<n>" + ID + ")\\s*=", SymbolKind.TYPE, "type"),
             // CommonJS: `exports.parse = (s) => …`, `module.exports.VERSION = '1.0'`.
-            rule("^\\s*(?:module\\.)?exports\\.(?<n>" + ID + ")\\s*=\\s*" + JS_FUNCTION_VALUE, SymbolKind.FUNCTION),
-            rule("^\\s*(?:module\\.)?exports\\.(?<n>" + ID + ")\\s*=(?!=)", SymbolKind.VARIABLE),
-            rule("(?:^|\\s)(?:async\\s+)?function\\s*\\*?\\s*(?<n>" + ID + ")", SymbolKind.FUNCTION),
+            rule(
+                    "^\\s*(?:module\\.)?exports\\.(?<n>" + ID + ")\\s*=\\s*" + JS_FUNCTION_VALUE,
+                    SymbolKind.FUNCTION,
+                    "exports."),
+            rule("^\\s*(?:module\\.)?exports\\.(?<n>" + ID + ")\\s*=(?!=)", SymbolKind.VARIABLE, "exports."),
+            rule("(?:^|\\s)(?:async\\s+)?function\\s*\\*?\\s*(?<n>" + ID + ")", SymbolKind.FUNCTION, "function"),
             // `const foo = () => …` / `const foo = function …` — the modern declaration form, at any depth.
             rule(
                     "^\\s*(?:export\\s+)?(?:const|let|var)\\s+(?<n>" + ID + ")\\s*=\\s*" + JS_FUNCTION_VALUE,
-                    SymbolKind.FUNCTION),
+                    SymbolKind.FUNCTION,
+                    "="),
             // A class or object method: `start() {`, `static async create(port) { … }`, `get size() {`, `#tick() {}`.
             // The `) {` it must end in is what no call has; control keywords and `function` are not names.
             rule(
                     "^\\s*(?:(?:static|async|get|set|public|private|protected|readonly|override|abstract|accessor)\\s+)*"
                             + "\\*?\\s*(?!(?:if|for|while|switch|catch|function|with|return|await|typeof|new)\\b)"
-                            + "(?<n>#?" + ID + ")\\s*\\([^()]*(?:\\([^()]*\\)[^()]*)*\\)\\s*(?::\\s*[^{=]+)?\\{",
-                    SymbolKind.METHOD),
+                            + "(?<n>#?" + ID + ")\\s*\\([^()]*+(?:\\([^()]*+\\)[^()]*+)*+\\)\\s*(?::\\s*[^{=]++)?\\{",
+                    SymbolKind.METHOD,
+                    "{"),
             // An object property holding a function: `remove: function (id) {`, `update: (id) => id,`.
-            rule("^\\s*(?<n>" + ID + ")\\s*:\\s*" + JS_FUNCTION_VALUE, SymbolKind.METHOD),
+            rule("^\\s*(?<n>" + ID + ")\\s*:\\s*" + JS_FUNCTION_VALUE, SymbolKind.METHOD, ":"),
             // A variable only at the top level (column 0): every local `const result =` used to be indexed too.
-            rule("^(?:export\\s+)?(?:const|let|var)\\s+(?<n>" + ID + ")\\s*=", SymbolKind.VARIABLE));
+            rule("^(?:export\\s+)?(?:const|let|var)\\s+(?<n>" + ID + ")\\s*=", SymbolKind.VARIABLE, "="));
 
     private static final List<Rule> GO = List.of(
             rule("^\\s*package\\s+(?<n>\\w+)", SymbolKind.MODULE),

@@ -128,6 +128,9 @@ public final class DeclarationScanner {
      */
     private static Symbol firstMatch(String lineText, List<DeclarationRules.Rule> rules, int line, String container) {
         for (DeclarationRules.Rule rule : rules) {
+            if (!rule.mayMatch(lineText)) {
+                continue;
+            }
             Matcher m = rule.pattern().matcher(lineText);
             if (!m.find()) {
                 continue;
