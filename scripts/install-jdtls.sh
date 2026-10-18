@@ -19,8 +19,8 @@ DEST="$CONFIG_DIR/plugins/lsp/java"
 # A PINNED Eclipse jdt.ls milestone — deliberately not the snapshots/ nightly, so this script and the in-app
 # installer (InstallCatalog.JDTLS_VERSION/JDTLS_BUILD) hand out the same, tested server. Keep the two in sync;
 # milestones are listed at https://download.eclipse.org/jdtls/milestones/. Override with JDTLS_URL to test another.
-JDTLS_VERSION="${JDTLS_VERSION:-1.60.0}"
-JDTLS_BUILD="${JDTLS_BUILD:-202606262232}"
+JDTLS_VERSION="${JDTLS_VERSION:-1.62.0}"
+JDTLS_BUILD="${JDTLS_BUILD:-202610131109}"
 URL="${JDTLS_URL:-https://download.eclipse.org/jdtls/milestones/$JDTLS_VERSION/jdt-language-server-$JDTLS_VERSION-$JDTLS_BUILD.tar.gz}"
 
 for cmd in curl tar; do

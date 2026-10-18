@@ -130,13 +130,12 @@ public final class UnittestOutputParser implements TestResultParser {
     }
 
     private static List<ParsedSuite> result(String name, String id, String outcome) {
-        TestStatus status =
-                switch (outcome) {
-                    case "ok", "expected failure" -> TestStatus.PASSED;
-                    case "FAIL", "unexpected success" -> TestStatus.FAILED;
-                    case "ERROR" -> TestStatus.ERROR;
-                    default -> TestStatus.SKIPPED; // skipped 'why'
-                };
+        TestStatus status = switch (outcome) {
+            case "ok", "expected failure" -> TestStatus.PASSED;
+            case "FAIL", "unexpected success" -> TestStatus.FAILED;
+            case "ERROR" -> TestStatus.ERROR;
+            default -> TestStatus.SKIPPED; // skipped 'why'
+        };
         String message = outcome.startsWith("skipped ") ? outcome.substring("skipped ".length()) : null;
         String cls = className(name, id);
         ParsedTest t = new ParsedTest(cls, name, status, 0, null, message, null, null, null, 0);

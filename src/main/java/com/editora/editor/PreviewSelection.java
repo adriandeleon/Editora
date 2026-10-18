@@ -551,14 +551,13 @@ final class PreviewSelection {
             clear();
             e.consume();
         } else if (e.isShiftDown() && !e.isShortcutDown() && !e.isAltDown()) {
-            Pos to =
-                    switch (e.getCode()) {
-                        case LEFT, KP_LEFT -> step(focus, false);
-                        case RIGHT, KP_RIGHT -> step(focus, true);
-                        case UP, KP_UP -> line(focus, false);
-                        case DOWN, KP_DOWN -> line(focus, true);
-                        default -> null;
-                    };
+            Pos to = switch (e.getCode()) {
+                case LEFT, KP_LEFT -> step(focus, false);
+                case RIGHT, KP_RIGHT -> step(focus, true);
+                case UP, KP_UP -> line(focus, false);
+                case DOWN, KP_DOWN -> line(focus, true);
+                default -> null;
+            };
             if (to != null) {
                 focus = to;
                 all = false;

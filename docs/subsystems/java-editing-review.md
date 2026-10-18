@@ -192,7 +192,8 @@ and 100 in Gradle returned **zero import-preservation failures**. The smaller sc
 passed with that default. This isolates a concrete launch-configuration fix rather than inventing a
 second client-side Java import resolver.
 
-A separate server gap remains in JDT LS 1.61.0.202607301809: in a file declaring `class ArrayList {}`,
+A separate server gap remains in JDT LS 1.61.0.202607301809 (and still in 1.62.0.202610131109, checked
+with the strict probe when Editora moved to it): in a file declaring `class ArrayList {}`,
 selecting the external `java.util.ArrayList` proposal for unfinished `new ArrayLi` resolves to an
 import that conflicts with the same-file declaration. This occurred in all 50 Maven and 25 Gradle
 conflict rounds after lifecycle joining. `-Dlsp.java.probe.strict=true` makes that recorded gap fail;

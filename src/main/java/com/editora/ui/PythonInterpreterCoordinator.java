@@ -164,14 +164,15 @@ final class PythonInterpreterCoordinator {
             } catch (RuntimeException e) {
                 // a dropped connection: only what resolved, PATH and Browse… are offered
             }
-            // Elsewhere an environment is offered as that machine names it, and nothing is run here for a version.
-            List<Path> venvs = machine.local()
-                    ? found
-                    : found.stream()
-                            .map(v -> Path.of(machine.toTarget().apply(v)))
-                            .toList();
+            // Elsewhere an environment is offered as that machine names it (toTarget), and nothing is run here for
+            // a version.
             List<PythonInterpreterView.Choice> choices = PythonInterpreterView.choices(
-                    current, venvs, windows, machine.onPath(), machine.local() ? this::versionOf : exe -> "");
+                    current,
+                    found,
+                    windows,
+                    machine.toTarget(),
+                    machine.onPath(),
+                    machine.local() ? this::versionOf : exe -> "");
             Platform.runLater(() -> showPicker(choices, root));
         });
     }

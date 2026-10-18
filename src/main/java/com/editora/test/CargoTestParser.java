@@ -75,12 +75,11 @@ public final class CargoTestParser implements TestResultParser {
             if (name.endsWith(SHOULD_PANIC)) {
                 name = name.substring(0, name.length() - SHOULD_PANIC.length()); // else it is counted twice
             }
-            TestStatus status =
-                    switch (result.group(2)) {
-                        case "FAILED" -> TestStatus.FAILED;
-                        case "ignored" -> TestStatus.SKIPPED;
-                        default -> TestStatus.PASSED;
-                    };
+            TestStatus status = switch (result.group(2)) {
+                case "FAILED" -> TestStatus.FAILED;
+                case "ignored" -> TestStatus.SKIPPED;
+                default -> TestStatus.PASSED;
+            };
             return List.of(new ParsedSuite(suite, List.of(ParsedTest.of(suite, name, status, 0))));
         }
         return List.of();

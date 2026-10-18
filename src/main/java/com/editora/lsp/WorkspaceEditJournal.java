@@ -179,11 +179,10 @@ public final class WorkspaceEditJournal {
         public List<Path> leftovers() {
             Set<Path> out = new LinkedHashSet<>();
             for (Entry entry : entries) {
-                Path stage =
-                        switch (entry.kind()) {
-                            case "DELETE", "REPLACE", "CREATE", "RENAME" -> entry.second();
-                            default -> null;
-                        };
+                Path stage = switch (entry.kind()) {
+                    case "DELETE", "REPLACE", "CREATE", "RENAME" -> entry.second();
+                    default -> null;
+                };
                 if (stage != null && Files.exists(stage)) {
                     out.add(stage);
                 }

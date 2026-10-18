@@ -288,27 +288,25 @@ class JavaTypingSoakProbeTest {
 
     private void scenario(String name, boolean large) throws Exception {
         prepare(large);
-        String expression =
-                switch (name) {
-                    case "println" -> "System.out.pr";
-                    case "backspace" -> "System.out.prin";
-                    case "String" -> "Str";
-                    case "ArrayList" -> "new ArrayLi";
-                    case "chain" -> "\"sample\".trim().sub";
-                    default -> throw new IllegalArgumentException(name);
-                };
+        String expression = switch (name) {
+            case "println" -> "System.out.pr";
+            case "backspace" -> "System.out.prin";
+            case "String" -> "Str";
+            case "ArrayList" -> "new ArrayLi";
+            case "chain" -> "\"sample\".trim().sub";
+            default -> throw new IllegalArgumentException(name);
+        };
         type(expression, true);
         if (name.equals("backspace")) {
             key("BACK_SPACE");
             key("BACK_SPACE");
         }
-        String label =
-                switch (name) {
-                    case "println", "backspace" -> "println()";
-                    case "String" -> "String";
-                    case "ArrayList" -> "ArrayList()";
-                    default -> "substring(int beginIndex)";
-                };
+        String label = switch (name) {
+            case "println", "backspace" -> "println()";
+            case "String" -> "String";
+            case "ArrayList" -> "ArrayList()";
+            default -> "substring(int beginIndex)";
+        };
         long finalKey = lastKeyNanos;
         awaitItem(label, 15);
         sample((large ? "large." : "small.") + name + ".key-to-popup", (System.nanoTime() - finalKey) / 1e6);

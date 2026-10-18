@@ -1426,6 +1426,12 @@ final class LspCoordinator {
         return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId), projectTrusted());
     }
 
+    /** Whether the user (or a trusted project) set this server's command, rather than leaving the default (Doctor). */
+    boolean serverCommandSet(String serverId) {
+        String raw = serverCommand(serverId);
+        return raw != null && !raw.isBlank();
+    }
+
     /**
      * Whether this window's project folder is trusted, which is what lets its committed
      * {@code .editora/settings.json} choose a program to run. Only consulted when the file overrides
@@ -5926,12 +5932,11 @@ final class LspCoordinator {
             if (c == null || c.path() == null) {
                 continue;
             }
-            com.editora.lsp.LspManager.WatchedKind kind =
-                    switch (c.kind()) {
-                        case CREATED -> com.editora.lsp.LspManager.WatchedKind.CREATED;
-                        case DELETED -> com.editora.lsp.LspManager.WatchedKind.DELETED;
-                        case CHANGED -> com.editora.lsp.LspManager.WatchedKind.CHANGED;
-                    };
+            com.editora.lsp.LspManager.WatchedKind kind = switch (c.kind()) {
+                case CREATED -> com.editora.lsp.LspManager.WatchedKind.CREATED;
+                case DELETED -> com.editora.lsp.LspManager.WatchedKind.DELETED;
+                case CHANGED -> com.editora.lsp.LspManager.WatchedKind.CHANGED;
+            };
             // Merged, not overwritten: writing a new file is a create then a modify, and a server told only
             // "changed" about a file it never knew ignores it — a new module stayed unresolved (review B6).
             com.editora.lsp.LspManager.WatchedKind merged =

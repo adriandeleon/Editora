@@ -23,13 +23,12 @@ public final class EditorConfigTransform {
             return content; // nothing to do — leave the bytes (and existing EOLs) untouched
         }
 
-        String target =
-                switch (eol == null ? "" : eol) {
-                    case "crlf" -> "\r\n";
-                    case "cr" -> "\r";
-                    case "lf" -> "\n";
-                    default -> dominantEol(content); // EOL not specified → keep the file's dominant style
-                };
+        String target = switch (eol == null ? "" : eol) {
+            case "crlf" -> "\r\n";
+            case "cr" -> "\r";
+            case "lf" -> "\n";
+            default -> dominantEol(content); // EOL not specified → keep the file's dominant style
+        };
 
         String lf = content.replace("\r\n", "\n").replace("\r", "\n");
         if (trim) {

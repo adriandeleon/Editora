@@ -723,22 +723,22 @@ public class SettingsWindow {
      * {@link Category} enum never leaks; an unknown key just opens Settings unfocused.
      */
     public void showDoctorTarget(String key, Window owner) {
-        Category target =
-                switch (key == null ? "" : key) {
-                    case "git" -> Category.GIT;
-                    case "github" -> Category.GITHUB;
-                    case "search" -> Category.SEARCH;
-                    case "mermaid" -> Category.MERMAID;
-                    case "diagrams" -> Category.DIAGRAMS;
-                    case "typst" -> Category.TYPST;
-                    case "lsp" -> Category.LSP;
-                    case "debug" -> Category.DEBUG;
-                    case "web" -> Category.WEB;
-                    case "ai" -> Category.AI_GENERAL;
-                    case "buildTools" -> Category.BUILD_TOOLS;
-                    case "editor" -> Category.EDITOR;
-                    default -> null;
-                };
+        Category target = switch (key == null ? "" : key) {
+            case "git" -> Category.GIT;
+            case "github" -> Category.GITHUB;
+            case "search" -> Category.SEARCH;
+            case "mermaid" -> Category.MERMAID;
+            case "diagrams" -> Category.DIAGRAMS;
+            case "typst" -> Category.TYPST;
+            case "lsp" -> Category.LSP;
+            case "debug" -> Category.DEBUG;
+            case "web" -> Category.WEB;
+            case "ai" -> Category.AI_GENERAL;
+            case "buildTools" -> Category.BUILD_TOOLS;
+            case "editor" -> Category.EDITOR;
+            case "remote" -> Category.REMOTE;
+            default -> null;
+        };
         showAt(target, owner);
     }
 
@@ -2401,16 +2401,15 @@ public class SettingsWindow {
                     return; // a key pressed on the row's own Record/Reset button is the button's
                 }
                 List<Node> all = shortcutListBox.getChildren();
-                int target =
-                        switch (e.getCode()) {
-                            // On the first row Up stays put, as Down does on the last one: left to the
-                            // toolkit it moved the focus out of the list, to the filter field above it.
-                            case UP -> Math.max(0, all.indexOf(row) - 1);
-                            case DOWN -> all.indexOf(row) + 1;
-                            case HOME -> 0;
-                            case END -> all.size() - 1;
-                            default -> -1;
-                        };
+                int target = switch (e.getCode()) {
+                    // On the first row Up stays put, as Down does on the last one: left to the
+                    // toolkit it moved the focus out of the list, to the filter field above it.
+                    case UP -> Math.max(0, all.indexOf(row) - 1);
+                    case DOWN -> all.indexOf(row) + 1;
+                    case HOME -> 0;
+                    case END -> all.size() - 1;
+                    default -> -1;
+                };
                 if (e.getCode() == javafx.scene.input.KeyCode.ENTER
                         || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
                     select.run();
@@ -5711,12 +5710,11 @@ public class SettingsWindow {
             agentStatusLabels.put(a.id(), status);
             String title = tr(a.commandLabelKey());
             toolRows(c, Category.AGENT, title, null, agentCommandFields.get(a.id()), null, status, a.keywords());
-            String setup =
-                    switch (a.id()) {
-                        case "codex" -> "settings.agent.codexHint";
-                        case "lmstudio" -> "settings.agent.lmstudioHint";
-                        default -> null;
-                    };
+            String setup = switch (a.id()) {
+                case "codex" -> "settings.agent.codexHint";
+                case "lmstudio" -> "settings.agent.lmstudioHint";
+                default -> null;
+            };
             if (setup != null) {
                 cardRow(c, Category.AGENT, wrappedNote(setup), a.keywords() + " install login setup local model");
             }

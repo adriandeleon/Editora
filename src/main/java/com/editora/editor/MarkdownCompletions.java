@@ -127,16 +127,15 @@ public final class MarkdownCompletions implements CompletionProvider {
         if (ctx == null || (ctx.kind() == Kind.FENCE_LANGUAGE) != (kind == MarkdownBlocks.Kind.FENCE_OPEN)) {
             return null;
         }
-        List<Completion> items =
-                switch (ctx.kind()) {
-                    case FENCE_LANGUAGE -> fenceLanguages(ctx.partial());
-                    case PATH -> paths(ctx);
-                    case ANCHOR -> anchors(ctx, document);
-                    case REFERENCE -> references(ctx, document, manual);
-                    case EMOJI -> emoji(ctx);
-                    case WIKI -> wikiNotes(ctx);
-                    case WIKI_HEADING -> wikiHeadings(ctx, document);
-                };
+        List<Completion> items = switch (ctx.kind()) {
+            case FENCE_LANGUAGE -> fenceLanguages(ctx.partial());
+            case PATH -> paths(ctx);
+            case ANCHOR -> anchors(ctx, document);
+            case REFERENCE -> references(ctx, document, manual);
+            case EMOJI -> emoji(ctx);
+            case WIKI -> wikiNotes(ctx);
+            case WIKI_HEADING -> wikiHeadings(ctx, document);
+        };
         return items.isEmpty() ? null : new Offer(ctx.start(), ctx.partial(), items);
     }
 
