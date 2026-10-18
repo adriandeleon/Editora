@@ -354,4 +354,81 @@ class JavaDebugEngineFxTest {
         assertTrue(text.contains(String.valueOf(DapClient.requestTimeoutSeconds())), text);
         assertFalse(DapManager.stillEvaluating().contains("Exception"));
     }
+
+    // --- follow-up 4: java-debug's garbled emoji are repaired from the JVM's own bytes ----------------------
+
+    private static org.eclipse.lsp4j.debug.Variable typed(String name, String value, String type, int ref) {
+        org.eclipse.lsp4j.debug.Variable v = FakeDebugAdapter.Session.variable(name, value, ref);
+        v.setType(type);
+        return v;
+    }
+
+    /** The children java-debug gives a UTF-16 String: {@code coder} 1 and its {@code value} bytes (x86: LE). */
+    private static void stringFields(FakeDebugAdapter.Session session, int ref, int valueRef, String text) {
+        session.variables.put(
+                ref,
+                List.of(
+                        typed("coder", "1", "byte", 0),
+                        typed("value", "byte[" + text.length() * 2 + "]", "byte[]", valueRef)));
+        List<org.eclipse.lsp4j.debug.Variable> bytes = new ArrayList<>();
+        int i = 0;
+        for (char ch : text.toCharArray()) {
+            bytes.add(typed(String.valueOf(i++), String.valueOf((byte) ch), "byte", 0));
+            bytes.add(typed(String.valueOf(i++), String.valueOf((byte) (ch >> 8)), "byte", 0));
+        }
+        session.variables.put(valueRef, bytes);
+    }
+
+    @Test
+    void anEmojiJavaDebugGarbledShowsAsItselfAndRealTextThatLooksGarbledIsLeftAlone() throws Exception {
+        FakeDebugAdapter.Session session = launch();
+        session.stop(1, "breakpoint");
+        awaitEvent("stopped:1");
+        // what java-debug 0.53.2 sends for "a😀b" (measured), and a Russian text whose "о»" looks like such a pair
+        session.variables.put(
+                FakeDebugAdapter.Session.LOCALS,
+                List.of(
+                        typed("e", "\"a\u07d8\u0080b\"", "String", 20),
+                        typed("ru", "\"«слово»\"", "String", 21),
+                        typed("n", "3", "int", 0)));
+        stringFields(session, 20, 22, "a\uD83D\uDE00b");
+        stringFields(session, 21, 23, "«слово»");
+
+        List<DapModels.VariableInfo> locals = new CopyOnWriteArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        onFx(() -> dap.variables(FakeDebugAdapter.Session.LOCALS, vars -> {
+            locals.addAll(vars);
+            done.countDown();
+        }));
+        assertTrue(done.await(10, TimeUnit.SECONDS));
+
+        assertEquals("\"a😀b\"", locals.get(0).value());
+        assertEquals("\"«слово»\"", locals.get(1).value(), "checked against the JVM's characters: left as it is");
+        assertEquals("3", locals.get(2).value());
+        assertEquals(
+                List.of("e", "ru", "n"),
+                locals.stream().map(DapModels.VariableInfo::name).toList());
+    }
+
+    @Test
+    void anEvaluatedStringIsRepairedToo() throws Exception {
+        FakeDebugAdapter.Session session = launch();
+        session.stop(1, "breakpoint");
+        awaitEvent("stopped:1");
+        stringFields(session, 30, 31, "x\uD83D\uDE00");
+        org.eclipse.lsp4j.debug.EvaluateResponse answer = new org.eclipse.lsp4j.debug.EvaluateResponse();
+        answer.setResult("\"x\u07d8\u0080\"");
+        answer.setType("String");
+        answer.setVariablesReference(30);
+        adapter.evaluateGate = CompletableFuture.completedFuture(answer);
+        List<String> console = new CopyOnWriteArrayList<>();
+        List<String> hover = new CopyOnWriteArrayList<>();
+        onFx(() -> {
+            dap.evaluate("e", 1, "repl", console::add);
+            dap.evaluateHover("e", 1, hover::add);
+        });
+        await("both answered", () -> console.size() == 1 && hover.size() == 1);
+        assertEquals("\"x😀\"", console.get(0));
+        assertEquals("\"x😀\"", hover.get(0));
+    }
 }

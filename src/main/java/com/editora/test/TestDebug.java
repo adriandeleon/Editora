@@ -21,7 +21,8 @@ public final class TestDebug {
 
     /**
      * The Maven/Gradle flag that forks the test JVM suspended on a JDWP port: for Maven one the system picks
-     * (surefire's own default is a fixed 5005, review A15); Gradle's {@code --debug-jvm} has no such choice.
+     * (surefire's own default is a fixed 5005, review A15); for Gradle an init script does the same, and
+     * {@code --debug-jvm} (always 5005) is the fallback.
      */
     private static final String MAVEN_DEBUG = "-Dmaven.surefire.debug=" + com.editora.build.BuildDebug.JDWP_AGENT;
 
@@ -36,14 +37,32 @@ public final class TestDebug {
      * can't ({@code null} {@code methodName} debugs the whole class).
      */
     public static List<String> debugTaskArgs(BuildTool tool, String className, String methodName) {
+        return debugTaskArgs(tool, className, methodName, null);
+    }
+
+    /**
+     * As above; {@code gradleInitScript}, when given, debugs Gradle's test JVMs on ports the system picks (see
+     * {@code GradleDebugInit}) instead of {@code --debug-jvm}'s fixed 5005.
+     */
+    public static List<String> debugTaskArgs(
+            BuildTool tool, String className, String methodName, java.nio.file.Path gradleInitScript) {
         List<String> base = TestRunRecognizer.singleTestTask(tool, className, methodName);
         if (base.isEmpty()) {
             return List.of(); // non-JVM tool — no supported suspend-and-wait flag
         }
         List<String> args = new ArrayList<>(base);
-        args.add(tool == BuildTool.GRADLE ? GRADLE_DEBUG : MAVEN_DEBUG);
+        if (tool != BuildTool.GRADLE) {
+            args.add(MAVEN_DEBUG);
+        } else if (gradleInitScript != null) {
+            args.addAll(com.editora.build.GradleDebugInit.args(gradleInitScript));
+        } else {
+            args.add(GRADLE_DEBUG);
+        }
         return List.copyOf(args);
     }
+
+    /** The Gradle task whose forked JVMs a test debug run debugs. */
+    public static final String GRADLE_TEST_TASK = "test";
 
     /** The port from a JDWP "Listening for transport…" line, or {@code -1} when the line isn't one. */
     public static int jdwpPort(String line) {

@@ -1680,6 +1680,50 @@ public final class DapClient implements IDebugProtocolClient {
         return timed(server.stepIn(a));
     }
 
+    // --- completions (follow-up 5: completion in the evaluate field, watch prompt and breakpoint condition) ----
+
+    /** Whether the adapter completes expressions ({@code completions}); java-debug and debugpy do. */
+    public boolean supportsCompletions() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsCompletionsRequest());
+    }
+
+    /**
+     * The completions of {@code text} at 0-based {@code column} (sent 1-based, as this client declares), in the
+     * scope of {@code frameId}: what the Debug console, the watch prompt and a breakpoint condition offer.
+     */
+    public CompletableFuture<List<DapModels.CompletionTarget>> completions(int frameId, String text, int column) {
+        DapClient session = target();
+        if (session != this) {
+            return session.completions(frameId, text, column);
+        }
+        org.eclipse.lsp4j.debug.CompletionsArguments a = new org.eclipse.lsp4j.debug.CompletionsArguments();
+        a.setFrameId(frameId);
+        a.setText(text == null ? "" : text);
+        a.setColumn(Math.max(0, column) + 1);
+        a.setLine(1);
+        return timed(server.completions(a)).thenApply(r -> {
+            List<DapModels.CompletionTarget> out = new ArrayList<>();
+            if (r != null && r.getTargets() != null) {
+                for (org.eclipse.lsp4j.debug.CompletionItem t : r.getTargets()) {
+                    if (t != null && t.getLabel() != null) {
+                        out.add(new DapModels.CompletionTarget(
+                                t.getLabel(),
+                                t.getText(),
+                                t.getType() == null
+                                        ? ""
+                                        : t.getType().toString().toLowerCase(java.util.Locale.ROOT),
+                                t.getDetail(),
+                                t.getSortText(),
+                                t.getStart() == null ? -1 : t.getStart() - 1,
+                                t.getLength() == null ? -1 : t.getLength()));
+                    }
+                }
+            }
+            return List.copyOf(out);
+        });
+    }
+
     private static void ignore(CompletableFuture<?> f) {
         if (f != null) {
             f.exceptionally(e -> null);

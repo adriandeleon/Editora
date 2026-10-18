@@ -52,8 +52,11 @@ public class WorkspaceState {
      *
      * <p>v18 → v19 added {@code debugExceptionFilters} (the exception breakpoints chosen per debug adapter
      * language). Additive; absent means the adapter's defaults, as before.
+     *
+     * <p>v19 → v20 added {@code debugBreakpointsMuted} (Mute Breakpoints, kept per project). Additive; absent
+     * means not muted, as before.
      */
-    public static final int SCHEMA_VERSION = 19;
+    public static final int SCHEMA_VERSION = 20;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -169,6 +172,8 @@ public class WorkspaceState {
      * language not listed uses its adapter's defaults. Additive in v19.
      */
     private Map<String, List<String>> debugExceptionFilters = new LinkedHashMap<>();
+    /** Mute Breakpoints: the debug adapter is told none of this project's breakpoints. Additive in v20. */
+    private boolean debugBreakpointsMuted;
 
     // --- Zen (distraction-free) mode (per window). zenMode is a per-window effective overlay folded into
     //     the chrome/view-settings application (MainController.zenActive) — it hides chrome WITHOUT mutating
@@ -519,6 +524,14 @@ public class WorkspaceState {
 
     public void setDebugWatches(List<String> debugWatches) {
         this.debugWatches = debugWatches == null ? new ArrayList<>() : debugWatches;
+    }
+
+    public boolean isDebugBreakpointsMuted() {
+        return debugBreakpointsMuted;
+    }
+
+    public void setDebugBreakpointsMuted(boolean debugBreakpointsMuted) {
+        this.debugBreakpointsMuted = debugBreakpointsMuted;
     }
 
     public Map<String, List<String>> getDebugExceptionFilters() {
