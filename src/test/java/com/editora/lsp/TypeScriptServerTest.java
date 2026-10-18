@@ -61,7 +61,7 @@ class TypeScriptServerTest {
 
     @Test
     void theWalkFindsTheNearestTsserverWithinTheCeilingAndSkipsTypescriptSeven() {
-        Path root = root.resolve("").toAbsolutePath(); // a drive on Windows: the walk works on absolute paths
+        Path root = Path.of("/").toAbsolutePath(); // a drive on Windows: the walk works on absolute paths
         Path near = root.resolve("r/a/node_modules/typescript/lib/tsserver.js");
         Path far = root.resolve("r/node_modules/typescript/lib/tsserver.js");
         Set<Path> files = Set.of(near, far);
