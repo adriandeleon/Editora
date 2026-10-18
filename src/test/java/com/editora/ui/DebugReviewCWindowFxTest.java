@@ -498,6 +498,15 @@ class DebugReviewCWindowFxTest {
         return out;
     }
 
+    /** The overlay card around the breakpoint form's fields. FX thread. */
+    private Node breakpointCard() {
+        Node card = completingFields().getFirst();
+        while (!card.getStyleClass().contains("overlay-form")) {
+            card = card.getParent();
+        }
+        return card;
+    }
+
     /**
      * The breakpoint form hugs its fields: its wrapping hint used to ask for its whole text on one line, which
      * stretched the card across the window and squeezed the field labels to an ellipsis.
@@ -510,12 +519,12 @@ class DebugReviewCWindowFxTest {
             b.getArea().moveTo(1, 0);
             debug.editBreakpointAtCaret();
         });
-        FxTestSupport.drainFx();
+        // The card is laid out on a later pulse (macOS CI measured it before any: 0 px wide).
+        await(
+                "the breakpoint form to be laid out",
+                () -> breakpointCard().getLayoutBounds().getWidth() > 0);
         FxTestSupport.runOnFx(() -> {
-            Node card = completingFields().getFirst();
-            while (!card.getStyleClass().contains("overlay-form")) {
-                card = card.getParent();
-            }
+            Node card = breakpointCard();
             double width = card.getLayoutBounds().getWidth();
             assertTrue(width > 0 && width < 700, "the card is " + width + " px wide");
             double height = card.getLayoutBounds().getHeight();
