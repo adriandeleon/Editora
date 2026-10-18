@@ -49,6 +49,18 @@ class JsLaunchTest {
     }
 
     @Test
+    void aPackageManagerLaunchHasNoProgramAndCarriesItsEnvironment() {
+        Map<String, Object> m = JsLaunch.request(
+                "pwa-node", "", "/p", "/p", List.of("/usr/bin/npm", "run", "start"), List.of(), true, Map.of("X", "1"));
+        assertFalse(m.containsKey("program"));
+        assertEquals("/usr/bin/npm", m.get("runtimeExecutable"));
+        assertEquals(List.of("run", "start"), m.get("runtimeArgs"));
+        assertEquals(Map.of("X", "1"), m.get("env"));
+        assertFalse(JsLaunch.request("pwa-node", "/p/a.js", "/p", null, List.of("node"), List.of(), true)
+                .containsKey("env"));
+    }
+
+    @Test
     void typescriptNeedsANodeThatStripsTypesAndJsxNeverRuns() {
         assertNull(JsLaunch.launchProblemKey("app.js", "v14.0.0"));
         assertNull(JsLaunch.launchProblemKey("main.ts", "v24.18.1"));

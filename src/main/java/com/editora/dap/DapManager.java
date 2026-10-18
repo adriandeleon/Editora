@@ -1981,44 +1981,87 @@ public final class DapManager {
             fail(epoch, tr("debug.error.jsNotFound"));
             return;
         }
+        JsProgram planned = jsProgram;
+        List<String> runtime;
+        String program;
+        List<String> args;
+        Path cwd;
+        Path workspace;
+        Map<String, String> env;
+        String adapterNode;
         Path projectRoot = jsProjectRoot;
-        com.editora.run.NodeRuntimes.NodeRuntime runtime =
-                com.editora.run.NodeRuntimes.resolveLocal(file, projectRoot, "", nodePath);
-        String version = nodeVersion(runtime.executable());
-        String problem = JsLaunch.launchProblemKey(file.getFileName().toString(), version);
-        if (problem != null) {
-            fail(epoch, tr(problem, version == null ? "?" : version));
-            return;
+        if (planned != null) {
+            // A run configuration's launch, planned as Run plans it (NodeRunPlan / the package manager).
+            runtime = planned.runtime();
+            program = planned.program();
+            args = planned.args();
+            cwd = planned.cwd();
+            workspace = projectRoot != null && cwd.toAbsolutePath().startsWith(projectRoot.toAbsolutePath())
+                    ? projectRoot
+                    : cwd;
+            env = planned.env();
+            String exe = runtime.get(0);
+            boolean node = com.editora.run.NodeRunPlan.isNodeName(exe);
+            String version = node ? nodeVersion(exe) : null;
+            adapterNode =
+                    node ? adapterNodeFor(exe, version) : adapterNodeFor(adapterNode(), nodeVersion(adapterNode()));
+            if (adapterNode == null) {
+                String used = node ? exe : adapterNode();
+                fail(
+                        epoch,
+                        tr(
+                                "debug.error.jsNodeTooOld",
+                                node ? version : nodeVersion(used),
+                                used,
+                                JsLaunch.MIN_ADAPTER_NODE_MAJOR));
+                return;
+            }
+        } else {
+            com.editora.run.NodeRuntimes.NodeRuntime resolved =
+                    com.editora.run.NodeRuntimes.resolveLocal(file, projectRoot, "", nodePath);
+            String version = nodeVersion(resolved.executable());
+            String problem = JsLaunch.launchProblemKey(file.getFileName().toString(), version);
+            if (problem != null) {
+                fail(epoch, tr(problem, version == null ? "?" : version));
+                return;
+            }
+            adapterNode = adapterNodeFor(resolved.executable(), version);
+            if (adapterNode == null) {
+                fail(
+                        epoch,
+                        tr(
+                                "debug.error.jsNodeTooOld",
+                                version,
+                                resolved.executable(),
+                                JsLaunch.MIN_ADAPTER_NODE_MAJOR));
+                return;
+            }
+            runtime = JsLaunch.withNodeArgs(resolved.command(), jsNodeArgs);
+            program = file.toString();
+            args = programArgs;
+            cwd = com.editora.run.NodeRuntimes.workingDirectory(file, projectRoot);
+            // The workspace folder js-debug resolves ${workspaceFolder} from (source maps): the project when the
+            // file is in it, else its package root.
+            workspace = projectRoot != null && file.toAbsolutePath().startsWith(projectRoot.toAbsolutePath())
+                    ? projectRoot
+                    : cwd;
+            env = Map.of();
         }
-        String adapterNode = adapterNodeFor(runtime.executable(), version);
-        if (adapterNode == null) {
-            fail(epoch, tr("debug.error.jsNodeTooOld", version, runtime.executable(), JsLaunch.MIN_ADAPTER_NODE_MAJOR));
-            return;
-        }
-        Path cwd = com.editora.run.NodeRuntimes.workingDirectory(file, projectRoot);
-        // The workspace folder js-debug resolves ${workspaceFolder} from (source maps): the project when the file
-        // is in it, else its package root.
-        Path workspace = projectRoot != null && file.toAbsolutePath().startsWith(projectRoot.toAbsolutePath())
-                ? projectRoot
-                : cwd;
         boolean clientConsole = programConsole;
         Map<String, Object> launch = JsLaunch.request(
-                spec.launchType(),
-                file.toString(),
-                cwd.toString(),
-                workspace.toString(),
-                JsLaunch.withNodeArgs(runtime.command(), jsNodeArgs),
-                programArgs,
-                clientConsole);
+                spec.launchType(), program, cwd.toString(), workspace.toString(), runtime, args, clientConsole, env);
         jsClientConsole = clientConsole;
         if (clientConsole) {
             // What runs, first in the console (muted), as for Python: which Node.js, with which arguments. (When
             // js-debug starts the program it prints this line itself.)
-            List<String> words = new java.util.ArrayList<>(JsLaunch.withNodeArgs(runtime.command(), jsNodeArgs));
-            words.add(file.toString());
-            words.addAll(programArgs);
+            List<String> words = new java.util.ArrayList<>(runtime);
+            if (program != null && !program.isBlank()) {
+                words.add(program);
+            }
+            words.addAll(args);
             onOutput(epoch, com.editora.run.RunService.commandLine(words) + "\n", COMMAND_CATEGORY);
         }
+        List<String> chip = runtime;
         JsAdapter adapter = startJsAdapter(adapterNode, epoch);
         if (adapter == null) {
             return; // reported
@@ -2034,7 +2077,36 @@ public final class DapManager {
                 DapPaths.LOCAL,
                 launch,
                 clientConsole,
-                runtime.command());
+                chip);
+    }
+
+    /**
+     * A JavaScript launch planned by its caller instead of from the file alone — a {@code node} run configuration
+     * (as {@code NodeRunPlan} runs it) or an npm script ({@code runtime} = the package manager, {@code program}
+     * blank, js-debug attaching to the Node processes it starts).
+     *
+     * @param runtime the executable and its arguments before the program
+     * @param program the script ({@code ""} for a package-manager launch)
+     * @param args the program's arguments
+     * @param cwd the folder it runs in
+     * @param env variables set on top of the inherited ones
+     */
+    public record JsProgram(
+            List<String> runtime, String program, List<String> args, Path cwd, Map<String, String> env) {
+        public JsProgram {
+            runtime = List.copyOf(runtime);
+            program = program == null ? "" : program;
+            args = args == null ? List.of() : List.copyOf(args);
+            env = env == null ? Map.of() : java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(env));
+        }
+    }
+
+    /** The planned launch for the next JavaScript session (null: plan it from the file); sticky across restart. */
+    private volatile JsProgram jsProgram;
+
+    /** Sets {@link #jsProgram}; {@code null} for an ordinary launch of a file. */
+    public void setJsProgram(JsProgram program) {
+        this.jsProgram = program;
     }
 
     /**
