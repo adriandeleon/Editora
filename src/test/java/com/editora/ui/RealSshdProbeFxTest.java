@@ -72,7 +72,22 @@ class RealSshdProbeFxTest {
         String run() throws Exception;
     }
 
+    /**
+     * {@code remote.probe.only}: comma-separated parts of step names; when set, only matching steps run (and the
+     * first, which connects). The CI's terminal probe runs {@code terminal,shell integration,dropped connection}
+     * on every pull request that touches the terminal, without the language servers the rest needs.
+     */
+    private static final List<String> ONLY = java.util.Arrays.stream(
+                    System.getProperty("remote.probe.only", "").split(","))
+            .map(String::strip)
+            .filter(part -> !part.isEmpty())
+            .toList();
+
     private void step(String name, Step body) {
+        if (!ONLY.isEmpty() && !report.isEmpty() && ONLY.stream().noneMatch(name::contains)) {
+            report.put(name, "SKIP — not in remote.probe.only");
+            return;
+        }
         long t0 = System.nanoTime();
         String outcome;
         try {
