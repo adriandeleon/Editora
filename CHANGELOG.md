@@ -351,6 +351,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The minimise, maximise and close buttons were nearly invisible with a dark theme and the menu bar in the
+  title bar.** They followed the desktop's light or dark setting rather than Editora's theme, so a dark theme on
+  a light desktop drew them dark on dark. They now follow the app theme, and change with it.
 - **A submenu's › arrow sat in the middle of its menu** (VCS → Changes, Branches, …), just past the longest
   submenu name. It now sits at the menu's right edge, past the shortcut column.
 - **A Markdown code span after a stray double backtick rendered as plain text** (``` `` `a` `c` ``` showed
