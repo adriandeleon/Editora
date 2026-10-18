@@ -88,12 +88,11 @@ public final class GoTestJsonParser implements TestResultParser {
                 return List.of();
             }
             case "pass", "fail", "skip" -> {
-                TestStatus status =
-                        switch (action) {
-                            case "fail" -> TestStatus.FAILED;
-                            case "skip" -> TestStatus.SKIPPED;
-                            default -> TestStatus.PASSED;
-                        };
+                TestStatus status = switch (action) {
+                    case "fail" -> TestStatus.FAILED;
+                    case "skip" -> TestStatus.SKIPPED;
+                    default -> TestStatus.PASSED;
+                };
                 Set<String> stillRunning = running.get(pkg);
                 if (stillRunning != null) {
                     stillRunning.remove(test);

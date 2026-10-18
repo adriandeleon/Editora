@@ -829,13 +829,12 @@ public final class MarkdownPdfWriter {
         }
 
         void heading(Heading h, float left) throws IOException {
-            float size =
-                    switch (h.getLevel()) {
-                        case 1 -> 20f;
-                        case 2 -> 16f;
-                        case 3 -> 14f;
-                        default -> 12f;
-                    };
+            float size = switch (h.getLevel()) {
+                case 1 -> 20f;
+                case 2 -> 16f;
+                case 3 -> 14f;
+                default -> 12f;
+            };
             float leading = size * 1.3f;
             if (h.getNext() != null) {
                 // Keep with next: a heading goes to the next page unless it and two body lines still fit,

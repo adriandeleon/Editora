@@ -215,16 +215,15 @@ public final class Themes {
         if (user != null) {
             return user.background();
         }
-        String hex =
-                switch (normalize(name)) {
-                    case "Primer Dark" -> "#1c2128";
-                    case "Nord Light" -> "#eceff4";
-                    case "Nord Dark" -> "#2e3440";
-                    case "Cupertino Light" -> "#ffffff";
-                    case "Cupertino Dark" -> "#1e1e1e";
-                    case "Dracula" -> "#282a36";
-                    default -> "#ffffff"; // Primer Light
-                };
+        String hex = switch (normalize(name)) {
+            case "Primer Dark" -> "#1c2128";
+            case "Nord Light" -> "#eceff4";
+            case "Nord Dark" -> "#2e3440";
+            case "Cupertino Light" -> "#ffffff";
+            case "Cupertino Dark" -> "#1e1e1e";
+            case "Dracula" -> "#282a36";
+            default -> "#ffffff"; // Primer Light
+        };
         return javafx.scene.paint.Color.web(hex);
     }
 

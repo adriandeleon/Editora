@@ -1058,16 +1058,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     /** Re-orders {@code nodes} (and their descendants) per the current {@link SortMode}. */
     private void sortNodes(List<StructureNode> nodes) {
-        Comparator<StructureNode> cmp =
-                switch (sortMode) {
-                    case NAME ->
-                        Comparator.<StructureNode, String>comparing(
-                                n -> n.label().toLowerCase(Locale.ROOT));
-                    case KIND ->
-                        Comparator.<StructureNode, String>comparing(n -> n.kind() == null ? "" : n.kind())
-                                .thenComparing(n -> n.label().toLowerCase(Locale.ROOT));
-                    default -> Comparator.comparingInt(StructureNode::line);
-                };
+        Comparator<StructureNode> cmp = switch (sortMode) {
+            case NAME ->
+                Comparator.<StructureNode, String>comparing(n -> n.label().toLowerCase(Locale.ROOT));
+            case KIND ->
+                Comparator.<StructureNode, String>comparing(n -> n.kind() == null ? "" : n.kind())
+                        .thenComparing(n -> n.label().toLowerCase(Locale.ROOT));
+            default -> Comparator.comparingInt(StructureNode::line);
+        };
         // Guard: List.sort throws UnsupportedOperationException on an immutable list (even an empty one),
         // and an empty/singleton list needs no sorting anyway. Lists of 2+ here are always mutable
         // (roots + every node's children are built as ArrayLists), so the in-place sort is safe.

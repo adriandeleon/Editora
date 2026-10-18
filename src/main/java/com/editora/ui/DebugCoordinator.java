@@ -337,18 +337,17 @@ final class DebugCoordinator {
             return false;
         }
         var s = host.settings();
-        boolean enabled =
-                switch (language) {
-                    case "python" -> s.isPythonDebugEnabled();
-                    case "javascript" -> s.isJsDebugEnabled();
-                    // jdtls runs on the host and is handed the java-debug jar there (copied from this machine,
-                    // or the host's own), so the adapter is the host's jdtls's.
-                    default ->
-                        lspEnabled()
-                                && lsp.serverEnabled("java")
-                                && (dapManager.isAdapterAvailable()
-                                        || com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null);
-                };
+        boolean enabled = switch (language) {
+            case "python" -> s.isPythonDebugEnabled();
+            case "javascript" -> s.isJsDebugEnabled();
+            // jdtls runs on the host and is handed the java-debug jar there (copied from this machine,
+            // or the host's own), so the adapter is the host's jdtls's.
+            default ->
+                lspEnabled()
+                        && lsp.serverEnabled("java")
+                        && (dapManager.isAdapterAvailable()
+                                || com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null);
+        };
         return enabled && RemoteExec.runsFor(file);
     }
 

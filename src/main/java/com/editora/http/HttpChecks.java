@@ -372,13 +372,12 @@ public final class HttpChecks {
                     return tr("http.check.fail.notNumber", a == null ? shown(actual) : lit.shown());
                 }
                 int cmp = a.compareTo(e);
-                boolean ok =
-                        switch (op) {
-                            case LT -> cmp < 0;
-                            case LE -> cmp <= 0;
-                            case GT -> cmp > 0;
-                            default -> cmp >= 0;
-                        };
+                boolean ok = switch (op) {
+                    case LT -> cmp < 0;
+                    case LE -> cmp <= 0;
+                    case GT -> cmp > 0;
+                    default -> cmp >= 0;
+                };
                 return ok ? null : tr("http.check.fail.compare", op.token(), lit.shown(), shown(actual));
             }
             case CONTAINS -> {
