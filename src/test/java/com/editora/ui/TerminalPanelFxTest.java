@@ -294,8 +294,61 @@ class TerminalPanelFxTest {
         assertEquals(List.of(file + ":12:3", "url https://example.com/docs"), opened);
     }
 
+    @Test
+    void anOsc8LinkOpensItsTargetNotItsTextAndOnlySafeSchemesAreLinks(@TempDir Path dir) throws Exception {
+        Path file = java.nio.file.Files.writeString(dir.resolve("Bar.java"), "class Bar {}\n");
+        List<String> opened = new ArrayList<>();
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.setLinkActions(new com.editora.terminal.LinkActions() {
+                @Override
+                public void openUrl(String url) {
+                    opened.add("url " + url);
+                }
+
+                @Override
+                public void openFile(Path f, int line, int column) {
+                    opened.add("file " + f);
+                }
+            });
+            panel.newTerminal();
+            return null;
+        });
+        String st = "\u001b\\";
+        shells.get(0)
+                .emit("\u001b]8;;https://example.com/manual" + st + "the manual\u001b]8;;" + st + " end\r\n"
+                        + "\u001b]8;;" + file.toUri() + st + "Bar\u001b]8;;" + st + "\r\n"
+                        + "\u001b]8;;javascript:alert(1)" + st + "trap\u001b]8;;" + st + "\r\n");
+        await(() -> call(() -> screen().contains("trap")), "the output on screen");
+        assertFalse(call(() -> screen().contains("example.com")), "the target is not drawn");
+        await(
+                () -> call(() ->
+                        panel.activeView().getWidth() > 0 && panel.activeView().getHeight() > 0),
+                "a layout");
+
+        clickWithLinkModifier(5, 0); // inside "the manual"
+        clickWithLinkModifier(12, 0); // " end": past the link
+        clickWithLinkModifier(1, 1); // "Bar", a file:// link
+        clickWithLinkModifier(1, 2); // "trap": a scheme that is never a link
+
+        assertEquals(List.of("url https://example.com/manual", "file " + file), opened);
+
+        mouseWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_MOVED, 5, 0);
+        assertEquals(
+                "https://example.com/manual",
+                fx(() -> panel.activeView().linkTipText()),
+                "hovering shows where the link really goes");
+        mouseWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_MOVED, 12, 0);
+        assertEquals(null, fx(() -> panel.activeView().linkTipText()), "and hides off it");
+    }
+
     /** A primary press with the platform's link modifier (Cmd on macOS, Ctrl elsewhere) at a cell. */
     private void clickWithLinkModifier(int column, int row) throws Exception {
+        mouseWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_PRESSED, column, row);
+    }
+
+    private void mouseWithLinkModifier(javafx.event.EventType<javafx.scene.input.MouseEvent> type, int column, int row)
+            throws Exception {
         boolean mac = System.getProperty("os.name", "")
                 .toLowerCase(java.util.Locale.ROOT)
                 .startsWith("mac");
@@ -311,7 +364,7 @@ class TerminalPanelFxTest {
             Event.fireEvent(
                     view,
                     new javafx.scene.input.MouseEvent(
-                            javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                            type,
                             x,
                             y,
                             x,

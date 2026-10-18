@@ -39,6 +39,7 @@ public final class TerminalSession {
         StyleState styleState = new StyleState();
         textBuffer = new TerminalTextBuffer(columns, rows, styleState, Math.max(0, scrollbackLines));
         terminal = new JediTerminal(display, textBuffer, styleState);
+        terminal.setUrlHyperlinkFilter(Osc8Links.filter()); // OSC 8: the URI rides in the cells' style
 
         executors = new TerminalExecutors();
         TerminalTypeAheadManager typeAhead = new TerminalTypeAheadManager(new DisabledTypeAhead());

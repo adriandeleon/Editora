@@ -1227,7 +1227,35 @@ public final class TerminalView extends Region {
         Hover previous = hover;
         hover = modifierDown ? linkAt(x, y) : null;
         setCursor(hover == null ? javafx.scene.Cursor.DEFAULT : javafx.scene.Cursor.HAND);
-        if (!sameHover(previous, hover)) markDirty();
+        if (!sameHover(previous, hover)) {
+            markDirty();
+            showLinkTarget(hover, x, y);
+        }
+    }
+
+    /** Shows where an OSC 8 link goes: its text is the program's to choose, and need not be its address. */
+    private javafx.scene.control.Tooltip linkTip;
+
+    private void showLinkTarget(Hover target, double x, double y) {
+        boolean disguised = target != null
+                && target.match().isUrl()
+                && !target.match().text().equals(target.match().target());
+        if (!disguised) {
+            if (linkTip != null) linkTip.hide();
+            return;
+        }
+        if (linkTip == null) {
+            linkTip = new javafx.scene.control.Tooltip();
+            linkTip.getStyleClass().add("terminal-link-tip");
+        }
+        linkTip.setText(target.match().target());
+        javafx.geometry.Point2D at = localToScreen(x, y + lineHeight);
+        if (at != null && getScene() != null) linkTip.show(this, at.getX(), at.getY());
+    }
+
+    /** The address an OSC 8 link under the pointer shows in its tip, or null; for tests. */
+    public String linkTipText() {
+        return linkTip != null && linkTip.isShowing() ? linkTip.getText() : null;
     }
 
     private static boolean sameHover(Hover a, Hover b) {
@@ -1252,7 +1280,8 @@ public final class TerminalView extends Region {
             if (logical == null) return null;
             int slot = ColumnMap.slotAt(lineTextAt(line), column);
             int index = logical.offsetOf(line) + slot;
-            LinkMatch match = LinkScanner.at(logical.text(), index);
+            LinkMatch match = osc8At(logical, line, slot, index);
+            if (match == null) match = LinkScanner.at(logical.text(), index);
             if (match == null) return null;
 
             // Moving along a link with the modifier held asks the same question of the filesystem
@@ -1272,6 +1301,35 @@ public final class TerminalView extends Region {
     }
 
     /**
+     * The OSC 8 link at a cell, as a URL match over the run of cells that carry the same target, or null. A program
+     * that marked text as a link meant it, so it wins over what the text itself looks like. Caller holds the lock.
+     */
+    private LinkMatch osc8At(LogicalLine logical, int line, int slot, int index) {
+        Osc8Links.Target target = osc8TargetAt(line, slot);
+        if (target == null) return null;
+        int start = index;
+        while (start > 0 && osc8TargetAtIndex(logical, start - 1) == target) start--;
+        int end = index + 1;
+        while (end < logical.text().length() && osc8TargetAtIndex(logical, end) == target) end++;
+        return new LinkMatch(LinkMatch.Kind.URL, logical.text().substring(start, end), start, end, target.uri(), 0, 0);
+    }
+
+    private Osc8Links.Target osc8TargetAt(int line, int slot) {
+        var row = buffer.getLine(line);
+        return row == null || slot < 0 || slot >= row.length() ? null : Osc8Links.targetOf(row.getStyleAt(slot));
+    }
+
+    private Osc8Links.Target osc8TargetAtIndex(LogicalLine logical, int index) {
+        int offset = 0;
+        for (int i = 0; i < logical.rowTexts().size(); i++) {
+            int length = logical.rowTexts().get(i).length();
+            if (index < offset + length) return osc8TargetAt(logical.firstLine() + i, index - offset);
+            offset += length;
+        }
+        return null;
+    }
+
+    /**
      * The file a match names, or null when it names none.
      *
      * <p>This is the whole safety story for paths: a candidate is any word under the pointer, and
@@ -1282,7 +1340,9 @@ public final class TerminalView extends Region {
     private java.nio.file.Path fileFor(LinkMatch match) {
         String target = match.target();
         if (match.kind() == LinkMatch.Kind.URL) {
-            java.nio.file.Path fromUri = LinkPaths.fromFileUri(target);
+            // A remote shell's file:// names a file of its machine: the tab's mapping finds it here.
+            String onShell = shellPaths == null ? null : ShellIntegration.pathOfCwdUrl(target);
+            java.nio.file.Path fromUri = onShell != null ? shellPaths.apply(onShell) : LinkPaths.fromFileUri(target);
             return fromUri != null && java.nio.file.Files.exists(fromUri) ? fromUri : null;
         }
         String cwd = display.getCwd();
