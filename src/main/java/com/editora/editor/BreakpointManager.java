@@ -122,6 +122,25 @@ public final class BreakpointManager implements LineMarks.Carrier {
 
     private static final Live UNANSWERED = new Live(LiveState.PENDING, "");
 
+    /** While Mute Breakpoints is on: the line every glyph's hover starts with; null when not muted. */
+    private String mutedText;
+
+    /**
+     * Mute Breakpoints turned on ({@code hoverText}: what each glyph's hover says first) or off ({@code null}):
+     * every glyph is drawn dimmed while it is on, so the gutter shows that none of them will stop the program.
+     */
+    public void setMuted(String hoverText) {
+        String next = hoverText == null || hoverText.isBlank() ? null : hoverText;
+        if (!java.util.Objects.equals(mutedText, next)) {
+            mutedText = next;
+            onLinesRepaint.accept(new ArrayList<>(byLine.keySet()));
+        }
+    }
+
+    public boolean isMuted() {
+        return mutedText != null;
+    }
+
     /**
      * The gutter glyph's extra CSS classes for the breakpoint on {@code line}, space-separated and without
      * the {@code breakpoint-} prefix: its kind (disabled / logpoint / conditional) and, while a session is
@@ -135,18 +154,26 @@ public final class BreakpointManager implements LineMarks.Carrier {
         String kind =
                 !bp.enabled() ? "disabled" : bp.isLogpoint() ? "logpoint" : bp.isConditional() ? "conditional" : null;
         Live state = live(line);
-        if (state == null || state.state() == LiveState.VERIFIED) {
-            return kind;
+        String classes = kind;
+        if (state != null && state.state() != LiveState.VERIFIED) {
+            String unverified = state.state() == LiveState.REJECTED ? "unverified rejected" : "unverified";
+            classes = kind == null ? unverified : kind + " " + unverified;
         }
-        String unverified = state.state() == LiveState.REJECTED ? "unverified rejected" : "unverified";
-        return kind == null ? unverified : kind + " " + unverified;
+        if (mutedText != null) {
+            classes = classes == null ? "muted" : classes + " muted";
+        }
+        return classes;
     }
 
     /** The hover text of the breakpoint on {@code line}: its condition / log message / hit count / disabled state
      *  and what the debug session says about it; null for a plain breakpoint the session has nothing to say on. */
     public String tooltip(int line) {
         Live state = live(line);
-        return BreakpointDescription.tooltip(byLine.get(line), state == null ? null : state.tooltip());
+        String text = BreakpointDescription.tooltip(byLine.get(line), state == null ? null : state.tooltip());
+        if (mutedText == null || !byLine.containsKey(line)) {
+            return text;
+        }
+        return text == null || text.isBlank() ? mutedText : mutedText + "\n" + text;
     }
 
     /**

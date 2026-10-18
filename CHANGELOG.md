@@ -144,6 +144,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Debug: Breakpoints…** lists every breakpoint: Enter jumps to it, Alt+E enables or disables it, Alt+D removes it,
   Alt+M mutes them all. Also **Mute Breakpoints**, **Enable/Disable Breakpoint** at the caret, and a right-click
   menu on a breakpoint glyph (Edit…, Enable/Disable, Remove, Breakpoints…).
+- **Completion while debugging.** Ctrl+Space, or typing `.`, lists what the debugger can complete in the Debug
+  console's evaluate field, the watch prompt and a breakpoint's condition and log message (while the program is
+  paused).
+- **The value popup unfolds.** Hovering a variable, or Show Value at Caret, shows an object, array or collection as a
+  tree (big arrays a page at a time), with Copy Value and Add to Watches; arrow keys, Enter and Shift+Enter work it
+  from the keyboard.
 - **Exception breakpoints: Caught and Uncaught** are two toggles, checked in the Run menu and shown in the Debug
   window, kept per project. Settings → Debugging can limit them to some exception classes.
 - **Java step filters and static fields.** Step Into skips JDK classes and synthetic methods, and a class's static
@@ -301,6 +307,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Before-launch steps** of a Java run configuration run in the project root (Run and Debug).
 - **Settings schema 129** adds the hot code replace, step filter, static fields and exception class settings;
   workspace schema 19 keeps the exception toggles per project.
+- **Mute Breakpoints is kept per project**, fades every breakpoint glyph while on, and is checked in the Run menu.
+  Workspace schema 20.
+- **Gradle Debug Test and Debug via Build** give every forked JVM a free debug port (through an init script) instead
+  of `--debug-jvm`'s fixed 5005, and attach each one in turn.
 - **Syntax highlighting for C#, CSS, dotenv, PowerShell and SQL is updated** to the shiki tm-grammars 1.32.22
   grammars (from 1.31.15).
   - CSS colours nested rules (`&`, `> h2` inside a rule), `@layer` name lists, `@import … layer(…)` and the
@@ -385,6 +395,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Debugger launch, connect and adapter errors were English in every language and could start with Java class
     names (`org.eclipse.debug.core.DebugException: …`); they are now translated and plain, and a report of
     several lines goes to the Debug console with its first line in the status bar.
+  - With "Run the debugged program in the Debug console" off, the console now shows the program's real exit code
+    (Linux and macOS, programs on this machine); java-debug always reported 0.
+  - Emoji and other characters outside the Basic Multilingual Plane showed garbled in Java string values (a bug in
+    Eclipse's debugger inside jdtls); Variables, watches, hover and inline values now show them as written.
 
 ### Changed
 

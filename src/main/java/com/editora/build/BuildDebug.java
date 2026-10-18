@@ -1,5 +1,6 @@
 package com.editora.build;
 
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -28,6 +29,19 @@ public final class BuildDebug {
     /** Gradle Run under debug: {@code <runTask> --debug-jvm} (suspends on 5005, prints the JDWP banner). */
     public static List<String> gradleDebugArgs(String runTask) {
         return List.of(runTask, "--debug-jvm");
+    }
+
+    /**
+     * Gradle Run under debug on a port the system picks: {@code <runTask> --init-script <initScript>} (see
+     * {@link GradleDebugInit}); {@code --debug-jvm}'s fixed 5005 when there is no script ({@code null}).
+     */
+    public static List<String> gradleDebugArgs(String runTask, Path initScript) {
+        if (initScript == null) {
+            return gradleDebugArgs(runTask);
+        }
+        List<String> args = new java.util.ArrayList<>(List.of(runTask));
+        args.addAll(GradleDebugInit.args(initScript));
+        return List.copyOf(args);
     }
 
     /** Maven Spring Boot under debug: {@code spring-boot:run} with a suspended JDWP {@code jvmArguments}. */
