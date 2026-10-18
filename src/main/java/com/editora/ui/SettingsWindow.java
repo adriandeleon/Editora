@@ -6223,7 +6223,9 @@ public class SettingsWindow {
             header.setAlignment(Pos.CENTER_LEFT);
             VBox entry = new VBox(2, header);
             if (d.loadError() != null) {
-                Label err = new Label(d.loadError());
+                Label err = new Label(PluginLoadProblems.text(d));
+                String detail = PluginLoadProblems.detail(d);
+                err.setTooltip(detail == null ? null : new Tooltip(detail));
                 err.getStyleClass().add("settings-git-missing");
                 err.setWrapText(true);
                 err.setMaxWidth(420);
