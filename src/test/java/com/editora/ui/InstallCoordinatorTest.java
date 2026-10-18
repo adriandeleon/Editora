@@ -20,7 +20,6 @@ class InstallCoordinatorTest {
         // The archive-installable servers (see InstallCatalog.serverInstall's ARCHIVE case) → their getter.
         Map<String, Function<Settings, String>> readers = Map.of(
                 "clangd", Settings::getClangdLspCommand,
-                "kotlin", Settings::getKotlinLspCommand,
                 "lua", Settings::getLuaLspCommand,
                 "xml", Settings::getXmlLspCommand,
                 "terraform", Settings::getTerraformLspCommand,
@@ -34,6 +33,10 @@ class InstallCoordinatorTest {
             assertEquals(
                     true, com.editora.install.InstallCatalog.archiveSpec(id).isPresent(), id + ": no archiveSpec");
         });
+        // JetBrains' Kotlin LSP is a pinned distribution, not an archive recipe: its launcher persists the same way.
+        Settings s = new Settings();
+        InstallCoordinator.applyServerCommand(s, "kotlin", "/cfg/plugins/lsp/kotlin/bin/intellij-server --stdio");
+        assertEquals("/cfg/plugins/lsp/kotlin/bin/intellij-server --stdio", s.getKotlinLspCommand());
     }
 
     /**
