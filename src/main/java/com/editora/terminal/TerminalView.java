@@ -735,8 +735,31 @@ public final class TerminalView extends Region {
         Color fg = palette.resolve(
                 inverse ? style.getBackground() : style.getForeground(),
                 inverse ? palette.background() : palette.foreground());
-        if (style.hasOption(TextStyle.Option.DIM)) fg = TerminalPalette.dim(fg, backgroundOf(style));
-        return fg;
+        Color bg = backgroundOf(style);
+        // Dim text is meant to recede, so it is left as it asked.
+        if (style.hasOption(TextStyle.Option.DIM)) return TerminalPalette.dim(fg, bg);
+        return readable(fg, bg);
+    }
+
+    /** Text colours already raised to {@link TerminalPalette#MIN_CONTRAST}, by foreground and background. */
+    private final java.util.Map<Long, Color> readable = new java.util.HashMap<>();
+
+    /** {@code fg} with at least the minimum contrast against {@code bg}; cached, it is asked per style run. */
+    private Color readable(Color fg, Color bg) {
+        long key = ((long) argb(fg) << 32) | (argb(bg) & 0xffffffffL);
+        Color known = readable.get(key);
+        if (known == null) {
+            if (readable.size() > 4096) readable.clear(); // a truecolour flood: plenty of pairs, each cheap
+            known = TerminalPalette.withContrast(fg, bg, TerminalPalette.MIN_CONTRAST);
+            readable.put(key, known);
+        }
+        return known;
+    }
+
+    private static int argb(Color c) {
+        return ((int) Math.round(c.getRed() * 255) << 16)
+                | ((int) Math.round(c.getGreen() * 255) << 8)
+                | (int) Math.round(c.getBlue() * 255);
     }
 
     private Color backgroundOf(TextStyle style) {

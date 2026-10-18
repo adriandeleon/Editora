@@ -145,4 +145,27 @@ class TerminalPalettesTest {
     private static com.jediterm.terminal.TerminalColor indexed(int index) {
         return com.jediterm.terminal.TerminalColor.index(index);
     }
+
+    @org.junit.jupiter.api.Test
+    void everyColourPairIsDrawnWithAtLeastTheMinimumContrast() {
+        javafx.scene.paint.Color blue = javafx.scene.paint.Color.web("#4f8fd0");
+        javafx.scene.paint.Color white = javafx.scene.paint.Color.web("#e8e8e8");
+        org.junit.jupiter.api.Assertions.assertTrue(TerminalPalette.contrast(white, blue) < 3, "the review's white on blue");
+        javafx.scene.paint.Color drawn = TerminalPalette.withContrast(white, blue, TerminalPalette.MIN_CONTRAST);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                TerminalPalette.contrast(drawn, blue) >= TerminalPalette.MIN_CONTRAST - 0.01,
+                "raised: " + TerminalPalette.contrast(drawn, blue));
+        javafx.scene.paint.Color fine = javafx.scene.paint.Color.web("#111111");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                fine, TerminalPalette.withContrast(fine, javafx.scene.paint.Color.WHITE, 4.5), "a readable pair is kept");
+        for (TerminalPalette p : java.util.List.of(TerminalPalettes.EDITORA_DARK, TerminalPalettes.EDITORA_LIGHT)) {
+            for (javafx.scene.paint.Color fg : p.ansi()) {
+                for (javafx.scene.paint.Color bg : p.ansi()) {
+                    if (fg.equals(bg)) continue;
+                    double c = TerminalPalette.contrast(TerminalPalette.withContrast(fg, bg, 4.5), bg);
+                    org.junit.jupiter.api.Assertions.assertTrue(c >= 4.49, fg + " on " + bg + ": " + c);
+                }
+            }
+        }
+    }
 }
