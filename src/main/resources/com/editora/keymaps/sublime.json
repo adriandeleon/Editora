@@ -71,5 +71,7 @@
   "f9": "debug.toggleBreakpoint",
   "f10": "debug.stepOver",
   "S-f11": "debug.stepOut",
-  "C-M-f": "window.fullScreen"
+  "C-M-f": "window.fullScreen",
+  "C-back-quote": "tool.terminal",
+  "C-S-back-quote": "terminal.new"
 }

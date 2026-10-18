@@ -1,17 +1,11 @@
 package com.editora.terminal;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.PipedReader;
-import java.io.PipedWriter;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 import javafx.application.Platform;
@@ -238,88 +232,5 @@ class TerminalViewFxTest {
             Thread.sleep(20);
         }
         throw new AssertionError("timed out waiting for " + what);
-    }
-
-    /** A "shell" made of two pipes: what the test emits is output, what the view writes is recorded. */
-    private static final class FakeConnector implements TerminalConnector {
-        private final PipedWriter output = new PipedWriter();
-        private final PipedReader reader;
-        private final ByteArrayOutputStream input = new ByteArrayOutputStream();
-        private final CountDownLatch closed = new CountDownLatch(1);
-        final AtomicReference<TermSize> lastResize = new AtomicReference<>();
-        volatile TermSize openedAt;
-
-        FakeConnector() throws IOException {
-            reader = new PipedReader(output, 64 * 1024);
-        }
-
-        void emit(String text) throws IOException {
-            output.write(text);
-            output.flush();
-        }
-
-        void endOfOutput() throws IOException {
-            output.close();
-        }
-
-        synchronized String written() {
-            return input.toString(StandardCharsets.UTF_8);
-        }
-
-        @Override
-        public int read(char[] buf, int offset, int length) throws IOException {
-            try {
-                return reader.read(buf, offset, length);
-            } catch (IOException e) {
-                // "Write end dead" once the test closed it: the end of the shell's output.
-                return -1;
-            }
-        }
-
-        @Override
-        public synchronized void write(byte[] bytes) {
-            input.writeBytes(bytes);
-        }
-
-        @Override
-        public void write(String string) {
-            write(string.getBytes(StandardCharsets.UTF_8));
-        }
-
-        @Override
-        public boolean isConnected() {
-            return closed.getCount() > 0;
-        }
-
-        @Override
-        public void resize(TermSize size) {
-            lastResize.set(size);
-        }
-
-        @Override
-        public int waitFor() throws InterruptedException {
-            closed.await();
-            return 0;
-        }
-
-        @Override
-        public boolean ready() throws IOException {
-            return reader.ready();
-        }
-
-        @Override
-        public String getName() {
-            return "fake";
-        }
-
-        @Override
-        public void close() {
-            closed.countDown();
-            try {
-                output.close();
-            } catch (IOException ignored) {
-                // Already closed by the test.
-            }
-        }
     }
 }

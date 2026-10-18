@@ -199,6 +199,8 @@ final class WindowCommandRegistrar {
 
         TodoCoordinator todoCoordinator();
 
+        TerminalCoordinator terminalCoordinator();
+
         CsvCoordinator csvCoordinator();
 
         SearchCoordinator searchCoordinator();
@@ -1841,6 +1843,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("search.inFiles", host.searchCoordinator()::openToggle));
         host.registry().register(Command.of("search.inFilesPopup", host.searchCoordinator()::showFindInFilesPopup));
         host.todoCoordinator().registerCommands(host.registry()); // tool.todo + todo.refresh + todo.addPattern
+        host.terminalCoordinator().registerCommands(host.registry()); // tool.terminal + terminal.new/close
         host.csvCoordinator().registerCommands(host.registry()); // csv.exportPdf/print/exportExcel/exportOds
         for (BuildCoordinator c : host.buildCoordinators()) {
             c.registerCommands(host.registry()); // tool.<id> + <id>.showActions/runCustom/stop/rerunLast/refresh

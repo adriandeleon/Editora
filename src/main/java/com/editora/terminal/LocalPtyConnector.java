@@ -53,6 +53,14 @@ public final class LocalPtyConnector extends ProcessTtyConnector implements Term
         super.close();
     }
 
+    /**
+     * The shell as a {@link Process} that can be tracked: pty4j's own throws from {@code toHandle()}, which
+     * Editora's process registry needs to end the shell's tree and to recognise it after a crash.
+     */
+    public Process trackableProcess() {
+        return new PtyHandleProcess(process);
+    }
+
     /** The shell's own pid — what the OS is asked about to find its working directory. */
     @Override
     public long pid() {
