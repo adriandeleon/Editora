@@ -57,6 +57,13 @@ final class ConfigImportFlow {
     /** Restarts Editora (null: not available, so the last dialog only says to restart). */
     static Runnable restart; // LEAD-WIRE: A's F3 "Restart now" relaunch
 
+    /** Puts the real chooser and dialogs back after a test replaced them. */
+    static void resetSeams() {
+        chooser = ConfigImportFlow::chooseZip;
+        ask = ConfigImportFlow::askDialog;
+        tell = ConfigImportFlow::tellDialog;
+    }
+
     /** What the parts dialog shows. */
     record Question(Window owner, String zipName, List<ConfigImport.Summary> parts, int leftOut) {}
 

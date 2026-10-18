@@ -59,9 +59,7 @@ class ConfigImportFxTest {
 
     @AfterEach
     void tearDown() throws Exception {
-        ConfigImportFlow.chooser = (w, d) -> null;
-        ConfigImportFlow.ask = q -> Optional.empty();
-        ConfigImportFlow.tell = o -> {};
+        ConfigImportFlow.resetSeams(); // the command sweep, in the same JVM, must reach the real chooser
         if (fx != null) {
             fx.dispose();
         }
