@@ -123,4 +123,13 @@ class StringCaseTest {
         assertNull(StringCase.tokenAt("a  b", 2));
         assertNull(StringCase.tokenAt("", 0));
     }
+
+    /** A dash is subtraction in Scala, Kotlin and Groovy, but part of the name in Clojure's kebab-case. */
+    @Test
+    void dashIsAnOperatorInScalaKotlinGroovyButNotClojure() {
+        assertEquals(true, StringCase.dashIsOperator("scala"));
+        assertEquals(true, StringCase.dashIsOperator("kotlin"));
+        assertEquals(true, StringCase.dashIsOperator("groovy"));
+        assertEquals(false, StringCase.dashIsOperator("clojure"));
+    }
 }

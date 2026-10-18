@@ -64,4 +64,25 @@ class LanguageTablesAgreeTest {
         assertEquals("shell", LanguageRegistry.forFileName("/Users/u/Desktop/Start Server.command"));
         assertEquals("source.shell", GRAMMARS.forFileName("x.bats").getScopeName());
     }
+
+    @Test
+    void jvmLanguageExtensionsAgreeInBothTables() {
+        Map<String, String> expected = Map.ofEntries(
+                Map.entry("scala", "scala"),
+                Map.entry("sc", "scala"),
+                Map.entry("sbt", "scala"),
+                Map.entry("mill", "scala"),
+                Map.entry("clj", "clojure"),
+                Map.entry("cljs", "clojure"),
+                Map.entry("cljc", "clojure"),
+                Map.entry("cljx", "clojure"),
+                Map.entry("edn", "clojure"),
+                Map.entry("bb", "clojure"),
+                Map.entry("groovy", "groovy"),
+                Map.entry("kts", "kotlin"));
+        expected.forEach((ext, language) -> {
+            assertEquals(language, LanguageRegistry.forFileName("x." + ext), ext);
+            assertEquals(language, GRAMMARS.extensionLanguages().get(ext), ext);
+        });
+    }
 }

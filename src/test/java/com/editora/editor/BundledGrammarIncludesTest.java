@@ -104,4 +104,13 @@ class BundledGrammarIncludesTest {
         }
         assertEquals(List.of(), nonBoolean);
     }
+
+    /** The Scala and Clojure grammars are among those checked above (vendored from tm-grammars 1.32.22). */
+    @Test
+    void theJvmLanguageGrammarsAreChecked() {
+        Set<String> names = GrammarRegistry.shared().availableLanguageNames();
+        for (String name : List.of("groovy", "kotlin", "scala", "clojure")) {
+            org.junit.jupiter.api.Assertions.assertTrue(names.contains(name), name);
+        }
+    }
 }

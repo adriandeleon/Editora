@@ -54,6 +54,8 @@ class SnippetManagerTest {
             "xml",
             "batchfile",
             "groovy",
+            "scala",
+            "clojure",
             "json",
             "yaml",
             "ini"
@@ -629,5 +631,15 @@ class SnippetManagerTest {
         assertNull(m.userFileProblem("go"), "still a file that parses: " + text);
         assertTrue(SnippetManager.hasComment("{ \"a\": \"http://x\" } // c"));
         assertTrue(!SnippetManager.hasComment("{ \"a\": \"http://x /* no */\" }"));
+    }
+
+    @Test
+    void theScalaAndClojureSnippetsAreIdiomatic(@TempDir Path dir) {
+        SnippetManager m = manager(dir);
+        assertTrue(m.byPrefix("scala", "main").body().contains("@main def"), "a Scala 3 entry point");
+        assertNotNull(m.byPrefix("scala", "match"));
+        assertTrue(m.byPrefix("clojure", "defn").body().startsWith("(defn "));
+        assertNotNull(m.byPrefix("clojure", "ns"));
+        assertNotNull(m.byPrefix("clojure", "deftest"));
     }
 }

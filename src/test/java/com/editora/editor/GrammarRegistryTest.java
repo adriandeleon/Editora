@@ -232,4 +232,20 @@ class GrammarRegistryTest {
             pool.shutdownNow();
         }
     }
+
+    @Test
+    void scalaAndClojureFilesLoadTheirGrammars() {
+        for (String file : java.util.List.of("Main.scala", "script.sc", "build.sbt", "build.mill")) {
+            assertNotNull(GrammarRegistry.shared().forFileName(file), file);
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "source.scala", GrammarRegistry.shared().forFileName(file).getScopeName(), file);
+        }
+        for (String file : java.util.List.of("core.clj", "app.cljs", "shared.cljc", "old.cljx", "deps.edn", "x.bb")) {
+            assertNotNull(GrammarRegistry.shared().forFileName(file), file);
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "source.clojure", GrammarRegistry.shared().forFileName(file).getScopeName(), file);
+        }
+        assertNotNull(GrammarRegistry.shared().forLanguageName("scala"));
+        assertNotNull(GrammarRegistry.shared().forLanguageName("clojure"));
+    }
 }
