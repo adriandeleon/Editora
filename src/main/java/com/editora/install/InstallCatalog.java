@@ -107,6 +107,14 @@ public final class InstallCatalog {
      */
     public static final String JDTLS_VERSION = "1.62.0";
 
+    /**
+     * The TypeScript the language servers that need its {@code tsserver} are installed with. TypeScript 7 is
+     * the native (Go) compiler and ships no {@code lib/tsserver.js}, so typescript-language-server (and astro-ls)
+     * cannot start on it; since TS 7 became npm's {@code latest}, an unpinned {@code typescript} gave a server
+     * that crashed on every file. Pinned to the last major with a tsserver.
+     */
+    public static final String TYPESCRIPT_PACKAGE = "typescript@6";
+
     /** The build stamp of the {@link #JDTLS_VERSION} tarball. */
     public static final String JDTLS_BUILD = "202610131109";
 
@@ -382,7 +390,7 @@ public final class InstallCatalog {
             case "yaml" -> java.util.Optional.of(List.of(npmStep("yaml-language-server")));
             case "dockerfile" -> java.util.Optional.of(List.of(npmStep("dockerfile-language-server-nodejs")));
             case "toml" -> java.util.Optional.of(List.of(npmStep("@taplo/cli")));
-            case "astro" -> java.util.Optional.of(List.of(npmStep("@astrojs/language-server", "typescript")));
+            case "astro" -> java.util.Optional.of(List.of(npmStep("@astrojs/language-server", TYPESCRIPT_PACKAGE)));
             // --- language toolchains (install only if the toolchain is already on PATH) ---
             case "go" ->
                 java.util.Optional.of(List.of(
@@ -854,7 +862,7 @@ public final class InstallCatalog {
                 "typescript-language-server",
                 Kind.NPM_GLOBAL,
                 Set.of(Prereq.NPM),
-                List.of("typescript-language-server", "typescript"),
+                List.of("typescript-language-server", TYPESCRIPT_PACKAGE),
                 null,
                 null,
                 null,

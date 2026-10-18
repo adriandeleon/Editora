@@ -6708,9 +6708,35 @@ public class SettingsWindow {
             c.body().getChildren().add(project);
             if ("bash".equals(srv.id())) {
                 bashServerRows(c);
+            } else if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(srv.id())) {
+                typeScriptServerRows(c);
             }
         }
         return p;
+    }
+
+    /** The TypeScript card's "TypeScript" line (the SDK its server runs). */
+    private ToolStatusRow typeScriptSdkStatus;
+
+    /** The TypeScript card's own rows: the TypeScript its server runs, and automatic type acquisition. */
+    private void typeScriptServerRows(Card c) {
+        String words = "lsp typescript javascript node tsserver sdk ";
+        typeScriptSdkStatus = new ToolStatusRow("TypeScript").install(() -> installSupport("javascript"));
+        controlRow(
+                c,
+                Category.LSP,
+                tr("settings.lsp.typescriptSdk"),
+                tr("settings.lsp.typescriptSdk.desc"),
+                typeScriptSdkStatus.node(),
+                words + "version found not found install");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.typescriptTypeAcquisition",
+                true,
+                Settings::isTypescriptTypeAcquisition,
+                Settings::setTypescriptTypeAcquisition,
+                words + "types npm automatic type acquisition download @types");
     }
 
     /** The ShellCheck / shfmt status lines on the Bash card, by tool id. */
@@ -7427,6 +7453,8 @@ public class SettingsWindow {
         if (lspManager == null || lspStatusLabels.isEmpty()) {
             return;
         }
+        TypeScriptSdkStatus.refresh(
+                typeScriptSdkStatus, lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID), lspCheck.isSelected());
         // Probe the commands this page shows, without configuring the manager. This window must not
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
         // shut its running server down every time Settings was merely opened.

@@ -732,6 +732,25 @@ final class DoctorCoordinator {
     }
 
     /**
+     * The TypeScript / JavaScript server's row once its command is found: OK with the TypeScript it runs, or a
+     * warning when there is no TypeScript with a tsserver beside it (TypeScript 7 has none), in which case the
+     * server does not start outside a trusted folder that has its own (Node review B1, E4).
+     */
+    private static DoctorCheck typeScriptServerRow(DoctorCheck base, List<String> argv, String path) {
+        Path exe = com.editora.lsp.LspManager.typeScriptServerExecutable(argv);
+        Path tsserver = com.editora.lsp.TypeScriptServer.installedTsserver(exe);
+        if (tsserver == null) {
+            String version = com.editora.lsp.TypeScriptServer.installedPackageVersion(exe);
+            return version.isEmpty()
+                    ? base.warn(path, "doctor.tip.typescriptSdkMissing")
+                    : base.warn(path, "doctor.tip.typescriptSdkWithoutTsserver", version);
+        }
+        String version = com.editora.lsp.TypeScriptServer.sdkVersion(tsserver);
+        return base.ok(version.isEmpty() ? path : tr("doctor.detail.typescriptSdk", version, path));
+    }
+
+    /**
+     * One language server: its resolved path    /**
      * One language server: its resolved path (and Pyright's npm version) when found. Missing, it is a problem
      * only when something in this window needs it (review A1); otherwise it is "not installed", Install… kept.
      */
@@ -764,6 +783,9 @@ final class DoctorCoordinator {
                                 ? "doctor.tip.missing"
                                 : "doctor.tip.missingInstallable",
                         argv.get(0));
+            }
+            if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
+                return typeScriptServerRow(base, argv, path); // found is not enough: it needs a tsserver (E4)
             }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
             String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";
