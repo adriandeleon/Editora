@@ -4787,9 +4787,10 @@ public class SettingsWindow {
 
     /** Whether the node the HTTP scripts run is there (a lookup, no process), like the Bash tool rows. */
     private void refreshHttpNodeStatus() {
-        String configured = config.getSettings().getHttpNodePath();
-        String found = ToolStatusRow.pathOf(
-                com.editora.run.ProgramArgs.commandLine(configured.isBlank() ? "node" : configured));
+        // Blank: the shared Node.js setting, as the run uses it (review E6).
+        String shown = com.editora.http.HttpNodeChoice.displayed(
+                config.getSettings().getHttpNodePath(), config.getSettings().getNodePath());
+        String found = ToolStatusRow.pathOf(com.editora.run.ProgramArgs.commandLine(shown));
         httpNodeStatus.show(!found.isEmpty(), found, httpCheck.isSelected() && httpScriptsCheck.isSelected());
     }
 
