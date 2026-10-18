@@ -117,6 +117,47 @@ needed): RichTextFX & friends, tm4e core, **PDFBox** (`pdfbox`/`pdfbox-io`/`font
 
 If you add a dependency that turns out to be an automatic module, expect to add a moditect entry.
 
+## The integrated terminal — JediTerm, pty4j, JNA, Kotlin
+
+[ADR 0014](decisions/0014-integrated-terminal.md). The emulator is JetBrains' **JediTerm core**
+(`org.jetbrains.jediterm:jediterm-core`), which parses VT/xterm escape sequences into a screen buffer and draws
+nothing; the pseudo-terminal is **pty4j** (forkpty on macOS and Linux, ConPTY or winpty on Windows), which
+reaches the OS through **JNA**. Both are written in Kotlin, hence **kotlin-stdlib**. The versions match
+Termina's, where this stack came from.
+
+- **JediTerm is vendored in `m2-repo/`.** JetBrains publishes it only to its own repository
+  (`packages.jetbrains.team/…/intellij-dependencies`), not to Maven Central. Like the RichTextFX fork it sits
+  beside a recorded SHA-256 of its jar and pom, and `BuildHygieneTest` checks both and that no other version is
+  left behind. To update: download `jediterm-core-<v>.{jar,pom}` from that repository, compare the jar with its
+  published `.sha1`, copy both into `m2-repo/org/jetbrains/jediterm/jediterm-core/<v>/`, record the SHA-256s,
+  delete the old directory and bump `<jediterm.version>`.
+- **Pinned on purpose.** jediterm wants Kotlin 2.4.0 and pty4j 2.1.21; pty4j wants JNA 5.14.0. The pom names
+  the versions so nearest-wins does not choose. The `org.jetbrains:annotations` jars all three declare are
+  compile-time only (CLASS retention) and excluded; version 13.0 (from kotlin-stdlib) has no module name and
+  would be an automatic module jlink cannot link.
+- **Four automatic modules, four moditect descriptors:** `com.sun.jna`, `com.sun.jna.platform`,
+  `jediterm.core` and `pty4j`. The last two name `kotlin.stdlib`, `org.slf4j` (and `java.desktop`, for
+  `TtyConnector`'s `java.awt.Dimension` overloads) explicitly and drop the jdeps-derived
+  `org.jetbrains.annotations` (`!`). Editora's own `module-info` requires `kotlin.stdlib` and `org.slf4j` too:
+  an automatic module reads every module in the graph but pulls none into it, so under `mvn javafx:run` they
+  would otherwise not be resolved and the first emulator call would fail.
+- **Native access.** JNA loads native code, so `--enable-native-access=javafx.graphics,com.sun.jna` in the
+  javafx:run options, the dist launcher and `aot_build.java`'s trainer.
+- **pty4j's natives** live in its jar under `resources/com/pty4j/native/<os>/<arch>/`. JPMS would encapsulate
+  them if that folder were a valid package name; `native` is a reserved word, so it is not, and they stay
+  readable. pty4j copies the ones for this OS to a fresh temp directory per JVM (`pty4j.tmpdir` overrides the
+  location, and makes it shared — do not set it for parallel test forks). On Linux the window size is set just
+  after the child starts, so a program that asks at once can read 0×0.
+- **`editora --check-terminal`** (not in `--help`) starts a shell on an 80×24 pseudo-terminal, reads
+  `stty size` (PowerShell's console size on Windows) back through JediTerm and exits 0 when it saw `24 80`. The
+  **Terminal image** workflow (`.github/workflows/terminal-image.yml`) runs it inside the `-Pdist` app image on
+  Linux, macOS and Windows for pull requests that touch these dependencies; `TerminalImageCheckTest` runs it from
+  the class path in CI.
+- **Size:** the five modules add 7.5 MB to the linked image (20.5 MB before jimage compression), measured on
+  Linux x64: pty4j 2.8 MB (natives for every OS), JNA 1.9, Kotlin 1.5, jna-platform 1.1, JediTerm 0.2.
+- No slf4j provider is bundled, as before (MINA SSHD logs through slf4j too): pty4j's and JediTerm's log lines
+  go to slf4j's no-op logger, and slf4j prints a one-time warning to stderr when it first loads.
+
 ## Bundled fonts & grammars
 
 Plain resources, no `module-info`/moditect change, picked up by the dist build automatically:

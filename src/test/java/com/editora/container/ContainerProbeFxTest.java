@@ -157,6 +157,67 @@ class ContainerProbeFxTest {
     }
 
     @Test
+    void aTerminalForTheFolderIsALoginShellInTheContainerAndClosingItEndsIt() throws Exception {
+        com.editora.process.TerminalChannel shell =
+                ExecTargets.forPath(folder).startTerminal(new com.editora.process.TerminalSpec(folder, 100, 30));
+        StringBuffer seen = new StringBuffer();
+        Thread.ofVirtual().start(() -> {
+            byte[] buf = new byte[4096];
+            try {
+                int n;
+                while ((n = shell.output().read(buf)) > 0) {
+                    seen.append(new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8));
+                }
+            } catch (java.io.IOException ended) {
+                // closed
+            }
+        });
+        try {
+            type(shell, "stty size; tty; pwd; echo $TERM\n");
+            awaitOutput(seen, "30 100");
+            awaitOutput(seen, "/workspaces/app");
+            assertTrue(seen.toString().contains("/dev/pts/"), "a tty in the container: " + seen);
+            assertTrue(seen.toString().contains("xterm-256color"), "TERM: " + seen);
+            assertFalse(seen.toString().contains("EDITORA"), "the pid line is the transport's: " + seen);
+            assertTrue(((com.editora.terminal.PtyChannel) shell).pid() > 0, "the shell's pid in the container");
+
+            shell.resize(120, 40);
+            type(shell, "stty size\n");
+            awaitOutput(seen, "40 120");
+
+            type(shell, "exec sleep 6009\n");
+            awaitTrue("the sleep up in the container", () -> processes().contains("sleep 6009"));
+        } finally {
+            shell.close();
+        }
+        // The engine keeps a program whose exec client went; closing hangs the shell up in the container.
+        awaitTrue("the sleep gone from the container", () -> !processes().contains("sleep 6009"));
+    }
+
+    private static void type(com.editora.process.TerminalChannel shell, String text) throws java.io.IOException {
+        shell.input().write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        shell.input().flush();
+    }
+
+    private static void awaitOutput(StringBuffer seen, String needle) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline && !seen.toString().contains(needle)) {
+            Thread.sleep(50);
+        }
+        assertTrue(
+                seen.toString().contains(needle), () -> "\"" + needle + "\" in the terminal's output: [" + seen + "]");
+    }
+
+    private static void awaitTrue(String what, java.util.function.BooleanSupplier condition)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline && !condition.getAsBoolean()) {
+            Thread.sleep(100);
+        }
+        assertTrue(condition.getAsBoolean(), "timed out: " + what);
+    }
+
+    @Test
     void aCommandForTheFolderRunsInTheContainerWhereItIsMounted() {
         assertFalse(ExecTargets.runsHere(folder.resolve("a.txt")));
 

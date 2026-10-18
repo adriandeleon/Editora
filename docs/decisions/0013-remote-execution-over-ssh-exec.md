@@ -1,6 +1,7 @@
 # 0013 — Remote development: tools run on the host over SSH exec channels
 
-**Status:** Accepted
+**Status:** Accepted. The terminal clause is superseded by [0014](0014-integrated-terminal.md), which adds a
+PTY on interactive terminal channels only; the no-PTY rule for tool commands stands.
 
 ## Context
 

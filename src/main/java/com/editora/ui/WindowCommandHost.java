@@ -417,6 +417,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public TerminalCoordinator terminalCoordinator() {
+        return mc.terminalCoordinator;
+    }
+
+    @Override
     public CsvCoordinator csvCoordinator() {
         return mc.csvCoordinator;
     }

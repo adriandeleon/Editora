@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import com.editora.process.ExecSpec;
@@ -17,6 +18,9 @@ import com.editora.process.PortRelays;
 import com.editora.process.PosixShell;
 import com.editora.process.RelayPortForward;
 import com.editora.process.RemoteEnv;
+import com.editora.process.TerminalChannel;
+import com.editora.process.TerminalSpec;
+import com.editora.terminal.PtyChannel;
 
 /**
  * A WSL distribution, for its folders as Windows reaches them ({@code \\wsl.localhost\<distro>\…}): their
@@ -138,6 +142,41 @@ public final class WslExecTarget implements ExecTarget {
         Process client = client(argv(PosixShell.argv(spec, cwd, known.path(), known.locale(), known.profile())))
                 .start();
         return LauncherProcess.start(id(), client, START_TIMEOUT, this::signal, this::orphanRecord);
+    }
+
+    /**
+     * A login shell on a pseudo-terminal in the distribution, for the integrated terminal: {@code wsl.exe} run here
+     * on ConPTY. WSL 1 ends the shell with {@code wsl.exe}; closing also hangs it up in the distribution
+     * ({@link #hangUp}), for WSL 2, where that is not certain.
+     */
+    @Override
+    public TerminalChannel startTerminal(TerminalSpec spec) throws IOException {
+        String cwd = spec.workingDir() == null ? null : toTargetPath(spec.workingDir());
+        List<String> argv = argv(List.of("/bin/sh", "-c", PosixShell.terminalScript(cwd, true)));
+        return PtyChannel.start(
+                com.editora.process.ProcessRunner.resolveExecutable(argv),
+                com.editora.process.ProcessRunner.applyUserEnv(new java.util.HashMap<>(System.getenv()), Map.of()),
+                spec.columns(),
+                spec.rows(),
+                this::hangUp);
+    }
+
+    /** SIGHUP to the shell {@code pid} in the distribution. */
+    void hangUp(long pid) {
+        try {
+            Process kill = client(argv(List.of("kill", "-s", "HUP", "--", Long.toString(pid))))
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            kill.getOutputStream().close();
+            if (!kill.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                kill.destroyForcibly();
+            }
+        } catch (IOException e) {
+            // The distribution went with it.
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** {@link #orphanRecord}'s kind, and the reaper {@code App} registers for it. */

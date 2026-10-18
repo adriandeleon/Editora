@@ -60,6 +60,15 @@
         <!-- Bouncy Castle: MINA SSHD's EdDSA provider (ed25519 keys and host keys). See docs/dependencies.md. -->
         <bouncycastle.version>1.86</bouncycastle.version>
         <slf4j.version>2.0.20</slf4j.version>
+        <!-- Integrated terminal (ADR 0014; see docs/dependencies.md). JediTerm core is the VT/xterm emulator,
+             published only to JetBrains' own repository, so it is vendored in m2-repo like RichTextFX. pty4j
+             opens the pseudo-terminal (forkpty / ConPTY) and carries every platform's natives in one jar.
+             Both are Kotlin and disagree on the stdlib (2.4.0 vs 2.1.21), and pty4j asks for JNA 5.14.0:
+             the versions below are pinned so the choice is ours, not nearest-wins. Same versions as Termina. -->
+        <jediterm.version>3.74</jediterm.version>
+        <pty4j.version>0.13.12</pty4j.version>
+        <jna.version>5.19.1</jna.version>
+        <kotlin.version>2.4.0</kotlin.version>
         <moditect.version>1.3.0.Final</moditect.version>
         <spotless.version>3.10.4</spotless.version>
         <palantir.version>2.102.0</palantir.version>
@@ -79,13 +88,14 @@
     </properties>
 
     <!-- In-project Maven repository holding the personal RichTextFX fork
-         (io.github.adriandeleon:richtextfx). Checked into the repo so CI/CD resolves it with no
-         external registry or credentials. To update: rebuild the fork, then copy the new
-         richtextfx-<version>.{jar,pom} under m2-repo/ and bump <richtextfx.version> above. -->
+         (io.github.adriandeleon:richtextfx) and JediTerm core (org.jetbrains.jediterm:jediterm-core, which
+         is not on Maven Central). Checked into the repo so CI/CD resolves them with no external registry
+         or credentials. To update: copy the new <artifact>-<version>.{jar,pom} under m2-repo/, record their
+         SHA-256 beside them, and bump the version property above (BuildHygieneTest checks all three). -->
     <repositories>
         <repository>
             <id>in-project-fork</id>
-            <name>In-project RichTextFX fork</name>
+            <name>In-project vendored artifacts (RichTextFX fork, JediTerm core)</name>
             <url>file://${project.basedir}/m2-repo</url>
             <releases>
                 <enabled>true</enabled>
@@ -373,6 +383,56 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
+        </dependency>
+
+        <!-- Integrated terminal (ADR 0014). JediTerm core parses escape sequences into a screen buffer and
+             knows nothing about drawing; pty4j starts a shell on a real pseudo-terminal. Automatic modules
+             (jediterm.core, pty4j, com.sun.jna, com.sun.jna.platform) → moditect descriptors below. The
+             org.jetbrains annotations they declare are compile-time only and excluded. -->
+        <dependency>
+            <groupId>org.jetbrains.jediterm</groupId>
+            <artifactId>jediterm-core</artifactId>
+            <version>${jediterm.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.jetbrains</groupId>
+                    <artifactId>annotations</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.pty4j</groupId>
+            <artifactId>pty4j</artifactId>
+            <version>${pty4j.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.jetbrains</groupId>
+                    <artifactId>annotations</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-stdlib</artifactId>
+            <version>${kotlin.version}</version>
+            <exclusions>
+                <!-- annotations 13.0 has no module name of its own (an automatic module jlink cannot link)
+                     and nothing reads it at run time. -->
+                <exclusion>
+                    <groupId>org.jetbrains</groupId>
+                    <artifactId>annotations</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>${jna.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna-platform</artifactId>
+            <version>${jna.version}</version>
         </dependency>
 
         <dependency>
@@ -878,7 +938,7 @@
                 <configuration>
                     <mainClass>com.editora/com.editora.Launcher</mainClass>
                     <options>
-                        <option>--enable-native-access=javafx.graphics</option>
+                        <option>--enable-native-access=javafx.graphics,com.sun.jna</option>
                         <!-- Let App.MacEventHandler reach the internal com.sun.glass.ui open-files hook (macOS
                              Finder "Open With"). Harmless on other OSes. Mirrored in the dist launcher. -->
                         <option>--add-exports</option>
@@ -1346,6 +1406,69 @@
                                                 with org.apache.sshd.sftp.client.fs.SftpFileSystemProvider;
                                         }
                                     </moduleInfoSource>
+                                </module>
+                                <!-- Integrated terminal (ADR 0014): JNA first, since pty4j's descriptor requires
+                                     it by name. The jediterm and pty4j requires are stated rather than left
+                                     to jdeps: both are Kotlin and log through slf4j, and a requires that
+                                     jdeps drops under ignore-missing-deps would let the image link and then
+                                     fail at the first emulator call instead of at build time (the same trap
+                                     as sshd-osgi's org.slf4j). jdeps also sees the JetBrains @NotNull
+                                     annotations: CLASS retention, excluded from the dependencies, so their
+                                     requires is dropped (`!`). TerminalImageCheck runs the linked image. -->
+                                <module>
+                                    <artifact>
+                                        <groupId>net.java.dev.jna</groupId>
+                                        <artifactId>jna</artifactId>
+                                        <version>${jna.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>com.sun.jna</name>
+                                    </moduleInfo>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>net.java.dev.jna</groupId>
+                                        <artifactId>jna-platform</artifactId>
+                                        <version>${jna.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>com.sun.jna.platform</name>
+                                    </moduleInfo>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.jetbrains.jediterm</groupId>
+                                        <artifactId>jediterm-core</artifactId>
+                                        <version>${jediterm.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>jediterm.core</name>
+                                        <requires>
+                                            kotlin.stdlib;
+                                            org.slf4j;
+                                            java.desktop;
+                                            !org.jetbrains.annotations;
+                                            *;
+                                        </requires>
+                                    </moduleInfo>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.jetbrains.pty4j</groupId>
+                                        <artifactId>pty4j</artifactId>
+                                        <version>${pty4j.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>pty4j</name>
+                                        <requires>
+                                            kotlin.stdlib;
+                                            org.slf4j;
+                                            com.sun.jna;
+                                            com.sun.jna.platform;
+                                            !org.jetbrains.annotations;
+                                            *;
+                                        </requires>
+                                    </moduleInfo>
                                 </module>
                             </modules>
                         </configuration>
@@ -1914,7 +2037,7 @@
                                         <modulePath>${project.build.directory}/mods</modulePath>
                                     </modulePaths>
                                     <javaOptions>
-                                        <javaOption>--enable-native-access=javafx.graphics</javaOption>
+                                        <javaOption>--enable-native-access=javafx.graphics,com.sun.jna</javaOption>
                                         <!-- Let App.MacEventHandler reach the internal com.sun.glass.ui
                                              open-files hook (macOS Finder "Open With"). Harmless elsewhere. -->
                                         <javaOption>--add-exports=javafx.graphics/com.sun.glass.ui=com.editora</javaOption>

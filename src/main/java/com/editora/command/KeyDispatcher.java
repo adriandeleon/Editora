@@ -299,6 +299,18 @@ public class KeyDispatcher {
         if (token == null) {
             return; // a modifier key on its own
         }
+        // A terminal owns the keyboard: every key goes to the shell except the few commands it lets through
+        // (see SHELL_KEYS). Decided before AltGr, prefix arguments and prefixes, since all of those are the
+        // shell's too — C-x is Emacs's own prefix inside the terminal, and Alt is readline's Meta.
+        if (pending.isEmpty() && !prefixArg.isActive() && shellKey(event.getTarget(), token)) {
+            if (plainAltActive(mac, event.isAltDown(), event.isControlDown())) {
+                claimedAltPress = true; // the terminal consumes it; consumeClaimedAlt is the backstop
+            }
+            if (macro == MacroCapture.RECORDING) {
+                capture.key(event, event.getTarget());
+            }
+            return;
+        }
         // AltGr composing a character (reported as Ctrl+Alt outside macOS): this is typing, not a C-M- chord.
         // Leave the press alone so its KEY_TYPED delivers the character to whatever is focused.
         if (pending.isEmpty() && altGrText(mac, event.isControlDown(), event.isAltDown(), altGrHeld)) {
@@ -666,6 +678,30 @@ public class KeyDispatcher {
                     && node.getProperties().get(CLAIMED_KEYS) instanceof java.util.Set<?> keys
                     && keys.contains(token)) {
                 return true;
+            }
+            node = node.getParent();
+        }
+        return false;
+    }
+
+    /**
+     * Node property for a component that takes the <em>whole</em> keyboard, as a terminal does: a
+     * {@code BiPredicate<String, String>} that answers, for a chord token and the command the keymap binds to
+     * it (or {@code null}), whether the key still reaches Editora. Every other press is left to the component,
+     * prefixes and plain Alt included. {@link #CLAIMED_KEYS} names the few keys a component takes;
+     * this names the few it gives back.
+     */
+    public static final String SHELL_KEYS = "editora.shellKeys";
+
+    /** Whether the focused component's {@link #SHELL_KEYS} keeps {@code token} for itself. */
+    private boolean shellKey(EventTarget target, String token) {
+        Node node = target instanceof Node n ? n : null;
+        while (node != null) {
+            if (node.hasProperties()
+                    && node.getProperties().get(SHELL_KEYS) instanceof java.util.function.BiPredicate<?, ?> rule) {
+                @SuppressWarnings("unchecked")
+                var reachesEditora = (java.util.function.BiPredicate<String, String>) rule;
+                return !reachesEditora.test(token, keymap.commandFor(token));
             }
             node = node.getParent();
         }

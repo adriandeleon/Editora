@@ -60,6 +60,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   merge, and accessibility.
 - [subsystems/remote.md](subsystems/remote.md) — remote (SFTP) folders as projects, the one-window-per-
   project connection model, the not-connected state, and running commands on the host (off by default).
+- [subsystems/terminal.md](subsystems/terminal.md) — the integrated terminal (in progress): the port from
+  Termina, connectors, the view, palettes derived from editor themes.
 - [subsystems/lsp-and-dap.md](subsystems/lsp-and-dap.md) — Language Server + Debug Adapter
   integration, and the `process/ProcessRegistry` lifecycle that owns spawned servers.
 - [subsystems/log-viewer.md](subsystems/log-viewer.md) — level detection, the record-aware filter,

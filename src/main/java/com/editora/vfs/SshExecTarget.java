@@ -14,6 +14,8 @@ import com.editora.process.ExecTarget;
 import com.editora.process.PortForward;
 import com.editora.process.PosixShell;
 import com.editora.process.RemoteEnv;
+import com.editora.process.TerminalChannel;
+import com.editora.process.TerminalSpec;
 import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.session.ClientSession;
@@ -91,6 +93,34 @@ final class SshExecTarget implements ExecTarget {
             if (e instanceof SshChannelOpenException) {
                 throw new IOException(
                         id + " refused to run another command at the same time (its MaxSessions limit)", e);
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * A login shell on a pseudo-terminal, for the integrated terminal. It takes one of the long-lived slots, like a
+     * run or a language server, and gives it back when its channel closes.
+     */
+    @Override
+    public TerminalChannel startTerminal(TerminalSpec spec) throws IOException {
+        ClientSession session = session();
+        String cwd = spec.workingDir() == null ? null : toTargetPath(spec.workingDir());
+        Semaphore budget;
+        try {
+            budget = acquire(true);
+        } catch (IOException e) {
+            throw new IOException(e.getMessage() + " (each terminal on it is one)", e);
+        }
+        try {
+            SshTerminalChannel terminal =
+                    SshTerminalChannel.open(session, SshTerminalChannel.commandLine(cwd), spec, START_TIMEOUT);
+            terminal.whenClosed(budget::release);
+            return terminal;
+        } catch (IOException | RuntimeException e) {
+            budget.release();
+            if (e instanceof SshChannelOpenException) {
+                throw new IOException(id + " refused another channel (its MaxSessions limit)", e);
             }
             throw e;
         }

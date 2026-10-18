@@ -283,6 +283,12 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
 
 ### What runs remotely so far
 
+- **The integrated terminal:** a login shell on a PTY channel of the window's session (`startTerminal`; see
+  [terminal.md](terminal.md#terminals-on-an-ssh-host)). It is the one channel with a PTY, takes a long-lived
+  slot, and on a dropped connection the server's hang-up ends it, with no watchdog. The tab offers Reconnect.
+  In a container or WSL folder the terminal is the target's own launcher (`exec -it`, `wsl.exe`) on a PTY here.
+  It hangs its shell up through the target on close, because a container keeps what an `exec` client left
+  ([terminal.md](terminal.md#terminals-in-a-container-or-a-wsl-distribution)).
 - **Git:** status, the gutter diff, tab colouring, log, blame and blob lookups, and every command that changes
   a repository (stage, commit, checkout, stash, merge, rebase, fetch / pull / push, hunk staging). `GitService`
   keeps git's availability and version per host (`gitAvailable(Path)`), uses the host's `git` (or its
