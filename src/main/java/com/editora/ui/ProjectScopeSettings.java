@@ -52,10 +52,19 @@ final class ProjectScopeSettings {
     private final Map<String, Scoped> scoped = new LinkedHashMap<>();
     private final Map<Node, Object> lockedFrom = new java.util.IdentityHashMap<>();
 
-    /** A row's user-scope marker and reset action, kept while Project mode lends the row its own. */
-    private record Lent(boolean modified, Runnable reset) {}
+    /** The rows of the scopable settings, as of the last {@link #refresh}. */
+    private final java.util.Set<Node> scopedRowNodes =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
-    private final Map<Node, Lent> lent = new java.util.IdentityHashMap<>();
+    /**
+     * Whether this marks {@code row} itself: a scopable row while the window edits the project (its marker and
+     * link are the project's value and "Use my setting"). In User mode the user-scope marking (SettingsModified)
+     * owns every row, and it runs after {@link #refresh}, so leaving Project mode gives the rows back.
+     */
+    boolean marksRow(Node row) {
+        return projectMode() && scopedRowNodes.contains(row);
+    }
+
     private final ToggleGroup group = new ToggleGroup();
     private final ToggleButton userButton = new ToggleButton(tr("settings.scope.user"));
     private final ToggleButton projectButton = new ToggleButton(tr("settings.scope.project"));
@@ -258,18 +267,12 @@ final class ProjectScopeSettings {
                 return;
             }
             scopedRows.add(row);
+            scopedRowNodes.add(row);
             if (projectOnly.contains(key)) {
                 projectOnlyRows.add(row);
             }
             boolean own = valueOf(ps, key) != null;
             SettingRowState state = SettingRowState.of(row);
-            if (project && !lent.containsKey(row)) {
-                lent.put(row, new Lent(state.isModified(), state.resetAction())); // the user scope's, given back below
-            } else if (!project && lent.containsKey(row)) {
-                Lent was = lent.remove(row);
-                state.setModified(was.modified());
-                state.setResetAction(was.reset());
-            }
             if (project) {
                 state.setScopeNote(
                         own ? tr(trusted ? "settings.scope.setHere" : "settings.scope.setHereUntrusted") : null);
@@ -340,7 +343,7 @@ final class ProjectScopeSettings {
     }
 
     private static boolean holdsSwitchFor(Node node, Node check) {
-        if (node instanceof SettingSwitch sw && sw.getProperties().get(SettingSwitch.class) == check) {
+        if (node instanceof SettingSwitch sw && sw.getProperties().get(SettingSwitch.CHECK) == check) {
             return true;
         }
         if (node instanceof Parent p) {

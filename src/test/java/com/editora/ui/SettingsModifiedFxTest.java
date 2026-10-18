@@ -41,8 +41,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SettingsModifiedFxTest {
 
     /** Controls that are not a setting of their own, or that ask before they change (a modal no test answers). */
-    private static final Set<String> NOT_SETTINGS =
-            Set.of("shortcutFilter", "dictionaryInput", "searchField", "zenCheck", "expertCheck", "mcpCheck");
+    private static final Set<String> NOT_SETTINGS = Set.of(
+            "shortcutFilter",
+            "dictionaryInput",
+            "searchField",
+            "zenCheck",
+            "expertCheck",
+            "mcpCheck",
+            // Project-only save rules: they write the project's .editora/settings.json, never settings.json.
+            "trimOnSaveCombo",
+            "finalNewlineCombo");
 
     @BeforeAll
     static void boot() throws Exception {

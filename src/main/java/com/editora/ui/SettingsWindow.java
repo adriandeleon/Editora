@@ -8940,10 +8940,14 @@ public class SettingsWindow {
         if (modified == null) {
             return;
         }
-        modifiedPerPage = modified.refresh(rows, config.getSettings(), keys -> {
-            SettingsModified.reset(config.getSettings(), keys);
-            commitReset(); // saves, applies, re-reads every control
-        });
+        modifiedPerPage = modified.refresh(
+                rows,
+                config.getSettings(),
+                keys -> {
+                    SettingsModified.reset(config.getSettings(), keys);
+                    commitReset(); // saves, applies, re-reads every control
+                },
+                scopeUi::marksRow); // Project mode marks its own rows (the project's values)
         List<String> restart = RestartPending.changed(config.getSettings());
         restartNote.setText(tr("settings.restart.pending", restart.size()));
         SettingsSearch.setShown(restartBox, !restart.isEmpty());

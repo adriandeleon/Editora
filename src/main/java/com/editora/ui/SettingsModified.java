@@ -158,9 +158,24 @@ final class SettingsModified {
      */
     Map<Object, Integer> refresh(
             List<SettingsSearch.Row> rows, Settings settings, java.util.function.Consumer<Set<String>> reset) {
+        return refresh(rows, settings, reset, row -> false);
+    }
+
+    /**
+     * As above, leaving alone the rows {@code lent} names: Settings' Project scope marks those itself (the
+     * project's value, "Use my setting") while the window edits the project.
+     */
+    Map<Object, Integer> refresh(
+            List<SettingsSearch.Row> rows,
+            Settings settings,
+            java.util.function.Consumer<Set<String>> reset,
+            java.util.function.Predicate<Node> lent) {
         Set<String> changed = modifiedKeys(settings);
         Map<Object, Integer> perPage = new LinkedHashMap<>();
         for (SettingsSearch.Row row : rows) {
+            if (lent.test(row.node())) {
+                continue;
+            }
             Set<String> keys = keysOf(row.node());
             SettingRowState state = keys.isEmpty() ? SettingRowState.peek(row.node()) : SettingRowState.of(row.node());
             if (state == null) {
