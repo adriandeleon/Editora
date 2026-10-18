@@ -79,6 +79,15 @@ public final class KeyEncoding {
      *     character. On macOS this is the difference between {@code M-b} and typing {@code ∫}.
      */
     public static byte[] encodePressed(KeyEvent e, CodeLookup lookup, boolean altIsMeta) {
+        return encodePressed(e, lookup, altIsMeta, false);
+    }
+
+    /**
+     * As above. {@code ctrlAltIsMeta}: Ctrl+Alt+key is the chord {@code C-M-key} (ESC then the control byte), not
+     * AltGr composing a character — true only where AltGr is told apart (Linux, while AltGr is not held). On
+     * Windows Ctrl+Alt <em>is</em> AltGr, and it stays the composing key there.
+     */
+    public static byte[] encodePressed(KeyEvent e, CodeLookup lookup, boolean altIsMeta, boolean ctrlAltIsMeta) {
         KeyCode code = e.getCode();
 
         Integer vk = VK.get(code);
@@ -103,6 +112,11 @@ public final class KeyEncoding {
         if (e.isControlDown() && !e.isAltDown() && !e.isMetaDown()) {
             byte[] control = controlByte(code);
             if (control != null) return withMeta(control, e, altIsMeta);
+        }
+        // readline's C-M-e and C-M-y, emacs -nw's C-M-f/b/k.
+        if (ctrlAltIsMeta && e.isControlDown() && e.isAltDown() && !e.isMetaDown()) {
+            byte[] control = controlByte(code);
+            if (control != null) return prefixEsc(control);
         }
 
         // Meta: ESC then the key's *unmodified* character. Handled from KEY_PRESSED precisely
@@ -155,6 +169,11 @@ public final class KeyEncoding {
      * event carries nothing to send.
      */
     public static byte[] encodeTyped(KeyEvent e, boolean altIsMeta) {
+        return encodeTyped(e, altIsMeta, false);
+    }
+
+    /** As above; with {@code ctrlAltIsMeta} a Ctrl+Alt character is the chord {@link #encodePressed} sent. */
+    public static byte[] encodeTyped(KeyEvent e, boolean altIsMeta, boolean ctrlAltIsMeta) {
         String text = e.getCharacter();
         if (text == null || text.isEmpty() || text.equals(KeyEvent.CHAR_UNDEFINED)) return null;
 
@@ -164,7 +183,7 @@ public final class KeyEncoding {
         if (text.length() == 1 && (first < 0x20 || first == 0x7f)) return null;
 
         // Ctrl held means this is the character form of a chord KEY_PRESSED already emitted.
-        if ((e.isControlDown() && !e.isAltDown()) || e.isMetaDown()) return null;
+        if ((e.isControlDown() && (!e.isAltDown() || ctrlAltIsMeta)) || e.isMetaDown()) return null;
 
         // The same is now true of Alt in Meta mode: KEY_PRESSED has sent ESC and the unmodified
         // key, and this event carries the composed character that mode exists to suppress. Sending
@@ -176,11 +195,34 @@ public final class KeyEncoding {
         return text.getBytes(StandardCharsets.UTF_8);
     }
 
-    /** Wraps text for bracketed paste, which lets the shell tell a paste from typing. */
+    /**
+     * Wraps text for bracketed paste, which lets the shell tell a paste from typing.
+     *
+     * <p>The text is cleaned first. A paste is data, never keystrokes, but a clipboard can hold control bytes —
+     * text copied from a web page may carry a hidden {@code ESC [201~} that ends the bracket early, after which
+     * the rest is typed: {@code \r} runs a command, ESC leaves vim's insert mode, Ctrl+C and Ctrl+D act. So, as
+     * xterm does with {@code allowPasteControls} off and as VTE does, every C0 control other than Tab and the
+     * line breaks, DEL, and every C1 control are dropped; with ESC gone no escape sequence survives.
+     */
     public static byte[] encodePaste(String text, boolean bracketed) {
-        String normalised = text.replace("\r\n", "\r").replace('\n', '\r');
+        String normalised = pasteText(text).replace("\r\n", "\r").replace('\n', '\r');
         if (!bracketed) return normalised.getBytes(StandardCharsets.UTF_8);
         return ("[200~" + normalised + "[201~").getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** The pasted text without the control characters a paste must not deliver (see {@link #encodePaste}). */
+    public static String pasteText(String text) {
+        StringBuilder out = null;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            boolean drop = (c < 0x20 && c != '\t' && c != '\n' && c != '\r') || (c >= 0x7f && c <= 0x9f);
+            if (drop && out == null) {
+                out = new StringBuilder(text.length()).append(text, 0, i);
+            } else if (!drop && out != null) {
+                out.append(c);
+            }
+        }
+        return out == null ? text : out.toString();
     }
 
     private static byte[] withMeta(byte[] bytes, KeyEvent e, boolean altIsMeta) {
@@ -235,6 +277,12 @@ public final class KeyEncoding {
         }
         return switch (code) {
             case SPACE, DIGIT2 -> new byte[] {0x00}; // Ctrl+Space / Ctrl+@ -> NUL
+            // xterm's Ctrl+digit row: 3..7 are the controls their US shifted keys name ([ \\ ] ^ _), 8 is DEL.
+            case DIGIT3 -> new byte[] {0x1b};
+            case DIGIT4 -> new byte[] {0x1c};
+            case DIGIT5 -> new byte[] {0x1d};
+            case DIGIT7 -> new byte[] {0x1f};
+            case DIGIT8 -> new byte[] {0x7f};
             case OPEN_BRACKET -> new byte[] {0x1b}; // ESC
             case BACK_SLASH -> new byte[] {0x1c}; // FS  (Ctrl+\ -> SIGQUIT)
             case CLOSE_BRACKET -> new byte[] {0x1d}; // GS

@@ -272,9 +272,11 @@ public class FileBreadcrumb extends StackPane {
     private void showCrumbMenu(Path crumbPath, boolean isDir, DirectoryListing listing, Node anchor) {
         List<Path> entries = listing.entries(); // folders first, then files — one sequence for paging
         ContextMenu menu = new ContextMenu();
-        // Reveal / Open Terminal act on this crumb (local files only — meaningless over SFTP).
-        if ((onReveal != null || onOpenTerminal != null) && Vfs.isLocal(crumbPath)) {
-            if (onReveal != null) {
+        // Reveal / Open Terminal act on this crumb. Reveal is local files only (meaningless over SFTP); a terminal
+        // on a remote crumb opens on its host.
+        boolean local = Vfs.isLocal(crumbPath);
+        if ((onReveal != null && local) || onOpenTerminal != null) {
+            if (onReveal != null && local) {
                 MenuItem reveal = new MenuItem(tr("menu.revealInFileManager"), Icons.revealInFiles());
                 reveal.setOnAction(e -> onReveal.accept(crumbPath, isDir));
                 menu.getItems().add(reveal);

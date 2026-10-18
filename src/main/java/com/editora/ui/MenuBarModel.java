@@ -112,6 +112,8 @@ final class MenuBarModel {
                                 "file.revert",
                                 submenu("menubar.file.encryption"),
                                 SEPARATOR,
+                                "file.openTerminal",
+                                SEPARATOR,
                                 "buffer.close",
                                 "buffer.closeOthers",
                                 "buffer.closeAll",
@@ -479,7 +481,10 @@ final class MenuBarModel {
                                 "tool.project",
                                 "tool.structure",
                                 "tool.search",
-                                "tool.problems")),
+                                "tool.problems",
+                                SEPARATOR,
+                                "tool.terminal",
+                                "terminal.new")),
                 new MenuSpec(
                         "menubar.help",
                         List.of(

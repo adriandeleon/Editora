@@ -164,7 +164,10 @@ final class MenuBarIcons {
         add("plugins.browse", Icons::plugin);
         add("install.languageServer", Icons::plugin);
         add("palette.show", Icons::palette);
-        add("view.debugLog", Icons::terminal);
+        add("tool.terminal", Icons::terminal);
+        add("terminal.new", Icons::plus);
+        add("file.openTerminal", Icons::terminal);
+        add("view.debugLog", Icons::fileSheet); // not the Terminal tool window's own glyph
         add("help.about", Icons::about);
     }
 

@@ -184,10 +184,10 @@ final class TabContextMenu {
             closeLeft.setDisable(c.eligibleToLeft(tab).isEmpty());
             closeRight.setDisable(c.eligibleToRight(tab).isEmpty());
             boolean hasPath = buffer.getPath() != null;
-            // Reveal/terminal only make sense for a saved, local file.
+            // Reveal only makes sense for a saved, local file; a terminal also opens on a remote file's host.
             boolean localPath = hasPath && c.isLocalBuffer(buffer);
             reveal.setDisable(!localPath);
-            terminal.setDisable(!localPath);
+            terminal.setDisable(!hasPath);
             copyPath.setDisable(!hasPath);
             rename.setDisable(!hasPath);
             compareWith.setVisible(!simple);

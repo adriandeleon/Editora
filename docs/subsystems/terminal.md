@@ -1,6 +1,6 @@
 # Integrated terminal
 
-Status: **in progress** ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
+Status: **in progress**, reviewed 2026-10-18 and fixed in one pass ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
 runs shells where a project's commands run: this machine, an SSH host, a dev container or a WSL distribution.
 Open Terminal Here opens one, links in the output open in the editor, and shell integration reports the
 shell's folder and its prompts. Scrollback search, OSC 8 links and type-ahead work in every tab, and Run and
@@ -28,6 +28,9 @@ Debug can run a program in a tab instead of their consoles.
 - **Where:** a remote project's terminals start in its root on the host, and Open Terminal Here on a remote
   folder opens there (the system terminal is never used for it). The tab chip shows the host
   (`TerminalCoordinator.hostOf`).
+- **CI:** the **Terminal probe** job (`ci.yml`) runs on every pull request that touches the terminal: the remote
+  probe's terminal steps against dropbear on the runner (`-Dremote.probe.only`) and the container probe's
+  terminal test against Docker. It passes at once otherwise, so it can be a required check.
 - **Tests:** `SshTerminalFxTest` (embedded server: answers, budget, exit vs close vs drop),
   `RemoteTerminalPanelFxTest` (a tab answers, survives a drop, and reconnects on the new connection), and
   `RealSshdProbeFxTest`'s two terminal steps. Those check a real tty and `stty size` before and after a resize,
@@ -35,20 +38,38 @@ Debug can run a program in a tab instead of their consoles.
 
 ## The tool window
 
-- **`ui/TerminalCoordinator`** owns the panel and the commands: `tool.terminal` (toggle; opening it starts a
-  shell if none is running), `terminal.new` (another tab), `terminal.close` (the selected one).
+- **`ui/TerminalCoordinator`** owns the panel and the commands: `tool.terminal` (shows the terminal and
+  focuses it; hides it only when it already has the keyboard, as IntelliJ's Alt+F12 does), `terminal.new`,
+  `terminal.close`, `terminal.find`, `terminal.next`/`previous` (also Ctrl+PageDown/PageUp in a terminal),
+  `terminal.rename`, `terminal.moveTabLeft`/`Right` (also Ctrl+Shift+PageUp/PageDown, a drag of the tab, or the
+  tab's own menu) and `terminal.focusEditor` (Shift+Escape in every keymap). The Window menu has Terminal and New
+  Terminal, the File menu Open Terminal Here, and the Emacs keymap binds `M-0`.
   `MainController` keeps the `ToolWindow` (bottom, `Icons.terminal()`; Build Output moved to `Icons.tools()`)
   and calls `applySettings`/`applyTheme` from `applyEditorTheme`, which runs on every settings apply.
 - **`ui/TerminalPanel`**: one tab per shell, with a "+" floating at the strip's right end and a target chip
-  ("Local") on each tab. A tab's title follows the shell's title or directory. Disposal is driven off the
-  tab list (✕, Close Terminal, the shell exiting, the window closing), so every path ends the shell. Tabs are
-  not reorderable: a reorder is a remove plus an add, which the list listener would read as a close.
-- **Where a shell starts:** the project folder when it is local, else the active file's folder, else home. A
-  remote project still gets a local shell until its host has a connector.
+  ("Local") on each tab. A tab's title follows the shell's title or directory, unless the user named it; tabs
+  with the same title are numbered. Disposal is driven off the tab list (✕, Close Terminal, the shell exiting,
+  the window closing), so every path ends the shell. A reorder is a remove plus an add, so it runs with
+  `reordering` set and the listener closes nothing (Termina's rule); `TerminalTabReorder` is the drop arithmetic.
+- **Focus:** the panel is a `ToolWindowContent`, so every path that shows it (stripe, float, jump, the
+  next-window command) focuses the selected shell, not the panel. A shell still starting takes the keyboard when
+  it comes up only if something asked for it: the shell a restored window starts by itself
+  (`newTerminalQuietly`) leaves the editor its keys. A floating terminal's stage gets the window's
+  `KeyDispatcher` (`ToolWindowManager.setFloatingSceneSetup`). When the last tab goes, the tool window hides.
+- **Where a shell starts:** the project folder (on its host for a remote project), else the active file's
+  folder, else home. A local shell is opened off the FX thread too (`Factory.background`: the fork, and the
+  first time pty4j's native library, took a quarter to half a second), without a "Connecting…" note.
 - **Closing a busy shell asks first** (`RunningProgram`: the shell's child processes; Settings → Terminal can
-  turn it off). Local shells are tracked by `ProcessRegistry` so a crash does not orphan them. pty4j's
+  turn it off). A remote shell is asked off the FX thread (`TerminalPanel.requestClose`; the tab stays until
+  the answer), with a `/proc` fallback where the target has no `ps`. Closing the window and quitting ask too,
+  one question listing every busy tab in every window (`busyTabs`, remote ones within 2 s). Local shells are tracked by `ProcessRegistry` so a crash does not orphan them. pty4j's
   `UnixPtyProcess` throws from `toHandle()`, which the registry needs, so `LocalPtyConnector.trackableProcess()`
   wraps it (`PtyHandleProcess`). Before that wrapper, tracking threw after the shell had started.
+- **How a terminal's process ends:** a shell is *hung up* (`ProcessRegistry.HangsUp`): its pty is closed, so it
+  gets SIGHUP and passes it to its jobs (no SIGTERM: pty4j's `destroy` signals the whole process group), a job the user detached (`nohup`, `disown`) keeps running on Linux (not on macOS, where CI saw it end with the shell; cause unknown), and
+  only the shell itself is force-killed after the grace period. The shutdown hook does the same, rather than
+  killing every descendant. A program (Run in Terminal) is ended as console Run ends one, `killTree`: TERM to
+  its tree, KILL to what ignored it; its streams stay open until it is gone, so its last words are shown.
 
 ## Terminals in a container or a WSL distribution
 
@@ -65,6 +86,9 @@ belongs elsewhere.
   (`TERMINAL_PID_MARK`), exports `TERM`/`COLORTERM`/`TERM_PROGRAM`, changes to the folder, and execs the login
   shell: `$SHELL`, else bash, else sh, since containers often set none. `PidMarkStream` takes the pid line out
   of the output and keeps the pid.
+- **Tracked:** once the pid line arrives the shell is `ProcessRegistry.track`ed as a `RemoteProcess`
+  (`PtyChannel.Shell`): the shutdown hook waits, bounded, for the hang-up in progress instead of exiting under
+  it, and the target's orphan record lets the next start reap a shell a crash left behind.
 - **Closing:** Docker and Podman keep a program whose `exec` client died (measured: without the hang-up the
   probe's `sleep` stays in the container). So close sends `kill -s HUP -- <pid>` through the target first,
   then ends the launcher. SIGTERM alone does not end an interactive shell, so the PTY is closed too, with a
@@ -101,8 +125,14 @@ VS Code, iTerm2 and WezTerm shells do.
   longer than 4 KB is passed through unread.
 - **Scripts** (`resources/com/editora/terminal/shell-integration/`): `editora.bash` is bash's `--init-file`. It
   reads the login files itself (`/etc/profile`, then the first of `~/.bash_profile`, `~/.bash_login`,
-  `~/.profile`), then adds its hook to the front of `PROMPT_COMMAND` and the `C` mark to `PS0`. `PS0`'s `$(…)`
-  runs in a subshell, so the mark is a literal escape, and "a command ran" (for `D`) is `HISTCMD` changing. zsh
+  `~/.profile`), and `~/.bashrc` when that profile does not mention it (installers' `.bash_profile`s often do
+  not). It defines `logout` and runs `~/.bash_logout` at exit, which a login shell would, then adds its hook to
+  the front of `PROMPT_COMMAND` and the `C` mark to `PS0`. `PS0`'s `$(…)` runs in a subshell, so the mark is a
+  literal escape, and "a command ran" (for `D`) is the command number `\#` moving (`${…@P}`, bash 4.4+; the
+  history number before that, which `HISTCONTROL=ignoreboth` does not move for a repeat). The folder is sent with
+  every byte outside the unreserved set percent-encoded, and `ShellIntegration.parseCwdUrl` decodes by hand
+  (`URI` cut a path at `#` and `?`). A local tab takes a report only from this machine's host name, so a remote
+  prompt after `ssh` does not move it. zsh
   gets `ZDOTDIR` wrappers that source the user's own `.zshenv`, `.zprofile`, `.zshrc` and `.zlogin` with
   `ZDOTDIR` restored, plus `precmd`/`preexec` hooks. Other shells start plain.
 - **Where they live:** `ShellIntegration.version()` hashes the scripts, and they are written once per version:
@@ -114,10 +144,11 @@ VS Code, iTerm2 and WezTerm shells do.
   Terminal Here** in the terminal's menu (a tab in the shell's current folder), **Copy Last Command Output**
   (what came between the last `C` and `D`), and prompt jumps: Ctrl+Shift+Up/Down (Cmd+Up/Down on macOS) scroll
   to the previous or next prompt.
-- **Marks move with their text** as lines scroll into history. JediTerm's history listener fires only on
+- **Marks stay with their text** as lines scroll into history. JediTerm's history listener fires only on
   resizes and clears, so `TerminalView` derives the shift on every model change from the history count plus the
-  lines a full history drops (`linesDiscardedFromHistory`). The same fix keeps a scrolled-back view and a
-  selection on their text, which Termina's port did not.
+  lines a full history drops (`linesDiscardedFromHistory`), and adds it to `pushedLines`. Marks and search hits
+  are kept at absolute lines (row + `pushedLines`), so nothing is rewritten per line of output (holding 1,000
+  hits made output 3–6× slower). A scrolled-back view and a selection still shift with it.
 - **Closing a remote shell that is running something asks first**, as a local one does: the script's pid line
   gives the shell's pid on the target, and `ps -A -o ppid=,comm=` there lists its children
   (`TerminalCoordinator.remotePrograms`, 3 s budget; no answer means close without asking).
@@ -131,10 +162,12 @@ VS Code, iTerm2 and WezTerm shells do.
 ## IDE features
 
 - **Find** (`terminal.find`, the menu's Find…, Ctrl+Shift+F or Cmd+F): `TerminalFindBar` sits over the selected
-  tab's content, top right, and follows the selection to another tab. `TerminalSearch` (pure) finds every hit in
-  history and screen, one row at a time, up to 1,000; `TerminalView.search` paints them in a wash of the
-  palette's yellow, stronger on the current one, which starts at the latest hit at or above the bottom of the
-  view. Enter steps up (older output), Shift+Enter down, both wrap; Escape closes and gives the keys back. Hits
+  tab's content, top right, and follows the selection to another tab. It searches once the query has held still
+  for 150 ms, and the scan (`TerminalView.searchAsync`) runs on a background thread, newest row first, a chunk of
+  rows per hold of the buffer lock, keeping the newest 1,000 hits. `TerminalSearch.inRow` folds case per
+  character and skips JediTerm's wide-character placeholder, so CJK text is found. The view paints the hits in a
+  wash of the palette's yellow, stronger on the current one, which starts at the latest hit at or above the
+  bottom of the view. Enter steps up (older output), Shift+Enter down, both wrap; Escape closes and gives the keys back. Hits
   shift with their text as lines scroll into history, like the prompt marks. Output that arrives while the bar
   is open marks the search stale, and the next step finds again from the current hit.
 - **OSC 8 links**: `TerminalSession` gives JediTerm `Osc8Links.filter()`. JediTerm keeps what it returns in the
@@ -153,6 +186,9 @@ VS Code, iTerm2 and WezTerm shells do.
 - **Programs in a tab**: `TerminalCoordinator.runProgram(title, dir, argv, env, onExit)` opens a tab running a
   program instead of a shell, where `dir`'s commands run.
   - Locally it uses `LocalShell.startProgram` (the user's environment plus `env`, a null value unsetting).
+  - A local shell's environment drops what describes Editora's own launch (`LocalShell.LAUNCH_VARIABLES`:
+    `TMUX`, `STY`, `VTE_VERSION`, the AppImage's), sets `TERM_PROGRAM_VERSION`, and fills a missing locale
+    with `C.UTF-8` on Linux. Test runs give shells their own HOME and no history (`editora.terminal.home`).
   - On a target it uses `TerminalSpec.program`. Its script (`PosixShell.programScript`) marks the pid, sets
     the variables and runs the program through the account's login shell, with `exec` all the way down, so the
     marked pid is the program's. fish and csh are passed over for `/bin/sh`.
@@ -166,7 +202,13 @@ VS Code, iTerm2 and WezTerm shells do.
   sends the command to `runProgram` instead of `RunService`.
   - The before-launch step still runs in the console.
   - The `read -p` shim's variables are dropped, since a terminal is a tty.
-  - The status line gives the exit code.
+  - The status line gives the exit code. Run's Stop, the toolbar and the Run stripe follow the program
+    (`RunCoordinator.terminalProgram`); a stopped program's end says "stopped".
+  - The next run of the same configuration (same title and folder) reuses the ended run's tab; one still running
+    keeps its tab.
+  - On a target the configuration's variables are set after the login profile ran (`PosixShell.AFTER_LOGIN`,
+    passed as arguments), as console Run sets them; a working folder that is not there fails the run (exit 126,
+    or "folder not found" locally) instead of running in the home folder.
   - Rerun is left unavailable rather than replaying an older console run.
 - **The debugged program in a tab** (`debugProgramInTerminal`, off; needs the program console): `DebugCoordinator`
   gives `DapManager` a `ProgramTerminal` (the window's `runProgram`), and `Debuggee` then starts the adapter's
@@ -196,13 +238,25 @@ word, Escape is vim's, and Emacs's C-x is the shell's.
 
 - Through by default: `tool.*`, `palette.show`, `search.everywhere`, `terminal.*` (Settings → Terminal →
   Commands that reach Editora; `Settings.DEFAULT_TERMINAL_IDE_COMMANDS`, kept equal to
-  `TerminalKeys.DEFAULT_IDE_COMMANDS` by a test). On macOS every Cmd chord reaches Editora too.
+  `TerminalKeys.DEFAULT_IDE_COMMANDS` by a test), **but only on chords a shell does not use**
+  (`TerminalKeys.isShellChord`: any key with no modifier or Shift alone, and a character key with Ctrl, Alt or
+  both). The command-id rule alone took IntelliJ's Ctrl+K and M-<n>, VS Code's Ctrl+B and F1, and Emacs's
+  M-<n> from the shell. `tool.terminal` and `terminal.*` pass on any chord (there must be a way out), and so
+  does the Emacs keymap's `M-x` for the palette (adl, 2026-10-18). An entry without a dot is a chord
+  (`M-1`) that passes whatever it is bound to. On macOS every Cmd chord reaches Editora too.
+  `TerminalKeysTest` walks every bundled keymap.
+- Alt is Meta (ESC + key) on Linux and Windows; on macOS only with "Option key as Meta"
+  (`terminalMacOptionIsMeta`, off), so Option composes `@ [ ] { }` on non-US layouts. Ctrl+Alt+key is C-M-key on
+  Linux unless AltGr is held (it is the composing key on Windows). Ctrl+3…8 send xterm's controls.
 - Prompt jumps (Ctrl+Shift+Up/Down, Cmd+Up/Down on macOS) and Find (Ctrl+Shift+F, Cmd+F) are the terminal's own
   too, never Editora's.
 - Copy and Paste are the terminal's own: Ctrl+Shift+C/V, Cmd+C/V on macOS. A filter on the panel runs before
   the view's, which would otherwise encode Ctrl+Shift+C as ^C.
-- Bindings: `tool.terminal` is Alt+F12 (IntelliJ) and Ctrl+` (VS Code, CUA, Sublime); `terminal.new` is
-  Ctrl+Shift+` in the last three. Emacs has no binding (`M-x`).
+- Bindings: `tool.terminal` is Alt+F12 (IntelliJ), Ctrl+` (VS Code, CUA, Sublime) and M-0 (Emacs);
+  `terminal.new` is Ctrl+Shift+` in VS Code, CUA and Sublime; `terminal.focusEditor` is Shift+Escape everywhere.
+- Shift+PageUp/PageDown/Home/End scroll the history (not on the alternate screen). A paste is cleaned of control
+  characters (`KeyEncoding.pasteText`), and one of several lines into a program without bracketed paste asks
+  first (`terminalConfirmMultilinePaste`).
 
 ## Settings
 
@@ -211,7 +265,9 @@ Settings → Terminal (Languages & Tools), schema 130: `terminalShell` (blank = 
 `terminalScrollback`, `terminalIdeCommands`, `terminalConfirmClose`. Font, cursor, bell and the key list apply
 to open terminals. Scrollback and shell apply from the next tab. Schema 131 adds `terminalUseExternal`; 132
 adds `terminalShellIntegration`, which applies from the next tab; 133 adds `terminalTypeAhead` (applies at
-once) and Debug's `debugProgramInTerminal`.
+once) and Debug's `debugProgramInTerminal`. 135 adds `terminalMacOptionIsMeta` and
+`terminalConfirmMultilinePaste`, and lowers the scrollback maximum to 50,000 lines (about 94 MB a tab at the old
+100,000); the migration clamps a larger value. The terminal's font size follows the editor's text zoom.
 
 ## Where the code came from
 
@@ -262,6 +318,22 @@ the UI's darkness is used. Each tab's content wrapper is painted the terminal's 
 below the grid matches. The selected tab uses the app-wide `-editor-surface` fill, so it merges into the
 terminal as it does into the editor.
 
+## Performance
+
+- **The FX thread never waits for the buffer lock.** Painting, hover, the accessibility text and the find bar
+  use `tryLock` (a frame that cannot get it is skipped, `dirty` stays set). A reflow of a long scrollback or a
+  flood of output holds JediTerm's non-fair lock for long stretches; waiting on it froze every window for up
+  to a minute during a splitter drag.
+- **Resize settles first:** a size change is applied 120 ms after the last one (`RESIZE_SETTLE`), so a drag
+  reflows the scrollback once, not per column.
+- **The painter runs only while there is something to paint**, and not for a hidden tab or window
+  (`isPaintable`); an idle terminal used to keep the FX pulse at 60 Hz forever. Window titles are posted to the
+  FX thread at most one update at a time.
+- **Colours:** text is drawn with at least 4.5:1 contrast against its background (`TerminalPalette.withContrast`,
+  cached per pair); dim text is left as it asked. OSC 10/11 queries are answered with the palette.
+- **Widths:** JediTerm puts no placeholder after an astral character, so `CellWidth.of` gives a wide one (an
+  emoji) two columns, as the shell's `wcwidth` does; the cursor is drawn by column through the row's text.
+
 ## Known behaviour
 
 - On Linux pty4j sets the window size just after the child starts, so a program started directly (not a
@@ -275,11 +347,14 @@ terminal as it does into the editor.
   - **When it fails:** a new tab goes away, a reconnecting one keeps its banner, and the error says why.
   - **Closed meanwhile:** a tab closed while connecting closes the connection that arrives late.
   - The channel open and, the first time on a target, writing the integration scripts both run on that thread.
-  - A program tab on a target (Run or Debug in a terminal) still opens on the FX thread: its starter needs the
-    outcome at once.
+  - A program tab on a target (Run or Debug in a terminal) opens there too: a failure arrives as the program's
+    end (-1) and the error.
 - Search matches within a row: text a soft wrap split across two rows is not found as one.
 - JediTerm's history listener fires only on resizes and clears; `TerminalView` derives the history shift on
-  every model change instead (marks, search hits, a scrolled-back view, the selection).
+  every model change instead (`pushedLines`, a scrolled-back view, the selection).
+- Not done, from the 2026-10-18 review: strikethrough and curly underline (JediTerm 3.74 has no such style),
+  `PIPESTATUS` for a user's own `PROMPT_COMMAND` after ours (bash cannot rebuild it at the top level), box-drawing
+  glyphs drawn as shapes.
 - The scrollbar is coloured through the looked-up colours `-terminal-thumb` and `-terminal-thumb-hover`
   (`.terminal-scroll-bar` in `app.css`, Termina's rules).
 - No palette rescues a prompt built for a dark terminal. Oh My Bash's agnoster theme draws `user@host` in the

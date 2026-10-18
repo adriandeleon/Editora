@@ -61,7 +61,11 @@ class PollingWatchServiceTest {
         }
     }
 
-    /** A save renames a new file over the old one; same size, maybe the same millisecond — still a change. */
+    /**
+     * A save renames a new file over the old one; same size, maybe the same millisecond — still a change. The file
+     * key tells on Linux and macOS; Windows has none, but a replacing rename (ATOMIC_MOVE) leaves the new file's own
+     * creation time. Windows "tunnels" the old creation time only onto a file renamed in after a delete.
+     */
     @Test
     void aFileReplacedByARenameIsReported(@TempDir Path dir) throws Exception {
         Path file = Files.writeString(dir.resolve("open.txt"), "v1");

@@ -56,6 +56,20 @@ class ColumnMapTest {
     }
 
     @Test
+    void anEmojiIsTwoSlotsAndTwoColumns() {
+        String emoji = new String(Character.toChars(0x1F600));
+        String line = "a" + emoji + emoji + "b";
+        assertEquals(1, ColumnMap.columnAt(line, 1));
+        assertEquals(3, ColumnMap.columnAt(line, 3), "after one emoji");
+        assertEquals(5, ColumnMap.columnAt(line, 5), "b, where the shell put it");
+        assertEquals(1, ColumnMap.slotAt(line, 2), "the emoji's second column is the emoji");
+        assertEquals(5, ColumnMap.slotAt(line, 5));
+        for (int column : new int[] {0, 1, 3, 5, 6}) {
+            assertEquals(column, ColumnMap.columnAt(line, ColumnMap.slotAt(line, column)), "column " + column);
+        }
+    }
+
+    @Test
     void pastTheEndBothDirectionsCarryOnOneToOne() {
         // A click in the padding right of the last character, and a selection clamped to the grid.
         assertEquals(LINE.length() + 3, ColumnMap.slotAt(LINE, 14));

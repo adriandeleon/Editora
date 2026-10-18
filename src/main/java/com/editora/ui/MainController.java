@@ -494,9 +494,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.closes = new CloseCoordinator(
                 stage, editorArea, pinned, MainController::bufferOf, fileWorkflows, this::persistSessionForClose);
         stage.setOnCloseRequest(e -> {
-            // Save/prompt this window's dirty buffers + persist its session; cancel the close if the
-            // user backs out. (No separate "Quit?" prompt — each window closes independently now.)
-            if (!closes.confirmCloseAll()) {
+            // Busy terminals first (closing ends them), then this window's dirty buffers + its session;
+            // cancel the close if the user backs out. (No separate "Quit?" prompt — each window closes
+            // independently now.)
+            if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll()) {
                 e.consume();
                 return;
             }
@@ -1537,7 +1538,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * user cancelled (the window stays open). The caller ({@link WindowManager}) closes the stage.
      */
     public boolean closeWindowProgrammatically() {
-        if (!closes.confirmCloseAll()) {
+        if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll()) {
             return false;
         }
         disposeWindow();
@@ -1630,6 +1631,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * closes that window and returns focus to the editor (instead of starting the go-to prefix).
      */
     public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
+        toolWindows.setFloatingSceneSetup(dispatcher::install);
         // Keyboard macros: the coordinator is told what was typed and which keys were left to the focused
         // control while recording, and the dispatcher stands aside for the keys a replay sends.
         if (macroCoordinator != null) {
@@ -2457,7 +2459,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::setStatus);
         exports.activeTabContent =
                 () -> tabPath(activeTab()) == null ? null : activeTab().getUserData();
-        // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (local files only).
+        // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (Reveal for local files only).
         breadcrumb.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         breadcrumb.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         bookmarkCoordinator.setOnChanged(this::refreshProjectMarkersIfBuilt);
@@ -5965,6 +5967,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void focusEditor() {
+                    toolWindows.focusEditor();
+                }
+
+                @Override
                 public java.nio.file.Path configDir() {
                     return config.getConfigDir();
                 }
@@ -8741,10 +8748,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         revealInFileManager(buffer.getPath(), false, isLocalBuffer(buffer));
     }
 
-    /** Opens a terminal at the active buffer's containing folder (no-op for an unsaved/remote file). */
+    /**
+     * Opens a terminal at the active buffer's containing folder, on its host for a remote file. With no saved file
+     * active (the Welcome tab, an unsaved buffer) it opens where {@code tool.terminal} would: the project's folder,
+     * or home.
+     */
     void openTerminalForActiveBuffer() {
         EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
+        if (buffer == null || buffer.getPath() == null) {
+            terminalCoordinator.newTerminal();
             return;
         }
         openTerminalAt(buffer.getPath(), false, isLocalBuffer(buffer));
@@ -8972,7 +8984,9 @@ public class MainController implements com.editora.mcp.McpBridge {
      * disposes each window's services); the null case is the unit-test/standalone controller.
      */
     boolean onQuit() {
-        boolean ok = closes.confirmQuit()
+        // One question: quitting, and which terminals that ends (in every window).
+        List<String> busy = windowManager != null ? windowManager.busyTerminals() : terminalCoordinator.busyTerminals();
+        boolean ok = closes.confirmQuit(busy)
                 && (windowManager != null ? windowManager.confirmCloseAllWindows() : closes.confirmCloseAll());
         if (ok) {
             Platform.exit();
@@ -9656,6 +9670,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // A font zoom changes no feature gate or theme — apply only the fonts/per-buffer view, not the full
         // settings cascade (editor-theme stylesheet swap + ~20 applySupport() calls). #545
         editorSettings.applyFontsAndPerBufferView(s);
+        terminalCoordinator.applySettings(); // terminals zoom with the editors
         statusBar.refresh();
         setStatus(tr("status.textZoom", Math.round(z * 100)));
     }
@@ -9811,6 +9826,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             terminalCoordinator.applySettings();
             terminalCoordinator.applyTheme();
         }
+        ExtendedWindow.matchButtonsToTheme(stage, appThemeDark()); // also every apply: cheap, and idempotent
         Color highlight = EditorThemes.lineHighlightFor(themeName);
         Color mmText = EditorThemes.minimapTextFor(themeName);
         Color mmViewport = EditorThemes.minimapViewportFor(themeName);

@@ -905,6 +905,17 @@ public final class ConfigMigrations {
      * the very URL the Anthropic key was being sent to — so it moves too; an Anthropic proxy URL stays. Safe to
      * repeat: nothing moves into a field that already has a value.
      */
+    /** v133→134: a terminal scrollback above the new 50,000-line maximum becomes the maximum. */
+    static JsonNode clampTerminalScrollback(JsonNode input) {
+        if (input instanceof ObjectNode o) {
+            JsonNode v = o.get("terminalScrollback");
+            if (v != null && v.isNumber() && v.asLong() > com.editora.config.Settings.TERMINAL_SCROLLBACK_MAX) {
+                o.put("terminalScrollback", com.editora.config.Settings.TERMINAL_SCROLLBACK_MAX);
+            }
+        }
+        return input;
+    }
+
     static JsonNode splitOpenaiEndpoint(JsonNode input) {
         if (!(input instanceof ObjectNode o)) {
             return input;
