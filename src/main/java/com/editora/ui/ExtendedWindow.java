@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.util.Locale;
 
+import javafx.application.ColorScheme;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HeaderBar;
@@ -86,5 +87,27 @@ final class ExtendedWindow {
         header.setLeftSystemPadding(true);
         header.setRightSystemPadding(true);
         return header;
+    }
+
+    /**
+     * Draws the system window buttons (minimise, maximise, close) for a light or dark app theme.
+     *
+     * <p>JavaFX picks their glyph colour from the scene's colour scheme, which defaults to the <em>OS</em>
+     * setting — not from what the header actually looks like. Editora themes itself, so on a light desktop
+     * with a dark app theme the buttons came out dark-on-dark and all but invisible. Only the buttons are
+     * told: the scene's own colour-scheme preference is left alone, since it reaches further than this.
+     *
+     * <p>Called on every settings apply, so a theme switch takes effect without a restart. A stage that is
+     * not extended has no such buttons, and is left untouched.
+     */
+    static void matchButtonsToTheme(Stage stage, boolean darkTheme) {
+        if (stage != null && stage.getStyle() == StageStyle.EXTENDED) {
+            HeaderBar.setSystemColorScheme(stage, buttonScheme(darkTheme));
+        }
+    }
+
+    /** The button colour scheme for a light or dark app theme. Pure. */
+    static ColorScheme buttonScheme(boolean darkTheme) {
+        return darkTheme ? ColorScheme.DARK : ColorScheme.LIGHT;
     }
 }

@@ -443,7 +443,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version.
 - **The palette shows plugin chords**, plugin right-click items have their own separator, a plugin status segment is
   reachable by keyboard and names its plugin, and `caretLine()` is right in a narrowed buffer.
-
+- **The minimise, maximise and close buttons were nearly invisible with a dark theme and the menu bar in the
+  title bar.** They followed the desktop's light or dark setting rather than Editora's theme, so a dark theme on
+  a light desktop drew them dark on dark. They now follow the app theme, and change with it.
 - **When the system had no file watcher to give** (Linux: inotify instances used up), the project tree and language
   servers silently stopped following the disk. They now check folders every 2 seconds.
 - **Plugins: Set Registry URL** accepted an address that is not https; it now refuses it like the Settings field.
