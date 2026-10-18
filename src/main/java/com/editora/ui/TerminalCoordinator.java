@@ -390,6 +390,10 @@ final class TerminalCoordinator {
     private TerminalConnector.Factory localShell(Path directory, String shell) {
         return (columns, rows) -> {
             List<String> command = shell == null || shell.isBlank() ? List.of() : LocalShell.shellCommand(shell);
+            String problem = LocalShell.overrideProblem(shell);
+            if (problem != null) {
+                Platform.runLater(() -> host.setStatus(tr("terminal.shellNotFound", problem)));
+            }
             LocalPtyConnector connector = LocalShell.start(
                     command, directory == null ? null : directory.toString(), columns, rows, localIntegration());
             try {

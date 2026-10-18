@@ -20,6 +20,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LocalShellTest {
 
     @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void theShellSettingTakesArgumentsAndNamesOnPath() {
+        org.junit.jupiter.api.Assertions.assertEquals(
+                List.of("/bin/sh", "-i"), LocalShell.shellCommand("/bin/sh -i"), "its own arguments, no -l added");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                LocalShell.shellCommand("sh").get(0).endsWith("/sh"), "a bare name is looked up on PATH");
+        org.junit.jupiter.api.Assertions.assertNull(LocalShell.overrideProblem("sh"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "/no/such/shell", LocalShell.overrideProblem("/no/such/shell --flag"), "and an unusable one is named");
+    }
+
+    @Test
+    void aMissingLocaleBecomesUtf8ThatTheSystemHas() {
+        var env = new java.util.HashMap<String, String>();
+        LocalShell.defaultLocale(env, false);
+        org.junit.jupiter.api.Assertions.assertEquals("C.UTF-8", env.get("LANG"), "every glibc has C.UTF-8");
+        var mac = new java.util.HashMap<String, String>();
+        LocalShell.defaultLocale(mac, true);
+        org.junit.jupiter.api.Assertions.assertEquals("en_US.UTF-8", mac.get("LANG"));
+        var ctype = new java.util.HashMap<>(java.util.Map.of("LC_CTYPE", "de_DE.UTF-8"));
+        LocalShell.defaultLocale(ctype, false);
+        org.junit.jupiter.api.Assertions.assertNull(ctype.get("LANG"), "LC_CTYPE is a preference too");
+    }
+
+    @Test
     void testShellsGetAHomeOfTheirOwnAndKeepNoHistory() {
         // The developer's ~/.bash_history had gained 81 test commands, and their profile ran in every test shell.
         String home = System.getProperty(LocalShell.TEST_HOME);

@@ -258,4 +258,22 @@ class PosixShellTest {
         assertEquals(126, p.waitFor(), "it fails, as console Run does");
         assertFalse(out.contains("ran in"), out);
     }
+
+    @Test
+    void aTerminalOnATargetWithNoLocaleGetsUtf8() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                java.nio.file.Files.isExecutable(java.nio.file.Path.of("/bin/sh")));
+        String script = PosixShell.terminalScript(
+                null, false, TerminalSpec.program(null, 80, 24, List.of("/bin/sh", "-c", "echo lang=$LANG"), Map.of()));
+        ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", script);
+        pb.environment().remove("LANG");
+        pb.environment().remove("LC_ALL");
+        pb.environment().remove("LC_CTYPE");
+        pb.environment().put("SHELL", "/bin/sh");
+        pb.environment().put("HOME", "/nonexistent");
+        Process p = pb.start();
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        p.waitFor();
+        assertTrue(out.contains("lang=C.UTF-8"), out);
+    }
 }

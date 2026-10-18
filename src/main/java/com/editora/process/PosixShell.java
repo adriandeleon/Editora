@@ -83,6 +83,7 @@ public final class PosixShell {
             script.append("printf '\\036EDITORA %s\\n' \"$$\"; ");
         }
         script.append("export TERM=xterm-256color COLORTERM=truecolor TERM_PROGRAM=Editora; ");
+        script.append(UTF8_LOCALE);
         if (cwd != null && !cwd.isBlank()) {
             script.append("cd -- ").append(quote(cwd)).append(" 2>/dev/null || cd; ");
         }
@@ -98,6 +99,13 @@ public final class PosixShell {
         script.append("exec \"$s\" -l");
         return script.toString();
     }
+
+    /**
+     * A UTF-8 locale for a terminal on a target that sets none (a container image often has no {@code LANG}): the
+     * terminal decodes UTF-8, and a shell left in the POSIX locale echoed a typed {@code é} as {@code \303\251}.
+     * The login files that follow may still set their own.
+     */
+    static final String UTF8_LOCALE = "[ -n \"${LC_ALL:-}${LC_CTYPE:-}${LANG:-}\" ] || export LANG=C.UTF-8; ";
 
     /**
      * The script for {@code spec} on a target, its folder as the target names it: the login shell (with
@@ -128,6 +136,7 @@ public final class PosixShell {
             script.append("printf '\\036EDITORA %s\\n' \"$$\"; ");
         }
         script.append("export TERM=xterm-256color COLORTERM=truecolor TERM_PROGRAM=Editora; ");
+        script.append(UTF8_LOCALE);
         if (cwd != null && !cwd.isBlank()) {
             script.append("cd -- ").append(quote(cwd)).append(" || exit 126; ");
         }
