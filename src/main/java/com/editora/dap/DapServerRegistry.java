@@ -72,7 +72,9 @@ public final class DapServerRegistry {
                 "pwa-node",
                 DEFAULT_NODE_INTERPRETER,
                 List.of(),
-                Set.of("javascript"));
+                // TypeScript too: Node 22.18+/23.6+ runs a .ts file itself, and a compiled project's .ts/.tsx
+                // sources are where its breakpoints go (source maps). One adapter, one "javascript" session.
+                Set.of("javascript", "typescript", "javascriptreact", "typescriptreact"));
 
         final String language;
         final Kind kind;
@@ -114,9 +116,19 @@ public final class DapServerRegistry {
         return null;
     }
 
-    /** The editor language ids that can be debugged ({@code java}, {@code python}, {@code javascript}). */
+    /** The adapter languages ({@code java}, {@code python}, {@code javascript}). */
     public static Set<String> languageIdsForDebug() {
         return Set.of("java", "python", "javascript");
+    }
+
+    /**
+     * The adapter language serving editor language {@code languageId} — {@code javascript} for TypeScript and
+     * JSX/TSX files too — or {@code languageId} itself when no adapter serves it. Settings, exception choices and
+     * messages are kept per adapter language.
+     */
+    public static String adapterLanguage(String languageId) {
+        Def d = defFor(languageId);
+        return d == null ? languageId : d.language;
     }
 
     /** Whether a debug adapter is registered for {@code languageId}. */

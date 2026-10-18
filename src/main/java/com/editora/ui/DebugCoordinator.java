@@ -322,6 +322,7 @@ final class DebugCoordinator {
         if (!debugSupportEnabled() || language == null) {
             return false;
         }
+        language = DapServerRegistry.adapterLanguage(language); // TypeScript/JSX: the JavaScript debugger
         var s = host.settings();
         return switch (language) {
             case "java" ->
@@ -346,6 +347,7 @@ final class DebugCoordinator {
         if (!debugSupportEnabled() || language == null || !DapManager.debuggableOnHost(language)) {
             return false;
         }
+        language = DapServerRegistry.adapterLanguage(language);
         var s = host.settings();
         boolean enabled = switch (language) {
             case "python" -> s.isPythonDebugEnabled();
@@ -524,6 +526,7 @@ final class DebugCoordinator {
                 s.isJsDebugEnabled(),
                 scope.debugTool("javascript", s.getJsDebugPath()));
         dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
+        dapManager.setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
         dapManager.setProgramTerminal(
                 s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
         dapManager.setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
@@ -1449,7 +1452,7 @@ final class DebugCoordinator {
                 if (values.size() == MAX_INLINE_VALUES) {
                     break;
                 }
-                values.put(v.name(), v.value());
+                values.put(v.name(), DebugValues.display(v.value())); // a function: its first line (review D9)
             }
             EditorBuffer b = ops.bufferForPath(frame.file());
             if (b == null) {
@@ -1667,6 +1670,34 @@ final class DebugCoordinator {
 
     /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */
     private void launchBuffer(EditorBuffer b) {
+        launchBuffer(b, List.of());
+    }
+
+    /**
+     * Debug Test at Caret on a JavaScript/TypeScript test file ({@link com.editora.dap.JsLaunch#isTestFile}): the
+     * file runs under {@code node --test}, narrowed to the test at the caret by name when there is one. False —
+     * nothing done — for any other buffer.
+     */
+    boolean debugJsTestAtCaret(EditorBuffer b) {
+        if (b == null
+                || b.getPath() == null
+                || !"javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))
+                || !com.editora.dap.JsLaunch.isTestFile(b.getPath())) {
+            return false;
+        }
+        int caret = b.getFocusedArea().getCurrentParagraph()
+                + b.getBreakpointManager().regionFirstLine();
+        List<String> nodeArgs = new java.util.ArrayList<>(List.of("--test"));
+        com.editora.dap.JsLaunch.testNameAt(b.getContent(), caret).ifPresent(name -> {
+            nodeArgs.add("--test-name-pattern");
+            nodeArgs.add(com.editora.dap.JsLaunch.literalPattern(name));
+        });
+        launchBuffer(b, nodeArgs);
+        return true;
+    }
+
+    /** {@link #launchBuffer(EditorBuffer)} with Node.js arguments for a JavaScript program ({@code --test}). */
+    private void launchBuffer(EditorBuffer b, List<String> nodeArgs) {
         if (b != null && b.isHttpFile()) {
             ops.debugHttpRequest(); // its scripts, around the request at the caret
             return;
@@ -1686,7 +1717,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.saveFirst"));
             return;
         }
-        String language = b.getLanguage();
+        String language = DapServerRegistry.adapterLanguage(b.getLanguage()); // a .ts file: JavaScript
         if (!debugEffectiveFor(language, b.getPath())) {
             host.setStatus(unavailableMessage(language, b.getPath()));
             return;
@@ -1713,6 +1744,8 @@ final class DebugCoordinator {
         if (b.isPython()) {
             planPython(b.getPath(), firstLine(b.getContent()));
         }
+        dapManager.setJsProjectRoot(ops.projectRoot()); // a JavaScript file's Node.js, package root, workspace
+        dapManager.setJsNodeArgs(nodeArgs);
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
         boolean java = "java".equals(language);
         Path projectRoot = java ? JavaProjectRoot.find(b.getPath()) : null;
@@ -1740,7 +1773,7 @@ final class DebugCoordinator {
         dapManager.setEnv(
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
         Path launched = b.getPath();
-        relaunch = () -> relaunchFor(launched, this::launchBuffer);
+        relaunch = () -> relaunchFor(launched, again -> launchBuffer(again, nodeArgs));
         Path looseCwd = projectRoot == null ? project : null;
         Runnable start = () -> withClosedBreakpoints(() -> {
             if (compactSource && shebangSource != null) {
@@ -1874,7 +1907,7 @@ final class DebugCoordinator {
             return tr("status.debug.unavailable");
         }
         var s = host.settings();
-        return switch (language == null ? "" : language) {
+        return switch (language == null ? "" : DapServerRegistry.adapterLanguage(language)) {
             case "python" ->
                 !s.isPythonDebugEnabled()
                         ? tr("status.debug.pythonOff")
@@ -2252,6 +2285,11 @@ final class DebugCoordinator {
     }
 
     private void startMainClassDebug(EditorBuffer b, String targetFqn) {
+        if (b != null && b.getLanguage() != null && !"java".equals(b.getLanguage())) {
+            // Said first: "turn on LSP for Java" on a JavaScript file sent the user the wrong way (review D7).
+            host.setStatus(tr("status.debug.needJavaFile"));
+            return;
+        }
         if (!debugEffectiveFor("java", b == null ? null : b.getPath())) {
             host.setStatus(unavailableMessage("java", b == null ? null : b.getPath()));
             return;
@@ -2508,8 +2546,16 @@ final class DebugCoordinator {
 
     void debugAttach() {
         EditorBuffer b = host.activeBuffer();
+        if (b != null && "javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))) {
+            attachToNode(b); // review D7: a Node.js inspector, not a JVM
+            return;
+        }
         if (b == null || b.getPath() == null) {
             host.setStatus(tr("status.debug.saveFirst"));
+            return;
+        }
+        if (!"java".equals(b.getLanguage())) {
+            host.setStatus(tr("status.debug.attachLanguages"));
             return;
         }
         if (!debugEffectiveFor("java", b.getPath())) { // a remote file attaches from its host (review A9)
@@ -2536,6 +2582,42 @@ final class DebugCoordinator {
                 host.setStatus(tr("status.debug.badAddress", text));
             }
         });
+    }
+
+    /**
+     * Debug ▸ Attach on a JavaScript or TypeScript file: asks for the inspector's {@code host:port} (a Node.js started
+     * with {@code --inspect} or {@code --inspect-brk}) and attaches vscode-js-debug to it, with every breakpoint.
+     * Restart attaches again; Stop detaches.
+     */
+    private void attachToNode(EditorBuffer b) {
+        if (!debugEffectiveFor("javascript")) {
+            host.setStatus(unavailableMessage("javascript", null));
+            return;
+        }
+        String defaultAddress = "localhost:" + com.editora.dap.JsLaunch.DEFAULT_INSPECTOR_PORT;
+        host.promptText(
+                tr("dialog.debug.attachNodeTitle"), tr("dialog.debug.attachNodeContent"), defaultAddress, input -> {
+                    if (input == null) {
+                        return; // cancelled
+                    }
+                    var address = com.editora.dap.JsLaunch.parseAddress(input);
+                    if (address.isEmpty()) {
+                        host.setStatus(tr("status.debug.badAddress", input.strip()));
+                        return;
+                    }
+                    String label = address.get().host() + ":" + address.get().port();
+                    Path dir = b.getPath() != null ? b.getPath().getParent() : ops.projectRoot();
+                    ops.openToolWindow();
+                    nameSession(label);
+                    relaunch = null; // an attach is re-attached as it was
+                    withClosedBreakpoints(() -> dapManager.startJsAttach(
+                            address.get().host(),
+                            address.get().port(),
+                            label,
+                            dir,
+                            List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
+                            false));
+                });
     }
 
     /** Main-class chooser (QuickOpen) when jdtls finds several. */
@@ -2738,7 +2820,9 @@ final class DebugCoordinator {
         }
         EditorBuffer b = host.activeBuffer();
         String language = b == null ? null : b.getLanguage();
-        return language != null && DapServerRegistry.isDebuggable(language) ? language : null;
+        return language != null && DapServerRegistry.isDebuggable(language)
+                ? DapServerRegistry.adapterLanguage(language)
+                : null;
     }
 
     // --- Caught / Uncaught exception toggles (Run menu + Debug window) ---------------------------------

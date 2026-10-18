@@ -272,13 +272,27 @@ public final class LaunchConfig {
      * breakpoints are set ({@code continueOnAttach}), and steps over {@code skipFiles} (glob patterns or paths).
      */
     public static Map<String, Object> nodeAttach(String type, String name, int port, java.util.List<String> skipFiles) {
+        return nodeAttach(type, name, "127.0.0.1", port, skipFiles, true);
+    }
+
+    /**
+     * As above, to the inspector at {@code host:port} (blank host: {@code 127.0.0.1}); {@code continueOnAttach} resumes
+     * a program held by {@code --inspect-brk} once the breakpoints are set (else it stays paused on its first line).
+     */
+    public static Map<String, Object> nodeAttach(
+            String type,
+            String name,
+            String host,
+            int port,
+            java.util.List<String> skipFiles,
+            boolean continueOnAttach) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", type);
         m.put("name", notBlank(name) ? name : "Editora (Attach)");
         m.put("request", "attach");
-        m.put("address", "127.0.0.1");
+        m.put("address", notBlank(host) ? host : "127.0.0.1");
         m.put("port", port);
-        m.put("continueOnAttach", true);
+        m.put("continueOnAttach", continueOnAttach);
         m.put("attachExistingChildren", false);
         if (skipFiles != null && !skipFiles.isEmpty()) {
             m.put("skipFiles", java.util.List.copyOf(skipFiles));

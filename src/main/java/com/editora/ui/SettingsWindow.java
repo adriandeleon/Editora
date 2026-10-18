@@ -435,6 +435,8 @@ public class SettingsWindow {
     private CheckBox debugStepFiltersCheck;
     private CheckBox debugShowStaticsCheck;
     private TextField debugExceptionTypesField;
+    /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
+    private TextField nodePathField;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
@@ -1933,6 +1935,14 @@ public class SettingsWindow {
         commitOnEnterOrBlur(debugExceptionTypesField, () -> config.getSettings().getDebugExceptionTypes(), now -> {
             config.getSettings().setDebugExceptionTypes(now);
             apply();
+        });
+        nodePathField = new TextField();
+        nodePathField.setPromptText(tr("settings.debug.nodePath.prompt"));
+        commitOnEnterOrBlur(nodePathField, () -> config.getSettings().getNodePath(), now -> {
+            config.getSettings().setNodePath(now.strip());
+            apply();
+            refreshDebugStatus();
+            // LEAD-WIRE: refreshHttpNodeStatus() — the Web page's Node.js row follows this field (Fixer E)
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             if (dbg.setEnabled() != null) {
@@ -6518,6 +6528,18 @@ public class SettingsWindow {
                         debugExceptionTypesField,
                         "debug java exception breakpoint class type filter caught uncaught");
             }
+            if ("javascript".equals(dbg.id())) {
+                // E6: one Node.js for everything Node in Editora, here beside the debugger that needs it.
+                nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
+                String node = tr("settings.debug.nodePath");
+                controlRow(
+                        c,
+                        Category.DEBUG,
+                        node,
+                        tr("settings.debug.nodePath.hint"),
+                        new HBox(6, nodePathField, browseButton(node, nodePathField)),
+                        "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
+            }
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
             ToolStatusRow status = new ToolStatusRow(
                             switch (dbg.id()) {
@@ -6611,7 +6633,14 @@ public class SettingsWindow {
                         () -> config.getSettings().getJsDebugPath(),
                         cb -> {
                             if (dapManager != null) {
-                                dapManager.detectJs(found -> cb.accept(found, ""));
+                                // installed, whether or not switched on (review D13): its path and the Node.js
+                                dapManager.detectJsInstalled((server, node) -> cb.accept(
+                                        server != null && node != null,
+                                        server == null
+                                                ? ""
+                                                : node == null
+                                                        ? tr("settings.debug.jsNoNode")
+                                                        : tr("settings.debug.jsFound", node, server)));
                             } else {
                                 cb.accept(false, "");
                             }
@@ -8404,6 +8433,7 @@ public class SettingsWindow {
             debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
             debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
             debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
+            nodePathField.setText(settings.getNodePath());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
                 if (enable != null && dbg.getEnabled() != null) {

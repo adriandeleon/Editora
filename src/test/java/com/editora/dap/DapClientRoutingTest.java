@@ -487,4 +487,35 @@ class DapClientRoutingTest {
             adapterProcess.destroyForcibly();
         }
     }
+
+    @Test
+    void threadsOfEveryChildAreListedAndEachRequestGoesToItsOwner() throws Exception {
+        // A forked process or a worker is a second js-debug child session (review D17): its threads are listed
+        // beside the first one's, and a request about one of them goes to the session that owns it.
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(true)) {
+            Host host = new Host();
+            DapClient client = new DapClient(host);
+            FakeDebugAdapter.Session[] sessions = launchWithChild(adapter, client);
+            FakeDebugAdapter.Session root = sessions[0];
+            FakeDebugAdapter.Session first = sessions[1];
+            root.requestChild();
+            FakeDebugAdapter.Session second = adapter.awaitSession();
+            second.mainThread = 9;
+            assertTrue(second.configured.await(10, TimeUnit.SECONDS), "the second child was never configured");
+
+            List<DapModels.ThreadInfo> threads = client.threads().get(10, TimeUnit.SECONDS);
+            assertEquals(
+                    List.of(7, 9),
+                    threads.stream().map(DapModels.ThreadInfo::id).toList());
+
+            client.stackTrace(9).get(10, TimeUnit.SECONDS);
+            second.awaitRequest("stackTrace");
+            assertFalse(first.requests.contains("stackTrace"), "thread 9 is the second child's: " + first.requests);
+            client.next(9).get(10, TimeUnit.SECONDS);
+            second.awaitRequest("next");
+            client.next(7).get(10, TimeUnit.SECONDS);
+            first.awaitRequest("next");
+            client.dispose();
+        }
+    }
 }

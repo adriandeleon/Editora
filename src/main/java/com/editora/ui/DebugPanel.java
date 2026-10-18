@@ -654,7 +654,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     value.getStyleClass().add("debug-val-error");
                     flow.getChildren().add(value);
                 } else {
-                    for (DebugValues.Run run : DebugValues.runs(row.value())) {
+                    for (DebugValues.Run run : DebugValues.runs(DebugValues.display(row.value()))) {
                         Text value = new Text(run.text());
                         if (run.token() != null) {
                             value.getStyleClass().addAll("text", run.token());
