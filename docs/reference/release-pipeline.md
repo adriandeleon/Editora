@@ -15,7 +15,7 @@ experimental asset and does not block the ordinary release. See the measured lim
 
 `.github/workflows/release.yml` runs on a version-shaped `vX.Y.Z*` tag (or manual dispatch for a
 dry run), after a `preflight` job has checked the tag against the pom version and that every check the
-`master` ruleset requires passed on the tagged commit (`check-release.py ci`, waiting up to 30 minutes
+`master` ruleset requires passed on the tagged commit (`CheckRelease.java ci`, waiting up to 30 minutes
 for CI still running): a 5-way
 matrix (linux x64/arm64, macOS x64/arm64, windows x64 — **Windows arm64 is omitted: a hosted
 runner now exists (`windows-11-arm`, GA Jan 2026), but OpenJFX (through 27) publishes no `win-aarch64` native
@@ -33,7 +33,7 @@ second `-Pdist` build):** a single-file **`.AppImage`** (`scripts/build-appimage
 image to `/opt/editora` (root) or `~/.local/editora` (user) with an `editora` command + a `.desktop`
 (`StartupWMClass=com.editora.App`), supporting `--system`/`--user`/`--prefix`/`--uninstall`. Both reuse the
 jpackage `APP_IMAGE` output (= jlink + the native launcher + `lib/app/editora.aot`, `$APPDIR`-relative so it's
-relocatable); both release steps are `continue-on-error` **only on a manual dry run** — on a tag a failure fails the leg, and the `Release` job's asset check (`scripts/release/check-release.py`) refuses to publish an immutable release with any expected file missing. The
+relocatable); both release steps are `continue-on-error` **only on a manual dry run** — on a tag a failure fails the leg, and the `Release` job's asset check (`scripts/release/CheckRelease.java`) refuses to publish an immutable release with any expected file missing. The
 `.tar.gz`/`.AppImage`/`.rpm` are attached to the GitHub release via `jreleaser.yml`'s file globs. Installers are renamed to
 `Editora-<version>-<target>.<ext>` per target (the Stage step preserves the compound `.tar.gz`
 extension) — one consistent `Editora-<version>-<target>` prefix
