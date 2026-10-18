@@ -216,6 +216,55 @@ class ClojureDebugAdapterTest {
     }
 
     @Test
+    void aLeiningenProjectIsDebuggedThroughJvmOpts(@TempDir Path dir) throws Exception {
+        String lein = JvmTools.locate("lein");
+        Assumptions.assumeTrue(lein != null, "Leiningen is not installed here");
+        Files.writeString(
+                dir.resolve("project.clj"),
+                "(defproject demo \"0.1.0\" :dependencies [[org.clojure/clojure \"1.12.3\"]])\n");
+        Path source = Files.createDirectories(dir.resolve("src/demo")).resolve("core.clj");
+        Files.writeString(source, """
+                (ns demo.core)
+                (defn -main [& args]
+                  (let [n (count args)]
+                    (println "args" n)))
+                """);
+        Map<String, String> env = new LinkedHashMap<>();
+        env.put("JAVA_HOME", System.getProperty("java.home"));
+        JvmScriptRun.Launch how = JvmScriptRun.launch(
+                "clojure", "lein", lein, source, source.toString(), List.of("x", "y"), "", true, env, System.getenv());
+        assertEquals(List.of(lein, "run", "-m", "demo.core", "x", "y"), how.argv());
+        assertTrue(how.env().get("JVM_OPTS").contains(com.editora.run.ClojureRun.KEEP_LOCALS), how.env()::toString);
+        Map<String, Object> launch = new LinkedHashMap<>();
+        launch.put("argv", how.argv());
+        launch.put("cwd", how.directory().toString());
+        launch.put("env", how.env());
+        launch.put("language", "clojure");
+        launch.put("jvmOptionsVariable", JvmScriptRun.jvmOptionsVariable("clojure", "lein"));
+        Session s = open();
+        try {
+            CompletableFuture<Void> launched = s.server().launch(launch);
+            s.client().initialized.get(WAIT, TimeUnit.SECONDS);
+            breakAt(s.server(), source, 4);
+            s.server().configurationDone(null);
+            launched.get(WAIT, TimeUnit.SECONDS);
+            // Leiningen's own JVM reads LEIN_JVM_OPTS: the agent is in the project's JVM, the one that stops.
+            StoppedEventArguments stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(stop, () -> "the breakpoint in -main is hit: " + s.client().output);
+            StackFrame frame = frames(s.server(), stop.getThreadId())[0];
+            assertEquals(source.toString(), frame.getSource().getPath());
+            assertEquals("demo.core/-main", frame.getName());
+            assertEquals("2", locals(s.server(), frame.getId()).get("n"));
+            ContinueArguments cont = new ContinueArguments();
+            cont.setThreadId(stop.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            assertEquals(0, s.client().exited.get(WAIT, TimeUnit.SECONDS));
+        } finally {
+            s.socket().close();
+        }
+    }
+
+    @Test
     void aStandaloneScriptStopsAtATopLevelFormAndOnItsUncaughtException(@TempDir Path dir) throws Exception {
         String clojure = clojure();
         Path script = dir.resolve("tally.clj");

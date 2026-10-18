@@ -1968,6 +1968,16 @@ public final class DapManager {
             long epoch)
             throws java.io.IOException {
         String language = spec.language();
+        if ("clojure".equals(language)
+                && file.getFileName() != null
+                && !com.editora.run.ClojureRun.runnable(file.getFileName().toString())) {
+            fail(
+                    epoch,
+                    tr(
+                            "debug.error.notDebuggable.clojureFile",
+                            file.getFileName().toString()));
+            return;
+        }
         String toolName = com.editora.run.JvmScriptRun.tool(language, file);
         if (!com.editora.run.JvmScriptRun.debuggable(toolName)) {
             // Babashka is a native program: there is no JVM for a debugger to attach to.

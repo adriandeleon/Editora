@@ -46,8 +46,10 @@ It ships **twenty-three** general-purpose servers (plus the Maven-aware `pom.xml
 | `astro` | `astro-ls --stdio` | `astro.config.mjs`, `astro.config.ts`, `package.json`, `.git` |
 
 The rest cover XML (lemminx), JSON, Bash, YAML, PHP, Ruby, HTML, CSS, Kotlin, Groovy (gvy's `gls` jar, pinned,
-run with `java -jar` on the Settings JDK; CodeNarc style rules off), Lua, Dockerfile, SQL, Terraform, TOML, C#,
-Typst, and Astro. Commands are user-configurable (Settings) and **never bundled** — servers
+run with `java -jar` on the Settings JDK; CodeNarc style rules off), Clojure (clojure-lsp, a GraalVM native
+binary; the installer pins the 2026.10.15 release per platform by SHA-256, else `clojure-lsp` on PATH; it serves
+`.clj`, `.cljs`, `.cljc` and `.edn` and asks `clojure -Spath`, `lein classpath` or `bb print-deps` for a project's
+classpath, which the augmented PATH lets it find), Lua, Dockerfile, SQL, Terraform, TOML, C#, Typst, and Astro. Commands are user-configurable (Settings) and **never bundled** — servers
 are auto-detected on the augmented PATH or installed in-app.
 
 Useful pure methods: `serverIdFor(languageId)`, `isSupported(languageId)`, `rootMarkersFor(...)`,
@@ -516,7 +518,7 @@ Editora debugs Java, Python, and JavaScript (Node), off by default
 (`Settings.debugSupport`). [`dap/DapServerRegistry`](../../src/main/java/com/editora/dap/DapServerRegistry.java)
 is the pure language → adapter spec (a `Kind` transport, the DAP `launch` type, the `initialize`
 adapter id, and the default interpreter + adapter args). `languageIdsForDebug()` =
-`{java, python, javascript, groovy}`.
+`{java, python, javascript, groovy, clojure}`.
 
 | Language | `Kind` | How |
 | --- | --- | --- |
@@ -524,6 +526,7 @@ adapter id, and the default interpreter + adapter args). `languageIdsForDebug()`
 | `python` | `STDIO` | `<python> -m debugpy.adapter`; `DapClient.connectStdio(proc, "python")` wires DAP to the process's stdin/stdout. |
 | `javascript` | `SOCKET` | `node <dapDebugServer.js> <port>`; `DapClient.connect(port, "pwa-node")`. |
 | `groovy` | `JVM` | Editora's own JDI adapter (`dap/jvm`, [ADR 0016](../decisions/0016-jvm-debug-adapter.md)), served in-process on a loopback port; `DapClient.connect(port, "editora-jvm")`. The program is `groovy <file>` started through `runInTerminal`, with the JDWP agent (`server=n`, connecting back) in `JAVA_OPTS`. Breakpoints bind by source name. |
+| `clojure` | `JVM` | The same adapter. `run/ClojureRun` picks the tool: the Clojure CLI (`clojure -J<agent> -J-Dclojure.compiler.disable-locals-clearing=true -M -m <ns>`, the agent as a `-J` argument — the launch's `jvmOptionPrefix`) in its `deps.edn` project, Leiningen (`lein run -m <ns>`, the agent in `JVM_OPTS`, which only the project's JVM reads) in a `project.clj` one, and a file outside any project as a script. A function's class (`my_app.core$greet`) records `core.clj` and the package path `my_app/`, so a breakpoint in `src/my_app/core.clj` binds by source name; a script loaded by path records that absolute path (Clojure's SMAP), which `JvmSourceMap.compiledFrom` accepts. Frames read as the function, demunged (`my-app.core/greet`); stepping skips `clojure.lang`, `clojure.core*` and `clojure.main`. Babashka is a native program with no JVM: Debug says so and does not start. Limits: values show as their class (the adapter runs no `toString`), and a function redefined from a REPL is a new class the session's breakpoints were not set in. |
 
 [`dap/DapClient`](../../src/main/java/com/editora/dap/DapClient.java) (mirrors `LanguageServerSession`)
 runs the handshake over an lsp4j.debug `DSPLauncher`: `initialize` → on the `initialized` event send

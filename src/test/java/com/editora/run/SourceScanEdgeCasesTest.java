@@ -211,8 +211,17 @@ class SourceScanEdgeCasesTest {
         assertEquals(List.of("test"), TestRunRecognizer.defaultTestTask(BuildTool.CARGO));
         assertEquals(List.of("run", "test"), TestRunRecognizer.defaultTestTask(BuildTool.NPM));
         assertEquals(List.of("test", "./..."), TestRunRecognizer.defaultTestTask(BuildTool.GO));
+        // Clojure's test runners print nothing a results tree reads: test.run streams their test task to the console.
+        assertEquals(List.of("-M:test"), TestRunRecognizer.defaultTestTask(BuildTool.CLOJURE));
+        assertEquals(List.of("test"), TestRunRecognizer.defaultTestTask(BuildTool.LEIN));
+        assertEquals(List.of("run", "test"), TestRunRecognizer.defaultTestTask(BuildTool.BABASHKA));
+        java.util.Set<BuildTool> consoleOnly =
+                java.util.EnumSet.of(BuildTool.CLOJURE, BuildTool.LEIN, BuildTool.BABASHKA);
         for (BuildTool tool : BuildTool.values()) {
-            assertTrue(TestRunRecognizer.isTestRun(tool, TestRunRecognizer.defaultTestTask(tool)), tool.toString());
+            assertEquals(
+                    !consoleOnly.contains(tool),
+                    TestRunRecognizer.isTestRun(tool, TestRunRecognizer.defaultTestTask(tool)),
+                    tool.toString());
         }
     }
 
