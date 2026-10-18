@@ -781,9 +781,10 @@ class RealSshdProbeFxTest {
             try {
                 StringBuffer seen = pump(shell);
                 type(shell, "stty size; tty; echo $TERM $TERM_PROGRAM; pwd -P\n");
+                // Each line awaited on its own: they arrive one by one, and dropbear can be a beat slower.
                 awaitOutput(seen, "30 100");
-                check(seen.toString().contains("/dev/"), "a real tty: " + seen);
-                check(seen.toString().contains("xterm-256color Editora"), "TERM and TERM_PROGRAM: " + seen);
+                awaitOutput(seen, "/dev/"); // a real tty
+                awaitOutput(seen, "xterm-256color Editora"); // TERM and TERM_PROGRAM
                 shell.resize(120, 40);
                 type(shell, "stty size\n");
                 await(
