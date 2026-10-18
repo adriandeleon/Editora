@@ -5937,10 +5937,24 @@ public class SettingsWindow {
             aiCompletionModelField.setText(settings.getAiCompletionModelFor(provider));
             aiEndpointField.setText(settings.getAiEndpointFor(provider));
             aiApiKeyField.setText(settings.getApiKeyFor(provider));
+            if (aiKeyNote != null) {
+                aiKeyNote.setText(apiKeyNote(settings));
+            }
         } finally {
             loading = previous;
         }
         updateAiProviderControls();
+    }
+
+    /** Says where the API keys are stored: the system keychain, or settings.json and why. */
+    private Label aiKeyNote;
+
+    static String apiKeyNote(Settings settings) {
+        return switch (settings.apiKeyStorage()) {
+            case KEYCHAIN -> tr("settings.ai.apiKeyInKeychain", settings.apiKeyStoreName());
+            case KEYCHAIN_UNREACHABLE -> tr("settings.ai.apiKeyKeychainUnreachable");
+            case SETTINGS_FILE -> tr("settings.ai.apiKeyNote");
+        };
     }
 
     /** Codex owns its login/transport; inline completion remains available for HTTP providers. */
@@ -6016,10 +6030,14 @@ public class SettingsWindow {
                 Category.AI,
                 labeledRow(tr("settings.ai.apiKey"), aiApiKeyField),
                 "ai api key anthropic token credential");
-        Label keyNote = note(tr("settings.ai.apiKeyNote"));
-        keyNote.setWrapText(true);
-        keyNote.setMaxWidth(440);
-        cardRow(mainCard, Category.AI, keyNote, "ai api key environment variable plain text security");
+        aiKeyNote = note(apiKeyNote(config.getSettings()));
+        aiKeyNote.setWrapText(true);
+        aiKeyNote.setMaxWidth(440);
+        cardRow(
+                mainCard,
+                Category.AI,
+                aiKeyNote,
+                "ai api key keychain credential manager environment variable plain text");
         checkRow(
                 mainCard,
                 Category.AI,
