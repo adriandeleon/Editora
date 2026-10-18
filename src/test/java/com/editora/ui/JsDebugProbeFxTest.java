@@ -41,6 +41,8 @@ class JsDebugProbeFxTest {
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();
+        // As App.main does: the js-debug server is killed in the background after Stop, and the fork may exit first.
+        com.editora.process.ProcessRegistry.installShutdownHook();
     }
 
     @Test
