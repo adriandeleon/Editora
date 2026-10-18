@@ -179,6 +179,11 @@ public final class ExecTargets {
         }
 
         @Override
+        public TerminalChannel startTerminal(TerminalSpec spec) throws IOException {
+            throw new IOException(reason);
+        }
+
+        @Override
         public PortForward forwardLocal(String host, int port) throws IOException {
             throw new IOException(reason);
         }

@@ -66,8 +66,36 @@ public final class TerminalSession {
             // when we tore the session down ourselves. Only the first is news: firing the callback
             // during our own shutdown races the toolkit, whose listener marshals to the FX thread
             // ("Main Java thread is detached" out of the Glass dispatcher once it has stopped).
-            if (!closed) onSessionEnded.run();
+            if (!closed) {
+                settle();
+                onSessionEnded.run();
+            }
         }
+    }
+
+    /** How long the end of the output may come before the connector has finished closing. */
+    private static final long SETTLE_MILLIS = 2000;
+
+    /**
+     * Waits, briefly, for the connector to finish closing after its output ended. The two arrive separately — an
+     * SSH channel's end of data before its close notice, a local shell's EOF before its exit — and what the end
+     * <em>means</em> (the shell exited, or the connection went: {@link #lostConnection}) is only known once the
+     * close has landed. Bounded, so a program that closes its output and lives on cannot hold the end back.
+     */
+    private void settle() {
+        Thread waiter = Thread.ofVirtual().name("terminal-settle").start(() -> {
+            try {
+                connector.waitFor();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        try {
+            waiter.join(SETTLE_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        waiter.interrupt();
     }
 
     /** Called off the FX thread when the shell exits. */
@@ -110,6 +138,11 @@ public final class TerminalSession {
 
     public boolean isRunning() {
         return !closed && connector.isConnected();
+    }
+
+    /** Whether the shell ended because its connection went (see {@link TerminalConnector#lostConnection}). */
+    public boolean lostConnection() {
+        return connector.lostConnection();
     }
 
     /** The shell's pid on this machine, or {@code -1} when it runs elsewhere. */

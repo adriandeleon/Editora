@@ -233,7 +233,7 @@ class MainControllerChromeFxTest {
     }
 
     @Test
-    void revealAndTerminalNeedAFileOnThisComputer() throws Exception {
+    void revealNeedsAFileOnThisComputerAndTerminalAFile() throws Exception {
         FxTestSupport.runOnFx(() -> {
             controller.setStatus("unchanged");
             FxTestSupport.invoke(controller, "revealActiveBuffer");
@@ -247,13 +247,11 @@ class MainControllerChromeFxTest {
             FxTestSupport.invoke(controller, "openTerminalForActiveBuffer");
             assertEquals(tr("status.reveal.noFile"), echo());
 
-            // A file on a remote site has no folder a local file manager or terminal could show.
+            // A file on a remote site has no folder a local file manager could show. A terminal can: Open Terminal
+            // Here on a remote folder opens one on its host (RemoteTerminalPanelFxTest), so it is not refused here.
             Class<?>[] types = {Path.class, boolean.class, boolean.class};
             controller.setStatus("");
             FxTestSupport.call(controller, "revealInFileManager", types, dir.resolve("remote.txt"), false, false);
-            assertEquals(tr("status.reveal.remote"), echo());
-            controller.setStatus("");
-            FxTestSupport.call(controller, "openTerminalAt", types, dir.resolve("remote.txt"), false, false);
             assertEquals(tr("status.reveal.remote"), echo());
         });
     }

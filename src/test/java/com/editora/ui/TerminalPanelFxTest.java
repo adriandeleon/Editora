@@ -343,6 +343,82 @@ class TerminalPanelFxTest {
         }
     }
 
+    @Test
+    void aDroppedConnectionKeepsTheTabAndReconnectStartsANewShellInIt() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).emit("what was on screen\r\n");
+        shells.get(0).dropConnection();
+
+        await(() -> call(() -> panel.showsReconnect(panel.activeTab())), "the connection-lost banner");
+        assertEquals(1, fx(panel::terminalCount), "the tab stays, with its text");
+
+        fx(() -> {
+            reconnectButton().fire();
+            return null;
+        });
+        assertEquals(2, shells.size(), "a new shell");
+        assertFalse(fx(() -> panel.showsReconnect(panel.activeTab())), "the banner goes with the old view");
+        assertEquals(1, fx(panel::terminalCount), "in the same tab");
+        assertTrue(shells.get(0).wasClosed() || !shells.get(0).isConnected());
+    }
+
+    @Test
+    void aReconnectThatFailsKeepsTheBannerAndSaysWhy() throws Exception {
+        AtomicReference<String> error = new AtomicReference<>();
+        AtomicBoolean refuse = new AtomicBoolean(false);
+        TerminalPanel.Shells fake = fakeShells();
+        show(
+                (dir, shell) -> refuse.get()
+                        ? (columns, rows) -> {
+                            throw new IOException("not connected to box");
+                        }
+                        : fake.open(dir, shell),
+                (title, programs) -> true,
+                null);
+        fx(() -> {
+            panel.setOnError(error::set);
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).dropConnection();
+        await(() -> call(() -> panel.showsReconnect(panel.activeTab())), "the connection-lost banner");
+
+        refuse.set(true);
+        fx(() -> {
+            reconnectButton().fire();
+            return null;
+        });
+        assertTrue(fx(() -> panel.showsReconnect(panel.activeTab())), "still offering to reconnect");
+        assertTrue(error.get() != null && error.get().contains("not connected to box"), error.get());
+    }
+
+    @Test
+    void aShellThatExitsOnItsOwnStillClosesItsTab() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).endOfOutput(); // exit, not a drop
+        await(() -> call(() -> !panel.hasTerminals()), "the tab to close");
+    }
+
+    private javafx.scene.control.Button reconnectButton() {
+        var content = (javafx.scene.layout.StackPane) panel.activeTab().getContent();
+        return content.getChildren().stream()
+                .filter(n -> n.getStyleClass().contains("terminal-lost-banner"))
+                .map(n -> (javafx.scene.layout.HBox) n)
+                .flatMap(box -> box.getChildren().stream())
+                .filter(n -> n instanceof javafx.scene.control.Button)
+                .map(n -> (javafx.scene.control.Button) n)
+                .findFirst()
+                .orElseThrow();
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private TerminalPanel.Shells fakeShells() {

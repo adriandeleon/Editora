@@ -1,6 +1,6 @@
 # 0014 — Integrated terminal: Termina's emulator, a PTY only for terminal channels
 
-**Status:** Accepted (in progress: local terminals in the Terminal tool window are in; remote targets are not yet)
+**Status:** Accepted (in progress: local and SSH terminals are in; containers and WSL are not yet)
 
 ## Context
 

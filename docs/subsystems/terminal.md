@@ -1,8 +1,35 @@
 # Integrated terminal
 
 Status: **in progress** ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
-runs shells on this machine, Open Terminal Here opens one, and links in the output open in the editor. The
-SSH, container and WSL connectors follow.
+runs shells on this machine and on SSH hosts, Open Terminal Here opens one, and links in the output open in
+the editor. Container and WSL terminals follow.
+
+## Terminals on an SSH host
+
+- **Seam:** `ExecTarget.startTerminal(TerminalSpec)` returns a `process.TerminalChannel` (output, input, resize,
+  `lostConnection()`). It is kept apart from `ExecSpec`, which never asks for a PTY. Targets without terminals
+  inherit the default, which says so; `ExecTargets`' unavailable target gives its usual reason (turned off, not
+  allowed, not connected). `terminal.ChannelConnector` adapts a channel to JediTerm.
+- **SSH (`vfs/SshTerminalChannel`):** an exec channel of the window's own session that asks for a PTY:
+  `xterm-256color`, the laid-out size, `window-change` on resize. **`setUsePty(true)` is required:** MINA's
+  `ChannelExec` sends no `pty-req` by default, even with a PTY configuration (`ChannelShell` does). Without it
+  the shell had no tty, no size and no hang-up, which only the real-server probe showed. The command is
+  `exec /bin/sh -c '… cd -- <dir> || cd; exec "${SHELL:-/bin/sh}" -l'`, wrapped for fish and csh accounts.
+  The local `terminalShell` setting is never sent to a host.
+- **Budget:** a terminal takes one of the connection's five long-lived slots (D2) and frees it when its channel
+  closes. The refusal says so ("each terminal on it is one").
+- **A dropped connection:** the server hangs up the PTY, so the shell and its foreground jobs get SIGHUP as with
+  a dropped `ssh`; there is no watchdog (D8). The channel reports `lostConnection()`, and the tab keeps its text
+  under an amber "Connection lost" banner with **Reconnect**. A shell that exits, or one Editora closes, still
+  closes its tab. Tabs remember their folder as a `Vfs` storable string, so Reconnect finds it on the new
+  connection; a dead path on the old file system would not do.
+- **Where:** a remote project's terminals start in its root on the host, and Open Terminal Here on a remote
+  folder opens there (the system terminal is never used for it). The tab chip shows the host
+  (`TerminalCoordinator.hostOf`).
+- **Tests:** `SshTerminalFxTest` (embedded server: answers, budget, exit vs close vs drop),
+  `RemoteTerminalPanelFxTest` (a tab answers, survives a drop, and reconnects on the new connection), and
+  `RealSshdProbeFxTest`'s two terminal steps. Those check a real tty and `stty size` before and after a resize,
+  and that a dropped connection kills the terminal's foreground program. They pass against OpenSSH 10.0.
 
 ## The tool window
 
