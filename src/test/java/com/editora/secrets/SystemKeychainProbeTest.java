@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 /**
  * The real keychain of the machine running the test — skipped unless {@code EDITORA_REAL_KEYCHAIN_PROBE=1} is set,
  * because it writes to it. CI sets it on the macOS and Windows pure-test jobs, so those two backends run for real
- * on every pull request; Linux lanes skip it (listed in {@code scripts/expected-skips-linux.txt}).
+ * on every pull request; Linux lanes skip it (listed in {@code scripts/ci/expected-skips-linux.txt}).
  *
  * <p>It files one throw-away item under its own service, "Editora probe" (never the "Editora" service the app
  * uses), reads it, overwrites it and deletes it, and deletes it again in {@code finally} whatever failed. It builds

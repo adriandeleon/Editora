@@ -1,4 +1,4 @@
-# Tests the Linux CI lanes are expected to skip. Read by scripts/check_skips.py; anything skipped that
+# Tests the Linux CI lanes are expected to skip. Read by scripts/ci/CheckSkips.java; anything skipped that
 # is not listed here fails the build. Keep the reason beside each group.
 
 # Opt-in probes: need a real JDT LS, debug adapter, Node or Codex login (-Dgroups=probe and friends).
