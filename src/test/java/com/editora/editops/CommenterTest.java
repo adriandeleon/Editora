@@ -91,6 +91,28 @@ class CommenterTest {
     }
 
     @Test
+    void aNodeShebangIsNeverToggledEither() {
+        // Node.js review A7: Ctrl+/ made `// #!/usr/bin/env node`, and select-all wrapped it in /* */.
+        String js = "#!/usr/bin/env node\nconsole.log(1);\n";
+        assertNull(Commenter.toggle(js, 3, 3, Commenter.styleFor("javascript")), "the shebang line alone");
+        assertTrue(Commenter.onlyShebang(js, 3, 3, Commenter.styleFor("javascript")));
+        assertEquals("#!/usr/bin/env node\n// console.log(1);\n", apply(js, 0, js.length(), "javascript"));
+        // Rust's inner attribute is code, not a shebang.
+        String rs = "#![allow(dead_code)]\nfn main() {}\n";
+        assertEquals("// #![allow(dead_code)]\nfn main() {}\n", apply(rs, 0, 0, "rust"));
+    }
+
+    @Test
+    void lineCommentsLineUpAtTheShallowestIndent() {
+        String doc = "/**\n * Loads.\n */\nfunction f() {\n  return 1;\n}";
+        String commented = apply(doc, 0, doc.length(), "javascript");
+        assertEquals("// /**\n//  * Loads.\n//  */\n// function f() {\n//   return 1;\n// }", commented);
+        assertEquals(doc, apply(commented, 0, commented.length(), "javascript"), "and uncommenting restores it");
+        String py = "if x:\n    y()\n\n    z()";
+        assertEquals("# if x:\n#     y()\n\n#     z()", apply(py, 0, py.length(), "python"));
+    }
+
+    @Test
     void aShebangIsNeverToggled() {
         // B3: Ctrl+/ on line 1 turned `#!/usr/bin/env bash` into `!/usr/bin/env bash`.
         String sh = "#!/usr/bin/env bash\n# usage: x\necho hi\n";
