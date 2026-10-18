@@ -355,6 +355,10 @@ class TerminalViewFxTest {
 
         assertEquals(1, asked.get());
         assertNotNull(fx(extra::getParentPopup), "the extra item was added to the view's menu");
+        assertTrue(
+                fx(() -> extra.getParentPopup().getItems().stream()
+                        .anyMatch(item -> item.getAccelerator() != null && item.getAccelerator().getName().contains("C"))),
+                "Copy shows its chord");
         fx(() -> {
             extra.getParentPopup().hide();
             Event.fireEvent(

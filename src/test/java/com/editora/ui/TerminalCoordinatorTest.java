@@ -29,4 +29,21 @@ class TerminalCoordinatorTest {
         assertEquals(java.util.List.of("vim", "sleep"), TerminalCoordinator.childrenOf(ps, 900));
         assertEquals(java.util.List.of(), TerminalCoordinator.childrenOf(ps, 42));
     }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledOnOs(org.junit.jupiter.api.condition.OS.LINUX)
+    void withoutPsTheProgramsAreReadFromProc() throws Exception {
+        Process child = new ProcessBuilder("sleep", "30").start();
+        try {
+            ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", TerminalCoordinator.PROGRAMS_SCRIPT);
+            pb.environment().put("PATH", "/nonexistent"); // no ps
+            Process p = pb.start();
+            String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            p.waitFor();
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    TerminalCoordinator.childrenOf(out, ProcessHandle.current().pid()).contains("sleep"), out);
+        } finally {
+            child.destroyForcibly();
+        }
+    }
 }

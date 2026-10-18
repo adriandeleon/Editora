@@ -1832,7 +1832,16 @@ public final class TerminalView extends Region {
                 item(tr("terminal.menu.clearScrollback"), menuIcons.apply("clear"), this::clearScrollback));
         menu.setAutoHide(true);
         ownItems = menu.getItems().size();
+        // The terminal's own chords, shown where its commands are: nothing else in the UI said them. Display only —
+        // the panel's key filter is what acts on them, and it consumes them first.
+        copyItem.setAccelerator(chord(MAC ? "Meta+C" : "Ctrl+Shift+C"));
+        pasteItem.setAccelerator(chord(MAC ? "Meta+V" : "Ctrl+Shift+V"));
         return menu;
+    }
+
+    /** {@code text} as a key combination for a menu item's accelerator text. */
+    public static javafx.scene.input.KeyCombination chord(String text) {
+        return javafx.scene.input.KeyCombination.keyCombination(text);
     }
 
     /** How many of the menu's items are the view's own; the window's extras follow them. */

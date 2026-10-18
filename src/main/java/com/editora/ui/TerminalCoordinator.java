@@ -91,6 +91,10 @@ final class TerminalCoordinator {
                 here.setOnAction(e -> panel.newTerminalHere());
                 MenuItem find = new MenuItem(tr("terminal.menu.find"));
                 find.setOnAction(e -> panel.find());
+                find.setAccelerator(com.editora.terminal.TerminalView.chord(
+                        System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("mac")
+                                ? "Meta+F"
+                                : "Ctrl+Shift+F"));
                 return List.of(here, find);
             });
             panel.setOnError(host::setError);
@@ -340,9 +344,17 @@ final class TerminalCoordinator {
             return List.of();
         }
         var result = com.editora.process.ProcessRunner.run(
-                directory, REMOTE_PROGRAMS_TIMEOUT, List.of("ps", "-A", "-o", "ppid=,comm="));
+                directory, REMOTE_PROGRAMS_TIMEOUT, List.of("/bin/sh", "-c", PROGRAMS_SCRIPT));
         return result.ok() ? childrenOf(result.out(), pid) : List.of();
     }
+
+    /**
+     * Every process's parent and name, as {@code ps -A -o ppid=,comm=} prints them; read from {@code /proc} where
+     * there is no {@code ps} (debian-slim and python-slim images ship none), with shell builtins only.
+     */
+    static final String PROGRAMS_SCRIPT = "ps -A -o ppid=,comm= 2>/dev/null || "
+            + "for f in /proc/[0-9]*/stat; do { read -r l < \"$f\"; } 2>/dev/null || continue; "
+            + "c=${l#*\\(}; c=${c%\\)*}; set -- ${l##*\\) }; echo \"$2 $c\"; done";
 
     /** {@code ps -A -o ppid=,comm=} output → the names of {@code pid}'s children, innermost-first order kept. Pure. */
     static List<String> childrenOf(String psOutput, long pid) {
