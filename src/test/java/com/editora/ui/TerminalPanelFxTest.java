@@ -865,6 +865,74 @@ class TerminalPanelFxTest {
     }
 
     @Test
+    void closingARemoteTabAsksItsHostOffTheFxThread() throws Exception {
+        java.util.concurrent.CountDownLatch answer = new java.util.concurrent.CountDownLatch(1);
+        List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        TerminalPanel.Shells fake = fakeShells();
+        show(
+                (dir, shell) -> (columns, rows) -> {
+                    FakeConnector c = (FakeConnector) fake.open(dir, shell).open(columns, rows);
+                    c.remotePid = 4242;
+                    return c;
+                },
+                (title, programs) -> {
+                    asked.add(String.join(",", programs));
+                    return true;
+                },
+                Path.of(System.getProperty("java.io.tmpdir")));
+        fx(() -> {
+            panel.setRemotePrograms((dir, pid) -> {
+                try {
+                    answer.await(10, TimeUnit.SECONDS); // a slow host
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return List.of("vim");
+            });
+            panel.newTerminal();
+            return null;
+        });
+        long t0 = System.nanoTime();
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0) < 1_000, "the FX thread did not wait");
+        assertEquals(1, fx(panel::terminalCount), "the tab stays while the host is asked");
+        assertTrue(fx(() -> panel.isAskingToClose(panel.activeTab())));
+        answer.countDown();
+        await(() -> call(() -> panel.terminalCount() == 0), "the close once the host answered");
+        assertEquals(List.of("vim"), asked);
+    }
+
+    @Test
+    void aProgramOnAnotherMachineOpensOffTheFxThread() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        java.util.concurrent.CountDownLatch hostAnswers = new java.util.concurrent.CountDownLatch(1);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.terminal.ProgramRun run = fx(() -> panel.runProgram(
+                "Main",
+                null,
+                com.editora.terminal.TerminalConnector.Factory.slow((c, r) -> {
+                    try {
+                        hostAnswers.await(10, TimeUnit.SECONDS); // an SSH channel opening
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return program;
+                }),
+                exits::add));
+        assertEquals(1, fx(panel::terminalCount), "the tab is there while it connects");
+        assertTrue(run.isRunning());
+        hostAnswers.countDown();
+        await(() -> call(() -> panel.activeView() != null), "the program's view once connected");
+        program.exit(0);
+        await(() -> !exits.isEmpty(), "its end");
+        assertEquals(List.of(0), exits);
+    }
+
+    @Test
     void aShellStartedQuietlyLeavesTheKeyboardWhereItWas() throws Exception {
         // A terminal left open comes back at startup: the editor's keystrokes must not land in a shell.
         javafx.scene.control.TextField editor = fx(javafx.scene.control.TextField::new);

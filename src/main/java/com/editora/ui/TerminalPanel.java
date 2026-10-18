@@ -291,9 +291,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         tab.setGraphic(target);
         tab.setTooltip(new Tooltip());
         tab.setOnCloseRequest(e -> {
-            if (!mayClose(tab)) {
-                e.consume();
-            }
+            e.consume(); // closed by requestClose once it may be
+            requestClose(tab);
         });
         dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
         if (!startIn(tab)) {
@@ -347,14 +346,24 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         tab.setGraphic(target);
         tab.setTooltip(new Tooltip(title));
         tab.setOnCloseRequest(e -> {
-            if (!mayClose(tab)) {
-                e.consume();
-            }
+            e.consume(); // closed by requestClose once it may be
+            requestClose(tab);
         });
         view.setOnSessionEnded(() -> programEnded(tab, view));
         markBell(tab, view);
         titles.put(tab, () -> title);
         programExits.put(tab, onExit == null ? code -> {} : onExit);
+        if (connector.opensSlowly()) {
+            // A program on another machine: the channel opens off the FX thread, as a remote shell's does. A
+            // failure arrives later, as the program's end (-1) and the error.
+            dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
+            programNames.put(tab, program == null || program.isBlank() ? title : program);
+            tabs.getTabs().add(tab);
+            tabs.getSelectionModel().select(tab);
+            content.getChildren().clear();
+            startProgramSlowly(tab, view, connector, dir);
+            return programRun(tab, view);
+        }
         try {
             view.start(connector);
         } catch (IOException | RuntimeException e) {
@@ -368,6 +377,36 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         tabs.getTabs().add(tab);
         tabs.getSelectionModel().select(tab);
         focusActive();
+        return programRun(tab, view);
+    }
+
+    /** {@link #startSlowly} for a program tab: connected, it shows the program; failed, the tab goes. */
+    private void startProgramSlowly(Tab tab, TerminalView view, TerminalConnector.Factory factory, Path dir) {
+        StackPane content = (StackPane) tab.getContent();
+        Label note = new Label(tr("terminal.connecting", targetLabel.apply(dir)));
+        note.getStyleClass().add("terminal-connecting");
+        StackPane.setAlignment(note, Pos.CENTER);
+        content.getChildren().add(note);
+        connecting.put(tab, view);
+        view.startAsync(
+                factory,
+                () -> {
+                    connecting.remove(tab);
+                    views.put(tab, view);
+                    content.getChildren().setAll(view);
+                    if (tab.isSelected()) {
+                        focusActive();
+                    }
+                },
+                e -> {
+                    connecting.remove(tab);
+                    view.close();
+                    tabs.getTabs().remove(tab); // tells its starter: the program ended without a code
+                    onError.accept(tr("terminal.startFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
+                });
+    }
+
+    private ProgramRun programRun(Tab tab, TerminalView view) {
         return new ProgramRun() {
             @Override
             public long pid() {
@@ -383,7 +422,11 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
             @Override
             public void stop() {
-                if (view.getSession() != null) view.getSession().terminate();
+                if (view.getSession() != null) {
+                    view.getSession().terminate();
+                } else if (connecting.get(tab) == view) {
+                    tabs.getTabs().remove(tab); // still connecting: it never starts, and its starter is told
+                }
             }
         };
     }
@@ -471,7 +514,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         Label note = new Label(tr("terminal.connecting", targetLabel.apply(dir)));
         note.getStyleClass().add("terminal-connecting");
         StackPane.setAlignment(note, Pos.CENTER);
-        content.getChildren().add(note);
+        if (factory.saysConnecting()) {
+            content.getChildren().add(note);
+        }
         connecting.put(tab, view);
         view.startAsync(
                 factory,
@@ -597,8 +642,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     /** Closes the selected tab, asking first if its shell is running something. */
     void closeActive() {
         Tab tab = tabs.getSelectionModel().getSelectedItem();
-        if (tab != null && mayClose(tab)) {
-            tabs.getTabs().remove(tab);
+        if (tab != null) {
+            requestClose(tab);
         }
     }
 
@@ -699,29 +744,69 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         view.setLinkActions(linkActions);
     }
 
-    private boolean mayClose(Tab tab) {
+    /** Tabs whose remote shell is being asked what it runs; a second close request waits for that answer. */
+    private final java.util.Set<Tab> asking = new java.util.HashSet<>();
+
+    /**
+     * Closes {@code tab} once it may: at once, or after asking when its shell is running something. A shell on
+     * another machine is asked off the FX thread — over a slow link, or with the host's one-shot slots busy, that
+     * question took up to tens of seconds, and the editor waited on it. The tab stays meanwhile.
+     */
+    void requestClose(Tab tab) {
         TerminalView view = views.get(tab);
         if (view == null || !config.confirmClose() || view.getSession() == null) {
-            return true;
+            tabs.getTabs().remove(tab);
+            return;
         }
         if (programNames.containsKey(tab)) {
             // A program tab: its program is what closing ends, while it runs; once it ended there is nothing to ask.
-            return !programExits.containsKey(tab)
-                    || closeGuard.confirm(tab.getText(), new ArrayList<>(List.of(programNames.get(tab))));
+            if (!programExits.containsKey(tab)
+                    || closeGuard.confirm(tab.getText(), new ArrayList<>(List.of(programNames.get(tab))))) {
+                tabs.getTabs().remove(tab);
+            }
+            return;
         }
         long pid = view.getSession().pid();
         long remote = view.getSession().remotePid();
-        List<String> programs;
         if (pid > 0) {
-            programs = RunningProgram.in(pid);
-        } else if (remote > 0) {
-            String stored = dirs.getOrDefault(tab, "");
-            Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
-            programs = dir == null ? List.of() : remotePrograms.apply(dir, remote);
-        } else {
-            programs = List.of();
+            closeUnlessDeclined(tab, RunningProgram.in(pid));
+            return;
         }
-        return programs.isEmpty() || closeGuard.confirm(tab.getText(), new ArrayList<>(programs));
+        String stored = dirs.getOrDefault(tab, "");
+        Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
+        if (remote <= 0 || dir == null) {
+            tabs.getTabs().remove(tab);
+            return;
+        }
+        if (!asking.add(tab)) {
+            return;
+        }
+        Thread.ofVirtual().name("terminal-close-ask").start(() -> {
+            List<String> programs;
+            try {
+                programs = remotePrograms.apply(dir, remote);
+            } catch (RuntimeException e) {
+                programs = List.of();
+            }
+            List<String> answer = programs;
+            Platform.runLater(() -> {
+                asking.remove(tab);
+                if (tabs.getTabs().contains(tab) && views.get(tab) == view) {
+                    closeUnlessDeclined(tab, answer);
+                }
+            });
+        });
+    }
+
+    private void closeUnlessDeclined(Tab tab, List<String> programs) {
+        if (programs.isEmpty() || closeGuard.confirm(tab.getText(), new ArrayList<>(programs))) {
+            tabs.getTabs().remove(tab);
+        }
+    }
+
+    /** Whether a close of {@code tab} is waiting for its remote shell's answer; for tests. */
+    boolean isAskingToClose(Tab tab) {
+        return asking.contains(tab);
     }
 
     private void onClipboardKey(KeyEvent e) {
@@ -761,6 +846,11 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             view.nextPrompt();
             e.consume();
         }
+    }
+
+    /** Every tab's started view, in tab order; for tests. */
+    List<TerminalView> viewsForTest() {
+        return List.copyOf(views.values());
     }
 
     /** The tab pane; for tests. */

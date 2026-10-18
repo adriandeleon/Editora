@@ -42,6 +42,7 @@ class TerminalToolWindowFxTest {
 
             FxTestSupport.runOnFx(() -> registry.run("terminal.new"));
             assertEquals(2, (int) FxTestSupport.callOnFx(() -> terminals.panel().terminalCount()));
+            await(() -> FxTestSupport.callOnFx(() -> terminals.panel().hasFocusWithin()), "the new shell's focus");
 
             FxTestSupport.runOnFx(() -> registry.run("tool.terminal"));
             assertFalse(FxTestSupport.callOnFx(() -> toolWindows.isOpen(window)), "the second toggle hides it");
@@ -58,6 +59,9 @@ class TerminalToolWindowFxTest {
                 assertTrue(FxTestSupport.callOnFx(() -> toolWindows.isOpen(window)), "it shows the tool window");
                 assertEquals(
                         3, (int) FxTestSupport.callOnFx(() -> terminals.panel().terminalCount()));
+                await(
+                        () -> FxTestSupport.callOnFx(() -> terminals.panel().activeView() != null),
+                        "the shell started (off the FX thread)");
                 long shell = FxTestSupport.callOnFx(
                         () -> terminals.panel().activeView().getSession().pid());
                 if (com.editora.terminal.ProcessCwd.isSupported()) {
@@ -96,16 +100,29 @@ class TerminalToolWindowFxTest {
                 java.nio.file.Files.deleteIfExists(source);
             }
 
-            var view = FxTestSupport.callOnFx(() -> terminals.panel().activeView());
-            long pid = FxTestSupport.callOnFx(() -> view.getSession().pid());
+            // Every tab's shell, not only the active one's, ends with the window.
+            await(() -> FxTestSupport.callOnFx(() -> terminals.panel().viewsForTest().size() == 3), "all three shells");
+            java.util.List<Long> pids = FxTestSupport.callOnFx(() -> terminals.panel().viewsForTest().stream()
+                    .map(v -> v.getSession().pid())
+                    .toList());
+            assertEquals(3, pids.size());
             fx.dispose();
-            if (pid > 0) {
+            for (long pid : pids) {
                 var process = ProcessHandle.of(pid);
                 if (process.isPresent()) {
                     process.get().onExit().get(10, TimeUnit.SECONDS);
                 }
-                assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "the shell ended");
+                assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "shell " + pid + " ended");
             }
         }
+    }
+
+    private static void await(java.util.concurrent.Callable<Boolean> condition, String what) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            if (Boolean.TRUE.equals(condition.call())) return;
+            Thread.sleep(20);
+        }
+        throw new AssertionError("timed out waiting for " + what);
     }
 }

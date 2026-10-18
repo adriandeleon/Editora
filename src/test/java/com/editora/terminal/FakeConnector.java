@@ -129,4 +129,12 @@ public final class FakeConnector implements TerminalConnector {
     public boolean wasClosed() {
         return closed.getCount() == 0;
     }
+
+    /** The shell's pid on "another machine"; -1 for a shell on this one. */
+    public volatile long remotePid = -1;
+
+    @Override
+    public long remotePid() {
+        return remotePid;
+    }
 }

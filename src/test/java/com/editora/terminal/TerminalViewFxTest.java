@@ -383,7 +383,9 @@ class TerminalViewFxTest {
     @Test
     void aShellsCwdReportBecomesTheTerminalsDirectory() throws Exception {
         open();
-        connector.emit("\u001b]7;file://box/srv/my%20app\u0007$ ");
+        // Another machine's report (a remote prompt after `ssh`, a printed file) does not move a local tab.
+        connector.emit("\u001b]7;file://elsewhere.example/etc\u0007");
+        connector.emit("\u001b]7;file://localhost/srv/my%20app\u0007$ ");
         await(() -> "/srv/my app".equals(call(() -> view.getDisplay().getCwd())), "the reported directory");
         await(
                 () -> "my app"

@@ -43,6 +43,34 @@ public interface TerminalConnector extends TtyConnector {
             return false;
         }
 
+        /** Whether the tab says "Connecting…" while it opens: a shell on another machine does, a local one need not. */
+        default boolean saysConnecting() {
+            return opensSlowly();
+        }
+
+        /**
+         * {@code factory}, opened off the FX thread without a "Connecting…" note: a local shell, whose start (a fork
+         * and, the first time, loading the native library) held the FX thread for a quarter of a second or more.
+         */
+        static Factory background(Factory factory) {
+            return new Factory() {
+                @Override
+                public TerminalConnector open(int columns, int rows) throws java.io.IOException {
+                    return factory.open(columns, rows);
+                }
+
+                @Override
+                public boolean opensSlowly() {
+                    return true;
+                }
+
+                @Override
+                public boolean saysConnecting() {
+                    return false;
+                }
+            };
+        }
+
         /** {@code factory}, marked as opening slowly. */
         static Factory slow(Factory factory) {
             return new Factory() {

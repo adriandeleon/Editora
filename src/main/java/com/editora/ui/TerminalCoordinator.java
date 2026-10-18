@@ -386,9 +386,12 @@ final class TerminalCoordinator {
         return colon > 0 && host.indexOf(':') == colon ? host.substring(0, colon) : host;
     }
 
-    /** A shell on this machine, tracked so it ends with Editora even when Editora does not end cleanly. */
+    /**
+     * A shell on this machine, tracked so it ends with Editora even when Editora does not end cleanly. Started off
+     * the FX thread: the fork, and the first time loading pty4j's native library, held it for up to half a second.
+     */
     private TerminalConnector.Factory localShell(Path directory, String shell) {
-        return (columns, rows) -> {
+        return TerminalConnector.Factory.background((columns, rows) -> {
             List<String> command = shell == null || shell.isBlank() ? List.of() : LocalShell.shellCommand(shell);
             String problem = LocalShell.overrideProblem(shell);
             if (problem != null) {
@@ -404,7 +407,7 @@ final class TerminalCoordinator {
                         .warning("terminal shell " + connector.pid() + " is not tracked: " + e);
             }
             return connector;
-        };
+        });
     }
 
     /**
@@ -426,16 +429,21 @@ final class TerminalCoordinator {
         return panel().runProgram(title, program, directory, programConnector(directory, argv, env), onExit);
     }
 
-    /** Opens {@code argv} on a pseudo-terminal where {@code directory}'s commands run. */
+    /**
+     * Opens {@code argv} on a pseudo-terminal where {@code directory}'s commands run. Elsewhere it opens off the FX
+     * thread: an SSH channel waits on the host (and on a free long-lived slot), which froze the editor.
+     */
     static TerminalConnector.Factory programConnector(
             Path directory, List<String> argv, java.util.Map<String, String> env) {
-        return (columns, rows) -> {
-            ExecTarget target = directory == null ? null : ExecTargets.forPath(directory);
-            if (target != null && !target.isLocal()) {
+        ExecTarget remote = directory == null ? null : ExecTargets.forPath(directory);
+        if (remote != null && !remote.isLocal()) {
+            return TerminalConnector.Factory.slow((columns, rows) -> {
                 TerminalChannel channel =
-                        target.startTerminal(TerminalSpec.program(directory, columns, rows, argv, env));
-                return new ChannelConnector(channel, target.id());
-            }
+                        remote.startTerminal(TerminalSpec.program(directory, columns, rows, argv, env));
+                return new ChannelConnector(channel, remote.id());
+            });
+        }
+        return (columns, rows) -> {
             LocalPtyConnector connector =
                     LocalShell.startProgram(argv, directory == null ? null : directory.toString(), columns, rows, env);
             try {
