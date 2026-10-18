@@ -118,6 +118,21 @@ class EditorBufferFeaturesFxTest {
     }
 
     @Test
+    void theCaretIsInALiteralByTheHighlightStylesAroundIt() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = buffer("plaintext", "x = 'abc' + y // note\n");
+            CodeArea area = buffer.getArea();
+            area.setStyle(4, 9, List.of("string"));
+            area.setStyle(14, 21, List.of("comment"));
+            assertTrue(TypingContext.inLiteral(area, 6), "between a and b");
+            assertFalse(TypingContext.inLiteral(area, 9), "right after the closing quote");
+            assertFalse(TypingContext.inLiteral(area, 2), "in code");
+            assertTrue(TypingContext.inLiteral(area, 21), "at the end of a line comment");
+            buffer.dispose();
+        });
+    }
+
+    @Test
     void theCsvGridIsThePreviewWhileItIsInjected() throws Exception {
         EditorFx.onFx(() -> {
             EditorBuffer buffer = buffer("csv", "a,b\n1,2\n");
