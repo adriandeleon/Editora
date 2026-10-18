@@ -58,6 +58,8 @@ com.editora.container.ContainerProbeFxTest
 # Opt-in, Windows only: runs against a real WSL distribution named with -Dwsl.probe (see its Javadoc).
 com.editora.wsl.WslProbeTest
 com.editora.ui.WslWatchProbeTest
+# Windows only: PowerShell on ConPTY (the pure lane runs it on Windows).
+com.editora.terminal.LocalShellWindowsPtyTest
 # Skips where zsh is not installed (a Linux runner may lack it); the macOS lanes always run it.
 com.editora.terminal.ShellIntegrationPtyTest#zshReportsItsDirectoryPromptsAndExitStatus
 # Opt-in: writes to the machine's real keychain only with EDITORA_REAL_KEYCHAIN_PROBE=1, which only the macOS and

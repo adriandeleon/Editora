@@ -185,6 +185,33 @@ class KeyEncodingTest {
     }
 
     @Test
+    void ctrlAltChordsAreEscapeAndTheControlByteWhereAltGrIsToldApart() {
+        RecordingLookup none = new RecordingLookup(null);
+        assertArrayEquals(
+                new byte[] {0x1b, 0x06},
+                KeyEncoding.encodePressed(pressed(KeyCode.F, false, true, true, false), none, true, true),
+                "C-M-f");
+        assertNull(KeyEncoding.encodeTyped(typed("f", true, true, false), true, true), "and its character is not sent");
+        assertNull(
+                KeyEncoding.encodePressed(pressed(KeyCode.Q, false, true, true, false), none, true, false),
+                "where Ctrl+Alt is AltGr (Windows), it still composes");
+    }
+
+    @Test
+    void ctrlDigitsAreXtermsControls() {
+        RecordingLookup none = new RecordingLookup(null);
+        assertArrayEquals(
+                new byte[] {0x1b},
+                KeyEncoding.encodePressed(pressed(KeyCode.DIGIT3, false, true, false, false), none, true));
+        assertArrayEquals(
+                new byte[] {0x1c},
+                KeyEncoding.encodePressed(pressed(KeyCode.DIGIT4, false, true, false, false), none, true));
+        assertArrayEquals(
+                new byte[] {0x7f},
+                KeyEncoding.encodePressed(pressed(KeyCode.DIGIT8, false, true, false, false), none, true));
+    }
+
+    @Test
     void pasteNormalisesNewlinesToCarriageReturns() {
         // A shell reading a line wants CR; sending LF submits nothing and looks like a hang.
         assertEquals("a\rb\rc", new String(KeyEncoding.encodePaste("a\r\nb\nc", false), StandardCharsets.UTF_8));
@@ -194,6 +221,21 @@ class KeyEncodingTest {
     void bracketedPasteWrapsTheTextWhenTheShellAskedForIt() {
         String out = new String(KeyEncoding.encodePaste("ls", true), StandardCharsets.UTF_8);
         assertEquals("[200~ls[201~", out);
+    }
+
+    @Test
+    void aPasteCannotEndTheBracketEarlyOrTypeControlKeys() {
+        // Text copied from a web page can hide ESC[201~: the shell would take the rest as typing and run it.
+        String clip = "echo harmless\u001b[201~touch /tmp/pwned\nmore\u0003\u0004\u009b201~";
+        String out = new String(KeyEncoding.encodePaste(clip, true), StandardCharsets.UTF_8);
+        assertEquals("\u001b[200~echo harmless[201~touch /tmp/pwned\rmore201~\u001b[201~", out);
+        assertEquals(1, out.split("\u001b\\[201~", -1).length - 1, "only the closing bracket ends the paste");
+    }
+
+    @Test
+    void aPasteKeepsTabsLineBreaksAndUnicode() {
+        String out = new String(KeyEncoding.encodePaste("a\tb\r\nc é 日本 😀\u007f", false), StandardCharsets.UTF_8);
+        assertEquals("a\tb\rc é 日本 😀", out);
     }
 
     // --- Alt as Meta, where the composed character is the trap ----------------------------------

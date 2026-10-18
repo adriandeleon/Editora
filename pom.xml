@@ -573,6 +573,9 @@
                              two macOS CI forks booting together lost libjavafx_font that way (see
                              docs/gotchas.md). A property, not an argLine -D: argLine is split on spaces. -->
                         <javafx.cachedir>${project.build.directory}/openjfx-cache-${surefire.forkNumber}</javafx.cachedir>
+                        <!-- Terminal shells a test starts get this HOME and no history file: they used to read the
+                             developer's own profile and append test commands to their ~/.bash_history. -->
+                        <editora.terminal.home>${project.build.directory}/terminal-home</editora.terminal.home>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

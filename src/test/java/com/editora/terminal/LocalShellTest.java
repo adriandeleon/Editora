@@ -20,6 +20,60 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LocalShellTest {
 
     @Test
+    void editorasOwnLaunchEnvironmentStaysOutOfItsTerminals() {
+        var env = new java.util.HashMap<>(java.util.Map.of(
+                "TMUX", "/tmp/tmux-1000/default,1,0",
+                "TMUX_PANE", "%3",
+                "STY", "1.pts",
+                "VTE_VERSION", "7600",
+                "APPDIR", "/tmp/.mount_Editora",
+                "APPIMAGE", "/home/a/Editora.AppImage",
+                "APPRUN_RUNTIME", "x",
+                "PATH", "/usr/bin",
+                "HOME", "/home/a"));
+        LocalShell.dropLaunchEnvironment(env);
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.Set.of("PATH", "HOME"), env.keySet());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.editora.AppInfo.VERSION, LocalShell.environment().get("TERM_PROGRAM_VERSION"), "our own version");
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void theShellSettingTakesArgumentsAndNamesOnPath() {
+        org.junit.jupiter.api.Assertions.assertEquals(
+                List.of("/bin/sh", "-i"), LocalShell.shellCommand("/bin/sh -i"), "its own arguments, no -l added");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                LocalShell.shellCommand("sh").get(0).endsWith("/sh"), "a bare name is looked up on PATH");
+        org.junit.jupiter.api.Assertions.assertNull(LocalShell.overrideProblem("sh"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "/no/such/shell", LocalShell.overrideProblem("/no/such/shell --flag"), "and an unusable one is named");
+    }
+
+    @Test
+    void aMissingLocaleBecomesUtf8ThatTheSystemHas() {
+        var env = new java.util.HashMap<String, String>();
+        LocalShell.defaultLocale(env, false);
+        org.junit.jupiter.api.Assertions.assertEquals("C.UTF-8", env.get("LANG"), "every glibc has C.UTF-8");
+        var mac = new java.util.HashMap<String, String>();
+        LocalShell.defaultLocale(mac, true);
+        org.junit.jupiter.api.Assertions.assertEquals("en_US.UTF-8", mac.get("LANG"));
+        var ctype = new java.util.HashMap<>(java.util.Map.of("LC_CTYPE", "de_DE.UTF-8"));
+        LocalShell.defaultLocale(ctype, false);
+        org.junit.jupiter.api.Assertions.assertNull(ctype.get("LANG"), "LC_CTYPE is a preference too");
+    }
+
+    @Test
+    void testShellsGetAHomeOfTheirOwnAndKeepNoHistory() {
+        // The developer's ~/.bash_history had gained 81 test commands, and their profile ran in every test shell.
+        String home = System.getProperty(LocalShell.TEST_HOME);
+        org.junit.jupiter.api.Assertions.assertNotNull(home, "the build names a HOME for test shells");
+        var env = LocalShell.environment();
+        org.junit.jupiter.api.Assertions.assertEquals(home, env.get("HOME"));
+        org.junit.jupiter.api.Assertions.assertEquals("/dev/null", env.get("HISTFILE"));
+        org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.isDirectory(java.nio.file.Path.of(home)));
+    }
+
+    @Test
     void aConfiguredShellIsUsed() {
         // Derived from this platform rather than hardcoded: the first version asserted /bin/sh and
         // CI caught it on Windows, where that is not executable so the override is ignored and the
@@ -81,6 +135,9 @@ class LocalShellTest {
     }
 
     @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(
+            value = org.junit.jupiter.api.condition.OS.WINDOWS,
+            disabledReason = "Windows shells start without the integration (its scripts are paths of this machine)")
     void bashAndZshStartWithTheIntegrationAndOtherShellsAsTheyAre(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
         java.nio.file.Files.createDirectories(dir.resolve("zsh"));

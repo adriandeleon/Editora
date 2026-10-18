@@ -92,4 +92,23 @@ class OscTapTest {
     void aMarkWithoutAKindIsNotOurs() {
         assertEquals(List.of("text \u001b]133;\u0007"), run("\u001b]133;\u0007"));
     }
+
+    @Test
+    @org.junit.jupiter.api.Timeout(10)
+    void aTrailingEscapeIsHandedOutWhenNothingElseIsComing() throws Exception {
+        // vim leaving insert mode, a lone Escape echoed: the read ends with ESC and the shell says nothing more.
+        FakeConnector inner = new FakeConnector();
+        TappedConnector tapped = new TappedConnector(inner, listener);
+        inner.emit("vim says \u001b");
+        char[] buf = new char[64];
+        StringBuilder got = new StringBuilder();
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while (got.indexOf("\u001b") < 0 && System.nanoTime() < deadline) {
+            int n = tapped.read(buf, 0, buf.length);
+            if (n < 0) break;
+            got.append(buf, 0, n);
+        }
+        assertEquals("vim says \u001b", got.toString());
+        inner.close();
+    }
 }

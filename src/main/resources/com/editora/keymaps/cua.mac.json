@@ -56,5 +56,6 @@
   "S-f11": "debug.stepOut",
   "Cmd-S-f5": "debug.restart",
   "C-back-quote": "tool.terminal",
+  "S-escape": "terminal.focusEditor",
   "C-S-back-quote": "terminal.new"
 }

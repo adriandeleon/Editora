@@ -4054,7 +4054,7 @@ public class SettingsWindow {
                 display,
                 cat,
                 "terminal.scrollback",
-                100_000,
+                Settings.TERMINAL_SCROLLBACK_MAX,
                 500,
                 Settings::getTerminalScrollback,
                 Settings::setTerminalScrollback,
@@ -4070,6 +4070,22 @@ public class SettingsWindow {
                         .filter(id -> !id.isBlank())
                         .toList()),
                 "terminal keys shortcuts commands shell keyboard ctrl escape allow");
+        switchRow(
+                keys,
+                cat,
+                "terminal.macOptionIsMeta",
+                true,
+                Settings::isTerminalMacOptionIsMeta,
+                Settings::setTerminalMacOptionIsMeta,
+                "terminal option alt meta macos mac compose characters readline");
+        switchRow(
+                keys,
+                cat,
+                "terminal.confirmMultilinePaste",
+                true,
+                Settings::isTerminalConfirmMultilinePaste,
+                Settings::setTerminalConfirmMultilinePaste,
+                "terminal paste multiple lines newline confirm warning bracketed");
         switchRow(
                 keys,
                 cat,

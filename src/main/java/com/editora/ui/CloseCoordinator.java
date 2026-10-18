@@ -127,11 +127,17 @@ final class CloseCoordinator {
     }
 
     boolean confirmQuit() {
+        return confirmQuit(java.util.List.of());
+    }
+
+    /** "Quit?", saying which terminals ({@code busy}, "title (program)") quitting ends. */
+    boolean confirmQuit(java.util.List<String> busy) {
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
         alert.initOwner(stage);
         alert.setTitle(tr("dialog.quit.title"));
         alert.setHeaderText(tr("dialog.quit.header"));
-        alert.setContentText(null);
+        alert.setContentText(
+                busy.isEmpty() ? null : tr("terminal.closeWindow.running", "• " + String.join("\n• ", busy)));
         ButtonType quit = new ButtonType(tr("dialog.quit.button"));
         ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(quit, cancel);

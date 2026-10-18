@@ -168,15 +168,57 @@ public final class TerminalView extends Region {
     /** Alt/Option prefixes ESC rather than composing a character; see {@link KeyEncoding}. */
     private boolean altIsMeta = true;
 
+    /**
+     * Paints dirty frames, and runs only while there are some: started by {@link #markDirty}, it stops after a
+     * few frames with nothing to paint. Left running, one idle terminal kept the FX pulse at 60 Hz forever, even
+     * with the tool window hidden — a wakeup every frame on a machine doing nothing.
+     */
     private final AnimationTimer painter = new AnimationTimer() {
+        private int idleFrames;
+
         @Override
         public void handle(long now) {
-            if (dirty) {
+            if (dirty && isPaintable()) {
                 dirty = false;
+                idleFrames = 0;
                 render();
+                return;
             }
+            if (++idleFrames < IDLE_FRAMES) return;
+            idleFrames = 0;
+            stop();
+            painting.set(false);
+            // A change that landed between the check above and the flag going down must still be painted.
+            if (dirty && isPaintable() && painting.compareAndSet(false, true)) start();
         }
     };
+
+    /** Frames with nothing to paint before the painter stops. */
+    private static final int IDLE_FRAMES = 30;
+
+    /** Whether {@link #painter} runs (or is about to). */
+    private final java.util.concurrent.atomic.AtomicBoolean painting = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** In a shown window and visible: a hidden terminal is painted when it is shown again, not meanwhile. */
+    private boolean isPaintable() {
+        if (getScene() == null
+                || getScene().getWindow() == null
+                || !getScene().getWindow().isShowing()) return false;
+        for (Node n = this; n != null; n = n.getParent()) {
+            if (!n.isVisible()) return false; // an unselected tab, a hidden panel
+        }
+        return true;
+    }
+
+    /** Paints again when next possible: its tab was selected, its window shown. */
+    public void repaint() {
+        markDirty();
+    }
+
+    /** Whether the painter is running; for tests. */
+    boolean isPainting() {
+        return painting.get();
+    }
 
     public TerminalView(double fontSize) {
         applyFont();
@@ -190,6 +232,9 @@ public final class TerminalView extends Region {
         getChildren().addAll(canvas, scrollBar);
         setFocusTraversable(true);
         canvas.setFocusTraversable(false);
+        // A screen reader sees a text area holding the screen, not an unnamed group (see queryAccessibleAttribute).
+        setAccessibleRole(javafx.scene.AccessibleRole.TEXT_AREA);
+        setAccessibleRoleDescription(tr("toolwindow.terminal"));
 
         addEventFilter(MouseEvent.MOUSE_PRESSED, this::onMousePressed);
         addEventFilter(MouseEvent.MOUSE_DRAGGED, this::onMouseDragged);
@@ -205,6 +250,14 @@ public final class TerminalView extends Region {
         addEventFilter(KeyEvent.KEY_TYPED, this::onKeyTyped);
         addEventFilter(ScrollEvent.SCROLL, this::onScroll);
         setOnContextMenuRequested(this::onContextMenuRequested);
+        // The cursor is drawn hollow while the keyboard is elsewhere, so which terminal (or whether one) has it shows.
+        focusedProperty().addListener((o, was, now) -> markDirty());
+        // Not painted while out of sight (see isPaintable): shown again, it catches up.
+        visibleProperty().addListener((o, was, now) -> markDirty());
+        sceneProperty()
+                .flatMap(javafx.scene.Scene::windowProperty)
+                .flatMap(javafx.stage.Window::showingProperty)
+                .addListener((o, was, now) -> markDirty());
 
         display.setOnRepaint(this::markDirty);
         display.setSelectionSupplier(() -> selection);
@@ -314,7 +367,6 @@ public final class TerminalView extends Region {
                 }
             });
         }
-        painter.start();
         markDirty();
         if (columns != openColumns || rows != openRows) {
             session.resize(columns, rows); // laid out again while it was opening
@@ -340,6 +392,7 @@ public final class TerminalView extends Region {
     public void close() {
         closed = true;
         painter.stop();
+        painting.set(false);
         // Before the session: the watcher polls by pid, and a pid is reused. Left running past the
         // process it was watching, it would eventually start reporting some unrelated process's
         // directory into a tab that no longer exists.
@@ -349,12 +402,25 @@ public final class TerminalView extends Region {
 
     private void markDirty() {
         dirty = true;
+        if (session != null && !closed && painting.compareAndSet(false, true)) {
+            if (Platform.isFxApplicationThread()) {
+                painter.start();
+            } else {
+                Platform.runLater(() -> {
+                    if (closed) painting.set(false);
+                    else painter.start();
+                });
+            }
+        }
     }
 
     /** Visual bell: a brief wash over the canvas, cleared by the next frame. */
     private void flashBell() {
+        if (onBellRung != null) onBellRung.run();
         GraphicsContext g = canvas.getGraphicsContext2D();
-        g.setFill(Color.color(1, 1, 1, 0.18));
+        // The text's own colour: a white wash vanished on a light theme.
+        Color fg = palette.foreground();
+        g.setFill(Color.color(fg.getRed(), fg.getGreen(), fg.getBlue(), 0.18));
         g.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
         javafx.animation.PauseTransition clear = new javafx.animation.PauseTransition(javafx.util.Duration.millis(80));
         clear.setOnFinished(e -> markDirty());
@@ -397,6 +463,7 @@ public final class TerminalView extends Region {
     public void setPalette(TerminalPalette palette) {
         this.palette = palette;
         this.selectionWash = washFor(palette);
+        display.setPalette(palette);
         styleScrollBar(palette);
         markDirty();
     }
@@ -436,6 +503,13 @@ public final class TerminalView extends Region {
         this.bellEnabled = bellEnabled;
     }
 
+    private Runnable onBellRung;
+
+    /** Told (on the FX thread) when the bell rings, so a tab out of sight can say so. */
+    public void setOnBell(Runnable onBellRung) {
+        this.onBellRung = onBellRung;
+    }
+
     private boolean typeAhead;
 
     /** Paints keystrokes before a slow shell echoes them (see {@link TypeAheadOverlay}); applies at once. */
@@ -469,12 +543,10 @@ public final class TerminalView extends Region {
         // Nothing to scroll on the alternate screen — a full-screen program owns the viewport and
         // has no scrollback of its own.
         boolean useful = ScrollBarModel.useful(scrollBarEnabled, history, display.isAlternateScreen());
-        if (scrollBar.isManaged() != useful) {
-            scrollBar.setVisible(useful);
-            scrollBar.setManaged(useful);
-            // Appearing or vanishing changes the width available for columns.
-            requestLayout();
-        }
+        // Only shown or hidden: its width is kept either way (see scrollBarWidth). Taking the width when the
+        // first line reached history and giving it back on `clear` or a full-screen program resized the shell
+        // and reflowed the scrollback each time.
+        scrollBar.setVisible(useful);
         if (!useful) return;
         updatingScrollBar = true;
         try {
@@ -487,9 +559,9 @@ public final class TerminalView extends Region {
         }
     }
 
-    /** Width the scrollbar takes from the terminal, or 0 when it is not shown. */
+    /** Width kept for the scrollbar, shown or not, unless the bar is turned off. */
     private double scrollBarWidth() {
-        return scrollBar.isManaged() ? scrollBar.prefWidth(-1) : 0;
+        return scrollBarEnabled ? scrollBar.prefWidth(-1) : 0;
     }
 
     private void measureFont() {
@@ -515,12 +587,45 @@ public final class TerminalView extends Region {
 
         int newColumns = Math.max(MIN_COLUMNS, (int) Math.floor((w - barWidth) / charWidth));
         int newRows = Math.max(MIN_ROWS, (int) Math.floor(h / lineHeight));
-        if (newColumns != columns || newRows != rows) {
+        if (session == null) {
             columns = newColumns;
             rows = newRows;
-            if (session != null) session.resize(columns, rows);
+        } else if (newColumns == columns && newRows == rows) {
+            resizeDebounce.stop(); // back to the size the shell has
+        } else {
+            // Every size change reflows the whole scrollback on the emulator's thread, under the
+            // buffer lock: a splitter drag across a full history would queue dozens of them. The
+            // size is applied once it has stopped changing; the old grid is painted meanwhile.
+            pendingColumns = newColumns;
+            pendingRows = newRows;
+            resizeDebounce.playFromStart();
         }
         render();
+    }
+
+    /** How long a size must hold before the shell is resized to it (see {@link #layoutChildren}). */
+    static final javafx.util.Duration RESIZE_SETTLE = javafx.util.Duration.millis(120);
+
+    private int pendingColumns;
+    private int pendingRows;
+    private final javafx.animation.PauseTransition resizeDebounce = new javafx.animation.PauseTransition(RESIZE_SETTLE);
+
+    {
+        resizeDebounce.setOnFinished(e -> applyPendingSize());
+    }
+
+    private void applyPendingSize() {
+        if (closed || (pendingColumns == columns && pendingRows == rows) || pendingColumns <= 0) return;
+        columns = pendingColumns;
+        rows = pendingRows;
+        if (session != null) session.resize(columns, rows);
+        markDirty();
+    }
+
+    /** Applies a size still waiting out {@link #RESIZE_SETTLE}; for tests. */
+    void flushResize() {
+        resizeDebounce.stop();
+        applyPendingSize();
     }
 
     @Override
@@ -541,15 +646,18 @@ public final class TerminalView extends Region {
         double h = canvas.getHeight();
         if (w <= 0 || h <= 0) return;
 
+        // The emulator writes into this buffer from its own thread; the lock is what makes a frame
+        // internally consistent rather than a mix of two states. Only tried: a flood of output or a
+        // reflow of a long scrollback holds it for a long time, and the FX thread waiting for it
+        // would freeze every window. The frame is skipped instead, and the next pulse paints.
+        if (buffer != null && !buffer.tryLock()) {
+            dirty = true;
+            return;
+        }
         g.setFontSmoothingType(FontSmoothingType.GRAY);
         g.setFill(palette.background());
         g.fillRect(0, 0, w, h);
-
         if (buffer == null) return;
-
-        // The emulator writes into this buffer from its own thread; the lock is what makes a frame
-        // internally consistent rather than a mix of two states.
-        buffer.lock();
         try {
             // x arrives as an index into the line's char[], which is not its column: see
             // RunColumns. Translating here rather than inside drawRun keeps every consumer
@@ -587,7 +695,23 @@ public final class TerminalView extends Region {
         Color bg = backgroundOf(style);
         if (bg.equals(palette.background())) return; // already cleared
         g.setFill(bg);
-        g.fillRect(column * charWidth, row * lineHeight, length * charWidth, lineHeight);
+        fillCells(g, column, column + length, row * lineHeight, lineHeight);
+    }
+
+    /**
+     * Fills columns {@code from} to {@code to} (end exclusive) of a row, edges on whole pixels. A cell is a
+     * fractional number of pixels wide (8.43 at 14 px), so two runs that met at 25.29 px were each drawn
+     * anti-aliased there, and a seam showed between backgrounds of the same colour; on whole pixels they abut.
+     */
+    private void fillCells(GraphicsContext g, double from, double to, double y, double height) {
+        double left = cellEdge(from, charWidth);
+        double right = cellEdge(to, charWidth);
+        if (right > left) g.fillRect(left, y, right - left, height);
+    }
+
+    /** The whole-pixel x where column {@code column} starts (the same for a run ending there and one starting). */
+    static double cellEdge(double column, double charWidth) {
+        return Math.round(column * charWidth);
     }
 
     private void drawRun(GraphicsContext g, int column, int row, TextStyle style, CharBuffer characters) {
@@ -606,7 +730,7 @@ public final class TerminalView extends Region {
 
         if (!bg.equals(palette.background())) {
             g.setFill(bg);
-            g.fillRect(x, y, width, lineHeight);
+            fillCells(g, column, column + CellWidth.cells(text), y, lineHeight);
         }
 
         if (style.hasOption(TextStyle.Option.HIDDEN)) return;
@@ -656,12 +780,12 @@ public final class TerminalView extends Region {
             if (codePoint != 0 && c != ' ') {
                 g.fillText(new String(Character.toChars(codePoint)), x + cell * charWidth, baseline);
             }
-            // One column per code point, whatever its UTF-16 length. Advancing by the number of
-            // array slots instead gave every astral character — every Nerd Font icon in an `ls`
-            // listing — a second, empty column, pushing the rest of the line out of alignment with
-            // the lines around it.  A genuinely double-width glyph gets its second column from the
-            // DWC placeholder above, not from here.
-            cell++;
+            // Columns per code point, not per UTF-16 slot. Advancing by slots gave every narrow
+            // astral character — every Nerd Font icon in an `ls` listing — a second, empty column,
+            // pushing the rest of the line out of alignment with the lines around it. A wide BMP
+            // glyph gets its second column from the DWC placeholder above; a wide astral one (an
+            // emoji) has none, and takes its two columns here (see CellWidth).
+            cell += CellWidth.of(codePoint);
             i += slots;
         }
     }
@@ -688,8 +812,31 @@ public final class TerminalView extends Region {
         Color fg = palette.resolve(
                 inverse ? style.getBackground() : style.getForeground(),
                 inverse ? palette.background() : palette.foreground());
-        if (style.hasOption(TextStyle.Option.DIM)) fg = TerminalPalette.dim(fg, backgroundOf(style));
-        return fg;
+        Color bg = backgroundOf(style);
+        // Dim text is meant to recede, so it is left as it asked.
+        if (style.hasOption(TextStyle.Option.DIM)) return TerminalPalette.dim(fg, bg);
+        return readable(fg, bg);
+    }
+
+    /** Text colours already raised to {@link TerminalPalette#MIN_CONTRAST}, by foreground and background. */
+    private final java.util.Map<Long, Color> readable = new java.util.HashMap<>();
+
+    /** {@code fg} with at least the minimum contrast against {@code bg}; cached, it is asked per style run. */
+    private Color readable(Color fg, Color bg) {
+        long key = ((long) argb(fg) << 32) | (argb(bg) & 0xffffffffL);
+        Color known = readable.get(key);
+        if (known == null) {
+            if (readable.size() > 4096) readable.clear(); // a truecolour flood: plenty of pairs, each cheap
+            known = TerminalPalette.withContrast(fg, bg, TerminalPalette.MIN_CONTRAST);
+            readable.put(key, known);
+        }
+        return known;
+    }
+
+    private static int argb(Color c) {
+        return ((int) Math.round(c.getRed() * 255) << 16)
+                | ((int) Math.round(c.getGreen() * 255) << 8)
+                | (int) Math.round(c.getBlue() * 255);
     }
 
     private Color backgroundOf(TextStyle style) {
@@ -733,34 +880,53 @@ public final class TerminalView extends Region {
         // JediTerm reports the cursor row 1-based against the live screen; scrolling back moves it
         // out of view rather than dragging it along.
         int row = display.getCursorY() - 1 - scrollOrigin;
-        int column = session != null && session.typeAheadPrediction() != null
-                ? session.typeAheadCursorColumn()
-                : display.getCursorX();
+        TypeAheadOverlay.Prediction p = session == null ? null : session.typeAheadPrediction();
+        // The emulator's cursor is a slot of its row's text, which is a column only while nothing
+        // to its left is astral: an emoji is two slots and two columns, a Nerd Font icon two slots
+        // and one. Mapped through the row's text, as every other overlay is.
+        String text = p == null ? lineTextAt(display.getCursorY() - 1) : p.text();
+        int slot = p == null ? display.getCursorX() : session.typeAheadCursorColumn();
+        int column = ColumnMap.columnAt(text, slot);
         if (row < 0 || row >= rows || column < 0 || column >= columns) return;
 
         double x = column * charWidth;
         double y = row * lineHeight;
         g.setFill(palette.foreground());
 
+        if (!isFocused()) {
+            g.setStroke(palette.foreground());
+            g.setLineWidth(1);
+            g.strokeRect(x + 0.5, y + 0.5, charWidth - 1, lineHeight - 1);
+            return;
+        }
         switch (effectiveCursorShape()) {
             case UNDERLINE -> g.fillRect(x, y + lineHeight - 2, charWidth, 2);
             case BAR -> g.fillRect(x, y, 2, lineHeight);
             default -> {
-                g.fillRect(x, y, charWidth, lineHeight);
+                // The cell the cursor sits on: two wide for a wide glyph.
+                int codePoint = glyphAt(text, slot);
+                int width = codePoint > 0 && slot + 1 < text.length() && text.charAt(slot + 1) == CharUtils.DWC
+                        ? 2
+                        : codePoint > 0 ? CellWidth.of(codePoint) : 1;
+                g.fillRect(x, y, width * charWidth, lineHeight);
                 // Re-draw the glyph underneath in the background colour so a block cursor does not
                 // hide the character it is sitting on.
-                TypeAheadOverlay.Prediction p = session == null ? null : session.typeAheadPrediction();
-                char ch = p == null
-                        ? buffer.getCharAt(column, display.getCursorY() - 1)
-                        : column < p.text().length() ? p.text().charAt(column) : ' ';
-                if (ch != '\0' && ch != ' ') {
+                if (codePoint > 0 && codePoint != ' ') {
                     g.setFill(palette.background());
                     g.setFont(font);
                     g.setTextBaseline(VPos.BASELINE);
-                    g.fillText(String.valueOf(ch), x, y + ascent);
+                    g.fillText(new String(Character.toChars(codePoint)), x, y + ascent);
                 }
             }
         }
+    }
+
+    /** The code point that starts at {@code slot} of a row's text, or 0 for none (past the end, a placeholder). */
+    static int glyphAt(String text, int slot) {
+        if (slot < 0 || slot >= text.length()) return 0;
+        char c = text.charAt(slot);
+        if (c == '\0' || c == CharUtils.DWC || Character.isLowSurrogate(c)) return 0;
+        return text.codePointAt(slot);
     }
 
     /**
@@ -793,8 +959,17 @@ public final class TerminalView extends Region {
             }
         }
         if (session == null || !session.isRunning()) return;
+        if (scrollbackKey(e)) {
+            e.consume();
+            return;
+        }
 
-        byte[] encoded = KeyEncoding.encodePressed(e, session::keyCode, altIsMeta);
+        if (e.getCode() == KeyCode.ALT_GRAPH) {
+            altGrHeld = true;
+        } else if (!e.isAltDown()) {
+            altGrHeld = false; // a release missed while focus was elsewhere must not outlive the next key
+        }
+        byte[] encoded = KeyEncoding.encodePressed(e, session::keyCode, altIsMeta, ctrlAltIsMeta());
         if (KeyTrace.enabled()) KeyTrace.log(e, encoded);
         if (encoded != null) {
             snapToLive();
@@ -804,9 +979,77 @@ public final class TerminalView extends Region {
         }
     }
 
+    /**
+     * Shift+PageUp/PageDown/Home/End scroll the scrollback, as in xterm, GNOME Terminal and Konsole: the keyboard's
+     * only way into history without shell integration's prompt marks. Not on the alternate screen, where a
+     * full-screen program owns those keys (and there is no scrollback).
+     */
+    private boolean scrollbackKey(KeyEvent e) {
+        boolean modifier = e.isShiftDown() && !e.isControlDown() && !e.isAltDown() && (!e.isMetaDown() || MAC);
+        if (!modifier || buffer == null || display.isAlternateScreen()) return false;
+        int history = buffer.getHistoryLinesCount();
+        int next = switch (e.getCode()) {
+            case PAGE_UP -> scrollOrigin - Math.max(1, rows - 1);
+            case PAGE_DOWN -> scrollOrigin + Math.max(1, rows - 1);
+            case HOME -> -history;
+            case END -> 0;
+            default -> Integer.MIN_VALUE;
+        };
+        if (next == Integer.MIN_VALUE) return false;
+        next = Math.max(-history, Math.min(0, next));
+        if (next != scrollOrigin) {
+            scrollOrigin = next;
+            markDirty();
+        }
+        return true;
+    }
+
+    /** The screen as a screen reader reads it, and where the cursor is in it. */
+    @Override
+    public Object queryAccessibleAttribute(javafx.scene.AccessibleAttribute attribute, Object... parameters) {
+        return switch (attribute) {
+            case TEXT -> accessibleText();
+            case CARET_OFFSET -> accessibleCaret();
+            case EDITABLE -> false;
+            default -> super.queryAccessibleAttribute(attribute, parameters);
+        };
+    }
+
+    /** The rows in view, one per line; empty while the emulator holds the buffer (asked again later). */
+    private String accessibleText() {
+        if (buffer == null || !buffer.tryLock()) return "";
+        try {
+            StringBuilder text = new StringBuilder();
+            for (int row = 0; row < rows; row++) {
+                text.append(accessibleRow(scrollOrigin + row)).append('\n');
+            }
+            return text.toString();
+        } finally {
+            buffer.unlock();
+        }
+    }
+
+    private String accessibleRow(int row) {
+        return lineTextAt(row).replace(String.valueOf(CharUtils.DWC), "").stripTrailing();
+    }
+
+    private int accessibleCaret() {
+        int cursorRow = display.getCursorY() - 1 - scrollOrigin;
+        if (buffer == null || cursorRow < 0 || cursorRow >= rows || !buffer.tryLock()) return 0;
+        try {
+            int offset = 0;
+            for (int row = 0; row < cursorRow; row++) {
+                offset += accessibleRow(scrollOrigin + row).length() + 1;
+            }
+            return offset + Math.max(0, display.getCursorX());
+        } finally {
+            buffer.unlock();
+        }
+    }
+
     private void onKeyTyped(KeyEvent e) {
         if (session == null || !session.isRunning()) return;
-        byte[] encoded = KeyEncoding.encodeTyped(e, altIsMeta);
+        byte[] encoded = KeyEncoding.encodeTyped(e, altIsMeta, ctrlAltIsMeta());
         if (KeyTrace.enabled()) KeyTrace.log(e, encoded);
         if (encoded != null) {
             snapToLive();
@@ -835,7 +1078,36 @@ public final class TerminalView extends Region {
     /** A prompt mark (OSC 133) at a buffer row: 0 is the top of the live screen, negative is history. */
     record PromptMark(char kind, int row, String params) {}
 
-    private final java.util.List<PromptMark> marks = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /**
+     * A prompt mark as kept: at an absolute line ({@link #pushedLines} plus the row when it was made), so lines aging
+     * into history move nothing — the row is worked out when it is read.
+     */
+    private record Mark(char kind, long line, String params) {}
+
+    private final java.util.List<Mark> marks = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * Lines ever pushed into history. A row plus this is an absolute line that stays put as output scrolls, which is
+     * how prompt marks and search hits keep to their text without being rewritten for every line of output. Written
+     * on the emulator thread under the buffer lock (see {@link #onHistoryLineCountChanged}).
+     */
+    private volatile long pushedLines;
+
+    /** The buffer row of absolute {@code line} now (0 is the top of the live screen, negative is history). */
+    private int rowOf(long line) {
+        return (int) Math.max(Integer.MIN_VALUE + 1, Math.min(Integer.MAX_VALUE, line - pushedLines));
+    }
+
+    /** The marks still in the buffer, as rows. */
+    private java.util.List<PromptMark> markRows() {
+        int floor = buffer == null ? 0 : -buffer.getHistoryLinesCount();
+        java.util.List<PromptMark> rows = new java.util.ArrayList<>(marks.size());
+        for (Mark m : marks) {
+            int row = rowOf(m.line());
+            if (row >= floor) rows.add(new PromptMark(m.kind(), row, m.params()));
+        }
+        return rows;
+    }
 
     /** Marks kept, oldest first; an older one is dropped past this many. */
     private static final int MAX_MARKS = 2000;
@@ -844,7 +1116,13 @@ public final class TerminalView extends Region {
     private final OscTap.Listener shellIntegration = new OscTap.Listener() {
         @Override
         public void cwd(String url) {
-            String path = ShellIntegration.pathOfCwdUrl(url);
+            ShellIntegration.CwdReport report = ShellIntegration.parseCwdUrl(url);
+            // A local tab takes a report only from this machine (see ShellIntegration.isThisMachine); a remote
+            // tab's shell is on its host, and its paths are mapped.
+            if (report != null && shellPaths == null && !ShellIntegration.isThisMachine(report.host())) {
+                return;
+            }
+            String path = report == null ? null : report.path();
             if (path != null) {
                 shellReportsCwd = true;
                 display.setCwd(path);
@@ -853,27 +1131,16 @@ public final class TerminalView extends Region {
 
         @Override
         public void promptMark(char kind, String params) {
-            marks.add(new PromptMark(kind, display.getCursorY() - 1, params));
+            marks.add(new Mark(kind, display.getCursorY() - 1 + pushedLines, params));
             while (marks.size() > MAX_MARKS) {
                 marks.removeFirst();
             }
         }
     };
 
-    /** Moves the marks with their text as lines age into history; drops the ones that left it. */
-    private void shiftMarks(int delta, int history) {
-        if (marks.isEmpty()) {
-            return;
-        }
-        java.util.List<PromptMark> moved = new java.util.ArrayList<>(marks.size());
-        for (PromptMark m : marks) {
-            int row = m.row() - delta;
-            if (row >= -history) {
-                moved.add(new PromptMark(m.kind(), row, m.params()));
-            }
-        }
-        marks.clear();
-        marks.addAll(moved);
+    /** A cell's width in pixels, for tests. */
+    double cellWidth() {
+        return charWidth;
     }
 
     /** Rows scrolled back from the live screen (0 at it, negative into history), for tests. */
@@ -888,14 +1155,14 @@ public final class TerminalView extends Region {
 
     /** The prompt marks, for tests and the panel. */
     java.util.List<PromptMark> promptMarks() {
-        return java.util.List.copyOf(marks);
+        return markRows();
     }
 
     /** Scrolls to the prompt above the top of the view; false when there is none. */
     public boolean previousPrompt() {
         int top = scrollOrigin;
         int target = Integer.MIN_VALUE;
-        for (PromptMark m : marks) {
+        for (PromptMark m : markRows()) {
             if (m.kind() == 'A' && m.row() < top && m.row() > target) {
                 target = m.row();
             }
@@ -915,7 +1182,7 @@ public final class TerminalView extends Region {
             return false;
         }
         int target = 0;
-        for (PromptMark m : marks) {
+        for (PromptMark m : markRows()) {
             if (m.kind() == 'A' && m.row() > top && m.row() < target) {
                 target = m.row();
             }
@@ -933,6 +1200,7 @@ public final class TerminalView extends Region {
         if (buffer == null) {
             return null;
         }
+        java.util.List<PromptMark> marks = markRows();
         PromptMark start = null;
         int startIndex = -1;
         for (int i = marks.size() - 1; i >= 0; i--) {
@@ -987,42 +1255,57 @@ public final class TerminalView extends Region {
         static final SearchResult NONE = new SearchResult(0, 0);
     }
 
+    /** A hit as kept: at an absolute line (see {@link #pushedLines}), so output scrolling past moves nothing. */
+    private record Hit(long line, int from, int to) {}
+
     /** The search being shown: its hits, oldest first, and which one is current (-1 for none). */
-    private record SearchState(
-            String query, boolean matchCase, java.util.List<TerminalSearch.Match> matches, int current) {
+    private record SearchState(String query, boolean matchCase, java.util.List<Hit> hits, int current) {
 
         static final SearchState NONE = new SearchState("", false, java.util.List.of(), -1);
 
         SearchResult result() {
-            return new SearchResult(current < 0 ? 0 : current + 1, matches.size());
+            return new SearchResult(current < 0 ? 0 : current + 1, hits.size());
         }
     }
 
-    private final Object searchLock = new Object();
     private volatile SearchState search = SearchState.NONE;
 
     /** Set when the buffer changed under a search, so the next step finds again before moving. */
     private volatile boolean searchStale;
 
+    /** Bumped by every search started or cleared; a scan that sees it change gives up. */
+    private final java.util.concurrent.atomic.AtomicLong searchGeneration =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /** Rows scanned per hold of the buffer lock, so a scan of a long scrollback never stalls the emulator. */
+    private static final int SEARCH_CHUNK = 2000;
+
     /**
-     * Highlights every occurrence of {@code query} in the scrollback and screen and scrolls to the most recent one
-     * at or above the bottom of the view. An empty query clears the search.
+     * Highlights every occurrence of {@code query} in the scrollback and screen (the newest {@link
+     * TerminalSearch#MAX_MATCHES}) and scrolls to the most recent one at or above the bottom of the view. An empty
+     * query clears the search. Scans on the calling thread; the find bar uses {@link #searchAsync}.
      */
     public SearchResult search(String query, boolean matchCase) {
         if (buffer == null || query == null || query.isEmpty()) {
             clearSearch();
             return SearchResult.NONE;
         }
-        java.util.List<TerminalSearch.Match> found = findAll(query, matchCase);
-        int current = TerminalSearch.startIndex(found, scrollOrigin + rows - 1);
-        SearchState next = new SearchState(query, matchCase, java.util.List.copyOf(found), current);
-        synchronized (searchLock) {
-            search = next;
-            searchStale = false;
+        long generation = searchGeneration.incrementAndGet();
+        return show(query, matchCase, scan(query, matchCase, generation));
+    }
+
+    /**
+     * {@link #search}, scanning off the FX thread: {@code done} gets the result on the FX thread, unless another
+     * search started or the search was cleared meanwhile.
+     */
+    public void searchAsync(String query, boolean matchCase, java.util.function.Consumer<SearchResult> done) {
+        if (buffer == null || query == null || query.isEmpty()) {
+            clearSearch();
+            done.accept(SearchResult.NONE);
+            return;
         }
-        reveal(next);
-        markDirty();
-        return next.result();
+        long generation = searchGeneration.incrementAndGet();
+        scanAsync(query, matchCase, generation, hits -> done.accept(show(query, matchCase, hits)));
     }
 
     /**
@@ -1035,56 +1318,141 @@ public final class TerminalView extends Region {
             return SearchResult.NONE;
         }
         if (searchStale) {
-            int row =
-                    state.current() >= 0 ? state.matches().get(state.current()).row() : scrollOrigin + rows - 1;
-            java.util.List<TerminalSearch.Match> found = findAll(state.query(), state.matchCase());
-            state = new SearchState(
-                    state.query(),
-                    state.matchCase(),
-                    java.util.List.copyOf(found),
-                    TerminalSearch.startIndex(found, row));
-            searchStale = false;
+            long generation = searchGeneration.incrementAndGet();
+            state = rescanned(state, scan(state.query(), state.matchCase(), generation));
         }
-        int count = state.matches().size();
+        return step(state, older);
+    }
+
+    /** {@link #findNext}, finding again off the FX thread when output arrived since; {@code done} runs on FX. */
+    public void findNextAsync(boolean older, java.util.function.Consumer<SearchResult> done) {
+        SearchState state = search;
+        if (state.query().isEmpty()) {
+            done.accept(SearchResult.NONE);
+            return;
+        }
+        if (!searchStale) {
+            done.accept(step(state, older));
+            return;
+        }
+        long generation = searchGeneration.incrementAndGet();
+        scanAsync(
+                state.query(), state.matchCase(), generation, hits -> done.accept(step(rescanned(state, hits), older)));
+    }
+
+    /** {@code state}'s query with {@code hits} found again, current on the one nearest the old current hit. */
+    private SearchState rescanned(SearchState state, java.util.List<Hit> hits) {
+        int row = state.current() >= 0 ? rowOf(state.hits().get(state.current()).line()) : scrollOrigin + rows - 1;
+        searchStale = false;
+        return new SearchState(state.query(), state.matchCase(), hits, startIndex(hits, row));
+    }
+
+    private SearchResult step(SearchState state, boolean older) {
+        int count = state.hits().size();
         if (count == 0) {
-            synchronized (searchLock) {
-                search = state;
-            }
+            search = state;
             markDirty();
             return state.result();
         }
         int current = state.current() < 0 ? count - 1 : Math.floorMod(state.current() + (older ? -1 : 1), count);
-        SearchState next = new SearchState(state.query(), state.matchCase(), state.matches(), current);
-        synchronized (searchLock) {
-            search = next;
-        }
+        SearchState next = new SearchState(state.query(), state.matchCase(), state.hits(), current);
+        search = next;
         reveal(next);
         markDirty();
         return next.result();
     }
 
-    /** Removes the highlights; the view stays where it is. */
-    public void clearSearch() {
-        synchronized (searchLock) {
-            search = SearchState.NONE;
-            searchStale = false;
+    /** Shows {@code hits} for {@code query}, current on the latest at or above the bottom of the view. */
+    private SearchResult show(String query, boolean matchCase, java.util.List<Hit> hits) {
+        SearchState next = new SearchState(
+                query, matchCase, java.util.List.copyOf(hits), startIndex(hits, scrollOrigin + rows - 1));
+        search = next;
+        searchStale = false;
+        reveal(next);
+        markDirty();
+        return next.result();
+    }
+
+    private int startIndex(java.util.List<Hit> hits, int row) {
+        for (int i = hits.size() - 1; i >= 0; i--) {
+            if (rowOf(hits.get(i).line()) <= row) {
+                return i;
+            }
         }
+        return hits.isEmpty() ? -1 : hits.size() - 1;
+    }
+
+    /** Removes the highlights; the view stays where it is. A scan in progress is abandoned. */
+    public void clearSearch() {
+        searchGeneration.incrementAndGet();
+        search = SearchState.NONE;
+        searchStale = false;
         markDirty();
     }
 
-    /** The hits being highlighted, for tests. */
+    /** The hits being highlighted, as rows now; for tests. */
     public java.util.List<TerminalSearch.Match> searchMatches() {
-        return search.matches();
+        return search.hits().stream()
+                .map(h -> new TerminalSearch.Match(rowOf(h.line()), h.from(), h.to()))
+                .toList();
     }
 
-    private java.util.List<TerminalSearch.Match> findAll(String query, boolean matchCase) {
+    /** One scanner for every view: a scan is short, and only the latest one of a view matters. */
+    private static final java.util.concurrent.ExecutorService SEARCHER =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "editora-terminal-search");
+                t.setDaemon(true);
+                return t;
+            });
+
+    private void scanAsync(
+            String query, boolean matchCase, long generation, java.util.function.Consumer<java.util.List<Hit>> onFx) {
+        SEARCHER.execute(() -> {
+            java.util.List<Hit> hits = scan(query, matchCase, generation);
+            if (hits == null) return;
+            Platform.runLater(() -> {
+                if (!closed && searchGeneration.get() == generation) onFx.accept(hits);
+            });
+        });
+    }
+
+    /**
+     * The newest hits of {@code query}, oldest first, scanned from the bottom up a chunk of rows per hold of the
+     * lock. Output may arrive between chunks: rows are turned into absolute lines under the lock, so the hits stay
+     * put. Null when {@code generation} was overtaken.
+     */
+    private java.util.List<Hit> scan(String query, boolean matchCase, long generation) {
+        java.util.List<Hit> newestFirst = new java.util.ArrayList<>();
+        long next; // the absolute line to scan next, going up
         buffer.lock();
         try {
-            int history = buffer.getHistoryLinesCount();
-            return TerminalSearch.find(this::lineTextAt, -history, buffer.getHeight() - 1, query, matchCase);
+            next = buffer.getHeight() - 1 + pushedLines;
         } finally {
             buffer.unlock();
         }
+        while (newestFirst.size() < TerminalSearch.MAX_MATCHES) {
+            if (searchGeneration.get() != generation || closed) return null;
+            buffer.lock();
+            try {
+                long pushed = pushedLines;
+                int top = -buffer.getHistoryLinesCount();
+                int row = (int) Math.min(buffer.getHeight() - 1, next - pushed);
+                if (row < top) break;
+                int last = Math.max(top, row - SEARCH_CHUNK + 1);
+                for (; row >= last && newestFirst.size() < TerminalSearch.MAX_MATCHES; row--) {
+                    java.util.List<TerminalSearch.Match> inRow =
+                            TerminalSearch.inRow(row, lineTextAt(row), query, matchCase);
+                    for (int i = inRow.size() - 1; i >= 0 && newestFirst.size() < TerminalSearch.MAX_MATCHES; i--) {
+                        TerminalSearch.Match m = inRow.get(i);
+                        newestFirst.add(new Hit(row + pushed, m.from(), m.to()));
+                    }
+                }
+                next = last - 1 + pushed;
+            } finally {
+                buffer.unlock();
+            }
+        }
+        return newestFirst.reversed();
     }
 
     /** Scrolls so the current hit is in view, a third of the way down, unless it already is. */
@@ -1092,7 +1460,7 @@ public final class TerminalView extends Region {
         if (state.current() < 0 || buffer == null) {
             return;
         }
-        int row = state.matches().get(state.current()).row();
+        int row = rowOf(state.hits().get(state.current()).line());
         if (row >= scrollOrigin && row < scrollOrigin + rows) {
             return;
         }
@@ -1100,48 +1468,33 @@ public final class TerminalView extends Region {
         scrollOrigin = Math.max(-buffer.getHistoryLinesCount(), Math.min(0, origin));
     }
 
-    /** Moves the hits with their text as lines age into history (see {@link #shiftMarks}). */
-    private void shiftSearch(int delta, int history) {
-        synchronized (searchLock) {
-            SearchState state = search;
-            if (state.matches().isEmpty()) {
-                return;
-            }
-            java.util.List<TerminalSearch.Match> moved =
-                    new java.util.ArrayList<>(state.matches().size());
-            int current = state.current();
-            for (int i = 0; i < state.matches().size(); i++) {
-                TerminalSearch.Match m = state.matches().get(i).shifted(delta);
-                if (m.row() >= -history) {
-                    moved.add(m);
-                } else if (i < state.current()) {
-                    current--;
-                } else if (i == state.current()) {
-                    current = -1;
-                }
-            }
-            search = new SearchState(state.query(), state.matchCase(), java.util.List.copyOf(moved), current);
-        }
-    }
-
-    /** Paints the hits in view: a wash of the palette's yellow, stronger on the current one. */
+    /** Paints the hits in view: a wash of the palette's yellow, stronger on the current one. Caller holds the lock. */
     private void drawSearch(GraphicsContext g) {
         SearchState state = search;
-        if (state.matches().isEmpty()) return;
+        if (state.hits().isEmpty()) return;
         Color yellow = palette.ansi()[3];
         Color wash = Color.color(yellow.getRed(), yellow.getGreen(), yellow.getBlue(), 0.35);
         Color strong = Color.color(yellow.getRed(), yellow.getGreen(), yellow.getBlue(), 0.75);
-        int first = scrollOrigin;
-        int last = scrollOrigin + rows - 1;
-        for (int i = 0; i < state.matches().size(); i++) {
-            TerminalSearch.Match m = state.matches().get(i);
-            if (m.row() < first || m.row() > last) continue;
-            String text = lineTextAt(m.row());
-            if (m.to() > text.length()) continue; // the row changed under the hit; it is found again on the next step
-            double x = ColumnMap.columnAt(text, m.from());
-            double to = ColumnMap.columnAt(text, m.to());
+        long first = scrollOrigin + pushedLines;
+        long last = first + rows - 1;
+        // Hits are in line order: skip to the first in view rather than walking all of them every frame.
+        java.util.List<Hit> hits = state.hits();
+        int lo = 0;
+        int hi = hits.size();
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (hits.get(mid).line() < first) lo = mid + 1;
+            else hi = mid;
+        }
+        for (int i = lo; i < hits.size() && hits.get(i).line() <= last; i++) {
+            Hit h = hits.get(i);
+            int row = rowOf(h.line());
+            String text = lineTextAt(row);
+            if (h.to() > text.length()) continue; // the row changed under the hit; it is found again on the next step
+            double x = ColumnMap.columnAt(text, h.from());
+            double to = ColumnMap.columnAt(text, h.to());
             g.setFill(i == state.current() ? strong : wash);
-            g.fillRect(x * charWidth, (m.row() - scrollOrigin) * lineHeight, (to - x) * charWidth, lineHeight);
+            fillCells(g, x, to, (row - scrollOrigin) * lineHeight, lineHeight);
         }
     }
 
@@ -1168,10 +1521,11 @@ public final class TerminalView extends Region {
         // scrolled-back viewport moves.
         if (scrollOrigin < 0) scrollOrigin = Math.max(-now, scrollOrigin - delta);
 
+        // Marks and hits are kept at absolute lines; this one count moves them all.
+        pushedLines += delta;
+
         TerminalSelection current = selection;
         if (current != null) current.shiftY(-delta);
-        shiftMarks(delta, now);
-        shiftSearch(delta, now);
         markDirty();
     }
 
@@ -1258,6 +1612,8 @@ public final class TerminalView extends Region {
     }
 
     private void onMouseReleased(MouseEvent e) {
+        dragScroll = 0;
+        dragScroller.stop();
         if (pressedOnScrollBar) {
             pressedOnScrollBar = false;
             return;
@@ -1312,6 +1668,7 @@ public final class TerminalView extends Region {
      * reading, and pay for it on every move.
      */
     private void updateHover(double x, double y, boolean modifierDown) {
+        hoverModifierDown = modifierDown;
         Hover previous = hover;
         hover = modifierDown ? linkAt(x, y) : null;
         setCursor(hover == null ? javafx.scene.Cursor.DEFAULT : javafx.scene.Cursor.HAND);
@@ -1362,7 +1719,8 @@ public final class TerminalView extends Region {
         int column = (int) Math.floor(x / charWidth);
         if (column < 0 || column >= columns) return null;
 
-        buffer.lock();
+        // Tried, not waited for: a hover is not worth a frozen editor while output floods in.
+        if (!buffer.tryLock()) return hover;
         try {
             LogicalLine logical = logicalLineAt(line);
             if (logical == null) return null;
@@ -1431,14 +1789,56 @@ public final class TerminalView extends Region {
             // A remote shell's file:// names a file of its machine: the tab's mapping finds it here.
             String onShell = shellPaths == null ? null : ShellIntegration.pathOfCwdUrl(target);
             java.nio.file.Path fromUri = onShell != null ? shellPaths.apply(onShell) : LinkPaths.fromFileUri(target);
-            return fromUri != null && java.nio.file.Files.exists(fromUri) ? fromUri : null;
+            return exists(fromUri) ? fromUri : null;
         }
         String cwd = display.getCwd();
         java.nio.file.Path resolved = shellPaths == null
                 ? LinkPaths.resolve(target, cwd == null || cwd.isBlank() ? null : java.nio.file.Path.of(cwd))
                 : LinkPaths.resolveOn(target, cwd, shellPaths);
-        return resolved != null && java.nio.file.Files.exists(resolved) ? resolved : null;
+        return exists(resolved) ? resolved : null;
     }
+
+    /** What remote paths are known to be there, as answered off the FX thread; a few hundred at most. */
+    private final java.util.Map<java.nio.file.Path, Boolean> remoteExists = new java.util.LinkedHashMap<>();
+
+    private final java.util.Set<java.nio.file.Path> remoteAsking = new java.util.HashSet<>();
+
+    /**
+     * Whether {@code path} is there. On this machine it is asked at once (a local stat is cheap); a remote shell's
+     * path is a file over SFTP, so it is asked off the FX thread — the hover and the right-click asked the host on
+     * the FX thread before, and a slow link froze the editor. Until the answer arrives the link is not offered; when
+     * it does, the hover is worked out again.
+     */
+    private boolean exists(java.nio.file.Path path) {
+        if (path == null) return false;
+        if (shellPaths == null || com.editora.vfs.Vfs.isLocal(path)) return java.nio.file.Files.exists(path);
+        Boolean known = remoteExists.get(path);
+        if (known != null) return known;
+        if (remoteAsking.add(path)) {
+            Thread.ofVirtual().name("terminal-link-check").start(() -> {
+                boolean there;
+                try {
+                    there = java.nio.file.Files.exists(path);
+                } catch (RuntimeException e) {
+                    there = false;
+                }
+                boolean answer = there;
+                Platform.runLater(() -> {
+                    remoteAsking.remove(path);
+                    if (remoteExists.size() > 500) remoteExists.clear();
+                    remoteExists.put(path, answer);
+                    if (answer && lastMouseX >= 0) {
+                        hover = null; // asked again now that the answer is in
+                        updateHover(lastMouseX, lastMouseY, hoverModifierDown);
+                    }
+                });
+            });
+        }
+        return false;
+    }
+
+    /** Whether the link modifier was down at the last hover update, to redo it when a remote answer arrives. */
+    private boolean hoverModifierDown;
 
     /** Opens the hovered link. */
     private void openLink(Hover target) {
@@ -1651,7 +2051,16 @@ public final class TerminalView extends Region {
                 item(tr("terminal.menu.clearScrollback"), menuIcons.apply("clear"), this::clearScrollback));
         menu.setAutoHide(true);
         ownItems = menu.getItems().size();
+        // The terminal's own chords, shown where its commands are: nothing else in the UI said them. Display only —
+        // the panel's key filter is what acts on them, and it consumes them first.
+        copyItem.setAccelerator(chord(MAC ? "Meta+C" : "Ctrl+Shift+C"));
+        pasteItem.setAccelerator(chord(MAC ? "Meta+V" : "Ctrl+Shift+V"));
         return menu;
+    }
+
+    /** {@code text} as a key combination for a menu item's accelerator text. */
+    public static javafx.scene.input.KeyCombination chord(String text) {
+        return javafx.scene.input.KeyCombination.keyCombination(text);
     }
 
     /** How many of the menu's items are the view's own; the window's extras follow them. */
@@ -1709,7 +2118,7 @@ public final class TerminalView extends Region {
         scrollOrigin = 0;
         knownHistoryLines = 0;
         discardedHistoryLines = 0;
-        marks.removeIf(m -> m.row() < 0);
+        marks.removeIf(m -> rowOf(m.line()) < 0);
         clearSearch();
         markDirty();
     }
@@ -1780,6 +2189,10 @@ public final class TerminalView extends Region {
     private void onMouseMoved(MouseEvent e) {
         lastMouseX = e.getX();
         lastMouseY = e.getY();
+        // Any-event tracking (1003): the program wants the pointer's moves too, buttons up.
+        if (display.getMouseMode() == MouseMode.MOUSE_REPORTING_ALL_MOTION) {
+            reportMouse(e, com.jediterm.core.input.MouseEvent.Type.MOVED);
+        }
         updateHover(lastMouseX, lastMouseY, LinkGesture.opensLink(MAC, e.isMetaDown(), e.isControlDown()));
     }
 
@@ -1790,7 +2203,18 @@ public final class TerminalView extends Region {
     }
 
     private void onKeyReleased(KeyEvent e) {
+        if (e.getCode() == KeyCode.ALT_GRAPH) altGrHeld = false;
         onLinkModifierChanged(e);
+    }
+
+    private static final boolean LINUX =
+            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("linux");
+
+    /** Whether AltGr is down: Linux reports it as its own key, so Ctrl+Alt there is a chord, not composing. */
+    private boolean altGrHeld;
+
+    private boolean ctrlAltIsMeta() {
+        return LINUX && !altGrHeld;
     }
 
     private void onMouseDragged(MouseEvent e) {
@@ -1800,6 +2224,13 @@ public final class TerminalView extends Region {
             return;
         }
         if (e.getButton() != MouseButton.PRIMARY || selectionAnchor == null) return;
+        dragX = e.getX();
+        dragScroll = e.getY() < 0 ? -1 : e.getY() >= getHeight() ? 1 : 0;
+        if (dragScroll != 0 && dragScroller.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+            dragScroller.play();
+        } else if (dragScroll == 0) {
+            dragScroller.stop();
+        }
         Point at = cellAt(e);
         TerminalSelection current = selection;
         if (current == null) {
@@ -1810,6 +2241,39 @@ public final class TerminalView extends Region {
         }
         current.updateEnd(at);
         markDirty();
+    }
+
+    /** Which way a drag past the top (-1) or bottom (1) edge scrolls, or 0; and where the pointer is across. */
+    private int dragScroll;
+
+    private double dragX;
+
+    /** While a selection is dragged past an edge: a line a tick, the selection following, as every terminal does. */
+    private final javafx.animation.Timeline dragScroller = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.millis(50), e -> dragScrollTick()));
+
+    {
+        dragScroller.setCycleCount(javafx.animation.Animation.INDEFINITE);
+    }
+
+    private void dragScrollTick() {
+        TerminalSelection current = selection;
+        if (dragScroll == 0 || buffer == null || current == null) {
+            dragScroller.stop();
+            return;
+        }
+        int history = buffer.getHistoryLinesCount();
+        scrollOrigin = Math.max(-history, Math.min(0, scrollOrigin + dragScroll));
+        int line = dragScroll < 0 ? scrollOrigin : scrollOrigin + rows - 1;
+        int column = Math.max(0, Math.min(columns, (int) Math.floor(dragX / charWidth)));
+        current.updateEnd(
+                new Point(dragScroll < 0 ? ColumnMap.slotAt(lineTextAt(line), column) : slotsInRow(line), line));
+        markDirty();
+    }
+
+    /** Whether a drag past an edge is scrolling the view; for tests. */
+    boolean isDragScrolling() {
+        return dragScroller.getStatus() == javafx.animation.Animation.Status.RUNNING;
     }
 
     /**
@@ -1911,7 +2375,7 @@ public final class TerminalView extends Region {
             String text = lineTextAt(line);
             double x = ColumnMap.columnAt(text, from);
             double to = ColumnMap.columnAt(text, from + length);
-            g.fillRect(x * charWidth, row * lineHeight, (to - x) * charWidth, lineHeight);
+            fillCells(g, x, to, row * lineHeight, lineHeight);
         }
     }
 
@@ -1932,8 +2396,11 @@ public final class TerminalView extends Region {
         // No scrollback exists on the alternate screen; a full-screen program owns the viewport.
         if (display.isAlternateScreen()) return;
 
-        int lines = (int) Math.signum(e.getDeltaY()) * 3;
-        if (lines == 0) return;
+        int lines = wheelLines(e);
+        if (lines == 0) {
+            e.consume();
+            return;
+        }
         int history = buffer.getHistoryLinesCount();
         int next = Math.max(-history, Math.min(0, scrollOrigin - lines));
         if (next != scrollOrigin) {
@@ -1943,10 +2410,44 @@ public final class TerminalView extends Region {
         e.consume();
     }
 
+    /** Lines of scroll not yet applied: a trackpad sends many events of a pixel or two. */
+    private double wheelRemainder;
+
+    /**
+     * Whole lines to scroll for one event, positive up. A wheel notch says how many lines it means (three,
+     * usually); a trackpad's small pixel deltas add up until they make a line. One event of a pixel used to move
+     * three lines whatever its size, so a trackpad flick flew through the scrollback.
+     */
+    private int wheelLines(ScrollEvent e) {
+        double lines = e.getTextDeltaYUnits() == ScrollEvent.VerticalTextScrollUnits.LINES && e.getTextDeltaY() != 0
+                ? e.getTextDeltaY()
+                : e.getDeltaY() / Math.max(1, lineHeight);
+        if (Math.signum(lines) != Math.signum(wheelRemainder)) wheelRemainder = 0; // a change of direction
+        wheelRemainder += lines;
+        int whole = (int) wheelRemainder;
+        wheelRemainder -= whole;
+        return whole;
+    }
+
+    /**
+     * Asked before a paste of several lines reaches a program that has not turned on bracketed paste — sh, a REPL,
+     * an older remote shell — where every line runs as it arrives. False drops the paste.
+     */
+    private java.util.function.Predicate<String> pasteGuard = text -> true;
+
+    public void setPasteGuard(java.util.function.Predicate<String> pasteGuard) {
+        this.pasteGuard = pasteGuard == null ? text -> true : pasteGuard;
+    }
+
     /** Pastes the clipboard, honouring bracketed-paste mode if the shell enabled it. */
     public void paste() {
         String text = Clipboard.getSystemClipboard().getString();
         if (text == null || text.isEmpty() || session == null) return;
+        if (!display.isBracketedPaste()
+                && KeyEncoding.pasteText(text).strip().contains("\n")
+                && !pasteGuard.test(text)) {
+            return;
+        }
         snapToLive();
         session.send(KeyEncoding.encodePaste(text, display.isBracketedPaste()));
     }

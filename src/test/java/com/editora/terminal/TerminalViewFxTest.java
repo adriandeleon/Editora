@@ -114,6 +114,303 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void aRunOfSizeChangesResizesTheShellOnceItSettles() throws Exception {
+        // A splitter drag: every column change used to reflow the whole scrollback, under the lock painting needs.
+        open();
+        await(() -> connector.resizes.get() >= 0, "the start");
+        Thread.sleep(300);
+        int before = connector.resizes.get();
+        fx(() -> {
+            for (int size = 14; size <= 18; size++) {
+                view.setFontSize(size);
+                view.getScene().getRoot().layout();
+            }
+            return null;
+        });
+        await(() -> connector.resizes.get() > before, "the resize once the size held still");
+        Thread.sleep((long) TerminalView.RESIZE_SETTLE.toMillis() + 300);
+        assertEquals(before + 1, connector.resizes.get(), "one resize for the whole run of changes");
+    }
+
+    @Test
+    void paintingDoesNotWaitForTheEmulatorsLock() throws Exception {
+        open();
+        var buffer = fx(() -> view.getSession().getTextBuffer());
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = Thread.ofPlatform().start(() -> {
+            buffer.lock(); // what a reflow of a long scrollback or a flood of output does
+            try {
+                held.countDown();
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                buffer.unlock();
+            }
+        });
+        held.await();
+        try {
+            long t0 = System.nanoTime();
+            fx(() -> {
+                view.requestLayout();
+                view.layout(); // paints
+                return null;
+            });
+            long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
+            assertTrue(ms < 1_000, "the FX thread skipped the frame instead of waiting: " + ms + " ms");
+        } finally {
+            release.countDown();
+            holder.join();
+        }
+    }
+
+    @Test
+    void theFindBarsSearchRunsOffTheFxThread() throws Exception {
+        open();
+        connector.emit("needle one\r\nhay\r\nneedle two\r\n");
+        await(() -> screen().contains("needle two"), "the output");
+        var buffer = fx(() -> view.getSession().getTextBuffer());
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = Thread.ofPlatform().start(() -> {
+            buffer.lock();
+            try {
+                held.countDown();
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                buffer.unlock();
+            }
+        });
+        held.await();
+        CompletableFuture<TerminalView.SearchResult> found = new CompletableFuture<>();
+        try {
+            long t0 = System.nanoTime();
+            fx(() -> {
+                view.searchAsync("needle", false, found::complete);
+                return null;
+            });
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0) < 1_000, "the FX thread did not scan");
+            assertFalse(found.isDone());
+        } finally {
+            release.countDown();
+            holder.join();
+        }
+        assertEquals(new TerminalView.SearchResult(2, 2), found.get(10, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void anEmojiTakesTheTwoColumnsTheShellCountsAndTheCursorStaysOnItsText() throws Exception {
+        open();
+        // What bash's line editor does after `echo 😀😀 end` and moving left three columns: its cursor is on the e.
+        connector.emit("echo \uD83D\uDE00\uD83D\uDE00 end\u001b[3D");
+        await(() -> screen().contains("end"), "the line");
+        String text = fx(() -> {
+            var buffer = view.getSession().getTextBuffer();
+            buffer.lock();
+            try {
+                return buffer.getLine(0).getText();
+            } finally {
+                buffer.unlock();
+            }
+        });
+        int slot = fx(() -> view.getDisplay().getCursorX());
+        assertEquals(10, ColumnMap.columnAt(text, slot), "the cursor's column is the shell's");
+        assertEquals('e', text.charAt(slot), "and it sits on the e");
+        assertEquals(0, TerminalView.glyphAt(text, 6), "never half an emoji");
+        assertEquals(0x1F600, TerminalView.glyphAt(text, 5));
+    }
+
+    @Test
+    void colourQueriesAreAnsweredWithThePalette() throws Exception {
+        // vim, neovim, delta and bat ask, to tell a light terminal from a dark one.
+        open();
+        fx(() -> {
+            view.setPalette(TerminalPalettes.EDITORA_LIGHT);
+            return null;
+        });
+        connector.emit("\u001b]11;?\u0007\u001b]10;?\u0007");
+        await(
+                () -> connector.written().contains("]11;rgb:")
+                        && connector.written().contains("]10;rgb:"),
+                "replies");
+    }
+
+    @Test
+    void theFirstLineIntoHistoryDoesNotResizeTheShell() throws Exception {
+        open();
+        Thread.sleep(300);
+        int before = connector.resizes.get();
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < 80; i++) lines.append("line ").append(i).append("\r\n");
+        connector.emit(lines.toString());
+        await(() -> screen().contains("line 79"), "the output");
+        fx(() -> {
+            view.getScene().getRoot().layout();
+            view.flushResize();
+            return null;
+        });
+        Thread.sleep(200);
+        assertEquals(before, connector.resizes.get(), "the scrollbar appearing kept the column count");
+    }
+
+    @Test
+    void aTrackpadsSmallDeltasAddUpInsteadOfEachScrollingThreeLines() throws Exception {
+        open();
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < 200; i++) lines.append("line ").append(i).append("\r\n");
+        connector.emit(lines.toString());
+        await(() -> screen().contains("line 199"), "the output");
+        int origin = fx(() -> {
+            for (int i = 0; i < 10; i++) Event.fireEvent(view, scroll(1, 0.075));
+            return view.scrollOrigin();
+        });
+        assertTrue(origin >= -1, "ten one-pixel events are less than a line or two: " + origin);
+        int notch = fx(() -> {
+            Event.fireEvent(view, scroll(40, 3));
+            return view.scrollOrigin();
+        });
+        assertEquals(origin - 3, notch, "a wheel notch is still three lines");
+    }
+
+    @Test
+    void draggingASelectionPastTheTopScrollsIntoHistory() throws Exception {
+        open();
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < 200; i++) lines.append("line ").append(i).append("\r\n");
+        connector.emit(lines.toString());
+        await(() -> screen().contains("line 199"), "the output");
+        fx(() -> {
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_PRESSED, 20, 40));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_DRAGGED, 20, -30));
+            return null;
+        });
+        assertTrue(fx(view::isDragScrolling));
+        await(() -> call(view::scrollOrigin) < -3, "the view scrolling up while the pointer is above it");
+        fx(() -> {
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_RELEASED, 20, -30));
+            return null;
+        });
+        assertFalse(fx(view::isDragScrolling));
+        assertTrue(fx(() -> view.selectedText().contains("line")), "the selection reaches into history");
+    }
+
+    @Test
+    void aProgramsDefaultCursorRequestGivesTheUsersShapeBack() throws Exception {
+        open();
+        connector.emit("\u001b[6 q");
+        await(
+                () -> call(() -> view.getDisplay().getCursorShape())
+                        == com.jediterm.terminal.CursorShape.STEADY_VERTICAL_BAR,
+                "vim's bar");
+        connector.emit("\u001b[0 q");
+        await(() -> call(() -> view.getDisplay().getCursorShape()) == null, "back to the user's preference");
+    }
+
+    private static javafx.scene.input.ScrollEvent scroll(double deltaY, double textDeltaY) {
+        return new javafx.scene.input.ScrollEvent(
+                javafx.scene.input.ScrollEvent.SCROLL,
+                50,
+                50,
+                50,
+                50,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                0,
+                deltaY,
+                0,
+                deltaY,
+                javafx.scene.input.ScrollEvent.HorizontalTextScrollUnits.NONE,
+                0,
+                javafx.scene.input.ScrollEvent.VerticalTextScrollUnits.LINES,
+                textDeltaY,
+                0,
+                null);
+    }
+
+    private static javafx.scene.input.MouseEvent mouse(
+            javafx.event.EventType<javafx.scene.input.MouseEvent> type, double x, double y) {
+        return new javafx.scene.input.MouseEvent(
+                type,
+                x,
+                y,
+                x,
+                y,
+                javafx.scene.input.MouseButton.PRIMARY,
+                1,
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                false,
+                false,
+                false,
+                false,
+                null);
+    }
+
+    @Test
+    void anIdleTerminalStopsThePulseAndOutputStartsItAgain() throws Exception {
+        open();
+        connector.emit("hello\r\n");
+        await(() -> screen().contains("hello"), "the output");
+        await(() -> !call(view::isPainting), "the painter stopping once there is nothing to paint");
+        connector.emit("more\r\n");
+        await(() -> call(view::isPainting) || screen().contains("more"), "output wakes it");
+        await(() -> !call(view::isPainting), "and it stops again");
+    }
+
+    @Test
+    void shiftPageUpScrollsTheScrollbackAndAScreenReaderSeesTheScreen() throws Exception {
+        open();
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < 200; i++) lines.append("line ").append(i).append("\r\n");
+        connector.emit(lines.toString());
+        await(() -> screen().contains("line 199"), "the output");
+        int origin = fx(() -> {
+            Event.fireEvent(
+                    view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, true, false, false, false));
+            return view.scrollOrigin();
+        });
+        assertTrue(origin < 0, "Shift+PageUp scrolled back: " + origin);
+        Thread.sleep(200);
+        assertEquals("", connector.written(), "and sent nothing to the shell");
+        assertEquals(
+                0,
+                (int) fx(() -> {
+                    Event.fireEvent(
+                            view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.END, true, false, false, false));
+                    return view.scrollOrigin();
+                }),
+                "Shift+End: back to the live screen");
+
+        assertEquals(javafx.scene.AccessibleRole.TEXT_AREA, fx(view::getAccessibleRole));
+        assertTrue(
+                fx(() -> String.valueOf(view.queryAccessibleAttribute(javafx.scene.AccessibleAttribute.TEXT)))
+                        .contains("line 199"),
+                "its text is the screen");
+    }
+
+    @Test
+    void cellEdgesFallOnWholePixelsSoAdjacentRunsAbut() {
+        // An 8.43 px cell: a run ending at column 3 and one starting there used to meet at 25.29 px, each
+        // anti-aliased, with a seam between backgrounds of one colour on GPU pipelines.
+        for (int column = 0; column < 200; column++) {
+            double edge = TerminalView.cellEdge(column, 8.43);
+            assertEquals(Math.rint(edge), edge, "column " + column);
+            assertTrue(TerminalView.cellEdge(column + 1, 8.43) - edge >= 8, "a cell keeps its width");
+        }
+    }
+
+    @Test
     void selectAllSelectsAndTypingDropsTheSelection() throws Exception {
         open();
         connector.emit("one\r\ntwo\r\n");
@@ -146,6 +443,11 @@ class TerminalViewFxTest {
 
         assertEquals(1, asked.get());
         assertNotNull(fx(extra::getParentPopup), "the extra item was added to the view's menu");
+        assertTrue(
+                fx(() -> extra.getParentPopup().getItems().stream()
+                        .anyMatch(item -> item.getAccelerator() != null
+                                && item.getAccelerator().getName().contains("C"))),
+                "Copy shows its chord");
         fx(() -> {
             extra.getParentPopup().hide();
             Event.fireEvent(
@@ -174,7 +476,9 @@ class TerminalViewFxTest {
     @Test
     void aShellsCwdReportBecomesTheTerminalsDirectory() throws Exception {
         open();
-        connector.emit("\u001b]7;file://box/srv/my%20app\u0007$ ");
+        // Another machine's report (a remote prompt after `ssh`, a printed file) does not move a local tab.
+        connector.emit("\u001b]7;file://elsewhere.example/etc\u0007");
+        connector.emit("\u001b]7;file://localhost/srv/my%20app\u0007$ ");
         await(() -> "/srv/my app".equals(call(() -> view.getDisplay().getCwd())), "the reported directory");
         await(
                 () -> "my app"
@@ -357,7 +661,7 @@ class TerminalViewFxTest {
             typed.append(key);
             String now = typed.toString();
             await(() -> screen().startsWith(now), "the echo of " + key);
-            assertEquals(null, call(this::predictedText), "nothing predicted after " + key);
+            assertEquals(null, fx(this::predictedText), "nothing predicted after " + key);
         }
     }
 
@@ -369,7 +673,7 @@ class TerminalViewFxTest {
         for (String key : java.util.List.of("a", "b", "c")) {
             type(key);
             Thread.sleep(150);
-            assertEquals(null, call(this::predictedText));
+            assertEquals(null, fx(this::predictedText));
             connector.emit(key);
         }
     }
@@ -418,6 +722,7 @@ class TerminalViewFxTest {
         });
     }
 
+    /** The screen's text. Throws when it cannot be read, so a negative check cannot pass on a failure. */
     private String screen() {
         try {
             return fx(() -> {
@@ -430,7 +735,7 @@ class TerminalViewFxTest {
                 }
             });
         } catch (Exception e) {
-            return "";
+            throw new IllegalStateException("the screen could not be read", e);
         }
     }
 
