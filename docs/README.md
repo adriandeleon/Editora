@@ -60,6 +60,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   merge, and accessibility.
 - [subsystems/remote.md](subsystems/remote.md) — remote (SFTP) folders as projects, the one-window-per-
   project connection model, the not-connected state, and running commands on the host (off by default).
+- [subsystems/deployment.md](subsystems/deployment.md) — deployments: a local project copied to an SSH host
+  before a run (manifest + one tar stream, only Editora's own files removed) and run there, per configuration.
 - [subsystems/terminal.md](subsystems/terminal.md) — the integrated terminal (in progress): the port from
   Termina, connectors, the view, palettes derived from editor themes.
 - [subsystems/lsp-and-dap.md](subsystems/lsp-and-dap.md) — Language Server + Debug Adapter

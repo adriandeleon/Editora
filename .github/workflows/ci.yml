@@ -68,7 +68,7 @@ jobs:
   # The Linux suite, on four runners at once. In one JVM on one runner it was 15 of the job's 17 minutes and
   # growing with every pull request; two JVMs on one runner share its cores, which gained little and made
   # timing-sensitive tests fail. A shard is still one JVM with a runner to itself, as before, with a
-  # quarter of the classes (scripts/shard_tests.py deals them out). Nothing here is a required check: the
+  # quarter of the classes (scripts/ci/ShardTests.java deals them out). Nothing here is a required check: the
   # `build` job below collects the four results under the name master's ruleset asks for.
   #
   # A JDK 27 compatibility lane was a second leg of this job's matrix and is disabled for now. To bring
@@ -110,7 +110,7 @@ jobs:
       - name: List this shard's test classes
         run: |
           mkdir -p target
-          python3 scripts/shard_tests.py list ${{ matrix.shard }} 4 > target/shard-includes.txt
+          java scripts/ci/ShardTests.java list ${{ matrix.shard }} 4 > target/shard-includes.txt
           echo "$(wc -l < target/shard-includes.txt) test classes in this shard"
 
       # A test that fails is run again, twice at most. One that then passes is a flake: the build stays
@@ -197,7 +197,7 @@ jobs:
           merge-multiple: true
 
       - name: Report flaky tests
-        run: python3 scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
+        run: java scripts/ci/ReportFlakes.java target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail when a shard failed
         if: needs.tests.result != 'success'
@@ -208,11 +208,11 @@ jobs:
       # A list of includes replaces Surefire's own, so a class left off every list would stop running
       # without a word. This compares the reports with the test sources.
       - name: Check that every test class ran
-        run: python3 scripts/shard_tests.py check target/surefire-reports
+        run: java scripts/ci/ShardTests.java check target/surefire-reports
 
       # A skip that is not on the allow-list means the runner lost something a test needs.
       - name: Check for unexpected skipped tests
-        run: python3 scripts/check_skips.py target/surefire-reports scripts/expected-skips-linux.txt
+        run: java scripts/ci/CheckSkips.java target/surefire-reports scripts/ci/expected-skips-linux.txt
 
       # A JaCoCo data file is a sequence of records and may hold several sessions, so the four are simply
       # joined. `-DskipTests` leaves compiling, the coverage report and the floors (`jacoco:check`).
@@ -223,16 +223,10 @@ jobs:
 
       - name: Summarise coverage
         run: |
-          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import csv
-          rows = list(csv.DictReader(open("target/site/jacoco/jacoco.csv")))
-          def ratio(kind):
-              covered = sum(int(r[kind + "_COVERED"]) for r in rows)
-              missed = sum(int(r[kind + "_MISSED"]) for r in rows)
-              return 100.0 * covered / (covered + missed)
-          print("### Coverage")
-          print(f"Lines {ratio('LINE'):.1f}% · branches {ratio('BRANCH'):.1f}%")
-          PY
+          awk -F, 'NR == 1 { for (i = 1; i <= NF; i++) col[$i] = i; next }
+            { lc += $col["LINE_COVERED"]; lm += $col["LINE_MISSED"]; bc += $col["BRANCH_COVERED"]; bm += $col["BRANCH_MISSED"] }
+            END { print "### Coverage"; printf "Lines %.1f%% · branches %.1f%%\n", 100 * lc / (lc + lm), 100 * bc / (bc + bm) }' \
+            target/site/jacoco/jacoco.csv >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage report
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -306,7 +300,7 @@ jobs:
       - name: Report flaky tests
         if: always()
         shell: bash
-        run: ${{ runner.os == 'Windows' && 'python' || 'python3' }} scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
+        run: java scripts/ci/ReportFlakes.java target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
 
       # The keychain probe must have run, not skipped: macOS and Windows always have a keychain, so a skip here
       # means the probe stopped testing anything.
@@ -331,13 +325,114 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # A real tty on a real host, for every pull request that touches the terminal: the remote probe's terminal
+  # steps against dropbear on the runner (a shell on a pty channel, its size and a resize, a program's exit code,
+  # shell integration, a dropped connection) and the container probe's terminal test against Docker. The unit
+  # and FX suites stop at a fake connector; this is where a broken pty-req or `exec -it` shows. Its check passes
+  # at once when nothing terminal-related changed, so it can be required (adl, 2026-10-18).
+  terminal-probe:
+    name: Terminal probe
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Did the terminal change?
+        id: changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if printf '%s\n' "$files" | grep -qE '^(src/main/java/com/editora/(terminal|container|wsl)/|src/main/java/com/editora/ui/Terminal|src/main/java/com/editora/vfs/SshTerminal|src/main/java/com/editora/process/(PosixShell|TerminalChannel|TerminalSpec|ProcessRegistry)|src/main/resources/com/editora/terminal/|src/test/java/com/editora/ui/RealSshdProbeFxTest|src/test/java/com/editora/container/ContainerProbeFxTest|\.github/workflows/ci\.yml)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing terminal-related changed: no probe needed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up JDK 25
+        if: steps.changed.outputs.run == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      # As remote-probe.yml's dropbear lane: an unprivileged server on a high port, the runner's own account.
+      - name: Private dropbear
+        if: steps.changed.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="$RUNNER_TEMP/server"
+          mkdir -p "$S/work"
+          cd "$S"
+          ssh-keygen -q -t ecdsa -N '' -f client_ecdsa
+          ssh-keygen -q -t ed25519 -N '' -f client_ed25519
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends dropbear-bin openssh-sftp-server
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          chmod go-w "$HOME"
+          cat client_ecdsa.pub client_ed25519.pub >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+          dropbearkey -t ed25519 -f host_ed25519 >/dev/null
+          dropbearkey -t ecdsa -f host_ecdsa >/dev/null
+          nohup dropbear -F -E -s -p 127.0.0.1:22523 -P "$S/server.pid" \
+            -r "$S/host_ed25519" -r "$S/host_ecdsa" > "$S/server.log" 2>&1 &
+          for i in $(seq 20); do [ -s "$S/server.pid" ] && break; sleep 0.5; done
+          echo "server pid $(cat "$S/server.pid")"
+
+      - name: Terminal on an SSH host
+        if: steps.changed.outputs.run == 'true'
+        shell: bash
+        run: |
+          S="$RUNNER_TEMP/server"
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -Dgroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest=RealSshdProbeFxTest \
+            -Dremote.probe="$(id -un)@127.0.0.1:22523" \
+            -Dremote.probe.key="$S/client_ecdsa" \
+            -Dremote.probe.ed25519Key="$S/client_ed25519" \
+            -Dremote.probe.dir="$S/work" \
+            -Dremote.probe.sshdPid="$(cat "$S/server.pid")" \
+            -Dremote.probe.only='terminal,shell integration,dropped connection' \
+            test | tee probe.log
+          status=${PIPESTATUS[0]}
+          { echo "### Terminal probe (SSH)"; echo '```'; sed -n '/PROBE REPORT/,/^\[/p' probe.log | sed '$d'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Terminal in a container
+        if: steps.changed.outputs.run == 'true'
+        shell: bash
+        run: |
+          docker pull --quiet eclipse-temurin:25-jdk
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -Dgroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest='ContainerProbeFxTest#aTerminal*' \
+            -Dcontainer.probe=docker \
+            -Dcontainer.probe.image=eclipse-temurin:25-jdk \
+            test
+
+      - name: Server log
+        if: failure() && steps.changed.outputs.run == 'true'
+        shell: bash
+        run: tail -n 200 "$RUNNER_TEMP/server/server.log" || true
+
   # The headless Glass platform ships inside JavaFX, so the FX suite can run on macOS without a display.
   # The pure lane above reaches under half the code; this one covers the rest on a second operating
   # system. It is advisory (13 failures in 36 runs on 12-13 October 2026): make it blocking once it has
   # stayed green. No coverage agent, and two test JVMs (each with its own JavaFX toolkit): in one JVM it
   # was the longest job of the run at 24 minutes, and still 16 to 19 with two.
   #
-  # Three shards, dealt out like the Linux ones (scripts/shard_tests.py). A shard's list holds every kind
+  # Three shards, dealt out like the Linux ones (scripts/ci/ShardTests.java). A shard's list holds every kind
   # of test class; `-Dgroups=fx` then keeps the FX tests among them, so the three lists together cover the
   # FX suite whatever a class is called. Three, not four: the account runs five macOS jobs at a time, and
   # with the pure lane this makes four per run.
@@ -378,7 +473,7 @@ jobs:
       - name: List this shard's test classes
         run: |
           mkdir -p target
-          python3 scripts/shard_tests.py list ${{ matrix.shard }} 3 > target/shard-includes.txt
+          java scripts/ci/ShardTests.java list ${{ matrix.shard }} 3 > target/shard-includes.txt
           echo "$(wc -l < target/shard-includes.txt) test classes in this shard, FX and other"
 
       # As in the pure lane: dump at 23 minutes, stop the step at 26, keep the dump as an artifact.
@@ -398,7 +493,7 @@ jobs:
 
       - name: Report flaky tests
         if: always()
-        run: python3 scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
+        run: java scripts/ci/ReportFlakes.java target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
 
       # As in the pure lane: the reports and any dump, also when the job was cancelled.
       - name: Upload test reports
@@ -412,9 +507,10 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # The release and packaging scripts have their own unit tests (the release-asset manifest, the tarball
-  # installer, the .deb maintainer scripts run against a scratch root, the pinned-download check). They are
-  # Python `unittest` files beside the scripts; nothing else runs them.
+  # The CI, release and packaging scripts have their own unit tests (the shard lists, the release-asset
+  # manifest, the tarball installer, the .deb maintainer scripts run against a scratch root, the
+  # pinned-download check). They are `*Test.java` files beside the scripts, run by the JDK's source launcher
+  # (scripts/lib/RunTests.java); nothing else runs them.
   scripts:
     name: Release & packaging scripts
     runs-on: ubuntu-latest
@@ -426,6 +522,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+
       - name: Check shell syntax
         run: |
           for script in scripts/*.sh; do bash -n "$script"; done
@@ -434,10 +536,7 @@ jobs:
           done
 
       - name: Run script unit tests
-        run: |
-          for dir in scripts scripts/release scripts/packaging scripts/native; do
-            python3 -m unittest discover -s "$dir" -p 'test_*.py'
-          done
+        run: java scripts/lib/RunTests.java
 
   compact-source-probes:
     name: Compact Java integration (JDK 25)

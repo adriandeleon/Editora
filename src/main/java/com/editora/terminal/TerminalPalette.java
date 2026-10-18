@@ -68,6 +68,46 @@ public record TerminalPalette(Color background, Color foreground, Color[] ansi) 
         return color.interpolate(over, 0.45);
     }
 
+    /** The contrast a cell's text is given at least (WCAG AA, VS Code's {@code minimumContrastRatio} default). */
+    public static final double MIN_CONTRAST = 4.5;
+
+    /**
+     * {@code fg}, moved toward black or white just far enough to reach {@code ratio} against {@code bg}; as it is
+     * when it already does. A palette made from a theme's syntax colours made white on blue 1.2:1 and green equal
+     * to yellow; this keeps every pair readable whatever the theme, and keeps the hue where it can.
+     */
+    public static Color withContrast(Color fg, Color bg, double ratio) {
+        if (contrast(fg, bg) >= ratio) return fg;
+        double bgLum = luminance(bg);
+        Color toward = bgLum > 0.5 ? Color.BLACK : Color.WHITE;
+        Color away = bgLum > 0.5 ? Color.WHITE : Color.BLACK;
+        // The direction away from the background's own lightness; if even its end is not enough, the other.
+        Color target = contrast(toward, bg) >= contrast(away, bg) ? toward : away;
+        double lo = 0;
+        double hi = 1;
+        for (int i = 0; i < 12; i++) {
+            double mid = (lo + hi) / 2;
+            if (contrast(fg.interpolate(target, mid), bg) >= ratio) hi = mid;
+            else lo = mid;
+        }
+        return fg.interpolate(target, hi);
+    }
+
+    /** WCAG contrast ratio of two colours, 1 to 21. */
+    public static double contrast(Color a, Color b) {
+        double la = luminance(a);
+        double lb = luminance(b);
+        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+    }
+
+    private static double luminance(Color c) {
+        return 0.2126 * linear(c.getRed()) + 0.7152 * linear(c.getGreen()) + 0.0722 * linear(c.getBlue());
+    }
+
+    private static double linear(double channel) {
+        return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    }
+
     @Override
     public Color[] ansi() {
         return ansi.clone();

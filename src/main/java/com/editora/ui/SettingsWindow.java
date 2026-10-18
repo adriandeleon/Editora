@@ -705,8 +705,26 @@ public class SettingsWindow {
                     () -> runConfigScriptSuggestion == null ? null : runConfigScriptSuggestion.get(),
                     () -> runConfigProjectRoot == null ? null : runConfigProjectRoot.get(),
                     onRunConfigsChanged);
+            runConfigurationsWindow.setEditDeployments(editDeployments);
         }
         runConfigurationsWindow.show(selectName, owner);
+    }
+
+    /** What the Run Configurations window's Run on → Deployments… opens. */
+    private java.util.function.Consumer<String> editDeployments;
+
+    public void setEditDeployments(java.util.function.Consumer<String> editDeployments) {
+        this.editDeployments = editDeployments;
+        if (runConfigurationsWindow != null) {
+            runConfigurationsWindow.setEditDeployments(editDeployments);
+        }
+    }
+
+    /** The project's deployments changed: the Run Configurations window's Run on choices follow. */
+    public void refreshRunConfigDeployments() {
+        if (runConfigurationsWindow != null) {
+            runConfigurationsWindow.refreshDeployments();
+        }
     }
 
     /** Supplies the active Java main class used to seed a newly added configuration. */
@@ -4044,7 +4062,7 @@ public class SettingsWindow {
                 display,
                 cat,
                 "terminal.scrollback",
-                100_000,
+                Settings.TERMINAL_SCROLLBACK_MAX,
                 500,
                 Settings::getTerminalScrollback,
                 Settings::setTerminalScrollback,
@@ -4060,6 +4078,22 @@ public class SettingsWindow {
                         .filter(id -> !id.isBlank())
                         .toList()),
                 "terminal keys shortcuts commands shell keyboard ctrl escape allow");
+        switchRow(
+                keys,
+                cat,
+                "terminal.macOptionIsMeta",
+                true,
+                Settings::isTerminalMacOptionIsMeta,
+                Settings::setTerminalMacOptionIsMeta,
+                "terminal option alt meta macos mac compose characters readline");
+        switchRow(
+                keys,
+                cat,
+                "terminal.confirmMultilinePaste",
+                true,
+                Settings::isTerminalConfirmMultilinePaste,
+                Settings::setTerminalConfirmMultilinePaste,
+                "terminal paste multiple lines newline confirm warning bracketed");
         switchRow(
                 keys,
                 cat,

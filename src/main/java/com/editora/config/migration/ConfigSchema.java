@@ -278,7 +278,11 @@ public enum ConfigSchema {
                     Map.entry(132, (Migration) ConfigMigrations::identity),
                     // v133→134: + aiModelCodex (Codex's model, which shared the Anthropic field: the shared value is
                     // copied so Codex keeps its model) and aiApiKeysInKeychain (additive; absent = keys in this file).
-                    Map.entry(133, (Migration) ConfigMigrations::splitCodexModel)),
+                    Map.entry(133, (Migration) ConfigMigrations::splitCodexModel),
+                    // v134→135: + terminalMacOptionIsMeta (off: Option composes, as in Terminal.app) and
+                    // terminalConfirmMultilinePaste (on), both additive; the scrollback maximum drops from 100,000
+                    // to 50,000 lines (about 94 MB a tab at the old cap), so a larger value is clamped to it.
+                    Map.entry(134, (Migration) ConfigMigrations::clampTerminalScrollback)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -337,7 +341,10 @@ public enum ConfigSchema {
                     // v19→20: + debugBreakpointsMuted (additive; absent means not muted)
                     Map.entry(19, ConfigMigrations::identity),
                     // v20→21: + a run configuration's runInTerminal (additive; absent means the Run console)
-                    Map.entry(20, ConfigMigrations::identity))),
+                    Map.entry(20, ConfigMigrations::identity),
+                    // v21→22: + deployments and a run configuration's deployment (additive; absent means every
+                    // configuration runs on this machine)
+                    Map.entry(21, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

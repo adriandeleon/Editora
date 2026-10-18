@@ -54,13 +54,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Each Settings page links to its documentation** with a **?** beside the title.
 - **File Watching** row in the Doctor: says when the system has no file watcher to give and Editora checks folders by
   polling instead.
+- **Deployments: develop locally, run on another machine.** A run configuration's new **Run on** setting names a
+  deployment — an SSH host and a folder there. Before the run, Editora copies what changed in the project to
+  that folder over the connection it already uses for remote folders (one compressed stream; no rsync or ssh
+  needed on this machine), then runs the before-launch step and the program there, with the host's tools.
+  - Only files whose contents changed are sent; a branch switch that only touched times sends nothing.
+  - Files Editora put on the host and the project no longer has are removed; nothing else on the host is ever
+    removed. A file changed on the host since it was sent is asked about, a first deploy into a folder with other
+    files asks first, and `/`, system folders and the home folder are refused.
+  - Java builds on the host with its Maven or Gradle. Debug starts the program on the host and attaches the
+    debugger here through a tunnel; breakpoints are the local files'.
+  - Run → Deployment: Deploy Now, Compare with Deployed, Open Terminal in Deployment, Edit Deployments. A
+    deployment can also upload a file when it is saved. Deployments are exported and imported with the run
+    configurations.
 - **A Terminal tool window**: shells on this machine, in tabs, inside Editora. Open it with Tool Window:
   Terminal (Alt+F12 in the IntelliJ keymap, Ctrl+` in VS Code, CUA and Sublime). It starts in the project's
   folder; Terminal: New Terminal adds a tab.
-  - A focused terminal owns the keyboard: Ctrl+C interrupts, Ctrl+W deletes a word, Escape reaches vim. Only
-    the tool-window toggles, the command palette and Search Everywhere still reach Editora (Settings →
-    Terminal → Commands that reach Editora), plus every Cmd shortcut on macOS. Copy and Paste are
-    Ctrl+Shift+C/V (Cmd+C/V on macOS).
+  - A focused terminal owns the keyboard: Ctrl+C interrupts, Ctrl+W deletes a word, Escape reaches vim. The
+    tool windows, the command palette and Search Everywhere still reach Editora, but only on keys a shell does
+    not use: a plain Ctrl+letter, Alt+letter, Alt+digit or F-key always goes to the shell, whatever the keymap
+    binds to it (IntelliJ's Ctrl+K, VS Code's Ctrl+B and F1). The terminal's own commands and the Emacs
+    keymap's M-x pass on any key, and a key typed into Settings → Terminal → Commands that reach Editora (say
+    `M-1`) passes too. Every Cmd shortcut on macOS reaches Editora. Copy and Paste are Ctrl+Shift+C/V
+    (Cmd+C/V on macOS), shown in the terminal's menu. Shift+Escape returns to the editor and leaves the
+    terminal open; Shift+PageUp/PageDown/Home/End scroll the history.
+  - On macOS, Option types the characters your keyboard layout puts on it (@ [ ] { } on many layouts);
+    Settings → Terminal → "Option key as Meta" makes it readline's Meta instead. Alt is Meta on Linux and
+    Windows.
+  - Tabs can be renamed, moved (drag, Ctrl+Shift+PageUp/PageDown, or the tab's menu) and closed from a tab
+    menu; Ctrl+PageUp/PageDown switch between them, and tabs with the same title are numbered. A bell in a
+    tab out of sight marks it.
+  - The terminal is in the Window menu (Terminal, New Terminal) and the File menu (Open Terminal Here); the
+    Emacs keymap opens it with M-0. It follows the editor's text zoom. It hides when its last shell exits.
+  - Pasting several lines into a program that would run each at once (sh, a REPL) asks first; a paste can no
+    longer carry control characters or end bash's bracketed paste early.
+  - Closing a window or quitting asks when terminals are running programs, in one question.
   - Its colours follow the editor theme: the keyword colour is its red, the number colour its blue, and so on.
     Its font is the editor's.
   - Build Output's stripe icon is now the tools glyph; the terminal glyph is the Terminal's.
@@ -90,7 +118,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     It starts only when echoes take over 100 ms (Settings → Terminal → Type-ahead).
   - **Run in a Terminal tab**: a run configuration's Console option runs its program in the Terminal (programs
     that draw on the screen or read single keys), locally or on the project's host. The tab stays when it
-    ends, with the exit code; closing it while the program runs asks first.
+    ends, with the exit code; closing it while the program runs asks first. Run's Stop button and stripe
+    follow it, the next run of the same configuration reuses its tab, the configuration's variables win over
+    the login profile's, and a missing working folder fails the run as in the console.
   - **Debug in a Terminal tab**: Settings → Debugging → Java → "Run the program in a Terminal tab instead" does the same
     for a debugged Java or Python program.
   - A terminal on a host or in a container opens without freezing the window: its tab says "Connecting to …"
@@ -393,7 +423,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   title bar.** They followed the desktop's light or dark setting rather than Editora's theme, so a dark theme on
   a light desktop drew them dark on dark. They now follow the app theme, and change with it.
 - **When the system had no file watcher to give** (Linux: inotify instances used up), the project tree and language
-  servers silently stopped following the disk. They now check folders every 2 seconds.
+  servers silently stopped following the disk. They now check folders every 2 seconds, and on Windows also notice
+  a save that replaces a file with one of the same size and time.
 - **Plugins: Set Registry URL** accepted an address that is not https; it now refuses it like the Settings field.
 - **A submenu's › arrow sat in the middle of its menu** (VCS → Changes, Branches, …), just past the longest
   submenu name. It now sits at the menu's right edge, past the shortcut column.

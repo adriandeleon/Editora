@@ -21,7 +21,7 @@ jobs:
   # version or does not match the pom. Without it a `v1.2.3` tag pushed from a `1.2.3-SNAPSHOT` pom built
   # and published installers named 1.2.3 whose app reports 1.2.3-SNAPSHOT (and the post-release bump then
   # quietly did nothing). -rc tags are cut from the -SNAPSHOT line and are only checked for their shape; a
-  # manual dispatch from a branch is not checked at all. See scripts/release/check-release.py.
+  # manual dispatch from a branch is not checked at all. See scripts/release/CheckRelease.java.
   #
   # It then refuses a commit that CI did not pass. The build legs run no tests (`-DskipTests`) and a tag
   # can be pushed on any commit, so before this a release could be cut from code whose required checks had
@@ -41,8 +41,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+
       - name: Check the tag against the pom version
-        run: python3 scripts/release/check-release.py version "$GITHUB_REF_TYPE" "$GITHUB_REF_NAME" pom.xml
+        run: java scripts/release/CheckRelease.java version "$GITHUB_REF_TYPE" "$GITHUB_REF_NAME" pom.xml
 
       # If a required check failed for a reason that has nothing to do with the code (a runner lost, a
       # flaky test), re-run it on the commit and then re-run this workflow: the newest run of each check
@@ -52,9 +58,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            python3 scripts/release/check-release.py ci "$GITHUB_REPOSITORY" "$GITHUB_SHA" --mode enforce --wait-minutes 30
+            java scripts/release/CheckRelease.java ci "$GITHUB_REPOSITORY" "$GITHUB_SHA" --mode enforce --wait-minutes 30
           else
-            python3 scripts/release/check-release.py ci "$GITHUB_REPOSITORY" "$GITHUB_SHA" --mode report
+            java scripts/release/CheckRelease.java ci "$GITHUB_REPOSITORY" "$GITHUB_SHA" --mode report
           fi
 
   build:
@@ -258,11 +264,6 @@ jobs:
             **/pom.xml
             .mvn/maven.config
 
-      - name: Set up Python for packaging and smoke test
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
       - name: Install Linux Native Image build and GUI test dependencies
         if: runner.os == 'Linux'
         run: |
@@ -303,7 +304,7 @@ jobs:
         run: |
           binary=target/editora-native
           if [ "$RUNNER_OS" = Windows ]; then binary="${binary}.exe"; fi
-          python scripts/native/package-release.py "$binary" "$VERSION" "$TARGET" staging
+          java scripts/nativeimage/PackageRelease.java "$binary" "$VERSION" "$TARGET" staging
 
       # Extract and test the exact payload that would be released. Keep its
       # disposable project outside the checkout: repository .editorconfig can
@@ -315,7 +316,7 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
           TARGET: ${{ matrix.target }}
         run: |
-          xvfb-run -a python scripts/native/smoke-release.py \
+          xvfb-run -a java scripts/nativeimage/SmokeRelease.java \
             "staging/Editora-${VERSION}-${TARGET}-native-experimental.tar.gz" \
             "$TARGET" "$RUNNER_TEMP/editora-native-release-smoke"
 
@@ -328,7 +329,7 @@ jobs:
         run: |
           ext=tar.gz
           if [ "$RUNNER_OS" = Windows ]; then ext=zip; fi
-          python scripts/native/smoke-release.py \
+          java scripts/nativeimage/SmokeRelease.java \
             "staging/Editora-${VERSION}-${TARGET}-native-experimental.${ext}" \
             "$TARGET" "$RUNNER_TEMP/editora-native-release-smoke"
 
@@ -415,7 +416,13 @@ jobs:
       # publish with an installer missing and no way to add it afterwards. On a tag this fails the job and
       # names every missing file; a manual dispatch only reports, so a dry run still reaches JReleaser
       # (read the step's output: every line must say `ok`).
-      # The expected set lives in scripts/release/check-release.py (unit-tested there).
+      # The expected set lives in scripts/release/CheckRelease.java (unit-tested there).
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+
       - name: Verify the expected release assets
         shell: bash
         env:
@@ -423,7 +430,7 @@ jobs:
         run: |
           mode=report
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then mode=enforce; fi
-          python3 scripts/release/check-release.py assets artifacts "$VERSION" --pom pom.xml --mode "$mode"
+          java scripts/release/CheckRelease.java assets artifacts "$VERSION" --pom pom.xml --mode "$mode"
 
       - name: JReleaser
         # No `v2` TAG exists upstream — `@v2` was a branch. Pinned to that branch's head as of 2026-10-01

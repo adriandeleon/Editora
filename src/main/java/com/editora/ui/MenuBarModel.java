@@ -111,6 +111,8 @@ final class MenuBarModel {
                                 "file.saveAsAdmin",
                                 "file.revert",
                                 SEPARATOR,
+                                "file.openTerminal",
+                                SEPARATOR,
                                 "buffer.close",
                                 "buffer.closeOthers",
                                 "buffer.closeAll",
@@ -271,16 +273,28 @@ final class MenuBarModel {
                                 submenu("menubar.run.breakpoints"),
                                 SEPARATOR,
                                 "test.run",
-                                "test.rerunFailed"),
-                        List.of(new MenuSpec(
-                                "menubar.run.breakpoints",
-                                List.of(
-                                        "debug.toggleBreakpointEnabled",
-                                        "debug.editBreakpoint",
-                                        "debug.breakpoints",
-                                        "debug.muteBreakpoints",
-                                        SEPARATOR,
-                                        "debug.toggleExceptionBreakpoints")))),
+                                "test.rerunFailed",
+                                SEPARATOR,
+                                submenu("menubar.run.deploy")),
+                        List.of(
+                                new MenuSpec(
+                                        "menubar.run.breakpoints",
+                                        List.of(
+                                                "debug.toggleBreakpointEnabled",
+                                                "debug.editBreakpoint",
+                                                "debug.breakpoints",
+                                                "debug.muteBreakpoints",
+                                                SEPARATOR,
+                                                "debug.toggleExceptionBreakpoints")),
+                                // A local project run on another machine (Run on in a configuration).
+                                new MenuSpec(
+                                        "menubar.run.deploy",
+                                        List.of(
+                                                "deploy.now",
+                                                "deploy.compare",
+                                                "deploy.terminal",
+                                                SEPARATOR,
+                                                "deploy.edit")))),
                 new MenuSpec(
                         "menubar.vcs",
                         // What is used every day stays at the top level; the rest is grouped below.
@@ -457,7 +471,10 @@ final class MenuBarModel {
                                 "tool.project",
                                 "tool.structure",
                                 "tool.search",
-                                "tool.problems")),
+                                "tool.problems",
+                                SEPARATOR,
+                                "tool.terminal",
+                                "terminal.new")),
                 new MenuSpec(
                         "menubar.help",
                         List.of(

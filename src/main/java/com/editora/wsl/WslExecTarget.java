@@ -158,7 +158,9 @@ public final class WslExecTarget implements ExecTarget {
                 com.editora.process.ProcessRunner.applyUserEnv(new java.util.HashMap<>(System.getenv()), Map.of()),
                 spec.columns(),
                 spec.rows(),
-                this::hangUp);
+                this::hangUp,
+                id(),
+                this::orphanRecord);
     }
 
     /** SIGHUP to the shell {@code pid} in the distribution. */

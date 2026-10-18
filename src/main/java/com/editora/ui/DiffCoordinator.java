@@ -1052,6 +1052,24 @@ final class DiffCoordinator {
         };
     }
 
+    /**
+     * Diffs the local file {@code local} (editable, right) against its deployed copy {@code deployed} on a host
+     * (left, read over the connection off the FX thread); {@code hostLabel} names the copy.
+     */
+    void diffWithDeployed(Path local, Path deployed, String hostLabel) {
+        String name = local.getFileName().toString();
+        openDiff(
+                tr("diff.title.vsDeployed", name),
+                tr("diff.side.deployed", hostLabel),
+                tr("diff.side.working"),
+                name,
+                name,
+                fileSide(deployed),
+                fileSide(local),
+                DiffViewerPane.EditableSide.RIGHT,
+                local);
+    }
+
     /** Diff the active file against a commit chosen from its history. */
     void diffActiveVsCommit() {
         EditorBuffer b = host.activeBuffer();

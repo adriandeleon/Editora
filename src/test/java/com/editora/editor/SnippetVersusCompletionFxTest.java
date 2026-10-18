@@ -5,6 +5,7 @@ import java.util.List;
 import javafx.stage.Stage;
 
 import com.editora.completion.Completion;
+import com.editora.completion.CompletionIconKind;
 import com.editora.snippet.Snippet;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
@@ -133,5 +134,53 @@ class SnippetVersusCompletionFxTest {
         assertSame(fori, rows.get(0).snippet());
         assertEquals(range, rows.get(0).replaceRange());
         assertEquals("format", rows.get(1).label());
+    }
+
+    /** A language server's own template row, the way jdtls sends {@code sysout}: kind Snippet, label = trigger. */
+    private static Completion serverTemplate(String label, String insert) {
+        return Completion.lsp(label, insert, null, null, CompletionIconKind.SNIPPET, null, false, false, null);
+    }
+
+    @Test
+    void theTypedTriggerHidesTheServersTemplateOfTheSameName() {
+        Snippet sysout = new Snippet("sysout", "sysout", "System.out.println($1);$0", "Print", "java");
+        var range = Completion.ReplaceRange.startingAt(4, 4);
+        List<Completion> server = List.of(
+                serverTemplate("sysout", "System.out.println(${0});"),
+                serverTemplate("System.out.println()", "System.out.println(${0});"));
+
+        List<Completion> rows = BufferCompletion.withTypedTrigger(server, sysout, range);
+
+        assertEquals(
+                List.of("sysout", "System.out.println()"),
+                rows.stream().map(Completion::label).toList());
+        assertSame(sysout, rows.get(0).snippet(), "the local snippet Tab expands, not jdtls's");
+    }
+
+    @Test
+    void aLocalSnippetShadowsTheServerTemplateWithItsTriggerOnly() {
+        Snippet fori = new Snippet("fori", "fori", "for (;;) {}", "Loop", "java");
+        Snippet foreach = new Snippet("foreach", "foreach", "for (:) {}", "Loop", "java");
+        List<Completion> server = List.of(
+                serverTemplate("fori", "for (${1:int} ${2:i} = 0;;) {}"),
+                serverTemplate("forEach", "x"),
+                Completion.lsp("foreach", "foreach()", "a method that happens to share the name"));
+        List<Completion> local = List.of(Completion.ofSnippet(fori), Completion.ofSnippet(foreach));
+
+        List<Completion> rows = BufferCompletion.mergeCompletions(server, local);
+
+        assertEquals(4, rows.size(), rows.toString());
+        assertTrue(rows.stream().noneMatch(c -> c.label().equals("fori") && c.snippet() == null));
+        assertTrue(rows.stream().anyMatch(c -> c.label().equals("forEach")), "a different name stays");
+        assertTrue(
+                rows.stream().anyMatch(c -> c.label().equals("foreach") && c.snippet() == null),
+                "only server templates are shadowed, never a method of the same name");
+        assertSame(fori, rows.get(rows.size() - 2).snippet());
+    }
+
+    @Test
+    void withoutLocalSnippetsTheServerTemplatesStay() {
+        List<Completion> server = List.of(serverTemplate("sysout", "System.out.println(${0});"));
+        assertEquals(server, BufferCompletion.mergeCompletions(server, List.of()));
     }
 }

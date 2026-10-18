@@ -93,7 +93,9 @@ public final class FxTerminalDisplay implements TerminalDisplay {
 
     @Override
     public void setCursorShape(CursorShape shape) {
-        if (shape != null) cursorShape = shape;
+        // DECSCUSR 0 (and 1, the same blinking block) means "the terminal's default": that is the user's shape, not
+        // a block for the rest of the tab. vim sends it on exit, after asking for its own shapes while it ran.
+        cursorShape = shape == CursorShape.BLINK_BLOCK ? null : shape;
         onRepaint.run();
     }
 
@@ -164,14 +166,21 @@ public final class FxTerminalDisplay implements TerminalDisplay {
         return cwd;
     }
 
+    /** Whether a title update is already queued for the FX thread; the queued one reads the latest. */
+    private final java.util.concurrent.atomic.AtomicBoolean titlesQueued =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Posts the titles to the FX thread, at most one update in flight: a program that sets thousands of titles a
+     * second (a progress bar in the title) would otherwise queue one task per title.
+     */
     private void refreshTitles() {
-        String window = TerminalTitle.window(shellTitle, cwd, home);
-        String tab = TerminalTitle.tab(shellTitle, cwd, home);
-        String tooltip = TerminalTitle.tooltip(shellTitle, cwd, home);
+        if (!titlesQueued.compareAndSet(false, true)) return;
         Platform.runLater(() -> {
-            windowTitle.set(window);
-            tabTitle.set(tab);
-            tabTooltip.set(tooltip);
+            titlesQueued.set(false);
+            windowTitle.set(TerminalTitle.window(shellTitle, cwd, home));
+            tabTitle.set(TerminalTitle.tab(shellTitle, cwd, home));
+            tabTooltip.set(TerminalTitle.tooltip(shellTitle, cwd, home));
         });
     }
 
@@ -231,6 +240,34 @@ public final class FxTerminalDisplay implements TerminalDisplay {
     @Override
     public void setBracketedPasteMode(boolean enabled) {
         bracketedPaste = enabled;
+    }
+
+    private volatile TerminalPalette palette = TerminalPalettes.EDITORA_DARK;
+
+    /** The colours OSC 10/11 queries are answered with. */
+    public void setPalette(TerminalPalette palette) {
+        if (palette != null) this.palette = palette;
+    }
+
+    /**
+     * The answer to OSC 10 ("what is your foreground?"). vim, neovim, delta, bat and fish ask to tell a light
+     * terminal from a dark one; without an answer they assume dark.
+     */
+    @Override
+    public com.jediterm.core.Color getWindowForeground() {
+        return toCore(palette.foreground());
+    }
+
+    /** The answer to OSC 11 ("what is your background?"). */
+    @Override
+    public com.jediterm.core.Color getWindowBackground() {
+        return toCore(palette.background());
+    }
+
+    private static com.jediterm.core.Color toCore(javafx.scene.paint.Color c) {
+        return new com.jediterm.core.Color(
+                (int) Math.round(c.getRed() * 255), (int) Math.round(c.getGreen() * 255), (int)
+                        Math.round(c.getBlue() * 255));
     }
 
     public int getCursorX() {

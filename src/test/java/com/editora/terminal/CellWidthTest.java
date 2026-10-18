@@ -35,8 +35,11 @@ class CellWidthTest {
 
     @Test
     void aWideAstralCharacterIsTwoCells() {
-        // An emoji: a surrogate pair *and* a placeholder.
+        // An emoji: a surrogate pair and no placeholder (JediTerm only asks BMP characters whether they are wide),
+        // two columns as glibc's wcwidth says, so the shell and the screen agree where the cursor is.
         String emoji = new String(Character.toChars(0x1F600));
-        assertEquals(2, CellWidth.cells(emoji + DWC));
+        assertEquals(2, CellWidth.cells(emoji));
+        assertEquals(5, CellWidth.cells(emoji + emoji + "x"));
+        assertEquals(2, CellWidth.of(0x20000), "a CJK extension B ideograph is wide too");
     }
 }

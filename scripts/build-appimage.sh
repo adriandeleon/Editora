@@ -18,8 +18,8 @@
 # appimagetool then fetched the type2 runtime — the ELF stub that becomes the first bytes of the shipped
 # .AppImage — from a second `continuous` tag on its own. To move to a newer release: change the version,
 # download the two files for BOTH architectures, and replace the four hashes (`sha256sum <file>`; they
-# should equal the digests GitHub shows on the release page). scripts/test_build_scripts.py checks that a
-# file whose hash does not match is never run.
+# should equal the digests GitHub shows on the release page). scripts/packaging/BuildScriptsTest.java checks
+# that a file whose hash does not match is never run.
 set -euo pipefail
 
 APPIMAGETOOL_VERSION="1.9.1"

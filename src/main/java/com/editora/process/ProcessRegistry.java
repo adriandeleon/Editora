@@ -110,6 +110,18 @@ public final class ProcessRegistry {
     private ProcessRegistry() {}
 
     /**
+     * A process that is ended by hanging up its terminal rather than by signalling its tree: an interactive shell.
+     * Closing a terminal sends its shell SIGHUP, and the shell passes it on to its jobs — except the ones the user
+     * detached on purpose ({@code nohup}, {@code disown}), which a terminal emulator leaves running. Killing the
+     * shell's descendants would take those too. Only the shell itself is force-killed if it is still there after the
+     * grace period.
+     */
+    public interface HangsUp {
+        /** Hangs the terminal up. Must not block. */
+        void hangUp();
+    }
+
+    /**
      * Registers the JVM shutdown hook that stops every live tracked process tree on exit. Idempotent;
      * call once from {@code App.main}. Cheap and safe even on the {@code --help}/{@code --version} paths
      * (nothing is tracked there, so the hook is a no-op).
@@ -241,6 +253,10 @@ public final class ProcessRegistry {
             killRemoteTree(remote);
             return;
         }
+        if (p instanceof HangsUp shell) {
+            hangUpThenKill(p, shell);
+            return;
+        }
         List<ProcessHandle> descendants = descendantsOf(p);
         retainPending(descendants);
         destroyHandles(descendants, false);
@@ -268,6 +284,32 @@ public final class ProcessRegistry {
             releaseDeadPending();
             untrack(p);
         }
+    }
+
+    /** {@link #killTree} for a {@link HangsUp}: the hang-up now, and only the root forced after the grace period. */
+    private static void hangUpThenKill(Process p, HangsUp shell) {
+        try {
+            shell.hangUp();
+        } catch (RuntimeException ignored) {
+            // best effort: the force below still ends the shell
+        }
+        try {
+            SCHEDULER.schedule(
+                    () -> {
+                        destroyRoot(p, true);
+                        untrack(p);
+                    },
+                    GRACE_MS,
+                    TimeUnit.MILLISECONDS);
+        } catch (RuntimeException ex) {
+            destroyRoot(p, true);
+            untrack(p);
+        }
+    }
+
+    /** Whether {@code p} is tracked: started, not yet ended or killed. */
+    public static boolean isTracked(Process p) {
+        return p != null && LIVE.contains(p);
     }
 
     /**
@@ -476,16 +518,28 @@ public final class ProcessRegistry {
                 remote.add(r);
                 continue;
             }
+            if (p instanceof HangsUp shell) {
+                // A shell: its jobs get the hang-up from it, and what the user detached keeps running.
+                try {
+                    shell.hangUp();
+                } catch (RuntimeException ignored) {
+                    // the root is forced below
+                }
+                handleOf(p).ifPresent(asked::add);
+                continue;
+            }
             List<ProcessHandle> tree = descendantsOf(p);
             destroyHandles(tree, false);
             destroyRoot(p, false);
             asked.addAll(tree);
-            asked.add(p.toHandle());
+            handleOf(p).ifPresent(asked::add);
         }
         awaitExit(asked, GRACE_MS);
         destroyHandles(asked, true); // the handles captured above: a child is reparented once its wrapper exits
         for (Process p : roots) {
-            if (!(p instanceof RemoteProcess)) {
+            if (p instanceof HangsUp) {
+                destroyRoot(p, true);
+            } else if (!(p instanceof RemoteProcess)) {
                 destroyTree(p, true); // and anything forked during the grace period
             }
         }
@@ -536,6 +590,14 @@ public final class ProcessRegistry {
                 Thread.currentThread().interrupt();
                 return;
             }
+        }
+    }
+
+    private static Optional<ProcessHandle> handleOf(Process p) {
+        try {
+            return Optional.of(p.toHandle());
+        } catch (RuntimeException alreadyGone) {
+            return Optional.empty();
         }
     }
 

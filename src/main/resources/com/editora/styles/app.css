@@ -2142,8 +2142,9 @@
 
 /* A disclosure inside a dialog form: its title names a group of fields, so it should read at the same
    size as the labels beside it. AtlantaFX sizes a TitledPane title up as a heading, which in a form makes
-   the optional section louder than the fields it belongs to. */
-.dialog-advanced > .title {
+   the optional section louder than the fields it belongs to. The theme puts the 1.25em on the title's
+   `.text` node, not on `.title`, so that is the node to reset. */
+.dialog-advanced > .title > .text {
     -fx-font-size: 1em;
 }
 
@@ -5429,6 +5430,16 @@
     -fx-background-radius: 999;
     -fx-padding: 0 6 0 6;
     -fx-font-size: 10px;
+}
+/* A long title (a program's OSC 0, a deep folder) is cut short; the tab's tooltip has it whole. */
+.terminal-panel .terminal-tabs > .tab-header-area .tab .tab-label {
+    -fx-max-width: 220;
+    -fx-text-overrun: ellipsis;
+}
+/* A tab whose bell rang while it was out of sight, until it is selected. */
+.terminal-panel .terminal-tabs > .tab-header-area .tab.terminal-bell .tab-label {
+    -fx-text-fill: -color-warning-fg;
+    -fx-font-weight: bold;
 }
 /* The scrollback bar, coloured from the terminal palette rather than the control theme: TerminalView sets
    -terminal-thumb / -terminal-thumb-hover on the bar itself (Termina's rules). */
