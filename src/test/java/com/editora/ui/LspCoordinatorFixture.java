@@ -443,6 +443,6 @@ final class LspCoordinatorFixture implements AutoCloseable {
             host.buffers.forEach(EditorBuffer::dispose);
             stage.close();
         });
-        manager.shutdownAll();
+        manager.close(); // not shutdownAll: close also stops the folder watchers, each an inotify instance
     }
 }

@@ -19,8 +19,20 @@ final class SettingsDependents {
     /** Greys out {@code rows} while {@code on} is false. A row bound here must not also set its own disable. */
     static void bind(ObservableBooleanValue on, Node... rows) {
         for (Node row : rows) {
-            row.disableProperty().bind(Bindings.not(on));
+            row.disableProperty().bind(Bindings.not(on).or(lockOf(row)));
         }
+    }
+
+    private static final Object LOCK = new Object();
+
+    /**
+     * A second reason a bound row is greyed out, besides its switch: Settings' Project scope greys out what a
+     * project cannot set ({@link ProjectScopeSettings}). A row's disable is bound here, so that reason cannot be
+     * set on it directly.
+     */
+    static javafx.beans.property.BooleanProperty lockOf(Node row) {
+        return (javafx.beans.property.BooleanProperty)
+                row.getProperties().computeIfAbsent(LOCK, k -> new javafx.beans.property.SimpleBooleanProperty(false));
     }
 
     /**

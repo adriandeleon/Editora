@@ -108,7 +108,7 @@ class CodeLensCoordinatorFxTest {
 
     @AfterEach
     void tearDown() throws Exception {
-        FxTestSupport.runOnFx(manager::shutdownAll);
+        FxTestSupport.runOnFx(manager::close); // close, not shutdownAll: it also stops the folder watchers
     }
 
     private EditorBuffer open() throws Exception {

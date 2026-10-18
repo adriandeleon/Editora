@@ -121,7 +121,8 @@ public final class ConfigExporter {
                 || relative.startsWith("jdtls-workspaces/")
                 || relative.startsWith("history/")
                 || relative.startsWith("sync/")
-                || relative.startsWith("cache/")) { // rebuilt on demand (the HTTP response-handler runner)
+                || relative.startsWith("cache/") // rebuilt on demand (the HTTP response-handler runner)
+                || relative.startsWith(ConfigImport.BACKUPS_DIR + "/")) { // copies made before an import
             return false;
         }
         String name = relative.substring(relative.lastIndexOf('/') + 1);
@@ -189,7 +190,16 @@ public final class ConfigExporter {
             boolean includeHttpHistory,
             boolean includeApiKeys)
             throws IOException {
-        Path zip = destinationDir.resolve(zipName(configDir, version, userName, now));
+        return exportTo(
+                configDir,
+                destinationDir.resolve(zipName(configDir, version, userName, now)),
+                includeHttpHistory,
+                includeApiKeys);
+    }
+
+    /** As {@link #export}, into the zip file {@code zip} (the copy made before an import, for one). */
+    static Path exportTo(Path configDir, Path zip, boolean includeHttpHistory, boolean includeApiKeys)
+            throws IOException {
         ConfigWriter.createOwnerOnly(zip); // newOutputStream truncates it and keeps the mode
         boolean complete = false;
         try (OutputStream out = Files.newOutputStream(zip);

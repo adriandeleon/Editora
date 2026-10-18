@@ -515,13 +515,14 @@ final class DebugCoordinator {
         restoreExceptionFilters();
         var s = host.settings();
         boolean on = debugSupportEnabled(); // effective: off in Simple UI mode
+        ProjectScope scope = host.projectScope(); // a trusted project's debugger paths, else the user's
         dapManager.configure(
                 on,
-                s.getJavaDebugPluginPath(),
+                scope.debugTool("java", s.getJavaDebugPluginPath()),
                 s.isPythonDebugEnabled(),
-                s.getPythonDebugCommand(),
+                scope.debugTool("python", s.getPythonDebugCommand()),
                 s.isJsDebugEnabled(),
-                s.getJsDebugPath());
+                scope.debugTool("javascript", s.getJsDebugPath()));
         dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
         dapManager.setProgramTerminal(
                 s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
@@ -1879,9 +1880,11 @@ final class DebugCoordinator {
                         ? tr("status.debug.pythonOff")
                         : tr(
                                 "status.debug.debugpyMissing",
-                                s.getPythonDebugCommand().isBlank()
+                                host.projectScope()
+                                                .debugTool("python", s.getPythonDebugCommand())
+                                                .isBlank()
                                         ? com.editora.dap.DapServerRegistry.DEFAULT_PYTHON_INTERPRETER
-                                        : s.getPythonDebugCommand());
+                                        : host.projectScope().debugTool("python", s.getPythonDebugCommand()));
             case "javascript" -> !s.isJsDebugEnabled() ? tr("status.debug.jsOff") : tr("status.debug.jsDebugMissing");
             case "java" -> javaUnavailableMessage();
             default -> tr("status.debug.unavailable");

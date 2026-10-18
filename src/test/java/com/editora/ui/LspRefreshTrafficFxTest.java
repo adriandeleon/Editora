@@ -114,7 +114,7 @@ class LspRefreshTrafficFxTest {
 
     @AfterEach
     void tearDown() throws Exception {
-        FxTestSupport.runOnFx(manager::shutdownAll);
+        FxTestSupport.runOnFx(manager::close); // close, not shutdownAll: it also stops the folder watchers
     }
 
     /** A wired, synced java buffer in {@code project} (its own LSP root); it becomes the active buffer. */

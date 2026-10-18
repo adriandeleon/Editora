@@ -3186,6 +3186,11 @@
     -fx-text-fill: -color-fg-muted;
     -fx-background-color: -color-neutral-muted;
 }
+/* "Not connected" on Settings ▸ Sync: not a fault (or one that fixes itself), but not working either. */
+.settings-git-warn {
+    -fx-text-fill: -state-amber;
+    -fx-background-color: -state-amber-bg;
+}
 /* Settings search with no hits: said in words, in place of a blank page. */
 .settings-search-empty {
     -fx-text-fill: -color-fg-muted;
@@ -3215,6 +3220,37 @@
 /* "Restart Editora to apply": a setting chosen now that the running app is not using yet. */
 .settings-restart-note {
     -fx-text-fill: -state-amber;
+}
+/* A row whose value differs from the default: an accent bar at the card's leading edge (SettingRowState). */
+.settings-row:modified {
+    -fx-border-color: transparent transparent transparent -color-accent-emphasis;
+    -fx-border-width: 0 0 0 3;
+    -fx-border-insets: 10 0 10 -12;
+}
+/* The sidebar's count of a page's modified rows, beside its name. */
+.settings-modified-count {
+    -fx-text-fill: -color-fg-emphasis;
+    -fx-background-color: -color-accent-emphasis;
+    -fx-background-radius: 999;
+    -fx-padding: 0 5 0 5;
+    -fx-font-size: 0.692em;
+    -fx-font-weight: bold;
+}
+/* The "?" beside a page title: its docs page. */
+.settings-help-link {
+    -fx-font-weight: bold;
+    -fx-padding: 0 4 0 4;
+}
+.settings-row-state .settings-scope-note {
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 999;
+    -fx-padding: 0 6 0 6;
+    -fx-font-size: 0.786em;
+}
+.settings-row-state .settings-row-reset {
+    -fx-padding: 0;
+    -fx-font-size: 0.821em;
 }
 /* A row whose title or description shows what was searched for: a visible reason for the hit. */
 .settings-row:search-hit {

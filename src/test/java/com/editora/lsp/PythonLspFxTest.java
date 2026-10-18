@@ -268,6 +268,16 @@ class PythonLspFxTest {
         assertTrue(manager.watchedRoots().isEmpty(), "closed with the window");
     }
 
+    /** Turning language servers off stops their folder watchers too (each one an inotify instance on Linux). */
+    @Test
+    void turningLanguageServersOffStopsTheFolderWatcher() throws Exception {
+        manager.setWatchSessionRoots(r -> true);
+        open();
+        assertTrue(manager.watchedRoots().contains(root.toAbsolutePath().normalize()), "precondition: watched");
+        manager.configure(false, null);
+        assertTrue(manager.watchedRoots().isEmpty(), "nothing is watched for servers that are off");
+    }
+
     /** Folders a server never reads are not watched: hidden ones, packages, caches, environments. */
     @Test
     void foldersNoServerReadsAreSkipped() throws Exception {

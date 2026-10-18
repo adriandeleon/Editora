@@ -120,6 +120,12 @@ class LspCoordinatorDiagnosticsFxTest {
         });
     }
 
+    /** The manager's folder watchers are inotify instances on Linux: a test that leaves them open uses them up. */
+    @org.junit.jupiter.api.AfterEach
+    void closeManager() throws Exception {
+        FxTestSupport.runOnFx(manager::close);
+    }
+
     private EditorBuffer openJava(String name, String text) throws Exception {
         Path f = root.resolve(name);
         Files.writeString(f, text);

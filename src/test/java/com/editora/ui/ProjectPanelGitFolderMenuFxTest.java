@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Project-tree folder Git comparisons are present and route the selected directory unchanged. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(DisposedPanels.class)
 class ProjectPanelGitFolderMenuFxTest {
 
     @BeforeAll
@@ -42,7 +43,7 @@ class ProjectPanelGitFolderMenuFxTest {
     void folderOffersHeadBranchTagAndRevisionComparisons(@TempDir Path folder) throws Exception {
         Map<String, Path> calls = new ConcurrentHashMap<>();
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
-            ProjectPanel created = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false);
+            ProjectPanel created = DisposedPanels.track(new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false));
             created.setFileActions(new ProjectPanel.FileActions() {
                 @Override
                 public boolean localHistoryEnabled() {
@@ -135,7 +136,7 @@ class ProjectPanelGitFolderMenuFxTest {
                     default -> method.getReturnType() == boolean.class ? Boolean.FALSE : null;
                 });
         ContextMenu context = FxTestSupport.callOnFx(() -> {
-            ProjectPanel panel = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false);
+            ProjectPanel panel = DisposedPanels.track(new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false));
             panel.setFileActions(actions);
             return (ContextMenu) FxTestSupport.call(
                     panel,
@@ -180,7 +181,7 @@ class ProjectPanelGitFolderMenuFxTest {
         AtomicReference<Path> bookmarked = new AtomicReference<>();
         AtomicReference<Path> noted = new AtomicReference<>();
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
-            ProjectPanel created = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false);
+            ProjectPanel created = DisposedPanels.track(new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false));
             created.setMarkerActions(new ProjectPanel.MarkerActions() {
                 @Override
                 public boolean personalNotesEnabled() {
@@ -237,7 +238,7 @@ class ProjectPanelGitFolderMenuFxTest {
     void folderPersonalNotesAppearInTreeTooltip(@TempDir Path root) throws Exception {
         Path folder = Files.createDirectory(root.resolve("docs"));
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
-            ProjectPanel created = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false);
+            ProjectPanel created = DisposedPanels.track(new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false));
             created.setMarkerActions(new ProjectPanel.MarkerActions() {
                 @Override
                 public boolean personalNotesEnabled() {
@@ -288,7 +289,8 @@ class ProjectPanelGitFolderMenuFxTest {
     void fileStateMarkersFollowTheFileName(@TempDir Path root) throws Exception {
         Path file = Files.writeString(root.resolve("README.md"), "# Test");
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
-            ProjectPanel created = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false, file::equals);
+            ProjectPanel created =
+                    DisposedPanels.track(new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false, file::equals));
             created.setMarkerActions(new ProjectPanel.MarkerActions() {
                 @Override
                 public boolean personalNotesEnabled() {
@@ -344,7 +346,7 @@ class ProjectPanelGitFolderMenuFxTest {
         Path parent = Files.createDirectory(root.resolve("src"));
         Path folder = Files.createDirectory(parent.resolve("main"));
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
-            ProjectPanel created = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false);
+            ProjectPanel created = DisposedPanels.track(new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false));
             created.setRoot(root);
             return created;
         });
