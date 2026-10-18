@@ -4,6 +4,10 @@ Editora can open a folder on another machine over SFTP, treat it as a project, a
 default) run the tools it drives on that machine. This page is the map; the SFTP file layer itself is
 described in the `vfs/` entry of the [architecture catalog](../reference/architecture-catalog.md).
 
+The opposite arrangement — the project on this machine, its programs run on a host in a copy of it — is a
+[deployment](deployment.md); it uses the same connection, consent and execution layers without mounting the
+host's folder.
+
 ## Files
 
 A remote file is an ordinary `java.nio.file.Path` on a non-default filesystem (Apache MINA SSHD's

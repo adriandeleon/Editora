@@ -368,4 +368,34 @@ class RunConfigurationsWindowFxTest {
                 .map(id -> stage.getScene().lookup(id).isDisabled())
                 .toList();
     }
+
+    @Test
+    void runOnListsTheDeploymentsAndSavesTheChoice(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setDeployments(
+                        new java.util.ArrayList<>(java.util.List.of(com.editora.config.Deployment.named("dev"))));
+        config.getWorkspaceState()
+                .setRunConfigurations(new java.util.ArrayList<>(
+                        java.util.List.of(new RunConfiguration("Serve", "example.Serve", "", "", "", ""))));
+        java.util.List<String> opened = new java.util.ArrayList<>();
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        window.setEditDeployments(opened::add);
+        FxTestSupport.runOnFx(() -> window.show("Serve", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        @SuppressWarnings("unchecked")
+        ComboBox<String> runOn = (ComboBox<String>) stage.getScene().lookup("#run-config-run-on");
+        assertEquals(
+                java.util.List.of("", "dev"), FxTestSupport.callOnFx(() -> java.util.List.copyOf(runOn.getItems())));
+        assertEquals("", FxTestSupport.callOnFx(runOn::getValue), "a configuration runs here by default");
+
+        FxTestSupport.runOnFx(() -> runOn.setValue("dev"));
+        assertEquals("dev", persisted(config, "Serve").deployment());
+
+        Button edit = (Button) stage.getScene().lookup("#run-config-edit-deployments");
+        FxTestSupport.runOnFx(edit::fire);
+        assertEquals(java.util.List.of("dev"), opened, "Deployments… opens the one chosen");
+        FxTestSupport.runOnFx(stage::close);
+    }
 }

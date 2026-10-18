@@ -59,6 +59,9 @@ final class DebugCoordinator {
         /** Shows the Debug window without moving keyboard focus into it (review C2). */
         void openToolWindow();
 
+        /** Debugs a configuration that runs on a deployment: deployed, started on its host, attached here. */
+        default void debugDeployed(RunConfiguration cfg) {}
+
         /** The active keymap's chord for {@code commandId}, formatted, or null when it is unbound. */
         default String chordFor(String commandId) {
             return null;
@@ -2107,6 +2110,10 @@ final class DebugCoordinator {
      * <p>Java only: the script types run but do not debug yet.
      */
     void debugConfig(RunConfiguration cfg) {
+        if (cfg.isDeployed()) {
+            ops.debugDeployed(cfg); // the program runs on the host; the debugger attaches through a tunnel
+            return;
+        }
         if (!cfg.isJava()) {
             // Script types run but do not debug yet. Say so plainly: falling through would resolve a Java
             // main class that a Python configuration does not have and report a confusing Java error.
