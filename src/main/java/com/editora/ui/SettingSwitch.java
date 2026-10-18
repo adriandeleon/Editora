@@ -45,6 +45,7 @@ final class SettingSwitch extends ToggleSwitch {
         }
         sw.getProperties().put(CHECK, check); // the checkbox the row's setting lives on (SettingsModified)
         sw.selectedProperty().bindBidirectional(check.selectedProperty());
+        sw.getProperties().put(SettingSwitch.class, check); // which setting a row's switch shows (ProjectScopeSettings)
         sw.disableProperty().bind(check.disableProperty());
         return sw;
     }

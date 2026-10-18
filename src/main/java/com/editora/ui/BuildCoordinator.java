@@ -396,7 +396,8 @@ final class BuildCoordinator {
     /** The launch argv prefix: the project wrapper when present, else the Settings override, else the tool's
      *  default command. */
     private List<String> executable(Path root) {
-        return tool.executable(root, wrapperBoundary(root), isWindows(), tool.commandIn(host.settings()));
+        return tool.executable(
+                root, wrapperBoundary(root), isWindows(), host.projectScope().buildCommand(tool, host.settings()));
     }
 
     /**
@@ -585,7 +586,8 @@ final class BuildCoordinator {
         if (!allowRun(root)) {
             return;
         }
-        String override = tool.commandIn(host.settings());
+        String override =
+                host.projectScope().buildCommand(tool, host.settings()); // a trusted project's, else the user's
         Path boundary = wrapperBoundary(root);
         host.setStatus(tr("status.build.loadingTasks", tool.displayName()));
         Thread t = new Thread(

@@ -101,6 +101,7 @@ final class SettingsReapply {
 
     private void everything(Settings settings) {
         MainController w = window;
+        w.lspCoordinator.reloadProjectSettings(); // first: the buffers below take a just-edited project file's values
         w.editorSettings.applyViewSettingsToAllBuffers(settings);
         w.updateBufferToolWindows(); // a feature toggle (Markdown lint, external tools, …) may re-gate a window
         // A build tool may have just been switched back on in Settings. Its cached detection was cleared the
@@ -127,7 +128,6 @@ final class SettingsReapply {
         w.installPrompts.maybeOfferInstall(w.activeBuffer()); // the install-prompts toggle / a gate may have changed
         w.fileWorkflows.applyAdminSaveSupport(); // the admin-save toggle may have flipped
         w.runConfigurations.refreshRunConfigs(); // the Settings page edits the same list this selector shows
-        w.lspCoordinator.reloadProjectSettings(); // pick up an edited .editora/settings.json
         w.remoteExecSettingsMayHaveChanged();
     }
 }

@@ -100,6 +100,17 @@ final class SettingRowState {
         return scopeNote.getText();
     }
 
+    /** The reset link's text: "Reset to default", or {@code label} (Project scope: "Use my setting"); null = default. */
+    void setResetLabel(String label) {
+        String text = label == null ? tr("settings.row.reset") : label;
+        reset.setText(text);
+    }
+
+    /** What the reset link does now (null: none), so a scope can lend the row its own and give it back. */
+    Runnable resetAction() {
+        return resetAction;
+    }
+
     /** What "Reset to default" does for this row (null: the row cannot be reset); shown while it is modified. */
     void setResetAction(Runnable action) {
         this.resetAction = action;
