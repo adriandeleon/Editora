@@ -2456,7 +2456,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::setStatus);
         exports.activeTabContent =
                 () -> tabPath(activeTab()) == null ? null : activeTab().getUserData();
-        // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (local files only).
+        // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (Reveal for local files only).
         breadcrumb.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         breadcrumb.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         bookmarkCoordinator.setOnChanged(this::refreshProjectMarkersIfBuilt);
@@ -8708,10 +8708,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         revealInFileManager(buffer.getPath(), false, isLocalBuffer(buffer));
     }
 
-    /** Opens a terminal at the active buffer's containing folder (no-op for an unsaved/remote file). */
+    /**
+     * Opens a terminal at the active buffer's containing folder, on its host for a remote file. With no saved file
+     * active (the Welcome tab, an unsaved buffer) it opens where {@code tool.terminal} would: the project's folder,
+     * or home.
+     */
     void openTerminalForActiveBuffer() {
         EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
+        if (buffer == null || buffer.getPath() == null) {
+            terminalCoordinator.newTerminal();
             return;
         }
         openTerminalAt(buffer.getPath(), false, isLocalBuffer(buffer));

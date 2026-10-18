@@ -165,6 +165,25 @@ class FileBreadcrumbMenuFxTest {
     }
 
     @Test
+    void aRemoteCrumbOffersATerminalButNoReveal(@TempDir Path dir) throws Exception {
+        // A file system other than this machine's stands in for SFTP: a terminal opens on the host, Reveal cannot.
+        try (var zip = java.nio.file.FileSystems.newFileSystem(dir.resolve("remote.zip"), java.util.Map.of("create", "true"));
+                Rig r = new Rig(zip.getPath("/"))) {
+            FxTestSupport.runOnFx(() -> {
+                r.bar.setOnReveal((path, isDir) -> r.calls.add("reveal " + path.getFileName()));
+                r.bar.setOnOpenTerminal((path, isDir) -> r.calls.add("terminal " + path.getFileName()));
+            });
+            ContextMenu folder = r.click("src");
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(Rig.texts(folder).contains(tr("menu.openTerminal")), Rig.texts(folder).toString());
+                assertFalse(Rig.texts(folder).contains(tr("menu.revealInFileManager")));
+                Rig.item(folder, tr("menu.openTerminal")).fire();
+            });
+            assertEquals(List.of("terminal src"), r.calls);
+        }
+    }
+
+    @Test
     void revealAndOpenTerminalActOnTheClickedCrumb(@TempDir Path dir) throws Exception {
         try (Rig r = new Rig(dir)) {
             FxTestSupport.runOnFx(() -> {
