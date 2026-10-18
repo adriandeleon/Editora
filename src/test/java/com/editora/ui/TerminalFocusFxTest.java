@@ -110,6 +110,28 @@ class TerminalFocusFxTest {
         }
     }
 
+    @Test
+    void closingTheWindowAsksWhenATerminalIsRunningAProgram() throws Exception {
+        try (WindowRig w = new WindowRig()) {
+            TerminalCoordinator terminals = w.controller.terminalCoordinator;
+            w.controller.config.getSettings().setTerminalShell("/bin/sh");
+            FxTestSupport.runOnFx(terminals::applySettings);
+            FxTestSupport.runOnFx(() -> w.registry.run("tool.terminal"));
+            await(() -> call(() -> terminals.panel().activeView() != null), "a shell");
+            long shell = FxTestSupport.callOnFx(() -> terminals.panel().activeView().getSession().pid());
+            FxTestSupport.runOnFx(() -> terminals.panel().activeView().getSession().sendString("sleep 30\n"));
+            await(() -> com.editora.terminal.RunningProgram.in(shell).contains("sleep"), "sleep running");
+
+            java.util.concurrent.CountDownLatch cancel =
+                    w.answer(com.editora.i18n.Messages.tr("terminal.closeWindow.header"), "Cancel");
+            FxTestSupport.runOnFx(() -> javafx.event.Event.fireEvent(
+                    w.stage(), new javafx.stage.WindowEvent(w.stage(), javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST)));
+            w.async.await(cancel, "the busy-terminal question");
+            assertTrue(FxTestSupport.callOnFx(() -> w.stage().isShowing()), "Cancel keeps the window");
+            assertTrue(com.editora.terminal.RunningProgram.in(shell).contains("sleep"), "and the program");
+        }
+    }
+
     private static Node focusOwner(FxWindowFixture fx) {
         try {
             javafx.stage.Stage stage = FxTestSupport.field(fx.controller, "stage");

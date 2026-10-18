@@ -494,9 +494,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.closes = new CloseCoordinator(
                 stage, editorArea, pinned, MainController::bufferOf, fileWorkflows, this::persistSessionForClose);
         stage.setOnCloseRequest(e -> {
-            // Save/prompt this window's dirty buffers + persist its session; cancel the close if the
-            // user backs out. (No separate "Quit?" prompt — each window closes independently now.)
-            if (!closes.confirmCloseAll()) {
+            // Busy terminals first (closing ends them), then this window's dirty buffers + its session;
+            // cancel the close if the user backs out. (No separate "Quit?" prompt — each window closes
+            // independently now.)
+            if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll()) {
                 e.consume();
                 return;
             }
@@ -1535,7 +1536,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * user cancelled (the window stays open). The caller ({@link WindowManager}) closes the stage.
      */
     public boolean closeWindowProgrammatically() {
-        if (!closes.confirmCloseAll()) {
+        if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll()) {
             return false;
         }
         disposeWindow();
@@ -8944,7 +8945,9 @@ public class MainController implements com.editora.mcp.McpBridge {
      * disposes each window's services); the null case is the unit-test/standalone controller.
      */
     void onQuit() {
-        if (!closes.confirmQuit()) {
+        // One question: quitting, and which terminals that ends (in every window).
+        List<String> busy = windowManager != null ? windowManager.busyTerminals() : terminalCoordinator.busyTerminals();
+        if (!closes.confirmQuit(busy)) {
             return;
         }
         boolean ok = windowManager != null ? windowManager.confirmCloseAllWindows() : closes.confirmCloseAll();

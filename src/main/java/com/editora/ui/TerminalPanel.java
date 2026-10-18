@@ -834,6 +834,64 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         }
     }
 
+    /**
+     * The tabs whose shell or program is running something, as "title (program, …)", for the question a window
+     * close or quit asks. A shell on another machine is asked in parallel with the others, all within
+     * {@code remoteWait}; one that does not answer in time is left out.
+     */
+    List<String> busyTabs(java.time.Duration remoteWait) {
+        List<String> busy = new ArrayList<>();
+        Map<Tab, java.util.concurrent.CompletableFuture<List<String>>> remoteAnswers = new LinkedHashMap<>();
+        for (Tab tab : tabs.getTabs()) {
+            TerminalView view = views.get(tab);
+            if (view == null || view.getSession() == null) {
+                continue;
+            }
+            if (programNames.containsKey(tab)) {
+                if (programExits.containsKey(tab)) {
+                    busy.add(describe(tab, List.of(programNames.get(tab))));
+                }
+                continue;
+            }
+            long pid = view.getSession().pid();
+            long remote = view.getSession().remotePid();
+            String stored = dirs.getOrDefault(tab, "");
+            Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
+            if (pid > 0) {
+                List<String> programs = RunningProgram.in(pid);
+                if (!programs.isEmpty()) {
+                    busy.add(describe(tab, programs));
+                }
+            } else if (remote > 0 && dir != null) {
+                remoteAnswers.put(
+                        tab,
+                        java.util.concurrent.CompletableFuture.supplyAsync(
+                                () -> remotePrograms.apply(dir, remote),
+                                command -> Thread.ofVirtual().start(command)));
+            }
+        }
+        long deadline = System.nanoTime() + remoteWait.toNanos();
+        remoteAnswers.forEach((tab, answer) -> {
+            try {
+                List<String> programs =
+                        answer.get(Math.max(0, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS);
+                if (!programs.isEmpty()) {
+                    busy.add(describe(tab, programs));
+                }
+            } catch (Exception noAnswer) {
+                // slow or gone: not asked about
+            }
+        });
+        return busy;
+    }
+
+    private static String describe(Tab tab, List<String> programs) {
+        String running = programs.size() <= RunningProgram.MAX_NAMED
+                ? String.join(", ", programs)
+                : String.join(", ", programs.subList(0, RunningProgram.MAX_NAMED)) + ", …";
+        return tab.getText() + " (" + running + ")";
+    }
+
     /** Whether a close of {@code tab} is waiting for its remote shell's answer; for tests. */
     boolean isAskingToClose(Tab tab) {
         return asking.contains(tab);

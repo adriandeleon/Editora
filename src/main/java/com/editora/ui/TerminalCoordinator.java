@@ -221,6 +221,41 @@ final class TerminalCoordinator {
         }
     }
 
+    /** How long a window close waits for terminals on other machines to say whether they are busy. */
+    private static final java.time.Duration BUSY_REMOTE_WAIT = java.time.Duration.ofSeconds(2);
+
+    /** This window's terminals that are running something (see {@link TerminalPanel#busyTabs}); empty when off. */
+    List<String> busyTerminals() {
+        if (panel == null || !host.settings().isTerminalConfirmClose()) {
+            return List.of();
+        }
+        return panel.busyTabs(BUSY_REMOTE_WAIT);
+    }
+
+    /**
+     * Asks before the window closes when its terminals are running programs — vim with unsaved text, a build, an
+     * ssh session — which the close ends. True closes. Closing one such tab already asked; closing the window did
+     * not.
+     */
+    boolean confirmCloseWithBusyTerminals() {
+        List<String> busy = busyTerminals();
+        return busy.isEmpty() || confirmEndingTerminals(host.window(), busy, tr("terminal.closeWindow.confirm"));
+    }
+
+    /** One question listing every busy terminal; {@code action} names the button that ends them. */
+    static boolean confirmEndingTerminals(javafx.stage.Window owner, List<String> busy, String action) {
+        ButtonType end = new ButtonType(action, ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, "• " + String.join("\n• ", busy), end, ButtonType.CANCEL));
+        confirm.initOwner(owner);
+        confirm.setTitle(tr("terminal.close.title"));
+        confirm.setHeaderText(tr("terminal.closeWindow.header"));
+        ((Button) confirm.getDialogPane().lookupButton(end)).setDefaultButton(false);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        MainController.styleQuitButtonAsDanger(confirm, end);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == end;
+    }
+
     /** Ends every shell (window closing). */
     void shutdown() {
         if (panel != null) {

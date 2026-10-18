@@ -1087,6 +1087,15 @@ public class WindowManager {
      *
      * @return false if the user cancelled at some window's save prompt (the quit is off).
      */
+    /** Every window's terminals that are running something, for the quit question. */
+    List<String> busyTerminals() {
+        List<String> busy = new ArrayList<>();
+        for (Holder h : windows) {
+            busy.addAll(h.controller().terminalCoordinator.busyTerminals());
+        }
+        return busy;
+    }
+
     boolean confirmCloseAllWindows() {
         // The prompts below run nested event loops; a pending restored window must not be built under them.
         // Left paused when the quit goes ahead: the unbuilt windows keep their saved sessions and their

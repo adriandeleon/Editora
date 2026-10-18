@@ -971,6 +971,33 @@ class TerminalPanelFxTest {
     }
 
     @Test
+    void theWindowCloseQuestionListsEveryBusyTerminal() throws Exception {
+        TerminalPanel.Shells fake = fakeShells();
+        show(
+                (dir, shell) -> (columns, rows) -> {
+                    FakeConnector c = (FakeConnector) fake.open(dir, shell).open(columns, rows);
+                    c.remotePid = 77;
+                    return c;
+                },
+                (title, programs) -> true,
+                Path.of(System.getProperty("java.io.tmpdir")));
+        FakeConnector program = new FakeConnector();
+        fx(() -> {
+            panel.setRemotePrograms((dir, pid) -> List.of("htop"));
+            panel.newTerminal();
+            panel.runProgram("Build", null, (c, r) -> program, code -> {});
+            return null;
+        });
+        List<String> busy = fx(() -> panel.busyTabs(java.time.Duration.ofSeconds(2)));
+        assertEquals(2, busy.size(), busy.toString());
+        assertTrue(busy.stream().anyMatch(b -> b.endsWith("(htop)")), busy.toString());
+        assertTrue(busy.contains("Build (Build)"), busy.toString());
+
+        program.exit(0);
+        await(() -> call(() -> panel.busyTabs(java.time.Duration.ofSeconds(2)).size() == 1), "an ended program is not busy");
+    }
+
+    @Test
     void aShellStartedQuietlyLeavesTheKeyboardWhereItWas() throws Exception {
         // A terminal left open comes back at startup: the editor's keystrokes must not land in a shell.
         javafx.scene.control.TextField editor = fx(javafx.scene.control.TextField::new);
