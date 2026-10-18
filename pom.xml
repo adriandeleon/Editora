@@ -68,7 +68,7 @@
         <jediterm.version>3.74</jediterm.version>
         <pty4j.version>0.14.0</pty4j.version>
         <jna.version>5.19.1</jna.version>
-        <kotlin.version>2.4.0</kotlin.version>
+        <kotlin.version>2.4.21</kotlin.version>
         <moditect.version>1.3.0.Final</moditect.version>
         <spotless.version>3.10.4</spotless.version>
         <palantir.version>2.102.0</palantir.version>
