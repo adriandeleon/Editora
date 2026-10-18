@@ -59,3 +59,6 @@ com.editora.wsl.WslProbeTest
 com.editora.ui.WslWatchProbeTest
 # Skips where zsh is not installed (a Linux runner may lack it); the macOS lanes always run it.
 com.editora.terminal.ShellIntegrationPtyTest#zshReportsItsDirectoryPromptsAndExitStatus
+# Opt-in: writes to the machine's real keychain only with EDITORA_REAL_KEYCHAIN_PROBE=1, which only the macOS and
+# Windows pure-test jobs set (they check that it ran).
+com.editora.secrets.SystemKeychainProbeTest
