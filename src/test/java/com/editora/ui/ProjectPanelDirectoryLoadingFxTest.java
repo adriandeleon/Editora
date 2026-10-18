@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(DisposedPanels.class)
 class ProjectPanelDirectoryLoadingFxTest {
 
     @BeforeAll
@@ -33,7 +34,8 @@ class ProjectPanelDirectoryLoadingFxTest {
         Path newRoot = Files.createDirectory(dir.resolve("new"));
         Files.writeString(newRoot.resolve("new.txt"), "new");
 
-        ProjectPanel panel = FxTestSupport.callOnFx(() -> new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false));
+        ProjectPanel panel = FxTestSupport.callOnFx(
+                () -> DisposedPanels.track(new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false)));
         CountDownLatch readStarted = new CountDownLatch(1);
         CountDownLatch releaseRead = new CountDownLatch(1);
         AtomicBoolean first = new AtomicBoolean(true);
@@ -83,7 +85,8 @@ class ProjectPanelDirectoryLoadingFxTest {
     void asynchronousRefreshRestoresExpandedFoldersAndSelection(@TempDir Path root) throws Exception {
         Path sub = Files.createDirectory(root.resolve("sub"));
         Path file = Files.writeString(sub.resolve("file.txt"), "text");
-        ProjectPanel panel = FxTestSupport.callOnFx(() -> new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false));
+        ProjectPanel panel = FxTestSupport.callOnFx(
+                () -> DisposedPanels.track(new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false)));
         try {
             FxTestSupport.runOnFx(() -> panel.setRoot(root));
             TreeView<Path> tree = FxTestSupport.field(panel, "tree");
@@ -120,7 +123,8 @@ class ProjectPanelDirectoryLoadingFxTest {
         Path sub = Files.createDirectory(root.resolve("sub"));
         Path nested = Files.createDirectory(sub.resolve("nested"));
         Path file = Files.writeString(nested.resolve("file.txt"), "text");
-        ProjectPanel panel = FxTestSupport.callOnFx(() -> new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false));
+        ProjectPanel panel = FxTestSupport.callOnFx(
+                () -> DisposedPanels.track(new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false)));
         try {
             FxTestSupport.runOnFx(() -> {
                 panel.setRoot(root);

@@ -593,4 +593,124 @@ class SettingsSyncPageFxTest {
             assertFalse(warning.isVisible(), "not again this run");
         });
     }
+
+    /** S2: Sync Now could not be stopped. Cancel stops it before it writes anything on this computer. */
+    @Test
+    void syncNowCanBeCancelledBeforeItWritesAnything() throws Exception {
+        open(null);
+        connect(remote.toString(), "main");
+        awaitIdle();
+        Files.writeString(other.resolve("dictionary.txt"), "zzfromother\n");
+        assertTrue(otherSyncs().ok());
+
+        java.util.concurrent.CountDownLatch hold = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService worker = FxTestSupport.field(sync, "worker");
+        worker.execute(
+                () -> { // stands for a slow network: the sync waits behind this
+                    try {
+                        hold.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+        FxTestSupport.runOnFx(() -> {
+            this.<Button>control("syncNowButton").fire();
+            Button cancel = control("syncCancelButton");
+            assertTrue(cancel.isVisible(), "offered while it syncs");
+            cancel.fire();
+        });
+        hold.countDown();
+        awaitIdle();
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(fx.shared.getUserDictionary().contains("zzfromother"), "nothing arrived");
+            assertFalse(this.<Button>control("syncCancelButton").isVisible());
+            assertNotEquals(
+                    tr("sync.state.syncing"),
+                    this.<Label>control("syncStateLabel").getText());
+        });
+
+        FxTestSupport.runOnFx(() -> this.<Button>control("syncNowButton").fire());
+        awaitIdle();
+        FxTestSupport.runOnFx(
+                () -> assertTrue(fx.shared.getUserDictionary().contains("zzfromother"), "the next sync runs in full"));
+    }
+
+    /** Puts the sync service in {@code phase} after a run that ended with {@code report} (no git, no network). */
+    private void fakeState(SettingsSync.Phase phase, SyncReport report, java.time.LocalTime at) {
+        FxTestSupport.call(
+                sync, "setState", new Class<?>[] {SettingsSync.State.class}, new SettingsSync.State(phase, report, at));
+    }
+
+    private static SyncReport report(SyncReport.Status status, String detail) {
+        return new SyncReport(status, List.of(), List.of(), List.of(), List.of(), detail);
+    }
+
+    /** The pill is as wide as its words, never the width of the row (adl's screenshots). */
+    private static void assertHugsItsText(Label pill) {
+        pill.getScene().getRoot().applyCss();
+        pill.getScene().getRoot().layout();
+        double pref = pill.prefWidth(-1);
+        double row = ((javafx.scene.layout.Region) pill.getParent().getParent()).getWidth();
+        assertTrue(
+                Math.abs(pill.getWidth() - Math.min(pref, pill.getMaxWidth())) < 2,
+                pill.getText() + ": " + pill.getWidth() + " wide, its text needs " + pref);
+        assertTrue(pill.getWidth() < row - 20, pill.getText() + " fills the row (" + row + ")");
+    }
+
+    /** adl: a green pill when connected, a yellow or red one when not, on the Status row of the Sync page. */
+    @Test
+    void theStatusRowIsAPillInEveryState() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            Label pill = control("syncPill");
+            Label detail = control("syncStateLabel");
+            // Not set up.
+            assertEquals(tr("settings.sync.pill.notConnected"), pill.getText());
+            assertTrue(pill.getStyleClass().contains("settings-git-warn"));
+            assertEquals(tr("settings.sync.pill.accessible", pill.getText()), pill.getAccessibleText());
+            assertHugsItsText(pill);
+            assertFalse(detail.isVisible(), "the pill says it all");
+
+            settings.setSyncRepoUrl("git@example.invalid:me/editora-sync.git"); // never contacted: no run starts
+            settings.setSyncEnabled(true);
+            fakeState(SettingsSync.Phase.IDLE, report(SyncReport.Status.OK, ""), java.time.LocalTime.now());
+            assertEquals(
+                    tr("settings.sync.pill.with", tr("settings.sync.pill.connected"), tr("settings.sync.pill.justNow")),
+                    pill.getText());
+            assertTrue(pill.getStyleClass().contains("settings-git-found"));
+            assertTrue(detail.isVisible(), "what the last run did");
+            assertHugsItsText(pill);
+
+            fakeState(SettingsSync.Phase.SYNCING, report(SyncReport.Status.OK, ""), java.time.LocalTime.now());
+            assertEquals(
+                    tr("settings.sync.pill.with", tr("settings.sync.pill.connected"), tr("settings.sync.pill.syncing")),
+                    pill.getText());
+            assertTrue(pill.getStyleClass().contains("settings-git-found"));
+
+            fakeState(
+                    SettingsSync.Phase.PROBLEM,
+                    report(
+                            SyncReport.Status.FETCH_FAILED,
+                            "fatal: unable to access: Could not resolve host: example.invalid"),
+                    java.time.LocalTime.now());
+            assertTrue(pill.getStyleClass().contains("settings-git-warn"), "offline: it retries by itself");
+            assertHugsItsText(pill);
+            assertTrue(pill.getText().startsWith(tr("settings.sync.pill.notConnected")));
+
+            fakeState(
+                    SettingsSync.Phase.PROBLEM,
+                    report(SyncReport.Status.FETCH_FAILED, "fatal: could not read Username: terminal prompts disabled"),
+                    java.time.LocalTime.now());
+            assertEquals(tr("settings.sync.pill.failing"), pill.getText());
+            assertTrue(pill.getStyleClass().contains("settings-git-missing"));
+            assertHugsItsText(pill);
+            assertTrue(detail.isVisible(), "with the reason under it");
+            assertEquals(sync.stateText(), detail.getText());
+            assertEquals(detail.getText(), pill.getTooltip().getText());
+
+            fakeState(SettingsSync.Phase.OFF, null, null);
+            settings.setSyncEnabled(false);
+            settings.setSyncRepoUrl("");
+        });
+    }
 }

@@ -66,7 +66,7 @@ public final class SettingsFileCheck {
      * Whether {@code used} holds what {@code written} says: numbers by value (14 = 14.0), an object by the fields it
      * was written with (fields the file leaves out take their defaults), an array element by element.
      */
-    static boolean sameValue(JsonNode written, JsonNode used) {
+    public static boolean sameValue(JsonNode written, JsonNode used) {
         if (written.isNumber() && used.isNumber()) {
             return written.decimalValue().compareTo(used.decimalValue()) == 0;
         }

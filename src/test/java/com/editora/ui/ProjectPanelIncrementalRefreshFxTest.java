@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The watcher now re-lists the one directory whose entries changed and keeps the rows that are still right.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(DisposedPanels.class)
 class ProjectPanelIncrementalRefreshFxTest {
 
     @BeforeAll
@@ -43,7 +44,7 @@ class ProjectPanelIncrementalRefreshFxTest {
 
     private static ProjectPanel panel(Path root, AtomicInteger external) throws Exception {
         return FxTestSupport.callOnFx(() -> {
-            ProjectPanel p = new ProjectPanel(x -> {}, (a, b) -> {}, x -> {}, x -> false);
+            ProjectPanel p = DisposedPanels.track(new ProjectPanel(x -> {}, (a, b) -> {}, x -> {}, x -> false));
             p.setOnExternalChange(external::incrementAndGet);
             p.setRoot(root);
             return p;

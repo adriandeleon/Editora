@@ -81,4 +81,15 @@ class SettingsSearchTest {
         assertTrue(SettingsSearch.matches("soft wrap", "Wrap long lines"));
         assertFalse(SettingsSearch.matches("zoom", "Theme"));
     }
+
+    @Test
+    void atModifiedAsksForModifiedRowsAndLeavesTheOtherWords() {
+        assertTrue(SettingsSearch.wantsModified("@modified"));
+        assertTrue(SettingsSearch.wantsModified("wrap @Modified"));
+        assertFalse(SettingsSearch.wantsModified("modified"));
+        assertFalse(SettingsSearch.wantsModified("@modifiedx"));
+        assertEquals("wrap", SettingsSearch.withoutModifiedToken("@modified wrap"));
+        assertEquals("", SettingsSearch.withoutModifiedToken(" @modified "));
+        assertEquals("@modifiedx", SettingsSearch.withoutModifiedToken("@modifiedx"));
+    }
 }

@@ -282,6 +282,9 @@ public class SharedConfig {
         List<String> skipped = new ArrayList<>();
         int before = loadProblems.size();
         settings = loadSettings();
+        if (apiKeys != null) {
+            settings.useApiKeyVault(apiKeys); // a reload replaced the Settings object the keys were attached to
+        }
         loadProblems.subList(before, loadProblems.size()).forEach(p -> skipped.addAll(p.skipped()));
         settingsFileIssues = checkSettingsFile(skipped);
         sync.loaded(getSettingsFile(), settingsBytes());
@@ -348,6 +351,9 @@ public class SharedConfig {
             throw new UncheckedIOException("Failed to apply " + file.getFileName(), e);
         }
         settingsFileIssues = checkSettingsFile(skipped);
+        if (apiKeys != null && apiKeys.absorb(settings)) {
+            saveSettings(); // a key typed into the file moved to the keychain; the file lets go of it
+        }
         sync.loaded(file, settingsBytes()); // what is on disk now is this process's own state
         return settingsFileIssues;
     }
@@ -708,7 +714,24 @@ public class SharedConfig {
                 includeApiKeys);
     }
 
-    /** Whether an AI provider API key is saved, which an export leaves out unless the user asks. */
+    /** The AI keys' vault once {@link #useSecretStore} ran; null keeps them in {@code settings.json}. */
+    private volatile ApiKeyVault apiKeys;
+
+    /**
+     * Keeps the AI providers' API keys in {@code store} (the system keychain), moving any that {@code settings.json}
+     * still holds (see {@link ApiKeyVault#open}). Blocking — the launch calls it off the FX thread. Tests never call
+     * it, so they never reach a real keychain.
+     */
+    public void useSecretStore(com.editora.secrets.SecretStore store) {
+        ApiKeyVault vault = ApiKeyVault.open(store, settings);
+        apiKeys = vault;
+        if (vault.settingsChanged()) {
+            saveSettings();
+        }
+    }
+
+    /** Whether an AI provider API key is saved in {@code settings.json} (never true for keys in the keychain),
+     *  which an export leaves out unless the user asks. */
     public boolean hasApiKeys() {
         Settings s = settings;
         return !(s.getAiApiKey().isBlank()

@@ -732,8 +732,8 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
-    public void onQuit() {
-        mc.onQuit();
+    public boolean onQuit() {
+        return mc.onQuit();
     }
 
     @Override
@@ -854,6 +854,16 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     @Override
     public void exportConfig() {
         mc.exportConfig();
+    }
+
+    @Override
+    public void importConfig() {
+        if (mc.windowManager != null) {
+            // The last dialog's "Restart now" quits and relaunches the way Settings' own Restart Now does.
+            ConfigImportFlow.restart = () -> mc.registry.run("app.restart");
+            new ConfigImportFlow(mc.stage, mc.config.shared(), mc.windowManager, mc::setStatus, mc.backgroundTasks())
+                    .start();
+        }
     }
 
     @Override
