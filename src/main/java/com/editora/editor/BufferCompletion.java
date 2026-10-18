@@ -1642,24 +1642,39 @@ final class BufferCompletion {
         var out = new java.util.ArrayList<Completion>(items.size() + 1);
         out.add(Completion.ofSnippet(typed).withReplaceRange(range));
         for (Completion c : items) {
-            if (c.kind() != Completion.Kind.SNIPPET || !typed.equals(c.snippet())) out.add(c);
+            if (c.kind() == Completion.Kind.SNIPPET && typed.equals(c.snippet())) continue;
+            if (isServerTemplate(c) && c.label().equals(typed.prefix())) continue;
+            out.add(c);
         }
         return out;
     }
 
-    /** Preserves server overloads; removes only duplicate local snippets and caps the displayed list. */
+    /**
+     * Preserves server overloads; removes duplicate local snippets and the server templates a local snippet
+     * shadows, and caps the displayed list.
+     */
     static java.util.List<Completion> mergeCompletions(
             java.util.List<Completion> lsp, java.util.List<Completion> local) {
-        // Same inserted text can mean different overloads or imports. Never deduplicate server identities.
+        // Same inserted text can mean different overloads or imports. Never deduplicate server identities —
+        // except a server template (jdtls's sysout, fori, try_catch…) named like a local snippet: Tab expands
+        // the local one, so the popup offers that one too instead of two rows under one trigger.
+        var triggers = new java.util.HashSet<String>();
+        for (Completion c : local) if (c.kind() == Completion.Kind.SNIPPET) triggers.add(c.label());
         var out = new java.util.ArrayList<Completion>();
         var inserts = new java.util.HashSet<String>();
         if (lsp != null)
             for (Completion c : lsp) {
+                if (isServerTemplate(c) && triggers.contains(c.label())) continue;
                 out.add(c);
                 inserts.add(c.insert());
             }
         for (Completion c : local) if (inserts.add(c.insert())) out.add(c);
         return List.copyOf(out.subList(0, Math.min(50, out.size())));
+    }
+
+    /** A language server's own snippet item (its {@code kind} is Snippet), as opposed to a local snippet. */
+    private static boolean isServerTemplate(Completion c) {
+        return c.kind() != Completion.Kind.SNIPPET && c.iconKind() == com.editora.completion.CompletionIconKind.SNIPPET;
     }
 
     /** Replaces the typed prefix with the accepted completion (a snippet starts a tab-stop session). */
