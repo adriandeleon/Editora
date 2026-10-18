@@ -111,7 +111,7 @@ Under `src/native/resources/META-INF/native-image/com.editora/`:
   `Orientation`, `Pos`, and `Priority` enum factories used by the actual markup.
 - `fxml/reachability-metadata.json`: only the constructor, 33 injected fields and named no-argument
   handlers from `main.fxml`, plus imported JavaFX element constructors/bean methods and query-only
-  entries for the layout/control superclasses that FXML's `BeanAdapter` inspects. Regenerate with `python3 scripts/native/fxml-metadata.py`; `--check`
+  entries for the layout/control superclasses that FXML's `BeanAdapter` inspects. Regenerate with `java scripts/nativeimage/FxmlMetadata.java`; `--check`
   detects drift and changed signatures. No whole-controller/package registration.
 - `config/reachability-metadata.json`: explicitly named persistence DTOs and Jackson's Java7 support
   constructor, record-base introspection, and the XML factory service-resource lookup. These DTOs use bean/field introspection; registering their public methods, constructors
@@ -195,8 +195,8 @@ Core gate, first on JVM:
 
 ```sh
 mvn clean -Peditor-probe compile dependency:build-classpath -Dmdep.outputFile=target/probe-classpath.txt
-python3 scripts/native/run-probe.py
-python3 scripts/native/run-probe.py --desktop --sizes=102400
+java scripts/nativeimage/RunProbe.java
+java scripts/nativeimage/RunProbe.java --desktop --sizes=102400
 ```
 
 Then on Native Image, with the same assertions and workload:
@@ -205,8 +205,8 @@ Then on Native Image, with the same assertions and workload:
 mvn clean -Pnative,editor-probe -DskipTests \
   -Dnative.mainClass=com.editora.experiment.EditorProbeLauncher \
   -Dnative.imageName=editora-editor-probe package
-python3 scripts/native/run-probe.py --native target/editora-editor-probe
-python3 scripts/native/run-probe.py --native target/editora-editor-probe --desktop
+java scripts/nativeimage/RunProbe.java --native target/editora-editor-probe
+java scripts/nativeimage/RunProbe.java --native target/editora-editor-probe --desktop
 ```
 
 The default probe uses JavaFX's built-in Headless backend and software Prism. It needs no TestFX,
@@ -218,9 +218,9 @@ The process exits nonzero for assertions, asynchronous uncaught exceptions, or p
 Reviewable agent collection, on the GraalVM **JVM**, after compiling the probe:
 
 ```sh
-python3 scripts/native/run-probe.py --sizes=102400 --trace target/native-agent-editor
-python3 scripts/native/fxml-metadata.py --check
-python3 -m unittest discover -s scripts/native -p 'test_*.py'
+java scripts/nativeimage/RunProbe.java --sizes=102400 --trace target/native-agent-editor
+java scripts/nativeimage/FxmlMetadata.java --check
+java scripts/lib/RunTests.java nativeimage
 ```
 
 Do not benchmark an agent-instrumented or JaCoCo-instrumented launch.
@@ -259,13 +259,13 @@ Do not tune initialization, remove features or alter the editor to pass them.
 
 ## Benchmark tooling
 
-`scripts/native/benchmark.py` accepts JSON containing explicit command **arrays**, never shell strings:
+`scripts/nativeimage/Benchmark.java` accepts JSON containing explicit command **arrays**, never shell strings:
 
 ```json
 {
   "modes": {
-    "jvm": {"editor": ["python3", "scripts/native/run-probe.py"]},
-    "native": {"editor": ["python3", "scripts/native/run-probe.py", "--native", "target/editora-editor-probe"]},
+    "jvm": {"editor": ["java", "scripts/nativeimage/RunProbe.java"]},
+    "native": {"editor": ["java", "scripts/nativeimage/RunProbe.java", "--native", "target/editora-editor-probe"]},
     "aot": {"startup": ["/absolute/path/to/AOT-image/bin/Editora", "--no-session", "/absolute/path/to/Example.java"]}
   },
   "distributions": {
@@ -275,14 +275,14 @@ Do not tune initialization, remove features or alter the editor to pass them.
 }
 ```
 
-Prepare/stage both probe artifacts before `clean` removes `target`. Use `run-probe.py --print-command`
+Prepare/stage both probe artifacts before `clean` removes `target`. Use `RunProbe.java --print-command`
 to emit argv JSON, replace `target/classes` with an immutable jar snapshot when comparing across builds,
 and use the **same dependency classpath and input sizes**. An `env` map per mode can carry launcher
 options; `{config_dir}` in argv expands to a fresh per-run configuration directory. Startup mode also
 sets `EDITORA_CONFIG_DIR`, `EDITORA_PERF`, `EDITORA_PERF_EXIT` and an external epoch-millisecond T0.
 
 ```sh
-python3 scripts/native/benchmark.py /path/to/commands.json --output /new/output/directory --runs 5 --warmups 1
+java scripts/nativeimage/Benchmark.java /path/to/commands.json --output /new/output/directory --runs 5 --warmups 1
 ```
 
 The runner rotates mode order, preserves each command and log (editor stdout and stderr separately), records failed/time-out
@@ -307,7 +307,7 @@ RSS is Linux `/proc/<pid>/status`, directly sampled, excluding child LSP/DAP pro
 
 ### Full application workflow and the current AOT cache
 
-`scripts/native/app-probe.py` launches the **unchanged main entry point** and drives the existing
+`scripts/nativeimage/AppProbe.java` launches the **unchanged main entry point** and drives the existing
 loopback MCP server. Each run creates a disposable 100 KiB Java file, Maven/Git project, and config;
 it enables MCP and disables automatic update checks and LSP. No user files/settings or production
 hooks are involved. It waits for real file paint and an exact buffer read, applies an edit, verifies
@@ -333,7 +333,7 @@ Use a config with `application` argv arrays (just launchers/VM options, **no fil
 ```
 
 ```sh
-python3 scripts/native/app-probe.py /path/to/application-commands.json \
+java scripts/nativeimage/AppProbe.java /path/to/application-commands.json \
   --output /new/application-results --runs 5 --warmups 1
 ```
 

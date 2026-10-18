@@ -6,7 +6,7 @@ release workflow and use this catalog when changing platform-specific implementa
 The separate Linux x64 `native-experimental` job uses GraalVM 25 to build `-Pnative` with a 6 GiB
 builder heap/four workers. It runs the actual-application smoke probe under Xvfb with its
 disposable project in the runner's temporary directory, outside the repository's `.editorconfig`, before
-`scripts/native/package-release.py` bundles the executable and adjacent shared libraries as
+`scripts/nativeimage/PackageRelease.java` bundles the executable and adjacent shared libraries as
 `Editora-<version>-linux-x64-native-experimental.tar.gz`. The JReleaser `*.tar.gz` glob picks it
 up with the established Linux portable tarballs. The job is best-effort; the `release` job waits
 for its outcome but runs whenever the ordinary build matrix succeeds. A native failure leaves no
@@ -15,7 +15,7 @@ experimental asset and does not block the ordinary release. See the measured lim
 
 `.github/workflows/release.yml` runs on a version-shaped `vX.Y.Z*` tag (or manual dispatch for a
 dry run), after a `preflight` job has checked the tag against the pom version and that every check the
-`master` ruleset requires passed on the tagged commit (`check-release.py ci`, waiting up to 30 minutes
+`master` ruleset requires passed on the tagged commit (`CheckRelease.java ci`, waiting up to 30 minutes
 for CI still running): a 5-way
 matrix (linux x64/arm64, macOS x64/arm64, windows x64 — **Windows arm64 is omitted: a hosted
 runner now exists (`windows-11-arm`, GA Jan 2026), but OpenJFX (through 27) publishes no `win-aarch64` native
@@ -33,7 +33,7 @@ second `-Pdist` build):** a single-file **`.AppImage`** (`scripts/build-appimage
 image to `/opt/editora` (root) or `~/.local/editora` (user) with an `editora` command + a `.desktop`
 (`StartupWMClass=com.editora.App`), supporting `--system`/`--user`/`--prefix`/`--uninstall`. Both reuse the
 jpackage `APP_IMAGE` output (= jlink + the native launcher + `lib/app/editora.aot`, `$APPDIR`-relative so it's
-relocatable); both release steps are `continue-on-error` **only on a manual dry run** — on a tag a failure fails the leg, and the `Release` job's asset check (`scripts/release/check-release.py`) refuses to publish an immutable release with any expected file missing. The
+relocatable); both release steps are `continue-on-error` **only on a manual dry run** — on a tag a failure fails the leg, and the `Release` job's asset check (`scripts/release/CheckRelease.java`) refuses to publish an immutable release with any expected file missing. The
 `.tar.gz`/`.AppImage`/`.rpm` are attached to the GitHub release via `jreleaser.yml`'s file globs. Installers are renamed to
 `Editora-<version>-<target>.<ext>` per target (the Stage step preserves the compound `.tar.gz`
 extension) — one consistent `Editora-<version>-<target>` prefix
@@ -123,7 +123,7 @@ convention — postinst runs as root and must not rewrite per-user config). Then
 expert-default lines from `mimeapps.list`, **putting back the defaults `postinst` displaced** (unless
 the type has since been given another default) and deleting that file only when nothing but section
 headers remains, i.e. postinst created it. Both scripts address every path under `$DPKG_ROOT`, which
-is how `scripts/packaging/test_deb_maintainer_scripts.py` runs them against a scratch root. DEB-only — the RPM bundler ignores the resource-dir maintainer
+is how `scripts/packaging/MaintainerScriptsTest.java` runs them against a scratch root. DEB-only — the RPM bundler ignores the resource-dir maintainer
 scripts, and the `.tar.gz`'s `tarball-install.sh` installs its own single `.desktop`. **Device-test on Linux** (install the `.deb`: `which editora`
 works + the app shows our icon in the menu and dock; then remove: both are gone) — the macOS dev box and
 the `os-linux` profile can't exercise this. *(If a terminal-launched window's dock icon is still generic,

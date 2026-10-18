@@ -2642,8 +2642,9 @@ final class LspCoordinator {
         if (!ops.lspFeatureEnabled()) {
             return;
         }
-        if (message != null && !message.isBlank()) {
-            host.setStatus(tr("status.lsp.server", serverId == null ? "LSP" : serverLabel(serverId), message));
+        showStatusLine(statusNarrator.onStatus(serverId, type, message, System.currentTimeMillis()));
+        if (statusNarrator.pending()) {
+            statusSettle.playFromStart(); // every status restarts the quiet period
         }
         if (type != null) {
             String t = type.toLowerCase(Locale.ROOT);
@@ -2666,8 +2667,38 @@ final class LspCoordinator {
         }
     }
 
+    /** Turns raw server statuses into conclusive echo lines — above all, one that says startup is done. */
+    private final com.editora.lsp.ServerStatusNarrator statusNarrator = new com.editora.lsp.ServerStatusNarrator();
+
+    /** Fires once the servers have been quiet long enough for the narrator to call one ready (or show work). */
+    private final javafx.animation.PauseTransition statusSettle = statusSettle();
+
+    private javafx.animation.PauseTransition statusSettle() {
+        var settle = new javafx.animation.PauseTransition(
+                javafx.util.Duration.millis(com.editora.lsp.ServerStatusNarrator.QUIET_MILLIS));
+        settle.setOnFinished(e -> {
+            if (!ops.lspFeatureEnabled()) {
+                return;
+            }
+            statusNarrator.tick(System.currentTimeMillis()).forEach(this::showStatusLine);
+            if (statusNarrator.pending()) {
+                settle.playFromStart();
+            }
+        });
+        return settle;
+    }
+
+    private void showStatusLine(com.editora.lsp.ServerStatusNarrator.Line line) {
+        if (line != null) {
+            String server = line.serverId() == null ? "LSP" : serverLabel(line.serverId());
+            host.setStatus(
+                    line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
+        }
+    }
+
     /** Restarts every running server, clears diagnostics, then re-gates each buffer ({@code lsp.restartServers}). */
     void restartServers() {
+        statusNarrator.forget(null);
         lspManager.shutdownAll();
         clearAllDiagnostics();
         applyGating();

@@ -1,6 +1,9 @@
 {
   "main": {
-    "prefix": "main",
+    "prefix": [
+      "main",
+      "psvm"
+    ],
     "body": [
       "public static void main(String[] args) {",
       "\t$0",
@@ -8,55 +11,261 @@
     ],
     "description": "Public static main method"
   },
+  "Compact main": {
+    "prefix": "cmain",
+    "body": [
+      "void main() {",
+      "\t$0",
+      "}"
+    ],
+    "description": "JDK 25 compact source file entry point (JEP 512)"
+  },
   "class": {
     "prefix": "class",
     "body": [
-      "public class ${1:TM_FILENAME_BASE} {",
+      "public class ${1:$TM_FILENAME_BASE} {",
       "\t$0",
       "}"
     ],
-    "description": "Public class"
+    "description": "Public class named after the file"
   },
-  "sysout": {
-    "prefix": "sysout",
+  "interface": {
+    "prefix": "interface",
     "body": [
-      "System.out.println($0);"
-    ],
-    "description": "Print to standard out"
-  },
-  "syserr": {
-    "prefix": "syserr",
-    "body": [
-      "System.err.println($0);"
-    ],
-    "description": "Print to standard err"
-  },
-  "fori": {
-    "prefix": "fori",
-    "body": [
-      "for (${1:int} ${2:i} = ${3:0}; $2 < ${4:max}; $2++) {",
+      "public interface ${1:$TM_FILENAME_BASE} {",
       "\t$0",
       "}"
     ],
-    "description": "Indexed for loop"
+    "description": "Public interface named after the file"
   },
-  "foreach": {
-    "prefix": "foreach",
+  "record": {
+    "prefix": "record",
     "body": [
-      "for (${1:type} ${2:var} : ${3:iterable}) {",
+      "public record ${1:$TM_FILENAME_BASE}(${2:String name}) {",
       "\t$0",
       "}"
     ],
-    "description": "Enhanced for loop"
+    "description": "Public record named after the file"
+  },
+  "enum": {
+    "prefix": "enum",
+    "body": [
+      "public enum ${1:$TM_FILENAME_BASE} {",
+      "\t${2:FIRST, SECOND};",
+      "\t$0",
+      "}"
+    ],
+    "description": "Public enum named after the file"
+  },
+  "sealed": {
+    "prefix": "sealed",
+    "body": [
+      "public sealed interface ${1:$TM_FILENAME_BASE} {",
+      "\trecord ${2:First}(${3:String value}) implements $1 {}",
+      "",
+      "\trecord ${4:Second}(${5:int count}) implements $1 {}",
+      "}$0"
+    ],
+    "description": "Sealed interface with two record implementations"
+  },
+  "package": {
+    "prefix": "package",
+    "body": [
+      "package ${1:${TM_DIRECTORY/(^.*[\\/\\\\]src[\\/\\\\](?:main|test)[\\/\\\\]java(?:[\\/\\\\]|$))|(^.*$)|([\\/\\\\])/${3:+.}/g}};$0"
+    ],
+    "description": "Package statement (the package of the folder under src/main/java or src/test/java)"
+  },
+  "import": {
+    "prefix": "import",
+    "body": [
+      "import ${1:java.util.List};$0"
+    ],
+    "description": "Import statement"
   },
   "Public constructor": {
     "prefix": "ctor",
     "body": [
-      "public ${1:${TM_FILENAME_BASE}}($2) {",
-      "\t${0:super();}",
+      "${1|public,protected,private|} ${TM_FILENAME_BASE}($2) {",
+      "\t$0",
       "}"
     ],
-    "description": "Public constructor"
+    "description": "Constructor for the class named after the file"
+  },
+  "method": {
+    "prefix": "method",
+    "body": [
+      "${1|public,protected,private|} ${2:void} ${3:name}($4) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Method with an access-modifier choice"
+  },
+  "static_method": {
+    "prefix": "static_method",
+    "body": [
+      "${1|public,protected,private|} static ${2:void} ${3:name}($4) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Static method with an access-modifier choice"
+  },
+  "private_method": {
+    "prefix": "private_method",
+    "body": [
+      "private ${1:void} ${2:name}($3) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Private method"
+  },
+  "Public method": {
+    "prefix": "public_method",
+    "body": [
+      "public ${1:void} ${2:name}($3) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Public method"
+  },
+  "Protected Method": {
+    "prefix": "protected_method",
+    "body": [
+      "protected ${1:void} ${2:name}($3) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Protected method"
+  },
+  "Private static method": {
+    "prefix": "private_static_method",
+    "body": [
+      "private static ${1:void} ${2:name}($3) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Private static method"
+  },
+  "Public static method": {
+    "prefix": "public_static_method",
+    "body": [
+      "public static ${1:void} ${2:name}($3) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Public static method"
+  },
+  "field": {
+    "prefix": "field",
+    "body": [
+      "${1|private,protected,public|} ${2:String} ${3:name};$0"
+    ],
+    "description": "Field with an access-modifier choice"
+  },
+  "Private field": {
+    "prefix": "private_field",
+    "body": [
+      "private ${1:String} ${2:name};$0"
+    ],
+    "description": "Private field"
+  },
+  "Protected field": {
+    "prefix": "protected_field",
+    "body": [
+      "protected ${1:String} ${2:name};$0"
+    ],
+    "description": "Protected field"
+  },
+  "Public field": {
+    "prefix": "public_field",
+    "body": [
+      "public ${1:String} ${2:name};$0"
+    ],
+    "description": "Public field"
+  },
+  "constant": {
+    "prefix": [
+      "const",
+      "psf"
+    ],
+    "body": [
+      "${1|private,public|} static final ${2:String} ${3:NAME} = ${4:\"value\"};$0"
+    ],
+    "description": "static final constant"
+  },
+  "newObject": {
+    "prefix": "new",
+    "body": [
+      "${1:Object} ${2:foo} = new $1($3);$0"
+    ],
+    "description": "Create a new object"
+  },
+  "sysout": {
+    "prefix": [
+      "sysout",
+      "sout"
+    ],
+    "body": [
+      "System.out.println($1);$0"
+    ],
+    "description": "Print to standard out"
+  },
+  "soutv": {
+    "prefix": "soutv",
+    "body": [
+      "System.out.println(\"${1:value} = \" + $1);$0"
+    ],
+    "description": "Print a value with its name"
+  },
+  "souf": {
+    "prefix": [
+      "souf",
+      "printf"
+    ],
+    "body": [
+      "System.out.printf(\"${1:%s}%n\", $2);$0"
+    ],
+    "description": "Formatted print to standard out"
+  },
+  "syserr": {
+    "prefix": [
+      "syserr",
+      "serr"
+    ],
+    "body": [
+      "System.err.println($1);$0"
+    ],
+    "description": "Print to standard err"
+  },
+  "IO.println": {
+    "prefix": [
+      "ioprintln",
+      "iop"
+    ],
+    "body": [
+      "IO.println($1);$0"
+    ],
+    "description": "java.lang.IO console output (JDK 25)"
+  },
+  "IO.readln": {
+    "prefix": "ioreadln",
+    "body": [
+      "String ${1:input} = IO.readln(${2:\"prompt: \"});$0"
+    ],
+    "description": "java.lang.IO console input (JDK 25)"
+  },
+  "logger": {
+    "prefix": "logger",
+    "body": [
+      "private static final System.Logger LOG = System.getLogger(${1:$TM_FILENAME_BASE}.class.getName());$0"
+    ],
+    "description": "System.Logger field (JDK, no dependency)"
+  },
+  "slf4j": {
+    "prefix": "slf4j",
+    "body": [
+      "private static final Logger log = LoggerFactory.getLogger(${1:$TM_FILENAME_BASE}.class);$0"
+    ],
+    "description": "SLF4J logger field (import org.slf4j.Logger and LoggerFactory)"
   },
   "if": {
     "prefix": "if",
@@ -79,102 +288,104 @@
     "description": "if/else statement"
   },
   "ifnull": {
-    "prefix": "ifnull",
+    "prefix": [
+      "ifnull",
+      "ifn"
+    ],
     "body": [
-      "if (${1:condition} == null) {",
+      "if (${1:value} == null) {",
       "\t$0",
       "}"
     ],
-    "description": "if statement checking for null"
+    "description": "if the value is null"
   },
   "ifnotnull": {
-    "prefix": "ifnotnull",
+    "prefix": [
+      "ifnotnull",
+      "inn"
+    ],
     "body": [
-      "if (${1:condition} != null) {",
+      "if (${1:value} != null) {",
       "\t$0",
       "}"
     ],
-    "description": "if statement checking for not null"
+    "description": "if the value is not null"
   },
-  "trycatch": {
-    "prefix": "try_catch",
-    "body": [
-      "try {",
-      "\t$1",
-      "} catch (${2:Exception} ${3:e}) {",
-      "\t$4//${0:TODO}: handle exception",
-      "}"
+  "instanceof": {
+    "prefix": [
+      "instanceof",
+      "inst"
     ],
-    "description": "try/catch block"
-  },
-  "tryresources": {
-    "prefix": "try_resources",
     "body": [
-      "try ($1) {",
-      "\t$2",
-      "} catch (${3:Exception} ${4:e}) {",
-      "\t$5//${0:TODO}: handle exception",
-      "}"
-    ]
-  },
-  "private_method": {
-    "prefix": "private_method",
-    "body": [
-      "private ${1:void} ${2:name}($3) {",
+      "if (${1:obj} instanceof ${2:String} ${3:s}) {",
       "\t$0",
       "}"
     ],
-    "description": "private method"
-  },
-  "Public method": {
-    "prefix": "public_method",
-    "body": [
-      "public ${1:void} ${2:name}(${3}) {",
-      "\t$0",
-      "}"
-    ],
-    "description": "public method"
-  },
-  "Private static method": {
-    "prefix": "private_static_method",
-    "body": [
-      "private static ${1:Type} ${2:name}(${3}) {",
-      "\t$0",
-      "}"
-    ],
-    "description": "private static method"
-  },
-  "Public static method": {
-    "prefix": "public_static_method",
-    "body": [
-      "public static ${1:void} ${2:name}(${3}) {",
-      "\t$0",
-      "}"
-    ],
-    "description": "public static method"
-  },
-  "Protected Method": {
-    "prefix": "protected_method",
-    "body": [
-      "protected ${1:void} ${2:name}(${3}) {",
-      "\t$0",
-      "}"
-    ],
-    "description": "Protected method"
+    "description": "instanceof with a pattern variable"
   },
   "Switch Statement": {
     "prefix": "switch",
     "body": [
-      "switch (${1:key}) {",
-      "\tcase ${2:value}:",
-      "\t\t$0",
-      "\t\tbreak;",
-      "",
-      "\tdefault:",
-      "\t\tbreak;",
+      "switch (${1:value}) {",
+      "\tcase ${2:CONSTANT} -> ${3:{\\}}",
+      "\tdefault -> ${0:throw new IllegalStateException(\"Unexpected value: \" + $1);}",
       "}"
     ],
-    "description": "Switch Statement"
+    "description": "switch statement with arrow cases"
+  },
+  "Switch Expression": {
+    "prefix": [
+      "switchexpr",
+      "sw"
+    ],
+    "body": [
+      "${1:var} ${2:result} = switch (${3:value}) {",
+      "\tcase ${4:CONSTANT} -> ${5:null};",
+      "\tdefault -> ${0:throw new IllegalStateException(\"Unexpected value: \" + $3);}",
+      "};"
+    ],
+    "description": "switch expression assigned to a variable"
+  },
+  "fori": {
+    "prefix": "fori",
+    "body": [
+      "for (int ${1:i} = 0; $1 < ${2:n}; $1++) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Indexed for loop"
+  },
+  "forr": {
+    "prefix": "forr",
+    "body": [
+      "for (int ${1:i} = ${2:n} - 1; $1 >= 0; $1--) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Indexed for loop, counting down"
+  },
+  "foreach": {
+    "prefix": [
+      "foreach",
+      "iter"
+    ],
+    "body": [
+      "for (${1:var} ${2:item} : ${3:items}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Enhanced for loop"
+  },
+  "formap": {
+    "prefix": "formap",
+    "body": [
+      "for (var ${1:entry} : ${2:map}.entrySet()) {",
+      "\tvar ${3:key} = $1.getKey();",
+      "\tvar ${4:value} = $1.getValue();",
+      "\t$0",
+      "}"
+    ],
+    "description": "Loop over a map's entries"
   },
   "While Statement": {
     "prefix": "while",
@@ -183,7 +394,7 @@
       "\t$0",
       "}"
     ],
-    "description": "While Statement"
+    "description": "while loop"
   },
   "Do-While Statement": {
     "prefix": "dowhile",
@@ -192,81 +403,156 @@
       "\t$0",
       "} while (${1:condition});"
     ],
-    "description": "Do-While Statement"
+    "description": "do/while loop"
   },
-  "newObject": {
-    "prefix": "new",
+  "trycatch": {
+    "prefix": "try_catch",
     "body": [
-      "${1:Object} ${2:foo} = new ${1:Object}();"
+      "try {",
+      "\t$1",
+      "} catch (${2:Exception} ${3:e}) {",
+      "\t${0:throw new RuntimeException($3);}",
+      "}"
     ],
-    "description": "Create new Object"
+    "description": "try/catch block"
   },
-  "Public field": {
-    "prefix": "public_field",
+  "tryfinally": {
+    "prefix": "try_finally",
     "body": [
-      "public ${1:String} ${2:name};"
-    ],
-    "description": "Public field"
-  },
-  "Private field": {
-    "prefix": "private_field",
-    "body": [
-      "private ${1:String} ${2:name};"
-    ],
-    "description": "Private field"
-  },
-  "Protected field": {
-    "prefix": "protected_field",
-    "body": [
-      "protected ${1:String} ${2:name};"
-    ],
-    "description": "Protected field"
-  },
-  "package": {
-    "prefix": "package",
-    "body": [
-      "package ${1:PackageName}"
-    ],
-    "description": "Package statement"
-  },
-  "import": {
-    "prefix": "import",
-    "body": [
-      "import ${1:PackageName}"
-    ],
-    "description": "Import statement"
-  },
-  "field": {
-    "prefix": "field",
-    "body": [
-      "${1|private,protected,public|} ${2:Type} ${3:name};"
-    ],
-    "description": "Field with an access-modifier choice"
-  },
-  "Compact main": {
-    "prefix": "cmain",
-    "body": [
-      "void main() {",
+      "try {",
+      "\t$1",
+      "} finally {",
       "\t$0",
       "}"
     ],
-    "description": "JDK 25 compact source file entry point (JEP 512)"
+    "description": "try/finally block"
   },
-  "IO.println": {
+  "tryresources": {
     "prefix": [
-      "ioprintln",
-      "iop"
+      "try_resources",
+      "twr"
     ],
     "body": [
-      "IO.println($1);$0"
+      "try (var ${1:in} = ${2:Files.newBufferedReader(path)}) {",
+      "\t$0",
+      "}"
     ],
-    "description": "java.lang.IO console output (JDK 25)"
+    "description": "try-with-resources block"
   },
-  "IO.readln": {
-    "prefix": "ioreadln",
-    "body": [
-      "String ${1:input} = IO.readln(${2:\"prompt: \"});$0"
+  "throw": {
+    "prefix": [
+      "throw",
+      "thr"
     ],
-    "description": "java.lang.IO console input (JDK 25)"
+    "body": [
+      "throw new ${1:IllegalArgumentException}(${2:\"message\"});$0"
+    ],
+    "description": "Throw a new exception"
+  },
+  "synchronized": {
+    "prefix": "synchronized",
+    "body": [
+      "synchronized (${1:this}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "synchronized block"
+  },
+  "lambda": {
+    "prefix": "lambda",
+    "body": [
+      "(${1:x}) -> ${0:x}"
+    ],
+    "description": "Lambda expression"
+  },
+  "stream": {
+    "prefix": "stream",
+    "body": [
+      "${1:items}.stream()",
+      "\t.filter(${2:item} -> ${3:true})",
+      "\t.map(${4:item -> item})",
+      "\t.toList()$0"
+    ],
+    "description": "Stream pipeline: filter, map, toList"
+  },
+  "textblock": {
+    "prefix": [
+      "textblock",
+      "tb"
+    ],
+    "body": [
+      "\"\"\"",
+      "\t$0",
+      "\t\"\"\""
+    ],
+    "description": "Text block"
+  },
+  "Virtual thread": {
+    "prefix": "vthread",
+    "body": [
+      "Thread.ofVirtual().start(() -> {",
+      "\t$0",
+      "});"
+    ],
+    "description": "Start a virtual thread"
+  },
+  "Virtual thread executor": {
+    "prefix": "vexecutor",
+    "body": [
+      "try (var ${1:executor} = Executors.newVirtualThreadPerTaskExecutor()) {",
+      "\t$1.submit(() -> {",
+      "\t\t$0",
+      "\t});",
+      "}"
+    ],
+    "description": "Virtual-thread-per-task executor, closed when done"
+  },
+  "JUnit test": {
+    "prefix": "test",
+    "body": [
+      "@Test",
+      "void ${1:name}() {",
+      "\t$0",
+      "}"
+    ],
+    "description": "JUnit 5 test method"
+  },
+  "JUnit parameterized test": {
+    "prefix": "ptest",
+    "body": [
+      "@ParameterizedTest",
+      "@ValueSource(${1:strings} = {${2:\"a\", \"b\"}})",
+      "void ${3:name}(${4:String value}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "JUnit 5 parameterized test method"
+  },
+  "JUnit before each": {
+    "prefix": "beforeeach",
+    "body": [
+      "@BeforeEach",
+      "void ${1:setUp}() {",
+      "\t$0",
+      "}"
+    ],
+    "description": "JUnit 5 @BeforeEach method"
+  },
+  "JUnit after each": {
+    "prefix": "aftereach",
+    "body": [
+      "@AfterEach",
+      "void ${1:tearDown}() {",
+      "\t$0",
+      "}"
+    ],
+    "description": "JUnit 5 @AfterEach method"
+  },
+  "assertThrows": {
+    "prefix": "assertthrows",
+    "body": [
+      "var ${1:e} = assertThrows(${2:IllegalArgumentException}.class, () -> ${3:call()});$0"
+    ],
+    "description": "JUnit 5 assertThrows"
   }
 }
