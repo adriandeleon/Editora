@@ -862,7 +862,11 @@ final class HistoryCoordinator {
      * the feature is off, the buffer is remote/untitled, or the content matches the newest revision.
      */
     void record(EditorBuffer buffer, String reason) {
-        if (!isEnabled() || buffer == null || buffer.getPath() == null || !host.isLocalBuffer(buffer)) {
+        if (!isEnabled()
+                || buffer == null
+                || buffer.getPath() == null
+                || !host.isLocalBuffer(buffer)
+                || buffer.encryption().isEncrypted()) {
             return;
         }
         recordFor(buffer.getPath(), buffer.getContent(), reason, "", false, null);
@@ -892,8 +896,11 @@ final class HistoryCoordinator {
         if (!isEnabled()) {
             return NoUndoGuard.Copy.HISTORY_OFF;
         }
-        if (buffer == null || buffer.getPath() == null || !host.isLocalBuffer(buffer)) {
-            return NoUndoGuard.Copy.NO_LOCAL_FILE;
+        if (buffer == null
+                || buffer.getPath() == null
+                || !host.isLocalBuffer(buffer)
+                || buffer.encryption().isEncrypted()) {
+            return NoUndoGuard.Copy.NO_LOCAL_FILE; // an encrypted file's text never goes into Local History
         }
         String key = historyKey(buffer.getPath());
         var policy = retentionPolicy();
@@ -967,7 +974,12 @@ final class HistoryCoordinator {
             Encoding encoding,
             boolean evenWhenOff,
             java.util.function.Consumer<Boolean> durableCompletion) {
-        if (file == null || content == null || !com.editora.vfs.Vfs.isLocal(file) || !(evenWhenOff || isEnabled())) {
+        // An encrypted file has no Local History (ADR 0015): its revisions would be its text, unencrypted.
+        if (file == null
+                || content == null
+                || !com.editora.vfs.Vfs.isLocal(file)
+                || !(evenWhenOff || isEnabled())
+                || com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
             if (durableCompletion != null) {
                 durableCompletion.accept(true);
             }

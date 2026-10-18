@@ -530,6 +530,25 @@ Bytes are preserved verbatim via `.gitattributes` (`-text`), so don't "fix" them
 - `samples/encodings/gbk.txt` — Chinese in GBK (reopen as `GBK`). Save with Encoding → UTF-8, then save,
   converts it.
 
+## encrypted/ — encrypted files (GnuPG)
+
+Needs GnuPG (`gpg`) installed; Doctor shows whether it is found. Every encrypted sample opens with the
+passphrase **editora** (passphrase-only files, so no key is needed).
+
+- `samples/encrypted/diary.md.asc` — ASCII-armored, Markdown inside: opens as Markdown after the passphrase
+  prompt. Edit and save: it stays encrypted, and the save does not ask again. Click the status bar's
+  *Encrypted · Passphrase* for the details card; File ▸ Encryption ▸ Lock File puts the text away.
+- `samples/encrypted/release-notes.md.gpg` — the same as a binary `.gpg` file. Save As to `release-notes.md`
+  asks before writing it unencrypted.
+- `samples/encrypted/armored-message.md` — a note with an encrypted message pasted into it: put the caret in
+  the block and run Encryption: Decrypt Block at Caret.
+- `samples/encrypted/clear-signed.txt` — a clear-signed text. Encryption: Verify Signature says the signing
+  key is unknown until `samples/encrypted/sample-public-key.asc` is imported (open it: the banner offers
+  Import Key), then says the signature is good.
+
+To try encrypting for people, open any plain file and run Encryption: Encrypt File… — the recipient picker
+lists your own keyring.
+
 ## perf/ — large files (generated, not committed)
 
 Run `java scripts/GenSamples.java` (a JDK 25 compact source file — run it from the repo root) to create

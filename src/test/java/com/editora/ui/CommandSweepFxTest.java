@@ -145,6 +145,7 @@ class CommandSweepFxTest {
      * a chooser fails the sweep, and so does a listed one that no longer reaches one in any state.
      */
     private static final Set<String> NATIVE_CHOOSER = Set.of(
+            "crypto.importPublicKey", // the key file to import
             "diff.compareDirectories",
             "editor.exportPdf",
             "editor.exportSelectionPdf",
@@ -533,6 +534,7 @@ class CommandSweepFxTest {
             settings.setPlantumlPath(missing);
             settings.setTypstPath(missing);
             settings.setRipgrepCommand(missing);
+            settings.setEncryptionGpgPath(missing); // never the developer's own keyring (or a pinentry popping up)
             settings.setMavenCommand(missing);
             settings.setGradleCommand(missing);
             settings.setNpmCommand(missing);

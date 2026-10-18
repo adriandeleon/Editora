@@ -93,11 +93,18 @@ final class TabHeaders {
         if (remote) {
             header.getChildren().add(Icons.remote()); // cloud glyph: this file lives on a remote host
         }
+        boolean encrypted = buffer.encryption().isEncrypted();
+        if (encrypted) {
+            header.getStyleClass().add("encrypted");
+        }
         // A file-type glyph reflecting the file's kind (Java/Python/image/…) — by its resolved language when the
         // name says nothing (a shebang script, a picked language) — or a generic doc.
         Node typeIcon = FileIcons.forBuffer(buffer.getTitle(), buffer.getLanguage());
         typeIcon.getStyleClass().add("tab-file-icon");
         header.getChildren().add(typeIcon);
+        if (encrypted) {
+            header.getChildren().add(Icons.lock()); // beside the type glyph: what is inside, and that it is encrypted
+        }
         header.getChildren().add(title);
         enableTabDrag(header, tab);
         tab.setText("");
@@ -106,7 +113,12 @@ final class TabHeaders {
         toggleClass(tab, "pinned", isPinned);
         toggleClass(tab, "read-only", !buffer.isEditable());
         toggleClass(tab, "remote", remote);
-        tab.setTooltip(tooltip(p));
+        Tooltip tip = tooltip(p);
+        if (encrypted) {
+            tip.setText(EncryptionViews.tabTooltip(
+                    tip.getText(), buffer.encryption().state()));
+        }
+        tab.setTooltip(tip);
     }
 
     /** The full-path tooltip of a file tab ("untitled" for none; a remote file shows its display label). */

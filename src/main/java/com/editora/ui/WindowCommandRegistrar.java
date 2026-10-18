@@ -292,6 +292,9 @@ final class WindowCommandRegistrar {
         /** Buffer: Reopen with Encoding… / Save with Encoding… and the status bar's encoding chooser. */
         EncodingCommands encodings();
 
+        /** Encrypted files: decrypt on open, encrypt on save, recipients, signing. */
+        EncryptionCoordinator encryption();
+
         /** Emacs registers. */
         RegisterCommands registers();
 
@@ -1784,6 +1787,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         EncodingCommands.CHOOSE, () -> host.encodings().choose()));
+        registerEncryptionCommands();
         host.registry().register(Command.of("window.other", host.chrome()::otherWindow));
         // Cross-platform via JavaFX Stage (handles the per-OS window manager specifics on macOS/Linux/Windows).
         host.registry()
@@ -3246,5 +3250,22 @@ final class WindowCommandRegistrar {
             int placed = b.splitSelectionIntoLines(atLineEnds);
             host.setStatus(placed == 0 ? tr("status.multiCaret.noSelection") : tr("status.multiCaret.placed", placed));
         });
+    }
+
+    /** File ▸ Encryption: encrypted files (ADR 0015). */
+    private void registerEncryptionCommands() {
+        EncryptionCoordinator e = host.encryption();
+        host.registry().register(Command.of(EncryptionCoordinator.ENCRYPT_FILE, e::encryptFile));
+        host.registry().register(Command.of(EncryptionCoordinator.CHANGE_RECIPIENTS, e::changeRecipients));
+        host.registry().register(Command.of(EncryptionCoordinator.REMOVE_ENCRYPTION, e::removeEncryption));
+        host.registry().register(Command.of(EncryptionCoordinator.LOCK_FILE, e::lockFile));
+        host.registry().register(Command.of(EncryptionCoordinator.SHOW_INFO, e::showInfo));
+        host.registry().register(Command.of(EncryptionCoordinator.ENCRYPT_SELECTION, e::encryptSelection));
+        host.registry().register(Command.of(EncryptionCoordinator.DECRYPT_BLOCK, e::decryptBlock));
+        host.registry().register(Command.of(EncryptionCoordinator.IMPORT_KEY, () -> e.importPublicKey(null)));
+        host.registry().register(Command.of(EncryptionCoordinator.DECRYPT_TO_FILE, e::decryptToFile));
+        host.registry().register(Command.of(EncryptionCoordinator.CLEAR_SIGN, e::clearSign));
+        host.registry().register(Command.of(EncryptionCoordinator.SIGN_DETACHED, e::signDetached));
+        host.registry().register(Command.of(EncryptionCoordinator.VERIFY, e::verifySignature));
     }
 }

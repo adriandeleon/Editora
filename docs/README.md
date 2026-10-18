@@ -62,6 +62,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   project connection model, the not-connected state, and running commands on the host (off by default).
 - [subsystems/terminal.md](subsystems/terminal.md) — the integrated terminal (in progress): the port from
   Termina, connectors, the view, palettes derived from editor themes.
+- [subsystems/encryption.md](subsystems/encryption.md) — encrypted files: gpg runs, locked loads, the save
+  seal, the recipient picker, and the privacy guard every text-copying feature must ask.
 - [subsystems/lsp-and-dap.md](subsystems/lsp-and-dap.md) — Language Server + Debug Adapter
   integration, and the `process/ProcessRegistry` lifecycle that owns spawned servers.
 - [subsystems/log-viewer.md](subsystems/log-viewer.md) — level detection, the record-aware filter,

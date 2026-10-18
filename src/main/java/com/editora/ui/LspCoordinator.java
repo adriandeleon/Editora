@@ -2155,6 +2155,11 @@ final class LspCoordinator {
                 // receives is offset — a formatting edit or code action would land in the wrong place and
                 // corrupt the file. Suspend the document until the buffer is widened again.
                 && !buffer.isNarrowed()
+                // An encrypted file's text reaches a language server only when Settings allow it (ADR 0015);
+                // a locked one has no text to serve yet.
+                && (!buffer.encryption().isEncrypted()
+                        || (host.settings().isEncryptionLanguageServers()
+                                && !buffer.encryption().isLocked()))
                 && serverId != null
                 && serverEnabled(serverId)
                 && (remote

@@ -36,7 +36,12 @@ public final class RecoveryPolicy {
         /** Its text is not a document the user could save: a loading shell, a slice of a huge file, a log tail. */
         NOT_A_DOCUMENT,
         /** Longer than {@link #MAX_CHARS}. */
-        TOO_LARGE
+        TOO_LARGE,
+        /**
+         * An encrypted file's decrypted text: a recovery copy would put it on disk unencrypted (ADR 0015), so an
+         * encrypted file has none, and one taken before it was encrypted is deleted.
+         */
+        SENSITIVE
     }
 
     /**
@@ -49,6 +54,15 @@ public final class RecoveryPolicy {
      * @param length document length in UTF-16 code units
      */
     public static Skip skip(boolean dirty, boolean loading, boolean partial, boolean following, int length) {
+        return skip(dirty, loading, partial, following, false, length);
+    }
+
+    /** As {@link #skip(boolean, boolean, boolean, boolean, int)}; {@code encrypted}: an encrypted file's text. */
+    public static Skip skip(
+            boolean dirty, boolean loading, boolean partial, boolean following, boolean encrypted, int length) {
+        if (encrypted) {
+            return Skip.SENSITIVE;
+        }
         if (loading || partial || following) {
             return Skip.NOT_A_DOCUMENT;
         }

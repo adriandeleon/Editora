@@ -110,6 +110,7 @@ final class MenuBarModel {
                                 "file.saveAll",
                                 "file.saveAsAdmin",
                                 "file.revert",
+                                submenu("menubar.file.encryption"),
                                 SEPARATOR,
                                 "buffer.close",
                                 "buffer.closeOthers",
@@ -125,15 +126,36 @@ final class MenuBarModel {
                                 "config.export",
                                 SEPARATOR,
                                 "app.quit"),
-                        List.of(new MenuSpec(
-                                "menubar.file.export",
-                                List.of(
-                                        "editor.exportPdf",
-                                        SEPARATOR,
-                                        "preview.exportPdf",
-                                        "preview.exportDocx",
-                                        "preview.exportOdt",
-                                        "preview.exportHtml")))),
+                        List.of(
+                                new MenuSpec(
+                                        "menubar.file.export",
+                                        List.of(
+                                                "editor.exportPdf",
+                                                SEPARATOR,
+                                                "preview.exportPdf",
+                                                "preview.exportDocx",
+                                                "preview.exportOdt",
+                                                "preview.exportHtml")),
+                                // An encrypted file's own actions first, then the ones on part of a text, then
+                                // signatures, then the keyring.
+                                new MenuSpec(
+                                        "menubar.file.encryption",
+                                        List.of(
+                                                EncryptionCoordinator.ENCRYPT_FILE,
+                                                EncryptionCoordinator.CHANGE_RECIPIENTS,
+                                                EncryptionCoordinator.REMOVE_ENCRYPTION,
+                                                EncryptionCoordinator.LOCK_FILE,
+                                                EncryptionCoordinator.SHOW_INFO,
+                                                SEPARATOR,
+                                                EncryptionCoordinator.ENCRYPT_SELECTION,
+                                                EncryptionCoordinator.DECRYPT_BLOCK,
+                                                EncryptionCoordinator.DECRYPT_TO_FILE,
+                                                SEPARATOR,
+                                                EncryptionCoordinator.CLEAR_SIGN,
+                                                EncryptionCoordinator.SIGN_DETACHED,
+                                                EncryptionCoordinator.VERIFY,
+                                                SEPARATOR,
+                                                EncryptionCoordinator.IMPORT_KEY)))),
                 new MenuSpec(
                         "menubar.edit",
                         List.of(
@@ -487,6 +509,7 @@ final class MenuBarModel {
                                 SEPARATOR,
                                 "file.save",
                                 "file.saveAs",
+                                EncryptionCoordinator.ENCRYPT_FILE,
                                 SEPARATOR,
                                 "buffer.close",
                                 SEPARATOR,

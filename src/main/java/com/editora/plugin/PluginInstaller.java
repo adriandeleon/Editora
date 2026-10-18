@@ -179,6 +179,10 @@ public final class PluginInstaller {
             if (isReservedId(id)) {
                 return new Result(false, "", "", "plugin id \"" + id + "\" is reserved");
             }
+            if (RetiredPlugins.isRetired(id)) {
+                // The feature is built in now; installing the plugin again would run the two side by side.
+                return new Result(false, "", "", com.editora.i18n.Messages.tr("plugins.retired", id));
+            }
             Path pluginsDir = manager.pluginsDir();
             Path target = pluginsDir.resolve(id);
             Files.createDirectories(pluginsDir);
@@ -453,6 +457,11 @@ public final class PluginInstaller {
                 Files.deleteIfExists(p);
             }
         }
+    }
+
+    /** Deletes a retired plugin's folder ({@link RetiredPlugins}); only ever a direct child of the plugins dir. */
+    static void deleteRecursivelyForRetirement(Path dir) throws IOException {
+        deleteRecursively(dir);
     }
 
     private static void deleteQuietly(Path dir) {

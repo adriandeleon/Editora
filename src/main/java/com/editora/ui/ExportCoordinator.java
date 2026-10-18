@@ -103,6 +103,12 @@ final class ExportCoordinator {
         this.openPath = openPath;
     }
 
+    /**
+     * Asked before an export or a print of {@code buffer} (the active one) writes or prints its text — for an
+     * encrypted file's, unencrypted. The window sets it; true goes ahead.
+     */
+    volatile java.util.function.Predicate<com.editora.editor.EditorBuffer> plaintextOut = buffer -> true;
+
     void registerCommands(CommandRegistry registry) {
         registry.register(Command.of("editor.exportPdf", this::exportActivePdf));
         registry.register(Command.of("editor.exportSelectionPdf", this::exportSelectionPdf));
@@ -579,6 +585,9 @@ final class ExportCoordinator {
      * (it used to answer "No file open" with a file plainly open).
      */
     void printActive() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         if (host.activeBuffer() != null) {
             printCode();
         } else if (activeTabContent.get() instanceof ImageViewerPane image) {
@@ -590,6 +599,9 @@ final class ExportCoordinator {
 
     /** {@code editor.exportPdf}: the PDF twin of {@link #printActive}. */
     void exportActivePdf() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         if (host.activeBuffer() != null) {
             exportCodePdf();
         } else if (activeTabContent.get() instanceof ImageViewerPane image) {
@@ -680,6 +692,9 @@ final class ExportCoordinator {
      * file's grammar and the line numbers they have in the file.
      */
     void printSelection() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         if (printBusy()) {
             return;
         }
@@ -711,6 +726,9 @@ final class ExportCoordinator {
 
     /** {@code editor.exportSelectionPdf}: the PDF twin of {@link #printSelection}. */
     void exportSelectionPdf() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         SelectedLines selected = selectedLines();
         if (selected == null) {
             return;
@@ -769,6 +787,9 @@ final class ExportCoordinator {
      * Honors the Settings toggles (line numbers, syntax highlighting) + page size. Runs off the FX thread.
      */
     void exportCodePdf() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         EditorBuffer b = host.activeBuffer();
         if (b == null) {
             host.setStatus(tr("status.noFileOpen"));
@@ -803,6 +824,9 @@ final class ExportCoordinator {
      * the Save dialog — not by an error dialog after a destination was chosen.
      */
     void exportPreviewPdf() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.hasCsvPreview()) {
             csvExportPdf(b.getContent(), bufferBaseName(b));
@@ -942,6 +966,9 @@ final class ExportCoordinator {
 
     /** Exports the active Markdown buffer's rendered preview to a standalone HTML file. */
     void exportPreviewHtml() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         EditorBuffer b = host.activeBuffer();
         if (b == null || !b.isMarkdown()) {
             host.setStatus(tr("status.html.notMarkdown"));
@@ -1121,6 +1148,9 @@ final class ExportCoordinator {
 
     /** Exports the active Markwhen buffer's parsed timeline to a JSON file (preview menu + palette). */
     void exportMarkwhenJson() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         EditorBuffer b = host.activeBuffer();
         if (b == null || !b.isMarkwhen()) {
             host.setStatus(tr("status.markwhen.notMarkwhen"));
@@ -1182,11 +1212,17 @@ final class ExportCoordinator {
 
     /** Exports the active Markdown preview to a MS Word {@code .docx} (Apache POI). */
     void exportPreviewDocx() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         exportPreviewOffice(true);
     }
 
     /** Exports the active Markdown preview to an OpenDocument Text {@code .odt} (hand-rolled). */
     void exportPreviewOdt() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         exportPreviewOffice(false);
     }
 
@@ -1239,6 +1275,9 @@ final class ExportCoordinator {
      * "include line numbers" + "syntax highlighting" settings; always light. Off the FX thread.
      */
     void printCode() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         if (printBusy()) {
             return;
         }
@@ -1302,6 +1341,9 @@ final class ExportCoordinator {
      * {@code csv.print} does. A buffer whose preview cannot be put on a page is told so before a job is made.
      */
     void printPreview() {
+        if (!plaintextOut.test(host.activeBuffer())) {
+            return; // an encrypted file's text, written or printed unencrypted: asked once per tab
+        }
         if (printBusy()) {
             return;
         }

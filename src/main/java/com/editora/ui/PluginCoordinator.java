@@ -827,5 +827,11 @@ final class PluginCoordinator {
                 ops.openPath(path);
             }
         }
+
+        @Override
+        public boolean isEncrypted() {
+            EditorBuffer b = buf();
+            return b != null && b.encryption().isEncrypted();
+        }
     }
 }

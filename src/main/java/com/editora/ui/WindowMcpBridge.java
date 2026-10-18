@@ -83,6 +83,10 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
      * not started when the wait ends is cancelled — a call answered with a timeout is not applied afterwards
      * — and the failure says which of the two it was (see {@link FxCall}).
      */
+    /** Why an MCP client may not read or edit an encrypted file's buffer. */
+    static final String ENCRYPTED =
+            "This buffer is an encrypted file; Editora does not share its decrypted text with MCP clients.";
+
     static <T> T mcpOnFx(java.util.function.Supplier<T> task) {
         try {
             return FxCall.call(task, FX_TIMEOUT_MILLIS);
@@ -132,6 +136,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (b == null) {
                 return null;
             }
+            if (b.encryption().isEncrypted()) {
+                throw new IllegalStateException(ENCRYPTED); // ADR 0015: its text stays in Editora
+            }
             String text = b.getContent();
             served.served(b, text);
             return new BufferContent(
@@ -177,8 +184,8 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             java.util.Map<Path, String> open = new java.util.HashMap<>();
             for (Tab tab : host.editorArea().tabs()) {
                 EditorBuffer b = host.bufferOf(tab);
-                if (b != null && b.getPath() != null) {
-                    open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
+                if (b != null && b.getPath() != null && !b.encryption().isEncrypted()) {
+                    open.put(b.getPath().toAbsolutePath().normalize(), b.getContent()); // never decrypted text
                 }
             }
             // This window's project, as its todo_scan and its own Find in Files use: the ProjectManager's
@@ -261,6 +268,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (protectedFile != null) {
                 return protectedFile;
             }
+            if (b.encryption().isEncrypted()) {
+                return ENCRYPTED; // a match would tell the client what the text says
+            }
             String replacement = newText == null ? "" : newText;
             // read_buffer serves the whole file, so the match is made against the whole file — also when the
             // buffer is narrowed: matching the accessible region only made "exactly once" and replace_all
@@ -312,6 +322,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             String protectedFile = McpAccess.writeRefusal(host.configDirectory(), b.getPath());
             if (protectedFile != null) {
                 return protectedFile;
+            }
+            if (b.encryption().isEncrypted()) {
+                return ENCRYPTED;
             }
             // The client sends the whole text as it believes it to be. What was typed since its read_buffer —
             // or unsaved text it never read — would be replaced without notice.

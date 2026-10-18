@@ -463,7 +463,9 @@ final class AgentCoordinator implements AcpClient.Host {
             return null;
         }
         CodeArea area = b.getFocusedArea() != null ? b.getFocusedArea() : b.getArea();
-        return formatContext(bufferLabel(b), area.getCurrentParagraph() + 1, area.getSelectedText());
+        // An encrypted file's selection is its decrypted text: the agent hears which file and line, not that.
+        String selection = b.encryption().isEncrypted() ? "" : area.getSelectedText();
+        return formatContext(bufferLabel(b), area.getCurrentParagraph() + 1, selection);
     }
 
     /** The path shown to the agent: relativized against {@link #sessionCwd()} (the same frame of
@@ -933,14 +935,23 @@ final class AgentCoordinator implements AcpClient.Host {
         return here != null ? here : ops.bufferInAnotherWindow(file);
     }
 
+    /** Why an agent may not read or write an encrypted file (ADR 0015). */
+    static final String ENCRYPTED = "This is an encrypted file; Editora does not share it with agents.";
+
     @Override
     public String readTextFile(String path, Integer line, Integer limit) throws Exception {
         Path file = sessionPath(path);
         String key = PathKeys.key(file);
+        if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+            throw new IOException(ENCRYPTED); // ADR 0015: neither the decrypted text nor the ciphertext
+        }
         String text = fxCall(() -> {
             EditorBuffer open = openBuffer(file);
             if (open == null) {
                 return null;
+            }
+            if (open.encryption().isEncrypted()) {
+                throw new IllegalStateException(ENCRYPTED);
             }
             String live = open.getContent();
             served.served(key, live); // in the same FX turn as the read: nothing can be typed in between
@@ -957,6 +968,9 @@ final class AgentCoordinator implements AcpClient.Host {
     @Override
     public void writeTextFile(String path, String content) throws Exception {
         Path file = sessionPath(path);
+        if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+            throw new IOException(ENCRYPTED); // an agent's text would land in an encrypted file's name, unencrypted
+        }
         String key = PathKeys.key(file);
         String body = content == null ? "" : content;
         // null = no buffer holds the file; "" = applied to its buffer; anything else = why it was refused.

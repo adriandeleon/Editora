@@ -399,6 +399,39 @@ final class DoctorCoordinator {
             specs.add(terminal(offRow(rg, "search")));
         }
 
+        // Encryption ------------------------------------------------------------------------------
+        // Optional: only encrypted files need gpg, so its absence is a fact, not a fault. Resolved in the probe
+        // (the lookup can read the login shell's PATH), not here on the FX thread.
+        String gpgConfigured = s.getEncryptionGpgPath();
+        String gpgLabel = gpgConfigured.isBlank() ? "gpg" : gpgConfigured;
+        DoctorCheck gpg =
+                DoctorCheck.checking("gpg", "security", "GnuPG", gpgLabel).withSettings("encryption");
+        specs.add(probe(gpg, base -> {
+            String exe = com.editora.crypto.Gpg.resolve(gpgConfigured);
+            String version = new com.editora.crypto.Gpg(exe, java.util.Map.of()).version();
+            return version != null ? base.ok(version) : base.optional("doctor.tip.gpgOptional");
+        }));
+        boolean editoraAsks =
+                com.editora.config.Settings.PASSPHRASE_PROMPT_EDITORA.equals(s.getEncryptionPassphrasePrompt());
+        DoctorCheck pinentry = DoctorCheck.checking("pinentry", "security", tr("doctor.label.pinentry"), "gpgconf")
+                .withSettings("encryption");
+        specs.add(probe(pinentry, base -> {
+            if (editoraAsks) {
+                return base.ok(tr("doctor.detail.pinentryEditora"));
+            }
+            String exe = com.editora.crypto.Gpg.resolve(gpgConfigured);
+            if (new com.editora.crypto.Gpg(exe, java.util.Map.of()).version() == null) {
+                return base.optional("doctor.tip.gpgOptional");
+            }
+            com.editora.crypto.Pinentry.Verdict v = com.editora.crypto.Pinentry.check(exe, java.util.Map.of());
+            if (!v.found()) {
+                return base.warn(tr("doctor.detail.pinentryMissing"), "doctor.tip.pinentryMissing");
+            }
+            return v.graphical()
+                    ? base.ok(v.program())
+                    : base.warn(v.program(), "doctor.tip.pinentryTerminal", v.program());
+        }));
+
         // Preview & diagrams ----------------------------------------------------------------------
         List<String> mmdcCmd = ops.mermaidService().mmdcCommand();
         List<String> maidCmd = ops.mermaidService().maidCommand();
