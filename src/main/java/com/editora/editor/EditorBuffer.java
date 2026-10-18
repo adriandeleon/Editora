@@ -488,6 +488,8 @@ public class EditorBuffer implements TabContent {
     private boolean highlightOwed;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
     private boolean largeFile;
+    /** The current-line highlight setting, which large-file mode suppresses (see {@link #setLineHighlightOn}). */
+    private boolean lineHighlightWanted;
     /** Intermediate "large source file" tier (below the 5 MB hard mode): the minimap and LSP are
      *  disabled — but syntax highlighting and editing stay — so a very long single file (e.g. a
      *  13k-line source) stays responsive. Triggered by line count at load (see {@code setHeavyFile});
@@ -6690,9 +6692,10 @@ public class EditorBuffer implements TabContent {
 
     /** Toggle the highlight on the line containing the caret. */
     public void setLineHighlightOn(boolean on) {
-        area.setLineHighlighterOn(on);
+        lineHighlightWanted = on; // it lays out the caret's whole line: ~270 ms a keystroke on a 2 MB line
+        area.setLineHighlighterOn(on && !largeFile);
         if (area2 != null) {
-            area2.setLineHighlighterOn(on);
+            area2.setLineHighlighterOn(on && !largeFile);
         }
     }
 
@@ -8005,11 +8008,8 @@ public class EditorBuffer implements TabContent {
         return spell.getLanguage();
     }
 
-    /**
-     * Enables large-file mode: skips syntax highlighting and hides the minimap (regardless of the
-     * user's view settings) so very large or pathologically shaped documents stay responsive. The loader
-     * sets it before content is inserted; see {@link #LARGE_FILE_BYTES}.
-     */
+    /** Large-file mode (see {@link #LARGE_FILE_BYTES}): no highlighting, minimap, spell check, whitespace marks, indent
+     *  guides, current-line highlight or undo, so huge or long-lined documents stay responsive. Set before the text. */
     public void setLargeFile(boolean large) {
         if (this.largeFile == large) {
             return;
@@ -8025,8 +8025,8 @@ public class EditorBuffer implements TabContent {
         if (indentGuides != null) {
             indentGuides.setSuppressed(large); // and the indent guides
         }
-        // Large files don't need (and shouldn't pay the memory for) undo history.
-        applyUndoMode();
+        setLineHighlightOn(lineHighlightWanted); // and the current-line highlight
+        applyUndoMode(); // nor undo history: a large file shouldn't pay its memory
         if (!large) {
             applyHighlighting(); // re-enable highlighting if we ever leave large-file mode
         }

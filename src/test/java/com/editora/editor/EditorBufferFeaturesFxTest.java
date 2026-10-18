@@ -100,6 +100,24 @@ class EditorBufferFeaturesFxTest {
     }
 
     @Test
+    void largeFileModeSuppressesTheCurrentLineHighlightAndRestoresTheSetting() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = buffer("javascript", "const a = 1;\n");
+            CodeArea area = buffer.getArea();
+            buffer.setLineHighlightOn(true);
+            assertTrue(area.isLineHighlighterOn());
+            // It lays out the caret's whole line on every keystroke: ~270 ms on a 2 MB minified line.
+            buffer.setLargeFile(true);
+            assertFalse(area.isLineHighlighterOn(), "off in large-file mode");
+            buffer.setLineHighlightOn(true);
+            assertFalse(area.isLineHighlighterOn(), "the setting cannot turn it back on there");
+            buffer.setLargeFile(false);
+            assertTrue(area.isLineHighlighterOn(), "leaving large-file mode restores the setting");
+            buffer.dispose();
+        });
+    }
+
+    @Test
     void theCsvGridIsThePreviewWhileItIsInjected() throws Exception {
         EditorFx.onFx(() -> {
             EditorBuffer buffer = buffer("csv", "a,b\n1,2\n");
