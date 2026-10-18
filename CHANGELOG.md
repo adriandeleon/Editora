@@ -382,7 +382,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **When the system had no file watcher to give** (Linux: inotify instances used up), the project tree and language
-  servers silently stopped following the disk. They now check folders every 2 seconds.
+  servers silently stopped following the disk. They now check folders every 2 seconds, and on Windows also notice
+  a save that replaces a file with one of the same size and time.
 - **Plugins: Set Registry URL** accepted an address that is not https; it now refuses it like the Settings field.
 - **A submenu's › arrow sat in the middle of its menu** (VCS → Changes, Branches, …), just past the longest
   submenu name. It now sits at the menu's right edge, past the shortcut column.
