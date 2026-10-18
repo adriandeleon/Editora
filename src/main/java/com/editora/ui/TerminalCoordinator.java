@@ -245,12 +245,14 @@ final class TerminalCoordinator {
     /** As above, with the shell-integration folder {@code integration} finds on the target (null for none). */
     static TerminalConnector.Factory remoteShell(
             Path directory, java.util.function.Function<ExecTarget, String> integration) {
-        return (columns, rows) -> {
+        // Opened off the FX thread by the panel: a channel open on the host, and the first time the integration
+        // scripts written there.
+        return TerminalConnector.Factory.slow((columns, rows) -> {
             ExecTarget target = ExecTargets.forPath(directory);
             TerminalChannel channel =
                     target.startTerminal(new TerminalSpec(directory, columns, rows, integration.apply(target)));
             return new ChannelConnector(channel, target.id());
-        };
+        });
     }
 
     /** Integration folders already installed, by target id: installing asks the target, so it is asked once. */

@@ -29,7 +29,6 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * A terminal tab on an SSH host, through the coordinator's own remote shell: it answers what it is typed, its chip
@@ -104,7 +103,10 @@ class RemoteTerminalPanelFxTest {
             reconnectButton().fire();
             return null;
         });
-        assertFalse(fx(() -> panel.showsReconnect(panel.activeTab())), "a new shell, on the new connection");
+        // The host's shell opens off the FX thread; the old text and banner stay until it has.
+        await(
+                () -> Boolean.FALSE.equals(call(() -> panel.showsReconnect(panel.activeTab()))),
+                "a new shell, on the new connection");
         type("echo $((6 * 9))\n");
         await(() -> screen().contains("54"), "the new shell's answer");
     }

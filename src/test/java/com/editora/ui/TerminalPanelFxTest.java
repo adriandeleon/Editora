@@ -648,6 +648,112 @@ class TerminalPanelFxTest {
         assertFalse(fx(panel::hasTerminals));
     }
 
+    @Test
+    void aShellOnAnotherMachineConnectsWithoutHoldingTheFxThread() throws Exception {
+        java.util.concurrent.CountDownLatch gate = new java.util.concurrent.CountDownLatch(1);
+        FakeConnector remote = new FakeConnector();
+        show(
+                (dir, shell) -> com.editora.terminal.TerminalConnector.Factory.slow((columns, rows) -> {
+                    try {
+                        gate.await();
+                    } catch (InterruptedException e) {
+                        throw new IOException(e);
+                    }
+                    return remote;
+                }),
+                (title, programs) -> true,
+                null);
+        fx(() -> {
+            panel.newTerminal(); // returns while the "host" has not answered: the FX thread is free
+            return null;
+        });
+        assertEquals(1, fx(panel::terminalCount), "the tab is there at once");
+        assertTrue(fx(() -> panel.isConnecting(panel.activeTab())), "saying it is connecting");
+        assertEquals(null, fx(panel::activeView));
+
+        gate.countDown();
+        await(() -> call(() -> panel.activeView() != null), "the shell once connected");
+        assertFalse(fx(() -> panel.isConnecting(panel.activeTab())));
+        remote.emit("hello\r\n");
+        await(() -> call(() -> screen().contains("hello")), "its output");
+    }
+
+    @Test
+    void aShellThatFailsToConnectTakesItsNewTabAwayAndSaysWhy() throws Exception {
+        AtomicReference<String> error = new AtomicReference<>();
+        show(
+                (dir, shell) -> com.editora.terminal.TerminalConnector.Factory.slow((columns, rows) -> {
+                    throw new IOException("not connected to box");
+                }),
+                (title, programs) -> true,
+                null);
+        fx(() -> {
+            panel.setOnError(error::set);
+            panel.newTerminal();
+            return null;
+        });
+        await(() -> !call(panel::hasTerminals), "the tab gone");
+        assertTrue(error.get() != null && error.get().contains("not connected to box"), error.get());
+    }
+
+    @Test
+    void aTabClosedWhileConnectingClosesTheConnectionThatArrivesLate() throws Exception {
+        java.util.concurrent.CountDownLatch gate = new java.util.concurrent.CountDownLatch(1);
+        FakeConnector remote = new FakeConnector();
+        show(
+                (dir, shell) -> com.editora.terminal.TerminalConnector.Factory.slow((columns, rows) -> {
+                    try {
+                        gate.await();
+                    } catch (InterruptedException e) {
+                        throw new IOException(e);
+                    }
+                    return remote;
+                }),
+                (title, programs) -> true,
+                null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.closeActive();
+            return null;
+        });
+        assertFalse(fx(panel::hasTerminals));
+        gate.countDown();
+        await(remote::wasClosed, "the late connection closed");
+        assertFalse(fx(panel::hasTerminals), "and no tab came back for it");
+    }
+
+    @Test
+    void aSlowReconnectThatFailsKeepsTheBanner() throws Exception {
+        AtomicReference<String> error = new AtomicReference<>();
+        AtomicBoolean refuse = new AtomicBoolean(false);
+        TerminalPanel.Shells fake = fakeShells();
+        show(
+                (dir, shell) -> refuse.get()
+                        ? com.editora.terminal.TerminalConnector.Factory.slow((columns, rows) -> {
+                            throw new IOException("not connected to box");
+                        })
+                        : fake.open(dir, shell),
+                (title, programs) -> true,
+                null);
+        fx(() -> {
+            panel.setOnError(error::set);
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).dropConnection();
+        await(() -> call(() -> panel.showsReconnect(panel.activeTab())), "the connection-lost banner");
+
+        refuse.set(true);
+        fx(() -> {
+            reconnectButton().fire();
+            return null;
+        });
+        await(() -> error.get() != null, "the failure");
+        assertTrue(error.get().contains("not connected to box"), error.get());
+        assertTrue(fx(() -> panel.showsReconnect(panel.activeTab())), "still offering to reconnect");
+        assertFalse(fx(() -> panel.isConnecting(panel.activeTab())));
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private TerminalPanel.Shells fakeShells() {

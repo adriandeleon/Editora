@@ -268,9 +268,15 @@ terminal as it does into the editor.
   shell) can read 0×0 if it asks at once. See `TerminalImageCheck`.
 - Local shell cwd tracking (`ProcessCwd`) works on Linux (`/proc`) and macOS (`proc_pidinfo` via JNA), not
   Windows. A shell with integration reports its own directory (OSC 7), which wins over the pid's.
-- A remote terminal opens on the FX thread (as since SSH terminals came in), and the first one on a target also
-  writes the integration scripts there: a few SFTP writes, or one `exec` per file in a container. A program
-  tab on a target opens the same way.
+- A shell on another machine opens off the FX thread. `remoteShell`'s factory is marked
+  `TerminalConnector.Factory.slow`, and the panel starts such a view with `TerminalView.startAsync`.
+  - **While it connects:** the tab says "Connecting to <host>…". A reconnect keeps the old text and banner
+    until the new shell is there.
+  - **When it fails:** a new tab goes away, a reconnecting one keeps its banner, and the error says why.
+  - **Closed meanwhile:** a tab closed while connecting closes the connection that arrives late.
+  - The channel open and, the first time on a target, writing the integration scripts both run on that thread.
+  - A program tab on a target (Run or Debug in a terminal) still opens on the FX thread: its starter needs the
+    outcome at once.
 - Search matches within a row: text a soft wrap split across two rows is not found as one.
 - JediTerm's history listener fires only on resizes and clears; `TerminalView` derives the history shift on
   every model change instead (marks, search hits, a scrolled-back view, the selection).

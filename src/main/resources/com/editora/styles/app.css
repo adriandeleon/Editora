@@ -5429,6 +5429,13 @@
 .terminal-lost-banner .label {
     -fx-text-fill: -color-warning-fg;
 }
+/* A shell on another machine still connecting: a quiet line in the middle of its tab. */
+.terminal-connecting {
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 6;
+    -fx-padding: 6 12 6 12;
+}
 /* A program run in a terminal tab ended: a quiet chip in the corner, over the text it printed. */
 .terminal-exit-banner {
     -fx-background-color: -color-bg-subtle;
