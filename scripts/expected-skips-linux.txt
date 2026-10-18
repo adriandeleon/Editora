@@ -24,6 +24,7 @@ com.editora.ui.JavaDebugRealAdapterProbeFxTest
 com.editora.ui.JavaEditingCostProbeTest
 com.editora.ui.JavaTypingSoakProbeTest
 com.editora.ui.JsDebugProbeFxTest
+com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 
 # Measurement harnesses, @Disabled by design.
@@ -44,6 +45,11 @@ com.editora.typst.TypstStagedExportTest
 com.editora.dap.jvm.JvmDebugAdapterTest#aGroovyScriptStopsInsideAClosureWhereGroovyIsInstalled
 com.editora.dap.jvm.JvmDebugAdapterTest#aGroovyScriptsUncaughtExceptionStopsWhereItIsThrownAndNowhereElse
 com.editora.ui.GroovyRunDebugWindowFxTest
+# Kotlin's compiler (the runner installs no kotlinc): the Kotlin program and script the JVM debugger runs, and
+# Run/Debug of Kotlin files in a window. The adapter itself is covered by the Java and attach cases.
+com.editora.dap.jvm.JvmDebugAdapterTest#aKotlinProgramStopsInItsFileWhicheverFolderItSitsInAndNamesItsFramesAsKotlin
+com.editora.dap.jvm.JvmDebugAdapterTest#aKotlinScriptStopsOnItsLine
+com.editora.ui.KotlinRunDebugWindowFxTest
 
 # Needs vscode-js-debug (Debug Request of HTTP Client scripts), which the runner does not install; it runs on
 # developer machines with js-debug. HttpResponseHandlersFxTest covers the inspector handoff on CI's Node.

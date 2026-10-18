@@ -116,7 +116,8 @@ class KotlinRunDebugWindowFxTest {
             FxTestSupport.runOnFx(() -> registry.run("run.rerun"));
             await("the rerun's new output", () -> output(c).contains("Hello, again"));
             try (var files = Files.list(cache)) {
-                jars = files.filter(f -> f.getFileName().toString().startsWith("Hello-")).count();
+                jars = files.filter(f -> f.getFileName().toString().startsWith("Hello-"))
+                        .count();
             }
             assertEquals(1, jars, "the edited file's jar replaced the old one");
         }
