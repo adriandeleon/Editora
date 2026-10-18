@@ -45,6 +45,17 @@ public final class TextMateHighlighter {
      */
     static final Duration LINE_TIMEOUT = Duration.ofMillis(1000);
 
+    /** A line this long counts against {@link #LONG_LINE_BUDGET}; ordinary code lines never do. */
+    static final int BUDGETED_LINE = 1_000;
+
+    /**
+     * Tokenizer time one pass may spend on {@link #BUDGETED_LINE long} lines before it leaves the rest of them
+     * plain. Minified JavaScript is the case: forty 19,000-character lines took ~30 s, all of it holding the
+     * per-grammar lock, so every other JavaScript/TypeScript tab waited that long for its colours too. The
+     * budget is time, not characters, so a grammar that handles long lines cheaply (JSON) never reaches it.
+     */
+    static final Duration LONG_LINE_BUDGET = Duration.ofMillis(1500);
+
     private static final Logger LOG = Logger.getLogger(TextMateHighlighter.class.getName());
     private static final Set<String> REPORTED_FAILURES = ConcurrentHashMap.newKeySet();
 
@@ -167,6 +178,19 @@ public final class TextMateHighlighter {
             BooleanSupplier cancelled,
             LineHook hook,
             Duration lineTimeout) {
+        return analyzeFrom(text, grammar, fromLine, startState, cancelled, hook, lineTimeout, LONG_LINE_BUDGET);
+    }
+
+    /** As above with an explicit {@link #LONG_LINE_BUDGET}, so a test can exhaust it. */
+    static IncrementalAnalysis analyzeFrom(
+            String text,
+            IGrammar grammar,
+            int fromLine,
+            IStateStack startState,
+            BooleanSupplier cancelled,
+            LineHook hook,
+            Duration lineTimeout,
+            Duration longLineBudget) {
         if (text == null || grammar == null) {
             return null;
         }
@@ -176,7 +200,8 @@ public final class TextMateHighlighter {
         // and throw — silently dropping one file's highlighting. Serialize per grammar instance:
         // same-grammar passes run sequentially; different grammars still run in parallel.
         synchronized (grammar) {
-            return analyzeFromLocked(text, grammar, fromLine, startState, cancelled, hook, lineTimeout);
+            return analyzeFromLocked(
+                    text, grammar, fromLine, startState, cancelled, hook, lineTimeout, longLineBudget.toNanos());
         }
     }
 
@@ -210,7 +235,8 @@ public final class TextMateHighlighter {
             IStateStack startState,
             BooleanSupplier cancelled,
             LineHook hook,
-            Duration lineTimeout) {
+            Duration lineTimeout,
+            long longLineBudgetNanos) {
         // Adjacent runs with the same style are merged before they reach the builder: we collapse
         // many TextMate scopes onto a few coarse classes, so a single line yields long stretches of
         // identical (or empty) styling. RichTextFX materializes one Text node per span, so emitting
@@ -223,6 +249,7 @@ public final class TextMateHighlighter {
         int pos = fromOffset;
         int length = text.length();
         int lineIndex = fromLine;
+        long longLineNanos = 0; // tokenizer time spent on long lines so far in this pass
         while (true) {
             if (cancelled.getAsBoolean()) {
                 return null; // superseded — stop tokenizing and release the grammar monitor promptly
@@ -230,9 +257,11 @@ public final class TextMateHighlighter {
             int newline = text.indexOf('\n', pos);
             int lineEnd = newline < 0 ? length : newline;
             int lineLength = lineEnd - pos;
-            if (lineLength > MAX_TOKENIZED_LINE) {
-                spans.add(null, lineLength); // too long to tokenize: plain text, state carried across it
+            boolean longLine = lineLength >= BUDGETED_LINE;
+            if (lineLength > MAX_TOKENIZED_LINE || (longLine && longLineNanos > longLineBudgetNanos)) {
+                spans.add(null, lineLength); // too long (or over budget): plain text, state carried across it
             } else {
+                long started = longLine ? System.nanoTime() : 0;
                 // One copy per line, terminator included when the text has one: the newline is what makes
                 // end-of-line ($) anchors and line-ending rules match, and tm4e only appends its own (a
                 // second copy) to a line that lacks it.
@@ -258,6 +287,9 @@ public final class TextMateHighlighter {
                 } catch (Exception | LinkageError e) {
                     spans.add(null, lineLength - spans.lineProgress());
                     reportTokenizeFailure(grammar, e);
+                }
+                if (longLine) {
+                    longLineNanos += System.nanoTime() - started;
                 }
             }
             spans.endLine();
@@ -659,6 +691,15 @@ public final class TextMateHighlighter {
         if (scope.startsWith("comment")) {
             return "comment";
         }
+        // A template literal's `${…}`: the code inside is code, not string, and the markers stand apart (as in
+        // VS Code's themes). Without this the most specific styled scope of `(`, `,`, `.` or an object key in
+        // there was the enclosing string.template, so the interpolation read as part of the string.
+        if (scope.startsWith("meta.template.expression")) {
+            return PLAIN;
+        }
+        if (scope.startsWith("punctuation.definition.template-expression")) {
+            return "keyword";
+        }
         if (scope.startsWith("constant.numeric")) {
             return "number";
         }
@@ -700,7 +741,9 @@ public final class TextMateHighlighter {
             return "keyword";
         }
         // A number's base prefix (0x, 0o, 0b) and imaginary suffix (j) are part of the number, not keywords.
-        if (scope.startsWith("storage.type.number") || scope.startsWith("storage.type.imaginary.number")) {
+        if (scope.startsWith("storage.type.number")
+                || scope.startsWith("storage.type.imaginary.number")
+                || scope.startsWith("storage.type.numeric.bigint")) { // the `n` of a JavaScript BigInt
             return "number";
         }
         if (scope.startsWith("storage")) {
@@ -744,6 +787,11 @@ public final class TextMateHighlighter {
         }
         if (scope.startsWith("support.constant")) {
             return "constant";
+        }
+        // Built-in properties and variables (`.length`, `import.meta`, `arguments`-like names) are variables, as
+        // VS Code paints them; the generic `support` rule below would make them type names.
+        if (scope.startsWith("support.variable")) {
+            return "variable";
         }
         if (scope.startsWith("variable")) {
             return "variable";

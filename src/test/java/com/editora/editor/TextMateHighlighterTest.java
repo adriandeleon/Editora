@@ -588,6 +588,43 @@ class TextMateHighlighterTest {
     }
 
     @Test
+    void onceAPassHasSpentItsLongLineBudgetTheRemainingLongLinesArePlain() {
+        IGrammar js = GrammarRegistry.shared().forFileName("a.js");
+        String unit = "var a=function(b){return b+\"s\"};";
+        String longLine = unit.repeat(TextMateHighlighter.BUDGETED_LINE / unit.length() + 1);
+        String text = longLine + "\n" + longLine + "\nvar short = 1;\n";
+
+        // A zero budget: the first long line spends it, so the second is left plain; short lines are never
+        // budgeted.
+        TextMateHighlighter.IncrementalAnalysis a = TextMateHighlighter.analyzeFrom(
+                text, js, 0, null, () -> false, null, TextMateHighlighter.LINE_TIMEOUT, java.time.Duration.ZERO);
+
+        assertEquals(text.length(), a.spans().length(), "the spans still cover the text exactly");
+        assertEquals("keyword", styleAt(a.spans(), 0), "the first long line is tokenized");
+        assertNull(styleAt(a.spans(), longLine.length() + 1), "the second long line is over budget");
+        assertEquals("keyword", styleAt(a.spans(), text.indexOf("var short")), "a short line still tokenizes");
+
+        // The default budget leaves a couple of ordinary long lines alone.
+        assertEquals(
+                "keyword",
+                styleAt(TextMateHighlighter.analyzeFrom(text, js, 0, null).spans(), longLine.length() + 1));
+    }
+
+    @Test
+    void javaScriptTemplateInterpolationsBuiltInPropertiesAndBigIntsGetTheirOwnColours() {
+        IGrammar js = GrammarRegistry.shared().forFileName("a.js");
+        String text = "const s = `a ${fn(x, {k: 1})} b`; n.length + 10n;\n";
+        var spans = TextMateHighlighter.compute(text, js);
+        assertEquals("string", styleAt(spans, text.indexOf("a $")), "the literal text is a string");
+        assertEquals("keyword", styleAt(spans, text.indexOf("${")), "the ${ marker stands apart");
+        assertNull(styleAt(spans, text.indexOf("(x")), "punctuation inside ${} is code, not string");
+        assertNull(styleAt(spans, text.indexOf("k:")), "an object key inside ${} is code, not string");
+        assertEquals("string", styleAt(spans, text.indexOf(" b`")), "the string resumes after }");
+        assertEquals("variable", styleAt(spans, text.indexOf("length")), "a built-in property is a variable");
+        assertEquals("number", styleAt(spans, text.indexOf("10n") + 2), "a BigInt's n is part of the number");
+    }
+
+    @Test
     void memoizedScopeAnswersMatchAFreshClassification() {
         // Each scope name is classified once and remembered; a second lookup must give the same answers.
         for (int round = 0; round < 2; round++) {
