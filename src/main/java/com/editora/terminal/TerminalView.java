@@ -239,7 +239,46 @@ public final class TerminalView extends Region {
      * view is in a scene.
      */
     public void start(TerminalConnector.Factory connectors) throws IOException {
-        TerminalConnector connector = new TappedConnector(connectors.open(columns, rows), shellIntegration);
+        attach(connectors.open(columns, rows), columns, rows);
+    }
+
+    /**
+     * As {@link #start}, opening the connector off the FX thread: a shell on another machine takes a channel open
+     * (and, the first time, its shell-integration scripts) to start. Exactly one callback runs, on the FX thread:
+     * {@code onStarted} once the session runs, or {@code onFailed} with why the connector did not open. A view
+     * closed in the meantime runs neither, and closes the connector that arrives late.
+     */
+    public void startAsync(
+            TerminalConnector.Factory connectors, Runnable onStarted, java.util.function.Consumer<Exception> onFailed) {
+        int openColumns = columns;
+        int openRows = rows;
+        Thread.ofVirtual().name("terminal-connect").start(() -> {
+            TerminalConnector opened;
+            try {
+                opened = connectors.open(openColumns, openRows);
+            } catch (IOException | RuntimeException e) {
+                Platform.runLater(() -> {
+                    if (!closed) onFailed.accept(e);
+                });
+                return;
+            }
+            Platform.runLater(() -> {
+                if (closed) {
+                    opened.close();
+                    return;
+                }
+                attach(opened, openColumns, openRows);
+                onStarted.run();
+            });
+        });
+    }
+
+    /** Whether {@link #close} ran. */
+    private boolean closed;
+
+    /** Runs a session on {@code opened}, which was opened at {@code openColumns} x {@code openRows}. */
+    private void attach(TerminalConnector opened, int openColumns, int openRows) {
+        TerminalConnector connector = new TappedConnector(opened, shellIntegration);
         session = new TerminalSession(display, connector, columns, rows, scrollbackLines);
         buffer = session.getTextBuffer();
         // Fires on the emulator thread for every buffer mutation — cheap by design.
@@ -277,6 +316,9 @@ public final class TerminalView extends Region {
         }
         painter.start();
         markDirty();
+        if (columns != openColumns || rows != openRows) {
+            session.resize(columns, rows); // laid out again while it was opening
+        }
     }
 
     private CwdWatcher cwdWatch;
@@ -296,6 +338,7 @@ public final class TerminalView extends Region {
     }
 
     public void close() {
+        closed = true;
         painter.stop();
         // Before the session: the watcher polls by pid, and a pid is reused. Left running past the
         // process it was watching, it would eventually start reporting some unrelated process's

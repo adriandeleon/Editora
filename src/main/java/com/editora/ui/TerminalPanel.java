@@ -172,6 +172,10 @@ final class TerminalPanel extends StackPane {
                     }
                     dirs.remove(removed);
                     programNames.remove(removed);
+                    TerminalView pending = connecting.remove(removed);
+                    if (pending != null) {
+                        pending.close(); // its connector is closed when it arrives
+                    }
                     TerminalView view = views.remove(removed);
                     if (view != null) {
                         view.close();
@@ -402,18 +406,74 @@ final class TerminalPanel extends StackPane {
             onError.accept(tr("terminal.startFailed", tr("terminal.notConnected", stored)));
             return false;
         }
+        if (connecting.containsKey(tab)) {
+            return true; // already connecting (a second Reconnect click)
+        }
         TerminalView view = new TerminalView(config.fontSize());
         configure(view);
         view.setPalette(palette);
         view.setShellPaths(dir == null ? null : shellPaths.apply(dir));
         view.setOnSessionEnded(() -> shellEnded(tab, view));
+        TerminalConnector.Factory factory;
         try {
-            view.start(shells.open(dir, config.shell()));
+            factory = shells.open(dir, config.shell());
+            if (!factory.opensSlowly()) {
+                view.start(factory);
+                install(tab, view);
+                return true;
+            }
         } catch (IOException | RuntimeException e) {
             view.close();
             onError.accept(tr("terminal.startFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
             return false;
         }
+        startSlowly(tab, view, factory, dir);
+        return true;
+    }
+
+    /** Views whose shells are still connecting, by tab; a tab's current view stays in {@link #views} meanwhile. */
+    private final Map<Tab, TerminalView> connecting = new LinkedHashMap<>();
+
+    /**
+     * Opens a shell on another machine without holding the FX thread. The tab says it is connecting, over the text
+     * of the shell it replaces (a reconnect) or on its own (a new tab). Connected, the new view takes the tab;
+     * failed, a new tab goes away and a reconnecting one keeps its banner, and the error says why.
+     */
+    private void startSlowly(Tab tab, TerminalView view, TerminalConnector.Factory factory, Path dir) {
+        StackPane content = (StackPane) tab.getContent();
+        Label note = new Label(tr("terminal.connecting", targetLabel.apply(dir)));
+        note.getStyleClass().add("terminal-connecting");
+        StackPane.setAlignment(note, Pos.CENTER);
+        content.getChildren().add(note);
+        connecting.put(tab, view);
+        view.startAsync(
+                factory,
+                () -> {
+                    connecting.remove(tab);
+                    content.getChildren().remove(note);
+                    install(tab, view);
+                    if (tab.isSelected()) {
+                        focusActive();
+                    }
+                },
+                e -> {
+                    connecting.remove(tab);
+                    content.getChildren().remove(note);
+                    view.close();
+                    if (!views.containsKey(tab)) {
+                        tabs.getTabs().remove(tab); // a new tab whose shell never came
+                    }
+                    onError.accept(tr("terminal.startFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
+                });
+    }
+
+    /** Whether {@code tab}'s shell is still connecting; for tests. */
+    boolean isConnecting(Tab tab) {
+        return connecting.containsKey(tab);
+    }
+
+    /** Puts a started {@code view} in {@code tab}, replacing (and ending) the one there. */
+    private void install(Tab tab, TerminalView view) {
         TerminalView previous = views.put(tab, view);
         if (previous != null) {
             previous.close();
@@ -426,7 +486,6 @@ final class TerminalPanel extends StackPane {
                         view.getDisplay().tabTitleProperty()));
         tab.getTooltip().textProperty().unbind();
         tab.getTooltip().textProperty().bind(view.getDisplay().tabTooltipProperty());
-        return true;
     }
 
     /**
@@ -484,12 +543,13 @@ final class TerminalPanel extends StackPane {
         tabs.getTabs().clear();
     }
 
+    /** Whether there is a terminal tab, connected or still connecting. */
     boolean hasTerminals() {
-        return !views.isEmpty();
+        return !tabs.getTabs().isEmpty();
     }
 
     int terminalCount() {
-        return views.size();
+        return tabs.getTabs().size();
     }
 
     /** The selected tab's view, or null. */

@@ -37,5 +37,25 @@ public interface TerminalConnector extends TtyConnector {
     @FunctionalInterface
     interface Factory {
         TerminalConnector open(int columns, int rows) throws java.io.IOException;
+
+        /** Whether opening waits on another machine, so it is done off the FX thread (see {@code startAsync}). */
+        default boolean opensSlowly() {
+            return false;
+        }
+
+        /** {@code factory}, marked as opening slowly. */
+        static Factory slow(Factory factory) {
+            return new Factory() {
+                @Override
+                public TerminalConnector open(int columns, int rows) throws java.io.IOException {
+                    return factory.open(columns, rows);
+                }
+
+                @Override
+                public boolean opensSlowly() {
+                    return true;
+                }
+            };
+        }
     }
 }
