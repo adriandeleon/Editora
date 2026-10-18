@@ -195,6 +195,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                     }
                     dirs.remove(removed);
                     titles.remove(removed);
+                    runKeys.remove(removed);
                     programNames.remove(removed);
                     TerminalView pending = connecting.remove(removed);
                     if (pending != null) {
@@ -371,6 +372,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         view.setPalette(palette);
         view.setShellPaths(dir == null ? null : shellPaths.apply(dir));
         Tab tab = new Tab(title);
+        String runKey = title + "\u0000" + (dir == null ? "" : Vfs.toStorableString(dir));
+        runKeys.put(tab, runKey);
         StackPane content = new StackPane(view);
         content.getStyleClass().add("terminal-content");
         content.setStyle(groundStyle());
@@ -392,8 +395,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             // failure arrives later, as the program's end (-1) and the error.
             dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
             programNames.put(tab, program == null || program.isBlank() ? title : program);
-            tabs.getTabs().add(tab);
-            tabs.getSelectionModel().select(tab);
+            addProgramTab(tab, runKey);
             content.getChildren().clear();
             startProgramSlowly(tab, view, connector, dir);
             return programRun(tab, view);
@@ -408,10 +410,32 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
         views.put(tab, view);
         programNames.put(tab, program == null || program.isBlank() ? title : program);
-        tabs.getTabs().add(tab);
-        tabs.getSelectionModel().select(tab);
+        addProgramTab(tab, runKey);
         focusActive();
         return programRun(tab, view);
+    }
+
+    /** What each program tab runs (its title and folder), so the next run of the same thing can take its place. */
+    private final Map<Tab, String> runKeys = new LinkedHashMap<>();
+
+    /**
+     * Adds a program tab where the last run of the same thing ended, replacing that tab, as IntelliJ reuses a run's
+     * tab: running a configuration five times left five tabs to close. A run still going keeps its tab, and the new
+     * one goes at the end.
+     */
+    private void addProgramTab(Tab tab, String runKey) {
+        for (int i = 0; i < tabs.getTabs().size(); i++) {
+            Tab old = tabs.getTabs().get(i);
+            if (old != tab && runKey.equals(runKeys.get(old)) && !programExits.containsKey(old)) {
+                // One change, so the list is never empty in between (that would hide the window); the old
+                // tab's view is closed as any removed tab's is.
+                tabs.getTabs().set(i, tab);
+                tabs.getSelectionModel().select(tab);
+                return;
+            }
+        }
+        tabs.getTabs().add(tab);
+        tabs.getSelectionModel().select(tab);
     }
 
     /** {@link #startSlowly} for a program tab: connected, it shows the program; failed, the tab goes. */

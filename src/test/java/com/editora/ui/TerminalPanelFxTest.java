@@ -8,6 +8,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.BooleanSupplier;
@@ -1022,6 +1023,30 @@ class TerminalPanelFxTest {
             return null;
         });
         await(() -> call(() -> panel.activeView() != null && panel.activeView().isFocused()), "the asked-for shell's focus");
+    }
+
+    @Test
+    void runningTheSameProgramAgainReusesItsEndedTab() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        FakeConnector first = new FakeConnector();
+        fx(() -> panel.runProgram("App.java", null, (c, r) -> first, code -> {}));
+        first.exit(0);
+        await(() -> call(() -> panel.exitBanner(panel.activeTab()) != null), "the first run's end");
+
+        AtomicInteger emptied = new AtomicInteger();
+        fx(() -> {
+            panel.setOnLastClosed(emptied::incrementAndGet);
+            return null;
+        });
+        FakeConnector second = new FakeConnector();
+        fx(() -> panel.runProgram("App.java", null, (c, r) -> second, code -> {}));
+        assertEquals(1, fx(panel::terminalCount), "the ended run's tab was reused");
+        assertEquals(0, emptied.get(), "without the window ever seeing no tabs (it would hide)");
+        assertTrue(first.wasClosed() || !first.isConnected());
+
+        FakeConnector third = new FakeConnector();
+        fx(() -> panel.runProgram("App.java", null, (c, r) -> third, code -> {}));
+        assertEquals(2, fx(panel::terminalCount), "a run still going keeps its tab");
     }
 
     @Test
