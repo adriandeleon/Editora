@@ -73,6 +73,7 @@ public final class Relaunch {
             ProcessBuilder pb = new ProcessBuilder(line)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD);
+            com.editora.process.ProcessRunner.applyUserEnv(pb); // the editor runs in the user's own locale
             pb.environment().put(WAIT_FOR, Long.toString(ProcessHandle.current().pid()));
             pb.start();
         } catch (java.io.IOException | RuntimeException e) {
