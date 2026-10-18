@@ -19,7 +19,8 @@ import java.util.Set;
  *       stdin/stdout; launch {@code type="python"}.</li>
  *   <li><b>javascript</b> → {@link Kind#SOCKET}: {@code node <dapDebugServer.js> <port>}, DAP over a TCP
  *       socket; launch {@code type="pwa-node"}.</li>
- *   <li><b>groovy</b> → {@link Kind#JVM}: Editora's own JDI adapter, in-process; nothing to install.</li>
+ *   <li><b>groovy</b>, <b>kotlin</b> → {@link Kind#JVM}: Editora's own JDI adapter, in-process; nothing to
+ *       install.</li>
  * </ul>
  *
  * <p>All methods are static + pure (no process launch, no I/O), so they are unit-testable. The
@@ -81,7 +82,10 @@ public final class DapServerRegistry {
                 Set.of("javascript")),
         // A Groovy script runs under `groovy` with the JDWP agent in JAVA_OPTS; Editora's own adapter maps its
         // breakpoints by source name (java-debug parses every file as Java).
-        GROOVY("groovy", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("groovy"));
+        GROOVY("groovy", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("groovy")),
+        // A Kotlin script runs under `kotlinc -script` (agent in JAVA_OPTS), a program as `java -jar` (agent on
+        // its command line). kotlin-lsp's own debugger is undocumented and alpha: not used.
+        KOTLIN("kotlin", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("kotlin"));
 
         final String language;
         final Kind kind;
@@ -125,7 +129,7 @@ public final class DapServerRegistry {
 
     /** The editor language ids that can be debugged ({@code java}, {@code python}, {@code javascript}). */
     public static Set<String> languageIdsForDebug() {
-        return Set.of("java", "python", "javascript", "groovy");
+        return Set.of("java", "python", "javascript", "groovy", "kotlin");
     }
 
     /** Whether a debug adapter is registered for {@code languageId}. */

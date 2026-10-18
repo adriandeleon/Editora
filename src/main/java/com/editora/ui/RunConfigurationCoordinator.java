@@ -643,13 +643,16 @@ final class RunConfigurationCoordinator {
      */
     void debugViaBuild() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
-            host.setStatus(tr("status.debug.needJavaFile"));
+        if (b == null || b.getPath() == null || !("java".equals(b.getLanguage()) || "kotlin".equals(b.getLanguage()))) {
+            host.setStatus(tr("status.debug.needJvmFile"));
             return;
         }
         java.nio.file.Path routing = b.getPath();
-        if (!host.debugCoordinator().debugEffectiveFor("java", routing)) { // remote: the host's (review A9)
-            host.setStatus(host.debugCoordinator().unavailableMessage("java", routing));
+        // A Kotlin file's program is attached by Editora's JVM adapter (DebugCoordinator.attachToPort), Java's by
+        // java-debug through jdtls.
+        String language = b.getLanguage();
+        if (!host.debugCoordinator().debugEffectiveFor(language, routing)) { // remote: the host's (review A9)
+            host.setStatus(host.debugCoordinator().unavailableMessage(language, routing));
             return;
         }
         java.nio.file.Path root = JavaProjectRoot.find(routing);
