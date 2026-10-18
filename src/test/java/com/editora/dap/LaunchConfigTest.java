@@ -236,4 +236,17 @@ class LaunchConfigTest {
                 new LaunchConfig.Target(false, true));
         assertEquals("jarmanifest", local.get("shortenCommandLine"), "this machine's JDK 8 is read here");
     }
+
+    @Test
+    void aUserAttachToANodeInspectorNamesItsHostAndKeepsItPaused() {
+        java.util.Map<String, Object> m =
+                LaunchConfig.nodeAttach("pwa-node", "localhost:9229", "localhost", 9229, java.util.List.of(), false);
+        org.junit.jupiter.api.Assertions.assertEquals("localhost", m.get("address"));
+        org.junit.jupiter.api.Assertions.assertEquals(9229, m.get("port"));
+        org.junit.jupiter.api.Assertions.assertEquals(false, m.get("continueOnAttach"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "127.0.0.1",
+                LaunchConfig.nodeAttach("pwa-node", "x", 1234, java.util.List.of())
+                        .get("address"));
+    }
 }
