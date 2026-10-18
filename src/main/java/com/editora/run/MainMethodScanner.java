@@ -77,6 +77,20 @@ public final class MainMethodScanner {
         return out;
     }
 
+    /** The {@code package} a Java source declares, or {@code ""} for the default package. */
+    public static String packageOf(String source) {
+        if (source == null || source.isBlank()) {
+            return "";
+        }
+        for (String line : blank(source).split("\n", -1)) {
+            Matcher pm = PACKAGE.matcher(line);
+            if (pm.find()) {
+                return pm.group(1);
+            }
+        }
+        return "";
+    }
+
     private static String fqcn(String pkg, String cls) {
         return pkg.isEmpty() ? cls : pkg + "." + cls;
     }

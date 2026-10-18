@@ -132,7 +132,7 @@ public final class RunConfigurationsWindow {
         TextField target = field("settings.runConfig.targetPrompt");
         TextField interpreter = field("settings.runConfig.interpreterPrompt");
         TextField interpreterOptions = field("settings.runConfig.interpreterOptionsPrompt");
-        TextField mainClass = new TextField();
+        TextField mainClass = field("settings.runConfig.mainClassPrompt");
         TextField projectName = field("settings.runConfig.projectNamePrompt");
         TextField args = new TextField();
         TextField vmArgs = new TextField();
@@ -162,7 +162,15 @@ public final class RunConfigurationsWindow {
         formRow(form, 2, "settings.runConfig.target", targetRow);
         formRow(form, 3, "settings.runConfig.interpreter", interpreter);
         formRow(form, 4, "settings.runConfig.interpreterOptions", interpreterOptions);
-        formRow(form, 5, "settings.runConfig.mainClass", mainClass);
+        // A main class can be picked as its .java file: its fully qualified name is not something to type.
+        Button browseClass = new Button(tr("settings.runConfig.browse"));
+        browseClass.setId("run-config-browse-main-class");
+        browseClass.setMinWidth(Region.USE_PREF_SIZE);
+        HBox mainClassRow = new HBox(6, mainClass, browseClass);
+        mainClassRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(mainClass, Priority.ALWAYS);
+        mainClass.setMaxWidth(Double.MAX_VALUE);
+        formRow(form, 5, "settings.runConfig.mainClass", mainClassRow);
         formRow(form, 6, "settings.runConfig.projectName", projectName);
         formRow(form, 7, "settings.runConfig.args", args);
         formRow(form, 8, "settings.runConfig.vmArgs", vmArgs);
@@ -173,6 +181,7 @@ public final class RunConfigurationsWindow {
         formRow(form, 13, "settings.runConfig.console", inTerminal);
         form.setDisable(true);
 
+        name.setId("run-config-name");
         type.setId("run-config-type");
         target.setId("run-config-target");
         interpreter.setId("run-config-interpreter");
@@ -193,7 +202,7 @@ public final class RunConfigurationsWindow {
             browse.setVisible(scriptFile);
             browse.setManaged(scriptFile);
             setRowDisabled(form, !RunConfigFields.usesInterpreter(value), interpreter, interpreterOptions);
-            setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClass, projectName, vmArgs, jdk);
+            setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClassRow, projectName, vmArgs, jdk);
             // The prompts say what a blank field means for this type (a Python script runs in its own folder).
             boolean python = com.editora.run.ScriptRunCommand.isPython(value);
             interpreter.setPromptText(
@@ -314,6 +323,23 @@ public final class RunConfigurationsWindow {
             }
         });
 
+        browseClass.setOnAction(e -> {
+            javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+            chooser.setTitle(tr("settings.runConfig.browseMainClassTitle"));
+            chooser.getExtensionFilters()
+                    .add(new javafx.stage.FileChooser.ExtensionFilter(
+                            tr("settings.runConfig.javaSourceFilter"), "*.java"));
+            java.nio.file.Path root = projectRoot == null ? null : projectRoot.get();
+            if (root != null && root.getFileSystem() == java.nio.file.FileSystems.getDefault()) {
+                chooser.setInitialDirectory(root.toFile());
+            }
+            java.io.File chosen = chooser.showOpenDialog(stage);
+            if (chosen != null) {
+                pickMainClass(chosen.toPath(), name, mainClass);
+                commit.run();
+            }
+        });
+
         Button add = new Button(tr("settings.runConfig.add"));
         add.setOnAction(e -> {
             List<String> taken = items.stream().map(RunConfiguration::name).toList();
@@ -379,6 +405,44 @@ public final class RunConfigurationsWindow {
     static String chosenTarget(String type, java.nio.file.Path chosen, java.nio.file.Path root) {
         RunConfiguration c = RunConfigDefaults.forScript(type, chosen, root);
         return c == null ? chosen.toString() : c.target();
+    }
+
+    /**
+     * Fills Main class from a picked {@code .java} file, and renames the selected configuration after the class
+     * while it is still named after nothing in particular ("New Configuration", or the class it launched).
+     */
+    void pickMainClass(java.nio.file.Path file, TextField name, TextField mainClass) {
+        String source;
+        try {
+            source = java.nio.file.Files.readString(file);
+        } catch (java.nio.charset.CharacterCodingException e) {
+            source = readLatin1(file); // a Latin-1 source still declares an ASCII package
+        } catch (java.io.IOException e) {
+            source = ""; // unreadable: the file name (in the default package) is all there is
+        }
+        String fileName = file.getFileName() == null ? "" : file.getFileName().toString();
+        String fqn = RunConfigDefaults.mainClassForSource(source, fileName);
+        if (fqn == null) {
+            return; // not a .java file
+        }
+        int index = list.getSelectionModel().getSelectedIndex();
+        List<String> others = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            if (i != index) {
+                others.add(items.get(i).name());
+            }
+        }
+        name.setText(RunConfigDefaults.renamedForMainClass(
+                name.getText(), mainClass.getText(), fqn, tr("settings.runConfig.newName"), others));
+        mainClass.setText(fqn);
+    }
+
+    private static String readLatin1(java.nio.file.Path file) {
+        try {
+            return java.nio.file.Files.readString(file, java.nio.charset.StandardCharsets.ISO_8859_1);
+        } catch (java.io.IOException e) {
+            return "";
+        }
     }
 
     private static void formRow(GridPane form, int row, String labelKey, javafx.scene.Node control) {
