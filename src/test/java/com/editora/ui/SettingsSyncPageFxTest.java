@@ -634,4 +634,67 @@ class SettingsSyncPageFxTest {
         FxTestSupport.runOnFx(
                 () -> assertTrue(fx.shared.getUserDictionary().contains("zzfromother"), "the next sync runs in full"));
     }
+
+    /** Puts the sync service in {@code phase} after a run that ended with {@code report} (no git, no network). */
+    private void fakeState(SettingsSync.Phase phase, SyncReport report, java.time.LocalTime at) {
+        FxTestSupport.call(
+                sync, "setState", new Class<?>[] {SettingsSync.State.class}, new SettingsSync.State(phase, report, at));
+    }
+
+    private static SyncReport report(SyncReport.Status status, String detail) {
+        return new SyncReport(status, List.of(), List.of(), List.of(), List.of(), detail);
+    }
+
+    /** adl: a green pill when connected, a yellow or red one when not, on the Status row of the Sync page. */
+    @Test
+    void theStatusRowIsAPillInEveryState() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            Label pill = control("syncPill");
+            Label detail = control("syncStateLabel");
+            // Not set up.
+            assertEquals(tr("settings.sync.pill.notConnected"), pill.getText());
+            assertTrue(pill.getStyleClass().contains("settings-git-warn"));
+            assertEquals(tr("settings.sync.pill.accessible", pill.getText()), pill.getAccessibleText());
+            assertFalse(detail.isVisible(), "the pill says it all");
+
+            settings.setSyncRepoUrl("git@example.invalid:me/editora-sync.git"); // never contacted: no run starts
+            settings.setSyncEnabled(true);
+            fakeState(SettingsSync.Phase.IDLE, report(SyncReport.Status.OK, ""), java.time.LocalTime.now());
+            assertEquals(
+                    tr("settings.sync.pill.with", tr("settings.sync.pill.connected"), tr("settings.sync.pill.justNow")),
+                    pill.getText());
+            assertTrue(pill.getStyleClass().contains("settings-git-found"));
+            assertTrue(detail.isVisible(), "what the last run did");
+
+            fakeState(SettingsSync.Phase.SYNCING, report(SyncReport.Status.OK, ""), java.time.LocalTime.now());
+            assertEquals(
+                    tr("settings.sync.pill.with", tr("settings.sync.pill.connected"), tr("settings.sync.pill.syncing")),
+                    pill.getText());
+            assertTrue(pill.getStyleClass().contains("settings-git-found"));
+
+            fakeState(
+                    SettingsSync.Phase.PROBLEM,
+                    report(
+                            SyncReport.Status.FETCH_FAILED,
+                            "fatal: unable to access: Could not resolve host: example.invalid"),
+                    java.time.LocalTime.now());
+            assertTrue(pill.getStyleClass().contains("settings-git-warn"), "offline: it retries by itself");
+            assertTrue(pill.getText().startsWith(tr("settings.sync.pill.notConnected")));
+
+            fakeState(
+                    SettingsSync.Phase.PROBLEM,
+                    report(SyncReport.Status.FETCH_FAILED, "fatal: could not read Username: terminal prompts disabled"),
+                    java.time.LocalTime.now());
+            assertEquals(tr("settings.sync.pill.failing"), pill.getText());
+            assertTrue(pill.getStyleClass().contains("settings-git-missing"));
+            assertTrue(detail.isVisible(), "with the reason under it");
+            assertEquals(sync.stateText(), detail.getText());
+            assertEquals(detail.getText(), pill.getTooltip().getText());
+
+            fakeState(SettingsSync.Phase.OFF, null, null);
+            settings.setSyncEnabled(false);
+            settings.setSyncRepoUrl("");
+        });
+    }
 }

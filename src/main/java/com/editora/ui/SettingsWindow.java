@@ -4184,6 +4184,9 @@ public class SettingsWindow {
     private Button syncNowButton;
     private Button syncAnywayButton;
     private Label syncStateLabel;
+    /** The Status row's pill: Connected (green), Not connected (amber), Sync failing (red); see {@link SyncStatus}. */
+    private Label syncPill;
+
     private Label syncAccountLabel;
     private CheckBox syncSnippetsCheck;
     private CheckBox syncAbbreviationsCheck;
@@ -4319,6 +4322,20 @@ public class SettingsWindow {
         syncStateLabel = new Label();
         syncStateLabel.setWrapText(true);
         syncStateLabel.setMaxWidth(420);
+        syncPill = new Label();
+        syncPill.setWrapText(true);
+        syncPill.setMaxWidth(420);
+        // "synced 5 min ago" moves on while the window is open.
+        javafx.animation.Timeline syncPillTick = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.seconds(30), e -> refreshSyncControls()));
+        syncPillTick.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        stage.showingProperty().addListener((o, was, now) -> {
+            if (now) {
+                syncPillTick.play();
+            } else {
+                syncPillTick.stop();
+            }
+        });
         syncAccountLabel = new Label();
         syncAccountLabel.getStyleClass().add("settings-row-desc");
         syncAccountLabel.setWrapText(true);
@@ -4359,6 +4376,7 @@ public class SettingsWindow {
                         null,
                         new VBox(
                                 6,
+                                new HBox(syncPill), // a pill as wide as its words
                                 syncStateLabel,
                                 syncAccountLabel,
                                 new HBox(8, syncNowButton, syncAnywayButton, syncCancelButton, openFolder))),
@@ -4493,6 +4511,27 @@ public class SettingsWindow {
                         : syncNotice != null
                                 ? syncNotice
                                 : settingsSync == null ? tr("sync.state.off") : settingsSync.stateText());
+        SyncStatus.Pill pill = SyncStatus.of(
+                connected && com.editora.sync.SyncEngine.isUsableUrl(settings.getSyncRepoUrl()),
+                available,
+                state,
+                java.time.LocalTime.now());
+        syncPill.setText(pill.text());
+        syncPill.setAccessibleText(pill.accessibleText());
+        syncPill.getStyleClass().setAll("settings-git-status", pill.level().pillClass());
+        syncPill.setTooltip(new Tooltip(syncStateLabel.getText()));
+        // The line under the pill: a notice, the reason a run failed, or what the last run did. The pill alone
+        // says "Not connected" and "syncing…".
+        SettingsSync.Phase phase = state == null ? SettingsSync.Phase.OFF : state.phase();
+        boolean detail = syncConnectMessage != null
+                || syncNotice != null
+                || !available && settingsSync != null
+                || phase == SettingsSync.Phase.PROBLEM
+                || phase == SettingsSync.Phase.IDLE
+                        && state.report() != null
+                        && state.report().ok();
+        syncStateLabel.setVisible(detail);
+        syncStateLabel.setManaged(detail);
     }
 
     /** Shows {@code text} in the status line until the user next acts on the repository (see {@link #syncNotice}). */

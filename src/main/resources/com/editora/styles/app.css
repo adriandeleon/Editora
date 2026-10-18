@@ -3186,6 +3186,11 @@
     -fx-text-fill: -color-fg-muted;
     -fx-background-color: -color-neutral-muted;
 }
+/* "Not connected" on Settings ▸ Sync: not a fault (or one that fixes itself), but not working either. */
+.settings-git-warn {
+    -fx-text-fill: -state-amber;
+    -fx-background-color: -state-amber-bg;
+}
 /* Settings search with no hits: said in words, in place of a blank page. */
 .settings-search-empty {
     -fx-text-fill: -color-fg-muted;
