@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 129;
+    public static final int SCHEMA_VERSION = 131;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -665,6 +665,29 @@ public class Settings {
      * own (the command still applies). Read by {@code DapManager.CodeReplaceMode.of}.
      */
     private String debugHotCodeReplace = "auto";
+    /** Integrated terminal: the shell a new tab runs (blank = the login shell, {@code $SHELL -l}). */
+    private String terminalShell = "";
+    /** Integrated terminal: lines of history kept above the screen (applies from the next tab). */
+    private int terminalScrollback = 5000;
+    /** Integrated terminal: text size, 0 = the editor's. The face is always the editor's. */
+    private int terminalFontSize = 0;
+    /** Integrated terminal: the cursor shape a program has not asked to change ({@code block|underline|bar}). */
+    private String terminalCursor = "block";
+    /** Integrated terminal: flash on the bell character. */
+    private boolean terminalBell = true;
+    /** Integrated terminal: ask before closing a tab whose shell is running a program. */
+    private boolean terminalConfirmClose = true;
+    /** "Open in Terminal" starts the system's terminal application instead of a tab in the Terminal tool window. */
+    private boolean terminalUseExternal = false;
+
+    /**
+     * The commands a focused terminal still lets through; every other key goes to the shell. Exact ids or
+     * {@code prefix.*}. Mirrors {@code TerminalKeys.DEFAULT_IDE_COMMANDS} (a test keeps them equal).
+     */
+    public static final java.util.List<String> DEFAULT_TERMINAL_IDE_COMMANDS =
+            java.util.List.of("tool.*", "palette.show", "search.everywhere", "terminal.*");
+
+    private java.util.List<String> terminalIdeCommands = new java.util.ArrayList<>(DEFAULT_TERMINAL_IDE_COMMANDS);
     /**
      * Java debugging: Step Into skips JDK classes and synthetic methods (java-debug's step filters) — what
      * IntelliJ and VS Code do by default. Off steps into everything, JDK internals included.
@@ -2905,6 +2928,76 @@ public class Settings {
 
     public void setDebugHotCodeReplace(String debugHotCodeReplace) {
         this.debugHotCodeReplace = debugHotCodeReplace;
+    }
+
+    public String getTerminalShell() {
+        return terminalShell == null ? "" : terminalShell;
+    }
+
+    public void setTerminalShell(String terminalShell) {
+        this.terminalShell = terminalShell == null ? "" : terminalShell.strip();
+    }
+
+    /** Clamped on read too: a hand-edited million-line scrollback would exhaust memory at the next tab. */
+    public int getTerminalScrollback() {
+        return Math.clamp(terminalScrollback, 0, 100_000);
+    }
+
+    public void setTerminalScrollback(int terminalScrollback) {
+        this.terminalScrollback = Math.clamp(terminalScrollback, 0, 100_000);
+    }
+
+    public int getTerminalFontSize() {
+        return terminalFontSize <= 0 ? 0 : Math.clamp(terminalFontSize, 6, 72);
+    }
+
+    public void setTerminalFontSize(int terminalFontSize) {
+        this.terminalFontSize = terminalFontSize <= 0 ? 0 : Math.clamp(terminalFontSize, 6, 72);
+    }
+
+    public String getTerminalCursor() {
+        return switch (terminalCursor == null ? "" : terminalCursor) {
+            case "underline", "bar" -> terminalCursor;
+            default -> "block";
+        };
+    }
+
+    public void setTerminalCursor(String terminalCursor) {
+        this.terminalCursor = terminalCursor;
+    }
+
+    public boolean isTerminalBell() {
+        return terminalBell;
+    }
+
+    public void setTerminalBell(boolean terminalBell) {
+        this.terminalBell = terminalBell;
+    }
+
+    public boolean isTerminalConfirmClose() {
+        return terminalConfirmClose;
+    }
+
+    public void setTerminalConfirmClose(boolean terminalConfirmClose) {
+        this.terminalConfirmClose = terminalConfirmClose;
+    }
+
+    public boolean isTerminalUseExternal() {
+        return terminalUseExternal;
+    }
+
+    public void setTerminalUseExternal(boolean terminalUseExternal) {
+        this.terminalUseExternal = terminalUseExternal;
+    }
+
+    public java.util.List<String> getTerminalIdeCommands() {
+        return terminalIdeCommands == null ? DEFAULT_TERMINAL_IDE_COMMANDS : terminalIdeCommands;
+    }
+
+    public void setTerminalIdeCommands(java.util.List<String> terminalIdeCommands) {
+        this.terminalIdeCommands = terminalIdeCommands == null
+                ? new java.util.ArrayList<>()
+                : new java.util.ArrayList<>(terminalIdeCommands);
     }
 
     public String getJavaDebugPluginPath() {

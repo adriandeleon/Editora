@@ -385,6 +385,11 @@ public class App extends Application {
                 System.out.println(AppInfo.versionLine());
                 System.exit(0);
             }
+            // Diagnostic, not in --help: starts a shell on a pseudo-terminal and checks what the emulator saw.
+            // CI runs it inside the jlink image, the one build where the terminal's natives can fail to load.
+            if ("--check-terminal".equals(a)) {
+                System.exit(com.editora.terminal.TerminalImageCheck.runAndReport(System.out));
+            }
         }
         // Force-kill any LSP/DAP server we spawn if the JVM exits without going through a window-close
         // teardown — a plain `kill`/SIGTERM, an OS quit, or most crashes. Without this, killing the app

@@ -85,6 +85,50 @@ class RealSshdProbeFxTest {
         System.out.println("PROBE " + name + ": " + report.get(name));
     }
 
+    /** Collects what a terminal prints, on a virtual thread, into the returned buffer. */
+    private static StringBuffer pump(com.editora.process.TerminalChannel shell) {
+        StringBuffer seen = new StringBuffer();
+        Thread.ofVirtual().start(() -> {
+            byte[] buf = new byte[4096];
+            try {
+                int n;
+                while ((n = shell.output().read(buf)) > 0) {
+                    seen.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+            } catch (java.io.IOException ended) {
+                // closed
+            }
+        });
+        return seen;
+    }
+
+    /** Waits for a terminal to print {@code needle}; the failure says what it printed instead. */
+    private static void awaitOutput(StringBuffer seen, String needle) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < deadline && !seen.toString().contains(needle)) {
+            Thread.sleep(50);
+        }
+        check(seen.toString().contains(needle), "\"" + needle + "\" in the terminal's output: [" + seen + "]");
+    }
+
+    private static void type(com.editora.process.TerminalChannel shell, String text) throws java.io.IOException {
+        shell.input().write(text.getBytes(StandardCharsets.UTF_8));
+        shell.input().flush();
+    }
+
+    /** Whether a {@code sleep <arg>} runs on this machine — the probe's host is this machine. */
+    private static boolean sleeping(String arg) {
+        try {
+            // pgrep, not ProcessHandle: macOS does not give other processes' arguments to ProcessHandle.Info.
+            return new ProcessBuilder("pgrep", "-f", "sleep " + arg).start().waitFor() == 0;
+        } catch (java.io.IOException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
     private static void check(boolean ok, String what) {
         if (!ok) {
             throw new AssertionError(what);
@@ -731,6 +775,28 @@ class RealSshdProbeFxTest {
             }
         });
 
+        step("a terminal on the host: a real tty, its size, and a resize", () -> {
+            com.editora.process.TerminalChannel shell =
+                    target().startTerminal(new com.editora.process.TerminalSpec(app, 100, 30));
+            try {
+                StringBuffer seen = pump(shell);
+                type(shell, "stty size; tty; echo $TERM $TERM_PROGRAM; pwd -P\n");
+                // Each line awaited on its own: they arrive one by one, and dropbear can be a beat slower.
+                awaitOutput(seen, "30 100");
+                awaitOutput(seen, "/dev/"); // a real tty
+                awaitOutput(seen, "xterm-256color Editora"); // TERM and TERM_PROGRAM
+                shell.resize(120, 40);
+                type(shell, "stty size\n");
+                await(
+                        "stty size 40 120 after the resize",
+                        20,
+                        () -> seen.toString().contains("40 120"));
+                return "30x100 then 40x120";
+            } finally {
+                shell.close();
+            }
+        });
+
         String sshdPid = System.getProperty("remote.probe.sshdPid");
         step("a frozen connection is given up on, and its folder reconnects", () -> {
             if (sshdPid == null) {
@@ -761,6 +827,11 @@ class RealSshdProbeFxTest {
             engine.addConnectionListener((authority, up) -> heard.add(up));
             Process p = longLived("sleep 600");
             long pgid = ((RemoteProcess) p).remotePid();
+            // A terminal running a foreground program: the hang-up must end it, and the terminal must say why.
+            com.editora.process.TerminalChannel shell =
+                    target().startTerminal(new com.editora.process.TerminalSpec(app, 80, 24));
+            type(shell, "exec sleep 6007\n");
+            await("the terminal's sleep up", 10, () -> sleeping("6007"));
             await("the sleep up", 10, () -> {
                 try {
                     return !group(pgid).isEmpty();
@@ -779,6 +850,9 @@ class RealSshdProbeFxTest {
                 }
             });
             check(!target().isAvailable(), "nothing can be started on a dead connection");
+            await("the terminal's channel closed", 20, () -> !shell.isOpen());
+            check(shell.lostConnection(), "the terminal reports the connection lost, not an exit");
+            await("the terminal's program gone (the server hung up its tty)", 20, () -> !sleeping("6007"));
             return null;
         });
 

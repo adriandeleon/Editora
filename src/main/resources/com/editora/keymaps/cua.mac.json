@@ -54,5 +54,7 @@
   "f10": "debug.stepOver",
   "f11": "debug.stepIntoOrFullScreen",
   "S-f11": "debug.stepOut",
-  "Cmd-S-f5": "debug.restart"
+  "Cmd-S-f5": "debug.restart",
+  "C-back-quote": "tool.terminal",
+  "C-S-back-quote": "terminal.new"
 }
