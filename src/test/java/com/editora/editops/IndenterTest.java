@@ -395,4 +395,82 @@ class IndenterTest {
                 Indenter.enterEdit("\tif (x) {", 9, "java", 4).insert(),
                 Indenter.enterEdit("\tif (x) {", 9, "java", 4, null, null).insert());
     }
+
+    // --- Lisp (Clojure) ---
+
+    @Test
+    void clojureIsTheLispStyleAndScalaIsBraces() {
+        assertEquals(Style.LISP, Indenter.styleFor("clojure"));
+        assertEquals(Style.BRACES, Indenter.styleFor("scala"));
+    }
+
+    @Test
+    void lispAlignsACallsArgumentsToItsFirstArgument() {
+        assertEquals("\n" + " ".repeat(5), enterAtEnd("(str \"a\"", "clojure"));
+        assertEquals("\n" + " ".repeat(9), enterAtEnd("  (assoc m :a 1", "clojure"));
+        // No argument on the paren's line: two spaces past the paren.
+        assertEquals("\n  ", enterAtEnd("(str", "clojure"));
+    }
+
+    @Test
+    void lispIndentsABodyFormTwoSpacesPastItsParen() {
+        assertEquals("\n  ", enterAtEnd("(defn greet [name]", "clojure"));
+        assertEquals("\n  ", enterAtEnd("(ns demo.core", "clojure"));
+        assertEquals("\n    ", enterAtEnd("(defn f [x]\n  (let [y 1]", "clojure"));
+        assertEquals("\n  ", enterAtEnd("(s/def ::id", "clojure"), "a qualified def form");
+        assertEquals("\n  ", enterAtEnd("(when-let [x (f)]", "clojure"));
+    }
+
+    @Test
+    void lispAlignsVectorAndMapElementsPastTheirBracket() {
+        assertEquals("\n" + " ".repeat(6), enterAtEnd("(let [a 1", "clojure"));
+        assertEquals("\n" + " ".repeat(8), enterAtEnd("(def m {:a 1", "clojure"));
+        assertEquals("\n  ", enterAtEnd("'(1 2", "clojure"), "a quoted list is data, aligned past its paren");
+    }
+
+    @Test
+    void lispReturnsToColumnZeroAfterAClosedTopLevelForm() {
+        assertEquals("\n", enterAtEnd("(defn f [x]\n  (inc x))", "clojure"));
+        assertEquals("\n", enterAtEnd("(def x 1) ; a ( in a comment", "clojure"));
+        assertEquals("\n  ", enterAtEnd("(defn f [x]\n  (str \"(\" \\( x)", "clojure"), "string and char parens");
+    }
+
+    @Test
+    void lispKeepsTheIndentInsideAMultiLineString() {
+        assertEquals("\n  ", enterAtEnd("(defn f\n  \"Docstring that", "clojure"));
+    }
+
+    @Test
+    void lispEnterBetweenBracketsDoesNotSplitIntoAStanza() {
+        // Between `(` and `)`: one new line, two spaces past the paren — the `)` stays where it is.
+        assertEquals("\n    ", enter("(defn f []\n  ())", 14, "clojure"));
+    }
+
+    @Test
+    void lispSmartTabReindentsTheLineExactly() {
+        String text = "(defn f [x]\n      (inc x))";
+        Indenter.TabEdit e = Indenter.smartTab(text, 12, 12, "clojure", 2, false);
+        String after = text.substring(0, e.from()) + e.replacement() + text.substring(e.to());
+        assertEquals("(defn f [x]\n  (inc x))", after, "a too-deep line is pulled back");
+        assertEquals(14, e.selStart());
+    }
+
+    // --- Scala 3 optional braces ---
+
+    @Test
+    void scala3IndentsAfterItsBlockOpeners() {
+        assertEquals("\n    ", enterAtEnd("class Shelf:", "scala"));
+        assertEquals("\n    ", enterAtEnd("def f(x: Int): Int =", "scala"));
+        assertEquals("\n    ", enterAtEnd("case Some(x) =>", "scala"));
+        assertEquals("\n    ", enterAtEnd("if ready then", "scala"));
+        assertEquals("\n    ", enterAtEnd("for x <- xs do", "scala"));
+        assertEquals("\n    ", enterAtEnd("val y = x match // note", "scala"));
+        assertEquals("\n    ", enterAtEnd("object A {", "scala"), "braces still open a block");
+        assertEquals("\n", enterAtEnd("val x = 1", "scala"));
+        assertEquals("\n", enterAtEnd("val ok = a == b", "scala"));
+        assertEquals("\n", enterAtEnd("println(\"done:\")", "scala"));
+        assertEquals("\n", enterAtEnd("val ending = \"then\"", "scala"));
+        // The same line in Kotlin opens nothing: the rule is Scala's.
+        assertEquals("\n", enterAtEnd("fun f(): Int =", "kotlin"));
+    }
 }

@@ -48,4 +48,12 @@ class ModelineTest {
         assertNull(ext("just some prose about vim and emacs\n"));
         assertNull(Modeline.detect(null, null));
     }
+
+    @Test
+    void scalaAndClojureModes() {
+        assertEquals("scala", ext("// vim: ft=scala\nobject A\n"));
+        assertEquals("clj", ext(";; -*- mode: clojure -*-\n(ns a)\n"));
+        assertEquals("cljs", ext(";; -*- clojurescript -*-\n"));
+        assertEquals("clj", ext("(ns a)\n;; vim: set filetype=clojure :\n"));
+    }
 }

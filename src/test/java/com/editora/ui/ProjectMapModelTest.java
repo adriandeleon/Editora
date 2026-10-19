@@ -218,4 +218,16 @@ class ProjectMapModelTest {
         Path normalized = ProjectMapModel.normalize(path);
         return entries.stream().anyMatch(entry -> entry.path().equals(normalized));
     }
+
+    @Test
+    void scalaAndClojureAreSourceAndTheirBuildFilesConfig() {
+        assertEquals(ProjectMapModel.TypeFilter.SOURCE, ProjectMapModel.classify("Main.scala"));
+        assertEquals(ProjectMapModel.TypeFilter.SOURCE, ProjectMapModel.classify("script.sc"));
+        assertEquals(ProjectMapModel.TypeFilter.SOURCE, ProjectMapModel.classify("core.clj"));
+        assertEquals(ProjectMapModel.TypeFilter.SOURCE, ProjectMapModel.classify("app.cljs"));
+        assertEquals(ProjectMapModel.TypeFilter.SOURCE, ProjectMapModel.classify("build.groovy"));
+        for (String name : List.of("build.sbt", "build.mill", "deps.edn", "bb.edn", "project.clj")) {
+            assertEquals(ProjectMapModel.TypeFilter.CONFIG, ProjectMapModel.classify(name), name);
+        }
+    }
 }
