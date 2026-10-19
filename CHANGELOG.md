@@ -555,6 +555,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **File Information and the status bar show the same word count.** File Information counted "well-known" and
+  "repo's" as two words each and skipped numbers; it now counts as the status bar does.
 - **Debugging a Kotlin script with Kotlin 2.4.10:** once the script had run, adding or removing a breakpoint failed
   with "Internal error". Two classes in that compiler carry source-map data (an SMAP) the JDK's debugger cannot
   read; the JVM debugger now treats such a class as one without source information, in breakpoints and in the
