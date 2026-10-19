@@ -288,7 +288,11 @@ public enum ConfigSchema {
                     // encryptionRecentRecipients ([]) — encrypted files
                     // became a core feature. Additive: absent is the default. (The retired GnuPG plugin's own
                     // settings are carried over at startup by RetiredPlugins, not here: they live in its folder.)
-                    Map.entry(135, (Migration) ConfigMigrations::identity)),
+                    Map.entry(135, (Migration) ConfigMigrations::identity),
+                    // v136→137: + nodePath (one Node.js for Run, Debug, npm and the TypeScript server; blank =
+                    // automatic, as before) and typescriptTypeAcquisition (off; it used to be the server's default,
+                    // on). Additive: absent is the default.
+                    Map.entry(136, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

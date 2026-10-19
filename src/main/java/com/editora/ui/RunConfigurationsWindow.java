@@ -154,7 +154,7 @@ public final class RunConfigurationsWindow {
 
         TextField name = new TextField();
         ComboBox<String> type = new ComboBox<>(
-                FXCollections.observableArrayList("java", "python", "python-module", "shell", "make", "npm"));
+                FXCollections.observableArrayList("java", "python", "python-module", "node", "shell", "make", "npm"));
         type.setConverter(new StringConverter<>() {
             @Override
             public String toString(String value) {
@@ -263,27 +263,16 @@ public final class RunConfigurationsWindow {
         Runnable applyType = () -> {
             String value = type.getValue();
             setRowDisabled(form, !RunConfigFields.usesTarget(value), targetRow);
-            boolean scriptFile = com.editora.run.RunConfigFields.usesScriptFile(value);
-            browse.setVisible(scriptFile);
-            browse.setManaged(scriptFile);
+            boolean browses = com.editora.run.RunConfigPrompts.browses(value);
+            browse.setVisible(browses);
+            browse.setManaged(browses);
             setRowDisabled(form, !RunConfigFields.usesInterpreter(value), interpreter, interpreterOptions);
             setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClassRow, projectName, vmArgs, jdk);
             // The prompts say what a blank field means for this type (a Python script runs in its own folder).
-            boolean python = com.editora.run.ScriptRunCommand.isPython(value);
-            interpreter.setPromptText(
-                    tr(python ? "settings.runConfig.interpreterPromptPython" : "settings.runConfig.interpreterPrompt"));
-            interpreterOptions.setPromptText(tr(
-                    python
-                            ? "settings.runConfig.interpreterOptionsPromptPython"
-                            : "settings.runConfig.interpreterOptionsPrompt"));
-            workingDir.setPromptText(tr(
-                    com.editora.run.ScriptRunCommand.PYTHON.equals(value)
-                            ? "settings.runConfig.workingDirPromptPython"
-                            : "settings.runConfig.workingDirPrompt"));
-            target.setPromptText(tr(
-                    com.editora.run.ScriptRunCommand.PYTHON_MODULE.equals(value)
-                            ? "settings.runConfig.targetPromptModule"
-                            : "settings.runConfig.targetPrompt"));
+            interpreter.setPromptText(tr(com.editora.run.RunConfigPrompts.interpreter(value)));
+            interpreterOptions.setPromptText(tr(com.editora.run.RunConfigPrompts.interpreterOptions(value)));
+            workingDir.setPromptText(tr(com.editora.run.RunConfigPrompts.workingDir(value)));
+            target.setPromptText(tr(com.editora.run.RunConfigPrompts.target(value)));
         };
         java.util.function.Supplier<RunConfiguration> fromForm = () -> new RunConfiguration(
                 name.getText(),
@@ -384,6 +373,29 @@ public final class RunConfigurationsWindow {
         });
 
         browse.setOnAction(e -> {
+            if (com.editora.run.ScriptRunCommand.NPM.equals(type.getValue())) {
+                // An npm configuration names a script: offer the package.json's own, not a file picker.
+                java.nio.file.Path root = projectRoot == null ? null : projectRoot.get();
+                javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+                for (String[] script : npmScripts(root, workingDir.getText())) {
+                    javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(
+                            com.editora.build.NpmActionsProvider.label(script[0], script[1]));
+                    item.setMnemonicParsing(false);
+                    item.setOnAction(ev -> {
+                        target.setText(script[0]);
+                        commit.run();
+                    });
+                    menu.getItems().add(item);
+                }
+                if (menu.getItems().isEmpty()) {
+                    javafx.scene.control.MenuItem none =
+                            new javafx.scene.control.MenuItem(tr("settings.runConfig.npmNoScripts"));
+                    none.setDisable(true);
+                    menu.getItems().add(none);
+                }
+                menu.show(browse, javafx.geometry.Side.BOTTOM, 0, 0);
+                return;
+            }
             javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
             chooser.setTitle(tr("settings.runConfig.browseTitle"));
             java.nio.file.Path root = projectRoot == null ? null : projectRoot.get();
@@ -473,6 +485,26 @@ public final class RunConfigurationsWindow {
         TextField field = new TextField();
         field.setPromptText(tr(promptKey));
         return field;
+    }
+
+    /**
+     * The scripts (name, command) of the {@code package.json} an npm configuration runs in: its working directory
+     * (relative to the project root), else the project root. Empty for a remote folder or no readable file.
+     */
+    static List<String[]> npmScripts(java.nio.file.Path root, String workingDir) {
+        if (root == null || root.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+            return List.of();
+        }
+        java.nio.file.Path dir = workingDir == null || workingDir.isBlank() ? root : root.resolve(workingDir.strip());
+        try {
+            com.editora.build.NpmProject p =
+                    com.editora.build.NpmProject.parse(java.nio.file.Files.readString(dir.resolve("package.json")));
+            return p.scripts().stream()
+                    .map(n -> new String[] {n, p.commandOf(n)})
+                    .toList();
+        } catch (java.io.IOException | RuntimeException ex) {
+            return List.of();
+        }
     }
 
     /** The Script / target text for a file picked with Browse: relative to the project when inside it. */

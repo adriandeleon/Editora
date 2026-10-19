@@ -48,7 +48,7 @@ class ChildLocalePolicyTest {
     private static final Set<String> PARSE_STABLE_FILES = Set.of(
             "AppInfo.java", // git rev-parse of the build's own checkout
             "crypto/Pinentry.java", // `gpgconf --list-dirs homedir`: a path
-            "dap/DapManager.java", // probe(): `node --version`, `python -c "import debugpy"`
+            "dap/DapManager.java", // probe(): `node --version` (also js-debug's minimum), `python -c "import debugpy"`
             "diagram/DiagramRenderer.java", // detect(): --version / --help
             "doctor/DoctorProbes.java", // version probes
             "git/GitService.java", // background reads: porcelain output
@@ -61,6 +61,7 @@ class ChildLocalePolicyTest {
             "mermaid/Mermaid.java", // detect() + maid's JSON report
             "run/RunService.java", // `java -version`
             "run/RuntimeProbe.java", // the Run/Debug runtime chip: `java -XshowSettings`, `--version`
+            "ui/NodeRunLauncher.java", // `node --version`: whether this Node strips TypeScript types
             "search/RemoteFiles.java", // rg --version and file lists on a remote host
             "search/Ripgrep.java", // rg --version
             "search/SearchService.java", // rg matches
@@ -87,7 +88,7 @@ class ChildLocalePolicyTest {
             Map.entry("build/BuildService.java", 1), // Maven/Gradle/npm/cargo/go builds
             Map.entry("build/BuildTool.java", 1), // `gradle tasks` (a JVM in the project dir)
             Map.entry("build/GradleHostClasspath.java", 1), // Gradle building a deployment's copy on its host
-            Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter
+            Map.entry("dap/DapManager.java", 2), // debugpy adapter, js-debug adapter (one helper: launch and attach)
             Map.entry("dap/JavaCompilation.java", 2), // javac of the user's file, here and on its host
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
@@ -165,8 +166,8 @@ class ChildLocalePolicyTest {
         // DapManager starts both kinds. Its adapters (and JavaCompilation's javac) are counted above; what
         // may still use the C locale is the local availability probe and, for a remote file, the host's three
         // (whether debugpy imports there, and pytest for a test: exit codes; where its vscode-js-debug is: a
-        // path).
-        assertTrue(count(PARSE_STABLE).getOrDefault("dap/DapManager.java", 0) <= 4);
+        // path), plus the Node version js-debug needs.
+        assertTrue(count(PARSE_STABLE).getOrDefault("dap/DapManager.java", 0) <= 5);
         // The language server session has none at all.
         assertEquals(0, count(PARSE_STABLE).getOrDefault("lsp/LanguageServerSession.java", 0));
     }

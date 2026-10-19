@@ -423,6 +423,27 @@ untrusted folder with no SDK beside the server gets **no server**: the session i
 to the project file's commands, and trusting restarts the Astro server so it picks the SDK up. Revoking
 trust does not stop a server that is already running; it applies from the next start.
 
+**typescript-language-server gets the same treatment, and Editora always names its tsserver.** Left to itself
+the server runs the first `node_modules/typescript/lib/tsserver.js` it finds walking up from the workspace
+root (a downloaded folder's own code), else the `typescript` package beside itself — and TypeScript 7, npm's
+`latest` since 2026, is the native compiler with no `tsserver.js`, so an unpinned install crash-looped on every
+file. `TypeScriptServer.choose` picks the folder's own tsserver only within its trusted part, else the one beside
+the resolved server, and passes it as `initializationOptions.tsserver.path`; with neither, the session is not
+started and `LspCoordinator.onStartRefused` says why (`status.lsp.tsSdkWithoutTsserver`, `tsNoSdk`,
+`tsSdkUntrusted`). The installer pins `InstallCatalog.TYPESCRIPT_PACKAGE` (`typescript@6`). The same options turn
+automatic type acquisition off unless `typescriptTypeAcquisition` is on (it runs `npm install` against the
+registry), the session pushes `javascript`/`typescript` inlay-hint and code-lens settings, and answers
+`formattingOptions` with the document's indent. Loose JS/TS files (no project, no marker below the home folder)
+share one session rooted at `<config>/lsp/loose-files`, with no separate syntax server; the server gives each
+file an inferred project of its own because none lies under that root. The server's PATH starts with the bin
+folder of the Node.js `NodeRuntimes` resolves.
+
+**A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as
+`LanguageServerSession.initializeRefusal`; the exit is reported only after LSP4J has read the server's last
+output) is dropped without the crash path and reported through `onStartRefused` with its own words. Such roots,
+and roots whose crash-loop cap was reached, are not restarted by opening or showing a tab
+(`LspCoordinator.startBlocked`) until Restart Language Servers, a settings apply or a reconnect.
+
 Save completion first synchronizes the current open document, then sends `didSave` with the exact transformed
 text written to disk when the server negotiated `includeText`; explicit and automatic saves share this path.
 Pull and push diagnostics carry request generation, document version, and originating session checks through
@@ -515,13 +536,15 @@ Editora debugs Java, Python, and JavaScript (Node), off by default
 (`Settings.debugSupport`). [`dap/DapServerRegistry`](../../src/main/java/com/editora/dap/DapServerRegistry.java)
 is the pure language → adapter spec (a `Kind` transport, the DAP `launch` type, the `initialize`
 adapter id, and the default interpreter + adapter args). `languageIdsForDebug()` =
-`{java, python, javascript}`.
+`{java, python, javascript}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
+`javascript` adapter (`adapterLanguage`): Node 22.18+/23.6+ runs a `.ts` file itself, and a compiled
+project's breakpoints live in its `.ts`/`.tsx` sources.
 
 | Language | `Kind` | How |
 | --- | --- | --- |
 | `java` | `JDTLS` | The Microsoft java-debug adapter is started *inside* jdtls via `workspace/executeCommand` (`vscode.java.startDebugSession` returns a port), then `DapClient.connect(port, "java")` opens a socket. |
 | `python` | `STDIO` | `<python> -m debugpy.adapter`; `DapClient.connectStdio(proc, "python")` wires DAP to the process's stdin/stdout. |
-| `javascript` | `SOCKET` | `node <dapDebugServer.js> <port>`; `DapClient.connect(port, "pwa-node")`. |
+| `javascript` | `SOCKET` | `node <dapDebugServer.js> 0 127.0.0.1`, the port read from its "listening at" line; `DapClient.connect(port, "pwa-node")`. |
 
 [`dap/DapClient`](../../src/main/java/com/editora/dap/DapClient.java) (mirrors `LanguageServerSession`)
 runs the handshake over an lsp4j.debug `DSPLauncher`: `initialize` → on the `initialized` event send
@@ -530,8 +553,25 @@ callback runs on the reader thread, and lsp4j serializes outgoing messages, so b
 on a response delivered by the same thread. Events arrive on the launcher thread; the `Host`
 (`DapManager`) marshals them to FX. `dispose()` disconnects, closes the socket, and
 `ProcessRegistry.killTree`s the adapter subprocess tree (same wrapper-orphan reasoning as LSP). The
-standalone adapters' stderr is `Redirect.DISCARD`ed by `DapManager` (an undrained PIPE deadlocks, like
-the LSP servers; DAP traffic is on stdin/stdout or the socket).
+standalone adapters' stderr is drained into `AdapterStderr` (an undrained PIPE deadlocks, like the LSP
+servers; DAP traffic is on stdin/stdout or the socket) and its last lines are added to a start failure's
+message.
+
+**The JavaScript launch.** [`dap/JsLaunch`](../../src/main/java/com/editora/dap/JsLaunch.java) builds the
+`launch` body: the program runs on the Node.js `run/NodeRuntimes` resolves for the file (`runtimeExecutable`
+/ `runtimeArgs`; js-debug itself runs on it too when it is 18+, else on the Settings/PATH one), from
+`NodeRuntimes.workingDirectory` (`cwd`, and `__workspaceFolder` = the project when the file is in it — js-debug
+resolves `${workspaceFolder}`, i.e. its default `outFiles`/`resolveSourceMapLocations`, from it, so a compiled
+file maps back to its `.ts` only with the package root there), with `skipFiles: ["<node_internals>/**"]`.
+With "Run the debugged program in the Debug console" on, `console: integratedTerminal` makes js-debug ask
+`runInTerminal` and Editora starts the program as a `Debuggee` (stdin, all output, exit code, kill on Stop,
+the Terminal-tab option) — js-debug's own `stdout`/`stderr` copies of `console.*` output are then dropped;
+off, `outputCapture: "std"` (the default `"console"` misses `process.stdout.write`). Node's inspector lines
+("Debugger attached.") are filtered out, and js-debug's "Syntax error setting breakpoint with condition" output
+becomes a notice that marks that breakpoint rejected. Debug ▸ Attach on a JS/TS file attaches to a Node.js
+inspector (`host:port`, `continueOnAttach: false`); Debug Test at Caret on a JS/TS test file runs it under
+`node --test --test-name-pattern <the test at the caret>`. js-debug reports failed evaluations only in
+`body.error.format` (`DapErrors.responseText`).
 
 **Child sessions (vscode-js-debug).** js-debug never debugs the program on the connection that launched
 it. That root session only starts the launcher; for every debuggee it sends the reverse request
@@ -549,8 +589,9 @@ children are still alive is held back for up to a second, because nothing orders
 against the real adapter, the root's event overtakes the child's final `output`, and ending there would
 drop the program's last lines. The socket connect tries both `127.0.0.1` and `::1` — js-debug binds
 `localhost`, which resolves to the IPv6 loopback first on many systems — and `telemetry`-category output
-is not shown. Known limits: with several simultaneous targets (a debuggee's subprocesses) only the most
-recently stopped one is shown, and there is no UI to switch between them. `FakeDebugAdapter` (test
+is not shown. With several simultaneous targets (a debuggee's subprocesses and workers) the threads of every child are
+listed together, and a request about a thread goes to the child that owns it (`target(threadId)`, which also
+moves the focus there). `FakeDebugAdapter` (test
 sources) plays js-debug's handshake over real sockets in the default suite; the opt-in
 `JsDebugProbeFxTest` drives the real adapter and Node through `DapManager`
 (`./mvnw test -Dtest=JsDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true`).
@@ -633,7 +674,7 @@ adapter (pure name-match + version comparison + filesystem scan): the java-debug
 (`com.microsoft.java.debug.plugin-*.jar`, newest wins, from a configured path / VS Code / mason /
 Editora's plugin dir), `dapDebugServer.js`, and a `debugpy` package dir for `PYTHONPATH`.
 [`dap/LaunchConfig`](../../src/main/java/com/editora/dap/LaunchConfig.java) shapes the DAP `launch`/
-`attach`/`program` argument maps (pure, unit-tested; attach stays Java-only). The neutral records
+`attach`/`program` argument maps (pure, unit-tested; `nodeAttach` for a Node.js inspector). The neutral records
 exposed to the UI are in [`dap/DapModels`](../../src/main/java/com/editora/dap/DapModels.java)
 (`ThreadInfo`, `StackFrameInfo`, `ScopeInfo`, `VariableInfo`, `EvalResult`, `LineBreakpoint`,
 `FileBreakpoints`).

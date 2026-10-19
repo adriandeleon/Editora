@@ -5373,7 +5373,7 @@ public class EditorBuffer implements TabContent {
             query = sel;
             anchor = a.getSelection().getStart();
         } else {
-            int[] w = com.editora.editops.SelectOccurrences.wordAt(text, a.getCaretPosition());
+            int[] w = com.editora.editops.SelectOccurrences.wordAt(text, a.getCaretPosition(), language);
             if (w == null) {
                 return 0;
             }
@@ -6695,9 +6695,10 @@ public class EditorBuffer implements TabContent {
 
     /** Toggle the highlight on the line containing the caret. */
     public void setLineHighlightOn(boolean on) {
-        area.setLineHighlighterOn(on);
+        // Not in large-file mode: it lays out the caret's whole line, ~270 ms a keystroke on a 2 MB line.
+        LineHighlighter.set(area, on, largeFile || loading);
         if (area2 != null) {
-            area2.setLineHighlighterOn(on);
+            LineHighlighter.set(area2, on, largeFile || loading);
         }
     }
 
@@ -8010,11 +8011,8 @@ public class EditorBuffer implements TabContent {
         return spell.getLanguage();
     }
 
-    /**
-     * Enables large-file mode: skips syntax highlighting and hides the minimap (regardless of the
-     * user's view settings) so very large or pathologically shaped documents stay responsive. The loader
-     * sets it before content is inserted; see {@link #LARGE_FILE_BYTES}.
-     */
+    /** Large-file mode (see {@link #LARGE_FILE_BYTES}): no highlighting, minimap, spell check, whitespace marks, indent
+     *  guides, current-line highlight or undo, so huge or long-lined documents stay responsive. Set before the text. */
     public void setLargeFile(boolean large) {
         if (this.largeFile == large) {
             return;
@@ -8030,8 +8028,8 @@ public class EditorBuffer implements TabContent {
         if (indentGuides != null) {
             indentGuides.setSuppressed(large); // and the indent guides
         }
-        // Large files don't need (and shouldn't pay the memory for) undo history.
-        applyUndoMode();
+        setLineHighlightOn(LineHighlighter.wanted(area)); // and the current-line highlight
+        applyUndoMode(); // nor undo history: a large file shouldn't pay its memory
         if (!large) {
             applyHighlighting(); // re-enable highlighting if we ever leave large-file mode
         }
@@ -8129,6 +8127,7 @@ public class EditorBuffer implements TabContent {
     public void setLoading(boolean loading) {
         this.loading = loading;
         applyEditable();
+        setLineHighlightOn(LineHighlighter.wanted(area)); // held back while loading (see LineHighlighter)
     }
 
     /** True while this is a shell whose document has not arrived: its (empty) text is not the file. */
@@ -8841,11 +8840,11 @@ public class EditorBuffer implements TabContent {
             return false; // not a bracket or quote
         }
         int caret = a.getCaretPosition();
-        int len = a.getLength();
-        char next = caret < len ? a.getText(caret, caret + 1).charAt(0) : 0;
+        char next = caret < a.getLength() ? a.getText(caret, caret + 1).charAt(0) : 0;
         boolean hasSel = a.getSelection().getLength() > 0;
         int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
-        AutoClose.Decision d = AutoClose.decide(c, a.getText(lineStart, caret), next, hasSel, language);
+        AutoClose.Decision d = AutoClose.decide(
+                c, a.getText(lineStart, caret), next, hasSel, language, TypingContext.inLiteral(a, caret, language));
         switch (d.action()) {
             case INSERT_PAIR -> {
                 a.replaceText(caret, caret, "" + c + d.closer());

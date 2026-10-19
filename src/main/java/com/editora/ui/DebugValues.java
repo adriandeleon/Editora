@@ -40,6 +40,28 @@ final class DebugValues {
     }
 
     /**
+     * A value as one row shows it: its first non-blank line, with " … }" (or " …") for the rest. vscode-js-debug
+     * describes a function by its whole source, which made a Variables row four lines tall and filled an inline
+     * value with the function's body (review D9); Copy Value keeps the full text.
+     */
+    static String display(String value) {
+        if (value == null || (value.indexOf('\n') < 0 && value.indexOf('\r') < 0)) {
+            return value;
+        }
+        String[] lines = value.split("\\R");
+        String first = "";
+        for (String line : lines) {
+            if (!line.isBlank()) {
+                first = line.stripTrailing();
+                break;
+            }
+        }
+        String last = lines[lines.length - 1].strip();
+        boolean closes = last.equals("}") || last.equals("};");
+        return first + (first.endsWith("{") && closes ? " … }" : " …");
+    }
+
+    /**
      * Whether a container's indexed children are <em>requested</em> a page at a time (DAP {@code start} /
      * {@code count}). Only possible when the adapter reported how many there are; an adapter that did not is
      * asked for everything, and the tree then pages what came back.

@@ -70,10 +70,27 @@ public final class NodeResponseScripts implements ResponseScripts {
      * The run's settings: whether handlers run at all, the Node command ({@code node}, or a path), the timeout of one
      * handler, and the folder the shim is copied to.
      */
-    public record Settings(boolean enabled, String node, Duration timeout, Path shimDir, Debugger debugger) {
+    public record Settings(
+            boolean enabled,
+            String node,
+            Duration timeout,
+            Path shimDir,
+            Debugger debugger,
+            String nodeSetting,
+            Path projectRoot) {
         public Settings {
             node = node == null || node.isBlank() ? "node" : node.strip();
             timeout = timeout == null || timeout.isNegative() || timeout.isZero() ? DEFAULT_TIMEOUT : timeout;
+            nodeSetting = nodeSetting == null ? "" : nodeSetting.strip();
+        }
+
+        /**
+         * With the HTTP field blank (or a bare {@code node}), the run uses the Node.js every Node feature shares
+         * ({@link HttpNodeChoice}): {@code nodeSetting} is Settings → Node.js, {@code projectRoot} bounds the
+         * {@code .nvmrc} lookup.
+         */
+        public Settings(boolean enabled, String node, Duration timeout, Path shimDir, Debugger debugger) {
+            this(enabled, node, timeout, shimDir, debugger, "", null);
         }
 
         /** Settings for a run that is not debugged. */
@@ -207,7 +224,7 @@ public final class NodeResponseScripts implements ResponseScripts {
         }
         Node node = node();
         if (node.error() != null) {
-            return new Ready(node, null, Skip.NO_NODE, settings.node());
+            return new Ready(node, null, Skip.NO_NODE, node.executable());
         }
         try {
             return new Ready(node, shim(settings.shimDir()), null, null);
@@ -521,14 +538,27 @@ public final class NodeResponseScripts implements ResponseScripts {
     record Node(String executable, String version, HttpScripts.Guard guard, String error) {}
 
     private Node node() {
-        List<String> resolved = ProcessRunner.resolveExecutable(List.of(settings.node()));
+        String command = nodeCommand();
+        List<String> resolved = ProcessRunner.resolveExecutable(List.of(command));
         String exe = resolved.get(0);
         int[] version = version(exe);
         if (version == null) {
-            return new Node(exe, null, HttpScripts.Guard.NONE, tr("http.warn.nodeMissing", settings.node()));
+            return new Node(exe, null, HttpScripts.Guard.NONE, tr("http.warn.nodeMissing", command));
         }
         String text = "v" + version[0] + "." + version[1] + "." + version[2];
         return new Node(exe, text, HttpScripts.guardFor(version), null);
+    }
+
+    /** The Node command of this run (review E6): the HTTP field, else the shared Node.js. Off the FX thread. */
+    private String nodeCommand() {
+        if (HttpNodeChoice.explicit(settings.node())) {
+            return settings.node();
+        }
+        if (com.editora.vfs.Vfs.isRemote(httpFile) || com.editora.vfs.Vfs.isRemote(settings.projectRoot())) {
+            // The scripts still run here; a remote folder's .nvmrc names a Node of that machine.
+            return HttpNodeChoice.resolveLocal(settings.node(), settings.nodeSetting(), null, null);
+        }
+        return HttpNodeChoice.resolveLocal(settings.node(), settings.nodeSetting(), httpFile, settings.projectRoot());
     }
 
     /** {@code exe}'s {@code node --version}, asked once per executable and modification time; null when it fails. */

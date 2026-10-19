@@ -550,6 +550,14 @@ public final class FakeDebugAdapter implements AutoCloseable {
             return CompletableFuture.completedFuture(null);
         }
 
+        /** The id {@code threads} names this session's main thread by (js-debug numbers threads across sessions). */
+        public volatile int mainThread = 7;
+
+        /** Root only: asks the client for another child session (a forked process, a worker). */
+        public void requestChild() {
+            CompletableFuture.runAsync(this::requestChildSession);
+        }
+
         private void requestChildSession() {
             Map<String, Object> configuration = new LinkedHashMap<>();
             configuration.put("type", "pwa-node");
@@ -614,7 +622,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 return refused(failure);
             }
             List<org.eclipse.lsp4j.debug.Thread> all = new java.util.ArrayList<>();
-            all.add(thread(7, "main"));
+            all.add(thread(mainThread, "main"));
             for (int id : runningThreads) {
                 all.add(thread(id, "worker-" + id));
             }

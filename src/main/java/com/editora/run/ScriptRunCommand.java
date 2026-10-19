@@ -27,13 +27,37 @@ public final class ScriptRunCommand {
     public static final String SHELL = "shell";
     public static final String MAKE = "make";
     public static final String NPM = "npm";
+
+    /** A Node.js script ({@code .js/.mjs/.cjs/.ts/.mts/.cts}), planned by {@link NodeRunPlan}. */
+    public static final String NODE = "node";
+
     public static final String JAVA = "java";
 
     private ScriptRunCommand() {}
 
     /** Whether {@code type} is a script type this builder can launch (i.e. anything but {@code java}). */
     public static boolean isScript(String type) {
-        return isPython(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type);
+        return isPython(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type) || NODE.equals(type);
+    }
+
+    /**
+     * An npm configuration's argv under the project's own package manager ({@code manager}: its argv prefix,
+     * e.g. {@code [pnpm]}): {@code <manager> run <script>}, then the arguments — after {@code --} for npm, which
+     * would otherwise read them as its own; yarn, pnpm and bun hand what follows the script name to it as is.
+     */
+    public static List<String> npm(List<String> manager, String script, List<String> args) {
+        List<String> argv = new ArrayList<>(manager);
+        argv.add("run");
+        argv.add(script.strip());
+        if (args != null && !args.isEmpty()) {
+            String exe = manager.isEmpty() ? "npm" : manager.get(0).replace('\\', '/');
+            String base = exe.substring(exe.lastIndexOf('/') + 1).replaceFirst("\\.(cmd|exe|bat)$", "");
+            if (base.equals("npm")) {
+                argv.add("--");
+            }
+            argv.addAll(args);
+        }
+        return argv;
     }
 
     /** Whether {@code type} is a Python script or module (launched through {@code PythonRunPlan}). */
@@ -48,7 +72,7 @@ public final class ScriptRunCommand {
      * {@code make} does, so it is a valid configuration rather than an incomplete one.
      */
     public static boolean needsTarget(String type) {
-        return isPython(type) || SHELL.equals(type) || NPM.equals(type);
+        return isPython(type) || SHELL.equals(type) || NPM.equals(type) || NODE.equals(type);
     }
 
     /**
@@ -97,6 +121,14 @@ public final class ScriptRunCommand {
                 if (!t.isEmpty()) {
                     argv.add(t);
                 }
+            }
+            case NODE -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                // The shape only; the real Node, its flags and environment come from NodeRunPlan.
+                argv.add("node");
+                argv.add(t);
             }
             case NPM -> {
                 if (t.isEmpty()) {

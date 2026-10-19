@@ -458,17 +458,17 @@ final class IndexCoordinator {
             host.setStatus(tr("status.definition.noName"));
             return true;
         }
-        for (Symbol s : DeclarationScanner.scan(b.getContent(), b.getLanguage())) {
-            if (s.name().equals(name)) {
-                if (b.getPath() != null) {
-                    ops.openAndGoto(b.getPath(), s.line(), s.column());
-                } else {
-                    a.moveTo(s.line(), s.column());
-                    a.requestFollowCaret();
-                }
-                host.setStatus(tr("status.definition.fromIndex", name));
-                return true;
+        Symbol local = nearestDeclaration(
+                DeclarationScanner.scan(b.getContent(), b.getLanguage()), name, a.getCurrentParagraph());
+        if (local != null) {
+            if (b.getPath() != null) {
+                ops.openAndGoto(b.getPath(), local.line(), local.column());
+            } else {
+                a.moveTo(local.line(), local.column());
+                a.requestFollowCaret();
             }
+            host.setStatus(tr("status.definition.fromIndex", name));
+            return true;
         }
         if (!isEnabled()) {
             host.setStatus(tr("status.definition.notFound", name));
@@ -493,13 +493,35 @@ final class IndexCoordinator {
     }
 
     /**
+     * The declaration of {@code name} in a file that a use on {@code line} most likely means: the nearest one at or
+     * above it, else the first below. Two functions that each declare a {@code parse} helper used to send a jump
+     * from the second one to the first.
+     */
+    static Symbol nearestDeclaration(List<Symbol> declarations, String name, int line) {
+        Symbol above = null;
+        Symbol below = null;
+        for (Symbol s : declarations) {
+            if (!s.name().equals(name)) {
+                continue;
+            }
+            if (s.line() <= line) {
+                above = s; // in document order, so the last one wins
+            } else if (below == null) {
+                below = s;
+            }
+        }
+        return above != null ? above : below;
+    }
+
+    /**
      * The name at {@code column} of {@code line}: identifier characters, and in shell also {@code . : -}, which
      * its function names use ({@code pkg::fn}, {@code my-fn}); null when the caret is on none.
      */
     static String nameAt(String line, int column, String language) {
         boolean shell = "shell".equals(language);
-        java.util.function.IntPredicate part =
-                c -> Character.isLetterOrDigit(c) || c == '_' || (shell && (c == '.' || c == ':' || c == '-'));
+        boolean dollar = com.editora.editops.IdentifierChars.dollarIdentifiers(language); // `$el`, `#count` in JS
+        java.util.function.IntPredicate part = c -> com.editora.editops.IdentifierChars.isPart((char) c, dollar)
+                || (shell && (c == '.' || c == ':' || c == '-'));
         int start = Math.min(column, line.length());
         while (start > 0 && part.test(line.charAt(start - 1))) {
             start--;
@@ -514,6 +536,17 @@ final class IndexCoordinator {
         }
         while (end > start && !Character.isLetterOrDigit(line.charAt(end - 1)) && line.charAt(end - 1) != '_') {
             end--;
+        }
+        if (dollar) { // `$` may start or end a JS name, and `#` starts a private one
+            while (start > 0 && line.charAt(start - 1) == '$') {
+                start--;
+            }
+            while (end < line.length() && line.charAt(end) == '$') {
+                end++;
+            }
+            if (start > 0 && line.charAt(start - 1) == '#') {
+                start--;
+            }
         }
         return start < end ? line.substring(start, end) : null;
     }

@@ -17,10 +17,26 @@ public final class NpmActionsProvider implements BuildActionsProvider {
 
     private final List<String> scripts;
     private final String packageManager;
+    private final java.util.Map<String, String> commands;
 
     public NpmActionsProvider(List<String> scripts, String packageManager) {
+        this(scripts, packageManager, java.util.Map.of());
+    }
+
+    /** As above, with each script's command — its row's tooltip says what it runs. */
+    public NpmActionsProvider(List<String> scripts, String packageManager, java.util.Map<String, String> commands) {
         this.scripts = List.copyOf(scripts);
         this.packageManager = packageManager;
+        this.commands = commands == null ? java.util.Map.of() : commands;
+    }
+
+    /** A script's menu label with its command after it, shortened ({@code test — node --test}). */
+    public static String label(String script, String command) {
+        if (command == null || command.isBlank()) {
+            return script;
+        }
+        String c = command.strip();
+        return script + "  \u2014  " + (c.length() > 60 ? c.substring(0, 59) + "\u2026" : c);
     }
 
     @Override
@@ -29,7 +45,8 @@ public final class NpmActionsProvider implements BuildActionsProvider {
         if (!scripts.isEmpty()) {
             List<BuildAction.Row> rows = new ArrayList<>();
             for (String s : scripts) {
-                rows.add(new BuildAction.Task(s, List.of("run", s)));
+                String command = commands.get(s);
+                rows.add(new BuildAction.Task(s, List.of("run", s), command == null ? "" : command));
             }
             out.add(new BuildAction.Section(tr("buildpopup.section.scripts"), rows));
         }

@@ -4,6 +4,7 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -177,6 +178,21 @@ class GrammarRegistryTest {
         assertTrue(names.contains("csharp"));
         assertTrue(names.contains("astro"));
         assertFalse(names.contains("plaintext"));
+    }
+
+    @Test
+    void javaScriptIsAPickableLanguageAndUsesTheTsxGrammarLikeVsCode() {
+        GrammarRegistry r = GrammarRegistry.shared();
+        assertTrue(r.pickableLanguageNames().contains("javascript"), "the status-bar picker offers JavaScript");
+        assertTrue(r.pickableLanguageNames().contains("javascriptreact"));
+        assertFalse(r.availableLanguageNames().contains("javascript"), "no grammar file of its own");
+        for (String file : new String[] {"a.js", "a.mjs", "a.cjs", "a.jsx"}) {
+            assertEquals("source.tsx", r.forFileName(file).getScopeName(), file);
+        }
+        assertEquals("source.tsx", r.forLanguageName("javascript").getScopeName());
+        for (String file : new String[] {"a.ts", "a.mts", "a.cts"}) {
+            assertEquals("source.ts", r.forFileName(file).getScopeName(), file); // `<T>x` stays a cast
+        }
     }
 
     @Test

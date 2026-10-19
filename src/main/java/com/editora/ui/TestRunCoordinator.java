@@ -176,6 +176,11 @@ final class TestRunCoordinator implements TestRunHook {
     // npm TAP sniffing
     private boolean npm;
     private boolean tapDecided;
+    /** This npm run's results came from node:test (spec or TAP with subtests): it can rerun tests by name. */
+    private boolean nodeTestRun;
+    /** The package manager this npm run launched ({@code npm}, {@code pnpm} …): how test names are passed on. */
+    private String npmManager = "npm";
+
     private final List<String> npmSniff = new ArrayList<>();
 
     TestRunCoordinator(CoordinatorHost host, Ops ops) {
@@ -288,6 +293,8 @@ final class TestRunCoordinator implements TestRunHook {
         fileBased = TestResultParsers.isFileBased(tool);
         npm = tool == BuildTool.NPM;
         tapDecided = false;
+        nodeTestRun = false;
+        npmManager = resolvedArgv == null || resolvedArgv.isEmpty() ? "npm" : resolvedArgv.get(0);
         npmSniff.clear();
         seeded = false;
         followTarget = null;
@@ -348,7 +355,12 @@ final class TestRunCoordinator implements TestRunHook {
         }
         if (npm && !tapDecided) {
             npmSniff.add(line);
-            if (TapParser.looksLikeTap(npmSniff)) {
+            boolean tap = TapParser.looksLikeTap(npmSniff);
+            if (!tap && com.editora.test.NodeSpecParser.looksLikeSpec(npmSniff)) {
+                parser = new com.editora.test.NodeSpecParser(); // node --test's default reporter on a pipe
+                nodeTestRun = true;
+            }
+            if (tap || nodeTestRun) {
                 tapDecided = true;
                 for (String buffered : npmSniff) {
                     mergeAll(parser.onLine(buffered, false));
@@ -779,6 +791,16 @@ final class TestRunCoordinator implements TestRunHook {
         }
         BuildTool tool = currentRun.tool();
         String method = node.kind() == TestNodeKind.TEST ? node.methodName() : null;
+        if (tool == BuildTool.NPM && !debug && nodeTestRun()) {
+            // node:test: the same script, filtered by the test's exact name (a suite row reruns them all).
+            ops.runTest(
+                    tool,
+                    currentRun.workingDir(),
+                    com.editora.test.NodeTestNames.npmTask(
+                            currentRun.taskArgs(), method == null ? List.of() : List.of(method), npmManager),
+                    currentRun.toggleArgs());
+            return;
+        }
         List<String> args = debug
                 ? TestDebug.debugTaskArgs(
                         tool, node.className(), method, gradleDebugInit(tool, currentRun.workingDir()))
@@ -864,6 +886,18 @@ final class TestRunCoordinator implements TestRunHook {
             }
             return;
         }
+        if (currentRun.tool() == BuildTool.NPM && nodeTestRun()) {
+            List<String> names = currentRun.root().failedLeaves().stream()
+                    .map(TestNode::methodName)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+            ops.runTest(
+                    currentRun.tool(),
+                    currentRun.workingDir(),
+                    com.editora.test.NodeTestNames.npmTask(currentRun.taskArgs(), names, npmManager),
+                    currentRun.toggleArgs());
+            return;
+        }
         List<String> failed = currentRun.failedTestFilters();
         if (failed.isEmpty()) {
             host.setStatus(tr("status.testrunner.rerunFailedUnsupported"));
@@ -871,6 +905,11 @@ final class TestRunCoordinator implements TestRunHook {
             return;
         }
         ops.runTest(currentRun.tool(), currentRun.workingDir(), failed, currentRun.toggleArgs());
+    }
+
+    /** Whether this npm run's results came from node:test, which filters tests by name. */
+    private boolean nodeTestRun() {
+        return nodeTestRun || (parser instanceof TapParser tap && tap.nodeTest());
     }
 
     void stop() {

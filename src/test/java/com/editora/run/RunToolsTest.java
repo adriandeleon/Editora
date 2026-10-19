@@ -158,4 +158,58 @@ class RunToolsTest {
                 "http://localhost:5173/",
                 ConsoleUrls.at(text, text.indexOf("http") + 3).url());
     }
+
+    // --- Node.js frames (review C7 / E11) ---------------------------------------------------------
+
+    private static StackTraceLinks.Link node(String line) {
+        return StackTraceLinks.parse(line);
+    }
+
+    @Test
+    void anEsmFileUrlFrameIsDecodedAndKeepsItsColumn() {
+        StackTraceLinks.Link l = node("    at main (file:///home/u/my%20app/index.mjs:3:9)");
+        assertEquals("/home/u/my app/index.mjs", l.file());
+        assertEquals(3, l.line());
+        assertEquals(9, l.column());
+        assertEquals(
+                "/home/u/app/index.mjs",
+                node("    at file:///home/u/app/index.mjs:2:1").file());
+        assertEquals(
+                "/home/u/app/index.mjs", node("file:///home/u/app/index.mjs:1").file());
+        assertEquals(
+                "C:/app/index.mjs",
+                node("    at f (file:///C:/app/index.mjs:3:9)").file(),
+                "the drive stays");
+        assertEquals("/p/a+b.mjs", node("at file:///p/a+b.mjs:1:1").file(), "a plus is a plus, not a space");
+    }
+
+    @Test
+    void aParenthesizedFrameKeepsASpaceInItsPath() {
+        StackTraceLinks.Link l = node("    at Object.<anonymous> (/tmp/p/my dir/cjs.js:1:16)");
+        assertEquals("/tmp/p/my dir/cjs.js", l.file());
+        assertEquals(16, l.column());
+        assertEquals(
+                "C:\\Users\\me\\app.js",
+                node("    at f (C:\\Users\\me\\app.js:1:21)").file());
+    }
+
+    @Test
+    void everyNodeExtensionLinksAndTscLocationsToo() {
+        for (String ext : List.of("js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx")) {
+            assertNotNull(node("    at g (/p/x." + ext + ":3:38)"), ext);
+        }
+        StackTraceLinks.Link tsc =
+                node("src/a.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.");
+        assertEquals("src/a.ts", tsc.file());
+        assertEquals(1, tsc.line());
+        assertEquals(7, tsc.column());
+    }
+
+    @Test
+    void quotesAndOtherSchemesAreNotPartOfAPath() {
+        assertEquals("/p/a.test.js", node("  location: '/p/a.test.js:4:1'").file());
+        assertNull(node("    at webpack:///./src/app.js:1:2"), "a bundler's virtual URL is not a file");
+        assertNull(node("    at Module._compile (node:internal/modules/cjs/loader:1871:14)"));
+        assertEquals(0, node("/tmp/app/index.js:3").column());
+    }
 }

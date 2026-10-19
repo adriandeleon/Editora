@@ -401,7 +401,8 @@ class RunCoordinatorFlowsFxTest {
         open("notes.txt", "just text\n", false);
         FxTestSupport.runOnFx(run::runActiveFile);
 
-        assertEquals(List.of(tr("status.run.notCompact"), tr("status.run.notCompact")), statuses());
+        // It says what Run File does run (review C1), not only that this is not it.
+        assertEquals(List.of(tr("status.run.notRunnable"), tr("status.run.notRunnable")), statuses());
         assertFalse(FxTestSupport.callOnFx(run::consoleInUse));
         assertEquals(tr("run.idle"), panelStatus());
     }

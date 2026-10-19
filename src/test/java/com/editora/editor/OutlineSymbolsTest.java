@@ -27,6 +27,18 @@ class OutlineSymbolsTest {
     }
 
     @Test
+    void aJsDocTypeIsNotADeclarationButOneLineJavaScriptDeclarationsAre() {
+        String js =
+                "/**\n * @param {string} file\n * @returns {Promise<object>}\n */\nexport async function load(file) {\n}\n"
+                        + "class Cache {\n  get(key) { return 1; }\n}\nconst twice = (x) => x * 2;\n";
+        List<String> symbols = symbols("x.js", js);
+        assertFalse(symbols.stream().anyMatch(s -> s.startsWith("1:") || s.startsWith("2:")), symbols.toString());
+        assertTrue(symbols.contains("4:load:function"), symbols.toString());
+        assertTrue(symbols.contains("7:get:function"), symbols.toString());
+        assertTrue(symbols.contains("9:twice:function"), symbols.toString());
+    }
+
+    @Test
     void goMethodsAreNamedAfterTheMethodNotTheReceiverType() {
         String go = "package main\n\ntype Server struct {\n}\n\nfunc (s *Server) Run() error {\n\treturn nil\n}\n\n"
                 + "func (s *Server) Stop() error {\n\tif cfg, ok := x.(Config); ok {\n\t}\n\treturn nil\n}\n";
