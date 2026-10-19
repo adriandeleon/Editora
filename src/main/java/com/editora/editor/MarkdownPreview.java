@@ -690,6 +690,13 @@ final class MarkdownPreview {
 
     // --- showing (FX thread) ---------------------------------------------------------------------
 
+    /** Whether diagrams render (off for an encrypted file: mmdc reads its source from a temporary file). */
+    private boolean diagrams = true;
+
+    void setDiagrams(boolean on) {
+        diagrams = on;
+    }
+
     /**
      * Shows {@code plan} in the attached pane, building only the units that changed since the last one.
      * {@code dark} is the preview's own theme, or null to follow the app. {@code line} is the source line to
@@ -715,7 +722,7 @@ final class MarkdownPreview {
             }
         }
         String signature = dark + "|" + MathImages.epoch() + "|" + MermaidImages.epoch() + "|"
-                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remotePolicy() + remoteGranted + "|"
+                + MermaidImages.isEnabled() + diagrams + "|" + PreviewImageLoader.remotePolicy() + remoteGranted + "|"
                 + plan.baseDir() + "|"
                 + PreviewPrefs.signature() + "|" + MarkdownRenderer.wikiLinks() + "|" + WikiLinkTargets.epoch();
         column.setMaxWidth(PreviewPrefs.contentWidth());
@@ -730,7 +737,7 @@ final class MarkdownPreview {
                 dark,
                 plan.footnotes(),
                 new MarkdownRenderer.Live(
-                        this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter(), remoteGranted));
+                        this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter(), remoteGranted, diagrams));
         showRemoteBar(plan.remoteImages()
                 && !remoteGranted
                 && PreviewImageLoader.remotePolicy() == PreviewImageLoader.RemotePolicy.ASK);

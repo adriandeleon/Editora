@@ -498,6 +498,16 @@
     -fx-font-size: 12px;
 }
 /* Git error dialog body: monospace so command output (paths, hints) lines up. */
+/* Plugin consent: the capability list, monospace so argv quoting and chords line up. */
+.plugin-consent-list {
+    -fx-font-family: "JetBrains Mono", "monospace";
+}
+
+/* Browse Plugins: an entry this Editora is too old for is shown, greyed, and cannot be installed. */
+.plugin-browse-unavailable {
+    -fx-opacity: 0.55;
+}
+
 .git-error-text {
     -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-size: 12px;
@@ -5507,4 +5517,152 @@
 }
 .terminal-exit-banner .label {
     -fx-text-fill: -color-fg-muted;
+}
+
+/* ---- Encrypted files (ADR 0017) -------------------------------------------------------------------
+   The lock is the accent hue (the app offering something it holds for you), not amber: an encrypted file
+   is not a state that wants attention. Red is kept for "Not saved.", amber for an unverified key. */
+.encryption-lock {
+    -fx-fill: -state-accent;
+}
+.status-bar .status-encryption {
+    -fx-text-fill: -state-accent;
+    -fx-graphic-text-gap: 4;
+}
+.file-lock-badge .toolbar-icon {
+    -fx-fill: -state-accent;
+}
+/* The locked placeholder fills the tab where the editor would be. */
+.encryption-locked-pane {
+    -fx-background-color: -editor-surface;
+}
+.encryption-locked {
+    -fx-spacing: 8;
+}
+.encryption-locked-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
+.encryption-locked-body {
+    -fx-text-fill: -color-fg-muted;
+}
+.encryption-locked-hint {
+    -fx-text-fill: -color-fg-subtle;
+    -fx-font-size: 11px;
+}
+.encryption-details {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-family: "JetBrains Mono", "monospace";
+    -fx-font-size: 11px;
+}
+.encryption-armor {
+    -fx-font-family: "JetBrains Mono", "monospace";
+    -fx-font-size: 12px;
+}
+/* "Not saved." above the editor: the file on disk is unchanged, the buffer keeps the edits. */
+.encryption-banner {
+    -fx-background-color: -state-red-bg;
+}
+.encryption-banner .encryption-banner-lead {
+    -fx-text-fill: -state-red;
+    -fx-font-weight: bold;
+}
+.encryption-banner .encryption-banner-text {
+    -fx-text-fill: -color-fg-default;
+}
+/* Pills on recipients: You (accent), Verified (green), Not verified (amber), unusable / no key (red). */
+.encryption-pill {
+    -fx-font-size: 10px;
+    -fx-padding: 1 7 1 7;
+}
+.encryption-pill-you {
+    -fx-background-color: -state-accent-bg;
+    -fx-text-fill: -state-accent;
+}
+.encryption-pill-green {
+    -fx-background-color: -state-green-bg;
+    -fx-text-fill: -state-green;
+}
+.encryption-pill-amber {
+    -fx-background-color: -state-amber-bg;
+    -fx-text-fill: -state-amber;
+}
+.encryption-pill-red {
+    -fx-background-color: -state-red-bg;
+    -fx-text-fill: -state-red;
+}
+.encryption-pill-muted {
+    -fx-background-color: -color-bg-subtle;
+    -fx-text-fill: -color-fg-muted;
+}
+/* The details card. */
+.encryption-info-section {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+.encryption-info-value {
+    -fx-text-fill: -color-fg-muted;
+}
+.encryption-info-actions {
+    -fx-border-color: -color-border-muted transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 6 0 0 0;
+}
+.encryption-info-action {
+    -fx-padding: 5 8 5 8;
+}
+.encryption-info-action:focused {
+    -fx-background-color: -state-sel;
+}
+/* The recipient picker. */
+.encryption-picker .encryption-chip {
+    -fx-background-color: -state-accent-bg;
+    -fx-background-radius: 999;
+    -fx-padding: 1 2 1 10;
+}
+.encryption-picker .encryption-chip-remove {
+    -fx-padding: 0 6 0 6;
+    -fx-text-fill: -color-fg-muted;
+}
+.encryption-key-list {
+    -fx-background-color: transparent;
+}
+.encryption-key-list .list-cell:selected {
+    -fx-background-color: -state-sel;
+}
+.encryption-key-name {
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
+.encryption-key-email {
+    -fx-text-fill: -color-fg-muted;
+}
+.encryption-key-fpr {
+    -fx-font-family: "JetBrains Mono", "monospace";
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.encryption-key-unusable {
+    -fx-opacity: 0.55;
+}
+.encryption-warning {
+    -fx-background-color: -state-amber-bg;
+    -fx-background-radius: 6;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 6 10 6 10;
+}
+.encryption-empty {
+    -fx-padding: 8 0 8 0;
+}
+/* The picker's search and the passphrase field have the focus from the start: keep their hint visible
+   until something is typed (the default hides it on focus, so it was never seen). */
+.encryption-picker .encryption-search:focused,
+.encryption-picker .password-field:focused,
+.encryption-passphrase .password-field:focused {
+    -fx-prompt-text-fill: -color-fg-subtle;
+}
+.encryption-banner .hyperlink {
+    -fx-text-fill: -state-red;
 }

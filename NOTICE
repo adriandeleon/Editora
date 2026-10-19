@@ -191,8 +191,9 @@ template uses no Python 2 super() call, and the try/except snippets re-raise
 with a bare raise; and java.json, which started from friendly-snippets and was
 largely rewritten for Editora: fixed bodies (class name, package, semicolons),
 arrow switch, records, sealed types, streams, text blocks, virtual threads,
-JUnit 5, and IntelliJ-style alias triggers. The remaining snippet files (xml, batchfile, groovy, scala,
-clojure, json, yaml, ini, global) are original to Editora and covered by Editora's own MIT License.
+JUnit 5, and IntelliJ-style alias triggers. The remaining snippet files (xml,
+batchfile, groovy, scala, clojure, json, yaml, ini, global) are original to
+Editora and covered by Editora's own MIT License.
 
 ================================================================================
 Third-party libraries

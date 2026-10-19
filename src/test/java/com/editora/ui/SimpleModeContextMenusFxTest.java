@@ -116,6 +116,7 @@ class SimpleModeContextMenusFxTest {
                         List.of(
                                 tr("project.menu.rename"),
                                 tr("project.menu.delete"),
+                                tr("project.menu.encrypt"), // kept: encrypting a file is file management
                                 "-",
                                 tr("project.menu.revealInFileManager")),
                         treeMenu(panel, file, false));

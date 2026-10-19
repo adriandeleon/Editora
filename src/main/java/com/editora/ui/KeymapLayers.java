@@ -100,14 +100,24 @@ final class KeymapLayers {
         });
     }
 
-    /** The keymaps of the enabled, loaded plugins, in load order; none while plugin support is off. */
+    /**
+     * The chords of the plugins this session runs ({@link com.editora.plugin.PluginManager#launchSet()}), in load
+     * order: each one's manifest chords for {@code keymapId} ({@link com.editora.plugin.PluginManifest#keymapFor}),
+     * then the chords its code bound with {@code PluginContext.bindKey} — recorded, so a keymap rebuild keeps them
+     * as the startup path does. None in Simple UI mode, which promises plugins are off.
+     */
     static java.util.List<Map<String, String>> pluginKeymaps(
-            Settings settings, com.editora.plugin.PluginManager plugins) {
+            Settings settings, com.editora.plugin.PluginManager plugins, String keymapId) {
         java.util.List<Map<String, String>> out = new java.util.ArrayList<>();
-        if (settings.isPluginSupport() && plugins != null) {
-            for (com.editora.plugin.PluginDescriptor d : plugins.descriptors()) {
-                if (d.enabled() && d.loadError() == null && d.manifest().keymap != null) {
-                    out.add(d.manifest().keymap);
+        if (plugins == null || settings.isSimpleMode()) {
+            return out;
+        }
+        for (com.editora.plugin.PluginDescriptor d : plugins.launchSet()) {
+            if (d.enabled() && d.loadError() == null) {
+                Map<String, String> chords = new LinkedHashMap<>(d.manifest().qualifiedKeymapFor(keymapId));
+                chords.putAll(plugins.codeBindings(d.id()));
+                if (!chords.isEmpty()) {
+                    out.add(chords);
                 }
             }
         }

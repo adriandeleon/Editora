@@ -215,6 +215,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     public interface FileActions {
         boolean localHistoryEnabled();
 
+        /** Encrypt…: opens {@code file} and asks who to encrypt it for (writes {@code file.gpg} beside it). */
+        default void encrypt(Path file) {}
+
         void showLocalHistory(Path file);
 
         /**
@@ -2856,6 +2859,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // (the confirm dialog shows the count).
             delete.setOnAction(e -> deleteSelected(treeItem));
             menu.getItems().add(delete);
+            Path target = treeItem.getValue();
+            if (fileActions != null
+                    && target != null
+                    && com.editora.editor.EncryptedNames.extensionOf(String.valueOf(target.getFileName())) == null) {
+                MenuItem encrypt = new MenuItem(tr("project.menu.encrypt"));
+                encrypt.setGraphic(Icons.lock());
+                encrypt.setOnAction(e -> fileActions.encrypt(target));
+                menu.getItems().add(encrypt);
+            }
         }
         if (markerActions != null && !simple) {
             Path target = treeItem.getValue();

@@ -489,7 +489,7 @@ final class EditorSettingsCoordinator {
         base.loadNamed(host.config().getSettings().getKeymap());
         if (host.windowManager() != null) {
             KeymapLayers.pluginKeymaps(
-                            host.config().getSettings(), host.windowManager().pluginManager())
+                            host.config().getSettings(), host.windowManager().pluginManager(), base.activeName())
                     .forEach(base::applyOverrides);
         }
         return base.bindings();

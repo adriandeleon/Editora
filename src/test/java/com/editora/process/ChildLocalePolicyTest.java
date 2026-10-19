@@ -47,6 +47,7 @@ class ChildLocalePolicyTest {
     /** Output is parsed, or only the exit code is read: these may start a child with {@code LC_ALL=C}. */
     private static final Set<String> PARSE_STABLE_FILES = Set.of(
             "AppInfo.java", // git rev-parse of the build's own checkout
+            "crypto/Pinentry.java", // `gpgconf --list-dirs homedir`: a path
             "dap/DapManager.java", // probe(): `node --version`, `python -c "import debugpy"`
             "diagram/DiagramRenderer.java", // detect(): --version / --help
             "doctor/DoctorProbes.java", // version probes
@@ -65,6 +66,7 @@ class ChildLocalePolicyTest {
             "search/SearchService.java", // rg matches
             "typst/TypstRenderer.java", // detect()
             "io/Trash.java", // `gio trash` (exit code)
+            "ui/EncryptionCoordinator.java", // `git ls-files --error-unmatch`: whether a file is tracked (exit code)
             "ui/FileWorkflowCoordinator.java", // pkexec probe + elevated save (exit code)
             "ui/GitPathScope.java", // `find` on a remote host: where a project's .git entries are
             "ui/PythonTestRunner.java", // `python -c "import pytest"`: whether pytest is there (exit code)

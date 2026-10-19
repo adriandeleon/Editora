@@ -274,6 +274,10 @@ final class AiCoordinator {
     void explainSelection() {
         ifReady(() -> {
             EditorBuffer b = host.activeBuffer();
+            if (b != null && b.encryption().isEncrypted()) {
+                host.setStatus(tr("encryption.status.noAi")); // ADR 0017: decrypted text is not sent anywhere
+                return;
+            }
             String selection = b == null ? "" : b.getFocusedArea().getSelectedText();
             if (selection.isEmpty()) {
                 host.setStatus(tr("status.ai.needSelection"));
@@ -350,6 +354,10 @@ final class AiCoordinator {
             EditorBuffer b = host.activeBuffer();
             if (b == null || !b.isEditable()) {
                 host.setStatus(tr("status.ai.needSelection"));
+                return;
+            }
+            if (b.encryption().isEncrypted()) {
+                host.setStatus(tr("encryption.status.noAi"));
                 return;
             }
             CodeArea area = b.getFocusedArea();

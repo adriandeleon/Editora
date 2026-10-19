@@ -112,6 +112,8 @@ public final class StatusBar extends HBox {
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
     /** The Python interpreter of the active Python file; click to pick another ({@code python.selectInterpreter}). */
     private final Label pythonInterpreter = segment("python.selectInterpreter", "");
+    /** Lock + "Encrypted · 2" on an encrypted file; opens the encryption details card. */
+    private final Label encryption = segment(EncryptionCoordinator.SHOW_INFO, "");
     /** The dictionary the active buffer is spell-checked with ({@code en-US}); clickable → the language
      *  picker. Hidden when the buffer is not being checked, so its presence also says that it is. */
     private final Label spell = segment("spell.setLanguage", tr("statusbar.tip.spell"));
@@ -239,6 +241,9 @@ public final class StatusBar extends HBox {
         httpEnv.setManaged(false);
 
         pythonInterpreter.getStyleClass().add("status-python");
+        encryption.getStyleClass().add("status-encryption");
+        encryption.setVisible(false); // shown only on an encrypted file
+        encryption.setManaged(false);
         pythonInterpreter.setVisible(false); // shown only on a Python file
         pythonInterpreter.setManaged(false);
         lsp.getStyleClass().add("status-lsp");
@@ -310,6 +315,7 @@ public final class StatusBar extends HBox {
                         position,
                         csvField,
                         pythonInterpreter,
+                        encryption,
                         language,
                         spell,
                         narrowed,
@@ -395,15 +401,40 @@ public final class StatusBar extends HBox {
         return label;
     }
 
-    /** Adds a plugin-contributed segment (text + optional command) at the right end of the status bar. */
-    public void addPluginSegment(String text, String commandId) {
+    /**
+     * Adds a plugin-contributed segment (text + optional command) at the right end of the status bar, with
+     * {@code hint} ("Plugin: command") as its tooltip and accessible help. A segment with a command is a
+     * keyboard-reachable button (Tab, then Enter or Space), not a mouse-only label.
+     *
+     * @return the segment, for {@link #removePluginSegment}
+     */
+    public Node addPluginSegment(String text, String commandId, String hint) {
         Label seg = new Label(text == null ? "" : text);
         seg.getStyleClass().add("status-segment");
+        if (hint != null && !hint.isBlank()) {
+            seg.setTooltip(new Tooltip(hint));
+            seg.setAccessibleHelp(hint);
+        }
         if (commandId != null && !commandId.isBlank()) {
             seg.getStyleClass().add("status-segment-clickable");
             seg.setOnMouseClicked(e -> registry.run(commandId));
+            seg.setFocusTraversable(true);
+            seg.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
+            seg.setOnKeyPressed(e -> {
+                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
+                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                    e.consume();
+                    registry.run(commandId);
+                }
+            });
         }
         getChildren().add(seg);
+        return seg;
+    }
+
+    /** Takes back a segment {@link #addPluginSegment} added (its plugin failed to start). */
+    public void removePluginSegment(Node segment) {
+        getChildren().remove(segment);
     }
 
     /** Sets the transient echo-area message (called by MainController.setStatus) and logs it for the session.
@@ -746,6 +777,32 @@ public final class StatusBar extends HBox {
         applyLspStatusVisibility();
     }
 
+    /**
+     * The encryption item: on an encrypted file a lock and the number of people it is encrypted for (or
+     * "Passphrase"), with "unsaved" while a recipient change waits for the next save. Kept in Simple mode: it
+     * says something about the file that matters there too.
+     */
+    private void refreshEncryption(EditorBuffer buffer) {
+        com.editora.editor.EncryptionState state =
+                buffer == null ? null : buffer.encryption().state();
+        boolean show = state != null;
+        encryption.setVisible(show);
+        encryption.setManaged(show);
+        if (!show) {
+            return;
+        }
+        if (encryption.getGraphic() == null) {
+            encryption.setGraphic(Icons.lock());
+        }
+        encryption.setText(EncryptionViews.chipText(state));
+        encryption.getTooltip().setText(EncryptionViews.chipTooltip(state));
+    }
+
+    /** The encryption item, which the encryption details card is anchored to. */
+    javafx.scene.Node encryptionNode() {
+        return encryption;
+    }
+
     /** Shows the Python interpreter item ({@code text}, hover {@code tooltip}); {@code null} hides it. */
     public void setPythonInterpreter(String text, String tooltip) {
         boolean show = text != null && !text.isBlank() && !simpleMode;
@@ -900,12 +957,15 @@ public final class StatusBar extends HBox {
         if (spellChecked) {
             spell.setText(SpellCoordinator.languageTag(buffer.getSpellLanguage()));
         }
+        refreshEncryption(buffer);
         // The git segment has its own gate (feature on + active file in a repo + not Simple mode).
         applyGitVisibility();
         // The read-only segment is a toggle: always shown (when there's a buffer), reflecting and
         // flipping the state. "Read-Only" (amber/active) ⇄ "Editable" (muted); click runs the command.
-        readOnly.setVisible(hasBuffer);
-        readOnly.setManaged(hasBuffer);
+        // A locked encrypted file says "Locked" in its own item; "Read-Only" beside it would say it twice.
+        boolean readOnlyShown = hasBuffer && !buffer.encryption().isLocked();
+        readOnly.setVisible(readOnlyShown);
+        readOnly.setManaged(readOnlyShown);
         if (hasBuffer) {
             boolean ro = !buffer.isEditable();
             readOnly.setText(ro ? tr("statusbar.readOnly") : tr("statusbar.editable"));
