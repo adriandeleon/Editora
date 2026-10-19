@@ -59,4 +59,30 @@ class StackTraceLinksSourcePathTest {
                 "com/foo/Bar.java",
                 pathOf("[ERROR]   BarTest.works:21 expected <1> but was <2>   at com.foo.Bar.baz(Bar.java:12)"));
     }
+
+    @Test
+    void kotlinGroovyAndScalaFramesResolveLikeJava() {
+        assertEquals("com/foo/Main.kt", pathOf("\tat com.foo.MainKt.main(Main.kt:4)"));
+        assertEquals("com/foo/Build.kts", pathOf("\tat com.foo.Build.run(Build.kts:4)"));
+        assertEquals("demo/Shelf.groovy", pathOf("\tat demo.Shelf.add(Shelf.groovy:12)"));
+        assertEquals("demo/Main.scala", pathOf("\tat demo.Main$.main(Main.scala:5)"));
+        assertEquals("demo/Shelf.scala", pathOf("\tat demo.Shelf.add$$anonfun$1(Shelf.scala:30)"));
+    }
+
+    /** A Clojure function's class is its munged namespace, `$`, and the function: the namespace gives the path. */
+    @Test
+    void mungedClojureFramesResolveToTheNamespacesFile() {
+        assertEquals("my_app/core.clj", pathOf("\tat my_app.core$fn__123.invoke(core.clj:12)"));
+        assertEquals("my_app/core.clj", pathOf("\tat my_app.core$_main.invokeStatic(core.clj:5)"));
+        assertEquals("my_app/util/strings.cljc", pathOf("\tat my_app.util.strings$trim.invoke(strings.cljc:3)"));
+    }
+
+    /** Clojure's own error report names the namespace as written, with dashes, and a space before the file. */
+    @Test
+    void clojuresOwnErrorLocationResolvesToo() {
+        assertEquals(
+                "my_app/core.clj", pathOf("Execution error (ArithmeticException) at my-app.core/divide (core.clj:4)."));
+        assertNull(pathOf("Syntax error compiling at user/eval1 (REPL:1:1)."), "the REPL is not a file");
+        assertNull(pathOf("at core/divide (core.clj:4)"), "a one-segment namespace has no directory");
+    }
 }

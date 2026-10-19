@@ -70,6 +70,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     hands the passphrase straight to GnuPG. A passphrase-only file is asked once and saves without asking again.
   - Settings ▸ Encryption (gpg path, always include my key, who asks for passphrases, language servers) and two
     Doctor rows (GnuPG, passphrase prompt). Samples in `samples/encrypted/` (passphrase `editora`).
+- **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
+  files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
+  `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),
+  folding (Scala 3's indentation blocks through their `end` marker; every multi-line Clojure form), Lisp indentation
+  (to the first argument, two spaces for a body form), Go to Symbol without a language server, a Structure outline,
+  snippets, brand file icons, and New ▸ Scala, Scala CLI script, Clojure and Babashka script. Groovy gets its own
+  icon and a server-free symbol index too, and stack-trace lines from Kotlin, Groovy, Scala and Clojure code are
+  links (including Clojure's `at my-app.core/f (core.clj:4)`).
 - **`--disable-plugins`** starts Editora with no plugin loaded for the session: the way out of a plugin that hangs or
   breaks startup. Settings and Doctor say when it is on.
 - **Doctor → Plugins** lists what runs and every plugin that failed to load or start, started slowly, or changed

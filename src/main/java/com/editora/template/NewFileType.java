@@ -19,9 +19,10 @@ package com.editora.template;
  * @param extension the extension appended when the typed name has none; {@code ""} for a file whose
  *     name <em>is</em> the whole thing ({@code Dockerfile}, {@code .gitignore}) or for the generic
  *     "File…" entry, where whatever the user types decides the type
- * @param template the initial contents, with two tokens substituted by
- *     {@link NewFileContent#render}: <code>{name}</code> (the base name) and <code>{package}</code>
- *     (a Java package declaration plus a blank line, or nothing outside a source root). A
+ * @param template the initial contents, with three tokens substituted by
+ *     {@link NewFileContent#render}: <code>{name}</code> (the base name), <code>{ns}</code> (the base name
+ *     with Clojure's dashes) and <code>{package}</code> (a Java package declaration plus a blank line, or
+ *     nothing outside a source root). A
  *     <code>{cursor}</code> token marks where the caret lands and is removed from the text. Empty =
  *     an empty file.
  */

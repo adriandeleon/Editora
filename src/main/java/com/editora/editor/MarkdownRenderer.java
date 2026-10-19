@@ -1384,6 +1384,10 @@ public final class MarkdownRenderer {
             Map.entry("c#", "cs"),
             Map.entry("kotlin", "kt"),
             Map.entry("kt", "kt"),
+            Map.entry("kts", "kts"),
+            Map.entry("sc", "sc"), // Scala CLI / Ammonite
+            Map.entry("clj", "clj"),
+            Map.entry("cljs", "cljs"),
             Map.entry("yml", "yaml"),
             Map.entry("yaml", "yaml"),
             Map.entry("markdown", "md"),

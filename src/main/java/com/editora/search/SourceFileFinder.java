@@ -24,8 +24,21 @@ public final class SourceFileFinder {
     /** Deep enough for {@code module/sub/src/test/java/a/b/c/d/e/F.java}; a bound, not a tuning knob. */
     private static final int MAX_DEPTH = 25;
 
-    private static final List<String> SOURCE_ROOTS =
-            List.of("src/main/java", "src/test/java", "src/main/kotlin", "src/test/kotlin", "src", "");
+    /** Maven/Gradle/sbt roots per JVM language, then Leiningen's and tools.deps' plain {@code src}/{@code test}. */
+    private static final List<String> SOURCE_ROOTS = List.of(
+            "src/main/java",
+            "src/test/java",
+            "src/main/kotlin",
+            "src/test/kotlin",
+            "src/main/groovy",
+            "src/test/groovy",
+            "src/main/scala",
+            "src/test/scala",
+            "src/main/clojure",
+            "src/test/clojure",
+            "src",
+            "test",
+            "");
 
     private SourceFileFinder() {}
 

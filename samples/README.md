@@ -25,7 +25,9 @@ has no sample anywhere in the corpus.
 `samples/syntax/Sample.java`, `samples/syntax/sample.py`, `samples/syntax/sample.ts`,
 `samples/syntax/sample.tsx`, `samples/syntax/sample.go`, `samples/syntax/sample.rs`,
 `samples/syntax/sample.c`, `samples/syntax/sample.cpp`, `samples/syntax/Sample.cs`,
-`samples/syntax/Sample.kt`, `samples/syntax/sample.php`, `samples/syntax/sample.rb`,
+`samples/syntax/Sample.kt`, `samples/syntax/sample.scala` (Scala 3 optional braces with `end` markers, plus
+a Scala 2 brace object), `samples/syntax/sample.clj` (Clojure: a namespace, a protocol and records, a
+macro, character and regex literals), `samples/syntax/sample.php`, `samples/syntax/sample.rb`,
 `samples/syntax/sample.lua`, `samples/syntax/sample.html`, `samples/syntax/sample.css`,
 `samples/syntax/sample.json`, `samples/syntax/sample.yaml`, `samples/syntax/sample.xml`,
 `samples/syntax/sample.toml`, `samples/syntax/sample.sql`, `samples/syntax/sample.sh`,
