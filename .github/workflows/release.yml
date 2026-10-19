@@ -557,24 +557,50 @@ jobs:
             echo "Opened $url"
             echo "Merge [the pull request]($url) to reopen master at \`${next}\`." >> "$GITHUB_STEP_SUMMARY"
 
-            # Opening the PR also queues a pull_request CI run, which GitHub holds ("action_required") because
-            # the Actions bot opened it. The PR counts that held run as its CI and so sees none of the
-            # dispatched checks above: it stays blocked until the run is approved (seen on v0.22.0, #1223).
+            # Opening the PR also queues pull_request runs, which GitHub holds ("action_required") because the
+            # Actions bot opened it: CI, plus every other workflow with a pull_request trigger that matches
+            # (Terminal image for pom.xml, Full tests). The PR counts the held CI run as its CI and so sees
+            # none of the dispatched checks above: it stays blocked until that run is approved (v0.22.0,
+            # #1223). Approving only the first held run is not enough (v0.23.0, #1296: it approved Full tests
+            # and left CI held), so approve every held run on the commit, and keep polling until CI's held run
+            # has been seen and one more pass finds nothing new, or until the attempts run out.
             sha="$(git rev-parse HEAD)"
-            held=""
-            for _ in $(seq 1 12); do
-              held="$(gh run list --branch "$branch" --event pull_request --json databaseId,headSha,conclusion \
-                --jq "map(select(.headSha == \"$sha\" and .conclusion == \"action_required\"))[0].databaseId // empty")"
-              [ -n "$held" ] && break
+            tried=" "        # run ids already approved or refused, space-separated
+            failed=()        # "id<TAB>workflow" of every refused approval
+            ci_seen=""
+            for _ in $(seq 1 24); do
+              held="$(gh run list --branch "$branch" --event pull_request --limit 50 \
+                --json databaseId,headSha,conclusion,workflowName \
+                --jq ".[] | select(.headSha == \"$sha\" and .conclusion == \"action_required\") | \"\(.databaseId)\t\(.workflowName)\"")"
+              new=""
+              while IFS=$'\t' read -r id workflow; do
+                [ -n "$id" ] || continue
+                case "$tried" in *" $id "*) continue ;; esac
+                tried+="$id "
+                new=1
+                [ "$workflow" = "CI" ] && ci_seen=1
+                if gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve" >/dev/null </dev/null; then
+                  echo "Approved the held pull_request run ${id} (${workflow})."
+                else
+                  failed+=("${id}"$'\t'"${workflow}")
+                fi
+              done <<< "$held"
+              [ -n "$ci_seen" ] && [ -z "$new" ] && break
               sleep 5
             done
-            if [ -z "$held" ]; then
+            if [ "$tried" = " " ]; then
               echo "No held pull_request run on $sha — the dispatched checks stand."
-            elif gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${held}/approve" >/dev/null; then
-              echo "Approved the held pull_request run ${held}."
-            else
-              echo "::warning::Could not approve the held pull_request run ${held}; the PR stays blocked until it is approved."
-              echo "Approve its CI run first: \`gh api -X POST repos/${GITHUB_REPOSITORY}/actions/runs/${held}/approve\`." >> "$GITHUB_STEP_SUMMARY"
+            elif [ -z "$ci_seen" ]; then
+              echo "::warning::No held CI run appeared on $sha; if the PR shows a held CI run, approve it by hand."
+            fi
+            if [ "${#failed[@]}" -gt 0 ]; then
+              echo "::warning::Could not approve ${#failed[@]} held pull_request run(s); the PR stays blocked until they are approved."
+              echo "Approve the held runs first:" >> "$GITHUB_STEP_SUMMARY"
+              for entry in "${failed[@]}"; do
+                IFS=$'\t' read -r id workflow <<< "$entry"
+                echo "Approve it by hand: gh api -X POST repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve  # ${workflow}"
+                echo "- ${workflow}: \`gh api -X POST repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve\`" >> "$GITHUB_STEP_SUMMARY"
+              done
             fi
           else
             compare="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/master...${branch}?expand=1"
