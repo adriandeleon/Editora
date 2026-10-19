@@ -27,6 +27,9 @@ class DoctorNeedsTest {
         for (String scalaBuild : List.of("build.sbt", "build.mill", "build.sc", "project.scala")) {
             assertEquals(Set.of("scala"), DoctorNeeds.serversForRootFiles(List.of(scalaBuild)), scalaBuild);
         }
+        for (String marker : List.of("deps.edn", "project.clj", "bb.edn", "shadow-cljs.edn", "build.boot")) {
+            assertEquals(Set.of("clojure"), DoctorNeeds.serversForRootFiles(List.of(marker)), marker);
+        }
         assertEquals(
                 Set.of("java"),
                 DoctorNeeds.serversForRootFiles(List.of("build.gradle")),

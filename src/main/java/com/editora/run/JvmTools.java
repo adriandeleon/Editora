@@ -8,7 +8,8 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Finds the command-line tool that runs a JVM language's files — {@code groovy}, Scala CLI — on this machine.
+ * Finds the command-line tool that runs a JVM language's files — {@code groovy}, Scala CLI, {@code kotlinc}, and
+ * Clojure's {@code clojure}, {@code lein} and {@code bb} — on this machine.
  *
  * <p>The tool's own home variable comes first ({@code GROOVY_HOME}: whoever set it chose that install), then the
  * {@linkplain com.editora.process.ProcessRunner#augmentedPath augmented PATH} (the login shell's, which already
@@ -38,7 +39,16 @@ public final class JvmTools {
                     null,
                     List.of("scala-cli", "scala"),
                     List.of(new String[] {"scalacli", "scala-cli"}, new String[] {"scala", "scala"}),
-                    ".exe"));
+                    ".exe"),
+            "kotlinc",
+            new Tool("KOTLIN_HOME", List.of("kotlinc"), List.<String[]>of(new String[] {"kotlin", "kotlinc"}), ".bat"),
+            // Clojure's tools: on PATH only (no home variable, no SDKMAN candidate).
+            "clojure",
+            new Tool(null, List.of("clojure"), List.of(), ".bat"),
+            "lein",
+            new Tool(null, List.of("lein"), List.of(), ".bat"),
+            "bb",
+            new Tool(null, List.of("bb"), List.of(), ".exe"));
 
     /** Whether {@code tool} is one this resolves. */
     public static boolean knows(String tool) {

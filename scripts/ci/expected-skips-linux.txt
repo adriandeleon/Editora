@@ -19,6 +19,7 @@ com.editora.lsp.JdtlsTypingProbeTest
 com.editora.lsp.JdtlsUpgradeProbeTest
 com.editora.lsp.TypeScriptServerNodeProbeFxTest
 com.editora.ui.CompactSourceDebugProbeFxTest
+com.editora.ui.ClojureServerProbeFxTest
 com.editora.ui.GroovyServerProbeFxTest
 com.editora.ui.ScalaBuildRunProbeFxTest
 com.editora.ui.ScalaMetalsProbeFxTest
@@ -27,6 +28,7 @@ com.editora.ui.JavaDebugRealAdapterProbeFxTest
 com.editora.ui.JavaEditingCostProbeTest
 com.editora.ui.JavaTypingSoakProbeTest
 com.editora.ui.JsDebugProbeFxTest
+com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 
 # Measurement harnesses, @Disabled by design.
@@ -47,6 +49,17 @@ com.editora.typst.TypstStagedExportTest
 com.editora.dap.jvm.JvmDebugAdapterTest#aGroovyScriptStopsInsideAClosureWhereGroovyIsInstalled
 com.editora.dap.jvm.JvmDebugAdapterTest#aGroovyScriptsUncaughtExceptionStopsWhereItIsThrownAndNowhereElse
 com.editora.ui.GroovyRunDebugWindowFxTest
+# Kotlin's compiler (the runner installs no kotlinc): the Kotlin program and script the JVM debugger runs, and
+# Run/Debug of Kotlin files in a window. The adapter itself is covered by the Java and attach cases.
+com.editora.dap.jvm.JvmDebugAdapterTest#aKotlinProgramStopsInItsFileWhicheverFolderItSitsInAndNamesItsFramesAsKotlin
+com.editora.dap.jvm.JvmDebugAdapterTest#aKotlinScriptStopsOnItsLine
+com.editora.ui.KotlinRunDebugWindowFxTest
+
+# Clojure (the runner installs no Clojure CLI or Leiningen): the programs the JVM debugger runs under each, and
+# Run/Debug of a Clojure namespace in a real window.
+com.editora.dap.jvm.ClojureDebugAdapterTest
+com.editora.ui.ClojureRunDebugWindowFxTest
+
 # Scala CLI (the runner installs none): a Scala program the JVM debugger runs through Scala CLI, and Run/Debug of a
 # Scala file in a window.
 com.editora.dap.jvm.JvmDebugAdapterTest#aScalaProgramRunByScalaCliStopsInALambdaWhereScalaCliIsInstalled

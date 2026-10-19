@@ -33,7 +33,12 @@ public record RuntimeVersion(String label, String detail) {
         FISH("--version"),
         MAKE("--version"),
         GROOVY("--version"),
-        SCALA("--version");
+        SCALA("--version"),
+        /** {@code kotlinc}: the compiler that runs a Kotlin script, and compiles a Kotlin program. */
+        KOTLIN("-version"),
+        CLOJURE("--version"),
+        LEIN("--version"),
+        BB("--version");
 
         final List<String> versionArgs;
 
@@ -70,6 +75,12 @@ public record RuntimeVersion(String label, String detail) {
     /** {@code Scala version (default): 3.9.0}, or an old runner's {@code Scala code runner version 2.13.16 -- …}. */
     private static final Pattern SCALA_DEFAULT_VERSION =
             Pattern.compile("^Scala (?:version \\(default\\):|code runner version) (\\d+\\.\\d+(?:\\.\\d+)?\\S*)");
+    /** {@code Clojure CLI version 1.12.6.1673}: the CLI's own version (each project picks its Clojure). */
+    private static final Pattern CLOJURE_VERSION = Pattern.compile("^Clojure CLI version (\\d+(?:\\.\\d+)+)");
+    /** {@code Leiningen 2.13.0 on Java 25.0.4 OpenJDK 64-Bit Server VM}. */
+    private static final Pattern LEIN_VERSION = Pattern.compile("^Leiningen (\\d+\\.\\d+(?:\\.\\d+)?\\S*)");
+    /** {@code babashka v1.13.226}. */
+    private static final Pattern BB_VERSION = Pattern.compile("^babashka v(\\d+\\.\\d+(?:\\.\\d+)?\\S*)");
     /** The distribution in {@code java.vendor.version}: "Temurin-25.0.3+9" → "Temurin", "Zulu21.38+21-CA" → "Zulu". */
     private static final Pattern DISTRIBUTION = Pattern.compile("^([A-Za-z][A-Za-z ]*?)[\\s-]*(?:\\d.*)?$");
 
@@ -103,6 +114,10 @@ public record RuntimeVersion(String label, String detail) {
             case "make", "gmake" -> kind = Kind.MAKE;
             case "groovy" -> kind = Kind.GROOVY;
             case "scala-cli", "scala" -> kind = Kind.SCALA;
+            case "kotlinc", "kotlinc-jvm" -> kind = Kind.KOTLIN;
+            case "clojure", "clj" -> kind = Kind.CLOJURE;
+            case "lein" -> kind = Kind.LEIN;
+            case "bb" -> kind = Kind.BB;
             default -> kind = PYTHON_NAME.matcher(name).matches() ? Kind.PYTHON : null;
         }
         if (kind == null) {
@@ -134,6 +149,11 @@ public record RuntimeVersion(String label, String detail) {
             case MAKE -> simple(output, MAKE_VERSION, "GNU Make ", probe.argv().get(0));
             case GROOVY -> parseGroovy(output, probe.argv().get(0));
             case SCALA -> parseScala(output, probe.argv().get(0));
+            case KOTLIN -> parseKotlin(output, probe.argv().get(0));
+            case CLOJURE ->
+                simple(output, CLOJURE_VERSION, "Clojure CLI ", probe.argv().get(0));
+            case LEIN -> simple(output, LEIN_VERSION, "Leiningen ", probe.argv().get(0));
+            case BB -> simple(output, BB_VERSION, "Babashka ", probe.argv().get(0));
         };
     }
 
@@ -236,6 +256,16 @@ public record RuntimeVersion(String label, String detail) {
                 ? "Scala CLI " + cli + (scala == null ? "" : " (Scala " + scala + ")")
                 : scala != null ? "Scala " + scala : null;
         return label == null ? null : new RuntimeVersion(label, detail(bannerLines(output), executable));
+    }
+
+    /** {@code Kotlin 2.4.21 (Java 25.0.4)}, from {@code info: kotlinc-jvm 2.4.21 (JRE 25.0.4+7-LTS)}. */
+    private static RuntimeVersion parseKotlin(String output, String executable) {
+        String[] version = KotlinRun.compilerVersion(output);
+        if (version == null) {
+            return null; // not the Kotlin compiler (JetBrains' toolchain CLI prints something else)
+        }
+        String label = "Kotlin " + version[0] + (version[1] == null ? "" : " (Java " + version[1] + ")");
+        return new RuntimeVersion(label, detail(bannerLines(output), executable));
     }
 
     /** A runtime whose first matching line holds its version; the tooltip names the executable asked. */

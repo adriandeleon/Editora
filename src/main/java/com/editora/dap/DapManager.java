@@ -442,7 +442,7 @@ public final class DapManager {
             case "python" -> pythonAvailable;
             case "javascript" -> jsAvailable;
             // Editora's own adapter: nothing to install, only the debugging switch (the tool is checked at start).
-            case "groovy" -> enabled;
+            case "groovy", "kotlin", "clojure" -> enabled;
             // Metals' adapter (checked at start: it needs Metals running) or, for a script, Editora's own.
             case "scala" -> enabled;
             default -> false;
@@ -657,6 +657,7 @@ public final class DapManager {
     public void startLaunch(
             Path file, String language, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
         jvmCwd = null; // a file's own debug runs in its folder
+        jvmJar = null;
         if ("java".equals(language)) {
             startLaunch(file, picker, javaExecOverride, projectRoot);
         } else if (DapServerRegistry.isDebuggable(language)) {
@@ -670,13 +671,114 @@ public final class DapManager {
     private volatile Path jvmCwd;
 
     /**
-     * Debugs JVM-language script {@code file} ({@code groovy}) in {@code cwd} — a run configuration's folder —
+     * Debugs JVM-language script {@code file} ({@code groovy}, {@code clojure}) in {@code cwd} — a run
+     * configuration's folder, or null for the one the tool runs it in —
      * with the arguments and environment set beforehand. Restart repeats it.
      */
     public void startJvmScript(Path file, String language, Path cwd) {
         jvmCwd = cwd;
+        jvmJar = null;
         startProgram(file, language);
         restartAction = () -> startJvmScript(file, language, cwd);
+    }
+
+    /** A compiled program's jar for the next JVM launch, run as {@code java -jar}; null runs the file's tool. */
+    private volatile Path jvmJar;
+
+    /** The {@code java} that runs {@link #jvmJar}: the session JDK's. */
+    private volatile String jvmJava = "java";
+
+    /**
+     * Debugs compiled Kotlin program {@code file} — its {@code jar}, built beforehand — as
+     * {@code java [VM arguments] -jar <jar> args…} on {@code java}, in {@code cwd} (null: the file's folder), with
+     * the arguments, VM arguments and environment set beforehand. The debugger's agent goes on that command line.
+     * Restart repeats it with the same jar; the coordinator's own restart compiles an edited file again.
+     */
+    public void startJvmProgram(Path file, String language, Path cwd, Path jar, String java) {
+        jvmCwd = cwd;
+        jvmJar = jar;
+        jvmJava = java == null || java.isBlank() ? "java" : java;
+        startProgram(file, language);
+        restartAction = () -> startJvmProgram(file, language, cwd, jar, java);
+    }
+
+    /**
+     * Attaches Editora's JVM adapter to a JVM listening at {@code host:port} — one a build tool started under a
+     * suspended JDWP agent — for a program in a language java-debug cannot map ({@code language}), anchored at
+     * {@code file}. Ending the session detaches; the JVM's owner stops it. Restart attaches again.
+     */
+    public void startJvmAttach(Path file, String language, String host, int port) {
+        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor(language);
+        if (spec == null || spec.kind() != DapServerRegistry.Kind.JVM) {
+            listener.onError(tr("debug.error.noAdapter"));
+            return;
+        }
+        restartAction = () -> startJvmAttach(file, language, host, port);
+        debugFile = file;
+        long epoch = beginSession();
+        setState(State.STARTING);
+        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<String> filters = filtersFor(language);
+        startupTask = io.submit(() -> {
+            try {
+                Map<String, Object> attach = new java.util.LinkedHashMap<>();
+                attach.put("hostName", host == null || host.isBlank() ? "localhost" : host);
+                attach.put("port", port);
+                attach.put("language", language);
+                Path root = file == null ? null : jvmSourceRoot(file);
+                if (root != null) {
+                    attach.put("cwd", root.toString());
+                }
+                if (file != null) {
+                    attach.put("sourceFiles", List.of(file.toString()));
+                }
+                int adapterPort = com.editora.dap.jvm.JvmDebugServer.start(new com.editora.dap.jvm.JvmDebugAdapter());
+                DapClient c = new DapClient(sessionHost(epoch));
+                c.setPaths(DapPaths.LOCAL);
+                c.setBreakpoints(bps);
+                c.setExceptionFilters(filters);
+                if (!publishClient(epoch, c)) {
+                    c.dispose();
+                    return;
+                }
+                c.connect(adapterPort, spec.adapterId()).whenComplete((caps, e) -> {
+                    if (e != null) {
+                        fail(epoch, tr("debug.error.connectFailed", msg(e)));
+                        return;
+                    }
+                    if (!isCurrent(epoch)) {
+                        c.dispose();
+                        return;
+                    }
+                    c.attach(attach).whenComplete((v, ae) -> {
+                        if (ae != null) {
+                            fail(epoch, tr("debug.error.launchFailed", msg(ae)));
+                        }
+                    });
+                    Platform.runLater(() -> {
+                        if (isCurrent(epoch, c)) {
+                            setState(State.RUNNING);
+                        }
+                    });
+                });
+            } catch (Exception e) {
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
+            }
+        });
+    }
+
+    /** The folder an attached program's sources are looked up under: the file's build root, else its folder. */
+    private static Path jvmSourceRoot(Path file) {
+        Path dir = file.toAbsolutePath().getParent();
+        for (Path p = dir; p != null; p = p.getParent()) {
+            for (String marker :
+                    List.of("settings.gradle.kts", "settings.gradle", "build.gradle.kts", "build.gradle", "pom.xml")) {
+                if (java.nio.file.Files.isRegularFile(p.resolve(marker))) {
+                    return p;
+                }
+            }
+        }
+        return dir;
     }
 
     /** Program arguments for the next launch (shared with the Run feature's per-file args). */
@@ -2122,16 +2224,37 @@ public final class DapManager {
             long epoch)
             throws java.io.IOException {
         String language = spec.language();
-        String tool = jvmToolLocator.apply(com.editora.run.JvmScriptRun.tool(language));
-        if (tool == null) {
-            fail(epoch, tr(com.editora.run.JvmScriptRun.missingToolKey(language)));
+        if ("clojure".equals(language)
+                && file.getFileName() != null
+                && !com.editora.run.ClojureRun.runnable(file.getFileName().toString())) {
+            fail(
+                    epoch,
+                    tr(
+                            "debug.error.notDebuggable.clojureFile",
+                            file.getFileName().toString()));
             return;
         }
-        Map<String, String> programEnv = env;
+        String toolName = com.editora.run.JvmScriptRun.tool(language, file);
+        if (!com.editora.run.JvmScriptRun.debuggable(toolName)) {
+            // Babashka is a native program: there is no JVM for a debugger to attach to.
+            fail(epoch, tr("debug.error.notDebuggable." + toolName));
+            return;
+        }
+        String tool = jvmToolLocator.apply(toolName);
+        if (tool == null) {
+            fail(epoch, tr(com.editora.run.JvmScriptRun.missingToolKeyFor(toolName)));
+            return;
+        }
         Map<String, Object> launch = new java.util.LinkedHashMap<>();
-        Path folder = jvmCwd;
+        Map<String, String> launchEnv = env;
+        Path directory = null;
+        Path jar = jvmJar;
         List<String> argv;
-        if (com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(language)) {
+        if (jar != null) {
+            // A Kotlin program: `java` is its own launcher, its VM arguments on that command line.
+            argv = com.editora.run.KotlinRun.programArgv(jvmJava, jvmOptions(), jar.toString(), programArgs);
+            launch.put("jvmOptionsInArgv", true); // the agent goes first
+        } else if (com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(language)) {
             // Scala CLI: the agent (and the VM arguments) as --java-opt; the file, or its project folder with
             // the file's main class. It compiles before the JVM starts — a first run fetches the compiler too.
             com.editora.run.ScalaRun.Owner owner =
@@ -2148,13 +2271,37 @@ public final class DapManager {
                 launch.put("sourceRoots", List.of(owner.root().toString()));
             }
         } else {
-            argv = com.editora.run.JvmScriptRun.argv(tool, file.toString(), programArgs);
+            // The configuration's VM arguments go where the tool hands them to its JVM, beside the debugger's agent.
+            com.editora.run.JvmScriptRun.Launch how = com.editora.run.JvmScriptRun.launch(
+                    language,
+                    toolName,
+                    tool,
+                    file,
+                    file.toString(),
+                    programArgs,
+                    vmArgsFor(LaunchConfig.Target.LOCAL),
+                    true,
+                    env,
+                    System.getenv());
+            argv = how.argv();
+            launchEnv = how.env();
+            directory = how.directory();
+            launch.put("jvmOptionsVariable", com.editora.run.JvmScriptRun.jvmOptionsVariable(language, toolName));
+            String prefix = com.editora.run.JvmScriptRun.jvmOptionPrefix(toolName);
+            if (prefix != null) {
+                launch.put("jvmOptionPrefix", prefix);
+            }
+            if (directory != null) {
+                launch.put("sourceRoots", List.of(directory.toString()));
+            }
         }
+        Map<String, String> programEnv = launchEnv;
         launch.put("argv", argv);
+        Path folder = jvmCwd != null ? jvmCwd : directory;
         launch.put("cwd", folder != null ? folder.toString() : cwdOf(file));
         launch.put("env", programEnv);
         launch.put("language", language);
-        launch.put("jvmOptionsVariable", com.editora.run.JvmScriptRun.jvmOptionsVariable(language));
+        launch.put("sourceFiles", List.of(file.toString())); // its frames find it whatever folder it sits in
         onOutput(epoch, com.editora.run.RunService.commandLine(argv) + "\n", COMMAND_CATEGORY);
         int port = com.editora.dap.jvm.JvmDebugServer.start(new com.editora.dap.jvm.JvmDebugAdapter());
         DapClient c = new DapClient(sessionHost(epoch));

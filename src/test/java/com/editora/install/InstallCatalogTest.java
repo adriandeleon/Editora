@@ -15,6 +15,7 @@ import com.editora.install.InstallCatalog.Prereq;
 import com.editora.install.InstallCatalog.Step;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -236,7 +237,7 @@ class InstallCatalogTest {
 
     @Test
     void archiveSpecsCoverEveryPlatformAndTheRightBinary() {
-        for (String id : new String[] {"clangd", "kotlin", "lua", "xml", "terraform"}) {
+        for (String id : new String[] {"clangd", "lua", "xml", "terraform"}) {
             // It's an ARCHIVE step with a recipe.
             assertEquals(
                     Kind.ARCHIVE,
@@ -258,6 +259,33 @@ class InstallCatalogTest {
                         .assetByPlatform()
                         .get(Platform.MAC_ARM));
         assertTrue(InstallCatalog.archiveSpec("unknown").isEmpty());
+        assertTrue(InstallCatalog.archiveSpec("kotlin").isEmpty(), "fwcd's server is no longer installed");
+    }
+
+    @Test
+    void theKotlinServerIsJetBrainsPinnedForEveryPlatformAndSaysItsSize() {
+        Step step = InstallCatalog.serverInstall("kotlin").orElseThrow().get(0);
+        assertEquals(Kind.PINNED_SERVER, step.kind());
+        assertEquals(InstallCatalog.KOTLIN_LSP_STEP, step.id());
+        assertEquals(java.util.Set.of(InstallCatalog.Prereq.TAR), step.prereqs());
+        assertEquals("plugins/lsp/kotlin", step.destSubpath());
+        InstallCatalog.PinnedServer server =
+                InstallCatalog.pinnedServer(step.id()).orElseThrow();
+        assertEquals("intellij-server", server.launcher());
+        assertEquals(" --stdio", server.arguments());
+        for (Platform p : Platform.values()) {
+            InstallCatalog.PinnedAsset asset = server.assetFor(p);
+            assertNotNull(asset, "no asset for " + p);
+            assertTrue(InstallCatalog.isTrustedDownloadUrl(asset.url()), asset.url());
+            assertTrue(asset.url().contains("/" + InstallCatalog.KOTLIN_LSP_VERSION + "/"), asset.url());
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), asset.sha256());
+        }
+        assertTrue(server.assetFor(Platform.MAC_ARM).url().endsWith("-aarch64.sit"));
+        assertTrue(server.assetFor(Platform.WIN_X64).url().endsWith(".win.zip"));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl("https://download-cdn.jetbrains.com/x.tar.gz"), "its CDN");
+        assertArrayEquals(new int[] {370, 1200}, InstallCatalog.largeDownload("kotlin"));
+        assertNull(InstallCatalog.largeDownload("lua"), "a small download is not asked about");
+        assertTrue(InstallCatalog.installableServerIds().contains("kotlin"));
     }
 
     @Test
@@ -343,6 +371,32 @@ class InstallCatalogTest {
         // The bundle is served from Eclipse's own repo (not Maven Central / GitHub) and is a self-contained zip.
         assertTrue(s.directUrl().startsWith("https://repo.eclipse.org/"));
         assertTrue(s.directUrl().endsWith("-zip-with-dependencies.zip"));
+    }
+
+    @Test
+    void clojureLspIsAPinnedNativeBinaryForEveryDesktopPlatform() {
+        assertTrue(InstallCatalog.installableServerIds().contains("clojure"));
+        Step s = InstallCatalog.serverInstall("clojure").orElseThrow().get(0);
+        assertEquals(Kind.PINNED_TOOL, s.kind());
+        assertEquals(java.util.Set.of(), s.prereqs(), "a zip, unpacked in-process: nothing to have installed");
+        assertEquals("plugins/lsp/clojure", s.destSubpath());
+        InstallCatalog.PinnedTool tool = InstallCatalog.pinnedTool(s.id()).orElseThrow();
+        assertEquals(InstallCatalog.CLOJURE_LSP_VERSION, tool.version());
+        assertEquals("clojure-lsp", tool.binaryName());
+        assertFalse(InstallCatalog.PINNED_TOOL_IDS.contains(s.id()), "a language server, not a shell tool");
+        for (Platform p : Platform.values()) {
+            InstallCatalog.PinnedAsset asset = tool.assetFor(p);
+            assertNotNull(asset, p.toString());
+            assertTrue(
+                    asset.url()
+                            .startsWith("https://github.com/clojure-lsp/clojure-lsp/releases/download/"
+                                    + InstallCatalog.CLOJURE_LSP_VERSION + "/clojure-lsp-native-"),
+                    asset.url());
+            assertFalse(asset.url().contains("static"), "the glibc build, as clojure-lsp's own installer picks");
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), p + " is pinned by its SHA-256");
+            assertEquals(InstallCatalog.Packing.ZIP, asset.packing());
+            assertTrue(InstallCatalog.isTrustedDownloadUrl(asset.url()));
+        }
     }
 
     @Test

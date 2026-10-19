@@ -71,9 +71,12 @@ not new logic:
    `settings-controls.properties` rows, a schema bump with an additive migration, and the i18n keys in
    all six catalogs.
 5. An installer, if it has one: `InstallCatalog.serverInstall` (`ARCHIVE` for a per-OS binary,
-   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle, `COURSIER_LSP` for a
-   server published only as Maven artifacts — a pinned coursier resolves it, as for Metals), and the
-   persist case in `InstallCoordinator.applyServerCommand`. A server run by `java` gets the Settings JDK
+   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle,
+   `PINNED_SERVER` for a pinned per-platform distribution too big to hold in memory — streamed to disk,
+   hash-checked, unpacked by `tar`, and announced with its size before it starts — `PINNED_TOOL` with a
+   `pinnedTool` recipe for a per-OS binary pinned by SHA-256, as clojure-lsp is, `COURSIER_LSP` for a server
+   published only as Maven artifacts — a pinned coursier resolves it, as for Metals), and the persist case in
+   `InstallCoordinator.applyServerCommand`. A server run by `java` gets the Settings JDK
    through `JvmServerCommand.withJdk`.
 
 `LspManager.configure(enabled, Map<serverId, command>)` is map-based, so it never needs a
@@ -90,11 +93,19 @@ debug commands, and the Settings → Debugging page is data-driven over
 JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by
 `dap/DebugAdapterLocator` and installed by the `scripts/install-*.sh` helpers.
 
-A JVM language other than Java (Groovy today) uses `Kind.JVM`: Editora's own JDI adapter
+A JVM language other than Java (Groovy, Kotlin, Clojure) uses `Kind.JVM`: Editora's own JDI adapter
 ([ADR 0018](decisions/0018-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
-the variable its launcher passes JVM options in), a `run/JvmTools` home variable, a `DapServerRegistry`
-`Def`, its `RunScan` branch, and its runtime-internal packages in `JvmSourceMap.stepFilters`. A tool that takes
-JVM options on its command line rather than in a variable (Scala CLI's `--java-opt`) answers
+where its launcher takes JVM options: a variable such as Groovy's and Kotlin's `JAVA_OPTS`, or an argument
+prefix such as the Clojure CLI's `-J`, which the adapter's launch request carries as `jvmOptionPrefix`), a
+`run/JvmTools` entry (and its SDKMAN candidate when that is named otherwise), a `DapServerRegistry` `Def`, its
+`RunScan` branch, its runtime-internal packages in `JvmSourceMap.stepFilters`, the `ExceptionFilterCatalog`
+filters, and, when its classes' names are not the source's, a `JvmSourceMap.frameName` case. A language whose
+files run under more than one tool decides per file in `JvmScriptRun.launch` (Clojure: `run/ClojureRun` picks the
+Clojure CLI, Leiningen or Babashka, the folder and the command line). A language whose files are compiled before
+they run (a Kotlin `.kt` program) plans the compile itself (`run/KotlinRun`, `run/KotlinBuild`), runs it as a
+`BeforeLaunchStep.Command`, and starts `java` with the agent on its command line (`jvmOptionsInArgv`). An attach
+to a build's JVM anchored at such a file goes to the same adapter (`DebugCoordinator.jvmAdapterLanguage`). A
+tool that takes JVM options on its command line rather than in a variable (Scala CLI's `--java-opt`) answers
 `JvmScriptRun.takesJvmOptionsInArgv` and puts `JvmScriptRun.AGENT_ARGUMENT` where the agent goes; a language
 whose packages need not follow folders says so in `JvmSourceMap.packagesFollowFolders`, and its breakpoints bind
 by file name.
@@ -104,6 +115,21 @@ arguments go in [`dap/HostedDebugAdapter`](../src/main/java/com/editora/dap/Host
 `debug-adapter-start`), which also reads the reply's socket; `DapManager.startHosted` does the rest. A file the
 server does not debug can fall back to another kind (`DapServerRegistry.fallbackKind`). jdtls keeps its own
 `JDTLS` path, since Java's launch is resolved by the client first.
+
+## Add a build tool
+
+A `BuildTool` constant ([`build/BuildTool.java`](../src/main/java/com/editora/build/BuildTool.java)): its id,
+display name, default command, marker files, `view.toggle…Support` command id, Settings accessors and console
+style, with `parse` (the marker file → a `BuildActionsProvider` and a label) and `executable` (a wrapper, the
+Settings override, or the tool on PATH). Then add it to `BuildTool.enabled()`, a toolbar glyph in
+`BuildCoordinator.iconFor` (`IconsFxTest` renders each), the `…Support` + `…Command` Settings fields with a schema
+bump and the `buildToolChecks`/`buildToolCommandFields` rows in `settings-controls.properties`, a case in each
+`test/` switch over the tool (`TestRunRecognizer`, `TestResultParsers`, `TestSourceLocator`, `TestRun`; a tool
+whose test output is not parsed returns false from `isTestRun`), and the `toolwindow.<id>`, `settings.<id>.hint`,
+`command.tool.<id>`, `command.<id>.{showActions,runCustom,stop,rerunLast,refresh}` and toggle keys (each with
+`.desc`) in all six catalogs. The Settings page, the tool window and the commands are data-driven from there. The
+Clojure CLI, Leiningen and Babashka (`ClojureProjects` reads a `deps.edn`'s aliases and a `bb.edn`'s tasks) are
+the latest worked example.
 
 ## Add a language / TextMate grammar
 

@@ -66,7 +66,12 @@ public final class InstallCatalog {
         /** A command-line tool from a pinned release (ShellCheck, shfmt): the per-platform asset is downloaded,
          *  its SHA-256 checked against the hash in {@link #pinnedTool}, and the binary put at
          *  {@code <config>/plugins/tools/<id>/<binary>} — see {@link #installedToolPath}. */
-        PINNED_TOOL
+        PINNED_TOOL,
+        /** A language server distribution from a pinned release ({@link #pinnedServer}): too big to hold in memory
+         *  (JetBrains' Kotlin LSP is ~370 MB with its own Java runtime), so the per-platform archive is streamed
+         *  to disk with its SHA-256 checked as it arrives, refused unless it matches, unpacked by the system
+         *  {@code tar} into {@code <config>/<destSubpath>}, and the server command set to its launcher. */
+        PINNED_SERVER
     }
 
     /** The host OS/arch buckets used to pick a per-platform release asset. */
@@ -300,7 +305,10 @@ public final class InstallCatalog {
             "download.eclipse.org",
             "repo.eclipse.org",
             "api.releases.hashicorp.com",
-            "releases.hashicorp.com");
+            "releases.hashicorp.com",
+            // JetBrains' Kotlin LSP (a pinned URL with a pinned hash), and the CDN it redirects to.
+            "download.jetbrains.com",
+            "download-cdn.jetbrains.com");
 
     /** Whether {@code url} is an {@code https} URL on one of the {@link #DOWNLOAD_HOSTS} (default port, no
      *  credentials). Pure — unit-tested. */
@@ -377,7 +385,6 @@ public final class InstallCatalog {
                 "php",
                 // per-OS/arch binary archives (download + extract; needs only network + tar/unzip).
                 "clangd",
-                "kotlin",
                 "lua",
                 "xml",
                 "terraform",
@@ -387,7 +394,11 @@ public final class InstallCatalog {
                 // a pinned JVM fat jar (needs java 17+): the Groovy server.
                 "groovy",
                 // Maven artifacts fetched by a pinned coursier (needs java 17+ to run): Metals, for Scala.
-                "scala");
+                "scala",
+                // a pinned server distribution with its own Java runtime (needs tar): JetBrains' Kotlin LSP.
+                "kotlin",
+                // a pinned native binary per OS/arch, its SHA-256 checked: clojure-lsp.
+                "clojure");
     }
 
     /** The install steps for an LSP-only server id (empty if it has no installer). Pure. */
@@ -424,8 +435,21 @@ public final class InstallCatalog {
                 java.util.Optional.of(List.of(toolStep(
                         "phpactor", Prereq.COMPOSER, List.of("composer", "global", "require", "phpactor/phpactor"))));
             // --- per-OS/arch binary archives (download + extract into the config dir) ---
-            case "clangd", "kotlin", "lua", "xml", "terraform", "typst" ->
-                java.util.Optional.of(List.of(archiveStep(serverId)));
+            case "clangd", "lua", "xml", "terraform", "typst" -> java.util.Optional.of(List.of(archiveStep(serverId)));
+            // --- JetBrains' Kotlin LSP: a pinned per-platform distribution, streamed to disk (needs tar) ---
+            case "kotlin" ->
+                java.util.Optional.of(List.of(new Step(
+                        KOTLIN_LSP_STEP,
+                        Kind.PINNED_SERVER,
+                        Set.of(Prereq.TAR),
+                        List.of(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        false,
+                        "plugins/lsp/kotlin",
+                        null)));
             // --- JVM lemminx + lemminx-maven (one cross-platform zip; needs java on PATH) ---
             case "maven-pom" ->
                 java.util.Optional.of(List.of(new Step(
@@ -439,6 +463,20 @@ public final class InstallCatalog {
                         LEMMINX_MAVEN_ZIP_URL,
                         false,
                         "plugins/lsp/maven",
+                        null)));
+            // --- clojure-lsp: a pinned GraalVM native binary per OS/arch (no JVM needed) ---
+            case "clojure" ->
+                java.util.Optional.of(List.of(new Step(
+                        CLOJURE_LSP_ID,
+                        Kind.PINNED_TOOL,
+                        Set.of(),
+                        List.of(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        false,
+                        "plugins/lsp/clojure",
                         null)));
             // --- gvy's gls: one pinned cross-platform jar (needs java 17+) ---
             case "groovy" ->
@@ -608,18 +646,6 @@ public final class InstallCatalog {
                         "clangd",
                         false,
                         ""));
-            case "kotlin" ->
-                java.util.Optional.of(new ArchiveSpec(
-                        "https://api.github.com/repos/fwcd/kotlin-language-server/releases/latest",
-                        java.util.Map.of(
-                                Platform.MAC_ARM, "server.zip",
-                                Platform.MAC_X64, "server.zip",
-                                Platform.LINUX_X64, "server.zip",
-                                Platform.LINUX_ARM, "server.zip",
-                                Platform.WIN_X64, "server.zip"),
-                        "kotlin-language-server",
-                        false,
-                        ""));
             case "lua" ->
                 java.util.Optional.of(new ArchiveSpec(
                         "https://api.github.com/repos/LuaLS/lua-language-server/releases/latest",
@@ -686,6 +712,110 @@ public final class InstallCatalog {
         };
     }
 
+    // --- pinned server distributions (JetBrains' Kotlin LSP) --------------------------------------------
+
+    /** The step id of the Kotlin LSP install (what the status line names while it runs). */
+    public static final String KOTLIN_LSP_STEP = "kotlin-lsp";
+
+    /**
+     * The JetBrains Kotlin LSP release Editora installs (github.com/Kotlin/kotlin-lsp, alpha). <b>Pinned</b>, with
+     * a hash per platform: JetBrains publishes no GitHub assets, only these downloads and a {@code .sha256} beside
+     * each, which the hashes below were checked against (and the Linux x64 one against a downloaded copy). Bump
+     * the version and every hash together.
+     */
+    public static final String KOTLIN_LSP_VERSION = "263.7084.0";
+
+    private static final String KOTLIN_LSP_BASE = "https://download.jetbrains.com/language-server/kotlin-server/"
+            + KOTLIN_LSP_VERSION + "/kotlin-server-" + KOTLIN_LSP_VERSION;
+
+    /**
+     * A language server installed from a pinned upstream distribution.
+     *
+     * @param launcher the launcher's file name without a Windows {@code .exe}, found anywhere in the unpacked
+     *     tree (the Windows archive has no top folder, the others do)
+     * @param arguments what follows the launcher on the server's command line
+     * @param downloadMegabytes the download's size, said before it starts
+     * @param installedMegabytes the size once unpacked, said with it
+     */
+    public record PinnedServer(
+            String id,
+            String version,
+            java.util.Map<Platform, PinnedAsset> assets,
+            String launcher,
+            String arguments,
+            int downloadMegabytes,
+            int installedMegabytes) {
+
+        /** This platform's asset, or null when upstream publishes none for it. */
+        public PinnedAsset assetFor(Platform platform) {
+            return assets.get(platform);
+        }
+
+        /** The most one download may be: its size and a margin, so a wrong body cannot fill the disk. */
+        public long maxBytes() {
+            return (downloadMegabytes + 128L) * 1024 * 1024;
+        }
+    }
+
+    /**
+     * The pinned distribution a {@link Kind#PINNED_SERVER} step installs, by step id, or empty. JetBrains' Kotlin
+     * LSP bundles its own Java runtime (JetBrains Runtime 25), so it needs no JDK. The macOS {@code .sit} is a
+     * zip; every archive is unpacked by the system {@code tar} (bsdtar reads zips on macOS and Windows, and keeps
+     * the launcher's and the runtime's execute bits). Windows on ARM runs the x64 build, as for every tool here.
+     */
+    public static Optional<PinnedServer> pinnedServer(String stepId) {
+        if (!KOTLIN_LSP_STEP.equals(stepId)) {
+            return Optional.empty();
+        }
+        return Optional.of(new PinnedServer(
+                KOTLIN_LSP_STEP,
+                KOTLIN_LSP_VERSION,
+                java.util.Map.of(
+                        Platform.LINUX_X64,
+                        new PinnedAsset(
+                                KOTLIN_LSP_BASE + ".tar.gz",
+                                "ae0c4b01e17ab73a4a5227a78ea99e6dcbe3e499600315b22759a4e4cddd11df",
+                                Packing.TAR_GZ),
+                        Platform.LINUX_ARM,
+                        new PinnedAsset(
+                                KOTLIN_LSP_BASE + "-aarch64.tar.gz",
+                                "450ab7c1d80e48106aa429b48cb4226d82ca12a8a2400447ae02386794780cac",
+                                Packing.TAR_GZ),
+                        Platform.MAC_X64,
+                        new PinnedAsset(
+                                KOTLIN_LSP_BASE + ".sit",
+                                "b29c393a5e541153d03d626e7946268437e358a667a5f914a126dbb4007664b1",
+                                Packing.ZIP),
+                        Platform.MAC_ARM,
+                        new PinnedAsset(
+                                KOTLIN_LSP_BASE + "-aarch64.sit",
+                                "b403bf8a54bd458e3ba6731cf8abb3340be08b439c03576dfc02b13faf3694b8",
+                                Packing.ZIP),
+                        Platform.WIN_X64,
+                        new PinnedAsset(
+                                KOTLIN_LSP_BASE + ".win.zip",
+                                "be3bc4ef430cde315e6a83900ffb5d9cc454a36aabe9dd3ba7d4141b2d628164",
+                                Packing.ZIP)),
+                "intellij-server",
+                " --stdio",
+                370,
+                1200));
+    }
+
+    /**
+     * The download a server's install makes, as {@code [download MB, installed MB]}, when it is big enough to ask
+     * about first; null otherwise. Pure.
+     */
+    public static int[] largeDownload(String serverId) {
+        return serverInstall(serverId).orElse(List.of()).stream()
+                .filter(s -> s.kind() == Kind.PINNED_SERVER)
+                .map(s -> pinnedServer(s.id()).orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .map(p -> new int[] {p.downloadMegabytes(), p.installedMegabytes()})
+                .findFirst()
+                .orElse(null);
+    }
+
     // --- pinned command-line tools (ShellCheck, shfmt) -------------------------------------------------
 
     /** The ShellCheck release Editora installs. Bump with every hash in {@link #pinnedTool}. */
@@ -693,6 +823,15 @@ public final class InstallCatalog {
 
     /** The shfmt release Editora installs. Bump with every hash in {@link #pinnedTool}. */
     public static final String SHFMT_VERSION = "3.14.1";
+
+    /** The clojure-lsp release Editora installs. Bump with every hash in {@link #pinnedTool}. */
+    public static final String CLOJURE_LSP_VERSION = "2026.10.15-11.42.38";
+
+    /** The install step (and {@link #pinnedTool} recipe) id of the Clojure server, installed for server "clojure". */
+    public static final String CLOJURE_LSP_ID = "clojure-lsp";
+
+    private static final String CLOJURE_LSP_BASE = "https://github.com/clojure-lsp/clojure-lsp/releases/download/"
+            + CLOJURE_LSP_VERSION + "/clojure-lsp-native-";
 
     /** The tools {@link #pinnedTool} knows, in display order. */
     public static final List<String> PINNED_TOOL_IDS = List.of("shellcheck", "shfmt");
@@ -806,6 +945,42 @@ public final class InstallCatalog {
                                         "13629ce28442ca80b6b5a819f7574ab39e1c28c6e26734ca816c9714e04851df",
                                         Packing.RAW)),
                         "shfmt"));
+            // clojure-lsp's GraalVM native builds (MIT, github.com/clojure-lsp/clojure-lsp): the hashes are the
+            // assets' SHA-256 as GitHub publishes them for the tag — the macOS arm64 build has no .sha256 file
+            // in this release — each checked against a downloaded copy. No Windows-on-ARM build exists; the x64
+            // one runs under emulation there. Installed as a language server (serverInstall "clojure"), not as
+            // one of PINNED_TOOL_IDS.
+            case CLOJURE_LSP_ID ->
+                Optional.of(new PinnedTool(
+                        CLOJURE_LSP_ID,
+                        CLOJURE_LSP_VERSION,
+                        java.util.Map.of(
+                                Platform.LINUX_X64,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "linux-amd64.zip",
+                                        "d68acf630465cec9d3685fd958f914d9228d90a07222edd301f1a4740b8e8b76",
+                                        Packing.ZIP),
+                                Platform.LINUX_ARM,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "linux-aarch64.zip",
+                                        "232ac0cd191070a3b7b5532135ec9f97217b82324de7e97da0b1bf81353a3c94",
+                                        Packing.ZIP),
+                                Platform.MAC_X64,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "macos-amd64.zip",
+                                        "468c261b48a7276c79cb92a82ddfce5474bc563ba6673df30cabf17a7f239ef3",
+                                        Packing.ZIP),
+                                Platform.MAC_ARM,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "macos-aarch64.zip",
+                                        "84df57e51e27f4ecf20d0cd65aab3296e2ebf28dbaacca4fe216b6cf20485716",
+                                        Packing.ZIP),
+                                Platform.WIN_X64,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "windows-amd64.zip",
+                                        "63bb6567a2280a563a8de22c3eb833a69159e054b6545a29d25ab588c1b749b1",
+                                        Packing.ZIP)),
+                        "clojure-lsp"));
             default -> Optional.empty();
         };
     }

@@ -50,6 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Kotlin: JetBrains' Kotlin LSP, Run and Debug.** Kotlin's language server is now JetBrains' Kotlin LSP: one
+  click installs a pinned release (about 370 MB with its own Java runtime, which Editora says before it starts),
+  and it imports the Gradle build for completion, navigation and diagnostics. A configured command is kept, so
+  fwcd's kotlin-language-server still works. Run File, the gutter ▶ and a new Kotlin run configuration run a
+  `.kts` script with `kotlinc -script`, and compile a `.kt` file with a top-level `main` into a cached jar that runs
+  with `java -jar` on the Settings JDK (compiled again only when the file changes); the Run window shows the Kotlin
+  and Java versions. Debug stops at breakpoints in programs, scripts and lambdas through Editora's own debugger,
+  names frames as Kotlin does (`Hello.main { lambda }`), and steps over the standard library and coroutines
+  machinery. Debug via Build Tool and Attach to JVM work from a Kotlin file too.
 - **Groovy: language server, Run and Debug.** Groovy files get completion, diagnostics, outline, rename and
   formatting from the gvy language server, installed in one click (a pinned jar, run on the JDK chosen in Settings).
   Run File, the gutter ▶ and a new Groovy script run configuration run a script with `groovy` on that JDK, and the
@@ -97,6 +106,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     hands the passphrase straight to GnuPG. A passphrase-only file is asked once and saves without asking again.
   - Settings ▸ Encryption (gpg path, always include my key, who asks for passphrases, language servers) and two
     Doctor rows (GnuPG, passphrase prompt). Samples in `samples/encrypted/` (passphrase `editora`).
+- **Clojure: language server, build tools, Run and Debug.** Clojure, ClojureScript and EDN files get completion,
+  diagnostics (clj-kondo's), navigation, rename and formatting from clojure-lsp, installed in one click (a pinned
+  native binary, checked by its SHA-256) or found on PATH. A `deps.edn`, `project.clj` or `bb.edn` project gets a
+  Clojure CLI, Leiningen or Babashka toolbar button: the CLI's runnable aliases (`-M:test`, `-X:build`,
+  `-T:build`), Leiningen's common tasks, a `bb.edn`'s tasks. Run File, the gutter ▶ (on `(defn -main`, else the
+  top of a script) and a new Clojure script run configuration run a namespace with `clojure -M -m` in its
+  project, through `lein run` in a Leiningen project, a script with `clojure -M`, and a Babashka script with
+  `bb`; an uncaught exception's whole trace is printed (not left in a temporary file), and its frames are links.
+  Debug stops at breakpoints in a namespace's functions or a script's top-level forms, under the Clojure CLI or
+  Leiningen, with locals kept visible and frames named as Clojure names them (`my-app.core/greet`); Babashka,
+  a native program, cannot be debugged and says so. Settings schema 139.
 - **Scala: Metals, sbt, Mill, Scala CLI, Run and Debug.** Scala files get completion, diagnostics, navigation,
   rename and formatting from Metals 1.6.9, installed in one click (a pinned coursier resolves it into Editora's
   folder; it runs on the JDK chosen in Settings). Language servers' questions are now asked — Metals' "Import
@@ -107,7 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mill build through it (`sbt "runMain …"`, `./mill <module>.runMain …`) and any other file with Scala CLI, with
   the Scala CLI and Scala versions in the Run window; a new Scala run configuration runs files with Scala CLI.
   Debug uses Metals' debug adapter for a file of a build, and Editora's own debugger over Scala CLI for a script,
-  stepping over the standard library. Settings schema 139.
+  stepping over the standard library. Settings schema 140.
 - **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
   files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
   `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),

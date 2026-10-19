@@ -148,6 +148,25 @@ class RuntimeVersionTest {
     }
 
     @Test
+    void theClojureToolsSayTheirOwnVersions() {
+        assertEquals(
+                List.of("/usr/local/bin/clojure", "--version"),
+                RuntimeVersion.probeFor(List.of("/usr/local/bin/clojure", "-M", "x.clj"))
+                        .argv());
+        assertEquals(
+                "Clojure CLI 1.12.6.1673",
+                parse(List.of("clojure", "-M", "x.clj"), "Clojure CLI version 1.12.6.1673\n")
+                        .label());
+        assertEquals(
+                "Leiningen 2.13.0",
+                parse(List.of("lein", "run"), "Leiningen 2.13.0 on Java 25.0.4 OpenJDK 64-Bit Server VM\n")
+                        .label());
+        assertEquals(
+                "Babashka 1.13.226",
+                parse(List.of("bb.exe", "x.bb"), "babashka v1.13.226\n").label());
+    }
+
+    @Test
     void groovySaysItsOwnVersionAndItsJava() {
         assertEquals(
                 List.of("/sdk/groovy/bin/groovy", "--version"),
@@ -180,6 +199,23 @@ class RuntimeVersionTest {
                 "Scala 2.13.16",
                 parse(List.of("scala"), "Scala code runner version 2.13.16 -- Copyright 2002-2025, LAMP/EPFL\n")
                         .label());
+    }
+
+    @Test
+    void kotlinSaysTheCompilersVersionAndItsJavaButNotTheToolchainClis() {
+        assertEquals(
+                List.of("/sdk/kotlin/bin/kotlinc", "-version"),
+                RuntimeVersion.probeFor(List.of("/sdk/kotlin/bin/kotlinc", "-script", "a.main.kts"))
+                        .argv());
+        assertEquals(
+                "Kotlin 2.4.21 (Java 25.0.4)",
+                parse(List.of("kotlinc", "-script", "a.kts"), "info: kotlinc-jvm 2.4.21 (JRE 25.0.4+7-LTS)\n")
+                        .label());
+        assertEquals(
+                "Kotlin 2.4.21",
+                parse(List.of("kotlinc.bat"), "info: kotlinc-jvm 2.4.21\n").label());
+        assertNull(parse(List.of("kotlinc"), "kotlin toolchain 0.1.0\n"));
+        assertNull(RuntimeVersion.probeFor(List.of("kotlin", "a.main.kts")), "`kotlin` may be the toolchain CLI");
     }
 
     @Test

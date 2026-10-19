@@ -57,6 +57,29 @@ class RunScanTest {
     }
 
     @Test
+    void aClojureFileRunsFromItsMainOrTheTopButDataAndClojureScriptNeverRun() {
+        RunScan.Result ns = RunScan.scan(
+                inputs("clojure", "core.clj"), "(ns my-app.core)\n\n(defn -main [& args]\n  (println args))\n");
+        assertTrue(ns.runnable());
+        assertEquals(2, ns.line(), "the marker sits on (defn -main");
+        RunScan.Result script = RunScan.scan(inputs("clojure", "tally.clj"), "(println (+ 1 2))\n");
+        assertTrue(script.runnable());
+        assertEquals(0, script.line());
+        assertEquals(
+                0, RunScan.scan(inputs("clojure", "tasks.bb"), "(println 1)\n").line());
+        assertEquals(
+                0,
+                RunScan.scan(inputs("clojure", "deploy"), "#!/usr/bin/env bb\n(println 1)\n")
+                        .line());
+        for (String data : List.of("deps.edn", "bb.edn", "project.clj", "app.cljs", "config.edn")) {
+            assertFalse(
+                    RunScan.scan(inputs("clojure", data), "{:paths [\"src\"]}\n")
+                            .runnable(),
+                    data);
+        }
+    }
+
+    @Test
     void aGroovyScriptRunsFromTheTopOrItsMainButABuildScriptNeverRuns() {
         RunScan.Result script = RunScan.scan(inputs("groovy", "report.groovy"), "println 'hi'\n");
         assertTrue(script.runnable());
@@ -81,6 +104,25 @@ class RunScanTest {
                 0, RunScan.scan(inputs("scala", "hello.sc"), "println(1)\n").line());
         assertFalse(RunScan.scan(inputs("scala", "Util.scala"), "object Util\n").runnable());
         assertFalse(RunScan.scan(inputs("scala", "build.sbt"), "lazy val root = project\n")
+                .runnable());
+    }
+
+    @Test
+    void aKotlinScriptRunsFromTheTopAProgramFromItsMainAndABuildScriptNever() {
+        RunScan.Result script = RunScan.scan(inputs("kotlin", "tool.main.kts"), "println(\"hi\")\n");
+        assertTrue(script.runnable());
+        assertEquals(0, script.line());
+        RunScan.Result program = RunScan.scan(
+                inputs("kotlin", "Hello.kt"), "package demo\n\nfun greet() = 1\n\nfun main(args: Array<String>) {}\n");
+        assertTrue(program.runnable());
+        assertEquals(4, program.line());
+        assertFalse(
+                RunScan.scan(inputs("kotlin", "Util.kt"), "fun twice(x: Int) = 2 * x\n")
+                        .runnable(),
+                "a .kt without a top-level main is not a program");
+        assertFalse(RunScan.scan(inputs("kotlin", "build.gradle.kts"), "plugins { kotlin(\"jvm\") }\n")
+                .runnable());
+        assertFalse(RunScan.scan(inputs("kotlin", "settings.gradle.kts"), "rootProject.name = \"x\"\n")
                 .runnable());
     }
 

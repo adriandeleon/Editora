@@ -39,12 +39,16 @@ public final class ScriptRunCommand {
     public static final String SCALA = "scala";
 
     /**
-     * Whether {@code type} runs one file through a JVM language's own tool ({@link JvmScriptRun}): its type is
-     * the language id ({@code groovy}, {@code scala}).
+     * A Kotlin file: a script ({@code .kts}) run by {@code kotlinc -script}, or a program ({@code .kt}) compiled by
+     * {@code kotlinc} and run by {@code java -jar}, both on the configuration's JDK ({@link KotlinRun}).
      */
-    public static boolean isJvmScript(String type) {
-        return JvmScriptRun.supports(type);
-    }
+    public static final String KOTLIN = "kotlin";
+
+    /**
+     * A Clojure file, run by the Clojure CLI, Leiningen or Babashka ({@link ClojureRun}) on the configuration's
+     * JDK.
+     */
+    public static final String CLOJURE = "clojure";
 
     public static final String JAVA = "java";
 
@@ -58,6 +62,14 @@ public final class ScriptRunCommand {
                 || NPM.equals(type)
                 || NODE.equals(type)
                 || isJvmScript(type);
+    }
+
+    /**
+     * Whether {@code type} is a JVM language's file run through its own tool on the configuration's JDK
+     * ({@link #GROOVY}, {@link #KOTLIN}, {@link #SCALA}, {@link #CLOJURE}): its type is its language id in {@link JvmScriptRun}.
+     */
+    public static boolean isJvmScript(String type) {
+        return JvmScriptRun.supports(type);
     }
 
     /**
@@ -143,6 +155,25 @@ public final class ScriptRunCommand {
                 // The shape only: the real tool and JDK come from JvmTools and the configuration's JDK.
                 return JvmScriptRun.launch(type, JvmScriptRun.tool(type), t, List.of(), args, Map.of(), Map.of())
                         .argv();
+            }
+            case KOTLIN -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                // The shape only: a program's compile and `java -jar` are planned by KotlinRun at launch.
+                argv.addAll(
+                        KotlinRun.shape(t) == KotlinRun.Shape.PROGRAM
+                                ? List.of(KotlinRun.TOOL, t)
+                                : KotlinRun.scriptArgv(KotlinRun.TOOL, t, null));
+            }
+            case CLOJURE -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                // The shape only: the real tool (clojure, lein or bb) comes from the file and its project.
+                argv.add(JvmScriptRun.tool(CLOJURE));
+                argv.add("-M");
+                argv.add(t);
             }
             case MAKE -> {
                 argv.add("make");

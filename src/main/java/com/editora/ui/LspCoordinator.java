@@ -327,6 +327,7 @@ final class LspCoordinator {
         "kotlin",
         "groovy",
         "scala",
+        "clojure",
         "lua",
         "dockerfile",
         "sql",
@@ -1444,6 +1445,7 @@ final class LspCoordinator {
             case "kotlin" -> s.isKotlinLspEnabled();
             case "groovy" -> s.isGroovyLspEnabled();
             case "scala" -> s.isScalaLspEnabled();
+            case "clojure" -> s.isClojureLspEnabled();
             case "lua" -> s.isLuaLspEnabled();
             case "dockerfile" -> s.isDockerfileLspEnabled();
             case "sql" -> s.isSqlLspEnabled();
@@ -1880,6 +1882,7 @@ final class LspCoordinator {
             case "kotlin" -> s.getKotlinLspCommand();
             case "groovy" -> com.editora.lsp.JvmServerCommand.withJdk(s.getGroovyLspCommand(), s.getMavenJdkHome());
             case "scala" -> com.editora.lsp.JvmServerCommand.withJdk(s.getScalaLspCommand(), s.getMavenJdkHome());
+            case "clojure" -> s.getClojureLspCommand();
             case "lua" -> s.getLuaLspCommand();
             case "dockerfile" -> s.getDockerfileLspCommand();
             case "sql" -> s.getSqlLspCommand();
@@ -1928,6 +1931,7 @@ final class LspCoordinator {
             case "kotlin" -> s.setKotlinLspEnabled(on);
             case "groovy" -> s.setGroovyLspEnabled(on);
             case "scala" -> s.setScalaLspEnabled(on);
+            case "clojure" -> s.setClojureLspEnabled(on);
             case "lua" -> s.setLuaLspEnabled(on);
             case "dockerfile" -> s.setDockerfileLspEnabled(on);
             case "sql" -> s.setSqlLspEnabled(on);
@@ -1961,6 +1965,7 @@ final class LspCoordinator {
             case "kotlin" -> s.setKotlinLspCommand(command);
             case "groovy" -> s.setGroovyLspCommand(command);
             case "scala" -> s.setScalaLspCommand(command);
+            case "clojure" -> s.setClojureLspCommand(command);
             case "lua" -> s.setLuaLspCommand(command);
             case "dockerfile" -> s.setDockerfileLspCommand(command);
             case "sql" -> s.setSqlLspCommand(command);

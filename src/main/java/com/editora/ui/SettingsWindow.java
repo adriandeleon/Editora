@@ -7322,7 +7322,8 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_KOTLIN_COMMAND,
                         "settings.lsp.enableKotlin",
                         "settings.lsp.kotlinCommand",
-                        "lsp kotlin language server found installed not found command path executable",
+                        "lsp kotlin language server jetbrains kotlin-lsp intellij-server gradle found installed not found"
+                                + " command path executable",
                         v -> config.getSettings().setKotlinLspEnabled(v),
                         () -> config.getSettings().isKotlinLspEnabled(),
                         v -> config.getSettings().setKotlinLspCommand(v),
@@ -7349,6 +7350,17 @@ public class SettingsWindow {
                         () -> config.getSettings().isScalaLspEnabled(),
                         v -> config.getSettings().setScalaLspCommand(v),
                         () -> config.getSettings().getScalaLspCommand()),
+                new LspServerUi(
+                        "clojure",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_CLOJURE_COMMAND,
+                        "settings.lsp.enableClojure",
+                        "settings.lsp.clojureCommand",
+                        "lsp clojure clojure-lsp clojurescript edn deps lein babashka language server found installed"
+                                + " not found command path executable",
+                        v -> config.getSettings().setClojureLspEnabled(v),
+                        () -> config.getSettings().isClojureLspEnabled(),
+                        v -> config.getSettings().setClojureLspCommand(v),
+                        () -> config.getSettings().getClojureLspCommand()),
                 new LspServerUi(
                         "lua",
                         com.editora.lsp.LspServerRegistry.DEFAULT_LUA_COMMAND,

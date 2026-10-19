@@ -26,6 +26,11 @@ interface CoordinatorHost {
         return ProjectScope.NONE;
     }
 
+    /** Editora's configuration folder, where its caches live; null for a host that has none (a test's). */
+    default java.nio.file.Path configDir() {
+        return null;
+    }
+
     boolean simpleModeActive();
 
     /** Whether the app/editor theme is dark (e.g. Mermaid renders a dark diagram to match). */

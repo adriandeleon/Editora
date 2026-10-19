@@ -19,7 +19,8 @@ import java.util.Set;
  * (vscode-json-language-server), <b>Bash</b> (bash-language-server, for shell scripts), <b>YAML</b>
  * (yaml-language-server), <b>Go</b> (gopls), <b>Rust</b> (rust-analyzer), <b>PHP</b> (phpactor),
  * <b>Ruby</b> (ruby-lsp), <b>C/C++</b> (clangd — one server, both language ids), <b>HTML</b> and
- * <b>CSS</b> (vscode-html/css-language-server), <b>Kotlin</b> (kotlin-language-server), <b>Groovy</b> (gvy), <b>Scala</b> (Metals),
+ * <b>CSS</b> (vscode-html/css-language-server), <b>Kotlin</b> (JetBrains' Kotlin LSP), <b>Groovy</b> (gvy),
+ * <b>Scala</b> (Metals),
  * <b>Lua</b>
  * (lua-language-server), <b>Dockerfile</b> (docker-langserver), <b>SQL</b> (sqls),
  * <b>Terraform</b> (terraform-ls), <b>TOML</b> (taplo), <b>C#</b> (csharp-ls), <b>Typst</b>
@@ -125,7 +126,7 @@ public final class LspServerRegistry {
 
     /** Markers for a Kotlin project root (Gradle/Maven build files, else the repo). */
     public static final List<String> KOTLIN_ROOT_MARKERS =
-            List.of("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle", "pom.xml", ".git");
+            List.of("settings.gradle.kts", "settings.gradle", "build.gradle.kts", "build.gradle", "pom.xml");
 
     /** Markers for a Groovy project root (Gradle/Maven build files, a Jenkinsfile, else the repo). */
     public static final List<String> GROOVY_ROOT_MARKERS = List.of(
@@ -152,6 +153,13 @@ public final class LspServerRegistry {
             "build.gradle.kts",
             "pom.xml",
             ".git");
+
+    /**
+     * Markers for a Clojure project root: the Clojure CLI's, Leiningen's, Babashka's, shadow-cljs's and Boot's
+     * project files, else the repo. clojure-lsp asks the matching tool for the project's classpath.
+     */
+    public static final List<String> CLOJURE_ROOT_MARKERS =
+            List.of("deps.edn", "project.clj", "bb.edn", "shadow-cljs.edn", "build.boot", ".git");
 
     /** Markers for a Lua project root (a LuaLS config, else the repo). */
     public static final List<String> LUA_ROOT_MARKERS = List.of(".luarc.json", ".luarc.jsonc", ".git");
@@ -185,7 +193,12 @@ public final class LspServerRegistry {
     public static final String DEFAULT_CLANGD_COMMAND = "clangd";
     public static final String DEFAULT_HTML_COMMAND = "vscode-html-language-server --stdio";
     public static final String DEFAULT_CSS_COMMAND = "vscode-css-language-server --stdio";
-    public static final String DEFAULT_KOTLIN_COMMAND = "kotlin-language-server";
+    /**
+     * JetBrains' Kotlin LSP as its Homebrew formula names it; Editora's own install writes its launcher's path
+     * into Settings instead. fwcd's {@code kotlin-language-server} still works as a configured command.
+     */
+    public static final String DEFAULT_KOTLIN_COMMAND = "kotlin-lsp --stdio";
+
     public static final String DEFAULT_LUA_COMMAND = "lua-language-server";
 
     /**
@@ -200,6 +213,9 @@ public final class LspServerRegistry {
      * classpath coursier resolved under the config dir, which the installer writes into Settings.
      */
     public static final String DEFAULT_SCALA_COMMAND = "";
+
+    /** clojure-lsp, a native binary, from PATH unless the installer wrote its own copy's path into Settings. */
+    public static final String DEFAULT_CLOJURE_COMMAND = "clojure-lsp";
 
     public static final String DEFAULT_DOCKERFILE_COMMAND = "docker-langserver --stdio";
     public static final String DEFAULT_SQL_COMMAND = "sqls";
@@ -253,6 +269,7 @@ public final class LspServerRegistry {
         KOTLIN("kotlin", DEFAULT_KOTLIN_COMMAND, KOTLIN_ROOT_MARKERS, Set.of("kotlin")),
         GROOVY("groovy", DEFAULT_GROOVY_COMMAND, GROOVY_ROOT_MARKERS, Set.of("groovy")),
         SCALA("scala", DEFAULT_SCALA_COMMAND, SCALA_ROOT_MARKERS, Set.of("scala")),
+        CLOJURE("clojure", DEFAULT_CLOJURE_COMMAND, CLOJURE_ROOT_MARKERS, Set.of("clojure")),
         LUA("lua", DEFAULT_LUA_COMMAND, LUA_ROOT_MARKERS, Set.of("lua")),
         DOCKERFILE("dockerfile", DEFAULT_DOCKERFILE_COMMAND, SHELL_ROOT_MARKERS, Set.of("dockerfile")),
         SQL("sql", DEFAULT_SQL_COMMAND, SHELL_ROOT_MARKERS, Set.of("sql")),
@@ -324,7 +341,8 @@ public final class LspServerRegistry {
      * project files ({@code pyproject.toml}, {@code setup.py}, {@code setup.cfg}) first, then the repository,
      * and only then a {@code requirements.txt}/{@code Pipfile}. Nearest-of-any let a {@code docs/requirements.txt}
      * (Read the Docs) make {@code docs/} a server root of its own, where the project's package did not resolve
-     * (review B9). Every other server: its markers as one tier.
+     * (review B9). Kotlin: a Gradle settings file first, so a multi-module build is one root. Every other server:
+     * its markers as one tier.
      */
     public static List<List<String>> rootMarkerTiersForServer(String serverId) {
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
@@ -337,6 +355,13 @@ public final class LspServerRegistry {
                     List.of("pyproject.toml", "setup.py", "setup.cfg"),
                     List.of(".git"),
                     List.of("requirements.txt", "Pipfile"));
+        }
+        if ("kotlin".equals(serverId)) {
+            // The Kotlin LSP imports the whole Gradle build: a module's build.gradle.kts under a settings file
+            // is not a root of its own. No .git fallback: outside a build it has nothing to import or check.
+            return List.of(
+                    List.of("settings.gradle.kts", "settings.gradle"),
+                    List.of("build.gradle.kts", "build.gradle", "pom.xml"));
         }
         return List.of(rootMarkersForServer(serverId));
     }

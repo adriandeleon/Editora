@@ -728,6 +728,9 @@ final class BuildCoordinator {
             case SBT -> Icons::sbt;
             case MILL -> Icons::mill;
             case SCALA_CLI -> Icons::scalaCli;
+            case CLOJURE -> Icons::clojureCli;
+            case LEIN -> Icons::leiningen;
+            case BABASHKA -> Icons::babashka;
         };
     }
 }

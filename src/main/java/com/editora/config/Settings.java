@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 139;
+    public static final int SCHEMA_VERSION = 140;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -515,6 +515,21 @@ public class Settings {
 
     /** Override command for launching Scala CLI; blank = resolve "scala-cli" on PATH. */
     private String scalaCliCommand = "";
+    /** Clojure CLI support (a toolbar icon + actions popup of a deps.edn's aliases, streaming to a console): on
+     *  by default — self-gates on detection (hidden until a deps.edn is found). */
+    private boolean clojureCliSupport = true;
+    /** Override command for launching the Clojure CLI; blank = resolve "clojure" on PATH. */
+    private String clojureCliCommand = "";
+    /** Leiningen support (a toolbar icon + actions popup of the common lein tasks): on by default — self-gates
+     *  on detection (hidden until a project.clj is found). */
+    private boolean leiningenSupport = true;
+    /** Override command for launching Leiningen; blank = resolve "lein" on PATH. */
+    private String leiningenCommand = "";
+    /** Babashka support (a toolbar icon + actions popup of a bb.edn's tasks): on by default — self-gates on
+     *  detection (hidden until a bb.edn is found). */
+    private boolean babashkaSupport = true;
+    /** Override command for launching Babashka; blank = resolve "bb" on PATH. */
+    private String babashkaCommand = "";
     /** Test Results window: intercept a build tool's {@code test} run and show an IntelliJ-style results tree
      *  (per-test pass/fail/skip + stack traces) instead of only the raw Output console. On by default;
      *  suppressed in Simple UI mode. */
@@ -814,6 +829,7 @@ public class Settings {
     private String kotlinLspCommand = "";
     private String groovyLspCommand = "";
     private String scalaLspCommand = "";
+    private String clojureLspCommand = "";
     private String luaLspCommand = "";
     private String dockerfileLspCommand = "";
     private String sqlLspCommand = "";
@@ -868,6 +884,7 @@ public class Settings {
     private boolean kotlinLspEnabled = true;
     private boolean groovyLspEnabled = true;
     private boolean scalaLspEnabled = true;
+    private boolean clojureLspEnabled = true;
     private boolean luaLspEnabled = true;
     private boolean dockerfileLspEnabled = true;
     private boolean sqlLspEnabled = true;
@@ -3060,6 +3077,54 @@ public class Settings {
         this.scalaCliCommand = scalaCliCommand == null ? "" : scalaCliCommand;
     }
 
+    public boolean isClojureCliSupport() {
+        return clojureCliSupport;
+    }
+
+    public void setClojureCliSupport(boolean clojureCliSupport) {
+        this.clojureCliSupport = clojureCliSupport;
+    }
+
+    public String getClojureCliCommand() {
+        return clojureCliCommand == null ? "" : clojureCliCommand;
+    }
+
+    public void setClojureCliCommand(String clojureCliCommand) {
+        this.clojureCliCommand = clojureCliCommand == null ? "" : clojureCliCommand;
+    }
+
+    public boolean isLeiningenSupport() {
+        return leiningenSupport;
+    }
+
+    public void setLeiningenSupport(boolean leiningenSupport) {
+        this.leiningenSupport = leiningenSupport;
+    }
+
+    public String getLeiningenCommand() {
+        return leiningenCommand == null ? "" : leiningenCommand;
+    }
+
+    public void setLeiningenCommand(String leiningenCommand) {
+        this.leiningenCommand = leiningenCommand == null ? "" : leiningenCommand;
+    }
+
+    public boolean isBabashkaSupport() {
+        return babashkaSupport;
+    }
+
+    public void setBabashkaSupport(boolean babashkaSupport) {
+        this.babashkaSupport = babashkaSupport;
+    }
+
+    public String getBabashkaCommand() {
+        return babashkaCommand == null ? "" : babashkaCommand;
+    }
+
+    public void setBabashkaCommand(String babashkaCommand) {
+        this.babashkaCommand = babashkaCommand == null ? "" : babashkaCommand;
+    }
+
     /** gpg-agent's own pinentry asks for passphrases (Editora never sees them). */
     public static final String PASSPHRASE_PROMPT_AGENT = "agent";
     /** Editora asks, and hands the passphrase to gpg by loopback (it is never stored). */
@@ -3759,6 +3824,22 @@ public class Settings {
 
     public void setScalaLspEnabled(boolean scalaLspEnabled) {
         this.scalaLspEnabled = scalaLspEnabled;
+    }
+
+    public String getClojureLspCommand() {
+        return clojureLspCommand == null ? "" : clojureLspCommand;
+    }
+
+    public void setClojureLspCommand(String clojureLspCommand) {
+        this.clojureLspCommand = clojureLspCommand == null ? "" : clojureLspCommand;
+    }
+
+    public boolean isClojureLspEnabled() {
+        return clojureLspEnabled;
+    }
+
+    public void setClojureLspEnabled(boolean clojureLspEnabled) {
+        this.clojureLspEnabled = clojureLspEnabled;
     }
 
     public String getLuaLspCommand() {
