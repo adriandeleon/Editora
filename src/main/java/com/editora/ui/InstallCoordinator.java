@@ -175,6 +175,12 @@ final class InstallCoordinator {
             onResult.accept(true);
             return;
         }
+        int[] large = InstallCatalog.largeDownload(serverId);
+        if (large != null
+                && !confirm.test(tr("dialog.install.largeDownload", serverName(serverId), large[0], large[1]))) {
+            onResult.accept(false); // said before anything is fetched: hundreds of MB is the user's call
+            return;
+        }
         service.detectPrereqs(present -> {
             Set<Prereq> needed = steps.stream()
                     .flatMap(s -> s.prereqs().stream())
@@ -409,6 +415,28 @@ final class InstallCoordinator {
     /** Test seam for {@link #alert}. */
     void setAlertForTest(java.util.function.BiConsumer<Alert.AlertType, String> alert) {
         this.alert = java.util.Objects.requireNonNull(alert, "alert");
+    }
+
+    /** Asks before a large download starts; replaceable so a test answers without a modal dialog. */
+    private java.util.function.Predicate<String> confirm = this::confirmDialog;
+
+    /** Test seam for {@link #confirm}. */
+    void setConfirmForTest(java.util.function.Predicate<String> confirm) {
+        this.confirm = java.util.Objects.requireNonNull(confirm, "confirm");
+    }
+
+    private boolean confirmDialog(String message) {
+        Alert a = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                message,
+                javafx.scene.control.ButtonType.OK,
+                javafx.scene.control.ButtonType.CANCEL);
+        a.initOwner(host.window());
+        a.setTitle(tr("dialog.install.title"));
+        a.setHeaderText(null);
+        return a.showAndWait()
+                .filter(r -> r == javafx.scene.control.ButtonType.OK)
+                .isPresent();
     }
 
     private void alertDialog(Alert.AlertType type, String message) {

@@ -152,8 +152,20 @@ class LspServerRegistryTest {
                 List.of("vscode-css-language-server", "--stdio"),
                 LspServerRegistry.specFor("css", Map.of()).command());
         assertEquals(
+                List.of("kotlin-lsp", "--stdio"),
+                LspServerRegistry.specFor("kotlin", Map.of()).command(),
+                "JetBrains' Kotlin LSP (D1)");
+        assertEquals(
                 List.of("kotlin-language-server"),
-                LspServerRegistry.specFor("kotlin", Map.of()).command());
+                LspServerRegistry.specFor("kotlin", Map.of("kotlin", "kotlin-language-server"))
+                        .command(),
+                "fwcd's server stays a configured command");
+        assertEquals(
+                List.of(
+                        List.of("settings.gradle.kts", "settings.gradle"),
+                        List.of("build.gradle.kts", "build.gradle", "pom.xml")),
+                LspServerRegistry.rootMarkerTiersForServer("kotlin"),
+                "a multi-module Gradle build is one root; no .git fallback");
         assertEquals(
                 List.of("lua-language-server"),
                 LspServerRegistry.specFor("lua", Map.of()).command());

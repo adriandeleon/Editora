@@ -64,16 +64,16 @@ class JvmSourceMapTest {
 
     @Test
     void aClojureFunctionsFrameReadsAsTheFunctionDemunged() {
-        assertEquals("my-app.core/greet", JvmSourceMap.frameName("my_app.core$greet", "invokeStatic", "clojure"));
-        assertEquals("my-app.core/-main", JvmSourceMap.frameName("my_app.core$_main", "doInvoke", "clojure"));
-        assertEquals("app/valid?", JvmSourceMap.frameName("app$valid_QMARK_", "invoke", "clojure"));
-        assertEquals("app/swap->!", JvmSourceMap.frameName("app$swap__GT__BANG_", "invoke", "clojure"));
-        assertEquals("user/tally/fn--123", JvmSourceMap.frameName("user$tally$fn__123", "invoke", "clojure"));
-        assertEquals("Numbers.divide", JvmSourceMap.frameName("clojure.lang.Numbers", "divide", "clojure"));
+        assertEquals("my-app.core/greet", JvmSourceMap.frameName("my_app.core$greet", "invokeStatic", "core.clj"));
+        assertEquals("my-app.core/-main", JvmSourceMap.frameName("my_app.core$_main", "doInvoke", "core.clj"));
+        assertEquals("app/valid?", JvmSourceMap.frameName("app$valid_QMARK_", "invoke", "app.clj"));
+        assertEquals("app/swap->!", JvmSourceMap.frameName("app$swap__GT__BANG_", "invoke", "app.clj"));
+        assertEquals("user/tally/fn--123", JvmSourceMap.frameName("user$tally$fn__123", "invoke", "app.clj"));
+        assertEquals("Numbers.divide", JvmSourceMap.frameName("clojure.lang.Numbers", "divide", "Numbers.java"));
         assertEquals(
                 "Report$Inner.invoke",
-                JvmSourceMap.frameName("com.acme.Report$Inner", "invoke", "groovy"),
-                "only a Clojure program's classes are demunged");
+                JvmSourceMap.frameName("com.acme.Report$Inner", "invoke", "Report.groovy"),
+                "only a Clojure file's classes are demunged");
     }
 
     @Test
@@ -93,5 +93,46 @@ class JvmSourceMapTest {
         assertEquals("Report.run { closure }", JvmSourceMap.frameName("com.acme.Report$_run_closure1", "doCall"));
         assertEquals("Report.total { closure }", JvmSourceMap.frameName("Report$_total_closure2$_closure3", "doCall"));
         assertEquals("Report$Inner.go", JvmSourceMap.frameName("com.acme.Report$Inner", "go"));
+    }
+
+    @Test
+    void aKotlinFileMatchesItsDeclaredPackageWhereverItSits() {
+        Path app = Path.of("/work/src/App.kt");
+        assertFalse(JvmSourceMap.compiledFrom("com/acme/App.kt", app), "by folder alone it does not");
+        assertTrue(JvmSourceMap.compiledFrom("com/acme/App.kt", app, "com.acme"), "by its package line it does");
+        assertFalse(JvmSourceMap.compiledFrom("org/acme/App.kt", app, "com.acme"));
+        assertFalse(JvmSourceMap.compiledFrom("com/acme/Other.kt", app, "com.acme"));
+        assertTrue(JvmSourceMap.compiledFrom("App.kt", app, ""), "the default package");
+        assertEquals(
+                app, JvmSourceMap.resolve("com/acme/App.kt", List.of(app), f -> "com.acme", List.of(), p -> false));
+    }
+
+    @Test
+    void thePackageIsReadFromTheHeader() {
+        assertEquals("com.acme", JvmSourceMap.declaredPackage("package com.acme\n\nfun main() {}\n"));
+        assertEquals("com.acme.app", JvmSourceMap.declaredPackage("package com.acme.app;\nclass A {}\n"));
+        assertEquals(
+                "a.b",
+                JvmSourceMap.declaredPackage(
+                        "#!/usr/bin/env kotlin\n/*\n * Licence\n */\n@file:JvmName(\"Tools\")\n// note\npackage a.b\n"));
+        assertEquals("", JvmSourceMap.declaredPackage("import x.y\nfun main() {}\npackage not.this\n"));
+        assertEquals("", JvmSourceMap.declaredPackage("println(1)\n"));
+        assertEquals("", JvmSourceMap.declaredPackage(null));
+    }
+
+    @Test
+    void kotlinsRuntimeIsSteppedOverAndItsFramesReadAsKotlin() {
+        List<String> filters = JvmSourceMap.stepFilters("kotlin");
+        assertTrue(filters.containsAll(List.of("java.*", "kotlin.*", "kotlinx.coroutines.*")));
+        assertFalse(JvmSourceMap.stepFilters("groovy").contains("kotlin.*"));
+        assertEquals("Hello.main", JvmSourceMap.frameName("demo.HelloKt", "main", "Hello.kt"));
+        assertEquals("Hello.greet", JvmSourceMap.frameName("demo.HelloKt", "greet$default", "Hello.kt"));
+        assertEquals("Hello.main { lambda }", JvmSourceMap.frameName("demo.HelloKt", "main$lambda$0", "Hello.kt"));
+        assertEquals("Hello.main { lambda }", JvmSourceMap.frameName("demo.HelloKt$main$1", "invoke", "Hello.kt"));
+        assertEquals(
+                "Hello.load { lambda }", JvmSourceMap.frameName("demo.HelloKt$load$2", "invokeSuspend", "Hello.kt"));
+        assertEquals("Greeter.hi", JvmSourceMap.frameName("demo.Greeter", "hi", "Hello.kt"), "a class keeps its name");
+        assertEquals("Tools.run", JvmSourceMap.frameName("Tools", "run", "Hello.kt"), "@file:JvmName");
+        assertEquals("UtilKt.go", JvmSourceMap.frameName("UtilKt", "go"), "no source name: as it is");
     }
 }

@@ -31,6 +31,13 @@ class ScriptRunCommandTest {
         assertTrue(ScriptRunCommand.isScript("groovy"));
         assertTrue(ScriptRunCommand.needsTarget("groovy"));
         assertEquals(List.of(), ScriptRunCommand.build("groovy", " ", List.of()));
+        assertEquals(
+                List.of("kotlinc", "-script", "tools/report.main.kts", "-v"),
+                ScriptRunCommand.build("kotlin", "tools/report.main.kts", List.of("-v")));
+        assertEquals(List.of("kotlinc", "src/App.kt"), ScriptRunCommand.build("kotlin", "src/App.kt", List.of()));
+        assertTrue(ScriptRunCommand.isScript("kotlin") && ScriptRunCommand.needsTarget("kotlin"));
+        assertTrue(ScriptRunCommand.isJvmScript("kotlin") && ScriptRunCommand.isJvmScript("groovy"));
+        assertFalse(ScriptRunCommand.isJvmScript("java"));
     }
 
     @Test

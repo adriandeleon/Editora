@@ -8,13 +8,14 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Finds the command-line tool that runs a JVM language's files — {@code groovy}, and Clojure's {@code clojure},
- * {@code lein} and {@code bb} — on this machine.
+ * Finds the command-line tool that runs a JVM language's files — {@code groovy}, {@code kotlinc}, and Clojure's
+ * {@code clojure}, {@code lein} and {@code bb} — on this machine.
  *
  * <p>The tool's own home variable comes first ({@code GROOVY_HOME}: whoever set it chose that install), then the
  * {@linkplain com.editora.process.ProcessRunner#augmentedPath augmented PATH} (the login shell's, which already
  * holds SDKMAN, asdf, mise and Homebrew when the profile sets them up), then SDKMAN's {@code current} candidate
- * for a profile that only sources SDKMAN in interactive shells.
+ * for a profile that only sources SDKMAN in interactive shells (its candidate is named for the language:
+ * {@code kotlinc} is in {@code candidates/kotlin}).
  *
  * <p>{@link #candidates} is pure; {@link #locate} looks at the disk.
  */
@@ -24,10 +25,13 @@ public final class JvmTools {
 
     /** The tools {@link #locate} knows, with the variable naming each one's install ("" when there is none). */
     private static final Map<String, String> HOME_VARIABLES =
-            Map.of("groovy", "GROOVY_HOME", "clojure", "", "lein", "", "bb", "");
+            Map.of("groovy", "GROOVY_HOME", "kotlinc", "KOTLIN_HOME", "clojure", "", "lein", "", "bb", "");
 
-    /** The tools SDKMAN installs (it has no Clojure CLI, Leiningen or Babashka candidate). */
-    private static final java.util.Set<String> SDKMAN_CANDIDATES = java.util.Set.of("groovy");
+    /**
+     * The tools SDKMAN installs, each with its candidate's name (it has no Clojure CLI, Leiningen or Babashka
+     * candidate).
+     */
+    private static final Map<String, String> SDKMAN_CANDIDATES = Map.of("groovy", "groovy", "kotlinc", "kotlin");
 
     /** Whether {@code tool} is one this resolves. */
     public static boolean knows(String tool) {
@@ -50,7 +54,7 @@ public final class JvmTools {
         if (home != null && !home.isBlank()) {
             out.add(Path.of(home.strip(), "bin", file));
         }
-        if (!SDKMAN_CANDIDATES.contains(tool)) {
+        if (!SDKMAN_CANDIDATES.containsKey(tool)) {
             return out;
         }
         String sdkman = env == null ? null : env.get("SDKMAN_DIR");
@@ -60,7 +64,7 @@ public final class JvmTools {
         if (sdkmanDir != null) {
             out.add(sdkmanDir
                     .resolve("candidates")
-                    .resolve(tool)
+                    .resolve(SDKMAN_CANDIDATES.get(tool))
                     .resolve("current")
                     .resolve("bin")
                     .resolve(file));

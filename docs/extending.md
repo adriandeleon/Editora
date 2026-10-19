@@ -71,7 +71,9 @@ not new logic:
    `settings-controls.properties` rows, a schema bump with an additive migration, and the i18n keys in
    all six catalogs.
 5. An installer, if it has one: `InstallCatalog.serverInstall` (`ARCHIVE` for a per-OS binary,
-   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle, `PINNED_TOOL` with a
+   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle,
+   `PINNED_SERVER` for a pinned per-platform distribution too big to hold in memory — streamed to disk,
+   hash-checked, unpacked by `tar`, and announced with its size before it starts — `PINNED_TOOL` with a
    `pinnedTool` recipe for a per-OS binary pinned by SHA-256, as clojure-lsp is), and the persist case in
    `InstallCoordinator.applyServerCommand`. A server run by `java` gets the Settings JDK
    through `JvmServerCommand.withJdk`.
@@ -90,14 +92,18 @@ debug commands, and the Settings → Debugging page is data-driven over
 JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by
 `dap/DebugAdapterLocator` and installed by the `scripts/install-*.sh` helpers.
 
-A JVM language other than Java (Groovy, Clojure) uses `Kind.JVM`: Editora's own JDI adapter
+A JVM language other than Java (Groovy, Kotlin, Clojure) uses `Kind.JVM`: Editora's own JDI adapter
 ([ADR 0018](decisions/0018-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
-where its launcher takes JVM options: a variable such as Groovy's `JAVA_OPTS`, or an argument prefix such as
-the Clojure CLI's `-J`, which the adapter's launch request carries as `jvmOptionPrefix`), a `run/JvmTools`
-entry, a `DapServerRegistry` `Def`, its `RunScan` branch, its runtime-internal packages in
-`JvmSourceMap.stepFilters`, and, when its classes' names are not the source's, a `JvmSourceMap.frameName` case.
-A language whose files run under more than one tool decides per file in `JvmScriptRun.launch` (Clojure:
-`run/ClojureRun` picks the Clojure CLI, Leiningen or Babashka, the folder and the command line).
+where its launcher takes JVM options: a variable such as Groovy's and Kotlin's `JAVA_OPTS`, or an argument
+prefix such as the Clojure CLI's `-J`, which the adapter's launch request carries as `jvmOptionPrefix`), a
+`run/JvmTools` entry (and its SDKMAN candidate when that is named otherwise), a `DapServerRegistry` `Def`, its
+`RunScan` branch, its runtime-internal packages in `JvmSourceMap.stepFilters`, the `ExceptionFilterCatalog`
+filters, and, when its classes' names are not the source's, a `JvmSourceMap.frameName` case. A language whose
+files run under more than one tool decides per file in `JvmScriptRun.launch` (Clojure: `run/ClojureRun` picks the
+Clojure CLI, Leiningen or Babashka, the folder and the command line). A language whose files are compiled before
+they run (a Kotlin `.kt` program) plans the compile itself (`run/KotlinRun`, `run/KotlinBuild`), runs it as a
+`BeforeLaunchStep.Command`, and starts `java` with the agent on its command line (`jvmOptionsInArgv`). An attach
+to a build's JVM anchored at such a file goes to the same adapter (`DebugCoordinator.jvmAdapterLanguage`).
 
 ## Add a build tool
 

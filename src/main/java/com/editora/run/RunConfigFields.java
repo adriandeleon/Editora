@@ -25,8 +25,7 @@ public final class RunConfigFields {
         return ScriptRunCommand.PYTHON.equals(type)
                 || ScriptRunCommand.SHELL.equals(type)
                 || ScriptRunCommand.NODE.equals(type)
-                || ScriptRunCommand.GROOVY.equals(type)
-                || ScriptRunCommand.CLOJURE.equals(type);
+                || ScriptRunCommand.isJvmScript(type);
     }
 
     /**
@@ -44,8 +43,8 @@ public final class RunConfigFields {
         return !ScriptRunCommand.isScript(type);
     }
 
-    /** Whether {@code type} runs on a JVM whose arguments and JDK the configuration sets: Java, Groovy, Clojure. */
+    /** Whether {@code type} runs on a JVM whose arguments and JDK the configuration sets: Java, Groovy, Kotlin, Clojure. */
     public static boolean usesJvmFields(String type) {
-        return usesJavaFields(type) || ScriptRunCommand.GROOVY.equals(type) || ScriptRunCommand.CLOJURE.equals(type);
+        return usesJavaFields(type) || ScriptRunCommand.isJvmScript(type);
     }
 }

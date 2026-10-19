@@ -38,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -352,6 +353,202 @@ class JvmDebugAdapterTest {
             assertEquals(1, s.client().exited.get(WAIT, TimeUnit.SECONDS));
         } finally {
             s.socket().close();
+        }
+    }
+
+    /** Compiles {@code source} with {@code kotlinc} into {@code jar} on this JDK; fails the test when it does not. */
+    private static void kotlinc(String kotlinc, Path source, Path jar) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(
+                        com.editora.run.KotlinRun.compileArgv(kotlinc, source.toString(), jar.toString()))
+                .redirectErrorStream(true);
+        pb.environment().put("JAVA_HOME", System.getProperty("java.home"));
+        Process p = pb.start();
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(p.waitFor(180, TimeUnit.SECONDS), "kotlinc finished");
+        assertEquals(0, p.exitValue(), out);
+    }
+
+    @Test
+    void aKotlinProgramStopsInItsFileWhicheverFolderItSitsInAndNamesItsFramesAsKotlin(@TempDir Path dir)
+            throws Exception {
+        String kotlinc = com.editora.run.JvmTools.locate("kotlinc");
+        Assumptions.assumeTrue(kotlinc != null, "Kotlin is not installed here");
+        // package demo, in a folder that is not demo/: Kotlin allows it, and its classes say demo/Hello.kt.
+        Path source = dir.resolve("Hello.kt");
+        Files.writeString(source, """
+                package demo
+
+                fun greet(name: String): String {
+                    val msg = "Hello, $name"
+                    return msg
+                }
+
+                fun main(args: Array<String>) {
+                    val twice: (Int) -> Int = { n ->
+                        n * 2
+                    }
+                    println(greet("Kotlin") + " " + twice(21))
+                }
+                """);
+        Path jar = dir.resolve("out/Hello.jar");
+        Files.createDirectories(jar.getParent());
+        kotlinc(kotlinc, source, jar);
+        Session s = open();
+        try {
+            Map<String, Object> launch = Map.of(
+                    "argv",
+                            com.editora.run.KotlinRun.programArgv(
+                                    javaExecutable(), List.of(), jar.toString(), List.of()),
+                    "cwd", dir.resolve("out").toString(),
+                    "jvmOptionsInArgv", true,
+                    "sourceFiles", List.of(source.toString()),
+                    "language", "kotlin");
+            CompletableFuture<Void> launched = s.server().launch(launch);
+            s.client().initialized.get(WAIT, TimeUnit.SECONDS);
+            breakAt(s.server(), source, 5, 10);
+            s.server().configurationDone(null);
+            launched.get(WAIT, TimeUnit.SECONDS);
+
+            StoppedEventArguments stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(stop, "the breakpoint in greet is hit: " + s.client().output);
+            StackFrame frame = top(s.server(), stop.getThreadId());
+            assertEquals(5, frame.getLine());
+            assertEquals(source.toString(), frame.getSource().getPath());
+            assertEquals("Hello.greet", frame.getName(), () -> frames(s.server(), stop.getThreadId()));
+            assertEquals("\"Hello, Kotlin\"", valueOf(locals(s.server(), frame.getId()), "msg"));
+            assertTrue(frames(s.server(), stop.getThreadId()).contains("Hello.main:12"), "the caller, as Kotlin");
+
+            ContinueArguments cont = new ContinueArguments();
+            cont.setThreadId(stop.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            StoppedEventArguments inLambda = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(inLambda, "the breakpoint in the lambda is hit: " + s.client().output);
+            StackFrame lambda = top(s.server(), inLambda.getThreadId());
+            assertEquals(10, lambda.getLine());
+            assertEquals(source.toString(), lambda.getSource().getPath());
+            assertEquals("Hello.main { lambda }", lambda.getName(), () -> frames(s.server(), inLambda.getThreadId()));
+            assertEquals("21", valueOf(locals(s.server(), lambda.getId()), "n"));
+
+            breakAt(s.server(), source);
+            cont.setThreadId(inLambda.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            assertEquals(0, s.client().exited.get(WAIT, TimeUnit.SECONDS));
+            assertTrue(
+                    s.client().output.toString().contains("Hello, Kotlin 42"),
+                    s.client().output.toString());
+            assertFalse(s.client().output.toString().contains("Picked up"), "no launcher note: the agent is in argv");
+        } finally {
+            s.socket().close();
+        }
+    }
+
+    @Test
+    void aKotlinScriptStopsOnItsLine(@TempDir Path dir) throws Exception {
+        String kotlinc = com.editora.run.JvmTools.locate("kotlinc");
+        Assumptions.assumeTrue(kotlinc != null, "Kotlin is not installed here");
+        Path script = dir.resolve("tally.main.kts");
+        Files.writeString(script, """
+                var total = 0
+                for (n in listOf(1, 2, 3)) {
+                    total += n
+                }
+                println("total=$total")
+                """);
+        Session s = open();
+        try {
+            Map<String, Object> launch = Map.of(
+                    "argv", com.editora.run.KotlinRun.scriptArgv(kotlinc, script.toString(), List.of()),
+                    "cwd", dir.toString(),
+                    "env", Map.of("JAVA_HOME", System.getProperty("java.home")),
+                    "jvmOptionsVariable", "JAVA_OPTS",
+                    "sourceFiles", List.of(script.toString()),
+                    "language", "kotlin");
+            CompletableFuture<Void> launched = s.server().launch(launch);
+            s.client().initialized.get(WAIT, TimeUnit.SECONDS);
+            breakAt(s.server(), script, 3);
+            s.server().configurationDone(null);
+            launched.get(WAIT, TimeUnit.SECONDS);
+
+            StoppedEventArguments stop = s.client().stops.poll(180, TimeUnit.SECONDS);
+            assertNotNull(stop, "the breakpoint in the script is hit: " + s.client().output);
+            StackFrame frame = top(s.server(), stop.getThreadId());
+            assertEquals(3, frame.getLine());
+            assertEquals(script.toString(), frame.getSource().getPath());
+
+            breakAt(s.server(), script);
+            ContinueArguments cont = new ContinueArguments();
+            cont.setThreadId(stop.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            assertEquals(0, s.client().exited.get(180, TimeUnit.SECONDS));
+            assertTrue(
+                    s.client().output.toString().contains("total=6"),
+                    s.client().output.toString());
+        } finally {
+            s.socket().close();
+        }
+    }
+
+    @Test
+    void anAttachConnectsToAWaitingJvmStopsAndDetachesLeavingItRunning(@TempDir Path dir) throws Exception {
+        Path pkg = Files.createDirectories(dir.resolve("p"));
+        Path source = pkg.resolve("Wait.java");
+        Files.writeString(source, """
+                package p;
+                public class Wait {
+                    public static void main(String[] args) {
+                        int x = 7;
+                        System.out.println("x=" + x);
+                    }
+                }
+                """);
+        var javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        assertEquals(
+                0, javac.run(null, null, null, "-g", "-d", dir.resolve("out").toString(), source.toString()));
+        Process program = new ProcessBuilder(
+                        javaExecutable(),
+                        "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:0",
+                        "-cp",
+                        dir.resolve("out").toString(),
+                        "p.Wait")
+                .redirectErrorStream(true)
+                .start();
+        try {
+            java.io.BufferedReader out = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(program.getInputStream(), java.nio.charset.StandardCharsets.UTF_8));
+            int port = com.editora.test.TestDebug.jdwpPort(out.readLine());
+            assertTrue(port > 0, "the JVM says where it listens");
+            Session s = open();
+            try {
+                Map<String, Object> attach =
+                        Map.of("hostName", "127.0.0.1", "port", port, "cwd", dir.toString(), "language", "java");
+                CompletableFuture<Void> attached = s.server().attach(attach);
+                s.client().initialized.get(WAIT, TimeUnit.SECONDS);
+                breakAt(s.server(), source, 5);
+                s.server().configurationDone(null);
+                attached.get(WAIT, TimeUnit.SECONDS);
+
+                StoppedEventArguments stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+                assertNotNull(stop, "the breakpoint is hit in the attached JVM");
+                StackFrame frame = top(s.server(), stop.getThreadId());
+                assertEquals(5, frame.getLine());
+                assertEquals("7", valueOf(locals(s.server(), frame.getId()), "x"));
+
+                s.server()
+                        .disconnect(new org.eclipse.lsp4j.debug.DisconnectArguments())
+                        .get(WAIT, TimeUnit.SECONDS);
+                s.client().terminated.get(WAIT, TimeUnit.SECONDS);
+                String line;
+                do {
+                    line = out.readLine(); // (the agent's own lines come first)
+                } while (line != null && !line.startsWith("x="));
+                assertEquals("x=7", line, "detached, the program carries on");
+                assertTrue(program.waitFor(WAIT, TimeUnit.SECONDS));
+                assertEquals(0, program.exitValue());
+            } finally {
+                s.socket().close();
+            }
+        } finally {
+            program.destroyForcibly();
         }
     }
 }

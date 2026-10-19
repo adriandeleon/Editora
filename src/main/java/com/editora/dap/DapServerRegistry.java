@@ -19,8 +19,8 @@ import java.util.Set;
  *       stdin/stdout; launch {@code type="python"}.</li>
  *   <li><b>javascript</b> → {@link Kind#SOCKET}: {@code node <dapDebugServer.js> <port>}, DAP over a TCP
  *       socket; launch {@code type="pwa-node"}.</li>
- *   <li><b>groovy</b>, <b>clojure</b> → {@link Kind#JVM}: Editora's own JDI adapter, in-process; nothing to
- *       install.</li>
+ *   <li><b>groovy</b>, <b>kotlin</b>, <b>clojure</b> → {@link Kind#JVM}: Editora's own JDI adapter, in-process;
+ *       nothing to install.</li>
  * </ul>
  *
  * <p>All methods are static + pure (no process launch, no I/O), so they are unit-testable. The
@@ -85,6 +85,9 @@ public final class DapServerRegistry {
         // A Groovy script runs under `groovy` with the JDWP agent in JAVA_OPTS; Editora's own adapter maps its
         // breakpoints by source name (java-debug parses every file as Java).
         GROOVY("groovy", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("groovy")),
+        // A Kotlin script runs under `kotlinc -script` (agent in JAVA_OPTS), a program as `java -jar` (agent on
+        // its command line). kotlin-lsp's own debugger is undocumented and alpha: not used.
+        KOTLIN("kotlin", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("kotlin")),
         // A Clojure file runs under the Clojure CLI (the agent as a -J argument) or Leiningen (in JVM_OPTS); its
         // functions' classes (my_app.core$greet) record core.clj, so breakpoints bind by source name as Groovy's.
         // Babashka is native: nothing to attach to.
@@ -132,7 +135,7 @@ public final class DapServerRegistry {
 
     /** The adapter languages ({@code java}, {@code python}, {@code javascript}). */
     public static Set<String> languageIdsForDebug() {
-        return Set.of("java", "python", "javascript", "groovy", "clojure");
+        return Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure");
     }
 
     /**

@@ -107,7 +107,14 @@ import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
  * {@code -agentlib:jdwp=…,server=n,suspend=y,address=127.0.0.1:<port>} in that variable, and has the client
  * start the program ({@code runInTerminal}, so its output, input and exit code go wherever the client shows
  * them) — or starts it itself and forwards its output, for a client that does not offer that. The JVM
- * connects back before it runs anything, so breakpoints are in place when the first line runs.
+ * connects back before it runs anything, so breakpoints are in place when the first line runs. A program that
+ * {@code java} starts itself (a compiled Kotlin program's {@code java -jar}) takes the agent on its command line
+ * instead ({@code jvmOptionsInArgv}): {@code JDK_JAVA_OPTIONS} would work too, but the launcher announces it on
+ * stderr.
+ *
+ * <p><b>Attach.</b> The {@code attach} request names a JVM listening for a debugger ({@code hostName},
+ * {@code port}) — one a build tool started with {@code -agentlib:jdwp=…,server=y} — and connects to it. Ending
+ * the session detaches and leaves that JVM running unless the client asks to terminate it.
  *
  * <p><b>Breakpoints</b> bind by source name: in every loaded class compiled from the file, and in each such
  * class as it loads ({@code ClassPrepareRequest.addSourceNameFilter}).
@@ -148,6 +155,15 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private volatile String language = "";
     private volatile List<String> stepFilters = JvmSourceMap.stepFilters("");
     private volatile List<Path> sourceRoots = List.of();
+
+    /** Files the program is made of that may have no breakpoint (the launched file): frames find their source. */
+    private volatile List<Path> sourceFiles = List.of();
+
+    /** The package each known source file declares, read once ({@link JvmSourceMap#declaredPackage}). */
+    private final Map<Path, String> packages = new ConcurrentHashMap<>();
+
+    /** Whether the session attached to a JVM someone else started: ending it detaches instead of exiting it. */
+    private volatile boolean attached;
 
     /** Breakpoints by file, in the order the client set them. JDI thread only. */
     private final Map<Path, List<Bp>> breakpoints = new LinkedHashMap<>();
@@ -220,22 +236,32 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         return CompletableFuture.runAsync(() -> launchNow(args), jdi);
     }
 
-    private void launchNow(Map<String, Object> args) {
-        List<String> argv = strings(args.get("argv"));
-        if (argv.isEmpty()) {
-            throw failure("Nothing to launch: the request names no command");
-        }
+    /** What a launch and an attach both say: the language, where its sources are, the files it is made of. */
+    private void configure(Map<String, Object> args, String cwd) {
         language = string(args.get("language"));
         stepFilters = JvmSourceMap.stepFilters(language);
         List<Path> roots = new ArrayList<>();
         for (String root : strings(args.get("sourceRoots"))) {
             roots.add(Path.of(root));
         }
-        String cwd = string(args.get("cwd"));
         if (!cwd.isBlank()) {
             roots.add(Path.of(cwd));
         }
         sourceRoots = List.copyOf(roots);
+        List<Path> files = new ArrayList<>();
+        for (String file : strings(args.get("sourceFiles"))) {
+            files.add(Path.of(file).toAbsolutePath().normalize());
+        }
+        sourceFiles = List.copyOf(files);
+    }
+
+    private void launchNow(Map<String, Object> args) {
+        List<String> argv = new ArrayList<>(strings(args.get("argv")));
+        if (argv.isEmpty()) {
+            throw failure("Nothing to launch: the request names no command");
+        }
+        String cwd = string(args.get("cwd"));
+        configure(args, cwd);
         Map<String, String> env = new LinkedHashMap<>(stringMap(args.get("env")));
         ListeningConnector connector = Bootstrap.virtualMachineManager().listeningConnectors().stream()
                 .filter(c -> "dt_socket".equals(c.transport().name()))
@@ -249,10 +275,11 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             String address = connector.startListening(connect);
             String port = address.substring(address.lastIndexOf(':') + 1);
             String agent = "-agentlib:jdwp=transport=dt_socket,server=n,suspend=y,address=127.0.0.1:" + port;
-            String prefix = string(args.get("jvmOptionPrefix"));
-            if (!prefix.isBlank()) {
+            if (Boolean.parseBoolean(string(args.get("jvmOptionsInArgv")))) {
+                argv.add(1, agent); // java <agent> -jar … : the launcher's own option, read by this JVM only
+            } else if (!string(args.get("jvmOptionPrefix")).isBlank()) {
                 // The Clojure CLI takes JVM options as arguments (-J<option>) after its own name.
-                argv = withArgument(argv, prefix + agent);
+                argv = withArgument(argv, string(args.get("jvmOptionPrefix")) + agent);
             } else {
                 String variable = string(args.get("jvmOptionsVariable"));
                 if (variable.isBlank()) {
@@ -298,6 +325,48 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         List<String> out = new ArrayList<>(argv);
         out.add(Math.min(1, out.size()), argument);
         return List.copyOf(out);
+    }
+
+    @Override
+    public CompletableFuture<Void> attach(Map<String, Object> args) {
+        return CompletableFuture.runAsync(() -> attachNow(args), jdi);
+    }
+
+    /** Connects to a JVM already listening for a debugger ({@code hostName}, {@code port}). */
+    private void attachNow(Map<String, Object> args) {
+        configure(args, string(args.get("cwd")));
+        String host = string(args.get("hostName"));
+        int port;
+        try {
+            port = (int) Double.parseDouble(string(args.get("port")));
+        } catch (NumberFormatException e) {
+            throw failure("Nothing to attach to: the request names no port");
+        }
+        com.sun.jdi.connect.AttachingConnector connector =
+                Bootstrap.virtualMachineManager().attachingConnectors().stream()
+                        .filter(c -> "dt_socket".equals(c.transport().name()))
+                        .findFirst()
+                        .orElseThrow(() -> failure("This Java runtime has no socket debugging transport"));
+        Map<String, Connector.Argument> connect = connector.defaultArguments();
+        setArgument(connect, "hostname", host.isBlank() ? "127.0.0.1" : host);
+        setArgument(connect, "port", String.valueOf(port));
+        setArgument(connect, "timeout", String.valueOf(CONNECT_TIMEOUT_MS));
+        try {
+            VirtualMachine machine = connector.attach(connect);
+            attached = true;
+            vm = machine;
+            machine.setDebugTraceMode(VirtualMachine.TRACE_NONE);
+            java.lang.Thread loop = new java.lang.Thread(this::eventLoop, "jvm-debug-events");
+            loop.setDaemon(true);
+            loop.start();
+        } catch (IOException | com.sun.jdi.connect.IllegalConnectorArgumentsException e) {
+            throw failure("Could not attach to " + (host.isBlank() ? "127.0.0.1" : host) + ":" + port + ": "
+                    + e.getMessage());
+        }
+        IDebugProtocolClient c = client;
+        if (c != null) {
+            c.initialized(); // breakpoints, exception filters, then configurationDone — which resumes it
+        }
     }
 
     private static void setArgument(Map<String, Connector.Argument> args, String name, String value) {
@@ -392,7 +461,21 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
 
     @Override
     public CompletableFuture<Void> disconnect(DisconnectArguments args) {
-        return CompletableFuture.runAsync(this::endProgram, jdi);
+        boolean terminate = args != null && Boolean.TRUE.equals(args.getTerminateDebuggee());
+        return CompletableFuture.runAsync(attached && !terminate ? this::detach : this::endProgram, jdi);
+    }
+
+    /** Leaves an attached JVM running: its breakpoints go, and it carries on without a debugger. */
+    private void detach() {
+        VirtualMachine machine = vm;
+        if (machine != null) {
+            try {
+                machine.dispose();
+            } catch (VMDisconnectedException e) {
+                LOG.log(Level.FINEST, "already gone", e);
+            }
+        }
+        sendTerminated();
     }
 
     @Override
@@ -660,7 +743,8 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                                 t.sourcePaths(null).isEmpty()
                                         ? null
                                         : t.sourcePaths(null).get(0),
-                                breakpointFiles,
+                                knownFiles(),
+                                this::packageOf,
                                 sourceRoots,
                                 Files::isRegularFile)
                         != null;
@@ -722,6 +806,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             watch.enable();
             prepareWatches.put(name, watch);
         }
+        packages.remove(file); // read again: an edit may have moved the file to another package
         for (ReferenceType type : vm.allClasses()) {
             if (compiledFrom(type, file)) {
                 bind(type, now);
@@ -779,13 +864,14 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         }
     }
 
-    private static boolean compiledFrom(ReferenceType type, Path file) {
+    private boolean compiledFrom(ReferenceType type, Path file) {
         try {
             if (!JvmSourceMap.sourceName(file).equals(type.sourceName())) {
                 return false;
             }
+            String pkg = packageOf(file);
             for (String path : type.sourcePaths(null)) {
-                if (JvmSourceMap.compiledFrom(path, file)) {
+                if (JvmSourceMap.compiledFrom(path, file, pkg)) {
                     return true;
                 }
             }
@@ -793,6 +879,33 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         } catch (AbsentInformationException e) {
             return false;
         }
+    }
+
+    /** The package {@code file} declares, read from disk once; {@code ""} when it cannot be read. */
+    private String packageOf(Path file) {
+        return packages.computeIfAbsent(file, f -> {
+            try {
+                return JvmSourceMap.declaredPackage(Files.readString(f));
+            } catch (IOException | RuntimeException e) {
+                return "";
+            }
+        });
+    }
+
+    /** The source files known by name: those with breakpoints, then the program's own. */
+    private List<Path> knownFiles() {
+        List<Path> known = breakpointFiles;
+        List<Path> own = sourceFiles;
+        if (own.isEmpty()) {
+            return known;
+        }
+        List<Path> all = new ArrayList<>(known);
+        for (Path p : own) {
+            if (!all.contains(p)) {
+                all.add(p);
+            }
+        }
+        return all;
     }
 
     private static Breakpoint describe(Bp bp, Source source) {
@@ -958,14 +1071,14 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             int start = args.getStartFrame() == null ? 0 : args.getStartFrame();
             int levels = args.getLevels() == null || args.getLevels() <= 0 ? total : args.getLevels();
             int end = Math.min(total, start + levels);
-            List<Path> known = breakpointFiles;
+            List<Path> known = knownFiles();
             List<StackFrame> out = new ArrayList<>();
             for (int i = start; i < end; i++) {
                 Location at = thread.frame(i).location();
                 StackFrame f = new StackFrame();
                 f.setId(handle(new FrameHandle(thread, i)));
                 f.setName(JvmSourceMap.frameName(
-                        at.declaringType().name(), at.method().name(), language));
+                        at.declaringType().name(), at.method().name(), sourceNameOf(at)));
                 f.setLine(Math.max(0, at.lineNumber()));
                 f.setColumn(1);
                 Path file = sourceOf(at, known);
@@ -990,7 +1103,15 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
 
     private Path sourceOf(Location at, List<Path> known) {
         try {
-            return JvmSourceMap.resolve(at.sourcePath(null), known, sourceRoots, Files::isRegularFile);
+            return JvmSourceMap.resolve(at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile);
+        } catch (AbsentInformationException e) {
+            return null;
+        }
+    }
+
+    private static String sourceNameOf(Location at) {
+        try {
+            return at.sourceName(null);
         } catch (AbsentInformationException e) {
             return null;
         }

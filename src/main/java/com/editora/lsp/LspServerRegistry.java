@@ -19,7 +19,7 @@ import java.util.Set;
  * (vscode-json-language-server), <b>Bash</b> (bash-language-server, for shell scripts), <b>YAML</b>
  * (yaml-language-server), <b>Go</b> (gopls), <b>Rust</b> (rust-analyzer), <b>PHP</b> (phpactor),
  * <b>Ruby</b> (ruby-lsp), <b>C/C++</b> (clangd — one server, both language ids), <b>HTML</b> and
- * <b>CSS</b> (vscode-html/css-language-server), <b>Kotlin</b> (kotlin-language-server), <b>Groovy</b> (gvy),
+ * <b>CSS</b> (vscode-html/css-language-server), <b>Kotlin</b> (JetBrains' Kotlin LSP), <b>Groovy</b> (gvy),
  * <b>Lua</b>
  * (lua-language-server), <b>Dockerfile</b> (docker-langserver), <b>SQL</b> (sqls),
  * <b>Terraform</b> (terraform-ls), <b>TOML</b> (taplo), <b>C#</b> (csharp-ls), <b>Typst</b>
@@ -125,7 +125,7 @@ public final class LspServerRegistry {
 
     /** Markers for a Kotlin project root (Gradle/Maven build files, else the repo). */
     public static final List<String> KOTLIN_ROOT_MARKERS =
-            List.of("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle", "pom.xml", ".git");
+            List.of("settings.gradle.kts", "settings.gradle", "build.gradle.kts", "build.gradle", "pom.xml");
 
     /** Markers for a Groovy project root (Gradle/Maven build files, a Jenkinsfile, else the repo). */
     public static final List<String> GROOVY_ROOT_MARKERS = List.of(
@@ -176,7 +176,12 @@ public final class LspServerRegistry {
     public static final String DEFAULT_CLANGD_COMMAND = "clangd";
     public static final String DEFAULT_HTML_COMMAND = "vscode-html-language-server --stdio";
     public static final String DEFAULT_CSS_COMMAND = "vscode-css-language-server --stdio";
-    public static final String DEFAULT_KOTLIN_COMMAND = "kotlin-language-server";
+    /**
+     * JetBrains' Kotlin LSP as its Homebrew formula names it; Editora's own install writes its launcher's path
+     * into Settings instead. fwcd's {@code kotlin-language-server} still works as a configured command.
+     */
+    public static final String DEFAULT_KOTLIN_COMMAND = "kotlin-lsp --stdio";
+
     public static final String DEFAULT_LUA_COMMAND = "lua-language-server";
 
     /**
@@ -312,7 +317,8 @@ public final class LspServerRegistry {
      * project files ({@code pyproject.toml}, {@code setup.py}, {@code setup.cfg}) first, then the repository,
      * and only then a {@code requirements.txt}/{@code Pipfile}. Nearest-of-any let a {@code docs/requirements.txt}
      * (Read the Docs) make {@code docs/} a server root of its own, where the project's package did not resolve
-     * (review B9). Every other server: its markers as one tier.
+     * (review B9). Kotlin: a Gradle settings file first, so a multi-module build is one root. Every other server:
+     * its markers as one tier.
      */
     public static List<List<String>> rootMarkerTiersForServer(String serverId) {
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
@@ -325,6 +331,13 @@ public final class LspServerRegistry {
                     List.of("pyproject.toml", "setup.py", "setup.cfg"),
                     List.of(".git"),
                     List.of("requirements.txt", "Pipfile"));
+        }
+        if ("kotlin".equals(serverId)) {
+            // The Kotlin LSP imports the whole Gradle build: a module's build.gradle.kts under a settings file
+            // is not a root of its own. No .git fallback: outside a build it has nothing to import or check.
+            return List.of(
+                    List.of("settings.gradle.kts", "settings.gradle"),
+                    List.of("build.gradle.kts", "build.gradle", "pom.xml"));
         }
         return List.of(rootMarkersForServer(serverId));
     }

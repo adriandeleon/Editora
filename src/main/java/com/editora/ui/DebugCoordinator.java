@@ -335,10 +335,9 @@ final class DebugCoordinator {
                         && dapManager.isAdapterAvailable();
             case "python" -> s.isPythonDebugEnabled() && dapManager.isLanguageAvailable("python");
             case "javascript" -> s.isJsDebugEnabled() && dapManager.isLanguageAvailable("javascript");
-            // Editora's own JVM adapter: nothing to install; the groovy tool is checked when the session starts.
-            case "groovy" -> dapManager.isLanguageAvailable("groovy");
-            // The same adapter: the clojure or lein tool is checked when the session starts (bb cannot be debugged).
-            case "clojure" -> dapManager.isLanguageAvailable("clojure");
+            // Editora's own JVM adapter: nothing to install; the tool (groovy, kotlinc, clojure or lein) is checked
+            // when the session starts (bb cannot be debugged).
+            case "groovy", "kotlin", "clojure" -> dapManager.isLanguageAvailable(language);
             default -> false;
         };
     }
@@ -1787,6 +1786,18 @@ final class DebugCoordinator {
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
         Path launched = b.getPath();
         relaunch = () -> relaunchFor(launched, again -> launchBuffer(again, nodeArgs));
+        if ("kotlin".equals(language)
+                && com.editora.run.KotlinRun.shape(launched.getFileName().toString())
+                        == com.editora.run.KotlinRun.Shape.PROGRAM) {
+            // Compiled first (into the Debug console), then `java -jar` with the agent: Restart compiles an edit.
+            debugKotlinProgram(
+                    launched,
+                    null,
+                    javaExec,
+                    com.editora.run.JdkToolchain.environment(
+                            jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
+            return;
+        }
         Path looseCwd = projectRoot == null ? project : null;
         Runnable start = () -> withClosedBreakpoints(() -> {
             if (compactSource && shebangSource != null) {
@@ -2320,6 +2331,10 @@ final class DebugCoordinator {
         java.util.Map<String, String> launchEnv = new java.util.LinkedHashMap<>(
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
         launchEnv.putAll(env);
+        // A Kotlin program is started by `java` itself: its VM arguments go on that command line.
+        boolean program = com.editora.run.ScriptRunCommand.KOTLIN.equals(cfg.type())
+                && com.editora.run.KotlinRun.shape(script.getFileName().toString())
+                        == com.editora.run.KotlinRun.Shape.PROGRAM;
         java.util.Map<String, String> programEnv = launchEnv;
         // A Clojure file runs in its project's folder unless the configuration names one.
         Path folder =
@@ -2336,11 +2351,85 @@ final class DebugCoordinator {
                     ops.openToolWindow();
                     nameSession(cfg.name());
                     dapManager.setProgramArgs(args);
-                    dapManager.setVmArgs(cfg.vmArgs().strip()); // placed where the tool reads them (JvmScriptRun)
+                    if (program) {
+                        dapManager.setVmArgs(com.editora.run.ProgramArgs.tokenize(cfg.vmArgs()));
+                    } else {
+                        dapManager.setVmArgs(cfg.vmArgs().strip()); // placed where the tool reads them (JvmScriptRun)
+                    }
                     dapManager.setHostJavaExec("");
                     dapManager.setEnv(programEnv);
-                    withClosedBreakpoints(() -> dapManager.startJvmScript(script, cfg.type(), folder));
+                    if (program) {
+                        debugKotlinProgram(
+                                script, cwd, com.editora.run.JdkToolchain.javaExecutable(jdkHome), programEnv);
+                    } else {
+                        withClosedBreakpoints(() -> dapManager.startJvmScript(script, cfg.type(), folder));
+                    }
                 });
+    }
+
+    /**
+     * Debugs Kotlin program {@code source}: compiled by {@code kotlinc} into its cached jar (in the Debug
+     * console, as a step Stop can end) unless this content's jar is there, then run as {@code java -jar} with the
+     * debugger's agent, in {@code cwd} (null: its folder), on {@code java}. The arguments, VM arguments and
+     * environment are already set on the session.
+     */
+    private void debugKotlinProgram(Path source, Path cwd, String java, java.util.Map<String, String> env) {
+        String kotlinc = com.editora.run.JvmTools.locate(com.editora.run.KotlinRun.TOOL);
+        if (kotlinc == null) {
+            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey("kotlin")));
+            return;
+        }
+        com.editora.run.KotlinBuild.Plan plan;
+        try {
+            plan = com.editora.run.KotlinBuild.plan(source, kotlinc, host.configDir());
+        } catch (java.io.IOException e) {
+            host.setStatus(tr("debug.error.startFailed", e.getMessage()));
+            return;
+        }
+        String javaExec = java == null || java.isBlank() ? "java" : java;
+        Runnable start = () -> {
+            ops.openToolWindow();
+            withClosedBreakpoints(() -> dapManager.startJvmProgram(source, "kotlin", cwd, plan.jar(), javaExec));
+        };
+        if (plan.compile().isEmpty()) {
+            start.run();
+            return;
+        }
+        if (beforeLaunch.isActive() || pendingBuild != null) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(
+                        source.getFileName().toString(), plan.compile(), "status.run.kotlinCompile"),
+                cwd != null ? cwd : source.getParent(),
+                env,
+                beforeLaunchConsole(),
+                () -> {
+                    try {
+                        com.editora.run.KotlinBuild.finish(plan);
+                    } catch (java.io.IOException e) {
+                        host.setStatus(tr("debug.error.startFailed", e.getMessage()));
+                        return;
+                    }
+                    start.run();
+                });
+        updateDebugAvailability();
+    }
+
+    /**
+     * The language of {@code file} when Editora's own JVM adapter debugs it (Kotlin, Groovy) — an attach for it
+     * goes there, since java-debug never binds a breakpoint outside a {@code .java} file; null otherwise. Pure.
+     */
+    static String jvmAdapterLanguage(Path file) {
+        if (file == null || file.getFileName() == null) {
+            return null;
+        }
+        String language = com.editora.editor.LanguageRegistry.forFileName(
+                file.getFileName().toString());
+        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor(language);
+        return spec != null && spec.kind() == DapServerRegistry.Kind.JVM ? language : null;
     }
 
     /** The saved configuration called {@code name} as it is now, else {@code fallback} (it was deleted). */
@@ -2579,6 +2668,19 @@ final class DebugCoordinator {
             return;
         }
         ownerStop = stopOwner;
+        String jvmLanguage = jvmAdapterLanguage(anchorFile);
+        if (jvmLanguage != null) {
+            // A Kotlin (or Groovy) program of a build: Editora's JVM adapter, which binds by source name.
+            if (!debugEffectiveFor(jvmLanguage, anchorFile)) {
+                host.setStatus(unavailableMessage(jvmLanguage, anchorFile));
+                return;
+            }
+            ops.openToolWindow();
+            nameSession(anchorFile.getFileName().toString());
+            relaunch = ONE_SHOT_ATTACH;
+            withClosedBreakpoints(() -> dapManager.startJvmAttach(anchorFile, jvmLanguage, attachHost, port));
+            return;
+        }
         // On a remote anchor's host the adapter attaches from there: "localhost" is the host itself.
         if (!debugEffectiveFor("java", anchorFile)) {
             host.setStatus(unavailableMessage("java", anchorFile));
@@ -2651,12 +2753,14 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.saveFirst"));
             return;
         }
-        if (!"java".equals(b.getLanguage())) {
+        String jvmLanguage = jvmAdapterLanguage(b.getPath());
+        if (jvmLanguage == null && !"java".equals(b.getLanguage())) {
             host.setStatus(tr("status.debug.attachLanguages"));
             return;
         }
-        if (!debugEffectiveFor("java", b.getPath())) { // a remote file attaches from its host (review A9)
-            host.setStatus(unavailableMessage("java", b.getPath()));
+        String adapterLanguage = jvmLanguage != null ? jvmLanguage : "java";
+        if (!debugEffectiveFor(adapterLanguage, b.getPath())) { // a remote file attaches from its host (review A9)
+            host.setStatus(unavailableMessage(adapterLanguage, b.getPath()));
             return;
         }
         host.promptText(tr("dialog.debug.attachTitle"), tr("dialog.debug.attachContent"), "localhost:5005", input -> {
@@ -2674,7 +2778,11 @@ final class DebugCoordinator {
                 nameSession(b.getPath().getFileName().toString());
                 String attachHost = hostName;
                 relaunch = null; // an attach is re-attached as it was
-                withClosedBreakpoints(() -> dapManager.startAttach(b.getPath(), attachHost, port));
+                if (jvmLanguage != null) {
+                    withClosedBreakpoints(() -> dapManager.startJvmAttach(b.getPath(), jvmLanguage, attachHost, port));
+                } else {
+                    withClosedBreakpoints(() -> dapManager.startAttach(b.getPath(), attachHost, port));
+                }
             } catch (NumberFormatException e) {
                 host.setStatus(tr("status.debug.badAddress", text));
             }
