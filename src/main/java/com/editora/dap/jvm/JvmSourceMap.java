@@ -154,14 +154,54 @@ public final class JvmSourceMap {
             java.util.function.Function<Path, String> packageOf,
             List<Path> roots,
             java.util.function.Predicate<Path> exists) {
+        return resolve(classSourcePath, knownFiles, packageOf, roots, exists, "");
+    }
+
+    /**
+     * As {@link #resolve(String, List, java.util.function.Function, List, java.util.function.Predicate)}, for
+     * {@code language} ({@link #resolve(String, List, List, java.util.function.Predicate, String)}).
+     */
+    public static Path resolve(
+            String classSourcePath,
+            List<Path> knownFiles,
+            java.util.function.Function<Path, String> packageOf,
+            List<Path> roots,
+            java.util.function.Predicate<Path> exists,
+            String language) {
         if (classSourcePath != null && knownFiles != null && packageOf != null) {
             for (Path known : knownFiles) {
-                if (compiledFrom(classSourcePath, known, packageOf.apply(known))) {
+                if (compiledFrom(classSourcePath, known, packageOf.apply(known), language)) {
                     return known;
                 }
             }
         }
-        return resolve(classSourcePath, knownFiles, roots, exists);
+        return resolve(classSourcePath, knownFiles, roots, exists, language);
+    }
+
+    /**
+     * Whether a language lets a file's package differ from its folder. Scala does ({@code package demo} in
+     * {@code src/Main.scala} is ordinary, and Scala CLI projects are flat), so its classes are matched by file
+     * name alone — the program's sources are the ones on its command line, where two files of one name are rare.
+     * Groovy, like Java, keeps them together in practice, and is matched by the whole path.
+     */
+    public static boolean packagesFollowFolders(String language) {
+        return !"scala".equals(language == null ? "" : language.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * As {@link #compiledFrom(String, Path, String)}, for {@code language}: by file name alone where its packages
+     * need not follow folders ({@link #packagesFollowFolders}).
+     */
+    public static boolean compiledFrom(String classSourcePath, Path file, String declaredPackage, String language) {
+        if (compiledFrom(classSourcePath, file, declaredPackage)) {
+            return true;
+        }
+        if (packagesFollowFolders(language) || classSourcePath == null || classSourcePath.isBlank() || file == null) {
+            return false;
+        }
+        String normalized = classSourcePath.replace('\\', '/');
+        String name = normalized.substring(normalized.lastIndexOf('/') + 1);
+        return name.equals(sourceName(file));
     }
 
     /**
@@ -174,15 +214,47 @@ public final class JvmSourceMap {
             List<Path> knownFiles,
             List<Path> roots,
             java.util.function.Predicate<Path> exists) {
+        return resolve(classSourcePath, knownFiles, roots, exists, "");
+    }
+
+    /**
+     * As {@link #resolve(String, List, List, java.util.function.Predicate)}, for {@code language}: where its
+     * packages need not follow folders, a known file matches by name, and a root is also searched for the bare
+     * file name ({@code demo/Main.scala} found as {@code <root>/Main.scala}).
+     */
+    public static Path resolve(
+            String classSourcePath,
+            List<Path> knownFiles,
+            List<Path> roots,
+            java.util.function.Predicate<Path> exists,
+            String language) {
         if (classSourcePath == null || classSourcePath.isBlank()) {
             return null;
         }
         if (knownFiles != null) {
             for (Path known : knownFiles) {
-                if (compiledFrom(classSourcePath, known)) {
+                if (compiledFrom(classSourcePath, known, null, language)) {
                     return known;
                 }
             }
+        }
+        if (!packagesFollowFolders(language) && roots != null) {
+            String relative = classSourcePath.replace('\\', '/');
+            String name = relative.substring(relative.lastIndexOf('/') + 1);
+            for (Path root : roots) {
+                if (root == null) {
+                    continue;
+                }
+                Path candidate = root.resolve(relative).normalize();
+                if (exists.test(candidate)) {
+                    return candidate;
+                }
+                Path flat = root.resolve(name).normalize();
+                if (exists.test(flat)) {
+                    return flat;
+                }
+            }
+            return null;
         }
         if (roots != null) {
             String relative = classSourcePath.replace('\\', '/');
@@ -213,6 +285,23 @@ public final class JvmSourceMap {
         if ("groovy".equals(lang)) {
             // groovyjarjar* is the parser, ASM and picocli Groovy bundles under renamed packages.
             filters.addAll(List.of("groovyjarjar*", "org.apache.groovy.*", "groovy.runtime.*"));
+        } else if ("scala".equals(lang)) {
+            // The standard library between two lines of a program: boxing and lazy-val plumbing
+            // (scala.runtime), the collections a map or foreach passes through, Predef's conversions, function
+            // and option wrappers; dotty.* is Scala 3's own runtime support.
+            filters.addAll(List.of(
+                    "scala.runtime.*",
+                    "scala.collection.*",
+                    "scala.Predef*",
+                    "scala.Function*",
+                    "scala.PartialFunction*",
+                    "scala.Option*",
+                    "scala.Some*",
+                    "scala.util.*",
+                    "scala.math.*",
+                    "scala.LowPriorityImplicits*",
+                    "scala.reflect.*",
+                    "dotty.*"));
         }
         if ("kotlin".equals(lang)) {
             // The standard library (collections' inline helpers are inlined, the rest is library code) and the
@@ -225,6 +314,60 @@ public final class JvmSourceMap {
             filters.addAll(List.of("clojure.lang.*", "clojure.core*", "clojure.main*", "clojure.spec.*"));
         }
         return List.copyOf(filters);
+    }
+
+    /**
+     * The name a frame of a {@code language} program shows, its class recording {@code sourceName}: a Scala
+     * class's as the source names it (an object's {@code Util$} as {@code Util}, Scala 3's top-level
+     * {@code Main$package$} as {@code Main}, a lambda as its enclosing method), else
+     * {@link #frameName(String, String, String)}.
+     */
+    public static String frameName(String className, String methodName, String sourceName, String language) {
+        if (!"scala".equals(language == null ? "" : language.toLowerCase(Locale.ROOT))) {
+            return frameName(className, methodName, sourceName);
+        }
+        String cls = className == null ? "" : className;
+        int dot = cls.lastIndexOf('.');
+        String simple = dot >= 0 ? cls.substring(dot + 1) : cls;
+        // Scala CLI's script wrapper (hello$_), Scala 3's top-level definitions (Main$package$), an object's
+        // module class (Util$): the name the source uses.
+        if (simple.endsWith("$_")) {
+            simple = simple.substring(0, simple.length() - 2);
+        }
+        if (simple.endsWith("$")) {
+            simple = simple.substring(0, simple.length() - 1);
+        }
+        if (simple.endsWith("$package")) {
+            simple = simple.substring(0, simple.length() - "$package".length());
+        }
+        String method = methodName == null ? "" : methodName;
+        int anon = method.indexOf("$anonfun");
+        if (anon >= 0) {
+            // A lambda: Scala 3's greet$$anonfun$1 / $init$$$anonfun$1, Scala 2's $anonfun$greet$1.
+            String enclosing = method.substring(0, anon).replaceAll("\\$+$", "");
+            if (enclosing.isEmpty()) {
+                String rest = method.substring(anon + "$anonfun".length()).replaceAll("^\\$", "");
+                enclosing = rest.replaceAll("\\$\\d+$", "").replaceAll("^\\d+$", "");
+            }
+            if (enclosing.equals("$init") || enclosing.equals("<init>")) {
+                return simple + " { lambda }";
+            }
+            return simple + (enclosing.isEmpty() ? "" : "." + enclosing) + " { lambda }";
+        }
+        if (method.equals("<init>") || method.equals("<clinit>")) {
+            return simple; // an object's or a script's body runs in its initialiser
+        }
+        return simple + "." + method;
+    }
+
+    /**
+     * Whether an instance field is compiler plumbing rather than the program's state — a Scala lazy val's
+     * initialisation bitmap ({@code bitmap$0}, {@code 0bitmap$1}). Hidden from the Variables view.
+     */
+    public static boolean hiddenField(String name, String language) {
+        return name != null
+                && "scala".equals(language == null ? "" : language.toLowerCase(Locale.ROOT))
+                && name.contains("bitmap$");
     }
 
     /**

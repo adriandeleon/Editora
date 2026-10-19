@@ -137,6 +137,12 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     /** How long the program has to start and connect back before the launch fails. */
     private static final long CONNECT_TIMEOUT_MS = 60_000;
 
+    /**
+     * How long this launch's program has to connect back: {@link #CONNECT_TIMEOUT_MS}, or the launch's own
+     * {@code connectTimeoutMs} — Scala CLI compiles first, and on a first run downloads the compiler.
+     */
+    private volatile long connectTimeoutMs = CONNECT_TIMEOUT_MS;
+
     /** Longest text of a string value shown before it is cut. */
     private static final int MAX_STRING = 500;
 
@@ -240,6 +246,9 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private void configure(Map<String, Object> args, String cwd) {
         language = string(args.get("language"));
         stepFilters = JvmSourceMap.stepFilters(language);
+        if (args.get("connectTimeoutMs") instanceof Number timeout && timeout.longValue() > 0) {
+            connectTimeoutMs = timeout.longValue();
+        }
         List<Path> roots = new ArrayList<>();
         for (String root : strings(args.get("sourceRoots"))) {
             roots.add(Path.of(root));
@@ -270,15 +279,22 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         Map<String, Connector.Argument> connect = connector.defaultArguments();
         setArgument(connect, "localAddress", "127.0.0.1");
         setArgument(connect, "port", "0");
-        setArgument(connect, "timeout", String.valueOf(CONNECT_TIMEOUT_MS));
+        setArgument(connect, "timeout", String.valueOf(connectTimeoutMs));
         try {
             String address = connector.startListening(connect);
             String port = address.substring(address.lastIndexOf(':') + 1);
             String agent = "-agentlib:jdwp=transport=dt_socket,server=n,suspend=y,address=127.0.0.1:" + port;
-            if (Boolean.parseBoolean(string(args.get("jvmOptionsInArgv")))) {
+            // A tool that takes JVM options on its command line (Scala CLI's --java-opt) names the argument the
+            // agent goes in; `java` itself (a Kotlin program) takes it first; the Clojure CLI as -J<option>; the
+            // others are handed it in the variable their launcher passes to the JVM.
+            String agentArgument = string(args.get("agentArgument"));
+            if (!agentArgument.isBlank() && argv.contains(agentArgument)) {
+                argv = argv.stream()
+                        .map(a -> a.equals(agentArgument) ? agent : a)
+                        .toList();
+            } else if (Boolean.parseBoolean(string(args.get("jvmOptionsInArgv")))) {
                 argv.add(1, agent); // java <agent> -jar … : the launcher's own option, read by this JVM only
             } else if (!string(args.get("jvmOptionPrefix")).isBlank()) {
-                // The Clojure CLI takes JVM options as arguments (-J<option>) after its own name.
                 argv = withArgument(argv, string(args.get("jvmOptionPrefix")) + agent);
             } else {
                 String variable = string(args.get("jvmOptionsVariable"));
@@ -395,7 +411,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             run.setArgs(argv.toArray(new String[0]));
             run.setEnv(new HashMap<>(env));
             try {
-                c.runInTerminal(run).get(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                c.runInTerminal(run).get(connectTimeoutMs, TimeUnit.MILLISECONDS);
                 return;
             } catch (java.util.concurrent.ExecutionException e) {
                 Throwable cause = e.getCause() == null ? e : e.getCause();
@@ -746,7 +762,8 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                                 knownFiles(),
                                 this::packageOf,
                                 sourceRoots,
-                                Files::isRegularFile)
+                                Files::isRegularFile,
+                                language)
                         != null;
             } catch (AbsentInformationException | RuntimeException e) {
                 return false;
@@ -871,7 +888,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             }
             String pkg = packageOf(file);
             for (String path : type.sourcePaths(null)) {
-                if (JvmSourceMap.compiledFrom(path, file, pkg)) {
+                if (JvmSourceMap.compiledFrom(path, file, pkg, language)) {
                     return true;
                 }
             }
@@ -1078,7 +1095,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 StackFrame f = new StackFrame();
                 f.setId(handle(new FrameHandle(thread, i)));
                 f.setName(JvmSourceMap.frameName(
-                        at.declaringType().name(), at.method().name(), sourceNameOf(at)));
+                        at.declaringType().name(), at.method().name(), sourceNameOf(at), language));
                 f.setLine(Math.max(0, at.lineNumber()));
                 f.setColumn(1);
                 Path file = sourceOf(at, known);
@@ -1103,7 +1120,8 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
 
     private Path sourceOf(Location at, List<Path> known) {
         try {
-            return JvmSourceMap.resolve(at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile);
+            return JvmSourceMap.resolve(
+                    at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile, language);
         } catch (AbsentInformationException e) {
             return null;
         }
@@ -1175,7 +1193,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 } else {
                     ObjectReference o = object.object();
                     for (Field field : o.referenceType().allFields()) {
-                        if (!field.isStatic()) {
+                        if (!field.isStatic() && !JvmSourceMap.hiddenField(field.name(), language)) {
                             out.add(variable(field.name(), o.getValue(field)));
                         }
                     }

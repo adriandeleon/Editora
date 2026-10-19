@@ -10,10 +10,11 @@ import java.util.Set;
 
 /**
  * How Run and Debug start one file of a JVM language other than Java: which tool runs it, the command line,
- * and where the debugger's JDWP agent goes. Groovy ({@code groovy Script.groovy args…}), Kotlin scripts
- * ({@code kotlinc -script tool.main.kts args…}; a Kotlin program ({@code .kt}) is compiled first, which
- * {@link KotlinRun} plans) and Clojure, whose file runs under the Clojure CLI, Leiningen or Babashka as
- * {@link ClojureRun} decides. Scala CLI fits the same shape.
+ * and where the debugger's JDWP agent goes. Groovy ({@code groovy Script.groovy args…}) and Kotlin scripts
+ * ({@code kotlinc -script tool.main.kts args…}) take JVM options in an environment variable (a Kotlin program,
+ * {@code .kt}, is compiled first, which {@link KotlinRun} plans); Scala CLI
+ * ({@code scala-cli run --java-opt … Hello.scala -- args…}) on its command line; Clojure's file runs under the
+ * Clojure CLI, Leiningen or Babashka as {@link ClojureRun} decides.
  *
  * <p>The program runs on the JDK chosen in Settings (the one Maven, Gradle and Java's Run use): its
  * {@code JAVA_HOME} goes into the environment, which the tools' launcher scripts honour.
@@ -26,7 +27,13 @@ public final class JvmScriptRun {
 
     /** The languages this runs, each with the tool that runs its files. */
     private static final Map<String, String> TOOLS =
-            Map.of("groovy", "groovy", "kotlin", KotlinRun.TOOL, "clojure", "clojure");
+            Map.of("groovy", "groovy", "scala", "scala-cli", "kotlin", KotlinRun.TOOL, "clojure", "clojure");
+
+    /**
+     * The argument a debug command line carries where the JDWP agent option goes, for a tool that takes JVM
+     * options on its command line ({@code --java-opt <agent>}); the debug adapter puts the agent there.
+     */
+    public static final String AGENT_ARGUMENT = "${editora.jdwpAgent}";
 
     /** Languages whose files this runs. */
     public static Set<String> languages() {
@@ -38,7 +45,10 @@ public final class JvmScriptRun {
         return language != null && TOOLS.containsKey(language);
     }
 
-    /** The tool that runs {@code language}'s files ({@code groovy}, {@code kotlinc}), or null. */
+    /**
+     * The tool that runs {@code language}'s files ({@code groovy}, {@code scala-cli}, {@code kotlinc},
+     * {@code clojure}), or null.
+     */
     public static String tool(String language) {
         return language == null ? null : TOOLS.get(language);
     }
@@ -63,7 +73,13 @@ public final class JvmScriptRun {
      *     configuration's)
      * @param env the environment additions, the JVM options included where the tool reads them
      */
-    public record Launch(List<String> argv, Path directory, Map<String, String> env) {}
+    public record Launch(List<String> argv, Path directory, Map<String, String> env) {
+
+        /** A launch in the caller's own folder. */
+        public Launch(List<String> argv, Map<String, String> env) {
+            this(argv, null, env);
+        }
+    }
 
     /**
      * How {@code file} (named {@code fileArg} where it runs) is started by {@code tool} (its executable is
@@ -83,6 +99,15 @@ public final class JvmScriptRun {
             Map<String, String> env,
             Map<String, String> inherited) {
         String vm = vmArgs == null ? "" : vmArgs.strip();
+        if (takesJvmOptionsInArgv(language)) {
+            List<String> options = ProgramArgs.tokenize(vm);
+            List<String> inputs = List.of(fileArg);
+            return new Launch(
+                    debug
+                            ? scalaCliDebug(executable, inputs, options, args)
+                            : scalaCli(executable, inputs, options, args),
+                    new LinkedHashMap<>(env == null ? Map.of() : env));
+        }
         ClojureRun.Tool clojure = "clojure".equals(language) ? ClojureRun.Tool.of(tool) : null;
         if (clojure == null) {
             return new Launch(
@@ -143,6 +168,84 @@ public final class JvmScriptRun {
         }
     }
 
+    /**
+     * How {@code language}'s {@code tool} runs {@code target} with {@code args}, on a JVM given
+     * {@code jvmOptions}, in {@code env} ({@code inherited} is the user's own environment, whose
+     * {@code JAVA_OPTS} a Groovy run keeps). Groovy: {@code groovy <target> args…} with the options in
+     * {@code JAVA_OPTS}. Scala CLI: {@code scala-cli run --java-opt <o>… <target> -- args…}.
+     */
+    public static Launch launch(
+            String language,
+            String tool,
+            String target,
+            List<String> jvmOptions,
+            List<String> args,
+            Map<String, String> env,
+            Map<String, String> inherited) {
+        List<String> options = jvmOptions == null ? List.of() : jvmOptions;
+        if (takesJvmOptionsInArgv(language)) {
+            return new Launch(
+                    scalaCli(tool, List.of(target), options, args), new LinkedHashMap<>(env == null ? Map.of() : env));
+        }
+        return new Launch(
+                argv(tool, target, args),
+                withJvmOption(env, inherited, jvmOptionsVariable(language), String.join(" ", options)));
+    }
+
+    /**
+     * The command line a debug session starts {@code target} with: as {@link #launch}, with
+     * {@link #AGENT_ARGUMENT} where the agent goes for a tool that takes JVM options on its command line (the
+     * adapter puts it in {@link #jvmOptionsVariable} for the others).
+     */
+    public static List<String> debugArgv(
+            String language, String tool, String target, List<String> jvmOptions, List<String> args) {
+        if (!takesJvmOptionsInArgv(language)) {
+            return argv(tool, target, args);
+        }
+        return scalaCliDebug(tool, List.of(target), jvmOptions, args);
+    }
+
+    /** As {@link #scalaCli}, with {@link #AGENT_ARGUMENT} as the first JVM option: a debug session's command. */
+    public static List<String> scalaCliDebug(
+            String tool, List<String> inputs, List<String> jvmOptions, List<String> args) {
+        List<String> options = new ArrayList<>();
+        options.add(AGENT_ARGUMENT);
+        if (jvmOptions != null) {
+            options.addAll(jvmOptions);
+        }
+        return scalaCli(tool, inputs, options, args);
+    }
+
+    /** Whether {@code language}'s tool is handed JVM options as arguments rather than an environment variable. */
+    public static boolean takesJvmOptionsInArgv(String language) {
+        return "scala".equals(language);
+    }
+
+    /**
+     * {@code scala-cli run --java-opt <o>… <inputs…> -- args…}: {@code inputs} is a file, or a project folder
+     * with its {@code --main-class} ({@link ScalaRun#cliInputs}). {@code run} is explicit: a bare
+     * {@code scala-cli <file>} also runs it, but {@code scala}, the Scala 3.5+ launcher, documents
+     * {@code scala run}. {@code --} keeps a program argument that looks like an option ({@code -v}) the
+     * program's.
+     */
+    public static List<String> scalaCli(String tool, List<String> inputs, List<String> jvmOptions, List<String> args) {
+        List<String> argv = new ArrayList<>();
+        argv.add(tool);
+        argv.add("run");
+        for (String option : jvmOptions == null ? List.<String>of() : jvmOptions) {
+            if (option != null && !option.isBlank()) {
+                argv.add("--java-opt");
+                argv.add(option);
+            }
+        }
+        argv.addAll(inputs);
+        if (args != null && !args.isEmpty()) {
+            argv.add("--");
+            argv.addAll(args);
+        }
+        return List.copyOf(argv);
+    }
+
     /** The command that runs {@code file} (as its host names it) with {@code args}: {@code <tool> <file> args…}. */
     public static List<String> argv(String toolExecutable, String file, List<String> args) {
         List<String> argv = new ArrayList<>();
@@ -169,7 +272,9 @@ public final class JvmScriptRun {
      * debug session puts the JDWP agent. {@code JAVA_OPTS} for Groovy's {@code startGroovy}, which reads it for
      * the one JVM it starts, and for {@code kotlinc}, whose launcher does the same (a script runs inside the
      * compiler's JVM). ({@code JAVA_TOOL_OPTIONS} would reach every JVM the command forks as well.) A compiled
-     * Kotlin program is started by {@code java} itself, so its options go on the command line instead.
+     * Kotlin program is started by {@code java} itself, so its options go on the command line instead. None
+     * for Scala CLI, which takes {@code --java-opt} arguments ({@link #takesJvmOptionsInArgv}): its JVM is one
+     * of several the command starts (the Bloop compile server is another).
      */
     public static String jvmOptionsVariable(String language) {
         return "groovy".equals(language) || "kotlin".equals(language) ? "JAVA_OPTS" : null;

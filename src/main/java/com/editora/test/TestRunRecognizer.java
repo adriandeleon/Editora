@@ -26,6 +26,8 @@ public final class TestRunRecognizer {
             case NPM -> isNpmTest(taskArgs);
             case CARGO -> "test".equals(firstNonFlag(taskArgs));
             case GO -> "test".equals(taskArgs.get(0));
+            // sbt, Mill and Scala CLI tests stream to the tool's console; the Test Results tree does not read them.
+            case SBT, MILL, SCALA_CLI -> false;
             // clojure.test, Kaocha and cognitect's runner print prose, not results a tree can be built from: their
             // test runs stream to the console like any other task.
             case CLOJURE, LEIN, BABASHKA -> false;
@@ -117,6 +119,9 @@ public final class TestRunRecognizer {
             case MAVEN, GRADLE, CARGO -> List.of("test");
             case NPM -> List.of("run", "test");
             case GO -> List.of("test", "./...");
+            case SBT -> List.of("test");
+            case MILL -> List.of("__.test");
+            case SCALA_CLI -> List.of("test", ".");
             case CLOJURE -> List.of("-M:test"); // the usual alias; a project without one says so itself
             case LEIN -> List.of("test");
             case BABASHKA -> List.of("run", "test");

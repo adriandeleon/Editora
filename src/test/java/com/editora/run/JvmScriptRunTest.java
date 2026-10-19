@@ -42,6 +42,91 @@ class JvmScriptRunTest {
     }
 
     @Test
+    void aScalaFileRunsThroughScalaCliWithItsJvmOptionsAsArguments() {
+        assertTrue(JvmScriptRun.supports("scala"));
+        assertEquals("scala-cli", JvmScriptRun.tool("scala"));
+        assertEquals("status.run.toolMissing.scala-cli", JvmScriptRun.missingToolKey("scala"));
+        assertNull(JvmScriptRun.jvmOptionsVariable("scala"), "the options go on the command line");
+        JvmScriptRun.Launch run = JvmScriptRun.launch(
+                "scala",
+                "/sdk/scala-cli",
+                "/p/hello.sc",
+                List.of("-Xmx1g", "-ea"),
+                List.of("-v", "x"),
+                Map.of("JAVA_HOME", "/jdk"),
+                Map.of("JAVA_OPTS", "-Dno=thanks"));
+        assertEquals(
+                List.of(
+                        "/sdk/scala-cli",
+                        "run",
+                        "--java-opt",
+                        "-Xmx1g",
+                        "--java-opt",
+                        "-ea",
+                        "/p/hello.sc",
+                        "--",
+                        "-v",
+                        "x"),
+                run.argv());
+        assertEquals(Map.of("JAVA_HOME", "/jdk"), run.env(), "JAVA_OPTS is not Scala CLI's");
+        assertEquals(
+                List.of("scala-cli", "run", "/p/hello.sc"),
+                JvmScriptRun.scalaCli("scala-cli", List.of("/p/hello.sc"), List.of(), List.of()));
+    }
+
+    @Test
+    void groovyKeepsItsOptionsInJavaOpts() {
+        JvmScriptRun.Launch run = JvmScriptRun.launch(
+                "groovy",
+                "groovy",
+                "/p/R.groovy",
+                List.of("-ea"),
+                List.of("a"),
+                Map.of(),
+                Map.of("JAVA_OPTS", "-Xmx1g"));
+        assertEquals(List.of("groovy", "/p/R.groovy", "a"), run.argv());
+        assertEquals(Map.of("JAVA_OPTS", "-Xmx1g -ea"), run.env());
+        assertEquals(
+                List.of("groovy", "/p/R.groovy"),
+                JvmScriptRun.debugArgv("groovy", "groovy", "/p/R.groovy", List.of(), List.of()));
+    }
+
+    @Test
+    void aScalaDebugCommandCarriesTheAgentPlaceholderFirst() {
+        assertEquals(
+                List.of(
+                        "scala-cli",
+                        "run",
+                        "--java-opt",
+                        JvmScriptRun.AGENT_ARGUMENT,
+                        "--java-opt",
+                        "-Xmx1g",
+                        "--main-class",
+                        "demo.hello",
+                        "/p",
+                        "--",
+                        "a"),
+                JvmScriptRun.scalaCliDebug(
+                        "scala-cli", List.of("--main-class", "demo.hello", "/p"), List.of("-Xmx1g"), List.of("a")));
+    }
+
+    @Test
+    void scalaCliIsLookedForInSdkmansScalacliThenScalaCandidates() {
+        Path home = Path.of("/home/u");
+        assertEquals(
+                List.of(
+                        home.resolve(".sdkman/candidates/scalacli/current/bin/scala-cli"),
+                        home.resolve(".sdkman/candidates/scala/current/bin/scala")),
+                JvmTools.candidates("scala-cli", Map.of(), home, false));
+        assertEquals(
+                List.of(
+                        Path.of("/sdk/candidates/scalacli/current/bin/scala-cli.exe"),
+                        Path.of("/sdk/candidates/scala/current/bin/scala.exe")),
+                JvmTools.candidates("scala-cli", Map.of("SDKMAN_DIR", "/sdk"), home, true));
+        assertTrue(JvmTools.knows("scala-cli"));
+    }
+
+    @Test
     void aClojureFilesJvmOptionsGoWhereItsToolReadsThem(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
         java.nio.file.Files.writeString(dir.resolve("deps.edn"), "{}");
         Path core =

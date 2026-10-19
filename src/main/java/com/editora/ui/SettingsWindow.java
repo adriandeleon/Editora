@@ -7340,6 +7340,17 @@ public class SettingsWindow {
                         v -> config.getSettings().setGroovyLspCommand(v),
                         () -> config.getSettings().getGroovyLspCommand()),
                 new LspServerUi(
+                        "scala",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_SCALA_COMMAND,
+                        "settings.lsp.enableScala",
+                        "settings.lsp.scalaCommand",
+                        "lsp scala metals sbt mill scala-cli bloop bsp language server found installed not found"
+                                + " command path java coursier",
+                        v -> config.getSettings().setScalaLspEnabled(v),
+                        () -> config.getSettings().isScalaLspEnabled(),
+                        v -> config.getSettings().setScalaLspCommand(v),
+                        () -> config.getSettings().getScalaLspCommand()),
+                new LspServerUi(
                         "clojure",
                         com.editora.lsp.LspServerRegistry.DEFAULT_CLOJURE_COMMAND,
                         "settings.lsp.enableClojure",

@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 139;
+    public static final int SCHEMA_VERSION = 140;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -497,6 +497,24 @@ public class Settings {
     /** Override command for launching Gradle; blank = auto (prefer the project's ./gradlew wrapper, else
      *  resolve "gradle" on PATH). */
     private String gradleCommand = "";
+
+    /** Whether the sbt build tool (build.sbt) is offered: its toolbar button, actions popup and console. */
+    private boolean sbtSupport = true;
+
+    /** Override command for launching sbt; blank = resolve "sbt" on PATH. */
+    private String sbtCommand = "";
+
+    /** Whether the Mill build tool (build.mill, build.sc) is offered. */
+    private boolean millSupport = true;
+
+    /** Override command for launching Mill; blank = the project's ./mill, else "mill" on PATH. */
+    private String millCommand = "";
+
+    /** Whether the Scala CLI build tool (project.scala) is offered. */
+    private boolean scalaCliSupport = true;
+
+    /** Override command for launching Scala CLI; blank = resolve "scala-cli" on PATH. */
+    private String scalaCliCommand = "";
     /** Clojure CLI support (a toolbar icon + actions popup of a deps.edn's aliases, streaming to a console): on
      *  by default — self-gates on detection (hidden until a deps.edn is found). */
     private boolean clojureCliSupport = true;
@@ -810,6 +828,7 @@ public class Settings {
     private String cssLspCommand = "";
     private String kotlinLspCommand = "";
     private String groovyLspCommand = "";
+    private String scalaLspCommand = "";
     private String clojureLspCommand = "";
     private String luaLspCommand = "";
     private String dockerfileLspCommand = "";
@@ -864,6 +883,7 @@ public class Settings {
     private boolean cssLspEnabled = true;
     private boolean kotlinLspEnabled = true;
     private boolean groovyLspEnabled = true;
+    private boolean scalaLspEnabled = true;
     private boolean clojureLspEnabled = true;
     private boolean luaLspEnabled = true;
     private boolean dockerfileLspEnabled = true;
@@ -3009,6 +3029,54 @@ public class Settings {
         this.gradleCommand = gradleCommand == null ? "" : gradleCommand;
     }
 
+    public boolean isSbtSupport() {
+        return sbtSupport;
+    }
+
+    public void setSbtSupport(boolean sbtSupport) {
+        this.sbtSupport = sbtSupport;
+    }
+
+    public String getSbtCommand() {
+        return sbtCommand == null ? "" : sbtCommand;
+    }
+
+    public void setSbtCommand(String sbtCommand) {
+        this.sbtCommand = sbtCommand == null ? "" : sbtCommand;
+    }
+
+    public boolean isMillSupport() {
+        return millSupport;
+    }
+
+    public void setMillSupport(boolean millSupport) {
+        this.millSupport = millSupport;
+    }
+
+    public String getMillCommand() {
+        return millCommand == null ? "" : millCommand;
+    }
+
+    public void setMillCommand(String millCommand) {
+        this.millCommand = millCommand == null ? "" : millCommand;
+    }
+
+    public boolean isScalaCliSupport() {
+        return scalaCliSupport;
+    }
+
+    public void setScalaCliSupport(boolean scalaCliSupport) {
+        this.scalaCliSupport = scalaCliSupport;
+    }
+
+    public String getScalaCliCommand() {
+        return scalaCliCommand == null ? "" : scalaCliCommand;
+    }
+
+    public void setScalaCliCommand(String scalaCliCommand) {
+        this.scalaCliCommand = scalaCliCommand == null ? "" : scalaCliCommand;
+    }
+
     public boolean isClojureCliSupport() {
         return clojureCliSupport;
     }
@@ -3740,6 +3808,22 @@ public class Settings {
 
     public void setGroovyLspEnabled(boolean groovyLspEnabled) {
         this.groovyLspEnabled = groovyLspEnabled;
+    }
+
+    public String getScalaLspCommand() {
+        return scalaLspCommand == null ? "" : scalaLspCommand;
+    }
+
+    public void setScalaLspCommand(String scalaLspCommand) {
+        this.scalaLspCommand = scalaLspCommand == null ? "" : scalaLspCommand;
+    }
+
+    public boolean isScalaLspEnabled() {
+        return scalaLspEnabled;
+    }
+
+    public void setScalaLspEnabled(boolean scalaLspEnabled) {
+        this.scalaLspEnabled = scalaLspEnabled;
     }
 
     public String getClojureLspCommand() {

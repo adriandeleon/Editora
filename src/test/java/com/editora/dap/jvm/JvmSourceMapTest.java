@@ -56,6 +56,48 @@ class JvmSourceMapTest {
     }
 
     @Test
+    void scalaClassesMatchByFileNameSinceItsPackagesNeedNotFollowFolders() {
+        Path main = Path.of("/work/app/Main.scala");
+        assertTrue(JvmSourceMap.compiledFrom("demo/Main.scala", main, null, "scala"), "package demo in a flat folder");
+        assertFalse(JvmSourceMap.compiledFrom("demo/Main.scala", main, null, "groovy"));
+        assertFalse(JvmSourceMap.compiledFrom("demo/Other.scala", main, null, "scala"));
+        assertEquals(main, JvmSourceMap.resolve("demo/Main.scala", List.of(main), List.of(), p -> false, "scala"));
+        assertEquals(
+                Path.of("/work/app/Util.scala"),
+                JvmSourceMap.resolve(
+                        "demo/Util.scala",
+                        List.of(main),
+                        List.of(Path.of("/work/app")),
+                        Path.of("/work/app/Util.scala")::equals,
+                        "scala"),
+                "a frame in a file without breakpoints is found in the program's folder");
+    }
+
+    @Test
+    void scalasStandardLibraryIsSteppedOver() {
+        List<String> filters = JvmSourceMap.stepFilters("scala");
+        assertTrue(filters.containsAll(List.of("java.*", "scala.runtime.*", "scala.collection.*", "scala.Predef*")));
+        assertFalse(JvmSourceMap.stepFilters("groovy").contains("scala.runtime.*"));
+    }
+
+    @Test
+    void scalaFramesAreNamedAsTheSourceNamesThem() {
+        assertEquals("Util.twice", JvmSourceMap.frameName("demo.Util$", "twice", null, "scala"));
+        assertEquals("Main.greet", JvmSourceMap.frameName("demo.Main$package$", "greet", null, "scala"));
+        assertEquals(
+                "Main.greet { lambda }",
+                JvmSourceMap.frameName("demo.Main$package$", "greet$$anonfun$1", null, "scala"));
+        assertEquals("Main.greet { lambda }", JvmSourceMap.frameName("demo.Main$", "$anonfun$greet$1", null, "scala"));
+        assertEquals("Main { lambda }", JvmSourceMap.frameName("demo.Main$package$", "$anonfun$1", null, "scala"));
+        assertEquals("hello", JvmSourceMap.frameName("hello$_", "<init>", null, "scala"), "a Scala CLI script's body");
+        assertEquals("hello { lambda }", JvmSourceMap.frameName("hello$_", "$init$$$anonfun$1", null, "scala"));
+        assertEquals("Report.run", JvmSourceMap.frameName("com.acme.Report", "run", null, "groovy"));
+        assertTrue(JvmSourceMap.hiddenField("0bitmap$1", "scala"));
+        assertFalse(JvmSourceMap.hiddenField("count", "scala"));
+        assertFalse(JvmSourceMap.hiddenField("0bitmap$1", "groovy"));
+    }
+
+    @Test
     void clojuresRuntimeAndCoreAreSteppedOver() {
         List<String> filters = JvmSourceMap.stepFilters("clojure");
         assertTrue(filters.containsAll(List.of("java.*", "clojure.lang.*", "clojure.core*", "clojure.main*")));

@@ -117,6 +117,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Debug stops at breakpoints in a namespace's functions or a script's top-level forms, under the Clojure CLI or
   Leiningen, with locals kept visible and frames named as Clojure names them (`my-app.core/greet`); Babashka,
   a native program, cannot be debugged and says so. Settings schema 139.
+- **Scala: Metals, sbt, Mill, Scala CLI, Run and Debug.** Scala files get completion, diagnostics, navigation,
+  rename and formatting from Metals 1.6.9, installed in one click (a pinned coursier resolves it into Editora's
+  folder; it runs on the JDK chosen in Settings). Language servers' questions are now asked — Metals' "Import
+  build?" among them — and Metals' input boxes, pick lists and status items work. sbt (`build.sbt`), Mill
+  (`build.mill`, `build.sc`) and Scala CLI (`project.scala`) projects get a toolbar button, actions popup and
+  console like Gradle's, with each sbt subproject's or Mill module's tasks loaded on demand. Run File and the
+  gutter ▶ (on an `@main def`, an `object … extends App`, a `def main`, or a `.sc` script) run a file of an sbt or
+  Mill build through it (`sbt "runMain …"`, `./mill <module>.runMain …`) and any other file with Scala CLI, with
+  the Scala CLI and Scala versions in the Run window; a new Scala run configuration runs files with Scala CLI.
+  Debug uses Metals' debug adapter for a file of a build, and Editora's own debugger over Scala CLI for a script,
+  stepping over the standard library. Settings schema 140.
 - **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
   files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
   `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),

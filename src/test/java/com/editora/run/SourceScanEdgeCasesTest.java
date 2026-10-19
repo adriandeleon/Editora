@@ -215,8 +215,14 @@ class SourceScanEdgeCasesTest {
         assertEquals(List.of("-M:test"), TestRunRecognizer.defaultTestTask(BuildTool.CLOJURE));
         assertEquals(List.of("test"), TestRunRecognizer.defaultTestTask(BuildTool.LEIN));
         assertEquals(List.of("run", "test"), TestRunRecognizer.defaultTestTask(BuildTool.BABASHKA));
-        java.util.Set<BuildTool> consoleOnly =
-                java.util.EnumSet.of(BuildTool.CLOJURE, BuildTool.LEIN, BuildTool.BABASHKA);
+        // sbt, Mill and Scala CLI tests stream to their console too: Test Results does not read them yet.
+        java.util.Set<BuildTool> consoleOnly = java.util.EnumSet.of(
+                BuildTool.CLOJURE,
+                BuildTool.LEIN,
+                BuildTool.BABASHKA,
+                BuildTool.SBT,
+                BuildTool.MILL,
+                BuildTool.SCALA_CLI);
         for (BuildTool tool : BuildTool.values()) {
             assertEquals(
                     !consoleOnly.contains(tool),

@@ -74,7 +74,8 @@ not new logic:
    `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle,
    `PINNED_SERVER` for a pinned per-platform distribution too big to hold in memory — streamed to disk,
    hash-checked, unpacked by `tar`, and announced with its size before it starts — `PINNED_TOOL` with a
-   `pinnedTool` recipe for a per-OS binary pinned by SHA-256, as clojure-lsp is), and the persist case in
+   `pinnedTool` recipe for a per-OS binary pinned by SHA-256, as clojure-lsp is, `COURSIER_LSP` for a server
+   published only as Maven artifacts — a pinned coursier resolves it, as for Metals), and the persist case in
    `InstallCoordinator.applyServerCommand`. A server run by `java` gets the Settings JDK
    through `JvmServerCommand.withJdk`.
 
@@ -86,7 +87,7 @@ signature change. If the language has no bundled grammar, also do
 
 Mirrors the LSP recipe. The language→adapter spec is
 [`dap/DapServerRegistry.java`](../src/main/java/com/editora/dap/DapServerRegistry.java)
-(`Kind` = `JDTLS` / `STDIO` / `SOCKET` / `JVM`), `languageIdsForDebug()` gates the breakpoint gutter +
+(`Kind` = `JDTLS` / `STDIO` / `SOCKET` / `JVM` / `LANGUAGE_SERVER`), `languageIdsForDebug()` gates the breakpoint gutter +
 debug commands, and the Settings → Debugging page is data-driven over
 `SettingsWindow.debugAdapterUis()`. Java rides the jdtls session; Python (debugpy) is stdio;
 JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by
@@ -103,7 +104,17 @@ files run under more than one tool decides per file in `JvmScriptRun.launch` (Cl
 Clojure CLI, Leiningen or Babashka, the folder and the command line). A language whose files are compiled before
 they run (a Kotlin `.kt` program) plans the compile itself (`run/KotlinRun`, `run/KotlinBuild`), runs it as a
 `BeforeLaunchStep.Command`, and starts `java` with the agent on its command line (`jvmOptionsInArgv`). An attach
-to a build's JVM anchored at such a file goes to the same adapter (`DebugCoordinator.jvmAdapterLanguage`).
+to a build's JVM anchored at such a file goes to the same adapter (`DebugCoordinator.jvmAdapterLanguage`). A
+tool that takes JVM options on its command line rather than in a variable (Scala CLI's `--java-opt`) answers
+`JvmScriptRun.takesJvmOptionsInArgv` and puts `JvmScriptRun.AGENT_ARGUMENT` where the agent goes; a language
+whose packages need not follow folders says so in `JvmSourceMap.packagesFollowFolders`, and its breakpoints bind
+by file name.
+
+An adapter that the language's **server** starts on request is `Kind.LANGUAGE_SERVER`: the start command and its
+arguments go in [`dap/HostedDebugAdapter`](../src/main/java/com/editora/dap/HostedDebugAdapter.java) (Metals'
+`debug-adapter-start`), which also reads the reply's socket; `DapManager.startHosted` does the rest. A file the
+server does not debug can fall back to another kind (`DapServerRegistry.fallbackKind`). jdtls keeps its own
+`JDTLS` path, since Java's launch is resolved by the client first.
 
 ## Add a build tool
 

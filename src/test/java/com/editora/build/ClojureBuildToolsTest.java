@@ -25,7 +25,8 @@ class ClojureBuildToolsTest {
         List<BuildTool> tools = BuildTool.enabled();
         assertEquals(
                 List.of(BuildTool.CLOJURE, BuildTool.LEIN, BuildTool.BABASHKA),
-                tools.subList(tools.indexOf(BuildTool.GRADLE) + 1, tools.size()));
+                tools.subList(tools.indexOf(BuildTool.CLOJURE), tools.size()));
+        assertTrue(tools.indexOf(BuildTool.CLOJURE) > tools.indexOf(BuildTool.GRADLE));
         assertEquals(List.of("deps.edn"), BuildTool.CLOJURE.markers());
         assertEquals(List.of("project.clj"), BuildTool.LEIN.markers());
         assertEquals(List.of("bb.edn"), BuildTool.BABASHKA.markers());

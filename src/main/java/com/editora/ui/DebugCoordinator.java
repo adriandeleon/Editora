@@ -338,6 +338,8 @@ final class DebugCoordinator {
             // Editora's own JVM adapter: nothing to install; the tool (groovy, kotlinc, clojure or lein) is checked
             // when the session starts (bb cannot be debugged).
             case "groovy", "kotlin", "clojure" -> dapManager.isLanguageAvailable(language);
+            // Metals' adapter for a build's file, Editora's own for a script; which applies is decided at start.
+            case "scala" -> dapManager.isLanguageAvailable("scala");
             default -> false;
         };
     }
@@ -2161,14 +2163,14 @@ final class DebugCoordinator {
      * Debugs a saved {@link RunConfiguration} — its main class, program args, VM args, environment and
      * working directory, and its before-launch step.
      *
-     * <p>Java, Groovy and Clojure: the other script types run but do not debug yet.
+     * <p>Java, Groovy, Clojure and Scala: the other script types run but do not debug yet.
      */
     void debugConfig(RunConfiguration cfg) {
         if (cfg.isDeployed()) {
             ops.debugDeployed(cfg); // the program runs on the host; the debugger attaches through a tunnel
             return;
         }
-        if (com.editora.run.JvmScriptRun.supports(cfg.type())) {
+        if (com.editora.run.ScriptRunCommand.isJvmScript(cfg.type())) {
             debugJvmScriptConfig(cfg);
             return;
         }
@@ -2284,9 +2286,9 @@ final class DebugCoordinator {
     }
 
     /**
-     * Debugs a Groovy or Clojure script configuration on Editora's JVM adapter: its script, arguments, folder,
-     * environment, JDK and VM arguments (where the tool hands them to its JVM, beside the debugger's agent), after
-     * its before-launch step.
+     * Debugs a Groovy, Clojure or Scala script configuration: its script, arguments, folder, environment, JDK
+     * and VM arguments (where the tool hands them to its JVM, beside the debugger's agent: Scala CLI's as
+     * {@code --java-opt}), after its before-launch step.
      * On this machine only: a configuration whose folder is on a remote host runs there but does not debug yet.
      */
     private void debugJvmScriptConfig(RunConfiguration cfg) {
@@ -2351,7 +2353,8 @@ final class DebugCoordinator {
                     ops.openToolWindow();
                     nameSession(cfg.name());
                     dapManager.setProgramArgs(args);
-                    if (program) {
+                    if (program || com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(cfg.type())) {
+                        // `java` (a Kotlin program) and Scala CLI take VM arguments on their command line.
                         dapManager.setVmArgs(com.editora.run.ProgramArgs.tokenize(cfg.vmArgs()));
                     } else {
                         dapManager.setVmArgs(cfg.vmArgs().strip()); // placed where the tool reads them (JvmScriptRun)

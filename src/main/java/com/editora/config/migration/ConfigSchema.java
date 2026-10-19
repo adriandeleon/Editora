@@ -299,7 +299,11 @@ public enum ConfigSchema {
                     // v138→139: + clojureLspCommand ("" = clojure-lsp on PATH) and clojureLspEnabled (on), and the
                     // Clojure CLI, Leiningen and Babashka build tools' {clojureCli,leiningen,babashka}Support (on) +
                     // …Command (""); additive, absent is the default.
-                    Map.entry(138, (Migration) ConfigMigrations::identity)),
+                    Map.entry(138, (Migration) ConfigMigrations::identity),
+                    // v139→140: + scalaLspCommand ("" = not installed), scalaLspEnabled (on), and the sbt, Mill and
+                    // Scala CLI build tools' sbtSupport/millSupport/scalaCliSupport (on) with their command overrides
+                    // (""); additive, absent is the default.
+                    Map.entry(139, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

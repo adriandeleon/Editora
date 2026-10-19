@@ -13,9 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DapServerRegistryTest {
 
     @Test
-    void languageIdsForDebugAreJavaPythonJavascriptGroovyKotlinAndClojure() {
+    void languageIdsForDebugAreJavaPythonJavascriptGroovyKotlinClojureAndScala() {
         assertEquals(
-                Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure"),
+                Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala"),
                 DapServerRegistry.languageIdsForDebug());
     }
 

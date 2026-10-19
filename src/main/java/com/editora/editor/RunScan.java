@@ -95,6 +95,10 @@ final class RunScan {
         } else if (in.eligible() && "groovy".equals(language)) {
             line = groovyRunLine(in.name(), text);
             runnable = line >= 0;
+        } else if (in.eligible() && "scala".equals(language)) {
+            // An @main def, an object extending App or with a main method, else a .sc script from the top.
+            line = com.editora.run.ScalaRun.runLine(in.name(), text);
+            runnable = line >= 0;
         } else if (in.eligible() && "clojure".equals(language)) {
             line = clojureRunLine(in.name(), text);
             runnable = line >= 0;

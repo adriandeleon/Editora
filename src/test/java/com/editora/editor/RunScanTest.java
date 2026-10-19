@@ -95,6 +95,19 @@ class RunScanTest {
     }
 
     @Test
+    void aScalaFileRunsAtItsMainAScriptFromTheTopAndABuildNever() {
+        RunScan.Result main = RunScan.scan(
+                inputs("scala", "Main.scala"), "package demo\n\n@main def hello(): Unit =\n  println(1)\n");
+        assertTrue(main.runnable());
+        assertEquals(2, main.line());
+        assertEquals(
+                0, RunScan.scan(inputs("scala", "hello.sc"), "println(1)\n").line());
+        assertFalse(RunScan.scan(inputs("scala", "Util.scala"), "object Util\n").runnable());
+        assertFalse(RunScan.scan(inputs("scala", "build.sbt"), "lazy val root = project\n")
+                .runnable());
+    }
+
+    @Test
     void aKotlinScriptRunsFromTheTopAProgramFromItsMainAndABuildScriptNever() {
         RunScan.Result script = RunScan.scan(inputs("kotlin", "tool.main.kts"), "println(\"hi\")\n");
         assertTrue(script.runnable());

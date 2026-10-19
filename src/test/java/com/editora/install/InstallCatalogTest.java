@@ -414,6 +414,50 @@ class InstallCatalogTest {
     }
 
     @Test
+    void metalsIsResolvedByAPinnedCoursierAndRunOnJava() {
+        assertTrue(InstallCatalog.installableServerIds().contains("scala"));
+        Step s = InstallCatalog.serverInstall("scala").orElseThrow().get(0);
+        assertEquals(Kind.COURSIER_LSP, s.kind());
+        assertEquals(java.util.Set.of(Prereq.JAVA), s.prereqs());
+        assertEquals("plugins/lsp/scala", s.destSubpath());
+        InstallCatalog.CoursierLsp metals = InstallCatalog.coursierLsp(s.id()).orElseThrow();
+        assertEquals("org.scalameta:metals_2.13:" + InstallCatalog.METALS_VERSION, metals.artifact());
+        assertEquals("scala.meta.metals.Main", metals.mainClass());
+        for (Platform p : Platform.values()) {
+            InstallCatalog.PinnedAsset asset = InstallCatalog.COURSIER_TOOL.assetFor(p);
+            assertNotNull(asset, "coursier launcher for " + p);
+            assertTrue(asset.url()
+                    .startsWith("https://github.com/coursier/coursier/releases/download/v"
+                            + InstallCatalog.COURSIER_VERSION + "/cs-"));
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), "pinned by its SHA-256");
+            assertEquals(
+                    p == Platform.WIN_X64 ? InstallCatalog.Packing.ZIP : InstallCatalog.Packing.GZ, asset.packing());
+        }
+        assertEquals(
+                List.of("/c/cs", "fetch", "org.scalameta:metals_2.13:" + InstallCatalog.METALS_VERSION),
+                InstallCatalog.coursierFetchArgv("/c/cs", metals.artifact()));
+    }
+
+    @Test
+    void metalsRunsWithItsJvmOptionsOverItsLibFolder() {
+        java.nio.file.Path lib = java.nio.file.Path.of("/home/a user/.editora/plugins/lsp/scala/lib");
+        String command = InstallCatalog.coursierLspCommand(lib, InstallCatalog.METALS);
+        for (List<String> argv : tokenizedEverywhere(command)) {
+            assertEquals(
+                    List.of(
+                            "java",
+                            "-Xss4m",
+                            "-Xms100m",
+                            "-XX:+UseG1GC",
+                            "-XX:+UseStringDeduplication",
+                            "-cp",
+                            lib + java.io.File.separator + "*",
+                            "scala.meta.metals.Main"),
+                    argv);
+        }
+    }
+
+    @Test
     void aServerJarRunsWithJavaJarAndSurvivesASpaceInItsPath() {
         java.nio.file.Path jar = java.nio.file.Path.of("/home/a user/.editora/plugins/lsp/groovy/gls.jar");
         String command = InstallCatalog.jvmJarCommand(jar);

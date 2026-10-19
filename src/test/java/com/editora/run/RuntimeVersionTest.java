@@ -184,6 +184,24 @@ class RuntimeVersionTest {
     }
 
     @Test
+    void scalaCliSaysItsOwnVersionAndItsDefaultScala() {
+        assertEquals(
+                List.of("/sdk/scalacli/bin/scala-cli", "--version"),
+                RuntimeVersion.probeFor(List.of("/sdk/scalacli/bin/scala-cli", "run", "x.sc"))
+                        .argv());
+        assertEquals(
+                "Scala CLI 1.18.0 (Scala 3.9.0)",
+                parse(
+                                List.of("scala-cli", "run", "x.sc"),
+                                "Scala CLI version: 1.18.0\nScala version (default): 3.9.0\n")
+                        .label());
+        assertEquals(
+                "Scala 2.13.16",
+                parse(List.of("scala"), "Scala code runner version 2.13.16 -- Copyright 2002-2025, LAMP/EPFL\n")
+                        .label());
+    }
+
+    @Test
     void kotlinSaysTheCompilersVersionAndItsJavaButNotTheToolchainClis() {
         assertEquals(
                 List.of("/sdk/kotlin/bin/kotlinc", "-version"),
