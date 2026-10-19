@@ -738,8 +738,8 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                                 sourceRoots,
                                 Files::isRegularFile)
                         != null;
-            } catch (AbsentInformationException | RuntimeException e) {
-                return false;
+            } catch (AbsentInformationException | RuntimeException | InternalError e) {
+                return false; // (InternalError: an SMAP JDI cannot read — see compiledFrom)
             }
         });
     }
@@ -848,12 +848,19 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                     bp.requests().add(request);
                     bp.verified()[0] = true;
                 }
-            } catch (AbsentInformationException | ClassNotPreparedException e) {
+            } catch (AbsentInformationException | ClassNotPreparedException | InternalError e) {
                 LOG.log(Level.FINEST, "no line table in " + type.name(), e);
             }
         }
     }
 
+    /**
+     * Whether {@code type} was compiled from {@code file}. A class whose {@code SourceDebugExtension} (the SMAP
+     * Kotlin writes for inlined code) JDI cannot parse makes every source query of it throw
+     * {@code InternalError("bad SourceDebugExtension syntax")} — classes inside kotlinc 2.4.10, which runs a
+     * script in its own JVM, have one. Such a class counts as one without source information rather than failing
+     * the whole request.
+     */
     private boolean compiledFrom(ReferenceType type, Path file) {
         try {
             if (!JvmSourceMap.sourceName(file).equals(type.sourceName())) {
@@ -866,7 +873,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 }
             }
             return false;
-        } catch (AbsentInformationException e) {
+        } catch (AbsentInformationException | InternalError e) {
             return false;
         }
     }
@@ -1069,7 +1076,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 f.setId(handle(new FrameHandle(thread, i)));
                 f.setName(JvmSourceMap.frameName(
                         at.declaringType().name(), at.method().name(), sourceNameOf(at)));
-                f.setLine(Math.max(0, at.lineNumber()));
+                f.setLine(Math.max(0, lineOf(at)));
                 f.setColumn(1);
                 Path file = sourceOf(at, known);
                 if (file != null) {
@@ -1094,16 +1101,25 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private Path sourceOf(Location at, List<Path> known) {
         try {
             return JvmSourceMap.resolve(at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile);
-        } catch (AbsentInformationException e) {
-            return null;
+        } catch (AbsentInformationException | InternalError e) {
+            return null; // (InternalError: an SMAP JDI cannot read — see compiledFrom)
         }
     }
 
     private static String sourceNameOf(Location at) {
         try {
             return at.sourceName(null);
-        } catch (AbsentInformationException e) {
+        } catch (AbsentInformationException | InternalError e) {
             return null;
+        }
+    }
+
+    /** {@code at}'s line, or -1 where its class's SMAP cannot be read (see {@link #compiledFrom}). */
+    private static int lineOf(Location at) {
+        try {
+            return at.lineNumber();
+        } catch (InternalError e) {
+            return -1;
         }
     }
 

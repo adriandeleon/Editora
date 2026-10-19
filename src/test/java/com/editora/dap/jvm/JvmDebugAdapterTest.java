@@ -551,4 +551,68 @@ class JvmDebugAdapterTest {
             program.destroyForcibly();
         }
     }
+
+    @Test
+    void aLoadedClassWithAnSmapJdiCannotReadDoesNotBreakBreakpointsOrFrames(@TempDir Path dir) throws Exception {
+        // kotlinc 2.4.10 runs a script in a JVM holding classes like this one: JDI throws InternalError ("bad
+        // SourceDebugExtension syntax") from every source query of it, which failed every setBreakpoints.
+        Path out = Files.createDirectories(dir.resolve("out"));
+        byte[] bad = java.lang.classfile.ClassFile.of()
+                .build(
+                        java.lang.constant.ClassDesc.of("Bad"),
+                        cb -> cb.with(java.lang.classfile.attribute.SourceFileAttribute.of("Bad.kt"))
+                                .with(java.lang.classfile.attribute.SourceDebugExtensionAttribute.of(
+                                        "SMAP\nBad.kt\nKotlin\nnot a section\n"
+                                                .getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        Files.write(out.resolve("Bad.class"), bad);
+        Path pkg = Files.createDirectories(dir.resolve("p"));
+        Path source = pkg.resolve("Loads.java");
+        Files.writeString(source, """
+                package p;
+                public class Loads {
+                    public static void main(String[] args) throws Exception {
+                        Class.forName("Bad");
+                        int x = 1;
+                        System.out.println("x=" + x);
+                    }
+                }
+                """);
+        var javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        assertEquals(0, javac.run(null, null, null, "-g", "-d", out.toString(), source.toString()));
+        Session s = open();
+        try {
+            Map<String, Object> launch = Map.of(
+                    "argv",
+                    List.of(javaExecutable(), "-cp", out.toString(), "p.Loads"),
+                    "cwd",
+                    dir.toString(),
+                    "jvmOptionsInArgv",
+                    true,
+                    "language",
+                    "java");
+            CompletableFuture<Void> launched = s.server().launch(launch);
+            s.client().initialized.get(WAIT, TimeUnit.SECONDS);
+            breakAt(s.server(), source, 6);
+            s.server().configurationDone(null);
+            launched.get(WAIT, TimeUnit.SECONDS);
+
+            StoppedEventArguments stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(stop, "the breakpoint is hit: " + s.client().output);
+            breakAt(s.server(), source, 5, 6); // every loaded class is looked at again, Bad among them
+            StackFrame frame = top(s.server(), stop.getThreadId());
+            assertEquals(6, frame.getLine());
+            assertEquals("1", valueOf(locals(s.server(), frame.getId()), "x"));
+
+            breakAt(s.server(), source);
+            ContinueArguments cont = new ContinueArguments();
+            cont.setThreadId(stop.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            assertEquals(0, s.client().exited.get(WAIT, TimeUnit.SECONDS));
+            assertTrue(
+                    s.client().output.toString().contains("x=1"),
+                    s.client().output.toString());
+        } finally {
+            s.socket().close();
+        }
+    }
 }
