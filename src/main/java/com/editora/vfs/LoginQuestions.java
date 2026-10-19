@@ -1,6 +1,9 @@
 package com.editora.vfs;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.sshd.common.AttributeRepository;
@@ -19,8 +22,13 @@ final class LoginQuestions {
     static final AttributeRepository.AttributeKey<String> SUBJECT = new AttributeRepository.AttributeKey<>();
     /** Passwords tried so far: a password given before the login counts as the first. */
     static final AttributeRepository.AttributeKey<AtomicInteger> PASSWORDS = new AttributeRepository.AttributeKey<>();
-    /** Keyboard-interactive rounds asked so far. */
-    static final AttributeRepository.AttributeKey<AtomicInteger> ROUNDS = new AttributeRepository.AttributeKey<>();
+    /**
+     * How often each keyboard-interactive round, told apart by its questions, has been asked so far. A server
+     * that asks in rounds (a password, then a 2FA code) puts a new question in each; only the same questions
+     * coming back mean an earlier answer was not accepted.
+     */
+    static final AttributeRepository.AttributeKey<Map<List<String>, Integer>> ROUNDS =
+            new AttributeRepository.AttributeKey<>();
 
     /** No questions can be asked: a login without a person (tests, a probe). */
     static final LoginQuestions NONE = new LoginQuestions(null, new PromptClock());
@@ -85,6 +93,13 @@ final class LoginQuestions {
     /** The next value of the {@code key} counter on {@code session}, counting from 1. */
     static int next(Session session, AttributeRepository.AttributeKey<AtomicInteger> key) {
         return session.computeAttributeIfAbsent(key, k -> new AtomicInteger()).incrementAndGet();
+    }
+
+    /** How many times a round asking {@code questions} has now been asked on {@code session}, counting from 1. */
+    static int round(Session session, List<LoginPrompt.Question> questions) {
+        List<String> texts = questions.stream().map(LoginPrompt.Question::text).toList();
+        return session.computeAttributeIfAbsent(ROUNDS, k -> new ConcurrentHashMap<>())
+                .merge(texts, 1, Integer::sum);
     }
 
     static String subject(Session session) {
