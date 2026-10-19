@@ -33,6 +33,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.command.KeymapManager;
+import com.editora.vfs.LoginPrompt;
 import com.editora.vfs.RemoteConnection;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -415,6 +416,88 @@ class RemoteSitesFxTest {
         // Asked from the connection's own thread, as SSH does: the same question, the same answers.
         assertTrue(answerHostKey(tr("dialog.hostKey.connect"), false));
         assertFalse(answerHostKey(null, false));
+    }
+
+    @Test
+    void anUnansweredLoginQuestionClosesItsDialogWhenItTimesOut() throws Exception {
+        coordinator.loginAnswerTimeoutMillis = 300;
+        LoginPrompt.Challenge challenge = new LoginPrompt.Challenge(
+                LoginPrompt.Kind.PASSWORD,
+                "ada@docs.example.test",
+                "",
+                "",
+                List.of(new LoginPrompt.Question("", false)),
+                1);
+
+        boolean stillShowing = unansweredQuestionLeavesItsDialogShowing(
+                "answerLogin", new Class<?>[] {LoginPrompt.Challenge.class}, challenge);
+
+        assertFalse(stillShowing, "the login dialog stayed on screen after its question gave up");
+    }
+
+    @Test
+    void anUnansweredHostKeyQuestionClosesItsDialogWhenItTimesOut() throws Exception {
+        coordinator.hostKeyAnswerTimeoutMillis = 300;
+
+        boolean stillShowing = unansweredQuestionLeavesItsDialogShowing(
+                "confirmHostKey",
+                new Class<?>[] {String.class, int.class, String.class, String.class},
+                "new.example.test",
+                2222,
+                "ssh-ed25519",
+                "SHA256:abcdef");
+
+        assertFalse(stillShowing, "the host-key dialog stayed on screen after its question gave up");
+    }
+
+    /**
+     * Asks a question from a worker, as SSH does, and leaves it unanswered: it must give up with a refusal
+     * (null, or false for a host key) once its time is up. Returns whether its dialog is still on screen two
+     * seconds later.
+     */
+    private boolean unansweredQuestionLeavesItsDialogShowing(String method, Class<?>[] types, Object... args)
+            throws Exception {
+        CompletableFuture<Window> shown = new CompletableFuture<>();
+        ListChangeListener<Window> watcher = change -> {
+            while (change.next()) {
+                for (Window w : change.getAddedSubList()) {
+                    if (w.getScene() != null && w.getScene().getRoot() instanceof DialogPane) {
+                        shown.complete(w);
+                    }
+                }
+            }
+        };
+        FxTestSupport.runOnFx(() -> Window.getWindows().addListener(watcher));
+        CompletableFuture<Object> answer = new CompletableFuture<>();
+        try {
+            Thread worker = new Thread(
+                    () -> {
+                        try {
+                            answer.complete(FxTestSupport.call(coordinator, method, types, args));
+                        } catch (Throwable t) {
+                            answer.completeExceptionally(t);
+                        }
+                    },
+                    "test-ssh-connect");
+            worker.setDaemon(true);
+            worker.start();
+            Window dialog = shown.get(30, TimeUnit.SECONDS);
+            Object result = answer.get(30, TimeUnit.SECONDS);
+            assertTrue(result == null || Boolean.FALSE.equals(result), "an unanswered question was taken as " + result);
+            for (int i = 0; i < 100 && FxTestSupport.callOnFx(dialog::isShowing); i++) {
+                Thread.sleep(20);
+            }
+            return FxTestSupport.callOnFx(dialog::isShowing);
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                Window.getWindows().removeListener(watcher);
+                for (Window w : List.copyOf(Window.getWindows())) {
+                    if (w.getScene() != null && w.getScene().getRoot() instanceof DialogPane) {
+                        w.hide(); // a dialog this test left open must not block the next one
+                    }
+                }
+            });
+        }
     }
 
     /**
