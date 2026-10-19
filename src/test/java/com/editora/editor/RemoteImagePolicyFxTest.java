@@ -174,11 +174,11 @@ class RemoteImagePolicyFxTest {
                     PreviewImageLoader.remoteImages(), "print and the exports have nobody to ask: they do not fetch");
             assertNull(PreviewImageLoader.fetchForExport(REMOTE, null));
             assertFalse(MarkdownRenderer.ImagePolicy.DOCUMENT.allows(REMOTE));
-            assertTrue(new MarkdownRenderer.Live(null, null, false, true).loadsRemote(REMOTE));
-            assertFalse(new MarkdownRenderer.Live(null, null, false, false).loadsRemote(REMOTE));
-            assertFalse(new MarkdownRenderer.Live(null, null, false, true).loadsRemote("file:///x.png"));
+            assertTrue(new MarkdownRenderer.Live(null, null, false, true, true).loadsRemote(REMOTE));
+            assertFalse(new MarkdownRenderer.Live(null, null, false, false, true).loadsRemote(REMOTE));
+            assertFalse(new MarkdownRenderer.Live(null, null, false, true, true).loadsRemote("file:///x.png"));
             PreviewImageLoader.setRemotePolicy(RemotePolicy.NEVER);
-            assertFalse(new MarkdownRenderer.Live(null, null, false, true).loadsRemote(REMOTE), "never is never");
+            assertFalse(new MarkdownRenderer.Live(null, null, false, true, true).loadsRemote(REMOTE), "never is never");
             PreviewImageLoader.setRemoteImages(true);
             assertEquals(RemotePolicy.ALWAYS, PreviewImageLoader.remotePolicy());
             PreviewImageLoader.setRemoteImages(false);

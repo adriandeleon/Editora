@@ -859,8 +859,11 @@ final class DebugCoordinator {
         List<Breakpoint> stored = map.get(key);
         // Not the snapshot alone: a second window on this file has its own copy of the breakpoints, and
         // writing this one as the whole list deleted every breakpoint the other had set.
-        List<Breakpoint> bps = MarkMerge.withForeign(
-                stored, seenInStore.get(buffer), buffer.getBreakpointManager().snapshot(), Breakpoint::line);
+        List<Breakpoint> snapshot = buffer.getBreakpointManager().snapshot();
+        if (buffer.encryption().isEncrypted()) {
+            snapshot = snapshot.stream().map(b -> b.withLineText("")).toList(); // see persistBookmarks
+        }
+        List<Breakpoint> bps = MarkMerge.withForeign(stored, seenInStore.get(buffer), snapshot, Breakpoint::line);
         if (bps.isEmpty()) {
             map.remove(key);
         } else {

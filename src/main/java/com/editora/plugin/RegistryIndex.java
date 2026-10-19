@@ -32,6 +32,8 @@ public class RegistryIndex {
         }
         // Drop entries with no id (malformed) so callers never see a half-formed row.
         idx.plugins.removeIf(e -> e == null || e.id == null || e.id.isBlank());
+        // A plugin whose feature is built in now is not offered (the registry may still list it for older versions).
+        idx.plugins.removeIf(e -> RetiredPlugins.isRetired(e.id));
         // Defensive: cap displayed strings so a hostile registry can't bloat the UI with megabyte fields.
         for (RegistryEntry e : idx.plugins) {
             e.id = cap(e.id, 100);

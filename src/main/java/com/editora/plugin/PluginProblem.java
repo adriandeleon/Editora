@@ -40,6 +40,8 @@ public record PluginProblem(Kind kind, List<String> args, String detail) {
         INVALID_ID,
         /** Its id names one of Editora's own tool folders; args: the id. */
         RESERVED_ID,
+        /** A plugin whose feature is built into Editora now ({@link RetiredPlugins}); args: the id. */
+        RETIRED,
         /** A folder with that name that is not a plugin is in the way; args: the id. */
         IN_THE_WAY,
         /** The installed copy is a link to a folder elsewhere (a plugin being developed); args: the id. */
@@ -81,6 +83,7 @@ public record PluginProblem(Kind kind, List<String> args, String detail) {
             case MANIFEST_INVALID -> "invalid plugin.json: " + detail;
             case INVALID_ID -> "invalid plugin id \"" + arg + "\"";
             case RESERVED_ID -> "plugin id \"" + arg + "\" is reserved";
+            case RETIRED -> "plugin \"" + arg + "\" is built into Editora now";
             case IN_THE_WAY -> "a folder named \"" + arg + "\" that is not a plugin is in the way";
             case SYMLINKED -> "the installed \"" + arg + "\" is a link to another folder";
             case ID_MISMATCH -> "the archive is plugin \"" + args.get(1) + "\", not \"" + arg + "\"";

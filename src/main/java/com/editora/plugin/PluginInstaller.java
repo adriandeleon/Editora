@@ -267,6 +267,10 @@ public final class PluginInstaller {
                     return failure(PluginProblem.of(PluginProblem.Kind.VERSION_MISMATCH, wantVersion, version));
                 }
             }
+            if (RetiredPlugins.isRetired(id)) {
+                // The feature is built in now; installing the plugin again would run the two side by side.
+                return failure(PluginProblem.of(PluginProblem.Kind.RETIRED, id));
+            }
             Path target = pluginsDir.resolve(id);
             PluginManifest previous = null;
             if (Files.isSymbolicLink(target)) {
@@ -813,6 +817,11 @@ public final class PluginInstaller {
                 Files.deleteIfExists(p);
             }
         }
+    }
+
+    /** Deletes a retired plugin's folder ({@link RetiredPlugins}); only ever a direct child of the plugins dir. */
+    static void deleteRecursivelyForRetirement(Path dir) throws IOException {
+        deleteRecursively(dir);
     }
 
     private static void deleteQuietly(Path dir) {

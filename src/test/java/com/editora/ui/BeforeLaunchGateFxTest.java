@@ -141,7 +141,9 @@ class BeforeLaunchGateFxTest {
         public static void main(String[] args) throws Exception {
             System.out.println("building");
             System.out.flush();
-            System.in.read();
+            // Not System.in.read(): a step that takes no input has its stdin closed (BeforeLaunchStep), so that
+            // returned at once and the step could be over before the test looked — busy or not was a race.
+            Thread.sleep(Long.MAX_VALUE); // until Stop kills it
         }
     }
 

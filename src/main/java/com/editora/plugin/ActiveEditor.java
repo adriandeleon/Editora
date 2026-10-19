@@ -38,4 +38,12 @@ public interface ActiveEditor {
 
     /** Opens {@code path} in a tab (a no-op for a directory / unreadable file). */
     void openPath(Path path);
+
+    /**
+     * Whether the active buffer is an encrypted file's decrypted text (Editora saves it encrypted again). A plugin
+     * that sends text anywhere — a web service, a log, a file of its own — should leave such a buffer alone.
+     */
+    default boolean isEncrypted() {
+        return false;
+    }
 }
