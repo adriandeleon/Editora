@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Opening a root as a file no longer throws.** `editora /` (or `editora D:\`), and Remote > Open File on
+  `sftp://host` with no path, used to hit a `NullPointerException` in the open path. From the command line that
+  stopped the session restore and left an empty window. Now the status bar says the path is a folder, and no tab
+  opens. A session entry that names a root is dropped instead of restored.
 - **Remote: a 2FA code asked after the password no longer says "That was not accepted. Try again."** A server
   that asks in rounds (a password, then a code) had each round counted as another try; only the same question
   asked again is a retry now.
