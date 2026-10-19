@@ -33,6 +33,15 @@ final class TabContextMenu {
             c.activateAndFocusTab(tab);
             c.exports.exportCodePdf();
         });
+        // Encrypt… on an ordinary file; Lock File on an encrypted one (its text leaves memory until Decrypt).
+        MenuItem encryption = LazyContextMenu.item(tr("menu.encrypt"), Icons.lock(), () -> {
+            if (buffer.encryption().isEncrypted()) {
+                c.fileWorkflows.encryption().lockFile(buffer);
+            } else {
+                c.activateAndFocusTab(tab);
+                c.fileWorkflows.encryption().encryptFile();
+            }
+        });
         MenuItem close = LazyContextMenu.item(tr("menu.close"), Icons.closeTab(), () -> c.closeTab(tab));
         MenuItem closeOthers =
                 LazyContextMenu.item(tr("menu.closeOthers"), Icons.closeOtherTabs(), () -> c.closeOtherTabs(tab));
@@ -137,6 +146,7 @@ final class TabContextMenu {
                 .setAll(
                         save,
                         saveAs,
+                        encryption,
                         new SeparatorMenuItem(),
                         print,
                         exportPdf,
@@ -161,6 +171,9 @@ final class TabContextMenu {
                         rename);
         menu.setOnShowing(e -> {
             boolean simple = c.chrome.simpleModeActive();
+            boolean encrypted = buffer.encryption().isEncrypted();
+            encryption.setText(tr(encrypted ? "menu.lockFile" : "menu.encrypt"));
+            encryption.setDisable(encrypted && (buffer.encryption().isLocked() || buffer.getPath() == null));
             closeUnmodified.setVisible(!simple);
             closeLeft.setVisible(!simple);
             closeRight.setVisible(!simple);

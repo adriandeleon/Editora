@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Encrypted files are a core feature, and their text stays encrypted everywhere Editora writes.** Opening a
+  `.gpg`, `.pgp` or `.asc` encrypted file decrypts it with GnuPG (the `gpg` you have installed, on this machine),
+  and saving encrypts it again for the same people, in the same format. A save that cannot be encrypted (a
+  recipient's public key missing, GnuPG failing) writes nothing and says why in a banner. While an encrypted
+  file is open, its text gets no crash-recovery copy and no Local History, bookmarks and breakpoints keep only
+  line numbers, no personal notes can be added, language servers do not read it (a setting turns them on),
+  agents, MCP clients and AI actions are refused, and diagrams are not rendered through temporary files. Save
+  As to a plain name, export, print and external tools ask first. Settings schema 136.
 - **Plugins: consent belongs to a plugin's folder and to what you were shown.** A plugin's id must be its folder's
   name (a folder that copies another plugin's id is listed with an error and never loads), and plugins.json stores
   a fingerprint of the disclosure with each consent: a plugin whose code, commands or chords changed since does not
@@ -42,6 +50,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Encrypted files** (Tools ▸ Encryption; [ADR 0017](docs/decisions/0017-encrypted-files.md)). An encrypted
+  file opens as the text inside it, in that text's language (`notes.md.gpg` is Markdown), with a lock on its tab
+  and an "Encrypted · 2" item in the status bar that opens the details: who can read it (you, verified or not),
+  its format, its signature.
+  - **Locked tabs** instead of hex or errors: a cancelled prompt, a file none of your keys opens, or GnuPG not
+    installed shows what happened and the next step. Restored tabs stay locked until you decrypt them, so
+    startup never asks for a run of passphrases.
+  - **Encrypt File…** (also on the Project tree and tab menus, and Save As to a `.gpg`/`.asc` name) opens a
+    recipient picker: searchable, several people at once or a passphrase instead, your own key included by
+    default, unverified keys warned about with their fingerprint, expired and sign-only keys shown with the
+    reason. It can write the folder's `.gpg-id` (the `pass` format) so new files there get the same people.
+    The plain original stays until you move it to the trash from the banner.
+  - **Change Recipients…** (applied on the next save), **Remove Encryption…**, **Lock File**, **Decrypt to
+    File…**, **Encrypt Selection…** and **Decrypt Block at Caret** (an armored message pasted into a note opens
+    in a read-only card), **Import Public Key…** (and an opened `.asc` key offers it), **Clear-Sign**, **Sign
+    File (Detached)** and **Verify Signature**.
+  - Passphrases go to gpg-agent's own prompt; when it cannot show one (a terminal pinentry), Editora asks and
+    hands the passphrase straight to GnuPG. A passphrase-only file is asked once and saves without asking again.
+  - Settings ▸ Encryption (gpg path, always include my key, who asks for passphrases, language servers) and two
+    Doctor rows (GnuPG, passphrase prompt). Samples in `samples/encrypted/` (passphrase `editora`).
 - **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
   files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
   `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),
@@ -291,6 +319,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Run Configurations → Main class has a Browse… button**: pick the `.java` file and the fully qualified class
   name is filled in (`src/main/java/test/App.java` → `test.App`), from the file's `main` method or else its
   package and name. A configuration still called "New Configuration" is renamed after the class.
+
+### Removed
+
+- **The GnuPG registry plugin (`gpg-tools`)**: GnuPG is built in now. An installed copy is removed at startup
+  (its gpg path and last recipient are kept), and it can no longer be installed.
 
 ### Changed
 

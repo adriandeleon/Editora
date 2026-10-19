@@ -249,6 +249,12 @@ final class RecoveryCoordinator {
             }
             int length = buffer.getArea().getLength();
             RecoveryPolicy.Skip skip = skip(buffer, dirty, length);
+            if (skip == RecoveryPolicy.Skip.SENSITIVE) {
+                if (state.copied) {
+                    forget(state); // encrypted: no copy, and a plain copy from before it was encrypted goes
+                }
+                continue;
+            }
             if (skip == RecoveryPolicy.Skip.TOO_LARGE && !state.toldTooLarge) {
                 state.toldTooLarge = true;
                 host.setStatus(tr("status.recovery.tooLarge", buffer.getTitle()));
@@ -293,6 +299,7 @@ final class RecoveryCoordinator {
                 buffer.isLoading(),
                 buffer.isTruncatedLoad() || buffer.isLogTrimmed(),
                 buffer.isLogFollowing(),
+                buffer.encryption().isEncrypted(),
                 length);
     }
 
