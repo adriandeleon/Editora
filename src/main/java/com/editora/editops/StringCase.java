@@ -259,6 +259,7 @@ public final class StringCase {
             "go",
             "kotlin",
             "groovy",
+            "scala",
             "php",
             "javascript",
             "typescript",
