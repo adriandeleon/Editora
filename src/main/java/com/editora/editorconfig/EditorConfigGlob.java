@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure EditorConfig glob matcher. Compiles a section glob to a regex and tests it against a file path
  * (relative to the {@code .editorconfig}'s directory, {@code /}-separated). Supports {@code *} (not across
@@ -164,7 +166,8 @@ public final class EditorConfigGlob {
     }
 
     /** A brace-range bound as a long, or null when it doesn't fit (so the caller degrades to "any integer"). */
-    private static Long parseBound(String s) {
+    private static @Nullable Long parseBound(String s) {
+
         try {
             return Long.parseLong(s);
         } catch (NumberFormatException overflow) {

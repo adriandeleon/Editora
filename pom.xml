@@ -74,6 +74,12 @@
         <palantir.version>2.102.0</palantir.version>
         <!-- 0.8.15 adds Java 27 class-file instrumentation (experimental upstream support). -->
         <jacoco.version>0.8.15</jacoco.version>
+        <!-- Null checking (docs/conventions.md, "Null annotations"): NullAway, an Error Prone plugin, checks every
+             @NullMarked package of the main compile and fails the build on a null it cannot prove safe. JSpecify
+             supplies the annotations. Error Prone reaches into javac, hence .mvn/jvm.config. -->
+        <jspecify.version>1.0.0</jspecify.version>
+        <errorprone.version>2.50.0</errorprone.version>
+        <nullaway.version>0.14.2</nullaway.version>
         <testfx.version>4.0.18</testfx.version>
         <jpackage.plugin.version>1.8.0</jpackage.plugin.version>
         <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
@@ -107,6 +113,14 @@
     </repositories>
 
     <dependencies>
+        <!-- Compile-time only (`requires static org.jspecify`): the annotations are read by NullAway, and a
+             missing annotation class is ignored by reflection at run time, so nothing ships. -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+            <version>${jspecify.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
@@ -533,7 +547,24 @@
                             <compilerArgs>
                                 <arg>--add-exports</arg>
                                 <arg>javafx.graphics/com.sun.glass.ui=com.editora</arg>
+                                <!-- NullAway only: every other Error Prone check is off. OnlyNullMarked leaves a
+                                     package unchecked until its package-info.java says @NullMarked. -->
+                                <arg>-XDcompilePolicy=simple</arg>
+                                <arg>--should-stop=ifError=FLOW</arg>
+                                <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:JSpecifyMode=true</arg>
                             </compilerArgs>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>com.google.errorprone</groupId>
+                                    <artifactId>error_prone_core</artifactId>
+                                    <version>${errorprone.version}</version>
+                                </path>
+                                <path>
+                                    <groupId>com.uber.nullaway</groupId>
+                                    <artifactId>nullaway</artifactId>
+                                    <version>${nullaway.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
                         </configuration>
                     </execution>
                 </executions>
