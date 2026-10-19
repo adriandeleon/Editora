@@ -59,7 +59,11 @@ worktree so branch switches and commits cannot interfere.
   derived from the active keymap.
 - Check `module-info.java` when reflection, FXML, service loading, or a new dependency crosses JPMS
   boundaries.
-- Run `mvn spotless:apply` after Java edits, then the narrow tests and `mvn verify` when practical.
+- Run `mvn spotless:apply` after Java edits, then the narrow tests for what you changed
+  (`mvn -Dtest='Foo*Test' test`). Do not run the whole suite (`mvn verify`) before pushing: CI runs it
+  on Linux in about ten minutes, and several sessions share the machine. Label a pull request `full-ci`
+  when it is likely to differ on Windows or macOS or touches the terminal, a language server or a debug
+  adapter ([testing](docs/testing.md)).
 - Update `CHANGELOG.md`, `TODO.md`, and contributor docs when the change affects them. `README.md` is a
   short landing page that defers to the website: touch it only when the highlights, install, build,
   command-line or configuration facts change. User-facing feature documentation goes to the

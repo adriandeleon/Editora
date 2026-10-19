@@ -355,4 +355,129 @@ class CheckReleaseTest implements AutoCloseable {
         assertEquals(1, run.code());
         assertContains(run.out(), "requires no checks");
     }
+
+    // --- the Full tests on the commit
+
+    private static CheckRelease.WorkflowRun fullRun(long id, String event, String status, String conclusion,
+            String created) {
+        return new CheckRelease.WorkflowRun(id, event, status, conclusion, created, "https://example/runs/" + id);
+    }
+
+    @Test
+    void aGreenScheduledOrDispatchedRunPasses() {
+        assertEquals("pass", CheckRelease.fullVerdict(
+                List.of(fullRun(1, "schedule", "completed", "success", "2026-10-19T05:23:00Z"))).verdict());
+        assertEquals("pass", CheckRelease.fullVerdict(
+                List.of(fullRun(2, "workflow_dispatch", "completed", "success", "2026-10-19T05:23:00Z"))).verdict());
+    }
+
+    @Test
+    void aPullRequestRunDoesNotCount() {
+        // It tested the pull request merged into an older master, not this commit.
+        var verdict = CheckRelease.fullVerdict(
+                List.of(fullRun(1, "pull_request", "completed", "success", "2026-10-19T05:23:00Z")));
+        assertEquals("none", verdict.verdict());
+    }
+
+    @Test
+    void theNewestFullRunDecides() {
+        var oldFail = fullRun(1, "schedule", "completed", "failure", "2026-10-19T05:23:00Z");
+        var newOk = fullRun(2, "workflow_dispatch", "completed", "success", "2026-10-19T09:00:00Z");
+        assertEquals("pass", CheckRelease.fullVerdict(List.of(newOk, oldFail)).verdict());
+        var running = fullRun(3, "workflow_dispatch", "in_progress", null, "2026-10-19T10:00:00Z");
+        assertEquals("pending", CheckRelease.fullVerdict(List.of(newOk, oldFail, running)).verdict());
+    }
+
+    @Test
+    void aFailedFullRunNamesTheRerunCommand() {
+        var verdict = CheckRelease.fullVerdict(
+                List.of(fullRun(42, "schedule", "completed", "failure", "2026-10-19T05:23:00Z")));
+        assertEquals("fail", verdict.verdict());
+        assertContains(String.join("\n", verdict.lines()), "gh run rerun 42 --failed");
+    }
+
+    /** Answers the workflow-runs listing with the next state per poll, and records a dispatch. */
+    private static final class FakeActions implements Function<List<String>, String> {
+        private final List<List<CheckRelease.WorkflowRun>> states;
+        final List<List<String>> dispatches = new ArrayList<>();
+        int polls;
+
+        @SafeVarargs
+        FakeActions(List<CheckRelease.WorkflowRun>... states) {
+            this.states = List.of(states);
+        }
+
+        @Override
+        public String apply(List<String> args) {
+            if (args.get(0).equals("workflow")) {
+                dispatches.add(args);
+                return "";
+            }
+            assertContains(args.get(1), "/actions/workflows/full-tests.yml/runs?head_sha=abc123");
+            var state = states.get(Math.min(polls, states.size() - 1));
+            polls++;
+            var out = new StringBuilder();
+            for (var run : state) {
+                Map<String, Object> json = new LinkedHashMap<>();
+                json.put("id", run.id());
+                json.put("event", run.event());
+                json.put("status", run.status());
+                json.put("conclusion", run.conclusion());
+                json.put("created_at", run.createdAt());
+                json.put("html_url", run.url());
+                out.append(Json.write(json)).append('\n');
+            }
+            return out.toString();
+        }
+    }
+
+    private static Run runFull(FakeActions gh, String mode, int wait) {
+        double[] now = {0};
+        var out = new ByteArrayOutputStream();
+        int code = CheckRelease.checkFull("o/r", "abc123", "v1.2.3", mode, wait, gh, seconds -> now[0] += seconds,
+                () -> now[0], new PrintStream(out));
+        return new Run(code, out.toString());
+    }
+
+    @Test
+    void aTagWithNoFullRunStartsOneAndWaitsForIt() {
+        var gh = new FakeActions(List.of(), List.of(),
+                List.of(fullRun(7, "workflow_dispatch", "in_progress", null, "2026-10-19T10:00:00Z")),
+                List.of(fullRun(7, "workflow_dispatch", "completed", "success", "2026-10-19T10:00:00Z")));
+        Run run = runFull(gh, "enforce", 60);
+        assertEquals(0, run.code(), run.out());
+        assertEquals(1, gh.dispatches.size()); // once, although the new run was not listed at the next poll
+        assertEquals(List.of("workflow", "run", "full-tests.yml", "--repo", "o/r", "--ref", "v1.2.3"),
+                gh.dispatches.getFirst());
+        assertEquals(4, gh.polls);
+    }
+
+    @Test
+    void aFailedFullRunStopsTheReleaseWithoutStartingAnother() {
+        var gh = new FakeActions(List.of(fullRun(9, "schedule", "completed", "failure", "2026-10-19T05:23:00Z")));
+        Run run = runFull(gh, "enforce", 60);
+        assertEquals(1, run.code());
+        assertEquals(0, gh.dispatches.size());
+        assertEquals(1, gh.polls);
+        assertContains(run.out(), "::error");
+    }
+
+    @Test
+    void aFullRunThatNeverFinishesFailsAfterTheWait() {
+        var gh = new FakeActions(List.of(fullRun(7, "workflow_dispatch", "queued", null, "2026-10-19T10:00:00Z")));
+        Run run = runFull(gh, "enforce", 5);
+        assertEquals(1, run.code());
+        assertEquals(11, gh.polls);
+        assertContains(run.out(), "have not finished");
+    }
+
+    @Test
+    void aDryRunReportsAMissingFullRunWithoutStartingOne() {
+        var gh = new FakeActions(List.of());
+        Run run = runFull(gh, "report", 0);
+        assertEquals(0, run.code());
+        assertEquals(0, gh.dispatches.size());
+        assertContains(run.out(), "::warning");
+        assertContains(run.out(), "gh workflow run full-tests.yml --ref v1.2.3");
+    }
 }
