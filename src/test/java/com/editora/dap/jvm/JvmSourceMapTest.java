@@ -56,6 +56,38 @@ class JvmSourceMapTest {
     }
 
     @Test
+    void clojuresRuntimeAndCoreAreSteppedOver() {
+        List<String> filters = JvmSourceMap.stepFilters("clojure");
+        assertTrue(filters.containsAll(List.of("java.*", "clojure.lang.*", "clojure.core*", "clojure.main*")));
+        assertFalse(JvmSourceMap.stepFilters("groovy").contains("clojure.lang.*"));
+    }
+
+    @Test
+    void aClojureFunctionsFrameReadsAsTheFunctionDemunged() {
+        assertEquals("my-app.core/greet", JvmSourceMap.frameName("my_app.core$greet", "invokeStatic", "core.clj"));
+        assertEquals("my-app.core/-main", JvmSourceMap.frameName("my_app.core$_main", "doInvoke", "core.clj"));
+        assertEquals("app/valid?", JvmSourceMap.frameName("app$valid_QMARK_", "invoke", "app.clj"));
+        assertEquals("app/swap->!", JvmSourceMap.frameName("app$swap__GT__BANG_", "invoke", "app.clj"));
+        assertEquals("user/tally/fn--123", JvmSourceMap.frameName("user$tally$fn__123", "invoke", "app.clj"));
+        assertEquals("Numbers.divide", JvmSourceMap.frameName("clojure.lang.Numbers", "divide", "Numbers.java"));
+        assertEquals(
+                "Report$Inner.invoke",
+                JvmSourceMap.frameName("com.acme.Report$Inner", "invoke", "Report.groovy"),
+                "only a Clojure file's classes are demunged");
+    }
+
+    @Test
+    void aScriptsAbsoluteSourcePathIsTheFileItself() {
+        Path script = Path.of("/work/tally.clj").toAbsolutePath();
+        assertTrue(JvmSourceMap.compiledFrom(script.toString(), script));
+        assertFalse(JvmSourceMap.compiledFrom(
+                Path.of("/other/tally.clj").toAbsolutePath().toString(), script));
+        assertTrue(JvmSourceMap.isAbsolute("C:\\work\\tally.clj"));
+        assertTrue(JvmSourceMap.isAbsolute("/work/tally.clj"));
+        assertFalse(JvmSourceMap.isAbsolute("my_app/core.clj"));
+    }
+
+    @Test
     void aClosuresFrameIsNamedForWhatEnclosesIt() {
         assertEquals("Report.run", JvmSourceMap.frameName("com.acme.Report", "run"));
         assertEquals("Report.run { closure }", JvmSourceMap.frameName("com.acme.Report$_run_closure1", "doCall"));

@@ -719,6 +719,9 @@ final class BuildCoordinator {
             case CARGO -> Icons::cargo;
             case GO -> Icons::go;
             case GRADLE -> Icons::gradle;
+            case CLOJURE -> Icons::clojureCli;
+            case LEIN -> Icons::leiningen;
+            case BABASHKA -> Icons::babashka;
         };
     }
 }

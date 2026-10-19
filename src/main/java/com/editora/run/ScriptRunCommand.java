@@ -40,6 +40,12 @@ public final class ScriptRunCommand {
      */
     public static final String KOTLIN = "kotlin";
 
+    /**
+     * A Clojure file, run by the Clojure CLI, Leiningen or Babashka ({@link ClojureRun}) on the configuration's
+     * JDK.
+     */
+    public static final String CLOJURE = "clojure";
+
     public static final String JAVA = "java";
 
     private ScriptRunCommand() {}
@@ -155,6 +161,15 @@ public final class ScriptRunCommand {
                         KotlinRun.shape(t) == KotlinRun.Shape.PROGRAM
                                 ? List.of(KotlinRun.TOOL, t)
                                 : KotlinRun.scriptArgv(KotlinRun.TOOL, t, null));
+            }
+            case CLOJURE -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                // The shape only: the real tool (clojure, lein or bb) comes from the file and its project.
+                argv.add(JvmScriptRun.tool(CLOJURE));
+                argv.add("-M");
+                argv.add(t);
             }
             case MAKE -> {
                 argv.add("make");

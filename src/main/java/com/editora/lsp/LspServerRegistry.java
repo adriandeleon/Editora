@@ -137,6 +137,13 @@ public final class LspServerRegistry {
             "Jenkinsfile",
             ".git");
 
+    /**
+     * Markers for a Clojure project root: the Clojure CLI's, Leiningen's, Babashka's, shadow-cljs's and Boot's
+     * project files, else the repo. clojure-lsp asks the matching tool for the project's classpath.
+     */
+    public static final List<String> CLOJURE_ROOT_MARKERS =
+            List.of("deps.edn", "project.clj", "bb.edn", "shadow-cljs.edn", "build.boot", ".git");
+
     /** Markers for a Lua project root (a LuaLS config, else the repo). */
     public static final List<String> LUA_ROOT_MARKERS = List.of(".luarc.json", ".luarc.jsonc", ".git");
 
@@ -183,6 +190,9 @@ public final class LspServerRegistry {
      * means "not installed".
      */
     public static final String DEFAULT_GROOVY_COMMAND = "";
+
+    /** clojure-lsp, a native binary, from PATH unless the installer wrote its own copy's path into Settings. */
+    public static final String DEFAULT_CLOJURE_COMMAND = "clojure-lsp";
 
     public static final String DEFAULT_DOCKERFILE_COMMAND = "docker-langserver --stdio";
     public static final String DEFAULT_SQL_COMMAND = "sqls";
@@ -235,6 +245,7 @@ public final class LspServerRegistry {
         CSS("css", DEFAULT_CSS_COMMAND, WEB_ROOT_MARKERS, Set.of("css")),
         KOTLIN("kotlin", DEFAULT_KOTLIN_COMMAND, KOTLIN_ROOT_MARKERS, Set.of("kotlin")),
         GROOVY("groovy", DEFAULT_GROOVY_COMMAND, GROOVY_ROOT_MARKERS, Set.of("groovy")),
+        CLOJURE("clojure", DEFAULT_CLOJURE_COMMAND, CLOJURE_ROOT_MARKERS, Set.of("clojure")),
         LUA("lua", DEFAULT_LUA_COMMAND, LUA_ROOT_MARKERS, Set.of("lua")),
         DOCKERFILE("dockerfile", DEFAULT_DOCKERFILE_COMMAND, SHELL_ROOT_MARKERS, Set.of("dockerfile")),
         SQL("sql", DEFAULT_SQL_COMMAND, SHELL_ROOT_MARKERS, Set.of("sql")),

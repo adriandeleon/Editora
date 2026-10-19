@@ -37,6 +37,7 @@ public final class DoctorNeeds {
                 // and gvy reads build.gradle as plain Groovy. An open .groovy file, or a Jenkinsfile, does.
                 case "build.gradle", "settings.gradle" -> ids.add("java");
                 case "jenkinsfile" -> ids.add("groovy");
+                case "deps.edn", "project.clj", "bb.edn", "shadow-cljs.edn", "build.boot" -> ids.add("clojure");
                 case "build.gradle.kts", "settings.gradle.kts" -> {
                     ids.add("java");
                     ids.add("kotlin");

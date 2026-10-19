@@ -95,6 +95,9 @@ final class RunScan {
         } else if (in.eligible() && "groovy".equals(language)) {
             line = groovyRunLine(in.name(), text);
             runnable = line >= 0;
+        } else if (in.eligible() && "clojure".equals(language)) {
+            line = clojureRunLine(in.name(), text);
+            runnable = line >= 0;
         } else if (in.eligible() && "kotlin".equals(language)) {
             // A script from line 0, a program at its top-level `fun main`; none for a Gradle build script.
             line = com.editora.run.KotlinRun.runLine(in.name(), text);
@@ -166,6 +169,18 @@ final class RunScan {
             }
         }
         return 0;
+    }
+
+    /**
+     * The gutter Run line for a Clojure file: its {@code (defn -main} when it has one, else line 0 (a script runs
+     * from the top) — or -1 for a file nobody runs: EDN data ({@code deps.edn}, {@code bb.edn}), a Leiningen
+     * {@code project.clj}, and ClojureScript, which no JVM runs.
+     */
+    static int clojureRunLine(String name, String text) {
+        if (name != null && !com.editora.run.ClojureRun.runnable(name)) {
+            return -1;
+        }
+        return Math.max(0, com.editora.run.ClojureRun.mainLine(text));
     }
 
     /**

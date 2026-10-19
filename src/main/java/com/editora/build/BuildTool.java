@@ -198,6 +198,84 @@ public enum BuildTool {
             ProcessRunner.Result result = ProcessRunner.runInUserLocale(root, TASK_LOAD_TIMEOUT, argv);
             return GradleTasks.parse(result.out());
         }
+    },
+
+    /** The Clojure CLI — {@code deps.edn}; runs {@code clojure} (no wrapper): the aliases that run something. */
+    CLOJURE(
+            "clojure",
+            "Clojure CLI",
+            "clojure",
+            List.of("deps.edn"),
+            "view.toggleClojureCliSupport",
+            Settings::isClojureCliSupport,
+            Settings::setClojureCliSupport,
+            Settings::getClojureCliCommand,
+            Settings::setClojureCliCommand,
+            OutputStyle.passthrough()) {
+        @Override
+        public Detected parse(Path root) throws Exception {
+            String deps = withoutBom(Files.readString(root.resolve("deps.edn")));
+            Path name = root.getFileName();
+            return new Detected(
+                    new ClojureCliActionsProvider(ClojureProjects.aliases(deps)),
+                    name == null ? null : name.toString());
+        }
+
+        @Override
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(List.of(), override, "clojure");
+        }
+    },
+
+    /** Leiningen — {@code project.clj}; runs {@code lein} (no wrapper), static common tasks. */
+    LEIN(
+            "lein",
+            "Leiningen",
+            "lein",
+            List.of("project.clj"),
+            "view.toggleLeiningenSupport",
+            Settings::isLeiningenSupport,
+            Settings::setLeiningenSupport,
+            Settings::getLeiningenCommand,
+            Settings::setLeiningenCommand,
+            OutputStyle.passthrough()) {
+        @Override
+        public Detected parse(Path root) throws Exception {
+            String project = withoutBom(Files.readString(root.resolve("project.clj")));
+            return new Detected(new LeiningenActionsProvider(), ClojureProjects.leiningenName(project));
+        }
+
+        @Override
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(List.of(), override, "lein");
+        }
+    },
+
+    /** Babashka — {@code bb.edn}; runs {@code bb} (no wrapper): the file's {@code :tasks}. */
+    BABASHKA(
+            "babashka",
+            "Babashka",
+            "bb",
+            List.of("bb.edn"),
+            "view.toggleBabashkaSupport",
+            Settings::isBabashkaSupport,
+            Settings::setBabashkaSupport,
+            Settings::getBabashkaCommand,
+            Settings::setBabashkaCommand,
+            OutputStyle.passthrough()) {
+        @Override
+        public Detected parse(Path root) throws Exception {
+            String bb = withoutBom(Files.readString(root.resolve("bb.edn")));
+            Path name = root.getFileName();
+            return new Detected(
+                    new BabashkaActionsProvider(ClojureProjects.babashkaTasks(bb)),
+                    name == null ? null : name.toString());
+        }
+
+        @Override
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(List.of(), override, "bb");
+        }
     };
 
     /**
@@ -347,7 +425,7 @@ public enum BuildTool {
 
     /** The build tools wired into the UI (each gets a toolbar button + console), in toolbar order. */
     public static List<BuildTool> enabled() {
-        return List.of(MAVEN, NPM, CARGO, GO, GRADLE);
+        return List.of(MAVEN, NPM, CARGO, GO, GRADLE, CLOJURE, LEIN, BABASHKA);
     }
 
     /** The user's home directory — where Maven's {@code ~/.m2} local repository lives. */

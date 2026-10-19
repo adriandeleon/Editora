@@ -43,7 +43,7 @@ public final class RunConfigFields {
         return !ScriptRunCommand.isScript(type);
     }
 
-    /** Whether {@code type} runs on a JVM whose arguments and JDK the configuration sets: Java, Groovy, Kotlin. */
+    /** Whether {@code type} runs on a JVM whose arguments and JDK the configuration sets: Java, Groovy, Kotlin, Clojure. */
     public static boolean usesJvmFields(String type) {
         return usesJavaFields(type) || ScriptRunCommand.isJvmScript(type);
     }

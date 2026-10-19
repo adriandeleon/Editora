@@ -326,6 +326,7 @@ final class LspCoordinator {
         "css",
         "kotlin",
         "groovy",
+        "clojure",
         "lua",
         "dockerfile",
         "sql",
@@ -1441,6 +1442,7 @@ final class LspCoordinator {
             case "css" -> s.isCssLspEnabled();
             case "kotlin" -> s.isKotlinLspEnabled();
             case "groovy" -> s.isGroovyLspEnabled();
+            case "clojure" -> s.isClojureLspEnabled();
             case "lua" -> s.isLuaLspEnabled();
             case "dockerfile" -> s.isDockerfileLspEnabled();
             case "sql" -> s.isSqlLspEnabled();
@@ -1876,6 +1878,7 @@ final class LspCoordinator {
             case "css" -> s.getCssLspCommand();
             case "kotlin" -> s.getKotlinLspCommand();
             case "groovy" -> com.editora.lsp.JvmServerCommand.withJdk(s.getGroovyLspCommand(), s.getMavenJdkHome());
+            case "clojure" -> s.getClojureLspCommand();
             case "lua" -> s.getLuaLspCommand();
             case "dockerfile" -> s.getDockerfileLspCommand();
             case "sql" -> s.getSqlLspCommand();
@@ -1923,6 +1926,7 @@ final class LspCoordinator {
             case "css" -> s.setCssLspEnabled(on);
             case "kotlin" -> s.setKotlinLspEnabled(on);
             case "groovy" -> s.setGroovyLspEnabled(on);
+            case "clojure" -> s.setClojureLspEnabled(on);
             case "lua" -> s.setLuaLspEnabled(on);
             case "dockerfile" -> s.setDockerfileLspEnabled(on);
             case "sql" -> s.setSqlLspEnabled(on);
@@ -1955,6 +1959,7 @@ final class LspCoordinator {
             case "css" -> s.setCssLspCommand(command);
             case "kotlin" -> s.setKotlinLspCommand(command);
             case "groovy" -> s.setGroovyLspCommand(command);
+            case "clojure" -> s.setClojureLspCommand(command);
             case "lua" -> s.setLuaLspCommand(command);
             case "dockerfile" -> s.setDockerfileLspCommand(command);
             case "sql" -> s.setSqlLspCommand(command);

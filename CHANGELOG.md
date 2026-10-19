@@ -106,6 +106,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     hands the passphrase straight to GnuPG. A passphrase-only file is asked once and saves without asking again.
   - Settings ▸ Encryption (gpg path, always include my key, who asks for passphrases, language servers) and two
     Doctor rows (GnuPG, passphrase prompt). Samples in `samples/encrypted/` (passphrase `editora`).
+- **Clojure: language server, build tools, Run and Debug.** Clojure, ClojureScript and EDN files get completion,
+  diagnostics (clj-kondo's), navigation, rename and formatting from clojure-lsp, installed in one click (a pinned
+  native binary, checked by its SHA-256) or found on PATH. A `deps.edn`, `project.clj` or `bb.edn` project gets a
+  Clojure CLI, Leiningen or Babashka toolbar button: the CLI's runnable aliases (`-M:test`, `-X:build`,
+  `-T:build`), Leiningen's common tasks, a `bb.edn`'s tasks. Run File, the gutter ▶ (on `(defn -main`, else the
+  top of a script) and a new Clojure script run configuration run a namespace with `clojure -M -m` in its
+  project, through `lein run` in a Leiningen project, a script with `clojure -M`, and a Babashka script with
+  `bb`; an uncaught exception's whole trace is printed (not left in a temporary file), and its frames are links.
+  Debug stops at breakpoints in a namespace's functions or a script's top-level forms, under the Clojure CLI or
+  Leiningen, with locals kept visible and frames named as Clojure names them (`my-app.core/greet`); Babashka,
+  a native program, cannot be debugged and says so. Settings schema 139.
 - **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
   files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
   `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),

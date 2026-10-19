@@ -154,7 +154,7 @@ public final class RunConfigurationsWindow {
 
         TextField name = new TextField();
         ComboBox<String> type = new ComboBox<>(FXCollections.observableArrayList(
-                "java", "python", "python-module", "node", "shell", "groovy", "kotlin", "make", "npm"));
+                "java", "python", "python-module", "node", "shell", "groovy", "kotlin", "clojure", "make", "npm"));
         type.setConverter(new StringConverter<>() {
             @Override
             public String toString(String value) {

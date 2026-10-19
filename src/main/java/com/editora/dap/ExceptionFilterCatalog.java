@@ -30,7 +30,7 @@ public final class ExceptionFilterCatalog {
                         new DapModels.ExceptionFilterOption("all", "Caught Exceptions", false),
                         new DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", false));
             // Editora's JVM adapter (com.editora.dap.jvm): a script's uncaught exception stops, as debugpy's does.
-            case "groovy", "kotlin" ->
+            case "groovy", "kotlin", "clojure" ->
                 List.of(
                         new DapModels.ExceptionFilterOption("caught", "Caught Exceptions", false),
                         new DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", true));
@@ -48,7 +48,7 @@ public final class ExceptionFilterCatalog {
             return null;
         }
         return switch (language) {
-            case "java", "groovy", "kotlin" -> "caught";
+            case "java", "groovy", "kotlin", "clojure" -> "caught";
             case "python" -> "raised";
             case "javascript" -> "all";
             default -> null;

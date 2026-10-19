@@ -8,7 +8,8 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Finds the command-line tool that runs a JVM language's files — {@code groovy}, {@code kotlinc} — on this machine.
+ * Finds the command-line tool that runs a JVM language's files — {@code groovy}, {@code kotlinc}, and Clojure's
+ * {@code clojure}, {@code lein} and {@code bb} — on this machine.
  *
  * <p>The tool's own home variable comes first ({@code GROOVY_HOME}: whoever set it chose that install), then the
  * {@linkplain com.editora.process.ProcessRunner#augmentedPath augmented PATH} (the login shell's, which already
@@ -22,11 +23,15 @@ public final class JvmTools {
 
     private JvmTools() {}
 
-    /** The tools {@link #locate} knows, with the variable naming each one's install. */
-    private static final Map<String, String> HOME_VARIABLES = Map.of("groovy", "GROOVY_HOME", "kotlinc", "KOTLIN_HOME");
+    /** The tools {@link #locate} knows, with the variable naming each one's install ("" when there is none). */
+    private static final Map<String, String> HOME_VARIABLES =
+            Map.of("groovy", "GROOVY_HOME", "kotlinc", "KOTLIN_HOME", "clojure", "", "lein", "", "bb", "");
 
-    /** SDKMAN candidates named otherwise than their tool. */
-    private static final Map<String, String> SDKMAN_CANDIDATES = Map.of("kotlinc", "kotlin");
+    /**
+     * The tools SDKMAN installs, each with its candidate's name (it has no Clojure CLI, Leiningen or Babashka
+     * candidate).
+     */
+    private static final Map<String, String> SDKMAN_CANDIDATES = Map.of("groovy", "groovy", "kotlinc", "kotlin");
 
     /** Whether {@code tool} is one this resolves. */
     public static boolean knows(String tool) {
@@ -44,9 +49,13 @@ public final class JvmTools {
             return out;
         }
         String file = windows ? tool + ".bat" : tool;
-        String home = env == null ? null : env.get(HOME_VARIABLES.get(tool));
+        String variable = HOME_VARIABLES.get(tool);
+        String home = env == null || variable.isEmpty() ? null : env.get(variable);
         if (home != null && !home.isBlank()) {
             out.add(Path.of(home.strip(), "bin", file));
+        }
+        if (!SDKMAN_CANDIDATES.containsKey(tool)) {
+            return out;
         }
         String sdkman = env == null ? null : env.get("SDKMAN_DIR");
         Path sdkmanDir = sdkman != null && !sdkman.isBlank()
@@ -55,7 +64,7 @@ public final class JvmTools {
         if (sdkmanDir != null) {
             out.add(sdkmanDir
                     .resolve("candidates")
-                    .resolve(SDKMAN_CANDIDATES.getOrDefault(tool, tool))
+                    .resolve(SDKMAN_CANDIDATES.get(tool))
                     .resolve("current")
                     .resolve("bin")
                     .resolve(file));
@@ -93,7 +102,11 @@ public final class JvmTools {
     }
 
     private static boolean hasHomeVariable(String tool) {
-        String home = System.getenv(HOME_VARIABLES.get(tool));
+        String variable = HOME_VARIABLES.get(tool);
+        if (variable.isEmpty()) {
+            return false;
+        }
+        String home = System.getenv(variable);
         return home != null && !home.isBlank();
     }
 }

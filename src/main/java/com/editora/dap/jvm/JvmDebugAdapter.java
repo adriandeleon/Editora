@@ -277,6 +277,9 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             String agent = "-agentlib:jdwp=transport=dt_socket,server=n,suspend=y,address=127.0.0.1:" + port;
             if (Boolean.parseBoolean(string(args.get("jvmOptionsInArgv")))) {
                 argv.add(1, agent); // java <agent> -jar … : the launcher's own option, read by this JVM only
+            } else if (!string(args.get("jvmOptionPrefix")).isBlank()) {
+                // The Clojure CLI takes JVM options as arguments (-J<option>) after its own name.
+                argv = withArgument(argv, string(args.get("jvmOptionPrefix")) + agent);
             } else {
                 String variable = string(args.get("jvmOptionsVariable"));
                 if (variable.isBlank()) {
@@ -315,6 +318,13 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         if (c != null) {
             c.initialized(); // breakpoints, exception filters, then configurationDone — which starts the program
         }
+    }
+
+    /** {@code argv} with {@code argument} right after the executable. */
+    static List<String> withArgument(List<String> argv, String argument) {
+        List<String> out = new ArrayList<>(argv);
+        out.add(Math.min(1, out.size()), argument);
+        return List.copyOf(out);
     }
 
     @Override

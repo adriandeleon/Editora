@@ -389,7 +389,9 @@ public final class InstallCatalog {
                 // a pinned JVM fat jar (needs java 17+): the Groovy server.
                 "groovy",
                 // a pinned server distribution with its own Java runtime (needs tar): JetBrains' Kotlin LSP.
-                "kotlin");
+                "kotlin",
+                // a pinned native binary per OS/arch, its SHA-256 checked: clojure-lsp.
+                "clojure");
     }
 
     /** The install steps for an LSP-only server id (empty if it has no installer). Pure. */
@@ -454,6 +456,20 @@ public final class InstallCatalog {
                         LEMMINX_MAVEN_ZIP_URL,
                         false,
                         "plugins/lsp/maven",
+                        null)));
+            // --- clojure-lsp: a pinned GraalVM native binary per OS/arch (no JVM needed) ---
+            case "clojure" ->
+                java.util.Optional.of(List.of(new Step(
+                        CLOJURE_LSP_ID,
+                        Kind.PINNED_TOOL,
+                        Set.of(),
+                        List.of(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        false,
+                        "plugins/lsp/clojure",
                         null)));
             // --- gvy's gls: one pinned cross-platform jar (needs java 17+) ---
             case "groovy" ->
@@ -700,6 +716,15 @@ public final class InstallCatalog {
     /** The shfmt release Editora installs. Bump with every hash in {@link #pinnedTool}. */
     public static final String SHFMT_VERSION = "3.14.1";
 
+    /** The clojure-lsp release Editora installs. Bump with every hash in {@link #pinnedTool}. */
+    public static final String CLOJURE_LSP_VERSION = "2026.10.15-11.42.38";
+
+    /** The install step (and {@link #pinnedTool} recipe) id of the Clojure server, installed for server "clojure". */
+    public static final String CLOJURE_LSP_ID = "clojure-lsp";
+
+    private static final String CLOJURE_LSP_BASE = "https://github.com/clojure-lsp/clojure-lsp/releases/download/"
+            + CLOJURE_LSP_VERSION + "/clojure-lsp-native-";
+
     /** The tools {@link #pinnedTool} knows, in display order. */
     public static final List<String> PINNED_TOOL_IDS = List.of("shellcheck", "shfmt");
 
@@ -810,6 +835,42 @@ public final class InstallCatalog {
                                         "13629ce28442ca80b6b5a819f7574ab39e1c28c6e26734ca816c9714e04851df",
                                         Packing.RAW)),
                         "shfmt"));
+            // clojure-lsp's GraalVM native builds (MIT, github.com/clojure-lsp/clojure-lsp): the hashes are the
+            // assets' SHA-256 as GitHub publishes them for the tag — the macOS arm64 build has no .sha256 file
+            // in this release — each checked against a downloaded copy. No Windows-on-ARM build exists; the x64
+            // one runs under emulation there. Installed as a language server (serverInstall "clojure"), not as
+            // one of PINNED_TOOL_IDS.
+            case CLOJURE_LSP_ID ->
+                Optional.of(new PinnedTool(
+                        CLOJURE_LSP_ID,
+                        CLOJURE_LSP_VERSION,
+                        java.util.Map.of(
+                                Platform.LINUX_X64,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "linux-amd64.zip",
+                                        "d68acf630465cec9d3685fd958f914d9228d90a07222edd301f1a4740b8e8b76",
+                                        Packing.ZIP),
+                                Platform.LINUX_ARM,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "linux-aarch64.zip",
+                                        "232ac0cd191070a3b7b5532135ec9f97217b82324de7e97da0b1bf81353a3c94",
+                                        Packing.ZIP),
+                                Platform.MAC_X64,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "macos-amd64.zip",
+                                        "468c261b48a7276c79cb92a82ddfce5474bc563ba6673df30cabf17a7f239ef3",
+                                        Packing.ZIP),
+                                Platform.MAC_ARM,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "macos-aarch64.zip",
+                                        "84df57e51e27f4ecf20d0cd65aab3296e2ebf28dbaacca4fe216b6cf20485716",
+                                        Packing.ZIP),
+                                Platform.WIN_X64,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "windows-amd64.zip",
+                                        "63bb6567a2280a563a8de22c3eb833a69159e054b6545a29d25ab588c1b749b1",
+                                        Packing.ZIP)),
+                        "clojure-lsp"));
             default -> Optional.empty();
         };
     }

@@ -34,7 +34,10 @@ public record RuntimeVersion(String label, String detail) {
         MAKE("--version"),
         GROOVY("--version"),
         /** {@code kotlinc}: the compiler that runs a Kotlin script, and compiles a Kotlin program. */
-        KOTLIN("-version");
+        KOTLIN("-version"),
+        CLOJURE("--version"),
+        LEIN("--version"),
+        BB("--version");
 
         final List<String> versionArgs;
 
@@ -65,6 +68,12 @@ public record RuntimeVersion(String label, String detail) {
     /** {@code Groovy Version: 5.1.3 JVM: 25.0.4 Vendor: Eclipse Adoptium OS: Linux} → 5.1.3 on Java 25.0.4. */
     private static final Pattern GROOVY_VERSION =
             Pattern.compile("^Groovy Version: (\\d+\\.\\d+(?:\\.\\d+)?\\S*)(?:\\s+JVM: (\\S+))?");
+    /** {@code Clojure CLI version 1.12.6.1673}: the CLI's own version (each project picks its Clojure). */
+    private static final Pattern CLOJURE_VERSION = Pattern.compile("^Clojure CLI version (\\d+(?:\\.\\d+)+)");
+    /** {@code Leiningen 2.13.0 on Java 25.0.4 OpenJDK 64-Bit Server VM}. */
+    private static final Pattern LEIN_VERSION = Pattern.compile("^Leiningen (\\d+\\.\\d+(?:\\.\\d+)?\\S*)");
+    /** {@code babashka v1.13.226}. */
+    private static final Pattern BB_VERSION = Pattern.compile("^babashka v(\\d+\\.\\d+(?:\\.\\d+)?\\S*)");
     /** The distribution in {@code java.vendor.version}: "Temurin-25.0.3+9" → "Temurin", "Zulu21.38+21-CA" → "Zulu". */
     private static final Pattern DISTRIBUTION = Pattern.compile("^([A-Za-z][A-Za-z ]*?)[\\s-]*(?:\\d.*)?$");
 
@@ -98,6 +107,9 @@ public record RuntimeVersion(String label, String detail) {
             case "make", "gmake" -> kind = Kind.MAKE;
             case "groovy" -> kind = Kind.GROOVY;
             case "kotlinc", "kotlinc-jvm" -> kind = Kind.KOTLIN;
+            case "clojure", "clj" -> kind = Kind.CLOJURE;
+            case "lein" -> kind = Kind.LEIN;
+            case "bb" -> kind = Kind.BB;
             default -> kind = PYTHON_NAME.matcher(name).matches() ? Kind.PYTHON : null;
         }
         if (kind == null) {
@@ -129,6 +141,10 @@ public record RuntimeVersion(String label, String detail) {
             case MAKE -> simple(output, MAKE_VERSION, "GNU Make ", probe.argv().get(0));
             case GROOVY -> parseGroovy(output, probe.argv().get(0));
             case KOTLIN -> parseKotlin(output, probe.argv().get(0));
+            case CLOJURE ->
+                simple(output, CLOJURE_VERSION, "Clojure CLI ", probe.argv().get(0));
+            case LEIN -> simple(output, LEIN_VERSION, "Leiningen ", probe.argv().get(0));
+            case BB -> simple(output, BB_VERSION, "Babashka ", probe.argv().get(0));
         };
     }
 

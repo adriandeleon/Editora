@@ -7340,6 +7340,17 @@ public class SettingsWindow {
                         v -> config.getSettings().setGroovyLspCommand(v),
                         () -> config.getSettings().getGroovyLspCommand()),
                 new LspServerUi(
+                        "clojure",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_CLOJURE_COMMAND,
+                        "settings.lsp.enableClojure",
+                        "settings.lsp.clojureCommand",
+                        "lsp clojure clojure-lsp clojurescript edn deps lein babashka language server found installed"
+                                + " not found command path executable",
+                        v -> config.getSettings().setClojureLspEnabled(v),
+                        () -> config.getSettings().isClojureLspEnabled(),
+                        v -> config.getSettings().setClojureLspCommand(v),
+                        () -> config.getSettings().getClojureLspCommand()),
+                new LspServerUi(
                         "lua",
                         com.editora.lsp.LspServerRegistry.DEFAULT_LUA_COMMAND,
                         "settings.lsp.enableLua",
