@@ -3,7 +3,6 @@
 # from it and unmarked (a new package starts @NullMarked), and when a package on it is marked or gone
 # (delete its line). One package per line.
 com.editora
-com.editora.agent
 com.editora.ai
 com.editora.build
 com.editora.command
@@ -12,7 +11,6 @@ com.editora.config
 com.editora.config.migration
 com.editora.container
 com.editora.cron
-com.editora.crypto
 com.editora.csv
 com.editora.dap
 com.editora.deploy
@@ -40,7 +38,6 @@ com.editora.macro
 com.editora.markdown
 com.editora.markwhen
 com.editora.maven
-com.editora.mcp
 com.editora.mermaid
 com.editora.office
 com.editora.pdf
@@ -48,14 +45,11 @@ com.editora.perf
 com.editora.plugin
 com.editora.print
 com.editora.process
-com.editora.recovery
 com.editora.run
 com.editora.search
-com.editora.secrets
 com.editora.snippet
 com.editora.sshconfig
 com.editora.structured
-com.editora.sync
 com.editora.systemd
 com.editora.template
 com.editora.terminal

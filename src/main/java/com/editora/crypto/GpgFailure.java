@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Why a gpg run failed, in the terms the user acts on: each {@link Kind} has its own sentence and its own next
  * step in the UI. Classified from the status lines (and, only for the agent's "no way to ask" failures that gpg
@@ -12,7 +14,8 @@ import java.util.Locale;
  * @param keyIds the keys the failure is about (a recipient gpg refused, the keys a message needs), may be empty
  * @param detail gpg's own messages, for a Details view
  */
-public record GpgFailure(Kind kind, List<String> keyIds, String detail) {
+public record GpgFailure(
+        Kind kind, List<String> keyIds, @Nullable String detail) {
 
     public enum Kind {
         /** gpg could not be started: not installed, or the configured path is wrong. */
@@ -61,7 +64,8 @@ public record GpgFailure(Kind kind, List<String> keyIds, String detail) {
      * @param startError the error text when the process could not be started, else null
      * @param timedOut   the run was killed at its timeout
      */
-    public static GpgFailure classify(int exit, String stderr, String startError, boolean timedOut) {
+    public static GpgFailure classify(int exit, String stderr, @Nullable String startError, boolean timedOut) {
+
         GpgStatus status = GpgStatus.parse(stderr);
         String detail = startError != null ? startError : status.humanText();
         if (startError != null) {

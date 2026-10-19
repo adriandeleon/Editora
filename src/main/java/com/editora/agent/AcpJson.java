@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure JSON payload builders + parsers for the <a href="https://agentclientprotocol.com">Agent Client
@@ -39,7 +40,7 @@ public final class AcpJson {
         return envelope(m, method, params);
     }
 
-    public static ObjectNode response(ObjectMapper m, JsonNode id, JsonNode result) {
+    public static ObjectNode response(ObjectMapper m, JsonNode id, @Nullable JsonNode result) {
         ObjectNode n = m.createObjectNode();
         n.put("jsonrpc", "2.0");
         n.set("id", id);
@@ -139,7 +140,7 @@ public final class AcpJson {
     }
 
     /** {@code session/request_permission} response: the user picked {@code optionId}, or cancelled (null). */
-    public static ObjectNode permissionOutcome(ObjectMapper m, String optionId) {
+    public static ObjectNode permissionOutcome(ObjectMapper m, @Nullable String optionId) {
         ObjectNode outcome = m.createObjectNode();
         if (optionId == null) {
             outcome.put("outcome", "cancelled");
@@ -175,7 +176,8 @@ public final class AcpJson {
 
     /** One parsed {@code session/update} notification. {@code planEntries} is non-empty only for
      *  {@link UpdateKind#PLAN}. */
-    public record Update(String sessionId, UpdateKind kind, String text, List<PlanEntry> planEntries) {}
+    /** {@code sessionId} is null when the agent's notification named none. */
+    public record Update(@Nullable String sessionId, UpdateKind kind, String text, List<PlanEntry> planEntries) {}
 
     /** A permission option offered by {@code session/request_permission}. */
     public record PermissionOption(String optionId, String name, String kind) {}
@@ -190,12 +192,13 @@ public final class AcpJson {
     public record PlanEntry(String content, String status) {}
 
     /** The parsed {@code session/new} result: the new session id plus its model/mode catalogs. */
+    /** {@code sessionId} is null when the agent's answer named none. */
     public record SessionInfo(
-            String sessionId,
+            @Nullable String sessionId,
             List<ModelInfo> models,
-            String currentModelId,
+            @Nullable String currentModelId,
             List<ModeInfo> modes,
-            String currentModeId) {}
+            @Nullable String currentModeId) {}
 
     /** Parses a {@code session/update} notification's params; never throws (unknown → OTHER). */
     public static Update parseUpdate(JsonNode params) {
@@ -304,7 +307,8 @@ public final class AcpJson {
     }
 
     /** First supported selector in an ACP semantic category (ids need not equal the category). */
-    public static JsonNode configOption(JsonNode result, String category) {
+    public static @Nullable JsonNode configOption(@Nullable JsonNode result, String category) {
+
         JsonNode options = result == null ? null : result.get("configOptions");
         if (options != null && options.isArray()) {
             for (JsonNode option : options) {
@@ -382,7 +386,8 @@ public final class AcpJson {
         return out;
     }
 
-    private static String textOf(JsonNode node, String field) {
+    private static @Nullable String textOf(@Nullable JsonNode node, String field) {
+
         return node != null && node.hasNonNull(field) ? node.get(field).asText() : null;
     }
 

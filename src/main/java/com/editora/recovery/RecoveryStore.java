@@ -21,6 +21,8 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The recovery directory: {@code <config>/recovery/<session>/<buffer>.rec}, one sub-directory per Editora
  * process and one file per unsaved buffer.
@@ -83,8 +85,8 @@ public final class RecoveryStore implements AutoCloseable {
     }
 
     private final Path root;
-    private Path sessionDir;
-    private FileChannel sessionLock;
+    private @Nullable Path sessionDir;
+    private @Nullable FileChannel sessionLock;
     /** Dead sessions whose lock this process now holds, by directory. */
     private final Map<Path, FileChannel> adopted = new LinkedHashMap<>();
 
@@ -98,7 +100,7 @@ public final class RecoveryStore implements AutoCloseable {
     }
 
     /** This process's session directory, or {@code null} while it has written nothing. */
-    public synchronized Path sessionDir() {
+    public synchronized @Nullable Path sessionDir() {
         return sessionDir;
     }
 
@@ -267,7 +269,8 @@ public final class RecoveryStore implements AutoCloseable {
     /** Deletes an orphaned record — the user's explicit choice — and its session directory once empty. */
     public synchronized void discard(Entry entry) throws IOException {
         Path dir = entry.file().getParent();
-        if (!adopted.containsKey(dir)) {
+        if (dir == null || !adopted.containsKey(dir)) {
+
             throw new IOException("Not a record of a session this process took over: " + entry.file());
         }
         Files.deleteIfExists(entry.file());
@@ -373,7 +376,7 @@ public final class RecoveryStore implements AutoCloseable {
     // --- helpers ---
 
     /** TRUE = locked by us now; FALSE = held by someone else; null = the file system would not say. */
-    private static Boolean tryLock(FileChannel channel) {
+    private static @Nullable Boolean tryLock(FileChannel channel) {
         try {
             FileLock lock = channel.tryLock();
             return lock != null;
@@ -417,7 +420,8 @@ public final class RecoveryStore implements AutoCloseable {
         return out;
     }
 
-    private static void closeQuietly(FileChannel channel) {
+    private static void closeQuietly(@Nullable FileChannel channel) {
+
         if (channel != null) {
             try {
                 channel.close();

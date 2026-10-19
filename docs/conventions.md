@@ -183,13 +183,18 @@ and not checked.
   `mvn -q -DskipTests compile` and fix what NullAway reports. javac stops at 100 errors, so run it again
   until it is clean. Behaviour must not change. A real bug found on the way gets its own fix and test.
   Prefer small packages and the boundaries where nulls arrive from outside (JSON, protocols, files).
+- **Native bindings are `@NullUnmarked`.** A JNA `Library` interface or `Structure` follows the C API's
+  nullness, so mark the binding type `@NullUnmarked` instead of annotating every pointer
+  (`secrets.LinuxSecretServiceStore`). The Java field that holds a library that may not have loaded is
+  `@Nullable`. A `loaded()` accessor that throws hands each method a non-null local.
 - **Suppress rarely.** Put `@SuppressWarnings("NullAway")` on the narrowest element, with a comment saying
-  why the null cannot happen.
+  why. Usually that is a one-line helper rather than a whole method: `RecoveryCodec.written` keeps a null
+  from a hand-edited header, because refusing the record would lose its text.
 - **Plumbing.** Only NullAway runs (`-XepDisableAllChecks -Xep:NullAway:ERROR`), and only in the main compile,
   not on tests. `.mvn/jvm.config` exports the javac internals that Error Prone needs. JSpecify is a `provided`
   dependency read through `requires static org.jspecify`, so nothing ships. It runs on JDK 25 and JDK 27.
-  Cost on 2026-10-19, with three packages marked: a clean `mvn -DskipTests compile` went from 9.0 s to 9.5 s.
-  The cost grows as more packages are marked.
+  Cost on 2026-10-19, with nine packages marked: a clean `mvn -DskipTests compile` took 0.5 to 1.4 s longer
+  than about 9.5 s without the gate (two noisy runs). The cost grows as more packages are marked.
 
 ## Worktrees: one per task
 

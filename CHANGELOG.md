@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Null checking in the build.** NullAway, an Error Prone plugin, now checks every package marked
-  `@NullMarked` (JSpecify) during compile and fails the build on a null that is not declared. Three packages
-  start marked: the JVM debug adapter, EditorConfig and single-instance launch. A new package must start
+  `@NullMarked` (JSpecify) during compile and fails the build on a null that is not declared. Nine packages
+  start marked: the JVM debug adapter, EditorConfig, single-instance launch, the OS secret stores, GnuPG
+  encryption, the MCP server, the agent client, settings sync and crash recovery. A new package must start
   marked, and the list of packages written before the rule may only shrink (docs/conventions.md, "Null
   annotations"). There is no change in behaviour.
 

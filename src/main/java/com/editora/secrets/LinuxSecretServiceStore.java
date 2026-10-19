@@ -8,6 +8,8 @@ import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.Structure;
 import com.sun.jna.ptr.PointerByReference;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The freedesktop Secret Service (GNOME Keyring, KWallet) through libsecret, called through JNA. Each secret is an
@@ -18,6 +20,8 @@ import com.sun.jna.ptr.PointerByReference;
 public final class LinuxSecretServiceStore implements SecretStore {
 
     /** {@code SecretSchemaAttribute}: an attribute name and its type (0 = string). */
+    // Native bindings: nullness is the C API's, so NullAway does not check them.
+    @NullUnmarked
     @Structure.FieldOrder({"name", "type"})
     public static class SchemaAttribute extends Structure {
         public String name;
@@ -25,6 +29,7 @@ public final class LinuxSecretServiceStore implements SecretStore {
     }
 
     /** {@code SecretSchema}: a name, flags, 32 attribute slots (a null name ends the list), reserved words. */
+    @NullUnmarked
     @Structure.FieldOrder({
         "name",
         "flags",
@@ -53,6 +58,7 @@ public final class LinuxSecretServiceStore implements SecretStore {
     }
 
     /** The libsecret calls used: the synchronous, varargs "password" API. */
+    @NullUnmarked
     interface LibSecret extends Library {
         boolean secret_password_store_sync(
                 Schema schema,
@@ -73,15 +79,16 @@ public final class LinuxSecretServiceStore implements SecretStore {
     }
 
     /** {@code g_error_free}, to release a {@code GError} libsecret hands back. */
+    @NullUnmarked
     interface GLib extends Library {
         void g_error_free(Pointer error);
     }
 
     private final String service;
-    private final LibSecret lib;
-    private final GLib glib;
+    private final @Nullable LibSecret lib;
+    private final @Nullable GLib glib;
     private final Schema schema;
-    private Boolean reachable;
+    private @Nullable Boolean reachable;
 
     /** A store filing secrets under {@code service}; unavailable when libsecret cannot be loaded. */
     public LinuxSecretServiceStore(String service) {
@@ -137,7 +144,7 @@ public final class LinuxSecretServiceStore implements SecretStore {
 
     @Override
     public Optional<String> read(String account) throws SecretStoreException {
-        requireLoaded();
+        LibSecret lib = loaded();
         PointerByReference error = new PointerByReference();
         Pointer found =
                 lib.secret_password_lookup_sync(schema, null, error, "service", service, "account", account, null);
@@ -154,7 +161,7 @@ public final class LinuxSecretServiceStore implements SecretStore {
 
     @Override
     public void write(String account, String secret) throws SecretStoreException {
-        requireLoaded();
+        LibSecret lib = loaded();
         PointerByReference error = new PointerByReference();
         boolean ok = lib.secret_password_store_sync(
                 schema,
@@ -176,16 +183,18 @@ public final class LinuxSecretServiceStore implements SecretStore {
 
     @Override
     public void delete(String account) throws SecretStoreException {
-        requireLoaded();
+        LibSecret lib = loaded();
         PointerByReference error = new PointerByReference();
         lib.secret_password_clear_sync(schema, null, error, "service", service, "account", account, null);
         check(error);
     }
 
-    private void requireLoaded() throws SecretStoreException {
-        if (lib == null) {
+    private LibSecret loaded() throws SecretStoreException {
+        LibSecret loaded = lib;
+        if (loaded == null) {
             throw new SecretStoreException("libsecret is not installed");
         }
+        return loaded;
     }
 
     /** Turns a {@code GError} into an exception (its message), freeing it. */

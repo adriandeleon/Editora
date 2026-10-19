@@ -25,6 +25,8 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The process-wide owner of the recovery directory: one worker thread that does every read, write and delete
  * in {@link RecoveryStore}, so no caller ever waits on the disk.
@@ -61,11 +63,12 @@ public final class RecoveryService implements AutoCloseable {
     private final Map<String, Optional<RecoveryRecord>> pending = new LinkedHashMap<>();
 
     private boolean drainQueued;
-    private ScheduledExecutorService worker;
-    private ScheduledFuture<?> tickTask;
-    private Thread shutdownHook;
+    private @Nullable ScheduledExecutorService worker;
+    private @Nullable ScheduledFuture<?> tickTask;
+    private @Nullable Thread shutdownHook;
     private boolean closed;
-    private CompletableFuture<RecoveryStore.Orphans> orphans;
+    private @Nullable CompletableFuture<RecoveryStore.Orphans> orphans;
+
     private boolean offerClaimed;
 
     /** Buffer ids a write was requested for and not since removed: removing any other id is a no-op. */
@@ -248,7 +251,8 @@ public final class RecoveryService implements AutoCloseable {
         return discardIf(entry, bufferId);
     }
 
-    private CompletableFuture<Boolean> discardIf(RecoveryStore.Entry entry, String durableBufferId) {
+    private CompletableFuture<Boolean> discardIf(RecoveryStore.Entry entry, @Nullable String durableBufferId) {
+
         CompletableFuture<Boolean> result = new CompletableFuture<>();
         if (!submit(() -> {
             try {

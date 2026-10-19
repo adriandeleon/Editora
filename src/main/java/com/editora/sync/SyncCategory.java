@@ -2,6 +2,8 @@ package com.editora.sync;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /** One kind of user data that settings sync carries, and which files of the config directory hold it. */
 public enum SyncCategory {
     /** {@code snippets/<language>.json}. */
@@ -52,7 +54,8 @@ public enum SyncCategory {
     }
 
     /** The category that owns {@code relativePath}, or null. */
-    public static SyncCategory of(String relativePath) {
+    public static @Nullable SyncCategory of(String relativePath) {
+
         for (SyncCategory c : values()) {
             if (c.owns(relativePath)) {
                 return c;
