@@ -28,13 +28,19 @@ jobs:
   # failed, or never ran. "Required" is whatever the master branch's ruleset requires, read from the API.
   # CI may still be running when the tag goes up straight after a merge, so on a tag it waits for up to 30
   # minutes; a failed check stops it at once. A manual dry run only reports.
+  #
+  # Last, the Full tests (full-tests.yml: Windows, macOS, the probes against real tools). Pull requests wait
+  # only for the fast lane, so this is where those suites gate a release. The tagged commit is usually a fresh
+  # merge with no run of its own, so the preflight starts one on the tag and waits up to an hour for it (the
+  # macOS runners may be queued); a failed run stops it at once.
   preflight:
-    name: Preflight (tag vs pom version, CI passed)
+    name: Preflight (tag vs pom version, CI and Full tests passed)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 100
     permissions:
       contents: read
       checks: read   # the check runs on the commit being released
+      actions: write # list the Full tests runs on the commit, and start one when there is none
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,6 +67,18 @@ jobs:
             java scripts/release/CheckRelease.java ci "$GITHUB_REPOSITORY" "$GITHUB_SHA" --mode enforce --wait-minutes 30
           else
             java scripts/release/CheckRelease.java ci "$GITHUB_REPOSITORY" "$GITHUB_SHA" --mode report
+          fi
+
+      # As above: if a job failed for an unrelated reason, re-run it (the log prints the command) and then
+      # re-run this workflow's failed jobs. A dry run reports and starts nothing.
+      - name: Check that the Full tests passed on this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            java scripts/release/CheckRelease.java full "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_REF_NAME" --mode enforce --wait-minutes 60
+          else
+            java scripts/release/CheckRelease.java full "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_REF_NAME" --mode report
           fi
 
   build:

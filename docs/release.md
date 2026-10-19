@@ -57,6 +57,18 @@ the merge commit on `master`. If a required check failed for a reason unrelated 
 on that commit, then re-run the Release workflow: the newest run of each check decides. A manual dry run
 prints the same verdict without stopping.
 
+Last, it **requires a green run of the Full tests** on the tagged commit
+([`full-tests.yml`](../.github/workflows/full-tests.yml): the pure suite on Windows and macOS, the FX
+suite on macOS, and the probes against real JDT LS, java-debug, TypeScript, js-debug, SSH and Docker).
+Pull requests do not wait for these suites, so this is the only place they stop anything from shipping.
+A run from a pull request does not count (it tested an older `master`); the daily run or a dispatched
+one does, and the newest decides. A fresh merge commit has none yet, so the preflight **starts one on
+the tag** and waits for up to an hour; a failed run stops the release at once, and the log prints the
+`gh run rerun <id> --failed` command for a failure unrelated to the code (then re-run the Release
+workflow's failed jobs). To have it ready before tagging, start it on `master` yourself
+(`gh workflow run full-tests.yml --ref master`) or tag the commit the daily run already tested. A dry
+run reports the verdict and starts nothing.
+
 **Step 1 is the only manual version edit.** After the release publishes, the workflow's final
 `bump` job opens a pull request that reopens `master` at the next patch `-SNAPSHOT` — merge it; see
 below.

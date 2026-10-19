@@ -28,9 +28,10 @@ Debug can run a program in a tab instead of their consoles.
 - **Where:** a remote project's terminals start in its root on the host, and Open Terminal Here on a remote
   folder opens there (the system terminal is never used for it). The tab chip shows the host
   (`TerminalCoordinator.hostOf`).
-- **CI:** the **Terminal probe** job (`ci.yml`) runs on every pull request that touches the terminal: the remote
-  probe's terminal steps against dropbear on the runner (`-Dremote.probe.only`) and the container probe's
-  terminal test against Docker. It passes at once otherwise, so it can be a required check.
+- **CI:** the **Terminal probe** job (`full-tests.yml`) runs the remote probe's terminal steps against dropbear
+  on the runner (`-Dremote.probe.only`) and the container probe's terminal test against Docker: daily on
+  `master`, before every release, and on a pull request labelled `full-ci` — give that label to every pull
+  request that touches the terminal.
 - **Tests:** `SshTerminalFxTest` (embedded server: answers, budget, exit vs close vs drop),
   `RemoteTerminalPanelFxTest` (a tab answers, survives a drop, and reconnects on the new connection), and
   `RealSshdProbeFxTest`'s two terminal steps. Those check a real tty and `stty size` before and after a resize,

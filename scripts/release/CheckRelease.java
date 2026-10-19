@@ -46,6 +46,14 @@ import lib.Proc;
  * could be cut from code CI never passed (or failed). When CI is still running on the commit (a tag pushed
  * straight after a merge), it waits up to N minutes. Asks GitHub with {@code gh}.
  *
+ * <pre>
+ *   java scripts/release/CheckRelease.java full &lt;owner/repo&gt; &lt;commit-sha&gt; &lt;ref&gt; [--mode enforce|report] [--wait-minutes N]
+ * </pre>
+ * Preflight: the Full tests workflow ({@code full-tests.yml}: Windows, macOS, the real-tool probes) must have
+ * passed on the commit being released. Pull requests wait only for the fast lane, so this is where those
+ * suites gate what ships. With {@code enforce} and no run on the commit yet, it dispatches one on {@code ref}
+ * and waits up to N minutes for it.
+ *
  * <p>All exit 0 when the release may proceed and 1 with a list of what is wrong otherwise.
  */
 public final class CheckRelease {
@@ -74,6 +82,12 @@ public final class CheckRelease {
 
     /** One check run on a commit, as GitHub's check-runs API reports it. */
     record CheckRun(String name, String status, String conclusion, String startedAt) {}
+
+    /** One run of the Full tests workflow, as GitHub's workflow-runs API reports it. */
+    record WorkflowRun(long id, String event, String status, String conclusion, String createdAt, String url) {}
+
+    /** The workflow whose green run on the tagged commit a release needs (see {@code full}). */
+    static final String FULL_WORKFLOW = "full-tests.yml";
 
     /** {@code pass}, {@code pending} or {@code fail}, and one line per required check. */
     record Verdict(String verdict, List<String> lines) {}
@@ -255,6 +269,104 @@ public final class CheckRelease {
         return mode.equals("enforce") ? 1 : 0;
     }
 
+    /** The Full tests runs on {@code sha}. */
+    static List<WorkflowRun> fullRuns(String repo, String sha, Function<List<String>, String> gh) {
+        String out = gh.apply(List.of("api", "repos/" + repo + "/actions/workflows/" + FULL_WORKFLOW + "/runs?head_sha="
+                        + sha + "&per_page=100",
+                "--jq", ".workflow_runs[] | {id, event, status, conclusion, created_at, html_url}"));
+        return out.lines()
+                .filter(line -> !line.isBlank())
+                .map(line -> {
+                    var run = Json.object(Json.parse(line));
+                    return new WorkflowRun(((Number) run.get("id")).longValue(), (String) run.get("event"),
+                            (String) run.get("status"), (String) run.get("conclusion"), (String) run.get("created_at"),
+                            (String) run.get("html_url"));
+                })
+                .toList();
+    }
+
+    /**
+     * The verdict on the Full tests runs of a commit: {@code none} when it has none yet.
+     *
+     * <p>A pull request's run does not count: it tested the pull request merged into the master of its day, not
+     * this commit. Of the others (the daily run, a dispatched one) the newest decides, so a run that failed for
+     * an unrelated reason can be re-run ({@code gh run rerun <id> --failed}) or replaced by a new dispatch.
+     */
+    static Verdict fullVerdict(List<WorkflowRun> runs) {
+        WorkflowRun newest = null;
+        for (WorkflowRun run : runs) {
+            if (run.event().equals("pull_request")) {
+                continue;
+            }
+            String start = run.createdAt() == null ? "" : run.createdAt();
+            if (newest == null || start.compareTo(newest.createdAt() == null ? "" : newest.createdAt()) >= 0) {
+                newest = run;
+            }
+        }
+        if (newest == null) {
+            return new Verdict("none", List.of("  waiting  Full tests: no run on this commit"));
+        }
+        String where = " (" + newest.event() + " run " + newest.url() + ")";
+        if (!"completed".equals(newest.status())) {
+            return new Verdict("pending", List.of("  waiting  Full tests: " + newest.status() + where));
+        }
+        if ("success".equals(newest.conclusion())) {
+            return new Verdict("pass", List.of("  ok       Full tests" + where));
+        }
+        return new Verdict("fail", List.of("  FAILED   Full tests: " + newest.conclusion() + where,
+                "           re-run its failed jobs if they were unrelated: gh run rerun " + newest.id() + " --failed"));
+    }
+
+    /**
+     * Polls until the Full tests on {@code sha} have a verdict or the wait is over, dispatching a run on
+     * {@code ref} first when enforcing and the commit has none. Returns the exit code.
+     */
+    static int checkFull(String repo, String sha, String ref, String mode, int waitMinutes,
+            Function<List<String>, String> gh, IntConsumer sleepSeconds, DoubleSupplier clockSeconds, PrintStream out) {
+        boolean enforce = mode.equals("enforce");
+        String level = enforce ? "error" : "warning";
+        double deadline = clockSeconds.getAsDouble() + waitMinutes * 60;
+        boolean dispatched = false;
+        Verdict verdict;
+        while (true) {
+            verdict = fullVerdict(fullRuns(repo, sha, gh));
+            out.println("Full tests on " + sha.substring(0, Math.min(12, sha.length())) + ": " + verdict.verdict());
+            out.println(String.join("\n", verdict.lines()));
+            out.flush();
+            if (verdict.verdict().equals("pass") || verdict.verdict().equals("fail")) {
+                break;
+            }
+            if (verdict.verdict().equals("none") && !dispatched) {
+                if (!enforce) {
+                    break;
+                }
+                // A run dispatched with the job's own token does start (workflow_dispatch is exempt from the
+                // rule that such a token triggers no workflow). It takes a few seconds to be listed.
+                gh.apply(List.of("workflow", "run", FULL_WORKFLOW, "--repo", repo, "--ref", ref));
+                out.println("started " + FULL_WORKFLOW + " on " + ref);
+                dispatched = true;
+            }
+            if (clockSeconds.getAsDouble() >= deadline) {
+                break;
+            }
+            sleepSeconds.accept(30);
+        }
+        if (verdict.verdict().equals("pass")) {
+            return 0;
+        }
+        String problem = switch (verdict.verdict()) {
+            case "fail" -> "the Full tests failed on this commit; fix it, or re-run the failed jobs if they were "
+                    + "unrelated, then re-run this workflow's failed jobs";
+            case "none" -> enforce
+                    ? "the Full tests run started on " + ref + " was not listed after " + waitMinutes + " minute(s)"
+                    : "no Full tests run on this commit; a tag dispatches one (or: gh workflow run " + FULL_WORKFLOW
+                            + " --ref " + ref + ")";
+            default -> "the Full tests have not finished on this commit after " + waitMinutes + " minute(s)";
+        };
+        out.println("::" + level + " title=Release preflight::" + problem);
+        return enforce ? 1 : 0;
+    }
+
     private static String gh(List<String> args) {
         var command = new ArrayList<String>();
         command.add("gh");
@@ -303,6 +415,19 @@ public final class CheckRelease {
                     return usage(err, "--wait-minutes must be a number");
                 }
                 return checkCi(positional.get(0), positional.get(1), mode, wait, CheckRelease::gh,
+                        CheckRelease::sleep, () -> System.nanoTime() / 1e9, out);
+            }
+            case "full" -> {
+                if (positional.size() != 3 || !Set.of("--mode", "--wait-minutes").containsAll(options.keySet())) {
+                    return usage(err, "full takes <owner/repo> <commit-sha> <ref> [--mode enforce|report] [--wait-minutes N]");
+                }
+                int wait;
+                try {
+                    wait = Integer.parseInt(options.getOrDefault("--wait-minutes", "0"));
+                } catch (NumberFormatException e) {
+                    return usage(err, "--wait-minutes must be a number");
+                }
+                return checkFull(positional.get(0), positional.get(1), positional.get(2), mode, wait, CheckRelease::gh,
                         CheckRelease::sleep, () -> System.nanoTime() / 1e9, out);
             }
             case "version" -> {
@@ -358,7 +483,7 @@ public final class CheckRelease {
     }
 
     private static int usage(PrintStream err, String problem) {
-        err.println("usage: java scripts/release/CheckRelease.java {version,assets,ci} ...");
+        err.println("usage: java scripts/release/CheckRelease.java {version,assets,ci,full} ...");
         err.println("error: " + problem);
         return 2;
     }

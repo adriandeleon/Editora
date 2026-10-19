@@ -1,0 +1,361 @@
+name: Full tests
+
+# Everything CI runs beyond the fast lane in ci.yml: the pure suite on Windows and macOS, the FX suite on
+# macOS, and the probes against real tools (JDT LS and java-debug, the TypeScript server and js-debug, a
+# terminal on an SSH host and in a container).
+#
+# These ran on every pull request until 19 October 2026. Each job takes about ten minutes, but a pull
+# request's run took 13 to 35: the account runs five macOS jobs at a time and twenty jobs in all, several
+# sessions open pull requests at once, and every merge waited for the slowest macOS shard. Now a pull request
+# waits only for ci.yml (about ten minutes), and this workflow tests master as merged once a day. A failure
+# here is fixed forward with a new pull request; the release preflight refuses a commit without a green run
+# of this workflow (scripts/release/CheckRelease.java `full`), so nothing broken here ships.
+#
+# Nothing here is a required check, and no job is `continue-on-error`: a red job turns the run red, and the
+# release gate reads the run's conclusion.
+on:
+  # Every day on master. 05:23 UTC, off the hour, when GitHub's scheduled runs crowd in and are delayed.
+  # GitHub mails a failed scheduled run to whoever last changed this cron line.
+  schedule:
+    - cron: '23 5 * * *'
+  # On demand, on any branch or tag: `gh workflow run full-tests.yml --ref <branch>`. The release preflight
+  # dispatches it on the tag when the tagged commit has no run of its own yet.
+  workflow_dispatch: {}
+  # On a pull request labelled `full-ci`: for a change that is likely to differ between platforms (paths,
+  # line endings, processes, keychains, fonts), touches the terminal, the language servers or the debug
+  # adapters, or is a release. `labeled` starts the run the moment the label goes on.
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+# A new push to a labelled pull request cancels the run still going for the previous one. Adding some
+# OTHER label (Dependabot labels its pull requests as it opens them) must not cancel a run in progress, so
+# such an event gets a group of its own; its jobs all skip. Scheduled and dispatched runs are grouped by
+# event and commit, so the daily run and a release's dispatched run never cancel each other.
+concurrency:
+  group: >-
+    full-tests-${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && github.run_id
+    || github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Every job carries the same `if`: everything except a pull request runs; a pull request runs only with the
+# `full-ci` label, and not on the event of some other label being added. Keep the five copies identical.
+jobs:
+  # Windows and macOS installers ship from every release, and this is where they are tested: the PURE suite
+  # (everything not tagged `fx` — no toolkit, no display), which is where path separators, line endings,
+  # case-insensitive file systems, process spawning and charset defaults bite. `test`, not `verify`: the
+  # JaCoCo floors are calibrated against the full suite. Coverage is collected only by ci.yml's Linux shards,
+  # so the agent is off here (`-Djacoco.skip=true`).
+  pure-tests:
+    name: Pure tests (${{ matrix.os }})
+    if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      # The background dump fires at 23 minutes, and the step stops at 26, before the job's own 30-minute limit.
+      # A job stopped at that limit ends as "cancelled", and on 15 October 2026 GitHub kept no log at all for
+      # such a Windows job, so the dump printed into it was lost. A step stopped at its limit is an ordinary
+      # failure: the steps below still print the dump and upload it with the reports, as an artifact.
+      - name: Test (pure suite)
+        timeout-minutes: 26
+        shell: bash
+        # SystemKeychainProbeTest writes one throw-away item to this runner's real keychain (service "Editora
+        # probe") and deletes it: the macOS Keychain and Windows Credential Manager bindings run for real here,
+        # since no developer machine checks them. It builds its store directly, so the pom's
+        # -Deditora.secretStore=none (the app's own tests stay off the keychain) does not apply to it.
+        env:
+          EDITORA_REAL_KEYCHAIN_PROBE: '1'
+        run: |
+          scripts/dump-stuck-jvms.sh 1380 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
+          dumper=$!
+          trap 'kill "$dumper" 2>/dev/null' EXIT
+          ./mvnw -B --no-transfer-progress -DexcludedGroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 test
+
+      - name: Thread dumps of a hung test run
+        if: always()
+        shell: bash
+        run: if [ -s target-jvm-dumps.txt ]; then cat target-jvm-dumps.txt; else echo "no hang"; fi
+
+      - name: Report flaky tests
+        if: always()
+        shell: bash
+        run: java scripts/ci/ReportFlakes.java target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
+
+      # The keychain probe must have run, not skipped: macOS and Windows always have a keychain, so a skip here
+      # means the probe stopped testing anything.
+      - name: Check that the keychain probe ran
+        if: success()
+        shell: bash
+        run: |
+          report=target/surefire-reports/TEST-com.editora.secrets.SystemKeychainProbeTest.xml
+          test -f "$report" || { echo "::error::SystemKeychainProbeTest did not run"; exit 1; }
+          grep -q 'skipped="0"' "$report" || { echo "::error::SystemKeychainProbeTest was skipped on ${{ runner.os }}"; exit 1; }
+
+      # The log names a failed test; the XML and text reports hold its output and stack trace, and the dump
+      # file, when there is one, where a hung run stuck. Also when the job was cancelled: its log may be gone.
+      - name: Upload test reports
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: surefire-reports-pure-${{ matrix.os }}
+          path: |
+            target/surefire-reports
+            target-jvm-dumps.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The headless Glass platform ships inside JavaFX, so the FX suite can run on macOS without a display.
+  # The pure lane above reaches under half the code; this one covers the rest on a second operating
+  # system. No coverage agent, and two test JVMs (each with its own JavaFX toolkit): in one JVM it was 24
+  # minutes, and still 16 to 19 with two.
+  #
+  # Three shards, dealt out like ci.yml's Linux ones (scripts/ci/ShardTests.java). A shard's list holds every
+  # kind of test class; `-Dgroups=fx` then keeps the FX tests among them, so the three lists together cover the
+  # FX suite whatever a class is called. Three, not four: the account runs five macOS jobs at a time, and
+  # with the pure lane this makes four per run.
+  fx-tests:
+    name: FX tests (macos-15, shard ${{ matrix.shard }} of 3)
+    if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')) }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      - name: List this shard's test classes
+        run: |
+          mkdir -p target
+          java scripts/ci/ShardTests.java list ${{ matrix.shard }} 3 > target/shard-includes.txt
+          echo "$(wc -l < target/shard-includes.txt) test classes in this shard, FX and other"
+
+      # As in the pure lane: dump at 23 minutes, stop the step at 26, keep the dump as an artifact.
+      - name: Test (FX suite)
+        timeout-minutes: 26
+        shell: bash
+        run: |
+          scripts/dump-stuck-jvms.sh 1380 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
+          dumper=$!
+          trap 'kill "$dumper" 2>/dev/null' EXIT
+          ./mvnw -B --no-transfer-progress -Dgroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -DforkCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
+
+      - name: Thread dumps of a hung test run
+        if: always()
+        shell: bash
+        run: if [ -s target-jvm-dumps.txt ]; then cat target-jvm-dumps.txt; else echo "no hang"; fi
+
+      - name: Report flaky tests
+        if: always()
+        run: java scripts/ci/ReportFlakes.java target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
+
+      # As in the pure lane: the reports and any dump, also when the job was cancelled.
+      - name: Upload test reports
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: surefire-reports-fx-macos-shard-${{ matrix.shard }}
+          path: |
+            target/surefire-reports
+            target-jvm-dumps.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # A real tty on a real host: the remote probe's terminal steps against dropbear on the runner (a shell on a
+  # pty channel, its size and a resize, a program's exit code, shell integration, a dropped connection) and the
+  # container probe's terminal test against Docker. The unit and FX suites stop at a fake connector; this is
+  # where a broken pty-req or `exec -it` shows. Label a pull request that touches the terminal `full-ci`.
+  terminal-probe:
+    name: Terminal probe
+    if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      # As remote-probe.yml's dropbear lane: an unprivileged server on a high port, the runner's own account.
+      - name: Private dropbear
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="$RUNNER_TEMP/server"
+          mkdir -p "$S/work"
+          cd "$S"
+          ssh-keygen -q -t ecdsa -N '' -f client_ecdsa
+          ssh-keygen -q -t ed25519 -N '' -f client_ed25519
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends dropbear-bin openssh-sftp-server
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          chmod go-w "$HOME"
+          cat client_ecdsa.pub client_ed25519.pub >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+          dropbearkey -t ed25519 -f host_ed25519 >/dev/null
+          dropbearkey -t ecdsa -f host_ecdsa >/dev/null
+          nohup dropbear -F -E -s -p 127.0.0.1:22523 -P "$S/server.pid" \
+            -r "$S/host_ed25519" -r "$S/host_ecdsa" > "$S/server.log" 2>&1 &
+          for i in $(seq 20); do [ -s "$S/server.pid" ] && break; sleep 0.5; done
+          echo "server pid $(cat "$S/server.pid")"
+
+      - name: Terminal on an SSH host
+        shell: bash
+        run: |
+          S="$RUNNER_TEMP/server"
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -Dgroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest=RealSshdProbeFxTest \
+            -Dremote.probe="$(id -un)@127.0.0.1:22523" \
+            -Dremote.probe.key="$S/client_ecdsa" \
+            -Dremote.probe.ed25519Key="$S/client_ed25519" \
+            -Dremote.probe.dir="$S/work" \
+            -Dremote.probe.sshdPid="$(cat "$S/server.pid")" \
+            -Dremote.probe.only='terminal,shell integration,dropped connection' \
+            test | tee probe.log
+          status=${PIPESTATUS[0]}
+          { echo "### Terminal probe (SSH)"; echo '```'; sed -n '/PROBE REPORT/,/^\[/p' probe.log | sed '$d'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Terminal in a container
+        shell: bash
+        run: |
+          docker pull --quiet eclipse-temurin:25-jdk
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -Dgroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest='ContainerProbeFxTest#aTerminal*' \
+            -Dcontainer.probe=docker \
+            -Dcontainer.probe.image=eclipse-temurin:25-jdk \
+            test
+
+      - name: Server log
+        if: failure()
+        shell: bash
+        run: tail -n 200 "$RUNNER_TEMP/server/server.log" || true
+
+  compact-source-probes:
+    name: Compact Java integration (JDK 25)
+    if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      - name: Install JDT LS and Java debug adapter
+        run: |
+          scripts/install-jdtls.sh
+          scripts/install-java-debug.sh
+          test -x "$HOME/.editora/plugins/lsp/java/bin/jdtls"
+          compgen -G "$HOME/.editora/plugins/dap/java/com.microsoft.java.debug.plugin-*.jar"
+
+      # JavaDebugRealAdapterProbeFxTest: a Maven project launch, a program Editora starts itself (runInTerminal),
+      # and Stop / window close leaving no debuggee or compile folder — against the real java-debug.
+      - name: Test compact Java language service and debugging
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+
+  # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
+  # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release
+  # without tsserver.js (TypeScript 7) broke every JavaScript file with nothing in CI to notice (review E12).
+  # Pinned to what Editora's installer pins: typescript@6 and js-debug v1.117.0. The runner's own Node.js runs them.
+  node-probes:
+    name: Node.js integration (TypeScript server, js-debug)
+    if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      - name: Install typescript-language-server, TypeScript 6 and vscode-js-debug
+        env:
+          JS_DEBUG_VERSION: v1.117.0
+        run: |
+          node --version
+          npm install -g --no-fund --no-audit typescript@6 typescript-language-server
+          typescript-language-server --version
+          test -f "$(npm root -g)/typescript/lib/tsserver.js"
+          dest="$HOME/.editora/plugins/dap/javascript"
+          mkdir -p "$dest"
+          curl -fsSL "https://github.com/microsoft/vscode-js-debug/releases/download/${JS_DEBUG_VERSION}/js-debug-dap-${JS_DEBUG_VERSION}.tar.gz" \
+            | tar -xz -C "$dest"
+          test -f "$dest/js-debug/src/dapDebugServer.js"
+
+      # TypeScriptServerNodeProbeFxTest: a JavaScript file gets a diagnostic from the real server Editora starts.
+      # JsDebugProbeFxTest: a breakpoint hits, steps, and the session ends with the program.
+      - name: Test the TypeScript server and JavaScript debugging
+        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
