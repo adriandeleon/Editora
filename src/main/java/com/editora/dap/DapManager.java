@@ -2122,7 +2122,7 @@ public final class DapManager {
             long epoch)
             throws java.io.IOException {
         String language = spec.language();
-        String tool = com.editora.run.JvmTools.locate(com.editora.run.JvmScriptRun.tool(language));
+        String tool = jvmToolLocator.apply(com.editora.run.JvmScriptRun.tool(language));
         if (tool == null) {
             fail(epoch, tr(com.editora.run.JvmScriptRun.missingToolKey(language)));
             return;
@@ -2187,6 +2187,14 @@ public final class DapManager {
                 }
             });
         });
+    }
+
+    /** Finds the tool a JVM language's program runs with ({@code groovy}, {@code scala-cli}); a test supplies one. */
+    private volatile java.util.function.UnaryOperator<String> jvmToolLocator = com.editora.run.JvmTools::locate;
+
+    /** Test seam for {@link #jvmToolLocator}: a stand-in tool, so the launch can be checked without one installed. */
+    void setJvmToolLocatorForTest(java.util.function.UnaryOperator<String> locator) {
+        this.jvmToolLocator = locator == null ? com.editora.run.JvmTools::locate : locator;
     }
 
     /** How long a Scala CLI program may take to compile and connect back (a first run downloads the compiler). */
