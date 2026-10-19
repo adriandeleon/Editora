@@ -33,6 +33,11 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
     }
 
     @Override
+    public void encrypt(Path file) {
+        fileWorkflows.encryption().encryptFile(file);
+    }
+
+    @Override
     public boolean localHistoryEnabled() {
         return localHistoryEnabled.getAsBoolean();
     }

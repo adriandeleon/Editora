@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Encrypted files are a core feature, and their text stays encrypted everywhere Editora writes.** Opening a
+  `.gpg`, `.pgp` or `.asc` encrypted file decrypts it with GnuPG (the `gpg` you have installed, on this machine),
+  and saving encrypts it again for the same people, in the same format. A save that cannot be encrypted (a
+  recipient's public key missing, GnuPG failing) writes nothing and says why in a banner. While an encrypted
+  file is open, its text gets no crash-recovery copy and no Local History, bookmarks and breakpoints keep only
+  line numbers, no personal notes can be added, language servers do not read it (a setting turns them on),
+  agents, MCP clients and AI actions are refused, and diagrams are not rendered through temporary files. Save
+  As to a plain name, export, print and external tools ask first. Settings schema 136.
+- **Plugins: consent belongs to a plugin's folder and to what you were shown.** A plugin's id must be its folder's
+  name (a folder that copies another plugin's id is listed with an error and never loads), and plugins.json stores
+  a fingerprint of the disclosure with each consent: a plugin whose code, commands or chords changed since does not
+  load until you enable it again. Entries of plugins whose folder is gone are dropped at start. plugins.json
+  schema 2 carries existing consents over.
+- **Plugins: nothing is replaced before you agree.** An install is unpacked beside the plugins and put in place only
+  on Enable; a registry archive must be the plugin and version its entry names; installing a different plugin
+  under an installed plugin's id asks "Replace A with B?" first. Remove deletes the row you clicked.
+- **The plugin consent dialog cannot be forged.** Manifest text is escaped (line breaks, control and bidi
+  characters are shown, not obeyed) and capped, the capability list scrolls in a fixed box, and it lists the main
+  class and every jar, each command's exact argv and folder, and what each chord replaces. A plugin whose
+  plugin.json cannot be read can no longer be ticked.
+- **MCP clients cannot switch plugins on, change the signed-registry requirement, install or remove plugins, or
+  trust a folder.** The registry URL setter refuses anything but https for every caller.
+
 - **AI API keys are kept in the system keychain** (macOS Keychain, Windows Credential Manager, the Secret Service on
   Linux). Keys in settings.json move there on first start, and Settings → AI Actions says where each key is. Where no
   keychain answers, keys stay in settings.json and the page says so. Keys in the keychain are never exported.
@@ -32,7 +55,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Run File, the gutter ▶ and a new Groovy script run configuration run a script with `groovy` on that JDK, and the
   Run window shows the Groovy and Java versions. Debug stops at breakpoints in scripts, classes and closures, steps
   over Groovy's own runtime, shows locals and fields, and stops on uncaught exceptions — through a new debugger
-  built into Editora, so there is nothing else to install. Settings schema 136.
+  built into Editora, so there is nothing else to install. Settings schema 137.
+- **Encrypted files** (Tools ▸ Encryption; [ADR 0017](docs/decisions/0017-encrypted-files.md)). An encrypted
+  file opens as the text inside it, in that text's language (`notes.md.gpg` is Markdown), with a lock on its tab
+  and an "Encrypted · 2" item in the status bar that opens the details: who can read it (you, verified or not),
+  its format, its signature.
+  - **Locked tabs** instead of hex or errors: a cancelled prompt, a file none of your keys opens, or GnuPG not
+    installed shows what happened and the next step. Restored tabs stay locked until you decrypt them, so
+    startup never asks for a run of passphrases.
+  - **Encrypt File…** (also on the Project tree and tab menus, and Save As to a `.gpg`/`.asc` name) opens a
+    recipient picker: searchable, several people at once or a passphrase instead, your own key included by
+    default, unverified keys warned about with their fingerprint, expired and sign-only keys shown with the
+    reason. It can write the folder's `.gpg-id` (the `pass` format) so new files there get the same people.
+    The plain original stays until you move it to the trash from the banner.
+  - **Change Recipients…** (applied on the next save), **Remove Encryption…**, **Lock File**, **Decrypt to
+    File…**, **Encrypt Selection…** and **Decrypt Block at Caret** (an armored message pasted into a note opens
+    in a read-only card), **Import Public Key…** (and an opened `.asc` key offers it), **Clear-Sign**, **Sign
+    File (Detached)** and **Verify Signature**.
+  - Passphrases go to gpg-agent's own prompt; when it cannot show one (a terminal pinentry), Editora asks and
+    hands the passphrase straight to GnuPG. A passphrase-only file is asked once and saves without asking again.
+  - Settings ▸ Encryption (gpg path, always include my key, who asks for passphrases, language servers) and two
+    Doctor rows (GnuPG, passphrase prompt). Samples in `samples/encrypted/` (passphrase `editora`).
 - **Clojure: language server, build tools, Run and Debug.** Clojure, ClojureScript and EDN files get completion,
   diagnostics (clj-kondo's), navigation, rename and formatting from clojure-lsp, installed in one click (a pinned
   native binary, checked by its SHA-256) or found on PATH. A `deps.edn`, `project.clj` or `bb.edn` project gets a
@@ -43,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `bb`; an uncaught exception's whole trace is printed (not left in a temporary file), and its frames are links.
   Debug stops at breakpoints in a namespace's functions or a script's top-level forms, under the Clojure CLI or
   Leiningen, with locals kept visible and frames named as Clojure names them (`my-app.core/greet`); Babashka,
-  a native program, cannot be debugged and says so. Settings schema 137.
+  a native program, cannot be debugged and says so. Settings schema 138.
 - **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
   files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
   `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),
@@ -52,6 +95,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   snippets, brand file icons, and New ▸ Scala, Scala CLI script, Clojure and Babashka script. Groovy gets its own
   icon and a server-free symbol index too, and stack-trace lines from Kotlin, Groovy, Scala and Clojure code are
   links (including Clojure's `at my-app.core/f (core.clj:4)`).
+- **`--disable-plugins`** starts Editora with no plugin loaded for the session: the way out of a plugin that hangs or
+  breaks startup. Settings and Doctor say when it is on.
+- **Doctor → Plugins** lists what runs and every plugin that failed to load or start, started slowly, or changed
+  since it was enabled.
+- **Plugin chords per keymap**: a manifest's `keymaps` gives chords for one keymap (`emacs`, `cua`, …) in place of
+  `keymap`.
+- **Plugins: Restart now** on a Settings row whose change waits for a restart, and status and errors shown on the
+  Plugins page itself.
+
 - **Settings shows what you changed.** A row whose value differs from the default carries a marker, the sidebar counts
   them per page, each row has **Reset to default**, and the **Modified** toggle (or `@modified` in the search) lists
   only the changed settings.
@@ -285,7 +337,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name is filled in (`src/main/java/test/App.java` → `test.App`), from the file's `main` method or else its
   package and name. A configuration still called "New Configuration" is renamed after the class.
 
+### Removed
+
+- **The GnuPG registry plugin (`gpg-tools`)**: GnuPG is built in now. An installed copy is removed at startup
+  (its gpg path and last recipient are kept), and it can no longer be installed.
+
 ### Changed
+
+- **What a session runs is what it started with.** Every window applies the plugins that loaded at launch; an
+  install, update, enable, disable or removal takes effect at the next start, as the Settings page says. An update
+  or removal of a running plugin is applied at the next start before anything loads (Windows cannot replace an
+  open jar), and a declined update keeps the installed version, enabled.
+- **Plugin commands and tool windows are always in the plugin's namespace** (`plugin.<id>.…`), so a plugin can no
+  longer replace a built-in command; an untitled one shows the plugin's name, and tool-window toggles read
+  "Tool Window: …".
+- **`activeEditor()` stays on the buffer it was asked for**: a plugin that finishes on a worker writes into the
+  file it started on, never the tab in front by then (format-runner overwrote another file). Plugin API reads off
+  the JavaFX thread throw; writes are handed to it.
+- **Plugin feedback is visible and translated**: start and main-class failures go to the Message Log and the
+  Settings row, a failed start's commands, chords and segments are taken back, failing plugin commands name the
+  plugin, declared commands show their output, and install and registry errors are sentences in your language in
+  a dialog titled "Plugins".
+- **Settings → Plugins**: installed plugins come first, Browse comes back to Settings when its picker closes,
+  Browse and Install from file are greyed while plugins are off (Simple mode says it is the reason), Remove names
+  the plugin and its saved data, and "Require signed plugins" is now "Require a signed registry".
+- **Export Configuration asks before including the data plugins saved**, and never includes the installer's
+  staging folders.
+- **The example plugin uses chords that are free in every keymap** (Ctrl+Alt+Shift+E / Y).
 
 - **Changing tab size or another view setting with many files open is about nine times faster**; tabs that are not
   shown catch up when you show them.
@@ -436,6 +514,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Closing a window no longer keeps it in memory** (about 21 MB each, plugin panes included): the Settings Sync
+  listener of every closed window was never removed.
+- **A plugin thread can no longer keep Editora running after quit**, where the next launch was "handed to" an
+  editor with no window.
+- **Chords a plugin bound in code survive a keymap switch or a key-binding edit**, and a keymap rebuild in Simple
+  mode no longer turns plugin chords on.
+- **A plugin's `start()` is timed**; one that holds up window opening is named.
+- **Registry and download reads have an overall deadline**, a second Browse while one is fetching joins it, a picked
+  file over the size cap is refused before it is read, and an install worker that fails always reports back.
+- **Removing a plugin deletes its plugin.json last**, so a folder that cannot be fully deleted stays listed and
+  removable; staging folders a crash left behind are swept at start; concurrent rescans can no longer close class
+  loaders in use.
+- **Plugin versions compare by semver**: `rc10 > rc2`, `+build` is ignored, `v2.0 < 10.0`; the install question
+  says Update, Reinstall or Downgrade where that is what an install would do, and Browse marks a newer installed
+  version.
+- **The palette shows plugin chords**, plugin right-click items have their own separator, a plugin status segment is
+  reachable by keyboard and names its plugin, and `caretLine()` is right in a narrowed buffer.
 - **The minimise, maximise and close buttons were nearly invisible with a dark theme and the menu bar in the
   title bar.** They followed the desktop's light or dark setting rather than Editora's theme, so a dark theme on
   a light desktop drew them dark on dark. They now follow the app theme, and change with it.

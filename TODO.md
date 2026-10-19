@@ -13,6 +13,22 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] Resolve the dynamic Java-plugin closed-world incompatibility only through a separate design,
       if a native product is pursued.
 
+## Plugin system follow-up (review 2026-10-18)
+
+- [x] Frozen launch set, consent fingerprints, folder-is-id, staged installs, deferred update/removal of a
+      running plugin, one escaped consent dialog, bound `activeEditor()`, `--disable-plugins`, Doctor → Plugins.
+      See [plugins](docs/plugins.md).
+- [ ] Registry index freshness: sign a `generated`/`serial` with the index and refuse one older than the last
+      seen (an old signed index verifies for ever).
+- [ ] App-level plugin lifecycle, shared state and buffer events (Scratchpad loses notes across windows,
+      word-count polls); unregister handles for contributions.
+- [ ] `${file}` / `${selection}` / `${projectDir}` in declarative commands, output in a console, a cancel.
+- [ ] Split the exported API (`Plugin`, `PluginContext`, `ActiveEditor`, `ToolWindowSide`) from the plugin
+      package internals and add an `apiVersion` manifest field checked at load.
+- [ ] Browse: description under the title, state pills, a refresh key; an "Updates" count on the Plugins page.
+- [ ] Stream registry downloads to a temp file (one copy in memory, not four); share one registry client
+      per WindowManager.
+
 ## Controller decomposition
 
 - [x] Extract exports, editing, templates, settings, run configurations, navigation, previews, Git actions,

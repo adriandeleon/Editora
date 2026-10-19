@@ -288,8 +288,12 @@ final class BookmarkCoordinator {
         List<Bookmark> stored = map.get(key);
         // Not the snapshot alone: a second window on this file has its own copy of the bookmarks, and
         // writing this one as the whole list deleted every bookmark the other had added.
-        List<Bookmark> marks = MarkMerge.withForeign(
-                stored, seenInStore.get(buffer), buffer.getBookmarkManager().snapshot(), Bookmark::line);
+        List<Bookmark> snapshot = buffer.getBookmarkManager().snapshot();
+        if (buffer.encryption().isEncrypted()) {
+            // bookmarks.json is not encrypted: an encrypted file's bookmarks keep their line, not its text.
+            snapshot = snapshot.stream().map(b -> b.withLineText("")).toList();
+        }
+        List<Bookmark> marks = MarkMerge.withForeign(stored, seenInStore.get(buffer), snapshot, Bookmark::line);
         if (marks.isEmpty()) {
             map.remove(key);
         } else {

@@ -191,8 +191,14 @@ final class ExternalToolCoordinator {
     }
 
     /** Runs an external tool against the active buffer; applies its output per the tool's {@code OutputTarget}. */
+    /** Asked before a tool runs on the active buffer — an encrypted file's text goes to it unencrypted. */
+    volatile java.util.function.Predicate<com.editora.editor.EditorBuffer> plaintextOut = buffer -> true;
+
     private void run(ExternalTool tool) {
         if (!isEnabled() || tool == null || !tool.isEnabled()) {
+            return;
+        }
+        if (!plaintextOut.test(host.activeBuffer())) {
             return;
         }
         // A remote (SFTP) buffer's path/dir can't feed a local subprocess: ProcessRunner does

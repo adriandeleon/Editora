@@ -652,6 +652,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public EncryptionCoordinator encryption() {
+        return mc.fileWorkflows.encryption();
+    }
+
+    @Override
     public RegisterCommands registers() {
         return mc.registers;
     }

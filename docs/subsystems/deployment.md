@@ -3,7 +3,7 @@
 A **deployment** runs a local project's programs on another machine: before a run, Editora copies what changed
 in the project to a folder on an SSH host, then runs the configuration there, in the copy. It is the inverse of
 [remote folders](remote.md), where the project itself lives on the host. Why it is built this way, and the
-alternatives, are in [ADR 0016](../decisions/0016-deployments.md).
+alternatives, are in [ADR 0017](../decisions/0016-deployments.md).
 
 ## Model
 

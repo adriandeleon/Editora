@@ -27,4 +27,9 @@ public class RegistryEntry {
     public String sha256 = "";
     /** Minimum Editora version required, or blank for any. Compared to {@code AppInfo.VERSION}. */
     public String minEditoraVersion = "";
+    /**
+     * Why the plugin should no longer be installed (its feature is built in now, it is unmaintained), or blank.
+     * Browse shows it and still lets the user install; the registry keeps such entries for older Editoras.
+     */
+    public String deprecated = "";
 }

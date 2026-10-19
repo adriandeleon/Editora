@@ -4,8 +4,8 @@ A minimal plugin that demonstrates **every** extension point Editora exposes:
 
 | Contribution | Where it comes from |
 | --- | --- |
-| Palette command `Example: Say Hello` + keybinding `C-c C-h` | Java (`HelloPlugin.registerCommand` + `bindKey`) |
-| `Example: Insert Marker` (edits the buffer) + keybinding `C-c C-e` | Java command + `plugin.json` `keymap` |
+| Palette command `Example: Say Hello` + keybinding `C-M-S-y` (Ctrl+Alt+Shift+Y) | Java (`HelloPlugin.registerCommand` + `bindKey`) |
+| `Example: Insert Marker` (edits the buffer) + keybinding `C-M-S-e` (Ctrl+Alt+Shift+E) | Java command + `plugin.json` `keymap` |
 | **Example** tool window (bottom) | Java (`registerToolWindow`) |
 | Editor right-click **Uppercase selection (example)** | Java (`addEditorMenuItem`) |
 | Status-bar **👋 Example** segment | Java (`addStatusBarSegment`) |

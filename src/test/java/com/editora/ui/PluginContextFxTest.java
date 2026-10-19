@@ -24,6 +24,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.plugin.ActiveEditor;
 import com.editora.plugin.Plugin;
 import com.editora.plugin.PluginContext;
+import com.editora.plugin.PluginManager;
 import com.editora.plugin.ToolWindowSide;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -77,6 +78,9 @@ class PluginContextFxTest {
             ctx.addEditorMenuItem(null, editor -> EVENTS.add("never"));
             ctx.addEditorMenuItem("No action", null);
             ctx.addStatusBarSegment("probe-segment", "ping");
+            ctx.registerCommand("boom", "Probe: Boom", () -> {
+                throw new IllegalStateException("a plugin command failed on purpose");
+            });
             ctx.addStatusBarSegment("probe-plain", null);
         }
 
@@ -87,11 +91,14 @@ class PluginContextFxTest {
         }
     }
 
-    /** A plugin that cannot start. */
+    /** A plugin that cannot start — after it has added a command, a chord and a status segment (C7). */
     public static final class BrokenPlugin implements Plugin {
         @Override
         public void start(PluginContext ctx) {
             EVENTS.add("broken start");
+            ctx.registerCommand("half", "Broken: Half Registered", () -> EVENTS.add("half"));
+            ctx.bindKey("C-M-S-f4", "half");
+            ctx.addStatusBarSegment("broken-segment", "half");
             throw new IllegalStateException("plugin start failed on purpose");
         }
 
@@ -199,6 +206,7 @@ class PluginContextFxTest {
         final FxWindowFixture fx;
         final RecordingHost host;
         final PluginCoordinator coordinator;
+        final PluginManager plugins;
         final List<Path> opened = new CopyOnWriteArrayList<>();
         private final AsyncTestScope scope;
 
@@ -241,11 +249,17 @@ class PluginContextFxTest {
                 @Override
                 public void showError(String summary, String detail) {}
             };
-            coordinator = FxTestSupport.callOnFx(() -> {
+            // The next launch: the store consents to them, and a fresh manager's first discover is its launch set.
+            plugins = FxTestSupport.callOnFx(() -> {
                 for (String id : List.of("probe", "broken", "late", "ghost")) {
                     fx.shared.getPluginStore().setEnabled(id, true);
                 }
-                fx.windowManager.pluginManager().discover();
+                PluginManager next = new PluginManager(
+                        fx.shared.getPluginsDir(), (PluginManager.Consent) fx.shared.getPluginStore()::allows);
+                next.discover();
+                return next;
+            });
+            coordinator = FxTestSupport.callOnFx(() -> {
                 return new PluginCoordinator(
                         host,
                         FxTestSupport.field(mc, "registry"),
@@ -256,10 +270,13 @@ class PluginContextFxTest {
                         FxTestSupport.field(mc, "statusBar"),
                         FxTestSupport.field(mc, "settingsWindow"),
                         FxTestSupport.field(mc, "config"),
-                        fx.windowManager.pluginManager(),
+                        plugins,
                         ops);
             });
-            scope.onClose(() -> FxTestSupport.runOnFx(coordinator::disposePlugins));
+            scope.onClose(() -> FxTestSupport.runOnFx(() -> {
+                coordinator.disposePlugins();
+                plugins.closeAll();
+            }));
         }
 
         CommandRegistry commands() {
@@ -315,27 +332,54 @@ class PluginContextFxTest {
             assertEquals(
                     List.of("broken start", "late start", "probe start"),
                     EVENTS.stream().filter(e -> e.endsWith(" start")).sorted().toList());
-            assertTrue(rig.host.log.contains(tr("status.plugins.failed", "broken")), rig.host.log.toString());
-            assertFalse(rig.host.log.contains(tr("status.plugins.failed", "ghost")), "a missing class is skipped");
+            // E7: a start that throws and a main class that is missing are both told, and kept on the row.
+            assertTrue(
+                    rig.host.log.stream()
+                            .anyMatch(l -> l.startsWith(tr("status.plugins.startFailed", "broken", "")
+                                    .strip())),
+                    rig.host.log.toString());
+            assertTrue(rig.host.log.contains(tr("status.plugins.failed", "ghost")), rig.host.log.toString());
+            assertEquals(
+                    com.editora.plugin.PluginDescriptor.LoadProblem.Kind.START_FAILED,
+                    rig.plugins.runtimeProblem("broken").kind());
+            assertEquals(
+                    com.editora.plugin.PluginDescriptor.LoadProblem.Kind.MAIN_NOT_FOUND,
+                    rig.plugins.runtimeProblem("ghost").kind());
+            assertNull(rig.plugins.runtimeProblem("probe"));
+            // C7: what the broken plugin added before it threw is taken back.
+            assertTrue(rig.commands().get("plugin.broken.half").isEmpty(), "its command is gone");
+            assertNull(rig.keymap().commandFor("C-M-S-f4"), "its chord is gone");
+            StatusBar bar = FxTestSupport.field(rig.fx.controller, "statusBar");
+            assertTrue(FxTestSupport.callOnFx(() -> bar.getChildren().stream()
+                    .noneMatch(n -> n instanceof Label l && "broken-segment".equals(l.getText()))));
 
-            // Commands: a bare id is namespaced, a dotted one is taken as written, a missing title is the id.
+            // Commands: every id is the plugin's own, dotted or not (C5); a missing title names the plugin.
             CommandRegistry commands = rig.commands();
             assertEquals(
-                    "plugin.probe.ping",
+                    "Probe: ping",
                     commands.get("plugin.probe.ping").orElseThrow().title());
             assertEquals(
-                    "Probe: Dotted", commands.get("probe.dotted").orElseThrow().title());
+                    "Probe: Dotted",
+                    commands.get("plugin.probe.probe.dotted").orElseThrow().title());
+            assertTrue(commands.get("probe.dotted").isEmpty(), "a dotted id no longer escapes the namespace");
             assertEquals(
                     "Probe: OK", commands.get("plugin.probe.ok").orElseThrow().title());
             assertEquals(
-                    "plugin.probe.fails",
+                    "Probe: fails",
                     commands.get("plugin.probe.fails").orElseThrow().title());
             assertTrue(commands.get("plugin.probe. ").isEmpty(), "a declared command without an id is dropped");
             FxTestSupport.runOnFx(() -> {
                 commands.run("plugin.probe.ping");
-                commands.run("probe.dotted");
+                commands.run("plugin.probe.probe.dotted");
             });
             assertTrue(EVENTS.containsAll(List.of("ping", "dotted")), EVENTS.toString());
+            // C12: a command that throws is reported with the plugin and the command named.
+            FxTestSupport.runOnFx(() -> commands.run("plugin.probe.boom"));
+            assertTrue(
+                    rig.host.log.stream()
+                            .anyMatch(l -> l.startsWith(tr("status.plugins.actionFailed", "Probe", "Probe: Boom", "")
+                                    .strip())),
+                    rig.host.log.toString());
 
             // Keys: from the manifest and from code; a binding without a chord or a command is ignored.
             assertEquals("plugin.probe.ok", rig.keymap().commandFor("C-M-S-f9"));
@@ -350,11 +394,12 @@ class PluginContextFxTest {
             assertEquals(ToolWindow.Side.RIGHT, right.getSide());
             assertEquals(ToolWindow.Side.BOTTOM, bottom.getSide(), "no side given means the bottom");
             assertEquals(
-                    "Probe Left",
+                    tr("plugins.toolWindowCommand", "Probe Left"),
                     commands.get("plugin.probe.showLeft").orElseThrow().title());
             assertEquals(
-                    "plugin.probe.right",
-                    commands.get("plugin.probe.right").orElseThrow().title());
+                    tr("plugins.toolWindowCommand", "Probe"),
+                    commands.get("plugin.probe.right").orElseThrow().title(),
+                    "no title: the plugin's name");
             assertTrue(commands.get("plugin.probe.bottom").isPresent());
             assertFalse(rig.available(left), "registered with no editor in front");
             FxTestSupport.runOnFx(() -> rig.coordinator.gateToolWindows(true));
@@ -365,7 +410,9 @@ class PluginContextFxTest {
 
             // The editor's right-click items act on the buffer they were built for.
             EditorBuffer buffer = rig.open(sandbox.resolve("note.txt"), "quiet words\n");
-            List<MenuItem> items = FxTestSupport.callOnFx(() -> rig.coordinator.editorMenuItems(buffer));
+            List<MenuItem> all = FxTestSupport.callOnFx(() -> rig.coordinator.editorMenuItems(buffer));
+            assertTrue(all.get(0) instanceof javafx.scene.control.SeparatorMenuItem, "apart from Print / Export");
+            List<MenuItem> items = all.subList(1, all.size());
             assertEquals(
                     List.of("Shout", "Boom"),
                     items.stream().map(MenuItem::getText).toList());
@@ -390,7 +437,8 @@ class PluginContextFxTest {
         }
         assertTrue(EVENTS.contains("probe stop"), "closing the window stops the plugin");
         assertTrue(EVENTS.contains("late stop"), "a plugin whose stop() throws does not keep the next from stopping");
-        assertFalse(EVENTS.contains("broken stop"), "a plugin that never started is not stopped");
+        // C7: a plugin whose start() threw has its stop() called at once, to release what it opened — and once.
+        assertEquals(1, EVENTS.stream().filter("broken stop"::equals).count());
     }
 
     @Test
@@ -415,7 +463,8 @@ class PluginContextFxTest {
             assertTrue(rig.host.log.contains("hello from the probe"));
             ctx.openUrl(null);
             ctx.openUrl("  ");
-            ctx.openUrl("https://example.test/docs");
+            ctx.openUrl("https://example.test/docs"); // from a worker thread: handed to the FX thread (C8)
+            FxTestSupport.drainFx();
             assertEquals(List.of("https://example.test/docs"), rig.host.urls);
 
             // With no editor tab in front, the active editor is empty and edits go nowhere.
@@ -456,6 +505,25 @@ class PluginContextFxTest {
             assertEquals("replaced", FxTestSupport.callOnFx(buffer::getContent));
             assertEquals(List.of(sandbox.resolve("other.txt")), rig.opened);
 
+            // C2: an editor asked for before a tab switch stays on its buffer — a formatter finishing later
+            // writes into the file it started on, not into whatever tab is in front by then.
+            EditorBuffer other = rig.open(sandbox.resolve("other-tab.txt"), "untouched\n");
+            FxTestSupport.runOnFx(() -> editor.setText("formatted"));
+            assertEquals("formatted", FxTestSupport.callOnFx(buffer::getContent));
+            assertEquals("untouched\n", FxTestSupport.callOnFx(other::getContent));
+            ActiveEditor onOther = FxTestSupport.callOnFx(ctx::activeEditor);
+            FxTestSupport.runOnFx(other::dispose); // the tab closes before the plugin's work is done
+            FxTestSupport.runOnFx(() -> {
+                onOther.setText("too late");
+                assertEquals("", onOther.text(), "a closed buffer reads as empty");
+            });
+            assertEquals("formatted", FxTestSupport.callOnFx(buffer::getContent), "and nothing else is written");
+            host(rig).active = buffer;
+            FxTestSupport.runOnFx(() -> editor.setText("replaced"));
+
+            // C8: a read off the JavaFX thread is refused, not raced.
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, editor::text);
+
             // A buffer the user cannot edit is not edited by a plugin either.
             FxTestSupport.runOnFx(() -> {
                 buffer.setReadOnly(true);
@@ -465,6 +533,10 @@ class PluginContextFxTest {
             });
             assertEquals("replaced", FxTestSupport.callOnFx(buffer::getContent));
         }
+    }
+
+    private static RecordingHost host(Rig rig) {
+        return rig.host;
     }
 
     private static String toReal(Path p) {
@@ -486,18 +558,25 @@ class PluginContextFxTest {
             rig.host.statuses.clear();
             FxTestSupport.runOnFx(() -> commands.run("plugin.probe.ok"));
             assertEquals(tr("status.plugins.running", "Probe: OK"), rig.host.await(s -> true));
-            assertEquals(tr("status.plugins.cmdDone", "ok"), rig.host.await(s -> true));
+            // C9: what it printed reaches the user (java -version writes its version to stderr).
+            String done = rig.host.await(s -> true);
+            assertTrue(done.startsWith(tr("status.plugins.cmdOutput", "Probe: OK", "")), done);
+            assertTrue(done.contains("version"), done);
 
-            // No title: the id names it. A non-zero exit is a failure, with the code.
+            // No title: the plugin and the id name it. A non-zero exit is a failure, with the code and output.
             FxTestSupport.runOnFx(() -> commands.run("plugin.probe.fails"));
-            assertEquals(tr("status.plugins.running", "fails"), rig.host.await(s -> true));
-            assertEquals(tr("status.plugins.cmdFailed", "exit 1"), rig.host.await(s -> true));
+            assertEquals(tr("status.plugins.running", "Probe: fails"), rig.host.await(s -> true));
+            String failedRun = rig.host.await(s -> true);
+            assertTrue(failedRun.startsWith(tr("status.plugins.cmdFailedOutput", "Probe: fails", "1", "")), failedRun);
 
             // A program that is not installed is a failure too, not a silent nothing.
             FxTestSupport.runOnFx(() -> commands.run("plugin.probe.missing"));
-            assertEquals(tr("status.plugins.running", "missing"), rig.host.await(s -> true));
+            assertEquals(tr("status.plugins.running", "Probe: missing"), rig.host.await(s -> true));
             String failed = rig.host.await(s -> true);
-            assertTrue(failed.startsWith(tr("status.plugins.cmdFailed", "").strip()), failed);
+            assertTrue(
+                    failed.startsWith(tr("status.plugins.cmdFailed", "").strip())
+                            || failed.startsWith(tr("status.plugins.cmdFailedOutput", "Probe: missing", "-1", "")),
+                    failed);
 
             // A command that declares nothing to run does nothing.
             FxTestSupport.runOnFx(() -> commands.run("plugin.probe.norun"));
@@ -519,7 +598,8 @@ class PluginContextFxTest {
                 rig.coordinator.installFromDisk();
             });
             assertEquals(List.of(), EVENTS, "nothing was started");
-            assertEquals(List.of(tr("status.plugins.disabled"), tr("status.plugins.disabled")), rig.host.log);
+            // A5: Simple mode says so — the switch on the page is on, "Enable plugins first" was wrong.
+            assertEquals(List.of(tr("status.plugins.simpleMode"), tr("status.plugins.simpleMode")), rig.host.log);
             assertEquals(List.of(), FxTestSupport.callOnFx(() -> rig.coordinator.editorMenuItems(null)));
 
             rig.host.simple = false;

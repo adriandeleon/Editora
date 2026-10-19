@@ -65,10 +65,13 @@ public final class Relaunch {
     }
 
     private static void startArmed() {
-        List<String> line = armed;
-        if (line == null) {
+        List<String> armedLine = armed;
+        if (armedLine == null) {
             return;
         }
+        // A "Restart now" after enabling plugins in a --disable-plugins session is meant to load them.
+        List<String> line = new ArrayList<>(armedLine);
+        line.removeIf("--disable-plugins"::equals);
         try {
             ProcessBuilder pb = new ProcessBuilder(line)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)

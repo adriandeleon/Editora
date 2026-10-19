@@ -191,6 +191,8 @@ public final class LanguageRegistry {
         if (fileName == null) {
             return PLAINTEXT;
         }
+        // An encrypted file is in the language of the file inside it: notes.md.gpg is Markdown.
+        fileName = EncryptedNames.languageName(fileName);
         // Reduce a path to its last segment so filename rules work regardless of how the caller passes it.
         String base = fileName;
         int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));

@@ -32,7 +32,7 @@ Two serialization formats, chosen per file:
 | `history/index.json` + `history/blobs/` | JSON | `HistoryStore` | Local History; blobs gzip'd. The user's files, not configuration; left out of the export. |
 | `connections.json` | JSON | `ConnectionStore` | SFTP connection metadata, no secrets. |
 | `macros.json` | JSON | `MacroStore` | App-global keyboard macros. |
-| `plugins.json` | JSON | `PluginStore` | Plugin enable-state. |
+| `plugins.json` | JSON | `PluginStore` | Plugin enable-state and, per enabled plugin, the fingerprint of what its consent disclosed (schema 2). |
 | `projects.json` | JSON | `ProjectManager.Index` | Projects index + open-window set. |
 | `search-history.json` | JSON | `SearchHistory` | Find-in-Files history. One shared instance. |
 | `agent-sessions.json` | JSON | `AgentSessionHistory` | AI Agent chat sessions. One shared instance. |

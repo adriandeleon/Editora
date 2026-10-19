@@ -238,6 +238,10 @@ final class NotesCoordinator {
             if (file == null) {
                 return;
             }
+            if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+                host.setStatus(tr("encryption.status.noNotes")); // a note keeps the text it is about, unencrypted
+                return;
+            }
             showNoteDialog("", body -> addPersonalNote(file, draft, body), null);
         });
     }
@@ -541,6 +545,10 @@ final class NotesCoordinator {
     void addNoteFromContext(EditorBuffer buffer) {
         if (buffer == null || buffer.getPath() == null) {
             host.setStatus(tr("notes.saveFirst"));
+            return;
+        }
+        if (buffer.encryption().isEncrypted()) {
+            host.setStatus(tr("encryption.status.noNotes")); // a note keeps the text it is about, unencrypted
             return;
         }
         NoteDraft draft = buffer.captureNoteDraft();
