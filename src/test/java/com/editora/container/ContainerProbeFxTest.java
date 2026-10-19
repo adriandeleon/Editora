@@ -176,8 +176,12 @@ class ContainerProbeFxTest {
             type(shell, "stty size; tty; pwd; echo $TERM\n");
             awaitOutput(seen, "30 100");
             awaitOutput(seen, "/workspaces/app");
+            // The prompt already shows the folder, so that wait can end before the commands have answered:
+            // wait for the last one's output too, or the checks below race the container's second read.
+            awaitOutput(seen, "xterm-256color");
+
             assertTrue(seen.toString().contains("/dev/pts/"), "a tty in the container: " + seen);
-            assertTrue(seen.toString().contains("xterm-256color"), "TERM: " + seen);
+
             assertFalse(seen.toString().contains("EDITORA"), "the pid line is the transport's: " + seen);
             assertTrue(((com.editora.terminal.PtyChannel) shell).pid() > 0, "the shell's pid in the container");
 
