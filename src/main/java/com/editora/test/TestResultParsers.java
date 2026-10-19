@@ -12,7 +12,9 @@ public final class TestResultParsers {
             case MAVEN, GRADLE -> new JUnitXmlParser(tool);
             case GO -> new GoTestJsonParser();
             case CARGO -> new CargoTestParser();
-            case NPM -> new TapParser();
+            // Clojure's runners print no format a parser reads (isTestRun is false for them): never fed. Nor are
+            // the Scala tools' runs read as test runs yet (TestRunRecognizer).
+            case NPM, CLOJURE, LEIN, BABASHKA, SBT, MILL, SCALA_CLI -> new TapParser();
         };
     }
 

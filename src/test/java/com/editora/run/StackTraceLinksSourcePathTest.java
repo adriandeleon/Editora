@@ -85,4 +85,19 @@ class StackTraceLinksSourcePathTest {
         assertNull(pathOf("Syntax error compiling at user/eval1 (REPL:1:1)."), "the REPL is not a file");
         assertNull(pathOf("at core/divide (core.clj:4)"), "a one-segment namespace has no directory");
     }
+
+    /** The CLI's report on stderr ({@code -Dclojure.main.report=stderr}, as Run sets it) is EDN. */
+    @Test
+    void theClojureCliReportsEdnFramesAreLinks() {
+        StackTraceLinks.Link link = StackTraceLinks.parse("   [my_app.core$greet invokeStatic \"core.clj\" 4]");
+        assertEquals("core.clj", link.file());
+        assertEquals(4, link.line());
+        assertEquals("my_app/core.clj", StackTraceLinks.javaSourcePath(link));
+        assertEquals("clojure/lang/Numbers.java", pathOf("  [[clojure.lang.Numbers divide \"Numbers.java\" 190]"));
+        assertNull(pathOf("   [user$f invoke \"boom.clj\" 1]"), "the user namespace has no directory");
+        assertEquals(
+                "boom.clj",
+                StackTraceLinks.parse("   [user$f invoke \"boom.clj\" 1]").file());
+        assertNull(StackTraceLinks.parse(" :clojure.error/line 2,"));
+    }
 }

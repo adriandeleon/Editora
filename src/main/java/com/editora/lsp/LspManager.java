@@ -436,15 +436,102 @@ public final class LspManager {
      * 30 s timeout guards against a server that never answers.
      */
     public void executeCommand(Path file, String command, List<Object> args, BiConsumer<Object, Throwable> cb) {
+        executeCommand(file, command, args, java.time.Duration.ofSeconds(30), cb);
+    }
+
+    /**
+     * As {@link #executeCommand(Path, String, List, BiConsumer)}, waiting up to {@code timeout}: a command that
+     * compiles first (Metals' {@code debug-adapter-start} builds the target it debugs) outlasts the usual 30 s.
+     */
+    public void executeCommand(
+            Path file,
+            String command,
+            List<Object> args,
+            java.time.Duration timeout,
+            BiConsumer<Object, Throwable> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(null, new IllegalStateException("no language server for file")));
             return;
         }
         s.executeCommand(command, args)
-                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .orTimeout(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
                 .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(r, e)));
     }
+
+    /**
+     * Whether {@code file}'s server is up and lists {@code command} among its {@code executeCommandProvider}
+     * commands — Metals' {@code debug-adapter-start}, say.
+     */
+    public boolean supportsCommand(Path file, String command) {
+        LanguageServerSession s = sessionFor(file);
+        var caps = s == null ? null : s.capabilities();
+        var provider = caps == null ? null : caps.getExecuteCommandProvider();
+        return provider != null
+                && provider.getCommands() != null
+                && provider.getCommands().contains(command);
+    }
+
+    /** Where servers' questions are asked (FX thread); null: unanswered, as before a window installs one. */
+    private volatile LspClientUi clientUi;
+
+    /**
+     * Installs the window's answers to server questions ({@code window/showMessageRequest}, Metals' input box,
+     * quick pick and client commands). Each call reaches {@code ui} on the FX thread.
+     */
+    public void setClientUi(LspClientUi ui) {
+        this.clientUi = ui;
+    }
+
+    /** {@link #clientUi} reached from a session's reader thread: every call is posted to the FX thread. */
+    private final LspClientUi fxClientUi = new LspClientUi() {
+        @Override
+        public java.util.concurrent.CompletableFuture<String> chooseAction(
+                String serverId, org.eclipse.lsp4j.MessageType type, String message, List<String> actions) {
+            return onFx(ui -> ui.chooseAction(serverId, type, message, actions));
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<String> inputBox(
+                String serverId, String prompt, String value, String placeHolder) {
+            return onFx(ui -> ui.inputBox(serverId, prompt, value, placeHolder));
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<String> quickPick(
+                String serverId, String placeHolder, List<PickItem> items) {
+            return onFx(ui -> ui.quickPick(serverId, placeHolder, items));
+        }
+
+        @Override
+        public void openLocation(String serverId, Path file, int line, int column) {
+            Platform.runLater(() -> {
+                LspClientUi ui = clientUi;
+                if (ui != null && !closed) {
+                    ui.openLocation(serverId, file, line, column);
+                }
+            });
+        }
+
+        private java.util.concurrent.CompletableFuture<String> onFx(
+                java.util.function.Function<LspClientUi, java.util.concurrent.CompletableFuture<String>> ask) {
+            var answer = new java.util.concurrent.CompletableFuture<String>();
+            Platform.runLater(() -> {
+                LspClientUi ui = clientUi;
+                if (ui == null || closed) {
+                    answer.complete(null);
+                    return;
+                }
+                try {
+                    ask.apply(ui).whenComplete((v, e) -> answer.complete(e == null ? v : null));
+                } catch (RuntimeException e) {
+                    LOG.log(java.util.logging.Level.FINE, "server question not shown", e);
+                    answer.complete(null);
+                }
+            });
+            return answer;
+        }
+    };
 
     /** Restarts {@code serverId} (dispose + drop its cached sessions) so the next {@code openDocument}
      *  re-initializes it — e.g. to reload jdtls with the java-debug bundle. The controller re-opens the
@@ -1168,6 +1255,7 @@ public final class LspManager {
         session.setOnRefresh(kind -> Platform.runLater(() -> onRefreshRequested.refreshRequested(kind, session)));
         session.setOnApplyEdit(
                 (edit, respond) -> onServerApplyEdit(session, edit, respond)); // server-side quick fix (#670)
+        session.setClientUi(fxClientUi); // showMessageRequest and Metals' prompts, answered on the FX thread
         if (claimedWorkspace != null) {
             jdtlsWorkspaceBySession.put(session, claimedWorkspace);
         }
@@ -3935,6 +4023,7 @@ public final class LspManager {
             // gvy reads a flat map of its VS Code settings. CodeNarc's style rules flag nearly every line of
             // ordinary Groovy at Information level; compiler errors are what an editor needs by default.
             case "groovy" -> Map.of("groovy.codenarc.enabled", false);
+            case "scala" -> metalsInitOptions();
             case ASTRO_SERVER_ID ->
                 astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->
@@ -3944,6 +4033,26 @@ public final class LspManager {
     }
 
     private static final String ASTRO_SERVER_ID = "astro";
+
+    /**
+     * Metals' {@code initializationOptions}: what this client implements of its extensions, and nothing more
+     * (an option left out means Metals falls back to plain LSP). Its status items arrive as
+     * {@code metals/status}; prompts as {@code metals/inputBox} / {@code metals/quickPick}; editor actions as
+     * {@code metals/executeClientCommand}; {@code debuggingProvider} lets Debug start Metals' debug adapter
+     * ({@code debug-adapter-start}). {@code isHttpEnabled} off: no local web server for its doctor page.
+     */
+    static Map<String, Object> metalsInitOptions() {
+        Map<String, Object> options = new java.util.LinkedHashMap<>();
+        options.put("statusBarProvider", "on");
+        options.put("icons", "vscode"); // the syntax MetalsStatusView reads (and strips)
+        options.put("isHttpEnabled", false);
+        options.put("debuggingProvider", true);
+        options.put("executeClientCommandProvider", true);
+        options.put("inputBoxProvider", true);
+        options.put("quickPickProvider", true);
+        options.put("isExitOnShutdown", true);
+        return options;
+    }
 
     /**
      * Whether a folder is trusted to supply code a language server loads — today the project-local

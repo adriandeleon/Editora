@@ -37,6 +37,9 @@ public final class DoctorNeeds {
                 // and gvy reads build.gradle as plain Groovy. An open .groovy file, or a Jenkinsfile, does.
                 case "build.gradle", "settings.gradle" -> ids.add("java");
                 case "jenkinsfile" -> ids.add("groovy");
+                // sbt, Mill (1.x and 0.x) and Scala CLI builds are Scala's own: Metals is what reads them.
+                case "build.sbt", "build.mill", "build.sc", "project.scala" -> ids.add("scala");
+                case "deps.edn", "project.clj", "bb.edn", "shadow-cljs.edn", "build.boot" -> ids.add("clojure");
                 case "build.gradle.kts", "settings.gradle.kts" -> {
                     ids.add("java");
                     ids.add("kotlin");

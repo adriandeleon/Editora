@@ -35,6 +35,7 @@ import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -356,6 +357,78 @@ class JvmDebugAdapterTest {
         }
     }
 
+    /** Scala CLI here: {@code -Deditora.test.scalaCli=<path>}, else the one {@link com.editora.run.JvmTools} finds. */
+    private static String scalaCli() {
+        String set = System.getProperty("editora.test.scalaCli", "");
+        return !set.isBlank() ? set : com.editora.run.JvmTools.locate("scala-cli");
+    }
+
+    /**
+     * A Scala file run by Scala CLI, with the agent on its command line ({@code --java-opt}): a breakpoint in a
+     * lambda binds although the file's package ({@code demo}) is not its folder, the frame reads as the source
+     * names it, and the program's output arrives. Scala CLI compiles first (and on a first run fetches the
+     * compiler), so this waits minutes, not seconds.
+     */
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.MINUTES) // a first Scala CLI run downloads the compiler
+    void aScalaProgramRunByScalaCliStopsInALambdaWhereScalaCliIsInstalled(@TempDir Path dir) throws Exception {
+        String cli = scalaCli();
+        Assumptions.assumeTrue(cli != null, "Scala CLI is not installed here");
+        Path main = dir.resolve("Main.scala");
+        Files.writeString(main, """
+                package demo
+
+                @main def tally(): Unit =
+                  val doubled = List(1, 2, 3).map { n =>
+                    n * 2
+                  }
+                  println(s"total=${doubled.sum}")
+                """);
+        Session s = open();
+        try {
+            Map<String, Object> launch = new java.util.LinkedHashMap<>();
+            // --server=false: compiled in Scala CLI's own process, so the test needs no Bloop daemon.
+            launch.put(
+                    "argv",
+                    com.editora.run.JvmScriptRun.scalaCliDebug(
+                            cli, List.of("--server=false", main.toString()), List.of(), List.of()));
+            launch.put("agentArgument", com.editora.run.JvmScriptRun.AGENT_ARGUMENT);
+            launch.put("connectTimeoutMs", 600_000);
+            launch.put("cwd", dir.toString());
+            launch.put("env", Map.of("JAVA_HOME", System.getProperty("java.home")));
+            launch.put("language", "scala");
+            CompletableFuture<Void> launched = s.server().launch(launch);
+            launched.exceptionally(e -> {
+                s.client().initialized.completeExceptionally(e); // a failed start ends the wait at once
+                return null;
+            });
+            s.client().initialized.get(4, TimeUnit.MINUTES);
+            breakAt(s.server(), main, 5);
+            s.server().configurationDone(null);
+            launched.get(WAIT, TimeUnit.SECONDS);
+
+            StoppedEventArguments stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(stop, "the breakpoint in the lambda is hit: " + s.client().output);
+            StackFrame frame = top(s.server(), stop.getThreadId());
+            assertEquals(5, frame.getLine());
+            assertEquals(main.toString(), frame.getSource().getPath());
+            // Scala 3 names the lambda $anonfun$1, without its enclosing method.
+            assertEquals("Main { lambda }", frame.getName(), frames(s.server(), stop.getThreadId()));
+            assertEquals("1", valueOf(locals(s.server(), frame.getId()), "n"));
+
+            breakAt(s.server(), main);
+            ContinueArguments cont = new ContinueArguments();
+            cont.setThreadId(stop.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            assertEquals(0, s.client().exited.get(WAIT, TimeUnit.SECONDS));
+            assertTrue(
+                    s.client().output.toString().contains("total=12"),
+                    s.client().output.toString());
+        } finally {
+            s.socket().close();
+        }
+    }
+
     /** Compiles {@code source} with {@code kotlinc} into {@code jar} on this JDK; fails the test when it does not. */
     private static void kotlinc(String kotlinc, Path source, Path jar) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(
@@ -482,6 +555,89 @@ class JvmDebugAdapterTest {
             assertEquals(0, s.client().exited.get(180, TimeUnit.SECONDS));
             assertTrue(
                     s.client().output.toString().contains("total=6"),
+                    s.client().output.toString());
+        } finally {
+            s.socket().close();
+        }
+    }
+
+    /**
+     * A loaded class whose SourceDebugExtension JDI cannot parse makes JDI throw InternalError, not
+     * AbsentInformationException, from every read of its source information. Kotlin 2.4.10's compiler loads two;
+     * this builds one by hand, so the case is covered where no Kotlin is installed. With a frame of that class on
+     * the stack, the stack trace still lists it, and setting breakpoints (which asks every loaded class) works.
+     */
+    @Test
+    void aClassWithAnUnreadableSourceDebugExtensionBreaksNeitherBreakpointsNorTheStack(@TempDir Path dir)
+            throws Exception {
+        Path pkg = Files.createDirectories(dir.resolve("p"));
+        Path source = pkg.resolve("Main.java");
+        Files.writeString(source, """
+                package p;
+                public class Main {
+                    public static void main(String[] args) {
+                        Bad.run(() -> {
+                            int x = 7;
+                            System.out.println("x=" + x);
+                        });
+                    }
+                }
+                """);
+        Path bad = pkg.resolve("Bad.java");
+        Files.writeString(bad, """
+                package p;
+                public class Bad {
+                    static void run(Runnable r) {
+                        r.run();
+                    }
+                }
+                """);
+        var javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        Path out = dir.resolve("out");
+        assertEquals(0, javac.run(null, null, null, "-g", "-d", out.toString(), source.toString(), bad.toString()));
+        // A line section JDI's SMAP parser stops at: `x` where a line number and ':' belong.
+        Path badClass = out.resolve("p/Bad.class");
+        var cf = java.lang.classfile.ClassFile.of();
+        byte[] smap = "SMAP\nBad.java\nJava\n*S Java\n*F\n1 Bad.java\n*L\nx\n*E\n"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Files.write(
+                badClass,
+                cf.transformClass(
+                        cf.parse(badClass),
+                        java.lang.classfile.ClassTransform.endHandler(
+                                b -> b.with(java.lang.classfile.attribute.SourceDebugExtensionAttribute.of(smap)))));
+
+        Session s = open();
+        try {
+            Map<String, Object> launch = Map.of(
+                    "argv",
+                    List.of(javaExecutable(), "-cp", out.toString(), "p.Main"),
+                    "cwd",
+                    dir.toString(),
+                    "jvmOptionsVariable",
+                    "JDK_JAVA_OPTIONS",
+                    "language",
+                    "java");
+            CompletableFuture<Void> launched = s.server().launch(launch);
+            s.client().initialized.get(WAIT, TimeUnit.SECONDS);
+            breakAt(s.server(), source, 5);
+            s.server().configurationDone(null);
+            launched.get(WAIT, TimeUnit.SECONDS);
+
+            StoppedEventArguments stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(stop, "the breakpoint in the lambda is hit: " + s.client().output);
+            String stack = frames(s.server(), stop.getThreadId());
+            assertEquals(5, top(s.server(), stop.getThreadId()).getLine(), stack);
+            assertTrue(stack.contains("Bad.run:"), "the frame of the unreadable class is listed: " + stack);
+
+            breakAt(s.server(), source); // asks every loaded class, Bad among them
+            breakAt(s.server(), bad, 4);
+            ContinueArguments cont = new ContinueArguments();
+            cont.setThreadId(stop.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            assertEquals(0, s.client().exited.get(WAIT, TimeUnit.SECONDS));
+            assertTrue(
+                    s.client().output.toString().contains("x=7"),
                     s.client().output.toString());
         } finally {
             s.socket().close();

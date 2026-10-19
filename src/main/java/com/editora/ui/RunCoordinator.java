@@ -139,6 +139,14 @@ final class RunCoordinator {
         void runGradleRunTask(Path root);
 
         /**
+         * Runs {@code taskArgs} with build tool {@code tool} in {@code root} through its tool window (its
+         * console, its workspace-trust check for a repository's own launcher). False when that tool is off.
+         */
+        default boolean runBuildTask(com.editora.build.BuildTool tool, Path root, List<String> taskArgs) {
+            return false;
+        }
+
+        /**
          * Runs every request of a {@code .http}/{@code .rest} buffer in the HTTP Client — what "Run File" means
          * for a request file. Returns {@code false} when the window has no HTTP Client to hand it to.
          */
@@ -592,9 +600,12 @@ final class RunCoordinator {
     }
 
     /**
-     * Runs a Groovy or Kotlin script configuration: its tool on the configuration's JDK (else the Settings one),
-     * with the configuration's VM arguments in {@code JAVA_OPTS} — the variable the launcher hands its JVM. A
-     * Kotlin program ({@code .kt}) is compiled and run by {@code java} instead, its VM arguments on that command.
+     * Runs a Groovy, Kotlin, Clojure or Scala script configuration: its tool on the configuration's JDK (else
+     * the Settings one), with the configuration's VM arguments where the tool hands them to its JVM
+     * ({@code JAVA_OPTS} for Groovy and Kotlin, {@code -J} arguments for the Clojure CLI, {@code JVM_OPTS} for
+     * Leiningen, {@code --java-opt} for Scala CLI). A Kotlin program ({@code .kt}) is compiled and run by
+     * {@code java} instead, its VM arguments on that command. A Clojure file runs in its project's folder when the
+     * configuration names none.
      */
     private void runJvmScriptConfig(
             RunConfiguration cfg,
@@ -604,11 +615,10 @@ final class RunCoordinator {
             java.util.Map<String, String> env,
             boolean elsewhere) {
         String language = cfg.type();
-        String tool = elsewhere
-                ? com.editora.run.JvmScriptRun.tool(language)
-                : com.editora.run.JvmTools.locate(com.editora.run.JvmScriptRun.tool(language));
+        String toolName = com.editora.run.JvmScriptRun.tool(language, script);
+        String tool = elsewhere ? toolName : com.editora.run.JvmTools.locate(toolName);
         if (tool == null) {
-            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey(language)));
+            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(toolName)));
             return;
         }
         String jdkHome = !cfg.jdkHome().isBlank()
@@ -617,11 +627,6 @@ final class RunCoordinator {
         java.util.Map<String, String> launch = new java.util.LinkedHashMap<>(
                 elsewhere ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath()));
         launch.putAll(env);
-        launch = com.editora.run.JvmScriptRun.withJvmOption(
-                launch,
-                elsewhere ? java.util.Map.of() : System.getenv(),
-                com.editora.run.JvmScriptRun.jvmOptionsVariable(language),
-                cfg.vmArgs().strip());
         String target = script != null
                 ? com.editora.process.ExecTargets.forPath(script).toTargetPath(script)
                 : cfg.target().strip();
@@ -646,7 +651,19 @@ final class RunCoordinator {
                     tool);
             return;
         }
-        streamRun(cfg.name(), cwd, com.editora.run.JvmScriptRun.argv(language, tool, target, args), launch, script);
+        com.editora.run.JvmScriptRun.Launch how = com.editora.run.JvmScriptRun.launch(
+                language,
+                toolName,
+                tool,
+                script,
+                target,
+                args,
+                cfg.vmArgs(),
+                false,
+                launch,
+                elsewhere ? java.util.Map.of() : System.getenv());
+        Path dir = cfg.workingDir().isBlank() && how.directory() != null ? how.directory() : cwd;
+        streamRun(cfg.name(), dir, how.argv(), how.env(), script);
     }
 
     /**
@@ -1773,6 +1790,14 @@ final class RunCoordinator {
 
     /** Runs {@code buffer} (already known to be runnable): save, pick the launcher, maybe ask for arguments. */
     private void startFileRun(EditorBuffer buffer, boolean promptArgs, boolean trace) {
+        if ("scala".equals(buffer.getLanguage()) && buffer.getPath() != null && scalaBuildOwner(buffer.getPath())) {
+            // A file of an sbt or Mill build runs as part of it, in that tool's window (not the Run console).
+            if (buffer.isDirty() && !ops.saveBuffer(buffer)) {
+                return;
+            }
+            runScalaThroughBuild(buffer, buffer.getPath(), promptArgs);
+            return;
+        }
         if (!beginRunRequest()) {
             return;
         }
@@ -1802,7 +1827,8 @@ final class RunCoordinator {
                 : remote ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath());
         if (jvmScript && !remote && jvmTool(buffer) == null) {
             // Said here, not as the shell's "groovy: command not found" in the Run console.
-            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey(buffer.getLanguage())));
+            host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(
+                    com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path))));
             return;
         }
         Runnable proceed = () -> {
@@ -1911,6 +1937,37 @@ final class RunCoordinator {
             }
             env = shellEnvironment(shell, java.util.Map.of(), remote);
         }
+        if ("scala".equals(buffer.getLanguage())) {
+            // Scala CLI runs the file, or its project folder with the file's main class.
+            String tool = jvmTool(buffer);
+            String target = com.editora.process.ExecTargets.forPath(path).toTargetPath(path);
+            List<String> argv = com.editora.run.JvmScriptRun.scalaCli(
+                    tool == null ? com.editora.run.JvmScriptRun.tool("scala") : tool,
+                    scalaCliInputs(path, target, buffer.getContent()),
+                    List.of(),
+                    args);
+            streamRun(path.getFileName().toString(), path.getParent(), argv, env, path);
+            return;
+        }
+        if (com.editora.run.JvmScriptRun.supports(buffer.getLanguage())) {
+            // The tool decides the folder too: a Clojure file runs in its project's, where deps.edn is read.
+            String toolName = com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
+            String tool = jvmTool(buffer);
+            com.editora.run.JvmScriptRun.Launch how = com.editora.run.JvmScriptRun.launch(
+                    buffer.getLanguage(),
+                    toolName,
+                    tool == null ? toolName : tool,
+                    path,
+                    com.editora.process.ExecTargets.forPath(path).toTargetPath(path),
+                    args,
+                    "",
+                    false,
+                    env,
+                    com.editora.process.ExecTargets.runsHere(path) ? System.getenv() : java.util.Map.of());
+            Path where = how.directory() != null ? how.directory() : path.getParent();
+            streamRun(path.getFileName().toString(), where, how.argv(), how.env(), path);
+            return;
+        }
         Path dir = shell == null
                 ? path.getParent()
                 : shebangDir(shell, path.getParent(), com.editora.vfs.Vfs.isRemote(path));
@@ -1976,15 +2033,87 @@ final class RunCoordinator {
      * the bare name (the host's PATH) for a remote one; null when it is not installed here.
      */
     private static String jvmTool(EditorBuffer buffer) {
-        String tool = com.editora.run.JvmScriptRun.tool(buffer.getLanguage());
+        Path path = buffer.getPath();
+        String tool = com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
         if (tool == null) {
             return null;
         }
-        Path path = buffer.getPath();
         if (path != null && !com.editora.process.ExecTargets.runsHere(path)) {
             return tool;
         }
         return com.editora.run.JvmTools.locate(tool);
+    }
+
+    /**
+     * What Scala CLI runs for {@code path} ({@code target} as its host names it): the file, or its Scala CLI
+     * project's folder with the file's main class.
+     */
+    private List<String> scalaCliInputs(Path path, String target, String text) {
+        if (!com.editora.process.ExecTargets.runsHere(path)) {
+            return List.of(target); // a remote file: no folder walk over the connection
+        }
+        com.editora.run.ScalaRun.Owner owner =
+                com.editora.run.ScalaRun.ownerOf(path, ops.projectRoot(), java.nio.file.Files::isRegularFile);
+        String folder = owner.root() == null
+                ? null
+                : com.editora.process.ExecTargets.forPath(owner.root()).toTargetPath(owner.root());
+        return com.editora.run.ScalaRun.cliInputs(target, owner, folder, com.editora.run.ScalaRun.mainClass(text));
+    }
+
+    /** Whether {@code path} belongs to an sbt, Mill, Gradle or Maven build, which runs it (not Scala CLI). */
+    private boolean scalaBuildOwner(Path path) {
+        if (!com.editora.process.ExecTargets.runsHere(path)) {
+            return false; // a remote file runs through Scala CLI on its host
+        }
+        com.editora.run.ScalaRun.Build build = com.editora.run.ScalaRun.ownerOf(
+                        path, ops.projectRoot(), java.nio.file.Files::isRegularFile)
+                .build();
+        return build == com.editora.run.ScalaRun.Build.SBT
+                || build == com.editora.run.ScalaRun.Build.MILL
+                || build == com.editora.run.ScalaRun.Build.OTHER;
+    }
+
+    /**
+     * Runs a Scala file of an sbt or Mill build through that build's tool window — {@code sbt "runMain
+     * demo.hello"}, {@code ./mill core.runMain demo.hello} — since only the build knows its classpath; says
+     * where to run a file of a Gradle or Maven build instead.
+     */
+    private void runScalaThroughBuild(EditorBuffer buffer, Path path, boolean promptArgs) {
+        com.editora.run.ScalaRun.Owner owner =
+                com.editora.run.ScalaRun.ownerOf(path, ops.projectRoot(), java.nio.file.Files::isRegularFile);
+        com.editora.build.BuildTool tool = switch (owner.build()) {
+            case SBT -> com.editora.build.BuildTool.SBT;
+            case MILL -> com.editora.build.BuildTool.MILL;
+            default -> null;
+        };
+        if (tool == null) {
+            host.setStatus(tr("status.run.scalaOtherBuild", path.getFileName().toString()));
+            return;
+        }
+        String mainClass = com.editora.run.ScalaRun.mainClass(buffer.getContent());
+        Path root = owner.root();
+        java.util.function.Consumer<String> run = argText -> {
+            List<String> args = programArgs(argText, null);
+            if (args == null) {
+                return;
+            }
+            List<String> task = tool == com.editora.build.BuildTool.SBT
+                    ? com.editora.run.ScalaRun.sbtRunTask(mainClass, args)
+                    : com.editora.run.ScalaRun.millRunTask(
+                            com.editora.run.ScalaRun.millModule(root, path), mainClass, args);
+            if (!ops.runBuildTask(tool, root, task)) {
+                host.setStatus(tr("status.build.disabled", tool.displayName()));
+            }
+        };
+        String stored = ops.programArgs(path);
+        if (promptArgs) {
+            host.promptText(tr("dialog.runArgs.title"), tr("dialog.runArgs.label"), stored, args -> {
+                ops.setProgramArgs(path, args == null ? "" : args.strip());
+                run.accept(args == null ? "" : args.strip());
+            });
+        } else {
+            run.accept(stored);
+        }
     }
 
     /** The launcher argv for the buffer's language: interpreter + file + {@code args}. */
@@ -1993,14 +2122,6 @@ final class RunCoordinator {
         if (shell != null) {
             return ShellCommand.argv(
                     shell, com.editora.process.ExecTargets.forPath(path).toTargetPath(path), args);
-        }
-        if (com.editora.run.JvmScriptRun.supports(buffer.getLanguage())) {
-            String tool = jvmTool(buffer);
-            return com.editora.run.JvmScriptRun.argv(
-                    buffer.getLanguage(),
-                    tool == null ? com.editora.run.JvmScriptRun.tool(buffer.getLanguage()) : tool,
-                    com.editora.process.ExecTargets.forPath(path).toTargetPath(path),
-                    args);
         }
         List<String> command = new ArrayList<>();
         command.add(javaExecutable); // (Python is planned by PythonRunLauncher)

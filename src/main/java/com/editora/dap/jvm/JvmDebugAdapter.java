@@ -137,6 +137,12 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     /** How long the program has to start and connect back before the launch fails. */
     private static final long CONNECT_TIMEOUT_MS = 60_000;
 
+    /**
+     * How long this launch's program has to connect back: {@link #CONNECT_TIMEOUT_MS}, or the launch's own
+     * {@code connectTimeoutMs} — Scala CLI compiles first, and on a first run downloads the compiler.
+     */
+    private volatile long connectTimeoutMs = CONNECT_TIMEOUT_MS;
+
     /** Longest text of a string value shown before it is cut. */
     private static final int MAX_STRING = 500;
 
@@ -240,6 +246,9 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private void configure(Map<String, Object> args, String cwd) {
         language = string(args.get("language"));
         stepFilters = JvmSourceMap.stepFilters(language);
+        if (args.get("connectTimeoutMs") instanceof Number timeout && timeout.longValue() > 0) {
+            connectTimeoutMs = timeout.longValue();
+        }
         List<Path> roots = new ArrayList<>();
         for (String root : strings(args.get("sourceRoots"))) {
             roots.add(Path.of(root));
@@ -270,13 +279,23 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         Map<String, Connector.Argument> connect = connector.defaultArguments();
         setArgument(connect, "localAddress", "127.0.0.1");
         setArgument(connect, "port", "0");
-        setArgument(connect, "timeout", String.valueOf(CONNECT_TIMEOUT_MS));
+        setArgument(connect, "timeout", String.valueOf(connectTimeoutMs));
         try {
             String address = connector.startListening(connect);
             String port = address.substring(address.lastIndexOf(':') + 1);
             String agent = "-agentlib:jdwp=transport=dt_socket,server=n,suspend=y,address=127.0.0.1:" + port;
-            if (Boolean.parseBoolean(string(args.get("jvmOptionsInArgv")))) {
+            // A tool that takes JVM options on its command line (Scala CLI's --java-opt) names the argument the
+            // agent goes in; `java` itself (a Kotlin program) takes it first; the Clojure CLI as -J<option>; the
+            // others are handed it in the variable their launcher passes to the JVM.
+            String agentArgument = string(args.get("agentArgument"));
+            if (!agentArgument.isBlank() && argv.contains(agentArgument)) {
+                argv = argv.stream()
+                        .map(a -> a.equals(agentArgument) ? agent : a)
+                        .toList();
+            } else if (Boolean.parseBoolean(string(args.get("jvmOptionsInArgv")))) {
                 argv.add(1, agent); // java <agent> -jar … : the launcher's own option, read by this JVM only
+            } else if (!string(args.get("jvmOptionPrefix")).isBlank()) {
+                argv = withArgument(argv, string(args.get("jvmOptionPrefix")) + agent);
             } else {
                 String variable = string(args.get("jvmOptionsVariable"));
                 if (variable.isBlank()) {
@@ -315,6 +334,13 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         if (c != null) {
             c.initialized(); // breakpoints, exception filters, then configurationDone — which starts the program
         }
+    }
+
+    /** {@code argv} with {@code argument} right after the executable. */
+    static List<String> withArgument(List<String> argv, String argument) {
+        List<String> out = new ArrayList<>(argv);
+        out.add(Math.min(1, out.size()), argument);
+        return List.copyOf(out);
     }
 
     @Override
@@ -385,7 +411,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             run.setArgs(argv.toArray(new String[0]));
             run.setEnv(new HashMap<>(env));
             try {
-                c.runInTerminal(run).get(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                c.runInTerminal(run).get(connectTimeoutMs, TimeUnit.MILLISECONDS);
                 return;
             } catch (java.util.concurrent.ExecutionException e) {
                 Throwable cause = e.getCause() == null ? e : e.getCause();
@@ -736,10 +762,11 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                                 knownFiles(),
                                 this::packageOf,
                                 sourceRoots,
-                                Files::isRegularFile)
+                                Files::isRegularFile,
+                                language)
                         != null;
-            } catch (AbsentInformationException | RuntimeException e) {
-                return false;
+            } catch (AbsentInformationException | RuntimeException | InternalError e) {
+                return false; // InternalError: an SMAP JDI cannot parse (see compiledFrom)
             }
         });
     }
@@ -848,12 +875,22 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                     bp.requests().add(request);
                     bp.verified()[0] = true;
                 }
-            } catch (AbsentInformationException | ClassNotPreparedException e) {
+            } catch (AbsentInformationException | ClassNotPreparedException | InternalError e) {
                 LOG.log(Level.FINEST, "no line table in " + type.name(), e);
             }
         }
     }
 
+    /**
+     * Whether {@code type} was compiled from {@code file}. Asked of every class the program has loaded.
+     *
+     * <p>Every read of a class's source information (its source name, paths, line table, a location's line)
+     * here also catches {@link InternalError}: that is what JDI throws for a class whose SourceDebugExtension
+     * (SMAP) it cannot parse, rather than {@link AbsentInformationException}. Kotlin 2.4.10's compiler loads
+     * two such classes (shaded kotlin-reflect: {@code …impl.km.Attributes},
+     * {@code …impl.types.AnnotationsTypeAttributeKt}), so once a Kotlin script had run, every breakpoint
+     * change failed with "Internal error". Such a class is treated as one without source information.
+     */
     private boolean compiledFrom(ReferenceType type, Path file) {
         try {
             if (!JvmSourceMap.sourceName(file).equals(type.sourceName())) {
@@ -861,12 +898,12 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             }
             String pkg = packageOf(file);
             for (String path : type.sourcePaths(null)) {
-                if (JvmSourceMap.compiledFrom(path, file, pkg)) {
+                if (JvmSourceMap.compiledFrom(path, file, pkg, language)) {
                     return true;
                 }
             }
             return false;
-        } catch (AbsentInformationException e) {
+        } catch (AbsentInformationException | InternalError e) {
             return false;
         }
     }
@@ -1068,8 +1105,8 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 StackFrame f = new StackFrame();
                 f.setId(handle(new FrameHandle(thread, i)));
                 f.setName(JvmSourceMap.frameName(
-                        at.declaringType().name(), at.method().name(), sourceNameOf(at)));
-                f.setLine(Math.max(0, at.lineNumber()));
+                        at.declaringType().name(), at.method().name(), sourceNameOf(at), language));
+                f.setLine(Math.max(0, lineOf(at)));
                 f.setColumn(1);
                 Path file = sourceOf(at, known);
                 if (file != null) {
@@ -1093,8 +1130,9 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
 
     private Path sourceOf(Location at, List<Path> known) {
         try {
-            return JvmSourceMap.resolve(at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile);
-        } catch (AbsentInformationException e) {
+            return JvmSourceMap.resolve(
+                    at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile, language);
+        } catch (AbsentInformationException | InternalError e) {
             return null;
         }
     }
@@ -1102,8 +1140,17 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private static String sourceNameOf(Location at) {
         try {
             return at.sourceName(null);
-        } catch (AbsentInformationException e) {
+        } catch (AbsentInformationException | InternalError e) {
             return null;
+        }
+    }
+
+    /** The location's line, or -1 when its class has an SMAP JDI cannot parse (see {@link #compiledFrom}). */
+    private static int lineOf(Location at) {
+        try {
+            return at.lineNumber();
+        } catch (InternalError e) {
+            return -1;
         }
     }
 
@@ -1165,7 +1212,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 } else {
                     ObjectReference o = object.object();
                     for (Field field : o.referenceType().allFields()) {
-                        if (!field.isStatic()) {
+                        if (!field.isStatic() && !JvmSourceMap.hiddenField(field.name(), language)) {
                             out.add(variable(field.name(), o.getValue(field)));
                         }
                     }

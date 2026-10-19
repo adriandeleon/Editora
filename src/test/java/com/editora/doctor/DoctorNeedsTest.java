@@ -24,6 +24,12 @@ class DoctorNeedsTest {
         assertEquals(Set.of("astro"), DoctorNeeds.serversForRootFiles(List.of("astro.config.mjs")));
         assertEquals(Set.of("dockerfile"), DoctorNeeds.serversForRootFiles(List.of("Dockerfile")));
         assertEquals(Set.of("groovy"), DoctorNeeds.serversForRootFiles(List.of("Jenkinsfile")));
+        for (String scalaBuild : List.of("build.sbt", "build.mill", "build.sc", "project.scala")) {
+            assertEquals(Set.of("scala"), DoctorNeeds.serversForRootFiles(List.of(scalaBuild)), scalaBuild);
+        }
+        for (String marker : List.of("deps.edn", "project.clj", "bb.edn", "shadow-cljs.edn", "build.boot")) {
+            assertEquals(Set.of("clojure"), DoctorNeeds.serversForRootFiles(List.of(marker)), marker);
+        }
         assertEquals(
                 Set.of("java"),
                 DoctorNeeds.serversForRootFiles(List.of("build.gradle")),

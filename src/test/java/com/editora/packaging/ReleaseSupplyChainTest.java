@@ -141,9 +141,9 @@ class ReleaseSupplyChainTest {
 
     @Test
     void theShippedPlatformsEachRunThePureSuiteInCi() throws IOException {
-        String ci = read(WORKFLOWS.resolve("ci.yml"));
-        String lane = jobs(ci).get("pure-tests");
-        assertTrue(lane != null, "ci.yml lost its Windows/macOS test lane");
+        String full = read(WORKFLOWS.resolve("full-tests.yml"));
+        String lane = jobs(full).get("pure-tests");
+        assertTrue(lane != null, "full-tests.yml lost its Windows/macOS test lane");
         assertTrue(lane.contains("windows-latest") && lane.contains("macos-15"), "pure-tests must cover both");
         assertTrue(lane.contains("-DexcludedGroups=fx"), "pure-tests runs the pure suite");
     }
@@ -159,6 +159,12 @@ class ReleaseSupplyChainTest {
                 jobs.get("preflight").contains("CheckRelease.java ci")
                         && jobs.get("preflight").contains("--mode enforce"),
                 "the preflight no longer refuses a commit that CI did not pass");
+        assertTrue(
+                Pattern.compile("CheckRelease\\.java full [^\\n]*--mode enforce")
+                        .matcher(jobs.get("preflight"))
+                        .find(),
+                "the preflight no longer refuses a commit without a green Full tests run (the Windows and macOS"
+                        + " suites run nowhere else before a release)");
         for (String job : List.of("build", "native-experimental")) {
             assertTrue(jobs.get(job).contains("needs: preflight"), job + " must wait for the preflight");
         }

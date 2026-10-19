@@ -58,6 +58,11 @@ public final class InstallCatalog {
          *  SHA-256 matches, put at {@code <config>/<destSubpath>/<file>}, and the server command set to
          *  {@code java -jar "<file>"}. The Groovy server (gvy's {@code gls}). */
         JVM_LSP_JAR,
+        /** A JVM language server published only as Maven artifacts ({@link #coursierLsp}): coursier's pinned
+         *  native launcher ({@link #COURSIER_TOOL}) is downloaded and checked, {@code cs fetch} resolves the
+         *  server's classpath into {@code <config>/<destSubpath>/lib}, and the server command becomes
+         *  {@code java <options> -cp "<lib>/*" <mainClass>}. Metals, for Scala. */
+        COURSIER_LSP,
         /** A command-line tool from a pinned release (ShellCheck, shfmt): the per-platform asset is downloaded,
          *  its SHA-256 checked against the hash in {@link #pinnedTool}, and the binary put at
          *  {@code <config>/plugins/tools/<id>/<binary>} — see {@link #installedToolPath}. */
@@ -388,8 +393,12 @@ public final class InstallCatalog {
                 "maven-pom",
                 // a pinned JVM fat jar (needs java 17+): the Groovy server.
                 "groovy",
+                // Maven artifacts fetched by a pinned coursier (needs java 17+ to run): Metals, for Scala.
+                "scala",
                 // a pinned server distribution with its own Java runtime (needs tar): JetBrains' Kotlin LSP.
-                "kotlin");
+                "kotlin",
+                // a pinned native binary per OS/arch, its SHA-256 checked: clojure-lsp.
+                "clojure");
     }
 
     /** The install steps for an LSP-only server id (empty if it has no installer). Pure. */
@@ -455,6 +464,20 @@ public final class InstallCatalog {
                         false,
                         "plugins/lsp/maven",
                         null)));
+            // --- clojure-lsp: a pinned GraalVM native binary per OS/arch (no JVM needed) ---
+            case "clojure" ->
+                java.util.Optional.of(List.of(new Step(
+                        CLOJURE_LSP_ID,
+                        Kind.PINNED_TOOL,
+                        Set.of(),
+                        List.of(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        false,
+                        "plugins/lsp/clojure",
+                        null)));
             // --- gvy's gls: one pinned cross-platform jar (needs java 17+) ---
             case "groovy" ->
                 java.util.Optional.of(List.of(new Step(
@@ -468,6 +491,20 @@ public final class InstallCatalog {
                         GLS_JAR.url(),
                         false,
                         "plugins/lsp/groovy",
+                        null)));
+            // --- Metals: coursier resolves its classpath (needs java 17+ to run, not to install) ---
+            case "scala" ->
+                java.util.Optional.of(List.of(new Step(
+                        "metals",
+                        Kind.COURSIER_LSP,
+                        Set.of(Prereq.JAVA),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        false,
+                        "plugins/lsp/scala",
                         null)));
             default -> java.util.Optional.empty();
         };
@@ -488,6 +525,93 @@ public final class InstallCatalog {
                     + ".jar",
             "552558bc588968c3127aa25114a86bb9137fa740572b39e7af44ff732a2802f2",
             "gls-" + GLS_VERSION + ".jar");
+
+    /**
+     * A language server resolved by coursier: the artifact {@code cs fetch} is given, the class that starts it,
+     * and the JVM options its launcher would pass (Metals' own recommendations: a larger thread stack for the
+     * Scala compiler, G1 with string de-duplication for its symbol tables).
+     */
+    public record CoursierLsp(String artifact, String mainClass, List<String> jvmOptions) {}
+
+    /** The Metals release Editora installs (the 1.x stable line; 2.0 was a release candidate when pinned). */
+    public static final String METALS_VERSION = "1.6.9";
+
+    /** Metals, the Scala language server (Apache-2.0, scalameta.org/metals), built for Scala 2.13. */
+    public static final CoursierLsp METALS = new CoursierLsp(
+            "org.scalameta:metals_2.13:" + METALS_VERSION,
+            "scala.meta.metals.Main",
+            List.of("-Xss4m", "-Xms100m", "-XX:+UseG1GC", "-XX:+UseStringDeduplication"));
+
+    /** The coursier-resolved server a {@link Kind#COURSIER_LSP} step installs, by step id, or empty. Pure. */
+    public static java.util.Optional<CoursierLsp> coursierLsp(String stepId) {
+        return "metals".equals(stepId) ? java.util.Optional.of(METALS) : java.util.Optional.empty();
+    }
+
+    /**
+     * The command that runs a coursier-installed server: {@code java <options> -cp "<lib>/*" <mainClass>} — the
+     * same {@code java -cp} shape as the pom.xml server, so the Settings JDK replaces the bare {@code java}
+     * ({@code JvmServerCommand}). Pure.
+     */
+    public static String coursierLspCommand(java.nio.file.Path lib, CoursierLsp server) {
+        StringBuilder out = new StringBuilder("java");
+        for (String option : server.jvmOptions()) {
+            out.append(' ').append(option);
+        }
+        return out.append(" -cp \"")
+                .append(lib)
+                .append(java.io.File.separator)
+                .append("*\" ")
+                .append(server.mainClass())
+                .toString();
+    }
+
+    /** The coursier release whose native launcher Editora downloads to resolve Metals. */
+    public static final String COURSIER_VERSION = "2.1.26";
+
+    private static final String COURSIER_BASE =
+            "https://github.com/coursier/coursier/releases/download/v" + COURSIER_VERSION + "/cs-";
+
+    /**
+     * coursier's native launcher ({@code cs}, Apache-2.0, github.com/coursier/coursier), pinned per platform. The
+     * hashes are the release assets' SHA-256 as GitHub publishes them for the tag, checked against downloaded
+     * copies. It is a GraalVM native image, so resolving needs no Java; only the server it installs does.
+     * Upstream publishes no Windows-on-ARM build.
+     */
+    public static final PinnedTool COURSIER_TOOL = new PinnedTool(
+            "coursier",
+            COURSIER_VERSION,
+            java.util.Map.of(
+                    Platform.LINUX_X64,
+                    new PinnedAsset(
+                            COURSIER_BASE + "x86_64-pc-linux.gz",
+                            "348e37bc2a8c706640e6b032c4551a0e055a7f1537485b4a91540e9d3598ec6d",
+                            Packing.GZ),
+                    Platform.LINUX_ARM,
+                    new PinnedAsset(
+                            COURSIER_BASE + "aarch64-pc-linux.gz",
+                            "6c358ac223332c8981eb86417d3faf9338a5ef6c95d1879a58162b24c510025c",
+                            Packing.GZ),
+                    Platform.MAC_X64,
+                    new PinnedAsset(
+                            COURSIER_BASE + "x86_64-apple-darwin.gz",
+                            "c8045f36fadec075c8647b979d1028435935b0ecd43efa1387cd286c3926a421",
+                            Packing.GZ),
+                    Platform.MAC_ARM,
+                    new PinnedAsset(
+                            COURSIER_BASE + "aarch64-apple-darwin.gz",
+                            "8e4d36aa2565276f262af073f0999399e4c2f920f2fe436bb0ae67665eb505e9",
+                            Packing.GZ),
+                    Platform.WIN_X64,
+                    new PinnedAsset(
+                            COURSIER_BASE + "x86_64-pc-win32.zip",
+                            "d23f4ba6afa7f092135b485303b0a020358fbb314abf9c6dc2576df3e2abd941",
+                            Packing.ZIP)),
+            "cs");
+
+    /** The {@code cs fetch} argv that prints {@code artifact}'s resolved classpath, one jar per line. Pure. */
+    public static List<String> coursierFetchArgv(String cs, String artifact) {
+        return List.of(cs, "fetch", artifact);
+    }
 
     /** The pinned jar a {@link Kind#JVM_LSP_JAR} step installs, by step id, or empty. Pure. */
     public static java.util.Optional<JvmLspJar> jvmLspJar(String stepId) {
@@ -700,6 +824,15 @@ public final class InstallCatalog {
     /** The shfmt release Editora installs. Bump with every hash in {@link #pinnedTool}. */
     public static final String SHFMT_VERSION = "3.14.1";
 
+    /** The clojure-lsp release Editora installs. Bump with every hash in {@link #pinnedTool}. */
+    public static final String CLOJURE_LSP_VERSION = "2026.10.15-11.42.38";
+
+    /** The install step (and {@link #pinnedTool} recipe) id of the Clojure server, installed for server "clojure". */
+    public static final String CLOJURE_LSP_ID = "clojure-lsp";
+
+    private static final String CLOJURE_LSP_BASE = "https://github.com/clojure-lsp/clojure-lsp/releases/download/"
+            + CLOJURE_LSP_VERSION + "/clojure-lsp-native-";
+
     /** The tools {@link #pinnedTool} knows, in display order. */
     public static final List<String> PINNED_TOOL_IDS = List.of("shellcheck", "shfmt");
 
@@ -710,7 +843,9 @@ public final class InstallCatalog {
         /** A {@code .tar.gz} holding the program somewhere inside (extracted with the system tar). */
         TAR_GZ,
         /** A {@code .zip} holding the program somewhere inside. */
-        ZIP
+        ZIP,
+        /** The program itself, gzip-compressed (coursier's {@code cs-<platform>.gz}). */
+        GZ
     }
 
     /** One platform's download: where it is, its SHA-256 (lower-case hex), and how it is packed. */
@@ -810,6 +945,42 @@ public final class InstallCatalog {
                                         "13629ce28442ca80b6b5a819f7574ab39e1c28c6e26734ca816c9714e04851df",
                                         Packing.RAW)),
                         "shfmt"));
+            // clojure-lsp's GraalVM native builds (MIT, github.com/clojure-lsp/clojure-lsp): the hashes are the
+            // assets' SHA-256 as GitHub publishes them for the tag — the macOS arm64 build has no .sha256 file
+            // in this release — each checked against a downloaded copy. No Windows-on-ARM build exists; the x64
+            // one runs under emulation there. Installed as a language server (serverInstall "clojure"), not as
+            // one of PINNED_TOOL_IDS.
+            case CLOJURE_LSP_ID ->
+                Optional.of(new PinnedTool(
+                        CLOJURE_LSP_ID,
+                        CLOJURE_LSP_VERSION,
+                        java.util.Map.of(
+                                Platform.LINUX_X64,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "linux-amd64.zip",
+                                        "d68acf630465cec9d3685fd958f914d9228d90a07222edd301f1a4740b8e8b76",
+                                        Packing.ZIP),
+                                Platform.LINUX_ARM,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "linux-aarch64.zip",
+                                        "232ac0cd191070a3b7b5532135ec9f97217b82324de7e97da0b1bf81353a3c94",
+                                        Packing.ZIP),
+                                Platform.MAC_X64,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "macos-amd64.zip",
+                                        "468c261b48a7276c79cb92a82ddfce5474bc563ba6673df30cabf17a7f239ef3",
+                                        Packing.ZIP),
+                                Platform.MAC_ARM,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "macos-aarch64.zip",
+                                        "84df57e51e27f4ecf20d0cd65aab3296e2ebf28dbaacca4fe216b6cf20485716",
+                                        Packing.ZIP),
+                                Platform.WIN_X64,
+                                new PinnedAsset(
+                                        CLOJURE_LSP_BASE + "windows-amd64.zip",
+                                        "63bb6567a2280a563a8de22c3eb833a69159e054b6545a29d25ab588c1b749b1",
+                                        Packing.ZIP)),
+                        "clojure-lsp"));
             default -> Optional.empty();
         };
     }

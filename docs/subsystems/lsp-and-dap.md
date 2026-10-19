@@ -49,8 +49,13 @@ The rest cover XML (lemminx), JSON, Bash, YAML, PHP, Ruby, HTML, CSS, Kotlin (Je
 ~370 MB distribution with its own Java runtime, installed by `InstallCatalog.Kind.PINNED_SERVER` and launched
 as `bin/intellij-server --stdio`; `kotlin-lsp --stdio` on PATH by default, fwcd's `kotlin-language-server` as a
 configured command; a Gradle settings file is the root before any build file, and there is no `.git` fallback),
-Groovy (gvy's `gls` jar, pinned, run with `java -jar` on the Settings JDK; CodeNarc style rules off), Lua,
-Dockerfile, SQL, Terraform, TOML, C#, Typst, and Astro. Commands are user-configurable (Settings) and **never bundled** — servers
+Groovy (gvy's `gls` jar, pinned, run with `java -jar` on the Settings JDK; CodeNarc style rules off), Scala
+(Metals 1.6.9, resolved by a pinned coursier into `plugins/lsp/scala/lib` and run with
+`java … -cp "lib/*" scala.meta.metals.Main` on the Settings JDK), Clojure (clojure-lsp, a GraalVM native binary;
+the installer pins the 2026.10.15 release per platform by SHA-256, else `clojure-lsp` on PATH; it serves `.clj`,
+`.cljs`, `.cljc` and `.edn` and asks `clojure -Spath`, `lein classpath` or `bb print-deps` for a project's
+classpath, which the augmented PATH lets it find), Lua, Dockerfile, SQL, Terraform, TOML, C#, Typst, and Astro.
+Commands are user-configurable (Settings) and **never bundled** — servers
 are auto-detected on the augmented PATH or installed in-app.
 
 Useful pure methods: `serverIdFor(languageId)`, `isSupported(languageId)`, `rootMarkersFor(...)`,
@@ -534,13 +539,13 @@ the child env. The result is cached after the first call.
 
 ## DAP
 
-### Three transports
+### Five transports
 
 Editora debugs Java, Python, and JavaScript (Node), off by default
 (`Settings.debugSupport`). [`dap/DapServerRegistry`](../../src/main/java/com/editora/dap/DapServerRegistry.java)
 is the pure language → adapter spec (a `Kind` transport, the DAP `launch` type, the `initialize`
 adapter id, and the default interpreter + adapter args). `languageIdsForDebug()` =
-`{java, python, javascript, groovy, kotlin}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
+`{java, python, javascript, groovy, kotlin, clojure, scala}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
 `javascript` adapter (`adapterLanguage`): Node 22.18+/23.6+ runs a `.ts` file itself, and a compiled
 project's breakpoints live in its `.ts`/`.tsx` sources.
 
@@ -551,6 +556,8 @@ project's breakpoints live in its `.ts`/`.tsx` sources.
 | `javascript` | `SOCKET` | `node <dapDebugServer.js> 0 127.0.0.1`, the port read from its "listening at" line; `DapClient.connect(port, "pwa-node")`. |
 | `groovy` | `JVM` | Editora's own JDI adapter (`dap/jvm`, [ADR 0018](../decisions/0018-jvm-debug-adapter.md)), served in-process on a loopback port; `DapClient.connect(port, "editora-jvm")`. The program is `groovy <file>` started through `runInTerminal`, with the JDWP agent (`server=n`, connecting back) in `JAVA_OPTS`. Breakpoints bind by source name. |
 | `kotlin` | `JVM` | The same adapter. A script is `kotlinc -script <file>` (agent in `JAVA_OPTS`); a program is compiled first (`kotlinc <file> -include-runtime -d <jar>`, cached by content under `<config>/cache/kotlin-run`) and run as `java <agent> -jar <jar>` (`jvmOptionsInArgv`). A file's declared `package` matches its classes' source path wherever the file sits. Debug via Build Tool and Attach from a Kotlin file attach this adapter (`attach`, `hostName`/`port`) instead of java-debug, which never binds a `.kt` breakpoint. kotlin-lsp's own undocumented DAP (`start_debug_server`) is not used. |
+| `clojure` | `JVM` | The same adapter. `run/ClojureRun` picks the tool: the Clojure CLI (`clojure -J<agent> -J-Dclojure.compiler.disable-locals-clearing=true -M -m <ns>`, the agent as a `-J` argument — the launch's `jvmOptionPrefix`) in its `deps.edn` project, Leiningen (`lein run -m <ns>`, the agent in `JVM_OPTS`, which only the project's JVM reads) in a `project.clj` one, and a file outside any project as a script. A function's class (`my_app.core$greet`) records `core.clj` and the package path `my_app/`, so a breakpoint in `src/my_app/core.clj` binds by source name; a script loaded by path records that absolute path (Clojure's SMAP), which `JvmSourceMap.compiledFrom` accepts. Frames read as the function, demunged (`my-app.core/greet`); stepping skips `clojure.lang`, `clojure.core*` and `clojure.main`. Babashka is a native program with no JVM: Debug says so and does not start. Limits: values show as their class (the adapter runs no `toString`), and a function redefined from a REPL is a new class the session's breakpoints were not set in. |
+| `scala` | `LANGUAGE_SERVER` | An adapter the language server starts on request ([`HostedDebugAdapter`](../../src/main/java/com/editora/dap/HostedDebugAdapter.java)): Metals' `workspace/executeCommand debug-adapter-start` with `{path, runType: "run", args, jvmOptions, env}` compiles the build target and answers `{name, uri: "tcp://host:port"}`; `DapClient.connect(port, "scala")`, then `launch {name, noDebug: false}`. Metals' adapter runs the program and reports its output. Only for a file of an sbt, Mill, Gradle or Maven build (`ScalaRun.ownerOf`); a script or a Scala CLI project falls back (`DapServerRegistry.fallbackKind`) to `JVM`: `scala-cli run --java-opt <agent> <file> -- args`, the agent in place of `JvmScriptRun.AGENT_ARGUMENT`, and breakpoints bound by file name (Scala packages need not follow folders). |
 
 [`dap/DapClient`](../../src/main/java/com/editora/dap/DapClient.java) (mirrors `LanguageServerSession`)
 runs the handshake over an lsp4j.debug `DSPLauncher`: `initialize` → on the `initialized` event send

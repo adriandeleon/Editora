@@ -21,7 +21,7 @@ class LspServerRegistryTest {
         assertTrue(LspServerRegistry.isSupported("python"));
         // groovy is served by gvy, which has no command until it is installed (like the pom.xml server).
         assertTrue(LspServerRegistry.isSupported("groovy"));
-        assertFalse(LspServerRegistry.isSupported("clojure"));
+        assertTrue(LspServerRegistry.isSupported("clojure"));
         assertFalse(LspServerRegistry.isSupported("plaintext"));
         assertEquals("java", LspServerRegistry.serverIdFor("java"));
         // One TypeScript server serves all four JS/TS dialects.
@@ -35,8 +35,17 @@ class LspServerRegistryTest {
                 List.of("java", "-jar", "/x/gls.jar"),
                 LspServerRegistry.commandFor("groovy", Map.of("groovy", "java -jar /x/gls.jar")));
         assertTrue(LspServerRegistry.rootMarkersFor("groovy").contains("Jenkinsfile"));
-        assertNull(LspServerRegistry.serverIdFor("clojure"));
-        assertNull(LspServerRegistry.specFor("clojure", Map.of()));
+        // clojure-lsp serves .clj, .cljs, .cljc and .edn alike, from PATH until the installer names its own copy.
+        assertEquals("clojure", LspServerRegistry.serverIdFor("clojure"));
+        assertEquals(List.of("clojure-lsp"), LspServerRegistry.commandFor("clojure", Map.of()));
+        assertEquals(
+                List.of("/c/clojure-lsp"),
+                LspServerRegistry.commandFor("clojure", Map.of("clojure", "/c/clojure-lsp")));
+        assertEquals(
+                List.of("deps.edn", "project.clj", "bb.edn", "shadow-cljs.edn", "build.boot", ".git"),
+                LspServerRegistry.rootMarkersFor("clojure"));
+        assertNull(LspServerRegistry.serverIdFor("plaintext"));
+        assertNull(LspServerRegistry.specFor("plaintext", Map.of()));
     }
 
     @Test

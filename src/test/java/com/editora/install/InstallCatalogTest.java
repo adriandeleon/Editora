@@ -374,6 +374,32 @@ class InstallCatalogTest {
     }
 
     @Test
+    void clojureLspIsAPinnedNativeBinaryForEveryDesktopPlatform() {
+        assertTrue(InstallCatalog.installableServerIds().contains("clojure"));
+        Step s = InstallCatalog.serverInstall("clojure").orElseThrow().get(0);
+        assertEquals(Kind.PINNED_TOOL, s.kind());
+        assertEquals(java.util.Set.of(), s.prereqs(), "a zip, unpacked in-process: nothing to have installed");
+        assertEquals("plugins/lsp/clojure", s.destSubpath());
+        InstallCatalog.PinnedTool tool = InstallCatalog.pinnedTool(s.id()).orElseThrow();
+        assertEquals(InstallCatalog.CLOJURE_LSP_VERSION, tool.version());
+        assertEquals("clojure-lsp", tool.binaryName());
+        assertFalse(InstallCatalog.PINNED_TOOL_IDS.contains(s.id()), "a language server, not a shell tool");
+        for (Platform p : Platform.values()) {
+            InstallCatalog.PinnedAsset asset = tool.assetFor(p);
+            assertNotNull(asset, p.toString());
+            assertTrue(
+                    asset.url()
+                            .startsWith("https://github.com/clojure-lsp/clojure-lsp/releases/download/"
+                                    + InstallCatalog.CLOJURE_LSP_VERSION + "/clojure-lsp-native-"),
+                    asset.url());
+            assertFalse(asset.url().contains("static"), "the glibc build, as clojure-lsp's own installer picks");
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), p + " is pinned by its SHA-256");
+            assertEquals(InstallCatalog.Packing.ZIP, asset.packing());
+            assertTrue(InstallCatalog.isTrustedDownloadUrl(asset.url()));
+        }
+    }
+
+    @Test
     void groovyServerIsAPinnedJarNeedingJava() {
         assertTrue(InstallCatalog.installableServerIds().contains("groovy"));
         Step s = InstallCatalog.serverInstall("groovy").orElseThrow().get(0);
@@ -385,6 +411,50 @@ class InstallCatalogTest {
         assertTrue(jar.url().startsWith("https://github.com/albertocavalcante/gvy/releases/download/v"));
         assertTrue(jar.sha256().matches("[0-9a-f]{64}"), "pinned by its SHA-256");
         assertEquals("gls-" + InstallCatalog.GLS_VERSION + ".jar", jar.fileName());
+    }
+
+    @Test
+    void metalsIsResolvedByAPinnedCoursierAndRunOnJava() {
+        assertTrue(InstallCatalog.installableServerIds().contains("scala"));
+        Step s = InstallCatalog.serverInstall("scala").orElseThrow().get(0);
+        assertEquals(Kind.COURSIER_LSP, s.kind());
+        assertEquals(java.util.Set.of(Prereq.JAVA), s.prereqs());
+        assertEquals("plugins/lsp/scala", s.destSubpath());
+        InstallCatalog.CoursierLsp metals = InstallCatalog.coursierLsp(s.id()).orElseThrow();
+        assertEquals("org.scalameta:metals_2.13:" + InstallCatalog.METALS_VERSION, metals.artifact());
+        assertEquals("scala.meta.metals.Main", metals.mainClass());
+        for (Platform p : Platform.values()) {
+            InstallCatalog.PinnedAsset asset = InstallCatalog.COURSIER_TOOL.assetFor(p);
+            assertNotNull(asset, "coursier launcher for " + p);
+            assertTrue(asset.url()
+                    .startsWith("https://github.com/coursier/coursier/releases/download/v"
+                            + InstallCatalog.COURSIER_VERSION + "/cs-"));
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), "pinned by its SHA-256");
+            assertEquals(
+                    p == Platform.WIN_X64 ? InstallCatalog.Packing.ZIP : InstallCatalog.Packing.GZ, asset.packing());
+        }
+        assertEquals(
+                List.of("/c/cs", "fetch", "org.scalameta:metals_2.13:" + InstallCatalog.METALS_VERSION),
+                InstallCatalog.coursierFetchArgv("/c/cs", metals.artifact()));
+    }
+
+    @Test
+    void metalsRunsWithItsJvmOptionsOverItsLibFolder() {
+        java.nio.file.Path lib = java.nio.file.Path.of("/home/a user/.editora/plugins/lsp/scala/lib");
+        String command = InstallCatalog.coursierLspCommand(lib, InstallCatalog.METALS);
+        for (List<String> argv : tokenizedEverywhere(command)) {
+            assertEquals(
+                    List.of(
+                            "java",
+                            "-Xss4m",
+                            "-Xms100m",
+                            "-XX:+UseG1GC",
+                            "-XX:+UseStringDeduplication",
+                            "-cp",
+                            lib + java.io.File.separator + "*",
+                            "scala.meta.metals.Main"),
+                    argv);
+        }
     }
 
     @Test

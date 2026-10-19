@@ -519,7 +519,13 @@ final class BuildCoordinator {
             tree.setRunning(true);
         }
         host.setStatus(tr("status.build.started", tool.displayName(), label));
-        java.util.Map<String, String> environment = tool != BuildTool.MAVEN
+        // Maven and the Scala tools (sbt, Mill, Scala CLI) run on the JDK chosen in Settings, as Run does; Gradle
+        // picks its own through its toolchains.
+        boolean onSettingsJdk = tool == BuildTool.MAVEN
+                || tool == BuildTool.SBT
+                || tool == BuildTool.MILL
+                || tool == BuildTool.SCALA_CLI;
+        java.util.Map<String, String> environment = !onSettingsJdk
                 ? java.util.Map.of()
                 : !com.editora.process.ExecTargets.runsHere(root)
                         // Where the build runs elsewhere: the JDK there, or the one configured for it; never
@@ -719,6 +725,12 @@ final class BuildCoordinator {
             case CARGO -> Icons::cargo;
             case GO -> Icons::go;
             case GRADLE -> Icons::gradle;
+            case SBT -> Icons::sbt;
+            case MILL -> Icons::mill;
+            case SCALA_CLI -> Icons::scalaCli;
+            case CLOJURE -> Icons::clojureCli;
+            case LEIN -> Icons::leiningen;
+            case BABASHKA -> Icons::babashka;
         };
     }
 }

@@ -2,6 +2,7 @@ package com.editora.run;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The launch argv for a run configuration that is <b>not</b> a Java main class.
@@ -34,11 +35,20 @@ public final class ScriptRunCommand {
     /** A Groovy script, run by {@code groovy} on the configuration's JDK ({@link JvmScriptRun}). */
     public static final String GROOVY = "groovy";
 
+    /** A Scala file or {@code .sc} script, run by Scala CLI on the configuration's JDK ({@link JvmScriptRun}). */
+    public static final String SCALA = "scala";
+
     /**
      * A Kotlin file: a script ({@code .kts}) run by {@code kotlinc -script}, or a program ({@code .kt}) compiled by
      * {@code kotlinc} and run by {@code java -jar}, both on the configuration's JDK ({@link KotlinRun}).
      */
     public static final String KOTLIN = "kotlin";
+
+    /**
+     * A Clojure file, run by the Clojure CLI, Leiningen or Babashka ({@link ClojureRun}) on the configuration's
+     * JDK.
+     */
+    public static final String CLOJURE = "clojure";
 
     public static final String JAVA = "java";
 
@@ -56,7 +66,7 @@ public final class ScriptRunCommand {
 
     /**
      * Whether {@code type} is a JVM language's file run through its own tool on the configuration's JDK
-     * ({@link #GROOVY}, {@link #KOTLIN}): its type is its language id in {@link JvmScriptRun}.
+     * ({@link #GROOVY}, {@link #KOTLIN}, {@link #SCALA}, {@link #CLOJURE}): its type is its language id in {@link JvmScriptRun}.
      */
     public static boolean isJvmScript(String type) {
         return JvmScriptRun.supports(type);
@@ -138,13 +148,13 @@ public final class ScriptRunCommand {
                 argv.addAll(shell == null ? List.of(ShellCommand.defaultInterpreter(t)) : shell.interpreter());
                 argv.add(t);
             }
-            case GROOVY -> {
+            case GROOVY, SCALA -> {
                 if (t.isEmpty()) {
                     return List.of();
                 }
                 // The shape only: the real tool and JDK come from JvmTools and the configuration's JDK.
-                argv.add(JvmScriptRun.tool(GROOVY));
-                argv.add(t);
+                return JvmScriptRun.launch(type, JvmScriptRun.tool(type), t, List.of(), args, Map.of(), Map.of())
+                        .argv();
             }
             case KOTLIN -> {
                 if (t.isEmpty()) {
@@ -155,6 +165,15 @@ public final class ScriptRunCommand {
                         KotlinRun.shape(t) == KotlinRun.Shape.PROGRAM
                                 ? List.of(KotlinRun.TOOL, t)
                                 : KotlinRun.scriptArgv(KotlinRun.TOOL, t, null));
+            }
+            case CLOJURE -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                // The shape only: the real tool (clojure, lein or bb) comes from the file and its project.
+                argv.add(JvmScriptRun.tool(CLOJURE));
+                argv.add("-M");
+                argv.add(t);
             }
             case MAKE -> {
                 argv.add("make");

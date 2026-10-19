@@ -10,7 +10,7 @@ import java.util.Set;
  * {@code initialize} adapter id, and (for the standalone adapters) the default interpreter + adapter
  * arguments. Mirrors {@code LspServerRegistry}, but debug-adapter-centric.
  *
- * <p>Four transports:
+ * <p>Five transports:
  * <ul>
  *   <li><b>java</b> → {@link Kind#JDTLS}: the Microsoft java-debug adapter is started <em>inside</em> jdtls
  *       via {@code workspace/executeCommand} (which returns a socket port); the registry carries no command
@@ -19,8 +19,11 @@ import java.util.Set;
  *       stdin/stdout; launch {@code type="python"}.</li>
  *   <li><b>javascript</b> → {@link Kind#SOCKET}: {@code node <dapDebugServer.js> <port>}, DAP over a TCP
  *       socket; launch {@code type="pwa-node"}.</li>
- *   <li><b>groovy</b>, <b>kotlin</b> → {@link Kind#JVM}: Editora's own JDI adapter, in-process; nothing to
- *       install.</li>
+ *   <li><b>groovy</b>, <b>kotlin</b>, <b>clojure</b> → {@link Kind#JVM}: Editora's own JDI adapter, in-process;
+ *       nothing to install.</li>
+ *   <li><b>scala</b> → {@link Kind#LANGUAGE_SERVER}: Metals starts its adapter on request
+ *       ({@link HostedDebugAdapter}); a file outside an sbt, Mill, Gradle or Maven build is run by Scala CLI
+ *       under Editora's JVM adapter instead ({@link #fallbackKind}).</li>
  * </ul>
  *
  * <p>All methods are static + pure (no process launch, no I/O), so they are unit-testable. The
@@ -35,7 +38,12 @@ public final class DapServerRegistry {
         STDIO,
         SOCKET,
         /** Editora's own JDI adapter ({@code com.editora.dap.jvm}), served in-process on a loopback socket. */
-        JVM
+        JVM,
+        /**
+         * An adapter the language server starts when asked ({@link HostedDebugAdapter}): Metals'
+         * {@code debug-adapter-start} compiles the build target and answers a socket to connect to.
+         */
+        LANGUAGE_SERVER
     }
 
     /**
@@ -87,7 +95,13 @@ public final class DapServerRegistry {
         GROOVY("groovy", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("groovy")),
         // A Kotlin script runs under `kotlinc -script` (agent in JAVA_OPTS), a program as `java -jar` (agent on
         // its command line). kotlin-lsp's own debugger is undocumented and alpha: not used.
-        KOTLIN("kotlin", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("kotlin"));
+        KOTLIN("kotlin", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("kotlin")),
+        // A Clojure file runs under the Clojure CLI (the agent as a -J argument) or Leiningen (in JVM_OPTS); its
+        // functions' classes (my_app.core$greet) record core.clj, so breakpoints bind by source name as Groovy's.
+        // Babashka is native: nothing to attach to.
+        CLOJURE("clojure", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("clojure")),
+        // A file of a build debugs on Metals' adapter (it knows the classpath); a script on Editora's own.
+        SCALA("scala", Kind.LANGUAGE_SERVER, "scala", "scala", "", List.of(), Set.of("scala"));
 
         final String language;
         final Kind kind;
@@ -131,7 +145,15 @@ public final class DapServerRegistry {
 
     /** The adapter languages ({@code java}, {@code python}, {@code javascript}). */
     public static Set<String> languageIdsForDebug() {
-        return Set.of("java", "python", "javascript", "groovy", "kotlin");
+        return Set.of("java", "python", "javascript", "groovy", "kotlin", "clojure", "scala");
+    }
+
+    /**
+     * The transport a {@link Kind#LANGUAGE_SERVER} language falls back to for a file its server does not debug
+     * (a Scala script outside any build: Editora's {@link Kind#JVM} adapter over Scala CLI), or null.
+     */
+    public static Kind fallbackKind(String languageId) {
+        return "scala".equals(languageId) ? Kind.JVM : null;
     }
 
     /**

@@ -198,6 +198,193 @@ public enum BuildTool {
             ProcessRunner.Result result = ProcessRunner.runInUserLocale(root, TASK_LOAD_TIMEOUT, argv);
             return GradleTasks.parse(result.out());
         }
+    },
+
+    /** sbt — {@code build.sbt}; runs {@code sbt} (no wrapper) one batch command at a time ({@code sbt compile}).
+     *  Common tasks + each subproject's tasks from {@code sbt projects} on demand. */
+    SBT(
+            "sbt",
+            "sbt",
+            "sbt",
+            List.of("build.sbt"),
+            "view.toggleSbtSupport",
+            Settings::isSbtSupport,
+            Settings::setSbtSupport,
+            Settings::getSbtCommand,
+            Settings::setSbtCommand,
+            OutputStyle.passthrough()) {
+        @Override
+        public Detected parse(Path root) {
+            Path name = root.getFileName();
+            return new Detected(ScalaActionsProvider.sbt(), name == null ? null : name.toString());
+        }
+
+        @Override
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(List.of(), override, "sbt");
+        }
+
+        @Override
+        public Optional<String> taskLoadLabel() {
+            return Optional.of("buildpopup.loadTasks");
+        }
+
+        @Override
+        public List<String> loadTasks(Path root, Path projectRoot, boolean isWindows, String override)
+                throws Exception {
+            List<String> argv = new ArrayList<>(executable(root, projectRoot, isWindows, override));
+            argv.addAll(List.of("-batch", "-no-colors", "projects"));
+            ProcessRunner.Result result = ProcessRunner.runInUserLocale(root, SCALA_TASK_LOAD_TIMEOUT, argv);
+            return ScalaBuildTasks.sbtTasks(ScalaBuildTasks.sbtProjects(result.out()));
+        }
+    },
+
+    /** Mill — {@code build.mill} (1.x) or {@code build.sc} (0.x); prefers the project's {@code ./mill} launcher,
+     *  else {@code mill}. Common tasks over all modules + each module's tasks from {@code mill resolve __.compile}. */
+    MILL(
+            "mill",
+            "Mill",
+            "mill",
+            List.of("build.mill", "build.mill.yaml", "build.sc"),
+            "view.toggleMillSupport",
+            Settings::isMillSupport,
+            Settings::setMillSupport,
+            Settings::getMillCommand,
+            Settings::setMillCommand,
+            OutputStyle.passthrough()) {
+        @Override
+        public Detected parse(Path root) {
+            Path name = root.getFileName();
+            return new Detected(ScalaActionsProvider.mill(), name == null ? null : name.toString());
+        }
+
+        @Override
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(
+                    wrapperArgv(root, projectRoot, isWindows, "mill", "mill.bat"), override, "mill");
+        }
+
+        @Override
+        public Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
+            return wrapperFile(root, projectRoot, isWindows, "mill", "mill.bat");
+        }
+
+        @Override
+        public Optional<String> taskLoadLabel() {
+            return Optional.of("buildpopup.loadTasks");
+        }
+
+        @Override
+        public List<String> loadTasks(Path root, Path projectRoot, boolean isWindows, String override)
+                throws Exception {
+            List<String> argv = new ArrayList<>(executable(root, projectRoot, isWindows, override));
+            argv.addAll(List.of("resolve", "__.compile"));
+            ProcessRunner.Result result = ProcessRunner.runInUserLocale(root, SCALA_TASK_LOAD_TIMEOUT, argv);
+            return ScalaBuildTasks.millTasks(ScalaBuildTasks.millModules(result.out()));
+        }
+    },
+
+    /** Scala CLI — {@code project.scala}; runs {@code scala-cli} (or the {@code scala} command, which is Scala CLI
+     *  since Scala 3.5) over the project folder. */
+    SCALA_CLI(
+            "scalacli",
+            "Scala CLI",
+            "scala-cli",
+            List.of("project.scala"),
+            "view.toggleScalaCliSupport",
+            Settings::isScalaCliSupport,
+            Settings::setScalaCliSupport,
+            Settings::getScalaCliCommand,
+            Settings::setScalaCliCommand,
+            OutputStyle.passthrough()) {
+        @Override
+        public Detected parse(Path root) {
+            Path name = root.getFileName();
+            return new Detected(ScalaActionsProvider.scalaCli(), name == null ? null : name.toString());
+        }
+
+        @Override
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(List.of(), override, "scala-cli");
+        }
+    },
+
+    /** The Clojure CLI — {@code deps.edn}; runs {@code clojure} (no wrapper): the aliases that run something. */
+    CLOJURE(
+            "clojure",
+            "Clojure CLI",
+            "clojure",
+            List.of("deps.edn"),
+            "view.toggleClojureCliSupport",
+            Settings::isClojureCliSupport,
+            Settings::setClojureCliSupport,
+            Settings::getClojureCliCommand,
+            Settings::setClojureCliCommand,
+            OutputStyle.passthrough()) {
+        @Override
+        public Detected parse(Path root) throws Exception {
+            String deps = withoutBom(Files.readString(root.resolve("deps.edn")));
+            Path name = root.getFileName();
+            return new Detected(
+                    new ClojureCliActionsProvider(ClojureProjects.aliases(deps)),
+                    name == null ? null : name.toString());
+        }
+
+        @Override
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(List.of(), override, "clojure");
+        }
+    },
+
+    /** Leiningen — {@code project.clj}; runs {@code lein} (no wrapper), static common tasks. */
+    LEIN(
+            "lein",
+            "Leiningen",
+            "lein",
+            List.of("project.clj"),
+            "view.toggleLeiningenSupport",
+            Settings::isLeiningenSupport,
+            Settings::setLeiningenSupport,
+            Settings::getLeiningenCommand,
+            Settings::setLeiningenCommand,
+            OutputStyle.passthrough()) {
+        @Override
+        public Detected parse(Path root) throws Exception {
+            String project = withoutBom(Files.readString(root.resolve("project.clj")));
+            return new Detected(new LeiningenActionsProvider(), ClojureProjects.leiningenName(project));
+        }
+
+        @Override
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(List.of(), override, "lein");
+        }
+    },
+
+    /** Babashka — {@code bb.edn}; runs {@code bb} (no wrapper): the file's {@code :tasks}. */
+    BABASHKA(
+            "babashka",
+            "Babashka",
+            "bb",
+            List.of("bb.edn"),
+            "view.toggleBabashkaSupport",
+            Settings::isBabashkaSupport,
+            Settings::setBabashkaSupport,
+            Settings::getBabashkaCommand,
+            Settings::setBabashkaCommand,
+            OutputStyle.passthrough()) {
+        @Override
+        public Detected parse(Path root) throws Exception {
+            String bb = withoutBom(Files.readString(root.resolve("bb.edn")));
+            Path name = root.getFileName();
+            return new Detected(
+                    new BabashkaActionsProvider(ClojureProjects.babashkaTasks(bb)),
+                    name == null ? null : name.toString());
+        }
+
+        @Override
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(List.of(), override, "bb");
+        }
     };
 
     /**
@@ -347,7 +534,7 @@ public enum BuildTool {
 
     /** The build tools wired into the UI (each gets a toolbar button + console), in toolbar order. */
     public static List<BuildTool> enabled() {
-        return List.of(MAVEN, NPM, CARGO, GO, GRADLE);
+        return List.of(MAVEN, NPM, CARGO, GO, GRADLE, SBT, MILL, SCALA_CLI, CLOJURE, LEIN, BABASHKA);
     }
 
     /** The user's home directory — where Maven's {@code ~/.m2} local repository lives. */
@@ -366,6 +553,10 @@ public enum BuildTool {
 
     /** Timeout for the on-demand {@code gradle tasks} enumeration (a fresh Gradle daemon can be slow). */
     private static final Duration TASK_LOAD_TIMEOUT = Duration.ofSeconds(90);
+
+    /** Timeout for listing sbt's projects or Mill's modules: either may first fetch its own Scala and compile the
+     *  build definition. */
+    private static final Duration SCALA_TASK_LOAD_TIMEOUT = Duration.ofMinutes(5);
 
     /**
      * The argv prefix for a project's build wrapper ({@code mvnw}/{@code gradlew}), or empty when there isn't

@@ -8,13 +8,13 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Finds the command-line tool that runs a JVM language's files — {@code groovy}, {@code kotlinc} — on this machine.
+ * Finds the command-line tool that runs a JVM language's files — {@code groovy}, Scala CLI, {@code kotlinc}, and
+ * Clojure's {@code clojure}, {@code lein} and {@code bb} — on this machine.
  *
  * <p>The tool's own home variable comes first ({@code GROOVY_HOME}: whoever set it chose that install), then the
  * {@linkplain com.editora.process.ProcessRunner#augmentedPath augmented PATH} (the login shell's, which already
  * holds SDKMAN, asdf, mise and Homebrew when the profile sets them up), then SDKMAN's {@code current} candidate
- * for a profile that only sources SDKMAN in interactive shells (its candidate is named for the language:
- * {@code kotlinc} is in {@code candidates/kotlin}).
+ * for a profile that only sources SDKMAN in interactive shells.
  *
  * <p>{@link #candidates} is pure; {@link #locate} looks at the disk.
  */
@@ -22,43 +22,68 @@ public final class JvmTools {
 
     private JvmTools() {}
 
-    /** The tools {@link #locate} knows, with the variable naming each one's install. */
-    private static final Map<String, String> HOME_VARIABLES = Map.of("groovy", "GROOVY_HOME", "kotlinc", "KOTLIN_HOME");
+    /**
+     * How one tool is found: the variable naming its install (null when it has none), the names it goes by on
+     * {@code PATH} in the order tried, its SDKMAN candidates with the program each holds, and the launcher's
+     * extension on Windows.
+     */
+    private record Tool(String homeVariable, List<String> pathNames, List<String[]> sdkman, String windowsSuffix) {}
 
-    /** SDKMAN candidates named otherwise than their tool. */
-    private static final Map<String, String> SDKMAN_CANDIDATES = Map.of("kotlinc", "kotlin");
+    /** The tools {@link #locate} knows. */
+    private static final Map<String, Tool> TOOLS = Map.of(
+            "groovy",
+            new Tool("GROOVY_HOME", List.of("groovy"), List.<String[]>of(new String[] {"groovy", "groovy"}), ".bat"),
+            // Scala CLI: `scala-cli`, or `scala`, which is Scala CLI since Scala 3.5 (SDKMAN's scala candidate).
+            "scala-cli",
+            new Tool(
+                    null,
+                    List.of("scala-cli", "scala"),
+                    List.of(new String[] {"scalacli", "scala-cli"}, new String[] {"scala", "scala"}),
+                    ".exe"),
+            "kotlinc",
+            new Tool("KOTLIN_HOME", List.of("kotlinc"), List.<String[]>of(new String[] {"kotlin", "kotlinc"}), ".bat"),
+            // Clojure's tools: on PATH only (no home variable, no SDKMAN candidate).
+            "clojure",
+            new Tool(null, List.of("clojure"), List.of(), ".bat"),
+            "lein",
+            new Tool(null, List.of("lein"), List.of(), ".bat"),
+            "bb",
+            new Tool(null, List.of("bb"), List.of(), ".exe"));
 
     /** Whether {@code tool} is one this resolves. */
     public static boolean knows(String tool) {
-        return tool != null && HOME_VARIABLES.containsKey(tool);
+        return tool != null && TOOLS.containsKey(tool);
     }
 
     /**
      * The places {@code tool} may be, in the order they are tried, before the PATH search (which
-     * {@link #locate} does itself): {@code $<TOOL>_HOME/bin/<tool>} and SDKMAN's current candidate. On Windows
-     * a launcher is a {@code .bat}. Pure.
+     * {@link #locate} does itself): {@code $<TOOL>_HOME/bin/<tool>} and SDKMAN's current candidates. On Windows
+     * a launcher has its extension ({@code groovy.bat}, {@code scala-cli.exe}). Pure.
      */
     static List<Path> candidates(String tool, Map<String, String> env, Path userHome, boolean windows) {
         List<Path> out = new ArrayList<>();
-        if (!knows(tool)) {
+        Tool t = tool == null ? null : TOOLS.get(tool);
+        if (t == null) {
             return out;
         }
-        String file = windows ? tool + ".bat" : tool;
-        String home = env == null ? null : env.get(HOME_VARIABLES.get(tool));
+        String suffix = windows ? t.windowsSuffix() : "";
+        String home = env == null || t.homeVariable() == null ? null : env.get(t.homeVariable());
         if (home != null && !home.isBlank()) {
-            out.add(Path.of(home.strip(), "bin", file));
+            out.add(Path.of(home.strip(), "bin", tool + suffix));
         }
         String sdkman = env == null ? null : env.get("SDKMAN_DIR");
         Path sdkmanDir = sdkman != null && !sdkman.isBlank()
                 ? Path.of(sdkman.strip())
                 : userHome == null ? null : userHome.resolve(".sdkman");
         if (sdkmanDir != null) {
-            out.add(sdkmanDir
-                    .resolve("candidates")
-                    .resolve(SDKMAN_CANDIDATES.getOrDefault(tool, tool))
-                    .resolve("current")
-                    .resolve("bin")
-                    .resolve(file));
+            for (String[] candidate : t.sdkman()) {
+                out.add(sdkmanDir
+                        .resolve("candidates")
+                        .resolve(candidate[0])
+                        .resolve("current")
+                        .resolve("bin")
+                        .resolve(candidate[1] + suffix));
+            }
         }
         return out;
     }
@@ -79,10 +104,12 @@ public final class JvmTools {
         if (!candidates.isEmpty() && Files.isExecutable(candidates.get(0)) && hasHomeVariable(tool)) {
             return candidates.get(0).toString();
         }
-        String onPath = com.editora.process.ProcessRunner.resolveExecutable(List.of(tool))
-                .get(0);
-        if (!onPath.equals(tool)) {
-            return onPath; // resolveExecutable rewrites a bare name only when it found it
+        for (String name : TOOLS.get(tool).pathNames()) {
+            String onPath = com.editora.process.ProcessRunner.resolveExecutable(List.of(name))
+                    .get(0);
+            if (!onPath.equals(name)) {
+                return onPath; // resolveExecutable rewrites a bare name only when it found it
+            }
         }
         for (Path p : candidates) {
             if (Files.isRegularFile(p) && Files.isExecutable(p)) {
@@ -93,7 +120,11 @@ public final class JvmTools {
     }
 
     private static boolean hasHomeVariable(String tool) {
-        String home = System.getenv(HOME_VARIABLES.get(tool));
+        String variable = TOOLS.get(tool).homeVariable();
+        if (variable == null) {
+            return false;
+        }
+        String home = System.getenv(variable);
         return home != null && !home.isBlank();
     }
 }

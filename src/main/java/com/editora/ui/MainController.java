@@ -6359,6 +6359,17 @@ public class MainController implements com.editora.mcp.McpBridge {
             httpClient.runFile(); // the active buffer — the one "Run File" was asked for
             return true;
         }
+
+        @Override
+        public boolean runBuildTask(BuildTool tool, java.nio.file.Path root, List<String> taskArgs) {
+            for (BuildCoordinator c : buildCoordinators) {
+                if (c.tool() == tool && c.isEnabled()) {
+                    c.runTaskAt(root, taskArgs, List.of());
+                    return true;
+                }
+            }
+            return false;
+        }
     });
 
     /** Builds IntelliJ-style Test Results from recognized build-tool test runs. */

@@ -270,11 +270,25 @@ without the network); and the release-asset manifest. The Java side has matching
 `SshdModuleDescriptorTest`, `WindowsFileAssociationsTest`) that read the workflows, the pom and the
 packaging files as text.
 
-CI also runs the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`. A separate
-advisory job runs the FX suite (`-Dgroups=fx`) on `macos-15`. The macOS jobs run on pull requests, not
-again on `master` after each merge (the account runs five macOS jobs at a time); Windows runs on both. A
-scheduled run every Monday tests `master` as merged on all platforms, macOS included, and there a macOS FX
-failure turns the run red. The FX job does not block a merge until it has a track record there.
+CI runs in two tiers. **`ci.yml`** is the fast lane, about ten minutes: formatting, the whole suite on
+Linux (four shards, coverage floors) and the scripts' own tests. It runs on every pull request and every
+push to `master`, and the two checks `master` requires come from it. **`full-tests.yml`** holds the rest:
+the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`, the FX suite (`-Dgroups=fx`) on
+`macos-15` in three shards, and the probes against real tools (JDT LS and java-debug, the TypeScript
+server and js-debug, a terminal on an SSH host and in a container). It runs once a day on `master`, on a
+pull request labelled `full-ci`, on demand (`gh workflow run full-tests.yml --ref <branch>`), and before
+every release, whose preflight requires it to be green on the tagged commit ([release](release.md)).
+None of it is a required check: a failure on `master` is fixed forward with a new pull request.
+
+Label a pull request `full-ci` when the change is likely to behave differently on Windows or macOS (paths,
+line endings, process spawning, keychains, fonts, key modifiers) or touches the terminal, a language
+server or a debug adapter. Until 19 October 2026 every pull request ran all of it; each job takes about
+ten minutes, but with five macOS runners for the account and several pull requests open at once a run took
+13 to 35 minutes, and every merge waited for the slowest macOS shard.
+
+**Locally,** run `mvn spotless:apply` and the tests for what you changed (`mvn -Dtest='Foo*Test' test`),
+not the whole suite: CI's four shards run it in about ten minutes, and several sessions share this
+machine.
 
 Remote development is checked against real SSH servers by `RealSshdProbeFxTest`, an opt-in probe that CI
 skips. The `Remote probe` workflow runs it against macOS's own sshd on `macos-15` and against dropbear on

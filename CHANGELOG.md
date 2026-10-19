@@ -106,6 +106,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     hands the passphrase straight to GnuPG. A passphrase-only file is asked once and saves without asking again.
   - Settings ▸ Encryption (gpg path, always include my key, who asks for passphrases, language servers) and two
     Doctor rows (GnuPG, passphrase prompt). Samples in `samples/encrypted/` (passphrase `editora`).
+- **Clojure: language server, build tools, Run and Debug.** Clojure, ClojureScript and EDN files get completion,
+  diagnostics (clj-kondo's), navigation, rename and formatting from clojure-lsp, installed in one click (a pinned
+  native binary, checked by its SHA-256) or found on PATH. A `deps.edn`, `project.clj` or `bb.edn` project gets a
+  Clojure CLI, Leiningen or Babashka toolbar button: the CLI's runnable aliases (`-M:test`, `-X:build`,
+  `-T:build`), Leiningen's common tasks, a `bb.edn`'s tasks. Run File, the gutter ▶ (on `(defn -main`, else the
+  top of a script) and a new Clojure script run configuration run a namespace with `clojure -M -m` in its
+  project, through `lein run` in a Leiningen project, a script with `clojure -M`, and a Babashka script with
+  `bb`; an uncaught exception's whole trace is printed (not left in a temporary file), and its frames are links.
+  Debug stops at breakpoints in a namespace's functions or a script's top-level forms, under the Clojure CLI or
+  Leiningen, with locals kept visible and frames named as Clojure names them (`my-app.core/greet`); Babashka,
+  a native program, cannot be debugged and says so. Settings schema 139.
+- **Scala: Metals, sbt, Mill, Scala CLI, Run and Debug.** Scala files get completion, diagnostics, navigation,
+  rename and formatting from Metals 1.6.9, installed in one click (a pinned coursier resolves it into Editora's
+  folder; it runs on the JDK chosen in Settings). Language servers' questions are now asked — Metals' "Import
+  build?" among them — and Metals' input boxes, pick lists and status items work. sbt (`build.sbt`), Mill
+  (`build.mill`, `build.sc`) and Scala CLI (`project.scala`) projects get a toolbar button, actions popup and
+  console like Gradle's, with each sbt subproject's or Mill module's tasks loaded on demand. Run File and the
+  gutter ▶ (on an `@main def`, an `object … extends App`, a `def main`, or a `.sc` script) run a file of an sbt or
+  Mill build through it (`sbt "runMain …"`, `./mill <module>.runMain …`) and any other file with Scala CLI, with
+  the Scala CLI and Scala versions in the Run window; a new Scala run configuration runs files with Scala CLI.
+  Debug uses Metals' debug adapter for a file of a build, and Editora's own debugger over Scala CLI for a script,
+  stepping over the standard library. Settings schema 140.
 - **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
   files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
   `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),
@@ -535,6 +557,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **File Information and the status bar show the same word count.** File Information counted "well-known" and
   "repo's" as two words each and skipped numbers; it now counts as the status bar does.
+- **Debugging a Kotlin script with Kotlin 2.4.10:** once the script had run, adding or removing a breakpoint failed
+  with "Internal error". Two classes in that compiler carry source-map data (an SMAP) the JDK's debugger cannot
+  read; the JVM debugger now treats such a class as one without source information, in breakpoints and in the
+  call stack, instead of failing.
 - **JavaScript editing without a language server:**
   - JSX in a `.js` file no longer turns the rest of the file into a comment or string (`.js` uses the TSX grammar,
     as VS Code does), and JavaScript is in the status-bar language picker.

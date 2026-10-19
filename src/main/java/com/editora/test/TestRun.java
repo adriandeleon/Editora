@@ -132,7 +132,8 @@ public final class TestRun {
                 }
                 yield List.copyOf(args);
             }
-            case NPM -> List.of(); // no universal per-test filter — caller does a full rerun
+            case NPM, CLOJURE, LEIN, BABASHKA, SBT, MILL, SCALA_CLI ->
+                List.of(); // no universal per-test filter — caller does a full rerun
         };
     }
 }

@@ -335,8 +335,11 @@ final class DebugCoordinator {
                         && dapManager.isAdapterAvailable();
             case "python" -> s.isPythonDebugEnabled() && dapManager.isLanguageAvailable("python");
             case "javascript" -> s.isJsDebugEnabled() && dapManager.isLanguageAvailable("javascript");
-            // Editora's own JVM adapter: nothing to install; the tool (groovy, kotlinc) is checked at the start.
-            case "groovy", "kotlin" -> dapManager.isLanguageAvailable(language);
+            // Editora's own JVM adapter: nothing to install; the tool (groovy, kotlinc, clojure or lein) is checked
+            // when the session starts (bb cannot be debugged).
+            case "groovy", "kotlin", "clojure" -> dapManager.isLanguageAvailable(language);
+            // Metals' adapter for a build's file, Editora's own for a script; which applies is decided at start.
+            case "scala" -> dapManager.isLanguageAvailable("scala");
             default -> false;
         };
     }
@@ -2160,14 +2163,14 @@ final class DebugCoordinator {
      * Debugs a saved {@link RunConfiguration} — its main class, program args, VM args, environment and
      * working directory, and its before-launch step.
      *
-     * <p>Java and Groovy: the other script types run but do not debug yet.
+     * <p>Java, Groovy, Clojure and Scala: the other script types run but do not debug yet.
      */
     void debugConfig(RunConfiguration cfg) {
         if (cfg.isDeployed()) {
             ops.debugDeployed(cfg); // the program runs on the host; the debugger attaches through a tunnel
             return;
         }
-        if (com.editora.run.ScriptRunCommand.GROOVY.equals(cfg.type())) {
+        if (com.editora.run.ScriptRunCommand.isJvmScript(cfg.type())) {
             debugJvmScriptConfig(cfg);
             return;
         }
@@ -2283,8 +2286,9 @@ final class DebugCoordinator {
     }
 
     /**
-     * Debugs a Groovy script configuration on Editora's JVM adapter: its script, arguments, folder, environment,
-     * JDK and VM arguments (in {@code JAVA_OPTS}, beside the debugger's agent), after its before-launch step.
+     * Debugs a Groovy, Clojure or Scala script configuration: its script, arguments, folder, environment, JDK
+     * and VM arguments (where the tool hands them to its JVM, beside the debugger's agent: Scala CLI's as
+     * {@code --java-opt}), after its before-launch step.
      * On this machine only: a configuration whose folder is on a remote host runs there but does not debug yet.
      */
     private void debugJvmScriptConfig(RunConfiguration cfg) {
@@ -2333,14 +2337,10 @@ final class DebugCoordinator {
         boolean program = com.editora.run.ScriptRunCommand.KOTLIN.equals(cfg.type())
                 && com.editora.run.KotlinRun.shape(script.getFileName().toString())
                         == com.editora.run.KotlinRun.Shape.PROGRAM;
-        if (!program) {
-            launchEnv = com.editora.run.JvmScriptRun.withJvmOption(
-                    launchEnv,
-                    System.getenv(),
-                    com.editora.run.JvmScriptRun.jvmOptionsVariable(cfg.type()),
-                    cfg.vmArgs().strip());
-        }
         java.util.Map<String, String> programEnv = launchEnv;
+        // A Clojure file runs in its project's folder unless the configuration names one.
+        Path folder =
+                cfg.workingDir().isBlank() && com.editora.run.ScriptRunCommand.CLOJURE.equals(cfg.type()) ? null : cwd;
         String name = cfg.name();
         relaunch = () -> debugConfig(currentConfiguration(name, cfg));
         beforeLaunch.run(
@@ -2353,10 +2353,11 @@ final class DebugCoordinator {
                     ops.openToolWindow();
                     nameSession(cfg.name());
                     dapManager.setProgramArgs(args);
-                    if (program) {
+                    if (program || com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(cfg.type())) {
+                        // `java` (a Kotlin program) and Scala CLI take VM arguments on their command line.
                         dapManager.setVmArgs(com.editora.run.ProgramArgs.tokenize(cfg.vmArgs()));
                     } else {
-                        dapManager.setVmArgs("");
+                        dapManager.setVmArgs(cfg.vmArgs().strip()); // placed where the tool reads them (JvmScriptRun)
                     }
                     dapManager.setHostJavaExec("");
                     dapManager.setEnv(programEnv);
@@ -2364,7 +2365,7 @@ final class DebugCoordinator {
                         debugKotlinProgram(
                                 script, cwd, com.editora.run.JdkToolchain.javaExecutable(jdkHome), programEnv);
                     } else {
-                        withClosedBreakpoints(() -> dapManager.startJvmScript(script, cfg.type(), cwd));
+                        withClosedBreakpoints(() -> dapManager.startJvmScript(script, cfg.type(), folder));
                     }
                 });
     }

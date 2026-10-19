@@ -8,7 +8,8 @@ import java.util.regex.Pattern;
  * Pure detection of source locations in program output (unit-tested), so the Run/Debug consoles can make
  * stack-trace lines clickable. Recognizes the frame formats of the runnable/debuggable languages:
  * the JVM's ({@code at pkg.Cls.m(File.java:12)} — bare file name — for Java, Kotlin, Groovy, Scala and
- * Clojure sources, and Clojure's own {@code at my-app.core/f (core.clj:4)}), Python ({@code File "/path/x.py", line 12}
+ * Clojure sources, Clojure's own {@code at my-app.core/f (core.clj:4)} and its CLI's EDN report's
+ * {@code [my_app.core$f invokeStatic "core.clj" 4]}), Python ({@code File "/path/x.py", line 12}
  * — usually absolute — plus warnings, pytest and linters' {@code x.py:12:} and pdb's {@code > x.py(12)}), and Node ({@code at fn (/path/x.js:12:5)} or a bare {@code /path/x.js:12:5}).
  *
  * <p>Shell scripts too: bash's errors ({@code /path/x.sh: line 7: foo: command not found}), dash's
@@ -116,6 +117,14 @@ public final class StackTraceLinks {
     private static final Pattern CLOJURE_FRAME =
             Pattern.compile("\\bat\\s+([\\p{L}\\p{N}_.*+!?<>=-]+)/\\S+\\s+\\(([A-Za-z0-9_$-]+\\.clj[cs]?):\\d+\\)");
 
+    /**
+     * A frame of the Clojure CLI's error report ({@code -Dclojure.main.report=stderr}), which is EDN:
+     * {@code [my_app.core$greet invokeStatic "core.clj" 4]}. Group 1 is the class, group 2 the file, group 3 the
+     * line.
+     */
+    private static final Pattern EDN_FRAME = Pattern.compile(
+            "\\[([\\p{L}\\p{N}_$.]+)\\s+\\S+\\s+\"([A-Za-z0-9_$-]+\\." + JVM_SOURCE + ")\"\\s+(\\d{1,9})]");
+
     private StackTraceLinks() {}
 
     /** A Node.js location in {@code line} — an ESM URL, a parenthesized frame, tsc's {@code (l,c)}, or a bare path. */
@@ -180,7 +189,10 @@ public final class StackTraceLinks {
         }
         Matcher m = JAVA_FRAME.matcher(link.raw());
         if (!m.find() || !m.group(2).equals(link.file())) {
-            return clojureSourcePath(link);
+            m = EDN_FRAME.matcher(link.raw());
+            if (!m.find() || !m.group(2).equals(link.file())) {
+                return clojureSourcePath(link);
+            }
         }
         // A Clojure function's class is its namespace, munged, then `$` and the function: my_app.core$greet,
         // my_app.core$fn__123. The package part below already ends at the namespace's last segment.
@@ -230,6 +242,10 @@ public final class StackTraceLinks {
         m = JAVA_LOCATION.matcher(line);
         if (m.find()) {
             return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
+        }
+        m = EDN_FRAME.matcher(line);
+        if (m.find()) {
+            return new Link(m.group(2), Integer.parseInt(m.group(3)), line);
         }
         for (Pattern python : List.of(PYTHON, PDB, PYTHON_LOCATION)) {
             m = python.matcher(line);

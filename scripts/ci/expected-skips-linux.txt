@@ -19,7 +19,10 @@ com.editora.lsp.JdtlsTypingProbeTest
 com.editora.lsp.JdtlsUpgradeProbeTest
 com.editora.lsp.TypeScriptServerNodeProbeFxTest
 com.editora.ui.CompactSourceDebugProbeFxTest
+com.editora.ui.ClojureServerProbeFxTest
 com.editora.ui.GroovyServerProbeFxTest
+com.editora.ui.ScalaBuildRunProbeFxTest
+com.editora.ui.ScalaMetalsProbeFxTest
 com.editora.ui.JavaCodeChangesProbeFxTest
 com.editora.ui.JavaDebugRealAdapterProbeFxTest
 com.editora.ui.JavaEditingCostProbeTest
@@ -51,6 +54,16 @@ com.editora.ui.GroovyRunDebugWindowFxTest
 com.editora.dap.jvm.JvmDebugAdapterTest#aKotlinProgramStopsInItsFileWhicheverFolderItSitsInAndNamesItsFramesAsKotlin
 com.editora.dap.jvm.JvmDebugAdapterTest#aKotlinScriptStopsOnItsLine
 com.editora.ui.KotlinRunDebugWindowFxTest
+
+# Clojure (the runner installs no Clojure CLI or Leiningen): the programs the JVM debugger runs under each, and
+# Run/Debug of a Clojure namespace in a real window.
+com.editora.dap.jvm.ClojureDebugAdapterTest
+com.editora.ui.ClojureRunDebugWindowFxTest
+
+# Scala CLI (the runner installs none): a Scala program the JVM debugger runs through Scala CLI, and Run/Debug of a
+# Scala file in a window.
+com.editora.dap.jvm.JvmDebugAdapterTest#aScalaProgramRunByScalaCliStopsInALambdaWhereScalaCliIsInstalled
+com.editora.ui.ScalaRunDebugWindowFxTest
 
 # Needs vscode-js-debug (Debug Request of HTTP Client scripts), which the runner does not install; it runs on
 # developer machines with js-debug. HttpResponseHandlersFxTest covers the inspector handoff on CI's Node.

@@ -352,6 +352,9 @@ final class InstallCoordinator {
             case "clangd" -> s.setClangdLspCommand(command);
             case "kotlin" -> s.setKotlinLspCommand(command);
             case "groovy" -> s.setGroovyLspCommand(command); // java -jar over the downloaded gls jar
+            case "scala" -> s.setScalaLspCommand(command); // java -cp over the jars coursier resolved for Metals
+            // clojure-lsp: a pinned native binary; the installer returns its bare path
+            case "clojure" -> s.setClojureLspCommand(InstallCatalog.quoteCommandPath(command));
             case "lua" -> s.setLuaLspCommand(command);
             case "xml" -> s.setXmlLspCommand(command);
             case "terraform" -> s.setTerraformLspCommand(command);

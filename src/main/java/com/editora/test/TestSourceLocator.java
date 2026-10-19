@@ -22,7 +22,7 @@ public final class TestSourceLocator {
         }
         return switch (tool) {
             case MAVEN, GRADLE -> simpleName(className) + ".java";
-            case GO, CARGO, NPM -> null;
+            case GO, CARGO, NPM, CLOJURE, LEIN, BABASHKA, SBT, MILL, SCALA_CLI -> null;
         };
     }
 
