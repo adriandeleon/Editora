@@ -183,7 +183,7 @@ class TemplateEngineTest {
             }
         }
         assertEquals(golden, sb.toString());
-        assertEquals(32, reg.bundledTemplates().size(), "the website lists the bundled templates");
+        assertEquals(33, reg.bundledTemplates().size(), "the website lists the bundled templates");
     }
 
     // --- T5: which variables the wizard asks for --------------------------------------------------

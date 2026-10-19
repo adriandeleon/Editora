@@ -131,15 +131,21 @@ class DebugAdapterLocatorTest {
     }
 
     @Test
-    void locateJsDebugPicksNewestByPathVersion(@TempDir Path home) throws IOException {
-        Path oldExt = home.resolve(".vscode/extensions/ms-vscode.js-debug-1.80.0/src");
-        Path newExt = home.resolve(".vscode/extensions/ms-vscode.js-debug-1.96.0/src");
-        Files.createDirectories(oldExt);
-        Files.createDirectories(newExt);
-        Files.createFile(oldExt.resolve("dapDebugServer.js"));
-        Path newest = newExt.resolve("dapDebugServer.js");
-        Files.createFile(newest);
-        assertEquals(Optional.of(newest), DebugAdapterLocator.locateJsDebugServer("", home));
+    void locateJsDebugIgnoresVsCodeExtensionFolders(@TempDir Path home) throws IOException {
+        // VS Code's js-debug has no dapDebugServer.js; a file of that name there is not looked for (review D14).
+        Path ext = home.resolve(".vscode/extensions/ms-vscode.js-debug-1.96.0/src");
+        Files.createDirectories(ext);
+        Files.createFile(ext.resolve("dapDebugServer.js"));
+        assertTrue(DebugAdapterLocator.locateJsDebugServer("", home).isEmpty());
+    }
+
+    @Test
+    void locateJsDebugFindsMasonPackage(@TempDir Path home) throws IOException {
+        Path src = home.resolve(".local/share/nvim/mason/packages/js-debug-adapter/js-debug/src");
+        Files.createDirectories(src);
+        Path entry = src.resolve("dapDebugServer.js");
+        Files.createFile(entry);
+        assertEquals(Optional.of(entry), DebugAdapterLocator.locateJsDebugServer("", home));
     }
 
     @Test
@@ -148,11 +154,11 @@ class DebugAdapterLocatorTest {
     }
 
     @Test
-    void locateJsDebugPrefersEditoraInstallOverNewerVsCode(@TempDir Path home) throws IOException {
-        // Editora's own installed copy (no version in its path) must win over a much newer VS Code copy —
-        // it's the adapter the user asked Editora to install (#474).
+    void locateJsDebugPrefersEditoraInstallOverMason(@TempDir Path home) throws IOException {
+        // Editora's own installed copy must win over another tool's — it's the adapter the user asked Editora to
+        // install (#474).
         Path editora = home.resolve(".editora/plugins/dap/javascript/js-debug/src");
-        Path vscode = home.resolve(".vscode/extensions/ms-vscode.js-debug-1.96.0/src");
+        Path vscode = home.resolve(".local/share/nvim/mason/packages/js-debug-adapter/js-debug/src");
         Files.createDirectories(editora);
         Files.createDirectories(vscode);
         Path editoraEntry = editora.resolve("dapDebugServer.js");

@@ -24,6 +24,7 @@ public final class RunConfigFields {
     public static boolean usesScriptFile(String type) {
         return ScriptRunCommand.PYTHON.equals(type)
                 || ScriptRunCommand.SHELL.equals(type)
+                || ScriptRunCommand.NODE.equals(type)
                 || ScriptRunCommand.isJvmScript(type);
     }
 
@@ -32,7 +33,9 @@ public final class RunConfigFields {
      * Python script's or module's (normally the project's venv, else the system Python).
      */
     public static boolean usesInterpreter(String type) {
-        return ScriptRunCommand.SHELL.equals(type) || ScriptRunCommand.isPython(type);
+        return ScriptRunCommand.SHELL.equals(type)
+                || ScriptRunCommand.isPython(type)
+                || ScriptRunCommand.NODE.equals(type);
     }
 
     /** Whether {@code type} launches with the main class and module (a Java main class, resolved by jdtls). */

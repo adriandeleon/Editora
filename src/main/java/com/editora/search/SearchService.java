@@ -320,7 +320,8 @@ public final class SearchService {
         if (!stoppedEarly && r.exit() != 0 && r.exit() != 1 && !partial) {
             return null;
         }
-        truncated[0] = r.outTruncated() || partial;
+        // A full budget means rg was stopped with more to report: there is more than Find in Files lists (E2).
+        truncated[0] = r.outTruncated() || partial || collector.full();
         List<FileResult> out = new ArrayList<>();
         for (FileResult fr : collector.results()) {
             out.add(new FileResult(root.resolve(fr.file().toString()).normalize(), fr.matches()));
@@ -392,7 +393,7 @@ public final class SearchService {
             Set<Path> openKeys,
             BooleanSupplier cancelled) {
         Set<Path> candidates = new LinkedHashSet<>();
-        GitignoreFilter gitignore = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
+        GitignoreFilter gitignore = walkerFilter(root, respectGitignore, include);
         boolean truncated = collect(root, candidates, gitignore, exclude, openKeys, cancelled);
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> out = new ArrayList<>();
@@ -505,25 +506,50 @@ public final class SearchService {
             }
         }
         all.sort((a, b) -> a.file().toString().compareToIgnoreCase(b.file().toString()));
+        return cap(all, MAX_MATCHES, sourceTruncated);
+    }
 
+    /**
+     * The first {@code max} matches of {@code sorted}, and whether any were left out. A match left out in a
+     * later file counts as much as one cut from the current file: stopping when the budget filled exactly at a
+     * file boundary used to drop the rest without saying so (review E2). Pure.
+     */
+    static Outcome cap(List<FileResult> sorted, int max, boolean sourceTruncated) {
         List<FileResult> results = new ArrayList<>();
         int total = 0;
         boolean truncated = sourceTruncated;
-        for (FileResult fr : all) {
-            List<LineMatch> ms = fr.matches();
-            if (total + ms.size() > MAX_MATCHES) {
-                ms = ms.subList(0, Math.max(0, MAX_MATCHES - total));
+        for (int i = 0; i < sorted.size(); i++) {
+            List<LineMatch> ms = sorted.get(i).matches();
+            if (total >= max) {
+                if (!ms.isEmpty()) {
+                    truncated = true; // a whole file of matches beyond the budget
+                    break;
+                }
+                continue;
+            }
+            if (total + ms.size() > max) {
+                ms = ms.subList(0, Math.max(0, max - total));
                 truncated = true;
             }
             if (!ms.isEmpty()) {
-                results.add(new FileResult(fr.file(), ms));
+                results.add(new FileResult(sorted.get(i).file(), ms));
                 total += ms.size();
-            }
-            if (total >= MAX_MATCHES) {
-                break;
             }
         }
         return new Outcome(results, total, results.size(), truncated);
+    }
+
+    /**
+     * The built-in walker's ignore rules: the project's {@code .gitignore} files plus the built-in
+     * {@code node_modules} rule while {@code respect} is on, minus that rule when an include glob names
+     * {@code node_modules} (the user asked to look inside it). Matches {@link RipgrepArgs}.
+     */
+    static GitignoreFilter walkerFilter(Path root, boolean respect, List<String> include) {
+        if (!respect) {
+            return GitignoreFilter.NONE;
+        }
+        GitignoreFilter loaded = GitignoreFilter.load(root);
+        return DependencyDirs.namedBy(include) ? loaded.withoutDependencyPruning() : loaded;
     }
 
     /** Collects the on-disk candidates through the shared pruned walk; true when the tree was not fully covered. */

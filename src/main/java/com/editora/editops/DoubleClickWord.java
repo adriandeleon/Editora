@@ -22,6 +22,9 @@ public final class DoubleClickWord {
 
     private static final Pattern RUN = Pattern.compile("\\w+", Pattern.UNICODE_CHARACTER_CLASS);
 
+    /** {@link #RUN} for JavaScript/TypeScript: {@code $} is an identifier character, {@code #} starts a private name. */
+    private static final Pattern SCRIPT_RUN = Pattern.compile("#?[\\w$]+", Pattern.UNICODE_CHARACTER_CLASS);
+
     private DoubleClickWord() {}
 
     /** Whether {@code language}'s words take hyphens: CSS properties, and shell names, flags and file names. */
@@ -37,7 +40,12 @@ public final class DoubleClickWord {
      * @return {@code [start, end)} columns to select, or {@code null} when no word ends after the column
      */
     public static int[] at(String line, int column, boolean prose, boolean hyphenated) {
-        Matcher m = RUN.matcher(line);
+        return at(line, column, prose, hyphenated, false);
+    }
+
+    /** As {@link #at(String, int, boolean, boolean)}; {@code dollar}: {@link IdentifierChars#dollarIdentifiers}. */
+    public static int[] at(String line, int column, boolean prose, boolean hyphenated, boolean dollar) {
+        Matcher m = (dollar ? SCRIPT_RUN : RUN).matcher(line);
         int start = -1;
         int end = -1;
         while (m.find()) {

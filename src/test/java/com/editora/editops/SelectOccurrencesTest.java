@@ -62,4 +62,13 @@ class SelectOccurrencesTest {
     void primaryIsZeroForAnEmptyList() {
         assertEquals(0, SelectOccurrences.primaryIndex(List.of(), 0));
     }
+
+    @Test
+    void theWordUnderTheCaretKeepsAJavaScriptDollar() {
+        String text = "const $el = 1; el = 2;";
+        int[] w = SelectOccurrences.wordAt(text, 8, "javascript");
+        assertEquals("$el", text.substring(w[0], w[1]));
+        int[] plain = SelectOccurrences.wordAt(text, 8);
+        assertEquals("el", text.substring(plain[0], plain[1]));
+    }
 }

@@ -571,3 +571,48 @@ jobs:
       # and Stop / window close leaving no debuggee or compile folder — against the real java-debug.
       - name: Test compact Java language service and debugging
         run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+
+  # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
+  # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release
+  # without tsserver.js (TypeScript 7) broke every JavaScript file with nothing in CI to notice (review E12).
+  # Pinned to what Editora's installer pins: typescript@6 and js-debug v1.117.0. The runner's own Node.js runs them.
+  node-probes:
+    name: Node.js integration (TypeScript server, js-debug)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      - name: Install typescript-language-server, TypeScript 6 and vscode-js-debug
+        env:
+          JS_DEBUG_VERSION: v1.117.0
+        run: |
+          node --version
+          npm install -g --no-fund --no-audit typescript@6 typescript-language-server
+          typescript-language-server --version
+          test -f "$(npm root -g)/typescript/lib/tsserver.js"
+          dest="$HOME/.editora/plugins/dap/javascript"
+          mkdir -p "$dest"
+          curl -fsSL "https://github.com/microsoft/vscode-js-debug/releases/download/${JS_DEBUG_VERSION}/js-debug-dap-${JS_DEBUG_VERSION}.tar.gz" \
+            | tar -xz -C "$dest"
+          test -f "$dest/js-debug/src/dapDebugServer.js"
+
+      # TypeScriptServerNodeProbeFxTest: a JavaScript file gets a diagnostic from the real server Editora starts.
+      # JsDebugProbeFxTest: a breakpoint hits, steps, and the session ends with the program.
+      - name: Test the TypeScript server and JavaScript debugging
+        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test

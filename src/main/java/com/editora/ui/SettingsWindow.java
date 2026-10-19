@@ -436,6 +436,8 @@ public class SettingsWindow {
     private CheckBox debugStepFiltersCheck;
     private CheckBox debugShowStaticsCheck;
     private TextField debugExceptionTypesField;
+    /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
+    private TextField nodePathField;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
@@ -2019,6 +2021,14 @@ public class SettingsWindow {
         commitOnEnterOrBlur(debugExceptionTypesField, () -> config.getSettings().getDebugExceptionTypes(), now -> {
             config.getSettings().setDebugExceptionTypes(now);
             apply();
+        });
+        nodePathField = new TextField();
+        nodePathField.setPromptText(tr("settings.debug.nodePath.prompt"));
+        commitOnEnterOrBlur(nodePathField, () -> config.getSettings().getNodePath(), now -> {
+            config.getSettings().setNodePath(now.strip());
+            apply();
+            refreshDebugStatus();
+            refreshHttpNodeStatus(); // the Web page's Node.js row follows this field
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             if (dbg.setEnabled() != null) {
@@ -4962,9 +4972,10 @@ public class SettingsWindow {
 
     /** Whether the node the HTTP scripts run is there (a lookup, no process), like the Bash tool rows. */
     private void refreshHttpNodeStatus() {
-        String configured = config.getSettings().getHttpNodePath();
-        String found = ToolStatusRow.pathOf(
-                com.editora.run.ProgramArgs.commandLine(configured.isBlank() ? "node" : configured));
+        // Blank: the shared Node.js setting, as the run uses it (review E6).
+        String shown = com.editora.http.HttpNodeChoice.displayed(
+                config.getSettings().getHttpNodePath(), config.getSettings().getNodePath());
+        String found = ToolStatusRow.pathOf(com.editora.run.ProgramArgs.commandLine(shown));
         httpNodeStatus.show(!found.isEmpty(), found, httpCheck.isSelected() && httpScriptsCheck.isSelected());
     }
 
@@ -4976,15 +4987,30 @@ public class SettingsWindow {
     private void refreshBuildCommandStatus(BuildTool bt) {
         ToolStatusRow status = buildToolCommandStatus.get(bt);
         if (status != null) {
-            List<String> argv = com.editora.build.BuildExecutable.resolve(
-                    null, bt.commandIn(config.getSettings()), bt.commandExample());
+            // npm: the manager the active project uses (pnpm, yarn, bun), not always npm (review E9).
+            String command = bt == BuildTool.NPM ? npmManagerName() : bt.commandExample();
+            String override = bt.commandIn(config.getSettings());
+            if (bt == BuildTool.NPM && !com.editora.build.NpmPackageManager.overrideApplies(override, command)) {
+                override = "";
+            }
+            List<String> argv = com.editora.build.BuildExecutable.resolve(null, override, command);
             String found = ToolStatusRow.pathOf(argv);
-            status.tool(ToolStatusRow.toolName(argv, bt.commandExample()));
+            status.tool(ToolStatusRow.toolName(argv, command));
             status.show(!found.isEmpty(), found, bt.enabledIn(config.getSettings()));
         }
     }
 
     private final Map<BuildTool, ToolStatusRow> buildToolCommandStatus = new java.util.EnumMap<>(BuildTool.class);
+
+    /** The package manager of the npm project detected for the active file, else npm. */
+    private String npmManagerName() {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.tool() == BuildTool.NPM && c.detectedManager() != null) {
+                return c.detectedManager().manager();
+            }
+        }
+        return "npm";
+    }
 
     private VBox mermaidPage() {
         VBox p = page(tr("settings.cat.mermaid"), tr("settings.mermaid.subtitle"));
@@ -6764,6 +6790,18 @@ public class SettingsWindow {
                         debugExceptionTypesField,
                         "debug java exception breakpoint class type filter caught uncaught");
             }
+            if ("javascript".equals(dbg.id())) {
+                // E6: one Node.js for everything Node in Editora, here beside the debugger that needs it.
+                nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
+                String node = tr("settings.debug.nodePath");
+                controlRow(
+                        c,
+                        Category.DEBUG,
+                        node,
+                        tr("settings.debug.nodePath.hint"),
+                        new HBox(6, nodePathField, browseButton(node, nodePathField)),
+                        "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
+            }
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
             ToolStatusRow status = new ToolStatusRow(
                             switch (dbg.id()) {
@@ -6857,7 +6895,14 @@ public class SettingsWindow {
                         () -> config.getSettings().getJsDebugPath(),
                         cb -> {
                             if (dapManager != null) {
-                                dapManager.detectJs(found -> cb.accept(found, ""));
+                                // installed, whether or not switched on (review D13): its path and the Node.js
+                                dapManager.detectJsInstalled((server, node) -> cb.accept(
+                                        server != null && node != null,
+                                        server == null
+                                                ? ""
+                                                : node == null
+                                                        ? tr("settings.debug.jsNoNode")
+                                                        : tr("settings.debug.jsFound", node, server)));
                             } else {
                                 cb.accept(false, "");
                             }
@@ -6925,9 +6970,35 @@ public class SettingsWindow {
             c.body().getChildren().add(project);
             if ("bash".equals(srv.id())) {
                 bashServerRows(c);
+            } else if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(srv.id())) {
+                typeScriptServerRows(c);
             }
         }
         return p;
+    }
+
+    /** The TypeScript card's "TypeScript" line (the SDK its server runs). */
+    private ToolStatusRow typeScriptSdkStatus;
+
+    /** The TypeScript card's own rows: the TypeScript its server runs, and automatic type acquisition. */
+    private void typeScriptServerRows(Card c) {
+        String words = "lsp typescript javascript node tsserver sdk ";
+        typeScriptSdkStatus = new ToolStatusRow("TypeScript").install(() -> installSupport("javascript"));
+        controlRow(
+                c,
+                Category.LSP,
+                tr("settings.lsp.typescriptSdk"),
+                tr("settings.lsp.typescriptSdk.desc"),
+                typeScriptSdkStatus.node(),
+                words + "version found not found install");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.typescriptTypeAcquisition",
+                true,
+                Settings::isTypescriptTypeAcquisition,
+                Settings::setTypescriptTypeAcquisition,
+                words + "types npm automatic type acquisition download @types");
     }
 
     /** The ShellCheck / shfmt status lines on the Bash card, by tool id. */
@@ -7568,6 +7639,10 @@ public class SettingsWindow {
                                             c.tool().displayName())
                                     : tr("settings.buildTools.found", detected))
                             : tr("settings.buildTools.notFound", c.tool().displayName()));
+            if (found && c.detectedManager() != null) {
+                label.setText(label.getText() + " · " + c.detectedManager().describe()); // "pnpm (pnpm-lock.yaml)"
+            }
+            refreshBuildCommandStatus(c.tool());
         }
     }
 
@@ -7652,6 +7727,8 @@ public class SettingsWindow {
         if (lspManager == null || lspStatusLabels.isEmpty()) {
             return;
         }
+        TypeScriptSdkStatus.refresh(
+                typeScriptSdkStatus, lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID), lspCheck.isSelected());
         // Probe the commands this page shows, without configuring the manager. This window must not
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
         // shut its running server down every time Settings was merely opened.
@@ -8663,6 +8740,7 @@ public class SettingsWindow {
             debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
             debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
             debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
+            nodePathField.setText(settings.getNodePath());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
                 if (enable != null && dbg.getEnabled() != null) {

@@ -26,6 +26,8 @@ public record RuntimeVersion(String label, String detail) {
         JAVA("-XshowSettings:properties", "-version"),
         PYTHON("--version"),
         NODE("--version"),
+        BUN("--version"),
+        DENO("--version"),
         BASH("--version"),
         ZSH("--version"),
         FISH("--version"),
@@ -54,6 +56,8 @@ public record RuntimeVersion(String label, String detail) {
     private static final Pattern PYTHON_VERSION = Pattern.compile("Python (\\d+\\.\\d+(?:\\.\\d+)?\\S*)");
     private static final Pattern PYPY_VERSION = Pattern.compile("PyPy (\\d+\\.\\d+(?:\\.\\d+)?)");
     private static final Pattern NODE_VERSION = Pattern.compile("^v(\\d+\\.\\d+\\.\\d+\\S*)");
+    private static final Pattern BUN_VERSION = Pattern.compile("^(\\d+\\.\\d+\\.\\d+\\S*)$");
+    private static final Pattern DENO_VERSION = Pattern.compile("^deno (\\d+\\.\\d+\\.\\d+\\S*)");
     private static final Pattern BASH_VERSION = Pattern.compile("bash, version (\\d+\\.\\d+(?:\\.\\d+)?)");
     private static final Pattern ZSH_VERSION = Pattern.compile("^zsh (\\d+\\.\\d+(?:\\.\\d+)?)");
     private static final Pattern FISH_VERSION = Pattern.compile("^fish, version (\\d+\\.\\d+(?:\\.\\d+)?)");
@@ -82,6 +86,8 @@ public record RuntimeVersion(String label, String detail) {
         switch (name) {
             case "java" -> kind = Kind.JAVA;
             case "node", "nodejs" -> kind = Kind.NODE;
+            case "bun", "bunx" -> kind = Kind.BUN; // its own runtime, not the Node beside it
+            case "deno" -> kind = Kind.DENO;
             case "npm", "npx", "pnpm", "yarn" -> {
                 kind = Kind.NODE;
                 executable = sibling(executable, "node");
@@ -115,6 +121,8 @@ public record RuntimeVersion(String label, String detail) {
             case JAVA -> parseJava(output);
             case PYTHON -> parsePython(output, probe.argv().get(0));
             case NODE -> simple(output, NODE_VERSION, "Node.js ", probe.argv().get(0));
+            case BUN -> simple(output, BUN_VERSION, "Bun ", probe.argv().get(0));
+            case DENO -> simple(output, DENO_VERSION, "Deno ", probe.argv().get(0));
             case BASH -> simple(output, BASH_VERSION, "Bash ", probe.argv().get(0));
             case ZSH -> simple(output, ZSH_VERSION, "Zsh ", probe.argv().get(0));
             case FISH -> simple(output, FISH_VERSION, "fish ", probe.argv().get(0));

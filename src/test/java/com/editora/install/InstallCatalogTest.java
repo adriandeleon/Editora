@@ -71,6 +71,21 @@ class InstallCatalogTest {
                 InstallCatalog.firstMatch(json, "https://[^\"\\s]+/js-debug-dap-v[^\"\\s]+\\.tar\\.gz"));
     }
 
+    /**
+     * TypeScript 7 ships no {@code tsserver}, so an unpinned {@code typescript} gave a language server that could
+     * not start (Node review B1). Both servers that run a tsserver install the pinned major.
+     */
+    @Test
+    void typescriptServersInstallTheTsserverMajor() {
+        assertEquals("typescript@6", InstallCatalog.TYPESCRIPT_PACKAGE);
+        assertEquals(
+                List.of("typescript-language-server", "typescript@6"),
+                InstallCatalog.steps(Lang.JAVASCRIPT).get(0).npmPackages());
+        assertEquals(
+                List.of("@astrojs/language-server", "typescript@6"),
+                InstallCatalog.serverInstall("astro").orElseThrow().get(0).npmPackages());
+    }
+
     @Test
     void bufferLanguagesMapToTheRightLang() {
         assertEquals(Lang.JAVA, InstallCatalog.forBufferLanguage("java").orElseThrow());
@@ -173,6 +188,8 @@ class InstallCatalogTest {
         Step jsDebug = steps.get(1);
         assertEquals(Kind.TARBALL, jsDebug.kind());
         assertEquals(InstallCatalog.JS_DEBUG_RELEASES_API, jsDebug.apiUrl());
+        // pinned to the tested release, not "latest" (review D16)
+        assertTrue(jsDebug.apiUrl().endsWith("/releases/tags/v1.117.0"), jsDebug.apiUrl());
         assertEquals("dapDebugServer.js", jsDebug.verifyEntry());
         assertNull(jsDebug.directUrl());
     }
@@ -304,7 +321,7 @@ class InstallCatalogTest {
         assertTrue(InstallCatalog.serverInstall("typescript").isEmpty());
         assertTrue(InstallCatalog.serverInstall(null).isEmpty());
         assertEquals(
-                List.of("@astrojs/language-server", "typescript"),
+                List.of("@astrojs/language-server", "typescript@6"),
                 InstallCatalog.serverInstall("astro").orElseThrow().get(0).npmPackages());
     }
 

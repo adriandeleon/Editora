@@ -297,7 +297,11 @@ public final class RunService {
         }
         current = process;
         posixShell = isPosixShell(argv.get(0));
-        interruptOnStop = !remote && com.editora.run.PythonLaunch.isPythonProgram(argv.get(0));
+        // Python and Node (and the package managers that start it) get SIGINT first, so a KeyboardInterrupt or a
+        // process.on('SIGINT') handler runs its cleanup before the grace-period kill.
+        interruptOnStop = !remote
+                && (com.editora.run.PythonLaunch.isPythonProgram(argv.get(0))
+                        || NodeRunPlan.interruptsOnStop(argv.get(0)));
         listener.onStart(commandLine(command));
         OutputPump.Sink sink = new OutputPump.Sink() {
             @Override

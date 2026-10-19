@@ -1,0 +1,19 @@
+{
+  "name": "Node.js Script",
+  "description": "A Node.js script with a shebang and an async main that reports failure through the exit code",
+  "language": "javascript",
+  "fileName": "${baseName:script}.js",
+  "body": [
+    "#!/usr/bin/env node",
+    "// ${summary:What this script does}",
+    "",
+    "async function main(args) {",
+    "  ${cursor}",
+    "}",
+    "",
+    "main(process.argv.slice(2)).catch((error) => {",
+    "  console.error(error);",
+    "  process.exitCode = 1;",
+    "});"
+  ]
+}

@@ -299,6 +299,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     /** Clears the console output (the Clear button + the {@code run.clear} palette command). */
     public void clearConsole() {
         appender.discard();
+        appender.resetTrimmed();
+        skipped = false;
         output.clear();
         overwriteLine = false;
     }
@@ -350,10 +352,15 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private void appendOutput(String line, boolean stderr, boolean completeLine) {
         AnsiText.Chunk chunk = (stderr ? stderrAnsi : stdoutAnsi).feed(line);
         String text = chunk.text();
-        // A trace line goes to stderr too, but it is the run's own log, not an error: drawn muted, not red.
-        String base = stderr
-                ? (StackTraceLinks.isTraceLine(text) ? "run-trace" : "run-stderr")
-                : lineStyle.styleClassFor(text);
+        boolean dropped = completeLine && com.editora.process.OutputPump.OUTPUT_DROPPED.equals(text);
+        skipped |= dropped;
+        // A trace line goes to stderr too, but it is the run's own log, not an error: drawn muted, not red. The
+        // pump's "output skipped" marker is Editora's note, not the program's: muted too.
+        String base = dropped
+                ? "run-command"
+                : stderr
+                        ? (StackTraceLinks.isTraceLine(text) ? "run-trace" : "run-stderr")
+                        : lineStyle.styleClassFor(text);
         int from = 0;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
@@ -457,15 +464,26 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     /** The process exited; shows the exit code (or a "stopped" note for a killed run) and disables Stop. */
     public void finished(int code) {
-        status.setText(code < 0 ? tr("run.stopped") : tr("run.exited", code));
+        status.setText((code < 0 ? tr("run.stopped") : tr("run.exited", code)) + trimNote());
         setRunning(false);
     }
 
     /** The program ended because Stop was pressed: says so, rather than "finished" with a signal's exit code. */
     public void stopped() {
-        status.setText(tr("run.stopped"));
+        status.setText(tr("run.stopped") + trimNote());
         setRunning(false);
     }
+
+    /** " — earlier output dropped" when the console cut its oldest lines to stay under its cap, else "". */
+    private String trimNote() {
+        if (skipped) {
+            return " " + tr("run.outputSkipped"); // lines missing from the middle, not only the oldest ones
+        }
+        return appender.trimmed() ? " " + tr("run.outputTrimmed", MAX_CHARS) : "";
+    }
+
+    /** The output pump skipped lines this run because the console could not keep up (its marker arrived). */
+    private boolean skipped;
 
     /** The process failed to launch (e.g. {@code java} not found). */
     public void failed(String message) {

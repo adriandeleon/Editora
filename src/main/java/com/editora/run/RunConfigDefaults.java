@@ -49,6 +49,7 @@ public final class RunConfigDefaults {
         if (script == null
                 || !(ScriptRunCommand.PYTHON.equals(type)
                         || ScriptRunCommand.SHELL.equals(type)
+                        || ScriptRunCommand.NODE.equals(type)
                         || ScriptRunCommand.isJvmScript(type))
                 || script.getFileName() == null
                 || ScriptRunCommand.KOTLIN.equals(type)
@@ -66,6 +67,9 @@ public final class RunConfigDefaults {
             workingDir = folder == null || folder.equals(root)
                     ? ""
                     : root.relativize(folder).toString();
+        }
+        if (ScriptRunCommand.NODE.equals(type)) {
+            workingDir = ""; // blank: the package root (nearest package.json), as the gutter ▶ runs it
         }
         return new com.editora.config.RunConfiguration(
                 script.getFileName().toString(), type, target, "", "", "", "", workingDir, "", "", "");
