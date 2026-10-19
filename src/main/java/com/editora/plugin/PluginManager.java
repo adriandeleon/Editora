@@ -136,6 +136,9 @@ public final class PluginManager {
                 if (!Files.isDirectory(dir) || folder.startsWith(".") || PluginInstaller.isReservedId(folder)) {
                     continue; // an install being staged, or a built-in tool folder (plugins/lsp, …): not a plugin
                 }
+                if (RetiredPlugins.isRetired(folder)) {
+                    continue; // built into Editora now (a removal that failed at startup): never load it beside that
+                }
                 Path manifestFile = dir.resolve("plugin.json");
                 if (!Files.isRegularFile(manifestFile)) {
                     continue; // not a plugin folder

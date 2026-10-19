@@ -4671,6 +4671,26 @@ public class MainController implements com.editora.mcp.McpBridge {
         public Path pathOf(java.io.File file) {
             return MainController.this.pathOf(file);
         }
+
+        @Override
+        public CoordinatorHost services() {
+            return coordinatorHost;
+        }
+
+        @Override
+        public void refreshStatusBar() {
+            statusBar.refresh();
+        }
+
+        @Override
+        public javafx.scene.Node encryptionStatusItem() {
+            return statusBar.encryptionNode();
+        }
+
+        @Override
+        public void runCommand(String commandId) {
+            registry.run(commandId);
+        }
     });
 
     @FXML
@@ -5637,6 +5657,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                     testNavigation.openRunLink(link);
                 }
             });
+
+    { // An export, a print or an external tool given an encrypted file's text asks first (ADR 0017).
+        exports.plaintextOut = b -> fileWorkflows.encryption().confirmPlaintextOut(b, tr("encryption.out.export"));
+        externalToolCoordinator.plaintextOut =
+                b -> fileWorkflows.encryption().confirmPlaintextOut(b, tr("encryption.out.tool"));
+    }
 
     /** Build tools (Maven/npm/…): one coordinator per tool — a toolbar icon + actions popup parsed from the
      *  active project's marker file, streaming tasks to a per-tool console (see {@link BuildCoordinator}). */
@@ -8446,6 +8472,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         setStatus(note.isEmpty() ? tr("status.opened", com.editora.config.PathDisplay.of(load.file())) : note);
         clearLoading(buffer);
+        fileWorkflows.encryption().opened(buffer); // an encrypted file decrypts now; a public key offers Import
     }
 
     private void failAsyncOpen(Tab tab, EditorBuffer buffer, Path file, Exception error) {

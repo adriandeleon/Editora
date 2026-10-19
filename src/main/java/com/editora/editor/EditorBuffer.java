@@ -301,6 +301,9 @@ public class EditorBuffer implements TabContent {
     private NoticeBar fileNotice;
 
     private boolean fileNoticeShown;
+    /** The file's encryption and the views that stand in for its text ({@link BufferEncryption}). */
+    private final BufferEncryption encryption =
+            new BufferEncryption(outer, viewHost, this::applyEditable, this::refreshTopBars);
     /** Invoked by the banner's "Enable Editing" button; the controller persists + refreshes indicators. */
     private Runnable onEnableEditing = () -> setViewMode(false);
     /** A second editable view sharing this document (created lazily on first split). */
@@ -2953,8 +2956,8 @@ public class EditorBuffer implements TabContent {
     public boolean hasPreview() {
         return isMarkdown()
                 || isMarkwhen()
-                || (isDiagram() && MermaidImages.isEnabled())
-                || (isRenderedDiagram() && DiagramImages.isEnabled())
+                || (isDiagram() && MermaidImages.isEnabled() && !encryption.isEncrypted()) // renders via temp files
+                || (isRenderedDiagram() && DiagramImages.isEnabled() && !encryption.isEncrypted())
                 || hasCsvPreview()
                 || hasHttpPreview()
                 || hasStructuredPreview()
@@ -2967,7 +2970,7 @@ public class EditorBuffer implements TabContent {
                 || hasSshConfigPreview()
                 || hasDockerfilePreview()
                 || hasGithubActionsPreview()
-                || hasTypstPreview();
+                || (hasTypstPreview() && !encryption.isEncrypted());
     }
 
     /** A CSV buffer whose grid preview node has been injected (i.e. the CSV preview feature is on). The
@@ -5192,6 +5195,7 @@ public class EditorBuffer implements TabContent {
      * buffer must not be reused.
      */
     public void dispose() {
+        encryption.wipe(); // a passphrase-only file's passphrase leaves with the tab
         snippetSession.cancel();
         cancelWrapRemeasure();
         completionEditTrackers.clear();
@@ -5943,6 +5947,7 @@ public class EditorBuffer implements TabContent {
                     }
                     // Only the blocks that changed are rebuilt; the reader's source line stays at the top.
                     Boolean dark = previewThemeMode.isEmpty() ? null : Boolean.valueOf("dark".equals(previewThemeMode));
+                    markdownPreview.setDiagrams(!encryption.isEncrypted()); // mmdc reads its source from a file
                     markdownPreview.show(plan, openUrlHandler, dark, scrollSync.anchorLine());
                     applyPreviewScale(); // keep the current zoom on the freshly rendered content
                 });
@@ -8132,7 +8137,11 @@ public class EditorBuffer implements TabContent {
 
     /** True when the buffer accepts edits — no huge-file, View mode, loading shell or log filter is active. */
     public boolean isEditable() {
-        return !hugeFile && !viewMode && !loading && !logView.filtered();
+        return !hugeFile && !viewMode && !loading && !logView.filtered() && !encryption.isLocked();
+    }
+
+    public BufferEncryption encryption() {
+        return encryption;
     }
 
     /** Applies editability to both views from the current flags, and tags the surface for CSS. */
@@ -8207,6 +8216,9 @@ public class EditorBuffer implements TabContent {
      *  (a {@code VBox} when both show), or {@code null} when neither does. */
     private void refreshTopBars() {
         java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
+        if (encryption.notice() != null) {
+            bars.add(encryption.notice());
+        }
         if (fileNoticeShown && fileNotice != null) {
             bars.add(fileNotice.node());
         }

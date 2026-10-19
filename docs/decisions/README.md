@@ -25,6 +25,7 @@ rather than rewriting history.
 | [0014](0014-integrated-terminal.md) | Integrated terminal: Termina's emulator, a PTY only for terminal channels | Accepted (in progress) |
 | [0015](0015-ai-keys-in-the-os-keychain.md) | AI API keys in the operating system's keychain (JNA), `settings.json` as fallback | Accepted |
 | [0016](0016-deployments.md) | Deployments: a local project copied to a host and run there, chosen per run configuration | Accepted |
+| [0017](0017-encrypted-files.md) | Encrypted files: the gpg CLI, encryption as a property of the file, sensitive buffers | Accepted |
 
 ## Writing a new one
 

@@ -145,6 +145,7 @@ public class SettingsWindow {
         KEYMAPS(tr("settings.cat.keymaps"), Group.SYSTEM),
         MACROS(tr("settings.cat.macros"), Group.SYSTEM),
         REMOTE(tr("settings.cat.remote"), Group.SYSTEM, true),
+        ENCRYPTION(tr("settings.cat.encryption"), Group.SYSTEM),
         PLUGINS(tr("settings.cat.plugins"), Group.SYSTEM),
         SYNC(tr("settings.cat.sync"), Group.SYSTEM, true),
         MCP(tr("settings.cat.mcp"), Group.SYSTEM, true),
@@ -460,6 +461,14 @@ public class SettingsWindow {
     private final TextField mavenArchetypeCatalogField = new TextField();
     private final java.util.Map<BuildTool, Label> buildToolStatusLabels = new java.util.EnumMap<>(BuildTool.class);
     private CheckBox ripgrepCheck;
+    private TextField encryptionGpgPathField;
+    private Label encryptionGpgStatus;
+    private CheckBox encryptionIncludeSelfCheck;
+    private ComboBox<String> encryptionPromptCombo;
+    private CheckBox encryptionLspCheck;
+    /** Bumped per gpg probe, so a slow answer for a path the user has since changed is dropped. */
+    private int encryptionProbeGen;
+
     private CheckBox searchGitignoreCheck;
     private TextField ripgrepCommandField;
     private Label ripgrepStatusLabel;
@@ -781,6 +790,7 @@ public class SettingsWindow {
             case "buildTools" -> Category.BUILD_TOOLS;
             case "editor" -> Category.EDITOR;
             case "remote" -> Category.REMOTE;
+            case "encryption" -> Category.ENCRYPTION;
             case "plugins" -> Category.PLUGINS;
             default -> null;
         };
@@ -1693,6 +1703,47 @@ public class SettingsWindow {
             buildToolStatusLabels.put(bt, status);
         }
 
+        encryptionGpgPathField = new TextField();
+        encryptionGpgPathField.setPromptText("gpg");
+        commitOnEnterOrBlur(encryptionGpgPathField, () -> config.getSettings().getEncryptionGpgPath(), now -> {
+            config.getSettings().setEncryptionGpgPath(now);
+            apply();
+            refreshEncryptionStatus();
+        });
+        encryptionIncludeSelfCheck = new CheckBox(tr("settings.encryption.includeSelf"));
+        encryptionIncludeSelfCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setEncryptionIncludeSelf(now);
+            apply();
+        });
+        encryptionPromptCombo = new ComboBox<>();
+        encryptionPromptCombo
+                .getItems()
+                .setAll(
+                        com.editora.config.Settings.PASSPHRASE_PROMPT_AGENT,
+                        com.editora.config.Settings.PASSPHRASE_PROMPT_EDITORA);
+        encryptionPromptCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String id) {
+                return id == null ? "" : tr("settings.encryption.prompt." + id);
+            }
+
+            @Override
+            public String fromString(String text) {
+                return text;
+            }
+        });
+        encryptionPromptCombo.valueProperty().addListener((obs, was, now) -> {
+            if (now != null && !now.equals(config.getSettings().getEncryptionPassphrasePrompt())) {
+                config.getSettings().setEncryptionPassphrasePrompt(now);
+                apply();
+            }
+        });
+        encryptionLspCheck = new CheckBox(tr("settings.encryption.lsp"));
+        encryptionLspCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setEncryptionLanguageServers(now);
+            apply();
+        });
+
         ripgrepCheck = new CheckBox(tr("settings.search.useRipgrep"));
         ripgrepCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setRipgrepSearch(now);
@@ -2197,6 +2248,7 @@ public class SettingsWindow {
         pages.put(Category.KEYMAPS, keymapsPage());
         pages.put(Category.MACROS, macrosPage());
         pages.put(Category.REMOTE, remotePage());
+        pages.put(Category.ENCRYPTION, encryptionPage());
         pages.put(Category.PLUGINS, pluginsPage());
         pages.put(Category.SYNC, syncPage());
         pages.put(Category.MCP, mcpPage());
@@ -4804,6 +4856,78 @@ public class SettingsWindow {
                 "github gh cli found installed authenticated not found");
         refreshGithubStatus();
         return p;
+    }
+
+    private VBox encryptionPage() {
+        VBox p = page(tr("settings.cat.encryption"), tr("settings.encryption.subtitle"));
+        Card c = card(p, tr("settings.encryption.gnupg"));
+        encryptionGpgStatus = new Label(tr("settings.search.checking"));
+        encryptionGpgStatus.getStyleClass().add("settings-git-status");
+        encryptionGpgStatus.setWrapText(true);
+        encryptionGpgStatus.setMaxWidth(340);
+        Button browse = browseButton(tr("settings.encryption.gpgPath"), encryptionGpgPathField);
+        encryptionGpgPathField.setPrefWidth(PATH_FIELD_WIDTH);
+        controlRow(
+                c,
+                Category.ENCRYPTION,
+                tr("settings.encryption.gpgPath"),
+                tr("settings.encryption.gpgPath.desc"),
+                new HBox(6, encryptionGpgPathField, browse),
+                "encryption gnupg gpg pgp openpgp path executable command");
+        controlRow(
+                c,
+                Category.ENCRYPTION,
+                tr("settings.git.detected"),
+                null,
+                encryptionGpgStatus,
+                "encryption gnupg gpg found installed not found version");
+        Card c2 = card(p, tr("settings.encryption.behaviour"));
+        checkRow(
+                c2,
+                Category.ENCRYPTION,
+                encryptionIncludeSelfCheck,
+                tr("settings.encryption.includeSelf.desc"),
+                "encryption encrypt to self me my key recipient include");
+        controlRow(
+                c2,
+                Category.ENCRYPTION,
+                tr("settings.encryption.prompt"),
+                tr("settings.encryption.prompt.desc"),
+                encryptionPromptCombo,
+                "encryption passphrase password pinentry prompt agent dialog ask");
+        checkRow(
+                c2,
+                Category.ENCRYPTION,
+                encryptionLspCheck,
+                tr("settings.encryption.lsp.desc"),
+                "encryption language server lsp privacy sensitive decrypted");
+        return p;
+    }
+
+    /** Shows which gpg Encryption would run, and its version, probed off the FX thread. */
+    private void refreshEncryptionStatus() {
+        if (encryptionGpgStatus == null) {
+            return;
+        }
+        int gen = ++encryptionProbeGen;
+        String configured = config.getSettings().getEncryptionGpgPath();
+        encryptionGpgStatus.getStyleClass().setAll("settings-git-status");
+        encryptionGpgStatus.setText(tr("settings.search.checking"));
+        Thread.ofVirtual().name("settings-gpg-probe").start(() -> {
+            String exe = com.editora.crypto.Gpg.resolve(configured);
+            String version = new com.editora.crypto.Gpg(exe, java.util.Map.of()).version();
+            javafx.application.Platform.runLater(() -> {
+                if (gen != encryptionProbeGen) {
+                    return;
+                }
+                boolean found = version != null;
+                encryptionGpgStatus
+                        .getStyleClass()
+                        .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+                encryptionGpgStatus.setText(
+                        found ? tr("settings.encryption.found", version, exe) : tr("settings.encryption.notFound"));
+            });
+        });
     }
 
     private VBox searchPage() {
@@ -8548,6 +8672,11 @@ public class SettingsWindow {
                 }
             }
             refreshBuildToolStatus();
+            encryptionGpgPathField.setText(settings.getEncryptionGpgPath());
+            encryptionIncludeSelfCheck.setSelected(settings.isEncryptionIncludeSelf());
+            encryptionPromptCombo.setValue(settings.getEncryptionPassphrasePrompt());
+            encryptionLspCheck.setSelected(settings.isEncryptionLanguageServers());
+            refreshEncryptionStatus();
             ripgrepCheck.setSelected(settings.isRipgrepSearch());
             searchGitignoreCheck.setSelected(settings.isSearchRespectGitignore());
             ripgrepCommandField.setText(settings.getRipgrepCommand());

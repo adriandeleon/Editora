@@ -184,6 +184,7 @@ public class WindowManager {
      * config-prefetch thread, before any window exists.
      */
     public static com.editora.plugin.PluginManager discoverPlugins(SharedConfig shared) {
+        retirePlugins(shared);
         var manager = new com.editora.plugin.PluginManager(
                 shared.getPluginsDir(),
                 (id, digest) -> shared.getSettings().isPluginSupport()
@@ -198,6 +199,35 @@ public class WindowManager {
             shared.savePlugins();
         }
         return manager;
+    }
+
+    /**
+     * Removes plugins whose feature is now built in ({@link com.editora.plugin.RetiredPlugins}), carrying over
+     * what the built-in feature can use: the GnuPG plugin's gpg path and last recipient become the encrypted
+     * files settings, unless those are already set.
+     */
+    static void retirePlugins(SharedConfig shared) {
+        com.editora.config.Settings settings = shared.getSettings();
+        boolean[] settingsChanged = {false};
+        java.util.List<String> removed = com.editora.plugin.RetiredPlugins.retire(shared.getPluginsDir(), carried -> {
+            if (settings.getEncryptionGpgPath().isEmpty() && !carried.gpgPath().isEmpty()) {
+                settings.setEncryptionGpgPath(carried.gpgPath());
+                settingsChanged[0] = true;
+            }
+            if (!carried.recipient().isEmpty()
+                    && !settings.getEncryptionRecentRecipients().contains(carried.recipient())) {
+                settings.rememberEncryptionRecipients(java.util.List.of(carried.recipient()));
+                settingsChanged[0] = true;
+            }
+        });
+        if (removed.isEmpty()) {
+            return;
+        }
+        shared.getPluginStore().enabled.remove(com.editora.plugin.RetiredPlugins.GPG_TOOLS);
+        shared.savePlugins();
+        if (settingsChanged[0]) {
+            shared.saveSettings();
+        }
     }
 
     /**

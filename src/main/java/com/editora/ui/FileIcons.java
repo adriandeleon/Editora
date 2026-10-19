@@ -410,7 +410,34 @@ public final class FileIcons {
      * Canvas views cannot drift to different folder or file-type icon families.
      */
     static Node forProjectItem(String fileName, boolean directory) {
-        return directory ? boxed(Icons.project()) : forFileName(fileName);
+        if (directory) {
+            return boxed(Icons.project());
+        }
+        Node glyph = forFileName(fileName);
+        return isEncryptedWithInnerType(fileName) ? withLockBadge(glyph) : glyph;
+    }
+
+    /**
+     * Whether {@code fileName} is an encrypted file whose glyph shows the file inside ({@code notes.md.gpg}), so
+     * a small lock is drawn on it to say it is encrypted. A bare {@code secret.gpg} already shows the lock.
+     */
+    static boolean isEncryptedWithInnerType(String fileName) {
+        return fileName != null
+                && com.editora.editor.EncryptedNames.extensionOf(fileName) != null
+                && !com.editora.editor.EncryptedNames.languageName(fileName).equals(fileName);
+    }
+
+    /** {@code glyph} with a small lock at its lower right: the file is encrypted. */
+    static Node withLockBadge(Node glyph) {
+        Node lock = Icons.of(PATHS.get("lock"));
+        lock.setScaleX(0.45);
+        lock.setScaleY(0.45);
+        lock.getStyleClass().add("file-lock-badge");
+        StackPane box = new StackPane(glyph, lock);
+        StackPane.setAlignment(lock, Pos.BOTTOM_RIGHT);
+        StackPane.setMargin(lock, new javafx.geometry.Insets(0, -7, -7, 0));
+        box.setMouseTransparent(true);
+        return box;
     }
 
     /**
@@ -474,6 +501,7 @@ public final class FileIcons {
         if (fileName == null) {
             return "generic";
         }
+        fileName = com.editora.editor.EncryptedNames.languageName(fileName); // notes.md.gpg: a Markdown glyph
         String base = fileName;
         int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
         if (slash >= 0) {
@@ -504,8 +532,8 @@ public final class FileIcons {
                 return "archive";
             case "csv", "tsv":
                 return "table";
-            case "lock":
-                return "lock";
+            case "lock", "gpg", "pgp":
+                return "lock"; // a lockfile, or an encrypted file with no type of its own inside
             case "txt", "text", "log":
                 return "text";
             default:

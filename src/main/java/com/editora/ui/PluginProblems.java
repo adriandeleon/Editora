@@ -35,6 +35,7 @@ final class PluginProblems {
                         : tr("settings.plugins.error.manifestInvalidAt", first, second);
             case INVALID_ID -> tr("plugins.problem.invalidId", first);
             case RESERVED_ID -> tr("plugins.problem.reservedId", first);
+            case RETIRED -> tr("plugins.problem.retired", first);
             case IN_THE_WAY -> tr("plugins.problem.inTheWay", first);
             case SYMLINKED -> tr("plugins.problem.symlinked", first);
             case ID_MISMATCH -> tr("plugins.problem.idMismatch", first, second);

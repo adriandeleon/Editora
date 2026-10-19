@@ -1,0 +1,12 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+This text is clear-signed by the Editora sample key.
+Run Encryption: Verify Signature.
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQRv+2iwhy+K6z3JqEuAz5oKQhtlPQUCatT6xgAKCRCAz5oKQhtl
+PfI6AP906fs7lw94vTROUuAimyob3bS+e4obR1hwokE3t644wgD/QzpaHz2iMnpU
+FyRyYGRodcRoL6hsmd9Dk+vdLb64bw8=
+=nX0F
+-----END PGP SIGNATURE-----
