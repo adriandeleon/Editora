@@ -92,6 +92,11 @@ final class RunCoordinator {
             return false;
         }
 
+        /** Runs a Node.js test file's tests ({@code node --test}) into Test Results; false when it cannot. */
+        default boolean runNodeTestFile(Path file) {
+            return false;
+        }
+
         /** The Python interpreter picked for this window's project ("" = detect it). */
         default String pythonInterpreterChoice() {
             return "";
@@ -435,6 +440,46 @@ final class RunCoordinator {
         }
         if (ScriptRunCommand.GROOVY.equals(cfg.type())) {
             runJvmScriptConfig(cfg, cwd, script, args, env, elsewhere);
+            return;
+        }
+        if (ScriptRunCommand.NODE.equals(cfg.type())) {
+            List<String> nodeOptions;
+            try {
+                nodeOptions = ProgramArgs.parse(cfg.interpreterOptions());
+            } catch (ProgramArgs.UnclosedQuoteException e) {
+                host.setStatus(tr("status.run.optionsUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+                ops.editConfiguration(cfg.name());
+                return;
+            }
+            NodeRunLauncher.plan(
+                    new NodeRunLauncher.Spec(
+                            script,
+                            ops.projectRoot(),
+                            cfg.interpreter(),
+                            host.settings().getNodePath(),
+                            args,
+                            nodeOptions,
+                            false,
+                            env,
+                            cfg.workingDir().isBlank() ? null : cwd),
+                    ready -> streamNode(cfg.name(), ready, script));
+            return;
+        }
+        if (ScriptRunCommand.NPM.equals(cfg.type())) {
+            // The project's own package manager (pnpm-lock.yaml → pnpm …), as the npm tool window runs it, and the
+            // npm command setting when it is for that manager.
+            com.editora.build.NpmPackageManager.Detection detected =
+                    com.editora.build.BuildTool.npmManager(cwd, ops.projectRoot());
+            String override = host.settings().getNpmCommand();
+            List<String> manager = com.editora.build.BuildExecutable.resolve(
+                    List.of(),
+                    com.editora.build.NpmPackageManager.overrideApplies(override, detected.manager()) ? override : "",
+                    detected.manager());
+            launchReason = detected.reason(); // "pnpm-lock.yaml": what a not-found message names
+            java.util.Map<String, String> npmEnv = new java.util.LinkedHashMap<>(
+                    NpmRunSupport.environment(elsewhere ? null : System.getenv("NO_COLOR")));
+            npmEnv.putAll(env);
+            streamRun(cfg.name(), cwd, ScriptRunCommand.npm(manager, cfg.target(), args), npmEnv, script);
             return;
         }
         if (!ScriptRunCommand.SHELL.equals(cfg.type())) {
@@ -1005,10 +1050,15 @@ final class RunCoordinator {
      * {@code cwd}). Null, after saying so, when that folder does not exist here.
      */
     private Path shebangDir(ShellCommand.Launch shell, Path cwd, boolean remote) {
-        if (shell.chdir() == null || shell.chdir().isBlank()) {
+        return chdir(shell.chdir(), cwd, remote);
+    }
+
+    /** {@code cwd}, or {@code chdir} (a shebang's {@code env -C DIR}) resolved against it; null when missing. */
+    private Path chdir(String chdir, Path cwd, boolean remote) {
+        if (chdir == null || chdir.isBlank()) {
             return cwd;
         }
-        Path dir = cwd.resolve(shell.chdir()).normalize();
+        Path dir = cwd.resolve(chdir).normalize();
         if (!remote && !java.nio.file.Files.isDirectory(dir)) {
             host.setStatus(tr("status.run.shebangDirMissing", dir.toString()));
             return null;
@@ -1570,7 +1620,7 @@ final class RunCoordinator {
             return;
         }
         if (buffer == null || !buffer.isRunnable()) {
-            host.setStatus(tr("status.run.notCompact"));
+            host.setStatus(tr("status.run.notRunnable"));
             return;
         }
         if (trace && !traceable(buffer)) {
@@ -1632,7 +1682,10 @@ final class RunCoordinator {
         }
         // A Groovy (and later Kotlin, Scala, Clojure) file runs through its own tool, on the same JDK as Java.
         boolean jvmScript = com.editora.run.JvmScriptRun.supports(buffer.getLanguage());
-        boolean javaSource = !buffer.isPython() && !buffer.isShell() && !jvmScript;
+        boolean javaSource = !buffer.isPython()
+                && !buffer.isShell()
+                && !com.editora.run.NodeRunPlan.isNodeLanguage(buffer.getLanguage())
+                && !jvmScript;
         boolean onJdk = javaSource || jvmScript;
         // On a remote host the program runs with the host's own java and environment: this machine's JDK
         // setting is a path here, and its PATH means nothing there. A host can name its JDK (jdk.home).
@@ -1702,6 +1755,10 @@ final class RunCoordinator {
         if (buffer.isPython() && ops.runPythonTestFile(path, buffer.getContent())) {
             return; // test_*.py: pytest runs its tests (a plain `python test_x.py` ran none and exited 0)
         }
+        if (com.editora.run.NodeRunPlan.isNodeLanguage(buffer.getLanguage())) {
+            launchNode(path, args);
+            return;
+        }
         if (buffer.isPython()) {
             Path dir = path.getParent();
             String target = com.editora.process.ExecTargets.forPath(path).toTargetPath(path);
@@ -1741,6 +1798,44 @@ final class RunCoordinator {
                 buildRunCommand(buffer, path, javaExecutable, args, shell),
                 env,
                 path);
+    }
+
+    /**
+     * Run File on a Node.js script: a test file's ▶ runs its tests into Test Results ({@code node --test}), any
+     * other file runs under the Node {@link com.editora.run.NodeRuntimes} picks, from its package root.
+     */
+    private void launchNode(Path path, List<String> args) {
+        Path root = ops.projectRoot();
+        boolean test = com.editora.run.NodeRunPlan.isTestFile(path, root);
+        if (test && ops.runNodeTestFile(path)) {
+            return;
+        }
+        NodeRunLauncher.plan(
+                new NodeRunLauncher.Spec(
+                        path,
+                        root,
+                        "",
+                        host.settings().getNodePath(),
+                        args,
+                        List.of(),
+                        false,
+                        java.util.Map.of(),
+                        null),
+                ready -> streamNode(path.getFileName().toString(), ready, path));
+    }
+
+    /** Streams a planned Node launch, or says why it cannot run. */
+    void streamNode(String label, NodeRunLauncher.Ready ready, Path script) {
+        com.editora.run.NodeRunPlan plan = ready.plan();
+        if (plan.error() != null) {
+            host.setStatus(tr(plan.error()));
+            panel().failed(tr(plan.error()));
+            return;
+        }
+        Path dir = chdir(plan.chdir(), ready.dir(), com.editora.vfs.Vfs.isRemote(ready.dir()));
+        if (dir != null) {
+            streamRun(label, dir, plan.argv(), plan.env(), script);
+        }
     }
 
     /** The buffer's first line (at most 512 characters), where a shebang would be. */
@@ -1858,6 +1953,9 @@ final class RunCoordinator {
         streamRun(label, workingDir, command, env, null);
     }
 
+    /** What chose the next launch's package manager ({@code pnpm-lock.yaml}), for a not-found message; else "". */
+    private String launchReason = "";
+
     /** Set by a configuration whose program runs in a Terminal tab; its launch, built later, goes there. */
     private boolean terminalRun;
 
@@ -1873,6 +1971,8 @@ final class RunCoordinator {
             return;
         }
         lastRunScript = script;
+        String reason = launchReason;
+        launchReason = "";
         TestStream tests = pendingTestStream;
         pendingTestStream = null;
         java.util.function.BiConsumer<String, Boolean> watcher = pendingOutputWatcher;
@@ -1952,8 +2052,12 @@ final class RunCoordinator {
                 if (tests != null) {
                     tests.exit(-1);
                 }
-                panel().failed(message);
-                host.setStatus(tr("status.run.failed", message));
+                // "node was not found — install it or set it in Settings", not the JDK's ENOENT text.
+                String friendly = NpmRunSupport.missingMessage(command.get(0), message, reason);
+                runtimeGeneration++; // nothing ran: no runtime chip (an npm probe would name the Node beside it)
+                panel().setRuntime(null);
+                panel().failed(friendly != null ? friendly : message);
+                host.setStatus(friendly != null ? friendly : tr("status.run.failed", message));
                 ops.onRunStateChanged();
             }
         });

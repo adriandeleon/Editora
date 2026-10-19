@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 137;
+    public static final int SCHEMA_VERSION = 138;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -529,6 +529,17 @@ public class Settings {
     private boolean httpScriptsEnabled = true;
     /** The Node.js that runs HTTP response handlers: blank = {@code node} on the PATH. */
     private String httpNodePath = "";
+    /**
+     * The Node.js Run, run configurations, Debug, npm scripts and the TypeScript server use (and HTTP response
+     * handlers when {@link #httpNodePath} is blank): blank = automatic — a {@code .nvmrc}/{@code .node-version}
+     * version nvm has, else {@code node} on the PATH (see {@code run/NodeRuntimes}).
+     */
+    private String nodePath = "";
+    /**
+     * Let the TypeScript server download type definitions for plain JavaScript (automatic type acquisition: runs
+     * {@code npm install} against the registry into {@code ~/.cache/typescript}): off by default.
+     */
+    private boolean typescriptTypeAcquisition = false;
     /** Seconds one HTTP response handler may run before it is stopped (1–600). */
     private int httpScriptTimeoutSeconds = 10;
     /**
@@ -1044,6 +1055,22 @@ public class Settings {
 
     public void setHttpInlineResults(boolean httpInlineResults) {
         this.httpInlineResults = httpInlineResults;
+    }
+
+    public String getNodePath() {
+        return nodePath == null ? "" : nodePath;
+    }
+
+    public void setNodePath(String nodePath) {
+        this.nodePath = nodePath == null ? "" : nodePath.strip();
+    }
+
+    public boolean isTypescriptTypeAcquisition() {
+        return typescriptTypeAcquisition;
+    }
+
+    public void setTypescriptTypeAcquisition(boolean typescriptTypeAcquisition) {
+        this.typescriptTypeAcquisition = typescriptTypeAcquisition;
     }
 
     public String getHttpNodePath() {

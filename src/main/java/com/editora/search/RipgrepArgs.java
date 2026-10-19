@@ -11,7 +11,8 @@ import java.util.List;
  *
  * <p>Flag mapping: always {@code --json --no-messages --crlf --max-filesize=<bytes>}; case-insensitive → {@code -i},
  * else explicit {@code -s}; literal (non-regex) → {@code -F}; whole-word → {@code -w}; each include glob →
- * {@code -g <glob>} and each exclude glob → {@code -g !<glob>}; and {@code --no-ignore} only when
+ * {@code -g <glob>} and each exclude glob → {@code -g !<glob>}; while {@code respectIgnore}, {@code -g !node_modules/}
+ * unless an include glob names it ({@link DependencyDirs}); and {@code --no-ignore} only when
  * {@code respectIgnore} is false (rg honors {@code .gitignore}/hidden/binary by default), else
  * {@code --no-require-git}.
  *
@@ -42,6 +43,14 @@ public final class RipgrepArgs {
         for (String g : include) {
             a.add("-g");
             a.add(g);
+        }
+        if (respectIgnore && !DependencyDirs.namedBy(include)) {
+            // node_modules even without a .gitignore naming it, as the built-in walker does (review E1); after
+            // the includes, since a later glob wins.
+            for (String g : DependencyDirs.ripgrepExcludes()) {
+                a.add("-g");
+                a.add(g);
+            }
         }
         for (String g : exclude) {
             a.add("-g");

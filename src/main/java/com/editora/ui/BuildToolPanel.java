@@ -23,6 +23,7 @@ import com.editora.build.OutputStyle;
 import com.editora.git.GitOutputDiffs;
 import com.editora.git.GitOutputHighlights;
 import com.editora.git.GitOutputLinks;
+import com.editora.run.AnsiText;
 import com.editora.run.ConsoleUrls;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.flowless.VirtualizedScrollPane;
@@ -47,6 +48,8 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
+    /** The runtime an npm script runs under ("Node.js 24.18.1"); hidden until its probe answers, or for others. */
+    private final Label runtime = RunPanel.runtimeChip();
     /** Spins while this tab's build (or, in log mode, a long command) is running. */
     private final ProgressIndicator busy = RunPanel.busySpinner();
 
@@ -99,7 +102,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         clearButton.setMinWidth(Region.USE_PREF_SIZE);
         clearButton.setOnAction(e -> clearConsole());
 
-        HBox header = new HBox(8, busy, status, spacer(), clearButton, stopButton);
+        HBox header = new HBox(8, busy, runtime, status, spacer(), clearButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
 
         output.setEditable(false);
@@ -237,6 +240,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     public void clearConsole() {
         transientTail = false;
         appender.discard();
+        appender.resetTrimmed();
         output.clear();
     }
 
@@ -244,7 +248,10 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     public void started(String header, OutputStyle style, Runnable onStop) {
         this.style = style == null ? OutputStyle.passthrough() : style;
         this.onStop = onStop;
+        RunPanel.showRuntime(runtime, null);
         clearConsole();
+        stdoutAnsi = new AnsiText.Parser();
+        stderrAnsi = new AnsiText.Parser();
         status.setText(tr("run.running", header));
         stopButton.setDisable(false);
         buildRunning = true;
@@ -258,8 +265,27 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      * navigating back to the end resumes the follow.
      */
     public void appendOutput(String line, boolean stderr) {
-        appendStyled(line, style.styleClassFor(line));
+        AnsiText.Parser ansi = stderr ? stderrAnsi : stdoutAnsi;
+        if (line.indexOf('\u001B') < 0 && !ansi.active()) {
+            appendStyled(line, style.styleClassFor(line));
+            return;
+        }
+        // A program's own colours (an npm script printing SGR codes): drawn, as the Run console draws them,
+        // instead of showing the escape bytes. A carriage return keeps only what follows it, as a terminal.
+        AnsiText.Chunk chunk = ansi.feed(line);
+        String text = chunk.text();
+        int from = Math.max(text.lastIndexOf('\r'), text.lastIndexOf(AnsiText.CLEAR_SCREEN)) + 1;
+        String shown = text.substring(from);
+        transientTail = false;
+        appender.append(
+                shown + "\n",
+                RunPanel.spans(shown, RunPanel.slice(chunk.runs(), from, text.length()), style.styleClassFor(shown)));
     }
+
+    /** Colour state of each stream of the current build (SGR codes are read, drawn, and removed). */
+    private AnsiText.Parser stdoutAnsi = new AnsiText.Parser();
+
+    private AnsiText.Parser stderrAnsi = new AnsiText.Parser();
 
     /**
      * Appends one line under a caller-chosen {@code .text.<class>} ({@code null} = default foreground), with
@@ -345,8 +371,19 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         transientTail = transientLine;
     }
 
+    /** The runtime this build's program runs under, once its probe answers; null hides the chip. */
+    public void setRuntime(com.editora.run.RuntimeVersion version) {
+        RunPanel.showRuntime(runtime, version);
+    }
+
+    /** The runtime chip's text, or "" while it is hidden. */
+    String runtimeText() {
+        return runtime.isVisible() ? runtime.getText() : "";
+    }
+
     public void finished(int code) {
-        status.setText(code < 0 ? tr("run.stopped") : tr("run.exited", code));
+        status.setText((code < 0 ? tr("run.stopped") : tr("run.exited", code))
+                + (appender.trimmed() ? " " + tr("run.outputTrimmed", MAX_CHARS) : ""));
         stopButton.setDisable(true);
         buildRunning = false;
         showBusy();

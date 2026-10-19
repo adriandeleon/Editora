@@ -17,6 +17,7 @@ com.editora.lsp.JdtlsResolveMainClassProbeTest
 com.editora.lsp.JdtlsSnippetProbeTest
 com.editora.lsp.JdtlsTypingProbeTest
 com.editora.lsp.JdtlsUpgradeProbeTest
+com.editora.lsp.TypeScriptServerNodeProbeFxTest
 com.editora.ui.CompactSourceDebugProbeFxTest
 com.editora.ui.GroovyServerProbeFxTest
 com.editora.ui.JavaCodeChangesProbeFxTest

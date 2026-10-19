@@ -697,4 +697,34 @@ class DoctorCatalogFxTest {
         assertTrue(spec(trusted, "build.maven").placeholder().command().contains("/opt/team/mvn"));
         assertTrue(spec(trusted, "debug.python").placeholder().command().contains("/opt/team/python"));
     }
+
+    /**
+     * Review E6: one Run → Node.js row names the Node.js every Node feature shares, with its version and why, and
+     * the HTTP row runs that Node.js too while its own field is blank.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // runs a sh script
+    void oneNodeRowNamesTheSharedNodeAndHttpScriptsUseIt(@TempDir Path dir) throws Exception {
+        Path node = executable(dir.resolve("node-24/bin/node"), "#!/bin/sh\necho v24.99.0\n");
+        Host host = new Host();
+        host.settings.setNodePath(node.toString());
+        host.settings.setHttpClientSupport(true);
+        host.settings.setHttpScriptsEnabled(true);
+        host.settings.setHttpNodePath("");
+        Ops ops = new Ops();
+        ops.root = Files.createDirectories(dir.resolve("proj"));
+        Files.writeString(ops.root.resolve("package.json"), "{}");
+
+        List<DoctorService.CheckSpec> specs = specs(host, ops);
+        DoctorService.CheckSpec nodeSpec = spec(specs, "run.node");
+        assertEquals("debug", nodeSpec.placeholder().settingsKey(), "the Node.js field is on the Debugging page");
+        DoctorCheck row = nodeSpec.probe().get();
+        assertEquals(DoctorStatus.OK, row.status());
+        assertEquals("v24.99.0 — " + node + " (Node.js setting)", row.detail());
+        assertEquals(node.toString(), spec(specs, "http.scripts").placeholder().command(), "blank HTTP field");
+
+        host.settings.setNodePath(dir.resolve("missing/node").toString());
+        DoctorCheck missing = spec(specs(host, ops), "run.node").probe().get();
+        assertEquals(DoctorStatus.MISSING, missing.status(), "a package.json project needs Node.js");
+    }
 }

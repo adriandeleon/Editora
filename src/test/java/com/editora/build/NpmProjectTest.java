@@ -54,4 +54,23 @@ class NpmProjectTest {
         assertEquals("x", p.name());
         assertEquals(List.of("hello"), p.scripts());
     }
+
+    @Test
+    void keepsScriptCommandsWorkspacesAndWhetherItHasDependencies() {
+        NpmProject p = NpmProject.parse("{\"scripts\":{\"test\":\"node --test\",\"x\":1},\"workspaces\":[\"a\"],"
+                + "\"devDependencies\":{\"typescript\":\"^6\"}}");
+        assertEquals("node --test", p.commandOf("test"));
+        assertEquals("", p.commandOf("x"));
+        assertEquals("", p.commandOf("missing"));
+        assertTrue(p.workspaces());
+        assertTrue(p.hasDependencies());
+        assertTrue(!NpmProject.parse("{\"dependencies\":{}}").hasDependencies());
+    }
+
+    @Test
+    void aMalformedFileSaysWhere() {
+        IllegalArgumentException e = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> NpmProject.parse("{\n  \"scripts\": { \"x\": "));
+        assertTrue(e.getMessage().startsWith("line 2, column"), e.getMessage());
+    }
 }

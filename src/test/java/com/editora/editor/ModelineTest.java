@@ -21,6 +21,16 @@ class ModelineTest {
         assertEquals("py", ext("x = 1\n# vim: ft=python\n"));
     }
 
+    @Test
+    void reactAndEmacsJavaScriptModes() {
+        assertEquals("tsx", ext("// vim: ft=typescriptreact\n"));
+        assertEquals("jsx", ext("/* vim: set filetype=javascriptreact : */\n"));
+        assertEquals("jsx", ext("// vim: set ft=jsx:\n"));
+        assertEquals("js", ext("// -*- mode: js2 -*-\n"));
+        assertEquals("jsx", ext("// -*- mode: rjsx -*-\n"));
+        assertEquals("tsx", ext("// -*- mode: typescript-tsx -*-\n"));
+    }
+
     /** vim reads the first and last five lines only. */
     @Test
     void vimModelinesAreReadAtEitherEnd() {

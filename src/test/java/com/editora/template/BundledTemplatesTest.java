@@ -101,6 +101,17 @@ class BundledTemplatesTest {
         }
     }
 
+    /**
+     * The Node TypeScript project pins a TypeScript that ships {@code tsserver}: TypeScript 7 has none, so the
+     * project's own language server could not start (Node review A9/B1).
+     */
+    @Test
+    void theNodeTypescriptProjectPinsATypescriptWithATsserver(@TempDir Path tmp) throws Exception {
+        var pkg = new ObjectMapper()
+                .readTree(rendered(tmp, bundled(tmp, "node-typescript-project")).get("package.json"));
+        assertEquals("^6.0.0", pkg.path("devDependencies").path("typescript").asText());
+    }
+
     @Test
     void theHttpRequestsParseWithTheirChecksAndBothEnvironmentsResolve(@TempDir Path tmp) throws Exception {
         Map<String, String> files = rendered(tmp, bundled(tmp, "http-requests"));
@@ -167,5 +178,17 @@ class BundledTemplatesTest {
         assertEquals(List.of("script"), List.copyOf(rendered(tmp, t).keySet()));
         assertEquals("java", t.language());
         assertTrue(rendered(tmp, t).get("script").startsWith("#!/usr/bin/env -S java --source 25\n"));
+    }
+
+    @Test
+    void theNodeScriptIsAShebangJsFileWhoseFailureSetsTheExitCode(@TempDir Path tmp) throws Exception {
+        Template t = bundled(tmp, "node-script");
+        Map<String, String> files = rendered(tmp, t);
+        assertEquals(List.of("script.js"), List.copyOf(files.keySet()));
+        String js = files.get("script.js");
+        assertTrue(js.startsWith("#!/usr/bin/env node\n"), js); // so the created file is made executable
+        assertTrue(js.contains("main(process.argv.slice(2)).catch("), js);
+        assertTrue(js.contains("process.exitCode = 1;"), js);
+        assertEquals("javascript", t.language());
     }
 }

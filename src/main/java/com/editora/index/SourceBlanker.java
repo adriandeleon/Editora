@@ -35,7 +35,8 @@ final class SourceBlanker {
      * Scala a {@code '} opens a character literal only ({@code 'a'}, {@code '\n'}), never Scala 2's
      * {@code 'symbol}, and a backtick quotes an identifier ({@code `type`}), which stays code. Read as strings,
      * each of those blanked the code after it up to the next quote — and a Clojure {@code \"}, opening a string
-     * that spans lines, everything after it.
+     * that spans lines, everything after it. In JavaScript/TypeScript regex literals are blanked too, so a
+     * backtick or brace inside one is not read as a template literal or a block.
      */
     static String blank(String text, CommentStyle style, String language) {
         if (text == null || text.isEmpty()) {
@@ -43,6 +44,7 @@ final class SourceBlanker {
         }
         boolean clojure = "clojure".equals(language);
         boolean scala = "scala".equals(language);
+        boolean regexLiterals = com.editora.editor.RegexLiterals.in(language);
         char[] out = text.toCharArray();
         String lineComment = clojure ? ";" : style != null && style.hasLine() ? style.line() : null;
         String blockStart = style != null && style.hasBlock() ? style.blockStart() : null;
@@ -77,6 +79,14 @@ final class SourceBlanker {
             if (c == '"' || c == '\'' || c == '`') {
                 i = blankString(text, out, i, c, clojure); // every Clojure string may span lines
                 continue;
+            }
+            if (c == '/' && regexLiterals) {
+                int end = com.editora.editor.RegexLiterals.end(text, i);
+                if (end > i) {
+                    blankRange(out, i, end + 1);
+                    i = end + 1;
+                    continue;
+                }
             }
             i++;
         }

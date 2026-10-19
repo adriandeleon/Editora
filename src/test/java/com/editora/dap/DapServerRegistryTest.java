@@ -31,7 +31,8 @@ class DapServerRegistryTest {
         assertTrue(DapServerRegistry.isDebuggable("python"));
         assertTrue(DapServerRegistry.isDebuggable("javascript"));
         assertTrue(DapServerRegistry.isDebuggable("groovy"));
-        assertFalse(DapServerRegistry.isDebuggable("typescript"));
+        assertTrue(DapServerRegistry.isDebuggable("typescript")); // review D2: Node runs .ts, source maps
+        assertTrue(DapServerRegistry.isDebuggable("typescriptreact"));
         assertFalse(DapServerRegistry.isDebuggable("ruby"));
         assertFalse(DapServerRegistry.isDebuggable(null));
     }
@@ -63,6 +64,16 @@ class DapServerRegistryTest {
         assertEquals("pwa-node", s.adapterId());
         assertEquals("node", s.defaultInterpreter());
         assertTrue(s.adapterArgs().isEmpty());
+    }
+
+    @Test
+    void typescriptAndJsxShareTheJavascriptAdapter() {
+        assertEquals("javascript", DapServerRegistry.adapterLanguage("typescript"));
+        assertEquals("javascript", DapServerRegistry.adapterLanguage("javascriptreact"));
+        assertEquals("javascript", DapServerRegistry.specFor("typescript").language());
+        assertEquals("python", DapServerRegistry.adapterLanguage("python"));
+        assertEquals("ruby", DapServerRegistry.adapterLanguage("ruby"));
+        assertNull(DapServerRegistry.adapterLanguage(null));
     }
 
     @Test

@@ -37,6 +37,9 @@ public final class BuildService {
 
     private volatile Process current;
 
+    /** Whether Stop interrupts first (Node and its package managers): see {@link #stop()}. */
+    private volatile boolean interruptOnStop;
+
     /**
      * The bounded, batched stdout/stderr pump shared with {@code run.RunService}. A build's stream is
      * <em>parsed</em> — Go, Cargo and npm TAP test results come from it — so a full queue makes the reader
@@ -95,6 +98,7 @@ public final class BuildService {
             return;
         }
         current = process;
+        interruptOnStop = !remote && com.editora.run.NodeRunPlan.interruptsOnStop(command.get(0));
         listener.onStart(String.join(" ", command));
         OutputPump.Sink sink = listener::onOutput;
         OutputPump.Feed stdout = pump.start(process.getInputStream(), false, gen, sink);
@@ -138,7 +142,13 @@ public final class BuildService {
     public void stop() {
         Process p = current;
         if (p != null && p.isAlive()) {
-            com.editora.process.ProcessRegistry.killTree(p);
+            if (interruptOnStop) {
+                // npm/pnpm/yarn/bun scripts: SIGINT first, as Ctrl+C in a terminal, so a script's own
+                // process.on('SIGINT') cleanup runs; whatever is left is killed after the grace period.
+                com.editora.process.ProcessRegistry.interruptThenKillTree(p);
+            } else {
+                com.editora.process.ProcessRegistry.killTree(p);
+            }
         }
     }
 

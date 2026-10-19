@@ -157,6 +157,21 @@ public final class DapManager {
     private String jsPath = ""; // configured dapDebugServer.js path/dir (blank ⇒ auto-detect)
     private Path jsServer; // resolved dapDebugServer.js (null ⇒ not found)
     private boolean jsAvailable;
+    /** The Debugging setting's Node.js ("" = automatic), see {@link com.editora.run.NodeRuntimes}. */
+    private volatile String nodePath = "";
+    /** The window's project root for the next JavaScript launch (its package root and workspace folder). */
+    private volatile Path jsProjectRoot;
+    /** The current session is vscode-js-debug's (read on adapter threads to clean up what it prints). */
+    private volatile boolean jsSession;
+    /**
+     * The JavaScript session's program was started by Editora ({@code runInTerminal}): its output arrives from its
+     * own pipes, so js-debug's copies of it (console.log through the inspector) are not shown a second time.
+     */
+    private volatile boolean jsClientConsole;
+    /** js-debug's stderr for the starting JavaScript session, for the message when it dies while starting. */
+    private volatile AdapterStderr jsAdapterStderr;
+    /** Condition errors js-debug already reported this session (it repeats each one per script it loads). */
+    private final java.util.Set<String> reportedConditionErrors = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private volatile DapClient client;
     private volatile long sessionEpoch;
@@ -240,6 +255,8 @@ public final class DapManager {
     /** The filters chosen for {@code language}, or null when the adapter's defaults apply. */
     private List<String> filtersFor(String language) {
         sessionLanguage = language;
+        jsSession = "javascript".equals(language);
+        reportedConditionErrors.clear();
         return exceptionChoices.get(language);
     }
 
@@ -293,6 +310,24 @@ public final class DapManager {
 
     public void setProgramConsole(boolean programConsole) {
         this.programConsole = programConsole;
+    }
+
+    /** The Debugging setting's Node.js for JavaScript sessions ("" = automatic). */
+    public void setNodePath(String nodePath) {
+        this.nodePath = nodePath == null ? "" : nodePath.strip();
+    }
+
+    /** Node.js arguments before the program for the next JavaScript launch ({@code --test} for a test file). */
+    private volatile List<String> jsNodeArgs = List.of();
+
+    /** Sets {@link #jsNodeArgs}; sticky across {@link #restart()}, like the program arguments. */
+    public void setJsNodeArgs(List<String> args) {
+        this.jsNodeArgs = args == null ? List.of() : List.copyOf(args);
+    }
+
+    /** The project root a JavaScript launch resolves its Node.js, package root and workspace folder from. */
+    public void setJsProjectRoot(Path projectRoot) {
+        this.jsProjectRoot = projectRoot;
     }
 
     /** Whether a line typed now would reach the debugged program's standard input. */
@@ -461,7 +496,7 @@ public final class DapManager {
         io.submit(() -> {
             Path server =
                     DebugAdapterLocator.locateJsDebugServer(jsPath, home()).orElse(null);
-            boolean ok = enabled && jsEnabled && server != null && probeNode();
+            boolean ok = enabled && jsEnabled && server != null && probeNode(adapterNode());
             Platform.runLater(() -> {
                 this.jsServer = server;
                 this.jsAvailable = ok;
@@ -498,9 +533,41 @@ public final class DapManager {
         return probe(argv, dir);
     }
 
-    /** Runs {@code node --version}; true on a clean exit. */
-    private boolean probeNode() {
-        return probe(List.of("node", "--version"), null);
+    /**
+     * Whether js-debug is installed and a Node.js runs, whatever the enable flags say — what the Settings card shows
+     * (review D13). Delivers the server path (null when not found) and the Node.js version (null when none runs)
+     * on the FX thread.
+     */
+    public void detectJsInstalled(java.util.function.BiConsumer<Path, String> onResult) {
+        String configured = jsPath;
+        io.submit(() -> {
+            Path server =
+                    DebugAdapterLocator.locateJsDebugServer(configured, home()).orElse(null);
+            String version = nodeVersion(adapterNode());
+            Platform.runLater(() -> onResult.accept(server, version));
+        });
+    }
+
+    /** The Node.js the settings name (or {@code node} on PATH) — what runs js-debug when no file is involved. */
+    private String adapterNode() {
+        return com.editora.run.NodeRuntimes.resolveLocal(null, null, "", nodePath)
+                .executable();
+    }
+
+    /** Runs {@code <node> --version}; true on a clean exit. */
+    private boolean probeNode(String node) {
+        return probe(List.of(node, "--version"), null);
+    }
+
+    /** What {@code <node> --version} prints ({@code v24.18.1}), or null when it does not run. Off the FX thread. */
+    static String nodeVersion(String node) {
+        try {
+            ProcessRunner.Result r =
+                    ProcessRunner.run(null, java.time.Duration.ofSeconds(5), List.of(node, "--version"));
+            return r.exit() == 0 ? JsLaunch.version(r.out()) : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Launches {@code argv} (PATH-augmented; {@code pythonPathDir} prepended to PYTHONPATH when non-null),
@@ -591,7 +658,7 @@ public final class DapManager {
         if ("java".equals(language)) {
             startLaunch(file, picker, javaExecOverride, projectRoot);
         } else if (DapServerRegistry.isDebuggable(language)) {
-            startProgram(file, language);
+            startProgram(file, DapServerRegistry.adapterLanguage(language));
         } else {
             listener.onError(tr("debug.error.notSupported"));
         }
@@ -1917,7 +1984,10 @@ public final class DapManager {
         return tr("debug.error.launchFailed", msg(error));
     }
 
-    /** vscode-js-debug over a socket: spawn {@code node dapDebugServer.js <port>}, connect, launch. */
+    /**
+     * vscode-js-debug for a file on this machine: the Node.js {@link com.editora.run.NodeRuntimes} resolves for it
+     * runs the program (and js-debug, when it is new enough), from the file's package root; then connect, launch.
+     */
     private void startSocket(
             Path file,
             DapServerRegistry.DapServerSpec spec,
@@ -1929,28 +1999,103 @@ public final class DapManager {
             fail(epoch, tr("debug.error.jsNotFound"));
             return;
         }
-        int port = freePort();
-        List<String> cmd = ProcessRunner.resolveExecutable(
-                List.of(spec.defaultInterpreter(), jsServer.toString(), String.valueOf(port)));
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        ProcessRunner.applyUserEnv(pb);
-        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD); // DAP is on the socket; stdout/stderr are logs
-        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-        Process proc = BusyExecutable.start(pb);
-        String nodeExe = cmd.isEmpty() ? null : cmd.get(0);
+        JsProgram planned = jsProgram;
+        List<String> runtime;
+        String program;
+        List<String> args;
+        Path cwd;
+        Path workspace;
+        Map<String, String> env;
+        String adapterNode;
+        Path projectRoot = jsProjectRoot;
+        if (planned != null) {
+            // A run configuration's launch, planned as Run plans it (NodeRunPlan / the package manager).
+            runtime = planned.runtime();
+            program = planned.program();
+            args = planned.args();
+            cwd = planned.cwd();
+            workspace = projectRoot != null && cwd.toAbsolutePath().startsWith(projectRoot.toAbsolutePath())
+                    ? projectRoot
+                    : cwd;
+            env = planned.env();
+            String exe = runtime.get(0);
+            boolean node = com.editora.run.NodeRunPlan.isNodeName(exe);
+            String version = node ? nodeVersion(exe) : null;
+            adapterNode =
+                    node ? adapterNodeFor(exe, version) : adapterNodeFor(adapterNode(), nodeVersion(adapterNode()));
+            if (adapterNode == null) {
+                String used = node ? exe : adapterNode();
+                fail(
+                        epoch,
+                        tr(
+                                "debug.error.jsNodeTooOld",
+                                node ? version : nodeVersion(used),
+                                used,
+                                JsLaunch.MIN_ADAPTER_NODE_MAJOR));
+                return;
+            }
+        } else {
+            com.editora.run.NodeRuntimes.NodeRuntime resolved =
+                    com.editora.run.NodeRuntimes.resolveLocal(file, projectRoot, "", nodePath);
+            String version = nodeVersion(resolved.executable());
+            String problem = JsLaunch.launchProblemKey(file.getFileName().toString(), version);
+            if (problem != null) {
+                fail(epoch, tr(problem, version == null ? "?" : version));
+                return;
+            }
+            adapterNode = adapterNodeFor(resolved.executable(), version);
+            if (adapterNode == null) {
+                fail(
+                        epoch,
+                        tr(
+                                "debug.error.jsNodeTooOld",
+                                version,
+                                resolved.executable(),
+                                JsLaunch.MIN_ADAPTER_NODE_MAJOR));
+                return;
+            }
+            runtime = JsLaunch.withNodeArgs(resolved.command(), jsNodeArgs);
+            program = file.toString();
+            args = programArgs;
+            cwd = com.editora.run.NodeRuntimes.workingDirectory(file, projectRoot);
+            // The workspace folder js-debug resolves ${workspaceFolder} from (source maps): the project when the
+            // file is in it, else its package root.
+            workspace = projectRoot != null && file.toAbsolutePath().startsWith(projectRoot.toAbsolutePath())
+                    ? projectRoot
+                    : cwd;
+            env = Map.of();
+        }
+        boolean clientConsole = programConsole;
+        Map<String, Object> launch = JsLaunch.request(
+                spec.launchType(), program, cwd.toString(), workspace.toString(), runtime, args, clientConsole, env);
+        jsClientConsole = clientConsole;
+        if (clientConsole) {
+            // What runs, first in the console (muted), as for Python: which Node.js, with which arguments. (When
+            // js-debug starts the program it prints this line itself.)
+            List<String> words = new java.util.ArrayList<>(runtime);
+            if (program != null && !program.isBlank()) {
+                words.add(program);
+            }
+            words.addAll(args);
+            onOutput(epoch, com.editora.run.RunService.commandLine(words) + "\n", COMMAND_CATEGORY);
+        }
+        List<String> chip = runtime;
+        JsAdapter adapter = startJsAdapter(adapterNode, epoch);
+        if (adapter == null) {
+            return; // reported
+        }
         attachSocket(
-                proc,
+                adapter.process(),
                 null,
-                port,
+                adapter.port(),
                 spec,
                 bps,
                 filters,
                 epoch,
                 DapPaths.LOCAL,
-                file.toString(),
-                cwdOf(file),
-                nodeExe,
-                null);
+                launch,
+                clientConsole,
+                chip);
     }
 
     /**
@@ -2016,13 +2161,97 @@ public final class DapManager {
     }
 
     /**
-     * Attaches the JavaScript debugger to a Node.js on this machine that waits for one on its inspector {@code port}
-     * — an HTTP Client script started with {@code --inspect-brk}. js-debug is started as for a JavaScript file and
-     * asked to {@code attach} ({@link LaunchConfig#nodeAttach}); it sets the breakpoints and resumes the script, and
-     * steps over {@code skipFiles} (the shim around it). The session is called {@code name} and ends with the script.
-     * There is nothing to restart: Restart only stops it.
+     * A JavaScript launch planned by its caller instead of from the file alone — a {@code node} run configuration
+     * (as {@code NodeRunPlan} runs it) or an npm script ({@code runtime} = the package manager, {@code program}
+     * blank, js-debug attaching to the Node processes it starts).
+     *
+     * @param runtime the executable and its arguments before the program
+     * @param program the script ({@code ""} for a package-manager launch)
+     * @param args the program's arguments
+     * @param cwd the folder it runs in
+     * @param env variables set on top of the inherited ones
+     */
+    public record JsProgram(
+            List<String> runtime, String program, List<String> args, Path cwd, Map<String, String> env) {
+        public JsProgram {
+            runtime = List.copyOf(runtime);
+            program = program == null ? "" : program;
+            args = args == null ? List.of() : List.copyOf(args);
+            env = env == null ? Map.of() : java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(env));
+        }
+    }
+
+    /** The planned launch for the next JavaScript session (null: plan it from the file); sticky across restart. */
+    private volatile JsProgram jsProgram;
+
+    /** Sets {@link #jsProgram}; {@code null} for an ordinary launch of a file. */
+    public void setJsProgram(JsProgram program) {
+        this.jsProgram = program;
+    }
+
+    /**
+     * The Node.js that runs js-debug for a program on {@code programNode} ({@code version}): that one when it is
+     * new enough, else the Debugging setting's / PATH's, else null. The program still runs on its own Node.
+     */
+    private String adapterNodeFor(String programNode, String version) {
+        if (JsLaunch.runsAdapter(version)) {
+            return programNode;
+        }
+        String fallback = adapterNode();
+        return !fallback.equals(programNode) && JsLaunch.runsAdapter(nodeVersion(fallback)) ? fallback : null;
+    }
+
+    /** A started js-debug server: its process, the port it announced on this machine, and its stderr. */
+    private record JsAdapter(Process process, int port, AdapterStderr stderr) {}
+
+    /**
+     * Starts js-debug on a port it picks itself and waits for the line announcing it ({@link #listeningPort}) —
+     * as on a remote host. A guessed free port, then connect retries for about two seconds, lost to any slower
+     * start (review D15). A server that dies first is reported with what it wrote to stderr; null then.
+     */
+    private JsAdapter startJsAdapter(String node, long epoch) throws java.io.IOException {
+        List<String> cmd = ProcessRunner.resolveExecutable(List.of(node, jsServer.toString(), "0", "127.0.0.1"));
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        ProcessRunner.applyUserEnv(pb);
+        Process proc = BusyExecutable.start(pb);
+        AdapterStderr stderr = AdapterStderr.drain(proc);
+        jsAdapterStderr = stderr;
+        int port = listeningPort(proc.getInputStream(), java.time.Duration.ofSeconds(20));
+        if (port < 0) {
+            boolean ended = false;
+            try {
+                ended = proc.waitFor(500, TimeUnit.MILLISECONDS); // let its last stderr lines arrive
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            com.editora.process.ProcessRegistry.killTree(proc);
+            fail(
+                    epoch,
+                    tr(ended ? "debug.error.jsAdapterExited" : "debug.error.jsAdapterNoStart", node)
+                            + AdapterStderr.suffix(stderr));
+            return null;
+        }
+        return new JsAdapter(proc, port, stderr);
+    }
+
+    /**
+     * Attaches the JavaScript debugger to a Node.js waiting for one on its inspector {@code port} on this machine —
+     * an HTTP Client script started with {@code --inspect-brk} — which js-debug resumes once the breakpoints are set.
+     * See {@link #startJsAttach(String, int, String, Path, List, boolean)}.
      */
     public void startJsAttach(int port, String name, Path cwd, List<String> skipFiles) {
+        startJsAttach("127.0.0.1", port, name, cwd, skipFiles, true);
+    }
+
+    /**
+     * Attaches the JavaScript debugger to the Node.js inspector at {@code host:port} (Debug ▸ Attach on a JavaScript
+     * file, the HTTP Client's Debug Request). js-debug is started as for a launch and asked to {@code attach}
+     * ({@link LaunchConfig#nodeAttach}); {@code continueOnAttach} resumes a program held by {@code --inspect-brk}
+     * once the breakpoints are set. The session is called {@code name}; Stop detaches and leaves the program
+     * running unless it was waiting for this debugger.
+     */
+    public void startJsAttach(
+            String host, int port, String name, Path cwd, List<String> skipFiles, boolean continueOnAttach) {
         if (managerClosed) {
             return;
         }
@@ -2038,40 +2267,37 @@ public final class DapManager {
             stop(); // one session at a time
         }
         DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("javascript");
-        restartAction = null;
+        restartAction = () -> startJsAttach(host, port, name, cwd, skipFiles, continueOnAttach);
         debugFile = cwd;
         long epoch = beginSession();
         setState(State.STARTING);
         List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
         List<String> filters = filtersFor("javascript");
-        Map<String, Object> attach = LaunchConfig.nodeAttach(spec.launchType(), name, port, skipFiles);
+        Map<String, Object> attach =
+                LaunchConfig.nodeAttach(spec.launchType(), name, host, port, skipFiles, continueOnAttach);
+        jsClientConsole = false;
         startupTask = io.submit(() -> {
             try {
                 if (jsServer == null) {
                     fail(epoch, tr("debug.error.jsNotFound"));
                     return;
                 }
-                int serverPort = freePort();
-                List<String> cmd = ProcessRunner.resolveExecutable(
-                        List.of(spec.defaultInterpreter(), jsServer.toString(), String.valueOf(serverPort)));
-                ProcessBuilder pb = new ProcessBuilder(cmd);
-                ProcessRunner.applyUserEnv(pb);
-                pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-                pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-                Process proc = BusyExecutable.start(pb);
+                JsAdapter adapter = startJsAdapter(adapterNode(), epoch);
+                if (adapter == null) {
+                    return; // reported
+                }
                 attachSocket(
-                        proc,
+                        adapter.process(),
                         null,
-                        serverPort,
+                        adapter.port(),
                         spec,
                         bps,
                         filters,
                         epoch,
                         DapPaths.LOCAL,
-                        null,
-                        cwd == null ? null : cwd.toString(),
-                        null,
-                        attach);
+                        attach,
+                        false,
+                        null);
             } catch (Exception e) {
                 fail(epoch, tr("debug.error.startFailed", msg(e)));
             }
@@ -2080,8 +2306,10 @@ public final class DapManager {
 
     /**
      * Wires a started socket adapter ({@code proc}, listening on this machine's {@code port} — through
-     * {@code forward} for one on a remote host) to a new session and launches {@code program} — or, given
-     * {@code attachArgs}, sends that {@code attach} instead.
+     * {@code forward} for one on a remote host) to a new session and sends it {@code request} (a {@code launch} or
+     * an {@code attach}). With {@code runsDebuggee} the adapter hands the program's command line back and Editora
+     * starts it (standard input, all output, exit code). {@code runtime} is the launched program's Node command,
+     * for the runtime chip (null for an attach).
      */
     private void attachSocket(
             Process proc,
@@ -2092,10 +2320,9 @@ public final class DapManager {
             List<String> filters,
             long epoch,
             DapPaths paths,
-            String program,
-            String cwd,
-            String nodeExe,
-            Map<String, Object> attachArgs) {
+            Map<String, Object> request,
+            boolean runsDebuggee,
+            List<String> runtime) {
         if (!isCurrent(epoch)) {
             com.editora.process.ProcessRegistry.killTree(proc);
             if (forward != null) {
@@ -2103,10 +2330,12 @@ public final class DapManager {
             }
             return;
         }
+        boolean attach = "attach".equals(request.get("request"));
         DapClient c = new DapClient(sessionHost(epoch));
         c.setPaths(paths);
         c.setBreakpoints(bps);
         c.setExceptionFilters(filters);
+        c.setRunsDebuggee(runsDebuggee);
         c.setAdapterProcess(proc); // killed on dispose (it serves the socket)
         if (forward != null) {
             c.closeOnDispose(forward);
@@ -2117,36 +2346,25 @@ public final class DapManager {
         }
         c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
-                fail(epoch, tr("debug.error.jsConnect", msg(e)));
+                fail(epoch, tr("debug.error.jsConnect", msg(e)) + AdapterStderr.suffix(jsAdapterStderr));
                 return;
             }
             if (!isCurrent(epoch)) {
                 c.dispose();
                 return;
             }
-            (attachArgs != null
-                            ? c.attach(attachArgs)
-                            : c.launch(
-                                    LaunchConfig.program(spec.launchType(), program, cwd, nodeExe, programArgs, false)))
-                    .whenComplete((v, le) -> {
-                        if (le != null) {
-                            fail(
-                                    epoch,
-                                    tr(
-                                            attachArgs != null
-                                                    ? "debug.error.attachFailed"
-                                                    : "debug.error.launchFailed",
-                                            msg(le)));
-                        }
-                    });
+            (attach ? c.attach(request) : c.launch(request)).whenComplete((v, le) -> {
+                if (le != null) {
+                    fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
+                }
+            });
             Platform.runLater(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
-                    if (attachArgs == null) {
+                    if (runtime != null && !runtime.isEmpty()) {
+                        Object cwd = request.get("cwd");
                         listener.onDebuggeeRuntime(
-                                List.of(nodeExe == null || nodeExe.isBlank() ? spec.defaultInterpreter() : nodeExe),
-                                runtimeWhere(paths, cwd),
-                                Map.of());
+                                runtime, runtimeWhere(paths, cwd instanceof String s ? s : null), Map.of());
                     }
                 }
             });
@@ -2157,7 +2375,8 @@ public final class DapManager {
 
     /** Languages a remote file is debugged in on its own host (Java through the jdtls running there). */
     public static boolean debuggableOnHost(String language) {
-        return "python".equals(language) || "javascript".equals(language) || "java".equals(language);
+        String adapter = DapServerRegistry.adapterLanguage(language); // TypeScript is debugged as JavaScript
+        return "python".equals(adapter) || "javascript".equals(adapter) || "java".equals(adapter);
     }
 
     /** Why {@code language} cannot be debugged on remote {@code file}'s host, or null when it can be tried. */
@@ -2280,7 +2499,7 @@ public final class DapManager {
 
     /**
      * Finds {@code dapDebugServer.js} on the host: the {@code dap.js} tool ($1: the file, or a folder to
-     * search), else where Editora's installer, mason and VS Code's server put it. Prints the path; exits 1
+     * search), else where Editora's installer and mason put it (VS Code's js-debug has no DAP server entry). Prints the path; exits 1
      * when there is none, 2 when {@code node} is missing.
      */
     static final String FIND_JS_DEBUG = """
@@ -2290,8 +2509,7 @@ public final class DapManager {
               d=$1; [ -f "$d" ] && d=${d%/*}
               set -- "$d"
             else
-              set -- "$HOME/.editora/plugins/dap/javascript" "$HOME/.local/share/nvim/mason/packages/js-debug-adapter" \
-                "$HOME"/.vscode-server/extensions/ms-vscode.js-debug* "$HOME"/.vscode/extensions/ms-vscode.js-debug*
+              set -- "$HOME/.editora/plugins/dap/javascript" "$HOME/.local/share/nvim/mason/packages/js-debug-adapter"
             fi
             for r in "$@"; do
               [ -d "$r" ] || continue
@@ -2309,6 +2527,7 @@ public final class DapManager {
             List<String> filters,
             long epoch)
             throws Exception {
+        jsClientConsole = false; // js-debug starts the program on the host
         var target = com.editora.process.ExecTargets.forPath(file);
         Path dir = file.getParent();
         String configured = com.editora.process.ExecTargets.remoteTool(file, "dap.js");
@@ -2360,10 +2579,18 @@ public final class DapManager {
                 filters,
                 epoch,
                 DapPaths.on(target, file.getFileSystem()),
-                target.toTargetPath(file),
-                target.toTargetPath(dir),
-                node,
-                null);
+                // js-debug starts the program on the host (Editora cannot start it there), so its output is read
+                // with outputCapture "std"; its folder is the file's, which is what the host can be asked for.
+                JsLaunch.request(
+                        spec.launchType(),
+                        target.toTargetPath(file),
+                        target.toTargetPath(dir),
+                        target.toTargetPath(dir),
+                        List.of(node),
+                        programArgs,
+                        false),
+                false,
+                List.of(node));
     }
 
     /** Matches the line vscode-js-debug's server prints once it listens: {@code … listening at host:port}. */
@@ -2759,6 +2986,10 @@ public final class DapManager {
             if (programRunning) {
                 outputPump.flush();
                 listener.onAdapterLost();
+            } else if (state == State.STARTING && jsSession) {
+                // js-debug died before the program ran: ending quietly showed "Starting…" then "Not debugging"
+                // and nothing else (review D4) — say so, with what it wrote to stderr.
+                listener.onError(tr("debug.error.jsAdapterDied") + AdapterStderr.suffix(jsAdapterStderr));
             }
             endSession(epoch);
         });
@@ -3084,13 +3315,40 @@ public final class DapManager {
     });
 
     private void onOutput(long epoch, String text, String category) {
+        if (jsSession) {
+            text = jsOutput(epoch, text, category);
+            if (text == null || text.isEmpty()) {
+                return;
+            }
+        }
+        String original = text;
         String shown = JavaLaunchSupport.withoutJvmVersionWarning(text);
         if (shown != text) {
-            LOG.fine(() -> "java-debug: " + text.strip());
+            LOG.fine(() -> "java-debug: " + original.strip());
         }
         if (!shown.isEmpty()) {
             outputPump.offer(epoch, shown, category);
         }
+    }
+
+    /**
+     * What js-debug sends as program output, as the console should show it: Node's inspector lines
+     * ("Debugger attached.") removed, and a breakpoint condition it could not compile turned into a notice that
+     * marks that breakpoint rejected — once, though js-debug repeats it for every script it loads (review D12).
+     */
+    private String jsOutput(long epoch, String text, String category) {
+        var error = JsLaunch.conditionError(text);
+        if (error.isPresent()) {
+            JsLaunch.ConditionError ce = error.get();
+            if (reportedConditionErrors.add(ce.condition() + "\u0000" + ce.line())) {
+                onNotice(epoch, tr("debug.notice.jsCondition", ce.condition(), ce.line(), ce.reason()), true);
+            }
+            return null;
+        }
+        if (jsClientConsole && ("stdout".equals(category) || "stderr".equals(category))) {
+            return null; // the program's own pipes carry it (startDebuggee); this is js-debug's copy
+        }
+        return JsLaunch.withoutInspectorNoise(text);
     }
 
     private void onTerminated(long epoch) {
@@ -3162,8 +3420,9 @@ public final class DapManager {
             long pid = program.start(dir, argv, env, new Debuggee.Sink() {
                 @Override
                 public void output(String text, boolean stderr) {
-                    if (debuggee == program && isCurrent(epoch)) {
-                        listener.onOutput(text, stderr ? "stderr" : "stdout");
+                    String shown = jsSession ? JsLaunch.withoutInspectorNoise(text) : text;
+                    if (debuggee == program && isCurrent(epoch) && !shown.isEmpty()) {
+                        listener.onOutput(shown, stderr ? "stderr" : "stdout");
                     }
                 }
 
@@ -3505,6 +3764,16 @@ public final class DapManager {
         }
         // java-debug words a refusal as the Java exception behind it: "org.eclipse.debug.core.DebugException:
         // com.sun.jdi.…: what happened". Only what happened is for the user.
+        if (t instanceof org.eclipse.lsp4j.jsonrpc.ResponseErrorException refused
+                && refused.getResponseError() != null) {
+            // js-debug words a failed evaluation in the body only (review D6): "Unset error message." otherwise.
+            String said = DapErrors.responseText(
+                    refused.getResponseError().getMessage(),
+                    refused.getResponseError().getData());
+            if (said != null) {
+                return DapErrors.userText(said);
+            }
+        }
         return t == null ? "" : DapErrors.userText(t.getMessage() == null ? t.toString() : t.getMessage());
     }
 

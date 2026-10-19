@@ -25,7 +25,10 @@ class FileIconsTest {
         assertEquals("css", FileIcons.iconKeyFor("style.css"));
         assertEquals("markdown", FileIcons.iconKeyFor("README.md"));
         assertEquals("yaml", FileIcons.iconKeyFor("config.yml"));
-        assertEquals("json", FileIcons.iconKeyFor("package.json"));
+        assertEquals("json", FileIcons.iconKeyFor("data.json"));
+        assertEquals("npm", FileIcons.iconKeyFor("package.json"));
+        assertEquals("npm", FileIcons.iconKeyFor("/p/package-lock.json"));
+        assertEquals("npm", FileIcons.iconKeyFor(".npmrc"));
         assertEquals("shell", FileIcons.iconKeyFor("build.sh"));
         assertEquals("mermaid", FileIcons.iconKeyFor("diagram.mmd"));
         assertEquals("markdown", FileIcons.iconKeyFor("report.typ")); // typst -> document glyph

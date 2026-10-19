@@ -231,6 +231,26 @@ public final class DapClient implements IDebugProtocolClient {
         return this;
     }
 
+    /**
+     * Root only: which child session each thread belongs to. A program's child processes and workers are separate
+     * js-debug sessions; their threads are listed together (review D17), and a request about a thread goes to the
+     * session that owns it.
+     */
+    private final Map<Integer, DapClient> threadOwners = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * The session a request about {@code threadId} goes to: the child that owns it (which then becomes the focus,
+     * so the frames and variables asked for next come from it too), else {@link #target()}.
+     */
+    private DapClient target(int threadId) {
+        DapClient owner = threadOwners.get(threadId);
+        if (owner != null && !owner.disposed && children.contains(owner)) {
+            focus = owner;
+            return owner;
+        }
+        return target();
+    }
+
     /** Live child sessions (test/diagnostic read). */
     int childCount() {
         return children.size();
@@ -808,6 +828,7 @@ public final class DapClient implements IDebugProtocolClient {
             @Override
             public void onStopped(int threadId, String reason, boolean allThreadsStopped) {
                 focus = child; // inspection and stepping now address the session that stopped
+                threadOwners.put(threadId, child);
                 host.onStopped(threadId, reason, allThreadsStopped);
             }
 
@@ -859,6 +880,7 @@ public final class DapClient implements IDebugProtocolClient {
         if (!children.remove(child)) {
             return; // already handled (terminated is followed by the transport closing)
         }
+        threadOwners.values().removeIf(owner -> owner == child);
         boolean wasFocus = focus == child;
         if (wasFocus) {
             focus = null;
@@ -994,7 +1016,9 @@ public final class DapClient implements IDebugProtocolClient {
             if (t instanceof org.eclipse.lsp4j.jsonrpc.ResponseErrorException refused) {
                 String message = refused.getResponseError() == null
                         ? refused.getMessage()
-                        : refused.getResponseError().getMessage();
+                        : DapErrors.responseText(
+                                refused.getResponseError().getMessage(),
+                                refused.getResponseError().getData());
                 return message == null || message.isBlank() ? null : message;
             }
         }
@@ -1007,7 +1031,7 @@ public final class DapClient implements IDebugProtocolClient {
      * text its stop event carried.
      */
     public CompletableFuture<DapModels.ExceptionInfo> exceptionInfo(int threadId) {
-        DapClient session = target();
+        DapClient session = target(threadId);
         if (session != this) {
             return session.exceptionInfo(threadId);
         }
@@ -1059,6 +1083,9 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<List<DapModels.ThreadInfo>> threads() {
+        if (root == null && children.size() > 1) {
+            return allChildThreads();
+        }
         DapClient session = target();
         if (session != this) {
             return session.threads();
@@ -1074,8 +1101,30 @@ public final class DapClient implements IDebugProtocolClient {
         });
     }
 
+    /** Every live child's threads, in the order the children started; each thread remembered with its owner. */
+    private CompletableFuture<List<DapModels.ThreadInfo>> allChildThreads() {
+        List<DapClient> live = children.stream().filter(c -> !c.disposed).toList();
+        List<CompletableFuture<List<DapModels.ThreadInfo>>> asked = new ArrayList<>();
+        for (DapClient child : live) {
+            asked.add(child.threads().exceptionally(e -> List.of()));
+        }
+        return CompletableFuture.allOf(asked.toArray(CompletableFuture[]::new)).thenApply(v -> {
+            List<DapModels.ThreadInfo> out = new ArrayList<>();
+            java.util.Set<Integer> seen = new java.util.HashSet<>();
+            for (int i = 0; i < live.size(); i++) {
+                for (DapModels.ThreadInfo t : asked.get(i).join()) {
+                    if (seen.add(t.id())) { // a clash keeps the first session's thread
+                        threadOwners.putIfAbsent(t.id(), live.get(i));
+                        out.add(t);
+                    }
+                }
+            }
+            return out;
+        });
+    }
+
     public CompletableFuture<List<DapModels.StackFrameInfo>> stackTrace(int threadId) {
-        DapClient session = target();
+        DapClient session = target(threadId);
         if (session != this) {
             return session.stackTrace(threadId);
         }
@@ -1256,7 +1305,7 @@ public final class DapClient implements IDebugProtocolClient {
      * other stopped threads are still stopped.
      */
     public CompletableFuture<Boolean> resume(int threadId) {
-        DapClient session = target();
+        DapClient session = target(threadId);
         if (session != this) {
             return session.resume(threadId);
         }
@@ -1268,7 +1317,7 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** Pauses a running thread; the adapter answers with a {@code stopped(reason=pause)} event. */
     public void pause(int threadId) {
-        DapClient session = target();
+        DapClient session = target(threadId);
         if (session != this) {
             session.pause(threadId);
             return;
@@ -1305,7 +1354,7 @@ public final class DapClient implements IDebugProtocolClient {
     /** Moves the execution pointer of {@code threadId} to a target from {@link #gotoTargets} (Jump to
      *  Line); the adapter then emits {@code stopped(reason=goto)}, refreshing the UI like any stop. */
     public CompletableFuture<Void> gotoTarget(int threadId, int targetId) {
-        DapClient session = target();
+        DapClient session = target(threadId);
         if (session != this) {
             return session.gotoTarget(threadId, targetId);
         }
@@ -1316,7 +1365,7 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<Void> next(int threadId) {
-        DapClient session = target();
+        DapClient session = target(threadId);
         if (session != this) {
             return session.next(threadId);
         }
@@ -1326,7 +1375,7 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<Void> stepIn(int threadId) {
-        DapClient session = target();
+        DapClient session = target(threadId);
         if (session != this) {
             return session.stepIn(threadId);
         }
@@ -1336,7 +1385,7 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<Void> stepOut(int threadId) {
-        DapClient session = target();
+        DapClient session = target(threadId);
         if (session != this) {
             return session.stepOut(threadId);
         }
@@ -1670,7 +1719,7 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** Steps {@code threadId} into the call {@code targetId} of {@link #stepInTargets} (smart step into). */
     public CompletableFuture<Void> stepIn(int threadId, int targetId) {
-        DapClient session = target();
+        DapClient session = target(threadId);
         if (session != this) {
             return session.stepIn(threadId, targetId);
         }

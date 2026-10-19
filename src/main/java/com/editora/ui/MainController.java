@@ -6249,6 +6249,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public boolean runNodeTestFile(java.nio.file.Path file) {
+            return testNavigation.runNodeTestFile(file);
+        }
+
+        @Override
         public java.nio.file.Path projectRoot() {
             return windowProjectRoot();
         }
@@ -9386,8 +9391,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (b == null || b.getPath() == null) {
             return null;
         }
-        String type =
-                b.isShell() ? "shell" : b.isPython() ? "python" : "groovy".equals(b.getLanguage()) ? "groovy" : null;
+        String type = b.isShell()
+                ? "shell"
+                : b.isPython()
+                        ? "python"
+                        : com.editora.run.NodeRunPlan.isNodeLanguage(b.getLanguage())
+                                ? "node"
+                                : "groovy".equals(b.getLanguage()) ? "groovy" : null;
         return com.editora.run.RunConfigDefaults.forScript(type, b.getPath(), windowProjectRoot());
     }
 
