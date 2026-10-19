@@ -367,6 +367,31 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   logpoint, a watch on `total`, step-into, and set-value. `samples/run/hello.java` is the Java
   equivalent for a first breakpoint.
 
+## debug/ — Java debugging (breakpoints, stepping, values, threads)
+
+- `samples/debug/java/pom.xml` — a standalone **Java 25 Maven** project (not a `<module>` of the root
+  pom) built to try every breakpoint kind on, in ~220 lines across six classes. Open the folder as a
+  project, wait for jdtls to import it, open `Main.java` and Debug ▶ `main`. Every suggested spot is a
+  `break here` comment; `mvn -q compile exec:java` runs it outside Editora, `mvn test` runs the tests.
+  - `samples/debug/java/src/main/java/com/example/shelf/Main.java` — the entry point. A first plain
+    breakpoint, **set-value** on the static `limit` field, **hot code replace** (pause on the
+    `greeting()` call, edit its text, save, step over), and the `crash` program argument for an
+    **uncaught exception** (any other argument is parsed, a word is a *caught* one).
+  - `samples/debug/java/src/main/java/com/example/shelf/Shelf.java` — the `checkout` loop: a **watch**
+    on `total`, a **logpoint**, a growing `TreeMap`, step-into on `Pricing.discountFor`, a breakpoint
+    **inside a stream lambda**, and `parseQuantity` with a caught `NumberFormatException` (`err` in
+    Variables, or an exception breakpoint on caught exceptions).
+  - `samples/debug/java/src/main/java/com/example/shelf/Pricing.java` — a **conditional** breakpoint
+    (`item.sku().equals("B-2")`) and a pattern-matching `switch` whose `Stacked` arm **recurses**, so
+    the call stack shows nested `apply` frames with record-pattern locals.
+  - `samples/debug/java/src/main/java/com/example/shelf/Restocker.java` — three named worker threads
+    (`restock-1…3`): the **Threads** view, suspend-all vs one thread, and a **hit-count** breakpoint
+    (the marked line runs 160 times).
+  - `samples/debug/java/src/main/java/com/example/shelf/Item.java` + `samples/debug/java/src/main/java/com/example/shelf/Discount.java`
+    — a record with a compact constructor (one hit per item built) and the sealed discount hierarchy.
+  - `samples/debug/java/src/test/java/com/example/shelf/ShelfTest.java` — nine green JUnit 5 tests
+    (one parameterized) for **Debug Test** from the test gutter ▶; a breakpoint is marked in the first.
+
 ## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup + tests
 
 Five tiny, self-contained projects — one per build tool. Open a file under a project's folder and

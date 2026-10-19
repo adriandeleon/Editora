@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A Java debugging sample.** `samples/debug/java/` is a small standalone Java 25 Maven project (six
+  classes, nine green JUnit tests) with a `break here` comment at every spot worth a breakpoint: plain,
+  conditional, hit count, logpoint, inside a lambda, in a caught and an uncaught exception, on three named
+  worker threads, in a recursive pattern-matching `switch`, plus set-value on a static field and a method to
+  change under hot code replace. `samples/README.md` lists each spot.
+
 ### Fixed
 
 - **Opening a root as a file no longer throws.** `editora /` (or `editora D:\`), and Remote > Open File on
