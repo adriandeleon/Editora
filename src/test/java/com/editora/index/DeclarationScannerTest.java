@@ -445,4 +445,155 @@ class DeclarationScannerTest {
         assertTrue(names("package demo;\n\npublic class Café {\n    void größe() {\n    }\n}\n", "java")
                 .containsAll(List.of("Café", "größe")));
     }
+
+    @Nested
+    @DisplayName("groovy")
+    class Groovy {
+
+        @Test
+        void findsTypesDefMethodsTypedMethodsAndFields() {
+            String src = """
+                    package demo
+
+                    trait Named {}
+
+                    class Shelf {
+                        private static final int MAX = 64
+                        def add(item) {
+                            items << item
+                        }
+                        String describe(Item item) {
+                            "x"
+                        }
+                    }
+                    """;
+            assertEquals(List.of("demo", "Named", "Shelf", "MAX", "add", "describe"), names(src, "groovy"));
+            assertEquals(
+                    SymbolKind.METHOD,
+                    DeclarationScanner.scan(src, "groovy").get(4).kind());
+            assertEquals("Shelf", DeclarationScanner.scan(src, "groovy").get(4).container());
+        }
+
+        /** Gradle and script DSL calls look like typed methods to the Java pattern; they are not declarations. */
+        @Test
+        void dslCallsAreNotMethods() {
+            String src = """
+                    plugins { id 'java' }
+                    task copyDocs(type: Copy) {
+                        from 'docs'
+                    }
+                    dependencies {
+                        implementation("a:b:1")
+                    }
+                    println greet('x')
+                    """;
+            assertEquals(List.of(), names(src, "groovy"));
+        }
+    }
+
+    @Nested
+    @DisplayName("scala")
+    class Scala {
+
+        @Test
+        void findsPackagesTypesTraitsEnumsDefsAndVals() {
+            String src = """
+                    package demo
+
+                    sealed trait Item:
+                      def name: String
+
+                    final case class Book(name: String) extends Item
+
+                    enum Size:
+                      case Small, Large
+
+                    object Shelf {
+                      private[demo] val max = 64
+                      override def toString: String = "shelf"
+                      type Id = Int
+                    }
+                    """;
+            assertEquals(
+                    List.of("demo", "Item", "name", "Book", "Size", "Shelf", "max", "toString", "Id"),
+                    names(src, "scala"));
+            List<Symbol> found = DeclarationScanner.scan(src, "scala");
+            assertEquals(SymbolKind.INTERFACE, found.get(1).kind());
+            assertEquals(SymbolKind.ENUM, found.get(4).kind());
+            assertEquals("Shelf", found.get(7).container(), "a def inside braces knows its object");
+        }
+
+        /** Scala 2's 'symbol is not a string: read as one, it blanked the code after it and lost the def. */
+        @Test
+        void aSymbolLiteralDoesNotHideTheCodeAfterIt() {
+            String src = """
+                    object A {
+                      val k = 'key; def after(x: Int) = x
+                      val c = '"'
+                      def next = 1
+                    }
+                    """;
+            assertEquals(List.of("A", "k", "c", "next"), names(src, "scala"));
+            assertTrue(names("val s = \"def hidden = 1\"\n", "scala").equals(List.of("s")), "a string still is one");
+        }
+    }
+
+    @Nested
+    @DisplayName("clojure")
+    class Clojure {
+
+        @Test
+        void findsTheTopLevelDefinitionForms() {
+            String src = """
+                    (ns demo.shelf
+                      (:require [clojure.string :as str]))
+
+                    (def max-items 64)
+                    (defonce ^:private state (atom []))
+                    (defprotocol Item (item-name [this]))
+                    (defrecord Book [title])
+                    (defn add! [x] x)
+                    (defn- valid? [x] true)
+                    (defmacro with-shelf [& body] body)
+                    (s/def ::id int?)
+                    (deftest add-test (is true))
+                    """;
+            List<Symbol> found = DeclarationScanner.scan(src, "clojure");
+            assertEquals(
+                    List.of(
+                            "demo.shelf",
+                            "max-items",
+                            "state",
+                            "Item",
+                            "Book",
+                            "add!",
+                            "valid?",
+                            "with-shelf",
+                            "add-test"),
+                    found.stream().map(Symbol::name).toList());
+            assertEquals(SymbolKind.MODULE, found.get(0).kind());
+            assertEquals(SymbolKind.VARIABLE, found.get(1).kind());
+            assertEquals(SymbolKind.INTERFACE, found.get(3).kind());
+            assertEquals(SymbolKind.TYPE, found.get(4).kind());
+            assertEquals(SymbolKind.FUNCTION, found.get(5).kind());
+            assertEquals("", found.get(5).container(), "Clojure is not brace-scoped");
+        }
+
+        /** Strings, ; comments, \c characters and indented scratch forms declare nothing. */
+        @Test
+        void commentsStringsCharactersAndNestedFormsAreNotDeclarations() {
+            String src = """
+                    ; (defn commented-out [] 1)
+                    (def doc "
+                    (defn in-a-string [] 1)")
+                    (def quote-char \\")
+                    (defn after-the-char [] 1)
+                    (comment
+                      (defn scratch [] 1))
+                    (def sym 'quoted)
+                    (defn last-one [] 1)
+                    """;
+            assertEquals(List.of("doc", "quote-char", "after-the-char", "sym", "last-one"), names(src, "clojure"));
+        }
+    }
 }

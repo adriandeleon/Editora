@@ -97,4 +97,26 @@ class AutoCloseTest {
                 AutoClose.decide('"', "x = ", (char) 0, false, "javascript", false)
                         .action());
     }
+
+    /** Clojure's ' and backtick are the quote reader macros: they never pair, nor wrap a selection. */
+    @Test
+    void clojureQuotesDoNotPair() {
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('\'', "(map ", '[', false, "clojure").action());
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('`', "(defmacro m [] ", ')', false, "clojure").action());
+        assertEquals(
+                Action.NONE, AutoClose.decide('\'', "", 'x', true, "clojure").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('"', "(str ", ')', false, "clojure").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('(', "", (char) 0, false, "clojure").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('\'', "val c = ", (char) 0, false, "scala").action());
+    }
 }

@@ -1,0 +1,87 @@
+{
+  "ns": {
+    "prefix": "ns",
+    "body": ["(ns ${1:my-app.core}", "  (:require [${2:clojure.string} :as ${3:str}]))", "", "$0"],
+    "description": "Namespace declaration"
+  },
+  "defn": {
+    "prefix": "defn",
+    "body": ["(defn ${1:name}", "  \"${2:Docstring.}\"", "  [${3:args}]", "  $0)"],
+    "description": "Function definition"
+  },
+  "defn-": {
+    "prefix": "defn-",
+    "body": ["(defn- ${1:name}", "  [${2:args}]", "  $0)"],
+    "description": "Private function definition"
+  },
+  "def": {
+    "prefix": "def",
+    "body": "(def ${1:name} $0)",
+    "description": "Var definition"
+  },
+  "fn": {
+    "prefix": "fn",
+    "body": "(fn [${1:args}] $0)",
+    "description": "Anonymous function"
+  },
+  "let": {
+    "prefix": "let",
+    "body": ["(let [${1:x} ${2:value}]", "  $0)"],
+    "description": "let binding"
+  },
+  "if": {
+    "prefix": "if",
+    "body": ["(if ${1:test}", "  ${2:then}", "  ${3:else})"],
+    "description": "if"
+  },
+  "when": {
+    "prefix": "when",
+    "body": ["(when ${1:test}", "  $0)"],
+    "description": "when"
+  },
+  "cond": {
+    "prefix": "cond",
+    "body": ["(cond", "  ${1:test} ${2:expr}", "  :else $0)"],
+    "description": "cond"
+  },
+  "doseq": {
+    "prefix": "doseq",
+    "body": ["(doseq [${1:x} ${2:xs}]", "  $0)"],
+    "description": "doseq loop"
+  },
+  "defmacro": {
+    "prefix": "defmacro",
+    "body": ["(defmacro ${1:name}", "  [${2:args}]", "  $0)"],
+    "description": "Macro definition"
+  },
+  "defprotocol": {
+    "prefix": "defprotocol",
+    "body": ["(defprotocol ${1:Name}", "  (${2:method} [this]))"],
+    "description": "Protocol definition"
+  },
+  "defrecord": {
+    "prefix": "defrecord",
+    "body": "(defrecord ${1:Name} [${2:fields}])",
+    "description": "Record definition"
+  },
+  "deftest": {
+    "prefix": "deftest",
+    "body": ["(deftest ${1:name}-test", "  (testing \"${2:does something}\"", "    (is (= ${3:expected} ${4:actual}))))"],
+    "description": "clojure.test test"
+  },
+  "-main": {
+    "prefix": "main",
+    "body": ["(defn -main", "  [& args]", "  $0)"],
+    "description": "Entry point"
+  },
+  "println": {
+    "prefix": "println",
+    "body": "(println $0)",
+    "description": "Print a line"
+  },
+  "comment": {
+    "prefix": "comment",
+    "body": ["(comment", "  $0", "  )"],
+    "description": "Rich comment block"
+  }
+}

@@ -152,4 +152,23 @@ class CommenterTest {
                 "# echo start", apply(sh, 0, 0, "shell").lines().findFirst().orElseThrow());
         assertFalse(Commenter.intoHereDoc("x = 1\n<<EOF\ny\n", 8, 8, "python"));
     }
+
+    @Test
+    void clojureUsesDoubleSemicolonLineComments() {
+        assertEquals(new CommentStyle(";;", null, null), Commenter.styleFor("clojure"));
+        assertEquals(";; (def x 1)", apply("(def x 1)", 0, 0, "clojure"));
+        assertEquals("(def x 1)", apply(";; (def x 1)", 0, 0, "clojure"));
+        assertEquals(new CommentStyle("//", "/*", "*/"), Commenter.styleFor("scala"));
+    }
+
+    /** A Scala CLI or Babashka script's shebang is not toggled: `// #!…` and `;; #!…` break the script. */
+    @Test
+    void aShebangIsNeverToggledInAnyLineCommentLanguage() {
+        String sc = "#!/usr/bin/env -S scala-cli shebang\nprintln(1)\n";
+        assertEquals(sc, apply(sc, 0, 0, "scala"));
+        assertEquals("#!/usr/bin/env -S scala-cli shebang\n// println(1)\n", apply(sc, 0, sc.length() - 1, "scala"));
+        String bb = "#!/usr/bin/env bb\n(println 1)\n";
+        assertEquals(bb, apply(bb, 0, 0, "clojure"));
+        assertTrue(Commenter.onlyShebang(bb, 0, 3, Commenter.styleFor("clojure")));
+    }
 }

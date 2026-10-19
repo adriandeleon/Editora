@@ -53,6 +53,12 @@ public final class Shebang {
             Map.entry("lua", "lua"),
             Map.entry("luajit", "lua"),
             Map.entry("groovy", "groovy"),
+            Map.entry("kotlin", "kts"), // a *.main.kts script run by the kotlin launcher
+            Map.entry("scala", "sc"),
+            Map.entry("scala-cli", "sc"), // `#!/usr/bin/env -S scala-cli shebang`
+            Map.entry("clojure", "clj"),
+            Map.entry("clj", "clj"),
+            Map.entry("bb", "clj"), // Babashka
             Map.entry("pwsh", "ps1"),
             Map.entry("powershell", "ps1"));
 

@@ -246,4 +246,12 @@ class ConfigFileTypeTest {
         assertNull(ConfigFileType.resolve("attributes"));
         assertNull(ConfigFileType.resolve("/etc/attributes"));
     }
+
+    @Test
+    void clojureProjectFiles() {
+        assertEquals("clojure", ConfigFileType.resolve("project.clj"));
+        assertEquals("clojure", ConfigFileType.resolve("/home/u/app/bb.edn"));
+        assertEquals("clojure", LanguageRegistry.forFileName("/home/u/app/deps.edn"));
+        assertNull(ConfigFileType.resolve("core.clj"));
+    }
 }

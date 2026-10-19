@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import java.util.List;
+
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.task.list.items.TaskListItemMarker;
@@ -382,5 +384,14 @@ class MarkdownRendererTest {
         assertNull(MarkdownRenderer.printedLinkTarget("mailto:a@b.example", "a@b.example"));
         assertNull(MarkdownRenderer.printedLinkTarget("https://example.org/badge", " "), "a linked image: no text");
         assertNull(MarkdownRenderer.printedLinkTarget(null, "x"));
+    }
+
+    @Test
+    void jvmLanguageFencesFindTheirGrammars() {
+        for (String info : List.of("scala", "sc", "sbt", "clojure", "clj", "cljs", "edn", "kotlin", "kts", "groovy")) {
+            assertNotNull(MarkdownRenderer.grammarForInfo(info), info);
+        }
+        assertEquals("source.scala", MarkdownRenderer.grammarForInfo("sc").getScopeName());
+        assertEquals("source.clojure", MarkdownRenderer.grammarForInfo("cljs").getScopeName());
     }
 }

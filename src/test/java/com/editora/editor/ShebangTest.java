@@ -133,4 +133,17 @@ class ShebangTest {
         assertNull(Shebang.extension("#!/bin/busybox"));
         assertEquals("sh", Shebang.extension("#!/usr/bin/env bats"));
     }
+
+    /** The JVM scripting launchers: Kotlin scripts, Scala CLI, Clojure and Babashka. */
+    @Test
+    void jvmScriptLaunchers() {
+        assertEquals("kts", ext("#!/usr/bin/env kotlin"));
+        assertEquals("sc", ext("#!/usr/bin/env -S scala-cli shebang"));
+        assertEquals("sc", ext("#!/usr/local/bin/scala"));
+        assertEquals("clj", ext("#!/usr/bin/env clojure -M"));
+        assertEquals("clj", ext("#!/usr/bin/env clj"));
+        assertEquals("clj", ext("#!/usr/bin/env bb"));
+        assertEquals("scala", LanguageRegistry.forFileName("x." + ext("#!/usr/bin/env -S scala-cli shebang")));
+        assertEquals("clojure", LanguageRegistry.forFileName("x." + ext("#!/usr/bin/env bb")));
+    }
 }

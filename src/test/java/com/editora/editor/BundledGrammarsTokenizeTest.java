@@ -51,7 +51,13 @@ class BundledGrammarsTokenizeTest {
             "python",
             "def f(a):\n    s = r'''x'''\n    return f\"{a}\"\n",
             "shell",
-            "cat <<EOF\nhello $USER\nEOF\nif [ -f x ]; then echo \"y\"; fi\n");
+            "cat <<EOF\nhello $USER\nEOF\nif [ -f x ]; then echo \"y\"; fi\n",
+            "scala",
+            "package demo\n/** Doc. */\nobject Main:\n  val c = 'x' // note\n  def f(x: Int): String = s\"v=$x\"\n"
+                    + "  given Ordering[Int] = Ordering.Int\nend Main\n",
+            "clojure",
+            "(ns demo.core (:require [clojure.string :as str]))\n; note\n(defn f [x] (str \"v=\" x \\a))\n"
+                    + "(def re #\"\\s+\")\n#{:a 'b}\n");
 
     private static List<String> failures(IGrammar grammar, String text) {
         List<String> failures = new ArrayList<>();
@@ -225,5 +231,16 @@ class BundledGrammarsTokenizeTest {
             pos += span.getLength();
         }
         return List.of();
+    }
+
+    /** The vendored Scala and Clojure grammars colour their samples, not merely survive them. */
+    @Test
+    void theScalaAndClojureGrammarsHighlight() {
+        assertTrue(classesOf("a.scala", SAMPLES.get("scala")).containsAll(List.of("keyword", "string", "comment")));
+        assertTrue(classesOf("a.clj", SAMPLES.get("clojure")).containsAll(List.of("string", "comment")));
+        String clj = SAMPLES.get("clojure");
+        TextMateHighlighter.Analysis analysis =
+                TextMateHighlighter.analyze(clj, GrammarRegistry.shared().forFileName("a.clj"));
+        assertTrue(styleAt(analysis, clj.indexOf("note")).contains("comment"), "a ; comment");
     }
 }

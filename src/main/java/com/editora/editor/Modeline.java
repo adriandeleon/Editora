@@ -77,6 +77,9 @@ public final class Modeline {
             Map.entry("ini", "ini"),
             Map.entry("groovy", "groovy"),
             Map.entry("kotlin", "kt"),
+            Map.entry("scala", "scala"),
+            Map.entry("clojure", "clj"),
+            Map.entry("clojurescript", "cljs"),
             Map.entry("ps1", "ps1"),
             Map.entry("powershell", "ps1"));
 

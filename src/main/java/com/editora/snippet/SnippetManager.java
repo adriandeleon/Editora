@@ -68,6 +68,7 @@ public final class SnippetManager {
     public static final List<String> BUNDLED_LANGUAGES = List.of(
             "batchfile",
             "c",
+            "clojure",
             "cpp",
             "csharp",
             "css",
@@ -88,6 +89,7 @@ public final class SnippetManager {
             "python",
             "ruby",
             "rust",
+            "scala",
             "shell",
             "sql",
             "terraform",

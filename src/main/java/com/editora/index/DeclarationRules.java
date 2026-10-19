@@ -177,6 +177,65 @@ final class DeclarationRules {
             rule("(?:^|\\s)fun\\s+(?:<[^>]*>\\s*)?(?:" + ID + "\\.)?(?<n>" + ID + ")", SymbolKind.METHOD),
             rule("^\\s*(?:va[lr])\\s+(?<n>" + ID + ")", SymbolKind.FIELD));
 
+    /**
+     * A Groovy method with a declared return type. Groovy scripts and Gradle builds are mostly DSL calls
+     * ({@code task copy(type: Copy) &#123;}), which {@link #JAVA_MEMBER} reads as a declaration, so the type
+     * must look like one: a capitalised name or a primitive.
+     */
+    private static final String GROOVY_TYPED_MEMBER = "^\\s*(?:@" + ID + "(?:\\([^)]*\\))?\\s+)*"
+            + "(?:(?:public|protected|private|static|final|abstract|synchronized)\\s+)*"
+            + "(?:<[^>]*>\\s*)?"
+            + "(?:[A-Z][A-Za-z0-9_$.]*(?:<[^>]*>)?(?:\\[\\])*|void|boolean|byte|char|short|int|long|float|double)\\s+"
+            + "(?<n>" + ID + ")\\s*\\(";
+
+    private static final List<Rule> GROOVY = List.of(
+            rule("^\\s*package\\s+(?<n>[\\w.]+)", SymbolKind.MODULE),
+            rule("(?:^|\\s)(?:class|record)\\s+(?<n>" + ID + ")", SymbolKind.TYPE),
+            rule("(?:^|\\s)(?:interface|trait)\\s+(?<n>" + ID + ")", SymbolKind.INTERFACE),
+            rule("(?:^|\\s)enum\\s+(?<n>" + ID + ")", SymbolKind.ENUM),
+            // `def name(` is a method (or a script's function); a quoted name is a Spock feature method.
+            rule(
+                    "^\\s*(?:(?:public|protected|private|static|final|abstract|synchronized)\\s+)*def\\s+(?<n>" + ID
+                            + ")\\s*\\(",
+                    SymbolKind.METHOD),
+            signatureRule(GROOVY_TYPED_MEMBER, SymbolKind.METHOD),
+            rule(
+                    "^\\s*(?:(?:public|protected|private|static|final)\\s+)+(?:def\\s+|" + TYPE + ")(?<n>" + ID
+                            + ")\\s*(?:=|$)",
+                    SymbolKind.FIELD));
+
+    /** Scala's modifiers, a qualified {@code private[pkg]} included. */
+    private static final String SCALA_MODIFIERS = "(?:(?:private|protected)(?:\\[\\w*\\])?\\s+"
+            + "|(?:final|sealed|abstract|override|implicit|lazy|case|inline|transparent|opaque|open|infix)\\s+)*";
+
+    private static final List<Rule> SCALA = List.of(
+            rule("^\\s*package\\s+object\\s+(?<n>" + ID + ")", SymbolKind.MODULE),
+            rule("^\\s*package\\s+(?<n>[\\w.]+)", SymbolKind.MODULE),
+            rule("^\\s*" + SCALA_MODIFIERS + "(?:class|object)\\s+(?<n>" + ID + ")", SymbolKind.TYPE),
+            rule("^\\s*" + SCALA_MODIFIERS + "trait\\s+(?<n>" + ID + ")", SymbolKind.INTERFACE),
+            rule("^\\s*" + SCALA_MODIFIERS + "enum\\s+(?<n>" + ID + ")", SymbolKind.ENUM),
+            rule("^\\s*" + SCALA_MODIFIERS + "type\\s+(?<n>" + ID + ")", SymbolKind.TYPE),
+            rule("^\\s*" + SCALA_MODIFIERS + "def\\s+(?<n>" + ID + ")", SymbolKind.METHOD),
+            rule("^\\s*" + SCALA_MODIFIERS + "(?:val|var|given)\\s+(?<n>" + ID + ")\\s*[:=]", SymbolKind.FIELD));
+
+    /**
+     * A Clojure symbol as a definition names it ({@code my-fn}, {@code valid?}, {@code *dynamic*}, {@code ->Map}),
+     * after optional {@code ^:private} / {@code ^String} metadata.
+     */
+    private static final String CLJ_NAME = "(?:\\^\\S+\\s+)*(?<n>[\\p{L}*+!_?<>=$&%-][\\p{L}\\p{N}*+!_?<>=$&%.'-]*)";
+
+    /**
+     * Clojure's top-level definition forms. A form in column 0 only: a {@code (defn …)} indented inside a
+     * {@code (comment …)} block or a {@code let} is scratch code, not part of the namespace's surface. An optional
+     * namespace alias on the operator ({@code (s/def …)}, {@code (t/deftest …)}) is allowed.
+     */
+    private static final List<Rule> CLOJURE = List.of(
+            rule("^\\((?:in-)?ns\\s+" + CLJ_NAME, SymbolKind.MODULE),
+            rule("^\\((?:[\\w.-]+/)?(?:defprotocol|definterface)\\s+" + CLJ_NAME, SymbolKind.INTERFACE),
+            rule("^\\((?:[\\w.-]+/)?(?:defrecord|deftype|defstruct)\\s+" + CLJ_NAME, SymbolKind.TYPE),
+            rule("^\\((?:[\\w.-]+/)?(?:defn-?|defmacro|defmulti|deftest|defspec)\\s+" + CLJ_NAME, SymbolKind.FUNCTION),
+            rule("^\\((?:[\\w.-]+/)?(?:def|defonce)\\s+" + CLJ_NAME, SymbolKind.VARIABLE));
+
     private static final List<Rule> PYTHON = List.of(
             rule("^\\s*class\\s+(?<n>\\w+)", SymbolKind.TYPE),
             // Type aliases: the 3.12 `type X = …` / `type X[T] = …` statement, and `X: TypeAlias = …`.
@@ -279,6 +338,9 @@ final class DeclarationRules {
     private static final Map<String, List<Rule>> BY_LANGUAGE = Map.ofEntries(
             Map.entry("java", JAVA),
             Map.entry("kotlin", KOTLIN),
+            Map.entry("groovy", GROOVY),
+            Map.entry("scala", SCALA),
+            Map.entry("clojure", CLOJURE),
             Map.entry("python", PYTHON),
             Map.entry("javascript", JS),
             Map.entry("javascriptreact", JS),
@@ -306,6 +368,9 @@ final class DeclarationRules {
 
     /** True when the language's members live inside braces, so a container can be tracked by depth. */
     static boolean braceScoped(String language) {
-        return !("python".equals(language) || "ruby".equals(language) || "shell".equals(language));
+        return !("python".equals(language)
+                || "ruby".equals(language)
+                || "shell".equals(language)
+                || "clojure".equals(language));
     }
 }

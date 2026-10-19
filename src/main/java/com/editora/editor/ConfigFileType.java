@@ -164,6 +164,11 @@ public final class ConfigFileType {
             default:
                 break;
         }
+        // Clojure project files: Leiningen's project.clj and Babashka's bb.edn. Their extensions already map to
+        // Clojure; naming them here keeps them Clojure files whatever the extension tables say.
+        if (lower.equals("project.clj") || lower.equals("bb.edn")) {
+            return "clojure";
+        }
         // Jenkins pipeline — Groovy (literal "Jenkinsfile" or a "Jenkinsfile.<env>" suffix).
         if (lower.equals("jenkinsfile") || lower.startsWith("jenkinsfile.")) {
             return "groovy";

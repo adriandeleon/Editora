@@ -39,6 +39,7 @@ public final class Commenter {
                     "go",
                     "kotlin",
                     "groovy",
+                    "scala",
                     "json",
                     "php",
                     "javascript",
@@ -48,6 +49,7 @@ public final class Commenter {
                     "proto",
                     "typst",
                     "dot" -> new CommentStyle("//", "/*", "*/");
+            case "clojure" -> new CommentStyle(";;", null, null);
             case "plantuml" -> new CommentStyle("'", "/'", "'/");
             case "css" -> new CommentStyle(null, "/*", "*/");
             case "sql" -> new CommentStyle("--", "/*", "*/");
