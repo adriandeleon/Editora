@@ -214,11 +214,11 @@ class JvmDebugAdapterTest {
             assertEquals(false, refused.isVerified());
             assertEquals(JvmDebugAdapter.CONDITIONS_UNSUPPORTED, refused.getMessage());
             breakAt(s.server(), source, 5);
-            s.server().setExceptionBreakpoints(new SetExceptionBreakpointsArguments() {
-                {
-                    setFilters(new String[0]);
-                }
-            });
+            // A plain instance, not an anonymous subclass: Gson writes an anonymous class as null, so the
+            // adapter received no arguments at all.
+            SetExceptionBreakpointsArguments noExceptions = new SetExceptionBreakpointsArguments();
+            noExceptions.setFilters(new String[0]);
+            s.server().setExceptionBreakpoints(noExceptions);
             s.server().configurationDone(null);
             launched.get(WAIT, TimeUnit.SECONDS);
 

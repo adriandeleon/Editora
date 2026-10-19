@@ -53,6 +53,9 @@ public record SessionScan(
         for (WorkspaceState.OpenFile f : files) {
             String stored = f.getPath();
             Path path = stored == null || stored.isBlank() ? null : resolve.apply(stored);
+            if (path != null && path.getFileName() == null) {
+                continue; // a root is never a tab (a hand-edited session); restoring one aborted the restore
+            }
             if (path != null && isReadable.test(path)) {
                 openable.add(f);
             } else if (keepUnreadable(path, isDirectory, notExists) || unreachableRemote(stored, path)) {
