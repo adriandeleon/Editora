@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-19
+
 ### Security
 
 - **Encrypted files are a core feature, and their text stays encrypted everywhere Editora writes.** Opening a
@@ -553,6 +555,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Plex itself instead of a fallback font, so they keep the editor's column width, and Plex covers more
   transliteration letters and combining marks. The four font files add about 145 KB to the package.
 
+- **Remote: one login per connect.** Connecting to a remote folder from another window no longer logs in a
+  second time for the project's own window: that window takes over the session you just logged in with. A
+  password or passphrase is asked for once, and a server that wants a one-time 2FA code no longer needs two of
+  them. Closing the window you connected from leaves the project's window connected.
+- **Settings switches that only change the editor view** (line numbers, minimap, rulers, wrapping, tab size…)
+  no longer rebuild the rest of every window; with many files open they apply about five times faster.
+- **Reset to Defaults keeps your AI API keys and the Settings Sync connection.** Its question lists what is reset
+  and what is kept and names the backup it writes, and Cancel is the default button.
+- **Number fields refuse a value out of range** (shown in red with the range) instead of quietly clamping it.
+- **Off switches are visible** in every theme, and a disabled switch is grey.
+- **Changing the language** shows "Restart Editora to apply" on its row instead of a dialog at every step.
+- **The Settings window stays where you put it** for the rest of the session, and says once that changes apply as
+  you make them.
+- **Beta pages** carry one Beta pill beside the page title; Settings text grows with the app's font size.
+- **List editors apply as you type.** Snippets, Templates, Abbreviations, External Tools and Remote sites no longer
+  have a Save button; every change is saved as you make it, as on every other page. Macros keeps Save / Revert.
+- **Deleting asks first** on every list editor ("Delete “x”?", Cancel is the default). Removing a Remote site also
+  offers to forget that commands may run on its host.
+- **Settings that depend on a switch grey out while it is off**, with a note naming the switch, on every page (AI,
+  AI Agent, LSP, Debugging, Mermaid, Diagrams, Typst, Git, Remote, Spell Check, rulers, plugins).
+- **Bad input is shown, not thrown away.** A ruler list, a TODO pattern, a Remote port or host, a plugin registry
+  URL or a sync branch that cannot be used turns its field red with the reason and keeps what you typed.
+- **The Editor page is regrouped** into Display, Editing and Clipboard, with Saving right after Indentation; the LSP
+  switches on Code Completion are titled "Language server features". Updates and Trusted folders moved to Advanced.
+- **Every page has a one-line subtitle**, and help text names the pages that really exist.
+- **Shortcuts recorded in Settings show in the active keymap's notation**, in the recorder, the conflict question and
+  the status line. A bare letter is refused as the first key of a shortcut.
+- **Macro, external-tool and run-configuration shortcuts follow a keymap switch.** Other custom shortcuts are kept
+  per keymap, and the Keymap row and "Reset all shortcuts" say so.
+- **Snippets can be added for every language**, and snippet and template bodies use Emacs keys only under the Emacs
+  keymap.
+- **The font list** drops weight variants and math/symbol fonts and marks the bundled fonts; themes are tagged
+  (light) or (dark).
+- **Simple UI mode trims the right-click menus too**, as it already trimmed the menu bar.
+  - **Tab menu:** keeps Save, Save As, Print, Export to PDF, Close, Close Others, Close All, Reveal in File
+    Manager, Copy Path and Rename. Unpin stays on a tab that was pinned before.
+  - **Editor menu:** keeps Comment / Uncomment, the spelling suggestions, Cut, Copy, Paste, Undo, Redo, Select
+    All, Print and Export to PDF. Run, Debug, the LSP, build, AI, Markdown and Typst submenus, Add Bookmark and
+    Add Personal Note are hidden.
+  - **Project tree menu:** keeps New (a file or a folder), Rename, Undo Move, Delete and Reveal in File
+    Manager.
+  - **Preview menu** (Markdown, Typst, Markwhen, diagrams): keeps the copy actions, Go to Source, Enlarge,
+    Export to PDF and Print. Copy HTML and the Word, OpenDocument, PNG, SVG and Markwhen JSON exports are
+    hidden.
+  - Git, Local History, the compare actions, Open Terminal, Pin and the bookmark and note entries are hidden
+    on the tab, editor and Project tree menus. Turning Simple mode off brings every entry back.
+
+- **HTTP Client: the response view gives the body the room.** The Request, Tests, warnings and headers used to
+  stack above the body, which a normal Split left three lines. Now one header row and a tab strip come first.
+  - **One header row:** Run (with its shortcut from your keymap), the status as a coloured pill (green 2xx, blue
+    3xx, amber 4xx, red 5xx and failures), the time and size, then History. Its tooltip has the full
+    status line and when the request was sent.
+  - **Tabs:** Body · Headers · Tests · Request · Notes, with counts: the number of headers, tests passed of total
+    (red when one failed), and warnings plus files written (amber when there is a warning). Body is shown by
+    default. A run switches to Tests on its own only when a test or a script failed; warnings never switch tabs.
+    The tab you pick stays across runs while a response has it. Tab reaches the tabs, and the arrow keys, Home and
+    End move between them.
+  - **Headers** are a name/value list: right-click to copy a value, a header, or all of them. **Request** shows
+    the request as sent, highlighted like a `.http` file and filling the tab.
+  - **The actions are icons** at the end of the tab strip (Wrap, Copy as cURL, Open in tab, Save response), with
+    their shortcuts in the tooltips; Clear is in the **⋯** menu.
+  - In a narrow panel History narrows first, then the time and size hide, then History moves to a
+    second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+
+- **HTTP Client: the environment is chosen beside the editor.** A `.http` file shows its environment on a pill
+  beside the Editor/Split/Preview toggle ("Env: dev", or "No environment"), in every view mode and as soon as the
+  file opens, and in the status bar. Clicking either opens the file's environments; `HTTP: Select Environment`
+  opens the same menu from the keyboard (arrow keys and Enter; Escape goes back to the editor). The first run of a
+  file no longer goes out without an environment because the response view was not open yet. The Environment
+  picker in the response view is gone; each file keeps the environment it had.
+  - **Use environment dev:** an unresolved `{{variable}}` that an environment of the file defines offers that
+    environment as a quick fix — right-click it, or use the Code Actions chord with the caret on it. Its tooltip
+    names the fix, and with another environment selected it says which ones define the variable.
+  - A variable sent empty is reported with the environments that define it. Each response in History records
+    the environment it was sent in, and the response view shows it beside the time and size ("env dev").
+  - The menu says when no `http-client.env.json` was found for the file, and opens the env files it has.
+
+  - In a narrow panel History narrows first, then the time and size hide, then History and the environment move
+    to a second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+- **HTTP Client: the response view says what is going on between responses.**
+  - **Before the first run** (and after Clear) it shows which request Run will send — the one at the caret, by its
+    `###` title — your Run shortcut, that the gutter's ▶ runs a request, and the file's requests: click one (or
+    press Enter on it) to run it.
+  - **While a request is sent**, the status says "Sending Get one user… 1.2 s" ("Sending 3 of 10: …" in a Run
+    All) over a thin progress line, and the response shown before is one "Previous: 200 OK · 16:42:31 · getUser"
+    row, which you can click to see it. Its body no longer disappears without a trace, nor shows under the new
+    run.
+  - **While a trust prompt is open** it says "Waiting for your answer…" without a clock; the time counts from
+    when the request is sent.
+  - **After Cancel** it says how long the request ran, and the previous response's row comes back, selected in
+    History.
+  - **A request that got no response** shows a card in the Body tab naming what went wrong (Connection refused,
+    Host not found, Timed out, Certificate problem, Not sent…) with the explanation and Run again and Copy as
+    cURL buttons; a pre-request script that did not run also offers its output. The view opens on that card.
+
+- **HTTP Client: response bodies read like other tools show them.** JSON is laid out as `"id": 42`, two spaces
+  per level, every field and array element on its own line, and `[]`/`{}` for empty ones (it was Jackson's
+  `"id" : 42` with `[ {` on one line). HTML responses, such as a one-line 404 page, are indented one element per
+  line, with text and inline tags kept together and the contents of `<pre>`, `<script>`, `<style>`,
+  `<textarea>` and comments left as they are; a page the server already indented, or one too irregular to
+  format safely, is shown as received. Only the view changes: Save response and Open in tab still write the
+  body exactly as it arrived.
+
+- **HTTP Client: image responses say what they are.** A caption line gives the format, the size in pixels and
+  the size in bytes ("PNG · 160 × 160 · 858 B"), the picture sits on a checkerboard so transparent parts show,
+  and **Fit** (the default, which scales a large picture down to the panel's width but never enlarges a small
+  one) and **100%** switch between fitting and the actual size.
+
 ### Fixed
 
 - **File Information and the status bar show the same word count.** File Information counted "well-known" and
@@ -716,57 +826,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Emoji and other characters outside the Basic Multilingual Plane showed garbled in Java string values (a bug in
     Eclipse's debugger inside jdtls); Variables, watches, hover and inline values now show them as written.
 
-### Changed
-
-- **Remote: one login per connect.** Connecting to a remote folder from another window no longer logs in a
-  second time for the project's own window: that window takes over the session you just logged in with. A
-  password or passphrase is asked for once, and a server that wants a one-time 2FA code no longer needs two of
-  them. Closing the window you connected from leaves the project's window connected.
-- **Settings switches that only change the editor view** (line numbers, minimap, rulers, wrapping, tab size…)
-  no longer rebuild the rest of every window; with many files open they apply about five times faster.
-- **Reset to Defaults keeps your AI API keys and the Settings Sync connection.** Its question lists what is reset
-  and what is kept and names the backup it writes, and Cancel is the default button.
-- **Number fields refuse a value out of range** (shown in red with the range) instead of quietly clamping it.
-- **Off switches are visible** in every theme, and a disabled switch is grey.
-- **Changing the language** shows "Restart Editora to apply" on its row instead of a dialog at every step.
-- **The Settings window stays where you put it** for the rest of the session, and says once that changes apply as
-  you make them.
-- **Beta pages** carry one Beta pill beside the page title; Settings text grows with the app's font size.
-- **List editors apply as you type.** Snippets, Templates, Abbreviations, External Tools and Remote sites no longer
-  have a Save button; every change is saved as you make it, as on every other page. Macros keeps Save / Revert.
-- **Deleting asks first** on every list editor ("Delete “x”?", Cancel is the default). Removing a Remote site also
-  offers to forget that commands may run on its host.
-- **Settings that depend on a switch grey out while it is off**, with a note naming the switch, on every page (AI,
-  AI Agent, LSP, Debugging, Mermaid, Diagrams, Typst, Git, Remote, Spell Check, rulers, plugins).
-- **Bad input is shown, not thrown away.** A ruler list, a TODO pattern, a Remote port or host, a plugin registry
-  URL or a sync branch that cannot be used turns its field red with the reason and keeps what you typed.
-- **The Editor page is regrouped** into Display, Editing and Clipboard, with Saving right after Indentation; the LSP
-  switches on Code Completion are titled "Language server features". Updates and Trusted folders moved to Advanced.
-- **Every page has a one-line subtitle**, and help text names the pages that really exist.
-- **Shortcuts recorded in Settings show in the active keymap's notation**, in the recorder, the conflict question and
-  the status line. A bare letter is refused as the first key of a shortcut.
-- **Macro, external-tool and run-configuration shortcuts follow a keymap switch.** Other custom shortcuts are kept
-  per keymap, and the Keymap row and "Reset all shortcuts" say so.
-- **Snippets can be added for every language**, and snippet and template bodies use Emacs keys only under the Emacs
-  keymap.
-- **The font list** drops weight variants and math/symbol fonts and marks the bundled fonts; themes are tagged
-  (light) or (dark).
-- **Simple UI mode trims the right-click menus too**, as it already trimmed the menu bar.
-  - **Tab menu:** keeps Save, Save As, Print, Export to PDF, Close, Close Others, Close All, Reveal in File
-    Manager, Copy Path and Rename. Unpin stays on a tab that was pinned before.
-  - **Editor menu:** keeps Comment / Uncomment, the spelling suggestions, Cut, Copy, Paste, Undo, Redo, Select
-    All, Print and Export to PDF. Run, Debug, the LSP, build, AI, Markdown and Typst submenus, Add Bookmark and
-    Add Personal Note are hidden.
-  - **Project tree menu:** keeps New (a file or a folder), Rename, Undo Move, Delete and Reveal in File
-    Manager.
-  - **Preview menu** (Markdown, Typst, Markwhen, diagrams): keeps the copy actions, Go to Source, Enlarge,
-    Export to PDF and Print. Copy HTML and the Word, OpenDocument, PNG, SVG and Markwhen JSON exports are
-    hidden.
-  - Git, Local History, the compare actions, Open Terminal, Pin and the bookmark and note entries are hidden
-    on the tab, editor and Project tree menus. Turning Simple mode off brings every entry back.
-
-### Fixed
-
 - **"Snippets: Manage", "Sync setup" and the Doctor links opened an empty page** when a search was left in the
   Settings search box.
 - **What Settings search found depended on which pages you had opened** before searching.
@@ -796,69 +855,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Remote: an SSH config with a `Match` section no longer stops every connect.** Editora skips `Match`
   sections (it cannot evaluate them) and reads the rest of the file; before, any `Match` made every connect
   fail with "Currently not able to process Match sections".
-
-### Changed
-
-- **HTTP Client: the response view gives the body the room.** The Request, Tests, warnings and headers used to
-  stack above the body, which a normal Split left three lines. Now one header row and a tab strip come first.
-  - **One header row:** Run (with its shortcut from your keymap), the status as a coloured pill (green 2xx, blue
-    3xx, amber 4xx, red 5xx and failures), the time and size, then History. Its tooltip has the full
-    status line and when the request was sent.
-  - **Tabs:** Body · Headers · Tests · Request · Notes, with counts: the number of headers, tests passed of total
-    (red when one failed), and warnings plus files written (amber when there is a warning). Body is shown by
-    default. A run switches to Tests on its own only when a test or a script failed; warnings never switch tabs.
-    The tab you pick stays across runs while a response has it. Tab reaches the tabs, and the arrow keys, Home and
-    End move between them.
-  - **Headers** are a name/value list: right-click to copy a value, a header, or all of them. **Request** shows
-    the request as sent, highlighted like a `.http` file and filling the tab.
-  - **The actions are icons** at the end of the tab strip (Wrap, Copy as cURL, Open in tab, Save response), with
-    their shortcuts in the tooltips; Clear is in the **⋯** menu.
-  - In a narrow panel History narrows first, then the time and size hide, then History moves to a
-    second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
-
-- **HTTP Client: the environment is chosen beside the editor.** A `.http` file shows its environment on a pill
-  beside the Editor/Split/Preview toggle ("Env: dev", or "No environment"), in every view mode and as soon as the
-  file opens, and in the status bar. Clicking either opens the file's environments; `HTTP: Select Environment`
-  opens the same menu from the keyboard (arrow keys and Enter; Escape goes back to the editor). The first run of a
-  file no longer goes out without an environment because the response view was not open yet. The Environment
-  picker in the response view is gone; each file keeps the environment it had.
-  - **Use environment dev:** an unresolved `{{variable}}` that an environment of the file defines offers that
-    environment as a quick fix — right-click it, or use the Code Actions chord with the caret on it. Its tooltip
-    names the fix, and with another environment selected it says which ones define the variable.
-  - A variable sent empty is reported with the environments that define it. Each response in History records
-    the environment it was sent in, and the response view shows it beside the time and size ("env dev").
-  - The menu says when no `http-client.env.json` was found for the file, and opens the env files it has.
-
-  - In a narrow panel History narrows first, then the time and size hide, then History and the environment move
-    to a second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
-- **HTTP Client: the response view says what is going on between responses.**
-  - **Before the first run** (and after Clear) it shows which request Run will send — the one at the caret, by its
-    `###` title — your Run shortcut, that the gutter's ▶ runs a request, and the file's requests: click one (or
-    press Enter on it) to run it.
-  - **While a request is sent**, the status says "Sending Get one user… 1.2 s" ("Sending 3 of 10: …" in a Run
-    All) over a thin progress line, and the response shown before is one "Previous: 200 OK · 16:42:31 · getUser"
-    row, which you can click to see it. Its body no longer disappears without a trace, nor shows under the new
-    run.
-  - **While a trust prompt is open** it says "Waiting for your answer…" without a clock; the time counts from
-    when the request is sent.
-  - **After Cancel** it says how long the request ran, and the previous response's row comes back, selected in
-    History.
-  - **A request that got no response** shows a card in the Body tab naming what went wrong (Connection refused,
-    Host not found, Timed out, Certificate problem, Not sent…) with the explanation and Run again and Copy as
-    cURL buttons; a pre-request script that did not run also offers its output. The view opens on that card.
-
-- **HTTP Client: response bodies read like other tools show them.** JSON is laid out as `"id": 42`, two spaces
-  per level, every field and array element on its own line, and `[]`/`{}` for empty ones (it was Jackson's
-  `"id" : 42` with `[ {` on one line). HTML responses, such as a one-line 404 page, are indented one element per
-  line, with text and inline tags kept together and the contents of `<pre>`, `<script>`, `<style>`,
-  `<textarea>` and comments left as they are; a page the server already indented, or one too irregular to
-  format safely, is shown as received. Only the view changes: Save response and Open in tab still write the
-  body exactly as it arrived.
-
-- **HTTP Client: image responses say what they are.** A caption line gives the format, the size in pixels and
-  the size in bytes ("PNG · 160 × 160 · 858 B"), the picture sits on a checkerboard so transparent parts show,
-  and **Fit** (the default, which scales a large picture down to the panel's width but never enlarges a small
-  one) and **100%** switch between fitting and the actual size.
 
 ## [0.22.0] - 2026-10-16
 
