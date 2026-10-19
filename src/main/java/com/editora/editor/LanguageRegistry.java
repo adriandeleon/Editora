@@ -87,6 +87,17 @@ public final class LanguageRegistry {
             Map.entry("groovy", "groovy"),
             Map.entry("gradle", "groovy"),
             Map.entry("gvy", "groovy"),
+            Map.entry("scala", "scala"),
+            Map.entry("sc", "scala"), // Scala CLI / Ammonite script
+            Map.entry("sbt", "scala"),
+            Map.entry("mill", "scala"),
+            // Clojure is a Lisp: folds by its own paren folder, not the brace one.
+            Map.entry("clj", "clojure"),
+            Map.entry("cljs", "clojure"),
+            Map.entry("cljc", "clojure"),
+            Map.entry("cljx", "clojure"),
+            Map.entry("edn", "clojure"),
+            Map.entry("bb", "clojure"), // Babashka script
             Map.entry("cs", "csharp"),
             Map.entry("csx", "csharp"),
             Map.entry("css", "css"),
@@ -180,6 +191,8 @@ public final class LanguageRegistry {
         if (fileName == null) {
             return PLAINTEXT;
         }
+        // An encrypted file is in the language of the file inside it: notes.md.gpg is Markdown.
+        fileName = EncryptedNames.languageName(fileName);
         // Reduce a path to its last segment so filename rules work regardless of how the caller passes it.
         String base = fileName;
         int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));

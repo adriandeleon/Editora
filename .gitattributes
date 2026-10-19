@@ -20,6 +20,11 @@ mvnw.cmd -text
 *.ttf binary
 *.pdf binary
 *.bin binary
+# OpenPGP: a binary encrypted file is bytes; an armored one (.asc) is ASCII but a signature or a key must keep
+# its exact bytes (a clear-signed text's line endings are part of what is signed).
+*.gpg binary
+*.pgp binary
+samples/encrypted/** -text
 
 # Sample corpus: preserve bytes verbatim and keep it out of language stats / diffs.
 # The encoding/EOL samples MUST NOT be normalized by git (autocrlf, eol, BOM

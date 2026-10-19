@@ -131,6 +131,7 @@ class TabContextMenuFxTest {
                         List.of(
                                 tr("menu.save"),
                                 tr("menu.saveAs"),
+                                tr("menu.encrypt"),
                                 "-",
                                 tr("menu.print"),
                                 tr("menu.exportPdf"),

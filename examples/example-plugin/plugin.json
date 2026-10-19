@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "main": "com.example.editora.HelloPlugin",
   "keymap": {
-    "C-c C-e": "plugin.example.insertStamp"
+    "C-M-S-e": "insertStamp"
   },
   "commands": [
     {

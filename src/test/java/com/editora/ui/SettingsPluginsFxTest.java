@@ -76,8 +76,17 @@ class SettingsPluginsFxTest {
             assertEquals(2, rows.size());
             assertFalse(master.isSelected());
             assertTrue(rows.stream().allMatch(CheckBox::isDisabled), "greyed while plugins are off");
+            CheckBox hello = rows.stream()
+                    .filter(c -> c.getText().startsWith("Hello Fake"))
+                    .findFirst()
+                    .orElseThrow();
+            CheckBox broken = rows.stream()
+                    .filter(c -> c.getText().equals("broken-fake"))
+                    .findFirst()
+                    .orElseThrow();
             master.setSelected(true);
-            assertTrue(rows.stream().noneMatch(CheckBox::isDisabled), "tickable once they are on");
+            assertFalse(hello.isDisabled(), "tickable once they are on");
+            assertTrue(broken.isDisabled(), "A1: a plugin that failed to load is never tickable");
             master.setSelected(false);
             assertTrue(rows.stream().allMatch(CheckBox::isDisabled));
         });
@@ -117,26 +126,24 @@ class SettingsPluginsFxTest {
         });
         FxTestSupport.runOnFx(() -> {
             VBox list = FxTestSupport.field(w, "pluginListBox");
-            javafx.scene.control.Label pill =
+            assertTrue(
                     SettingsRemoteSitesFxTest.all(list, javafx.scene.control.Label.class, new ArrayList<>()).stream()
-                            .filter(l ->
-                                    Messages.tr("settings.plugins.restartPill").equals(l.getText()))
-                            .findFirst()
-                            .orElseThrow();
+                            .noneMatch(l ->
+                                    Messages.tr("settings.plugins.restartPill").equals(l.getText())),
+                    "it runs as it is set: nothing to restart for");
             CheckBox hello = pluginRows(w).stream()
                     .filter(c -> c.getText().startsWith("Hello Fake"))
                     .findFirst()
                     .orElseThrow();
-            assertFalse(pill.isVisible() && pill.getParent() == hello.getParent(), "nothing switched yet");
             hello.setSelected(false); // switching off asks nothing
             assertFalse(fx.shared.getPluginStore().isEnabled("hello-fake"));
-            assertTrue(
-                    SettingsRemoteSitesFxTest.all(
-                                    hello.getParent(), javafx.scene.control.Label.class, new ArrayList<>())
-                            .stream()
-                            .anyMatch(l -> l.isVisible()
-                                    && Messages.tr("settings.plugins.restartPill")
-                                            .equals(l.getText())));
+        });
+        FxTestSupport.runOnFx(() -> {
+            VBox list = FxTestSupport.field(w, "pluginListBox");
+            // E12: the row is compared with what this session runs (the launch set), so it says so.
+            assertTrue(SettingsRemoteSitesFxTest.all(list, javafx.scene.control.Label.class, new ArrayList<>()).stream()
+                    .anyMatch(l -> l.isVisible()
+                            && Messages.tr("settings.plugins.restartPill").equals(l.getText())));
             String error =
                     SettingsRemoteSitesFxTest.all(list, javafx.scene.control.Label.class, new ArrayList<>()).stream()
                             .map(javafx.scene.control.Label::getText)

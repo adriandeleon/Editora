@@ -55,6 +55,8 @@ final class MenuBarIcons {
         add("file.save", Icons::save);
         add("file.saveAs", Icons::saveAs);
         add("file.saveAsAdmin", Icons::saveAs);
+        add(EncryptionCoordinator.ENCRYPT_FILE, Icons::lock);
+        add(EncryptionCoordinator.LOCK_FILE, Icons::lock);
         add("config.export", Icons::saveAs);
         add("editor.print", Icons::print);
         add("preview.print", Icons::print);

@@ -242,7 +242,9 @@ class PluginInstallerUrlTest {
         byte[] big = new byte[(int) ARCHIVE_CAP + 1];
         Arrays.fill(big, (byte) 'x');
 
-        assertRefused(installer.installFromUrlSync(published(big)), "exceeds " + ARCHIVE_CAP + " bytes");
+        PluginInstaller.Result r = installer.installFromUrlSync(published(big));
+        assertRefused(r, "archive too large");
+        assertEquals(PluginProblem.Kind.TOO_LARGE, r.problem().kind());
     }
 
     // --- hostile archives, correctly checksummed ------------------------------------------------------
@@ -400,7 +402,7 @@ class PluginInstallerUrlTest {
         Files.write(zip, new byte[(int) ARCHIVE_CAP + 1]);
         PluginInstaller.Result oversize = installer.installFromZipSync(zip);
         assertFalse(oversize.ok());
-        assertEquals("archive too large", oversize.error());
+        assertEquals(PluginProblem.Kind.TOO_LARGE, oversize.problem().kind(), "refused by its size, unread (D3)");
 
         Files.writeString(zip, "not a zip at all");
         PluginInstaller.Result notZip = installer.installFromZipSync(zip);

@@ -1,0 +1,87 @@
+{
+  "main": {
+    "prefix": "main",
+    "body": ["@main def ${1:run}(): Unit =", "\t$0"],
+    "description": "Scala 3 @main entry point"
+  },
+  "object main": {
+    "prefix": "objmain",
+    "body": ["object ${1:Main}:", "\tdef main(args: Array[String]): Unit =", "\t\t$0"],
+    "description": "Object with a main method"
+  },
+  "def": {
+    "prefix": "def",
+    "body": "def ${1:name}(${2:arg}: ${3:Int}): ${4:Unit} = $0",
+    "description": "Method definition"
+  },
+  "val": {
+    "prefix": "val",
+    "body": "val ${1:name} = $0",
+    "description": "Immutable value"
+  },
+  "var": {
+    "prefix": "var",
+    "body": "var ${1:name} = $0",
+    "description": "Mutable variable"
+  },
+  "class": {
+    "prefix": "class",
+    "body": ["class ${1:Name}(${2:args}):", "\t$0"],
+    "description": "Class definition"
+  },
+  "case class": {
+    "prefix": "cc",
+    "body": "case class ${1:Name}(${2:field}: ${3:String})",
+    "description": "Case class"
+  },
+  "trait": {
+    "prefix": "trait",
+    "body": ["trait ${1:Name}:", "\t$0"],
+    "description": "Trait definition"
+  },
+  "object": {
+    "prefix": "object",
+    "body": ["object ${1:Name}:", "\t$0"],
+    "description": "Singleton object"
+  },
+  "enum": {
+    "prefix": "enum",
+    "body": ["enum ${1:Name}:", "\tcase ${2:A}, ${3:B}"],
+    "description": "Scala 3 enum"
+  },
+  "match": {
+    "prefix": "match",
+    "body": ["${1:value} match", "\tcase ${2:pattern} => $3", "\tcase _ => $0"],
+    "description": "Pattern match"
+  },
+  "if": {
+    "prefix": "if",
+    "body": ["if ${1:condition} then", "\t$2", "else", "\t$0"],
+    "description": "if / then / else"
+  },
+  "for": {
+    "prefix": "for",
+    "body": ["for ${1:x} <- ${2:xs} do", "\t$0"],
+    "description": "for loop"
+  },
+  "for yield": {
+    "prefix": "fory",
+    "body": ["for", "\t${1:x} <- ${2:xs}", "yield $0"],
+    "description": "for comprehension"
+  },
+  "println": {
+    "prefix": "println",
+    "body": "println($0)",
+    "description": "Print a line"
+  },
+  "test": {
+    "prefix": "test",
+    "body": ["test(\"${1:does something}\") {", "\t$0", "}"],
+    "description": "munit / ScalaTest test case"
+  },
+  "using directive": {
+    "prefix": "using",
+    "body": "//> using ${1|scala,dep,jvm,option|} ${2:3}",
+    "description": "Scala CLI using directive"
+  }
+}

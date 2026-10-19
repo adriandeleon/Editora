@@ -16,8 +16,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class RegistryIndex {
 
-    /** Index format version (currently 1); reserved for future migrations. */
-    public int schemaVersion = 1;
+    /** The index format this build reads; a newer one is refused (see {@code PluginRegistry}). */
+    public static final int SCHEMA_VERSION = 1;
+
+    /** Index format version (currently 1). */
+    public int schemaVersion = SCHEMA_VERSION;
 
     public List<RegistryEntry> plugins = new ArrayList<>();
 
@@ -29,6 +32,8 @@ public class RegistryIndex {
         }
         // Drop entries with no id (malformed) so callers never see a half-formed row.
         idx.plugins.removeIf(e -> e == null || e.id == null || e.id.isBlank());
+        // A plugin whose feature is built in now is not offered (the registry may still list it for older versions).
+        idx.plugins.removeIf(e -> RetiredPlugins.isRetired(e.id));
         // Defensive: cap displayed strings so a hostile registry can't bloat the UI with megabyte fields.
         for (RegistryEntry e : idx.plugins) {
             e.id = cap(e.id, 100);
@@ -40,6 +45,7 @@ public class RegistryIndex {
             e.download = cap(e.download, 1000);
             e.sha256 = cap(e.sha256, 128);
             e.minEditoraVersion = cap(e.minEditoraVersion, 40);
+            e.deprecated = cap(e.deprecated, 300);
         }
         return idx;
     }

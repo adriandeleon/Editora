@@ -92,7 +92,7 @@ JavaScript (vscode-js-debug) is a socket. External adapters are never bundled �
 `dap/DebugAdapterLocator` and installed by the `scripts/install-*.sh` helpers.
 
 A JVM language other than Java (Groovy, Kotlin) uses `Kind.JVM`: Editora's own JDI adapter
-([ADR 0017](decisions/0017-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
+([ADR 0018](decisions/0018-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
 the variable its launcher passes JVM options in), a `run/JvmTools` home variable (and its SDKMAN candidate
 when that is named otherwise), a `DapServerRegistry` `Def`, its `RunScan` branch, its runtime-internal
 packages in `JvmSourceMap.stepFilters`, and the `ExceptionFilterCatalog` filters. A language whose files are
@@ -103,20 +103,70 @@ line (`jvmOptionsInArgv`). An attach to a build's JVM anchored at such a file go
 
 ## Add a language / TextMate grammar
 
-1. Drop the `<name>.tmLanguage.json` under
-   [`resources/com/editora/grammars/`](../src/main/resources/com/editora/grammars/) (vendor
-   from a permissive source; attribute it in `NOTICE`).
-2. Register it in `GrammarRegistry`: a `scopeToResource` entry (scope → resource base name) and
-   a `mapExtensions(...)` entry (file extension → scope). Filename-only matches (like
-   `Dockerfile`) go in `ConfigFileType`, which both registries read.
-3. Add the extension to `LanguageRegistry` (language-name resolver used by folding + File
-   Information), and to `FoldRegions`/`Indenter`/`Commenter` if it needs folding/indent/comment
-   support. `LanguageTablesAgreeTest` fails when an extension has a grammar but no language, or the
-   reverse. Shell extensions and names live in one table, `ShellFiles`, that all three read.
-   A plain-text buffer can still get a language from its content: a shebang (`Shebang`) or a vim/emacs
-   modeline (`Modeline`); add the interpreter or mode name there when a language should be reachable that way.
-4. A grammar that `include`s a `#rule` it never defines loses that construct silently (tm4e skips
-   it, and `App` silences tm4e's warnings); `BundledGrammarIncludesTest` catches it.
+A language is a set of small tables, not one class. Each row below is a place a language's id (the
+`LanguageRegistry` name, e.g. `scala`) or extension has to appear; leaving one out silently drops that
+feature for the language. The Kotlin, Groovy, Scala and Clojure rows are a worked example of the whole
+list.
+
+**Recognition**
+
+1. **Grammar** — drop `<name>.tmLanguage.json` under
+   [`resources/com/editora/grammars/`](../src/main/resources/com/editora/grammars/), vendored from a
+   permissive source (shiki's `tm-grammars` is the usual one), and attribute it in `NOTICE`: source,
+   version, any local change, and the "Languages bundled" list. tm4e reads `applyEndPatternLast` as true
+   only when it is the boolean `true` (`"1"` is false), and the Joni backend rejects variable-length
+   look-behinds; `BundledGrammarsTokenizeTest` compiles every regex and fails on either.
+2. **`GrammarRegistry`** — a `scopeToResource` entry (scope → resource base name) and a
+   `mapExtensions(...)` entry (extension → scope). Name-only files (`Dockerfile`, `project.clj`) go in
+   `ConfigFileType`, which both registries read.
+3. **`LanguageRegistry`** — the same extensions → the language id. `LanguageTablesAgreeTest` fails when an
+   extension has a grammar but no language, or the reverse. Shell extensions live in one table,
+   `ShellFiles`, that all three read.
+4. **Content detection** — a plain-text buffer still gets a language from a shebang (`Shebang.INTERPRETERS`:
+   interpreter → representative extension) or a vim/emacs modeline (`Modeline.NAMES`).
+5. **Markdown fences** — `MarkdownRenderer.INFO_EXT` maps a fence's info string to an extension for the
+   preview; the editor's own fence highlighting is a `fenced_code_block_<lang>` rule in
+   `markdown.tmLanguage.json`, which already covers most languages.
+
+**Editing**
+
+6. **`Commenter.styleFor`** — line and block comment tokens (`;;` for Clojure).
+7. **`Indenter.styleFor`** — the indent `Style`. A language whose blocks are not braces gets its own helper
+   beside `PythonIndent`/`ShellIndent`: `LispIndent` (Clojure: by the innermost open bracket) and
+   `ScalaIndent` (Scala 3's optional-brace openers, shared with folding). `IndentWindow.enterEdit` must
+   hand a style that reads the lines above the caret a back-scan window.
+8. **`FoldRegions`** — a `detect` case (the brace walker, or a scanner of its own like `lisp`/`scala`),
+   the `SLASH_STAR_LANGUAGES` block-comment set, and `Syntax.of` for the literal rules (triple quotes, a
+   `'` that may not close).
+9. **`AutoClose.decide`** — a quote that is not a string delimiter in the language (Clojure's `'` and
+   backtick) must not pair. **`StringCase.DASH_OPERATOR_LANGUAGES`** — whether `-` between names is an
+   operator (Scala) or part of a name (Clojure, CSS).
+
+**Navigation**
+
+10. **Symbol index** — a rule list in `index/DeclarationRules` (`BY_LANGUAGE`; `braceScoped` when members
+    are not nested in braces) and, when its quotes are not C's, a case in `SourceBlanker.blank` (Clojure's
+    `'sym` and `\c`, Scala 2's `'symbol`). `DeclarationScannerTest` holds a case per language.
+11. **Structure panel** — `StructurePanel.isBraceLanguage` for a brace language. When the grammar emits no
+    `entity.name.*` scopes for declarations (Clojure), add a branch to `buildNodes` that builds the outline
+    another way (`clojureFormNodes` reads the symbol index).
+12. **Stack traces** (JVM languages) — the file extension in `StackTraceLinks.JVM_SOURCE` and the source
+    roots in `search/SourceFileFinder.SOURCE_ROOTS`.
+
+**Files and chrome**
+
+13. **Snippets** — `resources/com/editora/snippets/<lang>.json`, the id in
+    `SnippetManager.BUNDLED_LANGUAGES` (sorted; `SnippetManagerTest` pins it to the directory), and its
+    provenance in `NOTICE`.
+14. **New file** — a `NewFileCatalog` row (with a template only when an empty file would be useless).
+15. **Icons** — a brand glyph in `FileIcons` (`PATHS` + `keyForLanguage`, Simple Icons are CC0; list it in
+    `NOTICE`), and the language in `ProjectMapModel.SOURCE_LANGUAGES` (build files in `CONFIG_NAMES`).
+16. **Samples** — a `samples/syntax/` file listed in `samples/README.md`; `SamplesCorpusTest` fails when a
+    bundled grammar has no sample.
+
+A grammar that `include`s a `#rule` it never defines loses that construct silently (tm4e skips it, and
+`App` silences tm4e's warnings); `BundledGrammarIncludesTest` catches it. Language servers and debug
+adapters are separate recipes ([LSP](#add-an-lsp-server), [DAP](#add-a-dap-adapter)).
 
 > **JPMS gotcha:** grammar resources live in the `com.editora.grammars` package, which
 > `module-info.java` must `opens ... to org.eclipse.tm4e.core`. Without that, tm4e's

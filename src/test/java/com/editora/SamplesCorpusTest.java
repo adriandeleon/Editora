@@ -77,7 +77,8 @@ class SamplesCorpusTest {
      * tool files Editora has no grammar for ({@code go.mod}, BibTeX).
      */
     private static final Set<String> PLAIN_EXTENSIONS =
-            Set.of("txt", "bin", "png", "jpg", "gif", "bmp", "pdf", "mod", "bib");
+            // "asc": an OpenPGP public key opens as text (an encrypted .md.asc is Markdown by its inner name).
+            Set.of("txt", "bin", "png", "jpg", "gif", "bmp", "pdf", "mod", "bib", "asc");
 
     /** Samples whose language comes from their <em>content</em> (a shebang, a log sniff), not their name. */
     private static final Set<String> DETECTED_BY_CONTENT =

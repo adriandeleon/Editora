@@ -25,7 +25,9 @@ has no sample anywhere in the corpus.
 `samples/syntax/Sample.java`, `samples/syntax/sample.py`, `samples/syntax/sample.ts`,
 `samples/syntax/sample.tsx`, `samples/syntax/sample.go`, `samples/syntax/sample.rs`,
 `samples/syntax/sample.c`, `samples/syntax/sample.cpp`, `samples/syntax/Sample.cs`,
-`samples/syntax/Sample.kt`, `samples/syntax/sample.php`, `samples/syntax/sample.rb`,
+`samples/syntax/Sample.kt`, `samples/syntax/sample.scala` (Scala 3 optional braces with `end` markers, plus
+a Scala 2 brace object), `samples/syntax/sample.clj` (Clojure: a namespace, a protocol and records, a
+macro, character and regex literals), `samples/syntax/sample.php`, `samples/syntax/sample.rb`,
 `samples/syntax/sample.lua`, `samples/syntax/sample.html`, `samples/syntax/sample.css`,
 `samples/syntax/sample.json`, `samples/syntax/sample.yaml`, `samples/syntax/sample.xml`,
 `samples/syntax/sample.toml`, `samples/syntax/sample.sql`, `samples/syntax/sample.sh`,
@@ -529,6 +531,25 @@ Bytes are preserved verbatim via `.gitattributes` (`-text`), so don't "fix" them
   reopened as `windows-1251`).
 - `samples/encodings/gbk.txt` — Chinese in GBK (reopen as `GBK`). Save with Encoding → UTF-8, then save,
   converts it.
+
+## encrypted/ — encrypted files (GnuPG)
+
+Needs GnuPG (`gpg`) installed; Doctor shows whether it is found. Every encrypted sample opens with the
+passphrase **editora** (passphrase-only files, so no key is needed).
+
+- `samples/encrypted/diary.md.asc` — ASCII-armored, Markdown inside: opens as Markdown after the passphrase
+  prompt. Edit and save: it stays encrypted, and the save does not ask again. Click the status bar's
+  *Encrypted · Passphrase* for the details card; Tools ▸ Encryption ▸ Lock File puts the text away.
+- `samples/encrypted/release-notes.md.gpg` — the same as a binary `.gpg` file. Save As to `release-notes.md`
+  asks before writing it unencrypted.
+- `samples/encrypted/armored-message.md` — a note with an encrypted message pasted into it: put the caret in
+  the block and run Encryption: Decrypt Block at Caret.
+- `samples/encrypted/clear-signed.txt` — a clear-signed text. Encryption: Verify Signature says the signing
+  key is unknown until `samples/encrypted/sample-public-key.asc` is imported (open it: the banner offers
+  Import Key), then says the signature is good.
+
+To try encrypting for people, open any plain file and run Encryption: Encrypt File… — the recipient picker
+lists your own keyring.
 
 ## perf/ — large files (generated, not committed)
 

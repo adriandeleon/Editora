@@ -53,9 +53,10 @@ public final class IndentWindow {
     /** {@link Indenter#enterEdit(String, int, String, int, Boolean, Integer)} at {@code caret}, for {@code unit}. */
     public static Indenter.EnterEdit enterEdit(Doc doc, int caret, String language, String unit) {
         int line = doc.lineOf(caret);
-        // Shell and Python read the stretch above the caret (blocks, quotes, wrapped statements); the rest only the
-        // line.
-        int start = Indenter.styleFor(language) == Indenter.Style.SHELL || "python".equals(language)
+        // Shell, Python and Lisp read the stretch above the caret (blocks, quotes, wrapped statements, open
+        // forms); the rest only the line.
+        Indenter.Style style = Indenter.styleFor(language);
+        int start = style == Indenter.Style.SHELL || style == Indenter.Style.LISP || "python".equals(language)
                 ? backScanStart(doc, line)
                 : doc.lineStart(line);
         return Indenter.enterEdit(

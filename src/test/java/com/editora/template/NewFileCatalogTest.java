@@ -142,4 +142,33 @@ class NewFileCatalogTest {
             }
         }
     }
+
+    @Test
+    void scalaAndClojureEntriesCreateFilesOfTheirLanguage() {
+        assertEquals(
+                "scala",
+                LanguageRegistry.forFileName(NewFileCatalog.byId("lang.scala").suggestedFileName()));
+        assertEquals(
+                "scala",
+                LanguageRegistry.forFileName(
+                        NewFileCatalog.byId("scripts.scalaCli").suggestedFileName()));
+        assertEquals(
+                "clojure",
+                LanguageRegistry.forFileName(NewFileCatalog.byId("lang.clojure").suggestedFileName()));
+        assertEquals(
+                "clojure",
+                LanguageRegistry.forFileName(
+                        NewFileCatalog.byId("scripts.babashka").suggestedFileName()));
+        assertTrue(
+                NewFileCatalog.byId("scripts.scalaCli").template().startsWith("#!/usr/bin/env -S scala-cli shebang"));
+        assertTrue(NewFileCatalog.byId("scripts.babashka").template().startsWith("#!/usr/bin/env bb"));
+    }
+
+    @Test
+    void aClojureNamespaceIsNamedAfterItsFileWithDashes() {
+        NewFileContent.Rendered r = NewFileContent.render(NewFileCatalog.byId("lang.clojure"), "string_utils", "");
+        assertTrue(r.text().startsWith("(ns string-utils)\n"), r.text());
+        NewFileContent.Rendered main = NewFileContent.render(NewFileCatalog.byId("lang.scala"), "App", "");
+        assertTrue(main.text().startsWith("object App:\n  def main(args: Array[String]): Unit =\n"), main.text());
+    }
 }
