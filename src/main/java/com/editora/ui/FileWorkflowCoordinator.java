@@ -414,6 +414,12 @@ final class FileWorkflowCoordinator {
      * there — reporting "Already open" for a tab Editora itself just made is noise, not information.
      */
     void openPath(Path file, boolean quietIfOpen) {
+        if (file.getFileName() == null) {
+            // A root ("/", "D:\", an SFTP host's "/" — what Remote > Open File makes of sftp://host) is a
+            // folder with no name. Everything below names the file, so it used to throw instead of answering.
+            host.setStatus(tr("status.openIsFolder", com.editora.config.PathDisplay.of(file)));
+            return;
+        }
         Tab existing = host.tabForPath(file);
         if (existing != null) {
             // Already open — switch to its tab instead of opening a duplicate. Asking for it explicitly
