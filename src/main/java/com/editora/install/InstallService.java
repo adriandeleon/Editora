@@ -196,6 +196,9 @@ public final class InstallService {
             case PINNED_TOOL -> {
                 return installPinnedTool(s, configDir);
             }
+            case JVM_LSP_JAR -> {
+                return installJvmLspJar(s, configDir);
+            }
         }
         return null;
     }
@@ -274,6 +277,39 @@ public final class InstallService {
             return null;
         });
         return InstallCatalog.jvmClasspathCommand(dest, InstallCatalog.LEMMINX_MAIN_CLASS);
+    }
+
+    /** Where server-jar recipes come from ({@link InstallCatalog#jvmLspJar}); a test supplies its own. */
+    private java.util.function.Function<String, java.util.Optional<InstallCatalog.JvmLspJar>> jvmLspJars =
+            InstallCatalog::jvmLspJar;
+
+    /** Test seam for {@link #jvmLspJars}: a recipe whose hash matches a test's own bytes. */
+    void setJvmLspJarsForTest(
+            java.util.function.Function<String, java.util.Optional<InstallCatalog.JvmLspJar>> recipes) {
+        this.jvmLspJars = recipes;
+    }
+
+    /**
+     * Downloads a pinned server jar, refuses it unless its SHA-256 is the recipe's, puts it at
+     * {@code <dest>/<file>} and returns the {@code java -jar "<file>"} launch command.
+     */
+    private String installJvmLspJar(Step s, Path configDir) throws Exception {
+        InstallCatalog.JvmLspJar jar = jvmLspJars.apply(s.id()).orElse(null);
+        if (jar == null) {
+            throw new InstallException(s.id() + ": no recipe");
+        }
+        byte[] data = download(jar.url());
+        String actual = InstallCatalog.sha256Hex(data);
+        if (!actual.equalsIgnoreCase(jar.sha256())) {
+            throw new InstallException(s.id() + ": the download does not match its published checksum (expected "
+                    + jar.sha256() + ", got " + actual + ") — not installed");
+        }
+        Path dest = configDir.resolve(s.destSubpath());
+        replaceInstall(dest, staged -> {
+            Files.write(staged.resolve(jar.fileName()), data);
+            return null;
+        });
+        return InstallCatalog.jvmJarCommand(dest.resolve(jar.fileName()));
     }
 
     private static boolean hasTopLevelJar(Path dir) throws IOException {

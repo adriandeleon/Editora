@@ -335,6 +335,8 @@ final class DebugCoordinator {
                         && dapManager.isAdapterAvailable();
             case "python" -> s.isPythonDebugEnabled() && dapManager.isLanguageAvailable("python");
             case "javascript" -> s.isJsDebugEnabled() && dapManager.isLanguageAvailable("javascript");
+            // Editora's own JVM adapter: nothing to install; the groovy tool is checked when the session starts.
+            case "groovy" -> dapManager.isLanguageAvailable("groovy");
             default -> false;
         };
     }
@@ -1773,9 +1775,11 @@ final class DebugCoordinator {
             }
         }
         // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
-        String jdkHome = !java || !com.editora.process.ExecTargets.runsHere(b.getPath())
+        // A Groovy script runs on the Settings JDK too (its JAVA_HOME), as Run runs it.
+        boolean jvmScript = com.editora.run.JvmScriptRun.supports(language);
+        String jdkHome = !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(b.getPath())
                 ? ""
-                : compactSource ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
+                : compactSource || jvmScript ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
         String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
         dapManager.setEnv(
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
@@ -2144,11 +2148,15 @@ final class DebugCoordinator {
      * Debugs a saved {@link RunConfiguration} — its main class, program args, VM args, environment and
      * working directory, and its before-launch step.
      *
-     * <p>Java only: the script types run but do not debug yet.
+     * <p>Java and Groovy: the other script types run but do not debug yet.
      */
     void debugConfig(RunConfiguration cfg) {
         if (cfg.isDeployed()) {
             ops.debugDeployed(cfg); // the program runs on the host; the debugger attaches through a tunnel
+            return;
+        }
+        if (com.editora.run.ScriptRunCommand.GROOVY.equals(cfg.type())) {
+            debugJvmScriptConfig(cfg);
             return;
         }
         if (com.editora.run.ScriptRunCommand.NODE.equals(cfg.type())
@@ -2260,6 +2268,78 @@ final class DebugCoordinator {
                 launch.run();
             }
         });
+    }
+
+    /**
+     * Debugs a Groovy script configuration on Editora's JVM adapter: its script, arguments, folder, environment,
+     * JDK and VM arguments (in {@code JAVA_OPTS}, beside the debugger's agent), after its before-launch step.
+     * On this machine only: a configuration whose folder is on a remote host runs there but does not debug yet.
+     */
+    private void debugJvmScriptConfig(RunConfiguration cfg) {
+        List<String> args = debugArgs(cfg.args());
+        if (args == null) {
+            return;
+        }
+        Path root = ops.projectRoot();
+        Path cwd = com.editora.run.RunConfigWorkingDirectory.resolve(cfg, root);
+        Path script = cwd == null ? null : com.editora.run.RunConfigWorkingDirectory.script(cfg, root, cwd);
+        if (cwd == null || script == null) {
+            host.setStatus(tr("status.run.configNeedsTarget", cfg.name()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (!com.editora.process.ExecTargets.runsHere(script)) {
+            host.setStatus(tr("debug.error.remoteLanguage"));
+            return;
+        }
+        if (!java.nio.file.Files.isRegularFile(script)) {
+            host.setStatus(tr("status.run.scriptMissing", cfg.name(), script.toString()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (!debugEffectiveFor(cfg.type(), script)) {
+            host.setStatus(unavailableMessage(cfg.type(), script));
+            return;
+        }
+        java.util.Map<String, String> env;
+        try {
+            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false));
+        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (beforeLaunch.isActive() || pendingBuild != null) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        String jdkHome = cfg.jdkHome().isBlank() ? host.settings().getMavenJdkHome() : cfg.jdkHome();
+        java.util.Map<String, String> launchEnv = new java.util.LinkedHashMap<>(
+                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
+        launchEnv.putAll(env);
+        launchEnv = com.editora.run.JvmScriptRun.withJvmOption(
+                launchEnv,
+                System.getenv(),
+                com.editora.run.JvmScriptRun.jvmOptionsVariable(cfg.type()),
+                cfg.vmArgs().strip());
+        java.util.Map<String, String> programEnv = launchEnv;
+        String name = cfg.name();
+        relaunch = () -> debugConfig(currentConfiguration(name, cfg));
+        beforeLaunch.run(
+                host,
+                cfg,
+                cwd,
+                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()),
+                beforeLaunchConsole(),
+                () -> {
+                    ops.openToolWindow();
+                    nameSession(cfg.name());
+                    dapManager.setProgramArgs(args);
+                    dapManager.setVmArgs("");
+                    dapManager.setHostJavaExec("");
+                    dapManager.setEnv(programEnv);
+                    withClosedBreakpoints(() -> dapManager.startJvmScript(script, cfg.type(), cwd));
+                });
     }
 
     /** The saved configuration called {@code name} as it is now, else {@code fallback} (it was deleted). */

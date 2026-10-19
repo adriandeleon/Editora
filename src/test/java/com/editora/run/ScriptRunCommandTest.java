@@ -25,6 +25,12 @@ class ScriptRunCommandTest {
     @Test
     void aMakeTargetRunsUnderMake() {
         assertEquals(List.of("make", "test"), ScriptRunCommand.build("make", "test", List.of()));
+        assertEquals(
+                List.of("groovy", "tools/report.groovy", "-v"),
+                ScriptRunCommand.build("groovy", "tools/report.groovy", List.of("-v")));
+        assertTrue(ScriptRunCommand.isScript("groovy"));
+        assertTrue(ScriptRunCommand.needsTarget("groovy"));
+        assertEquals(List.of(), ScriptRunCommand.build("groovy", " ", List.of()));
     }
 
     @Test

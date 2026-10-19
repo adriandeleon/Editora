@@ -57,6 +57,21 @@ class RunScanTest {
     }
 
     @Test
+    void aGroovyScriptRunsFromTheTopOrItsMainButABuildScriptNeverRuns() {
+        RunScan.Result script = RunScan.scan(inputs("groovy", "report.groovy"), "println 'hi'\n");
+        assertTrue(script.runnable());
+        assertEquals(0, script.line());
+        assertEquals(
+                2,
+                RunScan.scan(inputs("groovy", "App.groovy"), "class App {\n\n  static void main(String[] a) {}\n}\n")
+                        .line());
+        assertFalse(RunScan.scan(inputs("groovy", "build.gradle"), "plugins { id 'java' }\n")
+                .runnable());
+        assertFalse(
+                RunScan.scan(inputs("groovy", "Jenkinsfile"), "pipeline { }\n").runnable());
+    }
+
+    @Test
     void aShellScriptIsRunnableWheneverRunIsOn() {
         // No LSP or Bash-server condition any more: like Python, only the Run feature gates it.
         RunScan.Result r = RunScan.scan(inputs("shell", "a.sh"), "echo hi\n");

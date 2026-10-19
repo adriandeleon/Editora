@@ -19,8 +19,9 @@ class LspServerRegistryTest {
         assertTrue(LspServerRegistry.isSupported("typescript"));
         assertTrue(LspServerRegistry.isSupported("typescriptreact"));
         assertTrue(LspServerRegistry.isSupported("python"));
-        // groovy has highlighting but no bundled language server.
-        assertFalse(LspServerRegistry.isSupported("groovy"));
+        // groovy is served by gvy, which has no command until it is installed (like the pom.xml server).
+        assertTrue(LspServerRegistry.isSupported("groovy"));
+        assertFalse(LspServerRegistry.isSupported("clojure"));
         assertFalse(LspServerRegistry.isSupported("plaintext"));
         assertEquals("java", LspServerRegistry.serverIdFor("java"));
         // One TypeScript server serves all four JS/TS dialects.
@@ -28,8 +29,14 @@ class LspServerRegistryTest {
         assertEquals("typescript", LspServerRegistry.serverIdFor("javascriptreact"));
         assertEquals("typescript", LspServerRegistry.serverIdFor("typescript"));
         assertEquals("typescript", LspServerRegistry.serverIdFor("typescriptreact"));
-        assertNull(LspServerRegistry.serverIdFor("groovy"));
-        assertNull(LspServerRegistry.specFor("groovy", Map.of()));
+        assertEquals("groovy", LspServerRegistry.serverIdFor("groovy"));
+        assertEquals(List.of(), LspServerRegistry.commandFor("groovy", Map.of()), "not installed: no command");
+        assertEquals(
+                List.of("java", "-jar", "/x/gls.jar"),
+                LspServerRegistry.commandFor("groovy", Map.of("groovy", "java -jar /x/gls.jar")));
+        assertTrue(LspServerRegistry.rootMarkersFor("groovy").contains("Jenkinsfile"));
+        assertNull(LspServerRegistry.serverIdFor("clojure"));
+        assertNull(LspServerRegistry.specFor("clojure", Map.of()));
     }
 
     @Test

@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * The exception filters each adapter is known to offer, for the picker before a session has asked the adapter
  * itself (a live session's {@code exceptionBreakpointFilters} replace these). Defaults as the adapters declare
- * them: debugpy stops on uncaught exceptions; java-debug and vscode-js-debug stop on none.
+ * them: debugpy and Editora's JVM adapter stop on uncaught exceptions; java-debug and vscode-js-debug on none.
  */
 public final class ExceptionFilterCatalog {
 
@@ -29,6 +29,11 @@ public final class ExceptionFilterCatalog {
                 List.of(
                         new DapModels.ExceptionFilterOption("all", "Caught Exceptions", false),
                         new DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", false));
+            // Editora's JVM adapter (com.editora.dap.jvm): a script's uncaught exception stops, as debugpy's does.
+            case "groovy" ->
+                List.of(
+                        new DapModels.ExceptionFilterOption("caught", "Caught Exceptions", false),
+                        new DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", true));
             default -> List.of();
         };
     }
@@ -43,7 +48,7 @@ public final class ExceptionFilterCatalog {
             return null;
         }
         return switch (language) {
-            case "java" -> "caught";
+            case "java", "groovy" -> "caught";
             case "python" -> "raised";
             case "javascript" -> "all";
             default -> null;

@@ -105,6 +105,7 @@ class LspCoordinatorServerIdsTest {
             case "html" -> s.setHtmlLspCommand(v);
             case "css" -> s.setCssLspCommand(v);
             case "kotlin" -> s.setKotlinLspCommand(v);
+            case "groovy" -> s.setGroovyLspCommand(v);
             case "lua" -> s.setLuaLspCommand(v);
             case "dockerfile" -> s.setDockerfileLspCommand(v);
             case "sql" -> s.setSqlLspCommand(v);

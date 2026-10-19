@@ -9393,7 +9393,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         String type = b.isShell()
                 ? "shell"
-                : b.isPython() ? "python" : com.editora.run.NodeRunPlan.isNodeLanguage(b.getLanguage()) ? "node" : null;
+                : b.isPython()
+                        ? "python"
+                        : com.editora.run.NodeRunPlan.isNodeLanguage(b.getLanguage())
+                                ? "node"
+                                : "groovy".equals(b.getLanguage()) ? "groovy" : null;
         return com.editora.run.RunConfigDefaults.forScript(type, b.getPath(), windowProjectRoot());
     }
 

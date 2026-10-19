@@ -7328,6 +7328,17 @@ public class SettingsWindow {
                         v -> config.getSettings().setKotlinLspCommand(v),
                         () -> config.getSettings().getKotlinLspCommand()),
                 new LspServerUi(
+                        "groovy",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_GROOVY_COMMAND,
+                        "settings.lsp.enableGroovy",
+                        "settings.lsp.groovyCommand",
+                        "lsp groovy gvy gls gradle jenkinsfile language server found installed not found command path"
+                                + " java jar",
+                        v -> config.getSettings().setGroovyLspEnabled(v),
+                        () -> config.getSettings().isGroovyLspEnabled(),
+                        v -> config.getSettings().setGroovyLspCommand(v),
+                        () -> config.getSettings().getGroovyLspCommand()),
+                new LspServerUi(
                         "lua",
                         com.editora.lsp.LspServerRegistry.DEFAULT_LUA_COMMAND,
                         "settings.lsp.enableLua",

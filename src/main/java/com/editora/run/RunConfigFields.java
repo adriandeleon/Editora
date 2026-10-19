@@ -24,7 +24,8 @@ public final class RunConfigFields {
     public static boolean usesScriptFile(String type) {
         return ScriptRunCommand.PYTHON.equals(type)
                 || ScriptRunCommand.SHELL.equals(type)
-                || ScriptRunCommand.NODE.equals(type);
+                || ScriptRunCommand.NODE.equals(type)
+                || ScriptRunCommand.GROOVY.equals(type);
     }
 
     /**
@@ -37,8 +38,13 @@ public final class RunConfigFields {
                 || ScriptRunCommand.NODE.equals(type);
     }
 
-    /** Whether {@code type} launches with the main class, module, VM arguments and JDK. */
+    /** Whether {@code type} launches with the main class and module (a Java main class, resolved by jdtls). */
     public static boolean usesJavaFields(String type) {
         return !ScriptRunCommand.isScript(type);
+    }
+
+    /** Whether {@code type} runs on a JVM whose arguments and JDK the configuration sets: Java and Groovy. */
+    public static boolean usesJvmFields(String type) {
+        return usesJavaFields(type) || ScriptRunCommand.GROOVY.equals(type);
     }
 }

@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 137;
+    public static final int SCHEMA_VERSION = 138;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -794,6 +794,7 @@ public class Settings {
     private String htmlLspCommand = "";
     private String cssLspCommand = "";
     private String kotlinLspCommand = "";
+    private String groovyLspCommand = "";
     private String luaLspCommand = "";
     private String dockerfileLspCommand = "";
     private String sqlLspCommand = "";
@@ -846,6 +847,7 @@ public class Settings {
     private boolean htmlLspEnabled = true;
     private boolean cssLspEnabled = true;
     private boolean kotlinLspEnabled = true;
+    private boolean groovyLspEnabled = true;
     private boolean luaLspEnabled = true;
     private boolean dockerfileLspEnabled = true;
     private boolean sqlLspEnabled = true;
@@ -3657,6 +3659,22 @@ public class Settings {
 
     public void setKotlinLspEnabled(boolean kotlinLspEnabled) {
         this.kotlinLspEnabled = kotlinLspEnabled;
+    }
+
+    public String getGroovyLspCommand() {
+        return groovyLspCommand == null ? "" : groovyLspCommand;
+    }
+
+    public void setGroovyLspCommand(String groovyLspCommand) {
+        this.groovyLspCommand = groovyLspCommand == null ? "" : groovyLspCommand;
+    }
+
+    public boolean isGroovyLspEnabled() {
+        return groovyLspEnabled;
+    }
+
+    public void setGroovyLspEnabled(boolean groovyLspEnabled) {
+        this.groovyLspEnabled = groovyLspEnabled;
     }
 
     public String getLuaLspCommand() {

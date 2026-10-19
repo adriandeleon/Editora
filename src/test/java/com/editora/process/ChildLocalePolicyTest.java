@@ -90,6 +90,7 @@ class ChildLocalePolicyTest {
             Map.entry("build/GradleHostClasspath.java", 1), // Gradle building a deployment's copy on its host
             Map.entry("dap/DapManager.java", 2), // debugpy adapter, js-debug adapter (one helper: launch and attach)
             Map.entry("dap/JavaCompilation.java", 2), // javac of the user's file, here and on its host
+            Map.entry("dap/jvm/JvmDebugAdapter.java", 1), // the debugged program, when the client cannot start it
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
             Map.entry("format/PythonFormatter.java", 1), // Ruff/Black on the user's file names (decision 4)
@@ -112,6 +113,7 @@ class ChildLocalePolicyTest {
 
     /** Build their own {@code ProcessBuilder} and then apply one of the two environments above. */
     private static final Set<String> RAW_SPAWN_FILES = Set.of(
+            "dap/jvm/JvmDebugAdapter.java", // the debugged program, with applyUserEnv
             "Relaunch.java", // applyUserEnv: Editora itself, started again by Restart Now
             "agent/AcpClient.java",
             "container/ContainerExecTarget.java", // the engine's exec client: the user's environment, here only

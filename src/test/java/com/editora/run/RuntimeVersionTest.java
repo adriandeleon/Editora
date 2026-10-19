@@ -148,6 +148,23 @@ class RuntimeVersionTest {
     }
 
     @Test
+    void groovySaysItsOwnVersionAndItsJava() {
+        assertEquals(
+                List.of("/sdk/groovy/bin/groovy", "--version"),
+                RuntimeVersion.probeFor(List.of("/sdk/groovy/bin/groovy", "x.groovy"))
+                        .argv());
+        assertEquals(
+                "Groovy 5.1.3 (Java 25.0.4)",
+                parse(
+                                List.of("groovy", "x.groovy"),
+                                "Groovy Version: 5.1.3 JVM: 25.0.4 Vendor: Eclipse Adoptium OS: Linux\n")
+                        .label());
+        assertEquals(
+                "Groovy 4.0.33",
+                parse(List.of("groovy.bat"), "Groovy Version: 4.0.33\n").label());
+    }
+
+    @Test
     void unknownRuntimesAreNotProbed() {
         assertNull(RuntimeVersion.probeFor(List.of("sh", "x.sh")));
         assertNull(RuntimeVersion.probeFor(List.of("/w/build/app")));

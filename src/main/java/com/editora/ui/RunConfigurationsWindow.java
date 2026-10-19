@@ -153,8 +153,8 @@ public final class RunConfigurationsWindow {
         });
 
         TextField name = new TextField();
-        ComboBox<String> type = new ComboBox<>(
-                FXCollections.observableArrayList("java", "python", "python-module", "node", "shell", "make", "npm"));
+        ComboBox<String> type = new ComboBox<>(FXCollections.observableArrayList(
+                "java", "python", "python-module", "node", "shell", "groovy", "make", "npm"));
         type.setConverter(new StringConverter<>() {
             @Override
             public String toString(String value) {
@@ -267,7 +267,8 @@ public final class RunConfigurationsWindow {
             browse.setVisible(browses);
             browse.setManaged(browses);
             setRowDisabled(form, !RunConfigFields.usesInterpreter(value), interpreter, interpreterOptions);
-            setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClassRow, projectName, vmArgs, jdk);
+            setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClassRow, projectName);
+            setRowDisabled(form, !RunConfigFields.usesJvmFields(value), vmArgs, jdk);
             // The prompts say what a blank field means for this type (a Python script runs in its own folder).
             interpreter.setPromptText(tr(com.editora.run.RunConfigPrompts.interpreter(value)));
             interpreterOptions.setPromptText(tr(com.editora.run.RunConfigPrompts.interpreterOptions(value)));

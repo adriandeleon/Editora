@@ -54,6 +54,10 @@ public final class InstallCatalog {
          *  config dir, and set the server command to {@code java -cp "<dir>/*" <mainClass>}. Used for the
          *  Maven-aware pom.xml server (JVM lemminx + lemminx-maven), whose bundle is cross-platform. */
         JVM_LSP_ZIP,
+        /** A JVM language server shipped as one pinned fat jar ({@link #jvmLspJar}): downloaded, refused unless its
+         *  SHA-256 matches, put at {@code <config>/<destSubpath>/<file>}, and the server command set to
+         *  {@code java -jar "<file>"}. The Groovy server (gvy's {@code gls}). */
+        JVM_LSP_JAR,
         /** A command-line tool from a pinned release (ShellCheck, shfmt): the per-platform asset is downloaded,
          *  its SHA-256 checked against the hash in {@link #pinnedTool}, and the binary put at
          *  {@code <config>/plugins/tools/<id>/<binary>} — see {@link #installedToolPath}. */
@@ -374,7 +378,9 @@ public final class InstallCatalog {
                 "terraform",
                 "typst",
                 // JVM LSP zip-with-dependencies (needs java): the Maven-aware pom.xml server.
-                "maven-pom");
+                "maven-pom",
+                // a pinned JVM fat jar (needs java 17+): the Groovy server.
+                "groovy");
     }
 
     /** The install steps for an LSP-only server id (empty if it has no installer). Pure. */
@@ -427,8 +433,48 @@ public final class InstallCatalog {
                         false,
                         "plugins/lsp/maven",
                         null)));
+            // --- gvy's gls: one pinned cross-platform jar (needs java 17+) ---
+            case "groovy" ->
+                java.util.Optional.of(List.of(new Step(
+                        "gls",
+                        Kind.JVM_LSP_JAR,
+                        Set.of(Prereq.JAVA),
+                        null,
+                        null,
+                        null,
+                        null,
+                        GLS_JAR.url(),
+                        false,
+                        "plugins/lsp/groovy",
+                        null)));
             default -> java.util.Optional.empty();
         };
+    }
+
+    /** A language server shipped as one jar: where it is, its SHA-256 (lower-case hex), and its file name. */
+    public record JvmLspJar(String url, String sha256, String fileName) {}
+
+    /** The gvy release Editora installs for Groovy. Bump with {@link #GLS_JAR}'s hash. */
+    public static final String GLS_VERSION = "0.4.8";
+
+    /**
+     * gvy's language server, {@code gls-<version>.jar} (Apache-2.0, github.com/albertocavalcante/gvy). The hash
+     * is the release asset's SHA-256 as GitHub publishes it for the tag, checked against a downloaded copy.
+     */
+    public static final JvmLspJar GLS_JAR = new JvmLspJar(
+            "https://github.com/albertocavalcante/gvy/releases/download/v" + GLS_VERSION + "/gls-" + GLS_VERSION
+                    + ".jar",
+            "552558bc588968c3127aa25114a86bb9137fa740572b39e7af44ff732a2802f2",
+            "gls-" + GLS_VERSION + ".jar");
+
+    /** The pinned jar a {@link Kind#JVM_LSP_JAR} step installs, by step id, or empty. Pure. */
+    public static java.util.Optional<JvmLspJar> jvmLspJar(String stepId) {
+        return "gls".equals(stepId) ? java.util.Optional.of(GLS_JAR) : java.util.Optional.empty();
+    }
+
+    /** The command that runs an installed server jar: {@code java -jar "<jar>"} (quoted when needed). Pure. */
+    public static String jvmJarCommand(java.nio.file.Path jar) {
+        return "java -jar " + quoteCommandPath(jar.toString());
     }
 
     /**
