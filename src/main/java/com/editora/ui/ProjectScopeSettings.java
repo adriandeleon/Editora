@@ -65,6 +65,9 @@ final class ProjectScopeSettings {
         return projectMode() && scopedRowNodes.contains(row);
     }
 
+    /** On the bar while the window edits the project: the bar is tinted, so the mode is seen before it is read. */
+    private static final javafx.css.PseudoClass PROJECT = javafx.css.PseudoClass.getPseudoClass("project");
+
     private final ToggleGroup group = new ToggleGroup();
     private final ToggleButton userButton = new ToggleButton(tr("settings.scope.user"));
     private final ToggleButton projectButton = new ToggleButton(tr("settings.scope.project"));
@@ -72,6 +75,7 @@ final class ProjectScopeSettings {
     private final Button trustButton = new Button(tr("settings.scope.trust"));
     private final HBox bar;
     private Supplier<List<Node>> rows = List::of;
+    private Supplier<String> projectName = () -> null;
 
     /**
      * @param applied runs after a project value was written (the window's apply: every window re-reads its
@@ -127,6 +131,14 @@ final class ProjectScopeSettings {
     /** The bar for the top of the window; shown only in a project window. */
     Node bar() {
         return bar;
+    }
+
+    /**
+     * How the window names its project (the name the main window's title shows), or null to fall back to the
+     * project folder's name. The pill, the window title and the note say it.
+     */
+    void setProjectName(Supplier<String> projectName) {
+        this.projectName = projectName;
     }
 
     /** Where the window's rows come from, so Project mode can grey out the ones a project cannot set. */
@@ -251,11 +263,21 @@ final class ProjectScopeSettings {
         ProjectSettings ps = sc.settings();
         boolean trusted = sc.trusted();
         boolean untrustedValues = !ps.isEmpty() && !trusted;
+        // Which project: the pill names it, Project mode tints the bar, names it in the title and leads the
+        // note with it (a path alone, "test/.editora/settings.json", read as a detail rather than the scope).
+        String named = projectName.get();
+        String name = root == null ? "" : named == null || named.isBlank() ? folderName(root) : named;
+        projectButton.setText(root == null ? tr("settings.scope.project") : tr("settings.scope.projectNamed", name));
+        projectButton.setTooltip(root == null ? null : new javafx.scene.control.Tooltip(root.toString()));
+        bar.pseudoClassStateChanged(PROJECT, project);
+        if (owner.get() instanceof javafx.stage.Stage stage) {
+            stage.setTitle(project ? tr("settings.window.projectTitle", name) : tr("settings.window.title"));
+        }
         note.setText(
                 root == null
                         ? ""
                         : project
-                                ? tr("settings.scope.projectNote", shortPath(root))
+                                ? tr("settings.scope.projectNote", name, shortPath(root))
                                         + (untrustedValues ? " " + tr("settings.scope.untrusted") : "")
                                 : untrustedValues ? tr("settings.scope.untrusted") : "");
         SettingsSearch.setShown(trustButton, root != null && untrustedValues);
@@ -294,11 +316,15 @@ final class ProjectScopeSettings {
         }
     }
 
+    /** The project folder's name: the project's name when the window was given none (the whole path is the pill's tooltip). */
+    private static String folderName(Path root) {
+        Path name = root.getFileName();
+        return name == null ? root.toString() : name.toString();
+    }
+
     /** {@code <project folder name>/.editora/settings.json}: where Project mode writes, without the whole path. */
     private static String shortPath(Path root) {
-        Path name = root.getFileName();
-        return (name == null ? root.toString() : name.toString()) + "/" + ProjectSettings.DIR + "/"
-                + ProjectSettings.FILE;
+        return folderName(root) + "/" + ProjectSettings.DIR + "/" + ProjectSettings.FILE;
     }
 
     /** Says, after the change that caused it, that a project file could not be written. */

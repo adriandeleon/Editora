@@ -5,6 +5,7 @@ import java.nio.file.Path;
 
 import javafx.scene.Node;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.ToggleButton;
 import javafx.stage.Stage;
@@ -83,8 +84,23 @@ class SettingsProjectScopeFxTest {
             Node tabRow = rowOf(w, tabSize);
             CheckBoxRows rows = new CheckBoxRows(w);
 
-            FxTestSupport.<ToggleButton>field(ui, "projectButton").setSelected(true);
+            ToggleButton projectButton = FxTestSupport.field(ui, "projectButton");
+            String name = "fx-test"; // the project's name, as the main window's title shows it; its folder is "project"
+            assertEquals(
+                    tr("settings.scope.projectNamed", name), projectButton.getText(), "the pill names the project");
+            Stage stage = FxTestSupport.field(w, "stage");
+            assertEquals(tr("settings.window.title"), stage.getTitle());
+            projectButton.setSelected(true);
             assertTrue(ui.projectMode());
+            assertEquals(tr("settings.window.projectTitle", name), stage.getTitle(), "Project mode names the project");
+            assertTrue(
+                    FxTestSupport.<Label>field(ui, "note")
+                            .getText()
+                            .startsWith(tr(
+                                    "settings.scope.projectNote",
+                                    name,
+                                    project.getFileName() + "/.editora/settings.json")),
+                    "the note leads with the project");
             assertTrue(rows.minimapRow().isDisabled(), "a setting a project cannot set is greyed out");
             assertFalse(tabRow.isDisabled(), "tab size can be set per project");
 
@@ -115,6 +131,7 @@ class SettingsProjectScopeFxTest {
 
             // Back to User: the user's value shows, and the row says the project sets another.
             FxTestSupport.<ToggleButton>field(ui, "userButton").setSelected(true);
+            assertEquals(tr("settings.window.title"), stage.getTitle(), "User mode: the plain title again");
             assertEquals(4, tabSize.getValue());
             assertEquals(tr("settings.scope.overriddenUntrusted"), state.scopeNote());
             assertFalse(rows.minimapRow().isDisabled());
