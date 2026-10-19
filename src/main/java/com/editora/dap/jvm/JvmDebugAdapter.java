@@ -765,8 +765,8 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                                 Files::isRegularFile,
                                 language)
                         != null;
-            } catch (AbsentInformationException | RuntimeException e) {
-                return false;
+            } catch (AbsentInformationException | RuntimeException | InternalError e) {
+                return false; // InternalError: an SMAP JDI cannot parse (see compiledFrom)
             }
         });
     }
@@ -875,12 +875,22 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                     bp.requests().add(request);
                     bp.verified()[0] = true;
                 }
-            } catch (AbsentInformationException | ClassNotPreparedException e) {
+            } catch (AbsentInformationException | ClassNotPreparedException | InternalError e) {
                 LOG.log(Level.FINEST, "no line table in " + type.name(), e);
             }
         }
     }
 
+    /**
+     * Whether {@code type} was compiled from {@code file}. Asked of every class the program has loaded.
+     *
+     * <p>Every read of a class's source information (its source name, paths, line table, a location's line)
+     * here also catches {@link InternalError}: that is what JDI throws for a class whose SourceDebugExtension
+     * (SMAP) it cannot parse, rather than {@link AbsentInformationException}. Kotlin 2.4.10's compiler loads
+     * two such classes (shaded kotlin-reflect: {@code …impl.km.Attributes},
+     * {@code …impl.types.AnnotationsTypeAttributeKt}), so once a Kotlin script had run, every breakpoint
+     * change failed with "Internal error". Such a class is treated as one without source information.
+     */
     private boolean compiledFrom(ReferenceType type, Path file) {
         try {
             if (!JvmSourceMap.sourceName(file).equals(type.sourceName())) {
@@ -893,7 +903,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 }
             }
             return false;
-        } catch (AbsentInformationException e) {
+        } catch (AbsentInformationException | InternalError e) {
             return false;
         }
     }
@@ -1096,7 +1106,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 f.setId(handle(new FrameHandle(thread, i)));
                 f.setName(JvmSourceMap.frameName(
                         at.declaringType().name(), at.method().name(), sourceNameOf(at), language));
-                f.setLine(Math.max(0, at.lineNumber()));
+                f.setLine(Math.max(0, lineOf(at)));
                 f.setColumn(1);
                 Path file = sourceOf(at, known);
                 if (file != null) {
@@ -1122,7 +1132,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         try {
             return JvmSourceMap.resolve(
                     at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile, language);
-        } catch (AbsentInformationException e) {
+        } catch (AbsentInformationException | InternalError e) {
             return null;
         }
     }
@@ -1130,8 +1140,17 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private static String sourceNameOf(Location at) {
         try {
             return at.sourceName(null);
-        } catch (AbsentInformationException e) {
+        } catch (AbsentInformationException | InternalError e) {
             return null;
+        }
+    }
+
+    /** The location's line, or -1 when its class has an SMAP JDI cannot parse (see {@link #compiledFrom}). */
+    private static int lineOf(Location at) {
+        try {
+            return at.lineNumber();
+        } catch (InternalError e) {
+            return -1;
         }
     }
 

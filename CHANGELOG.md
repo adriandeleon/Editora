@@ -555,6 +555,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Debugging a Kotlin script with Kotlin 2.4.10:** once the script had run, adding or removing a breakpoint failed
+  with "Internal error". Two classes in that compiler carry source-map data (an SMAP) the JDK's debugger cannot
+  read; the JVM debugger now treats such a class as one without source information, in breakpoints and in the
+  call stack, instead of failing.
 - **JavaScript editing without a language server:**
   - JSX in a `.js` file no longer turns the rest of the file into a comment or string (`.js` uses the TSX grammar,
     as VS Code does), and JavaScript is in the status-bar language picker.
