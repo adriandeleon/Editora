@@ -116,5 +116,18 @@ class GotoDefinitionWithoutLspFxTest {
         assertNull(IndexCoordinator.nameAt("a = b", 2, "shell"), "the caret on no name");
         assertEquals("pkg::fn", IndexCoordinator.nameAt("x pkg::fn y", 4, "shell"));
         assertEquals("fn", IndexCoordinator.nameAt("x pkg::fn y", 8, "python"));
+        assertEquals("$fetch", IndexCoordinator.nameAt("await $fetch(url)", 8, "javascript"));
+        assertEquals("#listen", IndexCoordinator.nameAt("return this.#listen();", 15, "javascript"));
+        assertEquals("fetch", IndexCoordinator.nameAt("await $fetch(url)", 8, "python"));
+    }
+
+    @Test
+    void theNearestDeclarationAboveTheUseWins() {
+        String js = "function a() {\n  const parse = (s) => s;\n}\nfunction b() {\n  const parse = (s) => s;\n"
+                + "  return parse(x);\n}\n";
+        var symbols = com.editora.index.DeclarationScanner.scan(js, "javascript");
+        assertEquals(4, IndexCoordinator.nearestDeclaration(symbols, "parse", 5).line(), "b's own helper");
+        assertEquals(1, IndexCoordinator.nearestDeclaration(symbols, "parse", 0).line(), "else the first below");
+        assertNull(IndexCoordinator.nearestDeclaration(symbols, "nothing", 5));
     }
 }

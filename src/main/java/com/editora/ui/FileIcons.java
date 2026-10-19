@@ -132,6 +132,10 @@ public final class FileIcons {
                             + ".63.75 1.172 1.324 1.517.855.51 2.004.675 3.207.405.783-.226 1.458-.691 1.811-1.411.51-.93"
                             + ".402-2.07.397-3.346.012-2.054 0-4.109 0-6.179l.004-.056z"),
             Map.entry(
+                    "npm",
+                    "M1.763 0C.786 0 0 .786 0 1.763v20.474C0 23.214.786 24 1.763 24h20.474c.977 0 1.763-.786 1.763-1.763V1.763"
+                            + "C24 .786 23.214 0 22.237 0zM5.13 5.323l13.837.019-.009 13.836h-3.464l.01-10.382h-3.456L12.04 19.17H5.113z"),
+            Map.entry(
                     "typescript",
                     "M1.125 0C.502 0 0 .502 0 1.125v21.75C0 23.498.502 24 1.125 24h21.75c.623 0 1.125-.502 1.125-1"
                             + ".125V1.125C24 .502 23.498 0 22.875 0zm17.363 9.75c.612 0 1.154.037 1.627.111a6.38 6.38 0 "
@@ -507,6 +511,14 @@ public final class FileIcons {
         int dot = base.lastIndexOf('.');
         if (dot >= 0 && dot < base.length() - 1) {
             ext = base.substring(dot + 1).toLowerCase(Locale.ROOT);
+        }
+
+        // npm's own files carry its logo rather than the generic JSON braces.
+        switch (base.toLowerCase(Locale.ROOT)) {
+            case "package.json", "package-lock.json", "npm-shrinkwrap.json", ".npmrc":
+                return "npm";
+            default:
+                break;
         }
 
         // Non-language file types, resolved by extension first (these never reach a language id, or

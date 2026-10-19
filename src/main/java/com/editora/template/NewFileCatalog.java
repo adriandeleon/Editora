@@ -79,6 +79,20 @@ public final class NewFileCatalog {
             {cursor}
             """;
 
+    /** The "Node.js Script" template's shape (shebang, async main, failure as the exit code). */
+    private static final String NODE = """
+            #!/usr/bin/env node
+
+            async function main(args) {
+              {cursor}
+            }
+
+            main(process.argv.slice(2)).catch((error) => {
+              console.error(error);
+              process.exitCode = 1;
+            });
+            """;
+
     /** The "Python Script" template's shape (shebang, docstring, main guard), so both ways of starting one agree. */
     private static final String PYTHON = """
             #!/usr/bin/env python3
@@ -202,6 +216,8 @@ public final class NewFileCatalog {
                     List.of(
                             NewFileType.named("scripts.python", "Python", "script", "py")
                                     .withTemplate(PYTHON),
+                            NewFileType.named("scripts.node", "Node.js", "script", "js")
+                                    .withTemplate(NODE),
                             NewFileType.named("scripts.shell", "Shell", "script", "sh")
                                     .withTemplate(BASH),
                             NewFileType.named("scripts.zsh", "Zsh", "script", "zsh")

@@ -24,7 +24,9 @@ class RipgrepArgsTest {
         assertTrue(a.contains("-F"), "literal → fixed-strings");
         assertFalse(a.contains("-w"));
         assertFalse(a.contains("--no-ignore"), "respects .gitignore by default");
-        assertFalse(a.contains("-g"), "no globs → no -g");
+        // No user globs: the only -g is the built-in node_modules exclude (review E1).
+        assertEquals(List.of("-g", "!node_modules/"), a.subList(a.indexOf("-g"), a.indexOf("-g") + 2));
+        assertEquals(a.indexOf("-g"), a.lastIndexOf("-g"), "no user globs → one -g");
         // pattern passed via -e, last, so a leading-dash query is safe.
         assertEquals("-e", a.get(a.size() - 2));
         assertEquals("foo", a.get(a.size() - 1));

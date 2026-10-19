@@ -38,6 +38,63 @@ public final class DapErrors {
         return out;
     }
 
+    /** What lsp4j puts in a refused request's message when the adapter's answer has none. */
+    static final String LSP4J_UNSET = "Unset error message.";
+
+    private static final Pattern REPEATED_ERROR_NAME = Pattern.compile("^(?:Uncaught )?([A-Z]\\w*) \\1: ");
+
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{(\\w+)}");
+
+    /**
+     * The text of an adapter's refusal: its {@code message}, or — when it sent none, as vscode-js-debug does for a
+     * failed evaluation (lsp4j then says "Unset error message.") — the protocol's {@code body.error.format} with
+     * its {@code {name}} variables filled in, first line only, and js-debug's
+     * {@code Uncaught ReferenceError ReferenceError: x} said once ({@code ReferenceError: x}). {@code body} is the
+     * response body as lsp4j hands it over (a gson {@code JsonObject} or a {@code Map}). Null when neither says
+     * anything.
+     */
+    public static String responseText(String message, Object body) {
+        if (message != null && !message.isBlank() && !LSP4J_UNSET.equals(message.strip())) {
+            return message;
+        }
+        Object error = member(body, "error");
+        Object format = member(error, "format");
+        String text = format == null ? null : string(format);
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Object variables = member(error, "variables");
+        java.util.regex.Matcher m = PLACEHOLDER.matcher(text);
+        StringBuilder filled = new StringBuilder();
+        while (m.find()) {
+            Object v = member(variables, m.group(1));
+            m.appendReplacement(filled, java.util.regex.Matcher.quoteReplacement(v == null ? m.group() : string(v)));
+        }
+        m.appendTail(filled);
+        String first = firstLine(filled.toString());
+        return REPEATED_ERROR_NAME.matcher(first).replaceFirst("$1: ");
+    }
+
+    private static Object member(Object container, String name) {
+        if (container instanceof com.google.gson.JsonObject o) {
+            return o.has(name) ? o.get(name) : null;
+        }
+        if (container instanceof java.util.Map<?, ?> map) {
+            return map.get(name);
+        }
+        return null;
+    }
+
+    private static String string(Object value) {
+        if (value instanceof com.google.gson.JsonPrimitive p) {
+            return p.getAsString();
+        }
+        if (value instanceof com.google.gson.JsonNull) {
+            return "";
+        }
+        return String.valueOf(value);
+    }
+
     /** The first non-blank line of {@code text}, stripped ("" for none). */
     public static String firstLine(String text) {
         if (text == null) {

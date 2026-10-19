@@ -197,4 +197,16 @@ class RuntimeVersionTest {
         assertNull(parse(List.of("make"), "make: unknown option -- -\n")); // a BSD make
         assertNull(parse(List.of("node"), null));
     }
+
+    @Test
+    void bunAndDenoReportTheirOwnRuntime() {
+        RuntimeVersion.Probe bun = RuntimeVersion.probeFor(java.util.List.of("/home/u/.bun/bin/bun", "run", "x"));
+        assertEquals(java.util.List.of("/home/u/.bun/bin/bun", "--version"), bun.argv());
+        assertEquals("Bun 1.1.30", RuntimeVersion.parse(bun, "1.1.30\n").label());
+        RuntimeVersion.Probe deno = RuntimeVersion.probeFor(java.util.List.of("deno", "run", "a.ts"));
+        assertEquals(
+                "Deno 2.0.1",
+                RuntimeVersion.parse(deno, "deno 2.0.1 (stable, release, x86_64)\nv8 12\n")
+                        .label());
+    }
 }

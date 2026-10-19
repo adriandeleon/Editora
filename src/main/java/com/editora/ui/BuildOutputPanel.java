@@ -159,6 +159,14 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
         }
     }
 
+    /** Shows the runtime {@code owner}'s current build runs under (an npm script's Node). */
+    public void setRuntime(Object owner, com.editora.run.RuntimeVersion version) {
+        BuildToolPanel console = consoles.get(owner);
+        if (console != null) {
+            console.setRuntime(version);
+        }
+    }
+
     public void finished(Object owner, int code) {
         BuildToolPanel console = consoles.get(owner);
         if (console != null) {

@@ -256,7 +256,9 @@ class BuildCoordinatorFxTest {
         assertNull(c.detectedLabel(), "but never parses to a model");
 
         FxTestSupport.runOnFx(() -> c.showActionsPopup());
-        assertEquals(tr("status.build.malformed", disp(BuildTool.MAVEN)), host.lastStatus);
+        // It says where the file is broken (review C13): the parser's message after the tool's name.
+        String prefix = tr("status.build.malformedAt", disp(BuildTool.MAVEN), "");
+        assertTrue(host.lastStatus.startsWith(prefix) && host.lastStatus.length() > prefix.length(), host.lastStatus);
     }
 
     @Test
@@ -273,7 +275,9 @@ class BuildCoordinatorFxTest {
         assertNull(c.detectedLabel());
 
         FxTestSupport.runOnFx(() -> c.showActionsPopup());
-        assertEquals(tr("status.build.malformed", disp(BuildTool.NPM)), host.lastStatus);
+        // It says where the file is broken (review C13): the parser's message after the tool's name.
+        String prefix = tr("status.build.malformedAt", disp(BuildTool.NPM), "");
+        assertTrue(host.lastStatus.startsWith(prefix) && host.lastStatus.length() > prefix.length(), host.lastStatus);
     }
 
     @Test

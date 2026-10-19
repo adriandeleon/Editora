@@ -35,6 +35,32 @@ class FoldRegionsTest {
     }
 
     @Test
+    void aJavaScriptRegexLiteralIsSkippedLikeAString() {
+        // A backtick inside a regex used to open a template literal that swallowed every brace below it.
+        String js = "function md(s) {\n  return s.split(/`/).join('');\n}\n"
+                + "function count(s) {\n  return (s.match(/\\{/g) || []).length;\n}\n"
+                + "function later() {\n  if (x) {\n    y();\n  }\n}\n";
+        List<Region> regions = FoldRegions.detect(js, "javascript");
+        assertTrue(hasRegion(regions, 0, 2), "the function holding /`/ folds");
+        assertTrue(hasRegion(regions, 3, 5), "the function holding /\\{/ folds as a whole");
+        assertFalse(hasRegion(regions, 4, 5), "the escaped brace opens nothing");
+        assertTrue(hasRegion(regions, 6, 10), "everything below still folds");
+        assertTrue(hasRegion(regions, 7, 9));
+
+        // A slash after an operand divides; a regex after `return`, `(`, `=` or a line start is skipped.
+        String division = "const a = {\n  b: x / 2 / y,\n  c: (a) / `x`.length,\n};\nconst r = /[/{]/;\nif (z) {\n}\n";
+        List<Region> d = FoldRegions.detect(division, "typescript");
+        assertTrue(hasRegion(d, 0, 3), "divisions do not open regexes");
+        assertTrue(hasRegion(d, 5, 6), "a slash inside a regex's [class] does not end it");
+        // Not in other languages: Java has no regex literals.
+        assertTrue(
+                FoldRegions.detect("class A {\n  int x = a /`/ b;\n}\n", "java").contains(new Region(0, 2)));
+        // The block-comment pass skips regexes too: /\/*/ is not a comment opener.
+        assertTrue(FoldRegions.blockComments("const re = /\\/*/;\nx();\n/* a\n b */\n", "javascript")
+                .contains(new Region(2, 3)));
+    }
+
+    @Test
     void bracesOnSameLineDoNotFold() {
         List<Region> regions = FoldRegions.detect("int[] a = {1, 2, 3};\n", "java");
         assertTrue(regions.isEmpty());

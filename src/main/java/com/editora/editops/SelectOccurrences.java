@@ -17,15 +17,21 @@ public final class SelectOccurrences {
      * digit or underscore, matching {@code SearchMatcher}'s whole-word test.
      */
     public static int[] wordAt(String text, int caret) {
+        return wordAt(text, caret, null);
+    }
+
+    /** As {@link #wordAt(String, int)}, with {@code language}'s identifier characters ({@code $el} in JavaScript). */
+    public static int[] wordAt(String text, int caret, String language) {
         if (text == null || caret < 0 || caret > text.length()) {
             return null;
         }
+        boolean dollar = IdentifierChars.dollarIdentifiers(language);
         int a = caret;
-        while (a > 0 && isWord(text.charAt(a - 1))) {
+        while (a > 0 && IdentifierChars.isPart(text.charAt(a - 1), dollar)) {
             a--;
         }
         int b = caret;
-        while (b < text.length() && isWord(text.charAt(b))) {
+        while (b < text.length() && IdentifierChars.isPart(text.charAt(b), dollar)) {
             b++;
         }
         return a < b ? new int[] {a, b} : null;
@@ -52,9 +58,5 @@ public final class SelectOccurrences {
             }
         }
         return matches.size() - 1;
-    }
-
-    private static boolean isWord(char c) {
-        return Character.isLetterOrDigit(c) || c == '_';
     }
 }

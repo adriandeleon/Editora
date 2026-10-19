@@ -55,7 +55,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Run File, the gutter ▶ and a new Groovy script run configuration run a script with `groovy` on that JDK, and the
   Run window shows the Groovy and Java versions. Debug stops at breakpoints in scripts, classes and closures, steps
   over Groovy's own runtime, shows locals and fields, and stops on uncaught exceptions — through a new debugger
-  built into Editora, so there is nothing else to install. Settings schema 137.
+  built into Editora, so there is nothing else to install. Settings schema 138.
+- **Run File runs Node.js scripts.** A `.js`, `.mjs`, `.cjs`, `.ts`, `.mts` or `.cts` file, or a script with a
+  `node` (or `deno`, `bun`, `tsx`) shebang, gets a gutter ▶ and runs in the Run console under the Node.js Editora
+  resolves (the Node.js setting, the project's `.nvmrc`/`.node-version`, else `node` on PATH), from its package
+  folder, with `--enable-source-maps` and colours on. TypeScript runs on plain Node 22.18+; an older Node says so.
+  The ▶ of a test file (`*.test.*`, `*.spec.*`, `test/`, `__tests__/`) runs `node --test` into Test Results, with
+  Rerun Failed and Rerun This Test. Run configurations gain a **Node.js script** type (script, Node.js arguments,
+  interpreter, arguments, environment).
+- **One Node.js for everything.** Settings → Debugging → JavaScript has a **Node.js** field used by Run, run
+  configurations, Debug, npm scripts, the TypeScript language server and (when its own field is blank) HTTP
+  response handlers. Left blank, Editora uses the version a project's `.nvmrc` or `.node-version` names when nvm has
+  it, else `node` on PATH. Doctor has one **Node.js** row saying which Node runs and why.
+- **Debugging JavaScript and TypeScript.** `.ts`, `.mts` and `.cts` files can be debugged on Node 22.18+, and a
+  breakpoint in a compiled project's `.ts` source stops there through source maps. **Debug ▸ Attach** on a JS/TS file
+  connects to a Node started with `--inspect`. **Debug Test at Caret** runs the node:test test at the caret. Node.js
+  and npm run configurations can be debugged, started the way Run starts them.
+- **TypeScript server settings:** **Download type definitions automatically** (off), and inlay hints and code
+  lenses now work for JavaScript and TypeScript.
+- **A Node.js Script template** (New ▸ Scripts ▸ Node.js), and an npm icon on `package.json`, `package-lock.json`
+  and `.npmrc`.
+- **Test Results reads node:test's default output**, so `"test": "node --test"` fills the tree without a TAP
+  reporter flag, and node:test results can be rerun one by one or failed-only.
 - **Encrypted files** (Tools ▸ Encryption; [ADR 0017](docs/decisions/0017-encrypted-files.md)). An encrypted
   file opens as the text inside it, in that text's language (`notes.md.gpg` is Markdown), with a lock on its tab
   and an "Encrypted · 2" item in the status bar that opens the details: who can read it (you, verified or not),
@@ -86,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mill build through it (`sbt "runMain …"`, `./mill <module>.runMain …`) and any other file with Scala CLI, with
   the Scala CLI and Scala versions in the Run window; a new Scala run configuration runs files with Scala CLI.
   Debug uses Metals' debug adapter for a file of a build, and Editora's own debugger over Scala CLI for a script,
-  stepping over the standard library. Settings schema 138.
+  stepping over the standard library. Settings schema 139.
 - **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
   files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
   `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),
@@ -514,6 +535,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JavaScript editing without a language server:**
+  - JSX in a `.js` file no longer turns the rest of the file into a comment or string (`.js` uses the TSX grammar,
+    as VS Code does), and JavaScript is in the status-bar language picker.
+  - A regex such as `/`/` or `/\{/` no longer removes every fold, sticky-scroll header and Structure entry below it.
+  - Structure lists one-line methods and arrow functions; Go to Symbol finds class and object methods and
+    `exports.x =`; Go to Definition picks the nearest declaration; `$` and `#` are part of names.
+  - Enter continues a `/** */` comment; Toggle Comment never touches a `#!` shebang and lines its markers up.
+  - Smart indent handles `case` bodies, brace-less `if`/`for`/`while`, open argument lists and call chains (in every
+    brace language).
+  - A quote typed inside a string, comment or regex is not paired.
+  - Template literals, `.length`, `import.meta` and BigInt literals get the right colours.
+  - `npx`/`pnpm exec`/`bunx` and `zx` shebangs and React modelines are recognised; `.mocharc`, `.nycrc`,
+    `.lintstagedrc` and similar open as JSON.
+- **A minified file with many long lines no longer stalls highlighting** in every JavaScript tab for about 45 s: it
+  opens in long-line mode, and the tokenizer gives long lines a time budget. Typing in a one-line bundle is about 30%
+  faster.
+- **The TypeScript / JavaScript language server did not start on a fresh install.** npm's latest TypeScript is now
+  7, which has no tsserver; Editora's install step (and the Node.js TypeScript Project template) now take
+  TypeScript 6. When no usable TypeScript is found the server is not started and the message says why, instead of
+  three crashes and "keeps crashing"; Doctor and Settings no longer show it as OK, and opening more tabs no longer
+  starts it again.
+- **An untrusted folder's own `node_modules/typescript` no longer runs** when a JS/TS file opens: the TypeScript
+  installed beside the server is used until the folder is trusted, and the trust prompt lists the folder's copy.
+- **The TypeScript server no longer downloads type definitions silently** (`npm install` against the registry into
+  `~/.cache/typescript`), and loose scripts in different folders share one server (about 320 MB instead of 550 MB
+  each).
+- **Organize Imports works on JavaScript and TypeScript**, and the code-action menu offers Fix all, Add missing
+  imports and Remove unused. Quick fixes follow the file's indentation. A monorepo without a project open roots at
+  its tsconfig/jsconfig.
+- **Debugging JavaScript:** `process.stdout.write` / `process.stderr.write` output and `readline` prompts reach the
+  Debug console, and the program reads typed input; the program runs from its package folder; node-internal frames
+  are skipped; errors in the console and watches say what went wrong instead of "Unset error message."; a js-debug
+  that cannot start (or a Node older than 18) says so instead of stopping silently; function values take one line;
+  a bad breakpoint condition marks the breakpoint as rejected, once; child processes and workers list all their
+  threads; js-debug is pinned to v1.117.0.
+- **`node_modules` no longer floods search.** Find in Files, the symbol index, Go to File, Search Everywhere, TODO
+  and the Project filter skip `node_modules` even without a `.gitignore` (a 60,000-file `node_modules` used to push
+  every project file out of the index); `!node_modules/` in a `.gitignore`, or an include glob naming it, looks
+  inside. Find in Files also says when it stopped at its 5,000-match limit exactly at a file boundary.
+- **Run console after a flood:** the newest output on screen no longer has gaps when a program printed faster than
+  the console could show, and the status line says when output was skipped.
+- **npm scripts:** a workspace member runs its workspace's package manager (pnpm, yarn, bun), not npm; an npm run
+  configuration uses the project's manager too, and the npm command setting no longer replaces a different manager.
+  Settings → Build Tools names the detected manager and why ("pnpm (pnpm-lock.yaml)"). A file inside
+  `node_modules` no longer turns the npm tool window into the dependency's. A missing node, npm, pnpm, yarn or bun
+  says how to get it instead of showing the Java error; a script that fails with no `node_modules` suggests
+  installing first. The Output console draws colours, names the runtime ("Node.js 24.18.1"), and its tab is named
+  after the manager. Stop sends Ctrl+C (SIGINT) first to Node and its package managers. A malformed package.json
+  says where. Script rows show their command.
+- **Test Results with TAP:** a `describe` block is no longer counted as a failed test, and a failure shows its error
+  and stack instead of the YAML block.
+- **Node.js stack-trace links** work for ESM `file://` frames (spaces, Windows drives), paths with spaces,
+  `.jsx/.tsx/.mts/.cts` files and tsc errors, and jump to the column.
+- **Run and Output consoles** say when the oldest output was dropped to stay under the size cap.
 - **Closing a window no longer keeps it in memory** (about 21 MB each, plugin panes included): the Settings Sync
   listener of every closed window was never removed.
 - **A plugin thread can no longer keep Editora running after quit**, where the next launch was "handed to" an
