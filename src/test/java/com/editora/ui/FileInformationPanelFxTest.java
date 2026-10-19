@@ -9,6 +9,7 @@ import javafx.scene.control.TextField;
 import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.markdown.WordCount;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -338,6 +339,23 @@ class FileInformationPanelFxTest {
 
             SaveGuardsFxTest.awaitOnFx(async, "the recount after the edit settles", () -> "4".equals(r.value("words")));
             assertEquals("18", FxTestSupport.callOnFx(() -> r.value("chars")));
+        }
+    }
+
+    @Test
+    void wordsAreCountedAsTheStatusBarCountsThem() throws Exception {
+        // "well-known" and "repo's" are one word each and "42" is a word, as in the status bar's count.
+        String text = "a well-known repo's 42 tests";
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Rig r = FxTestSupport.callOnFx(() -> {
+                Rig rig = new Rig();
+                rig.buffer.setContent(text);
+                rig.panel.attach(rig.buffer);
+                return rig;
+            });
+            async.onClose(() -> FxTestSupport.runOnFx(r::dispose));
+            awaitValue(r, "words", "5");
+            assertEquals(String.valueOf(WordCount.words(text)), FxTestSupport.callOnFx(() -> r.value("words")));
         }
     }
 

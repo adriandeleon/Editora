@@ -533,6 +533,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **File Information and the status bar show the same word count.** File Information counted "well-known" and
+  "repo's" as two words each and skipped numbers; it now counts as the status bar does.
 - **JavaScript editing without a language server:**
   - JSX in a `.js` file no longer turns the rest of the file into a comment or string (`.js` uses the TSX grammar,
     as VS Code does), and JavaScript is in the status-bar language picker.

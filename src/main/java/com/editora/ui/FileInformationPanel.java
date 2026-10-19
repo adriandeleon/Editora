@@ -12,7 +12,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
@@ -30,6 +29,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.LanguageRegistry;
+import com.editora.markdown.WordCount;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -41,7 +41,6 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
 
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern("d MMM uuuu 'at' h:mm a", Locale.getDefault());
-    private static final Pattern WORD = Pattern.compile("\\p{L}[\\p{L}\\p{N}_]*");
 
     private final TextField createdValue = value();
     private final TextField modifiedValue = value();
@@ -396,7 +395,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         String text = buffer.getContent();
         long gen = ++wordGen;
         Thread.ofVirtual().name("editora-file-info").start(() -> {
-            int words = countWords(text);
+            int words = WordCount.words(text); // the status bar's count, so the two agree
             Platform.runLater(() -> {
                 if (gen == wordGen && attached == buffer) {
                     wordsValue.setText(formatNum(words));
@@ -488,18 +487,6 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         if (perms.contains(PosixFilePermission.OTHERS_WRITE)) octal |= 02;
         if (perms.contains(PosixFilePermission.OTHERS_EXECUTE)) octal |= 01;
         return String.format("%o (-%s)", octal, PosixFilePermissions.toString(perms));
-    }
-
-    private static int countWords(String text) {
-        if (text.isEmpty()) {
-            return 0;
-        }
-        var matcher = WORD.matcher(text);
-        int n = 0;
-        while (matcher.find()) {
-            n++;
-        }
-        return n;
     }
 
     private static String friendlyBlockName(Character.UnicodeBlock block) {
