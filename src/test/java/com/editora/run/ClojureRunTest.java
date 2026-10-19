@@ -16,10 +16,15 @@ class ClojureRunTest {
 
     private static final String CORE = "(ns my-app.core\n  (:gen-class))\n\n(defn -main [& args]\n  (println args))\n";
 
+    /** {@code path} as this platform's absolute path: on Windows a drive is added, as for any real file. */
+    private static Path abs(String path) {
+        return Path.of(path).toAbsolutePath();
+    }
+
     private static Predicate<Path> files(String... paths) {
         Set<Path> set = new java.util.HashSet<>();
         for (String p : paths) {
-            set.add(Path.of(p));
+            set.add(abs(p));
         }
         return set::contains;
     }
@@ -57,10 +62,10 @@ class ClojureRunTest {
 
     @Test
     void aDepsProjectsNamespaceRunsThroughDashMInTheProjectFolder() {
-        Path file = Path.of("/p/src/my_app/core.clj");
+        Path file = abs("/p/src/my_app/core.clj");
         ClojureRun.Plan plan = ClojureRun.plan(file, CORE, files("/p/deps.edn"));
         assertEquals(ClojureRun.Tool.CLI, plan.tool());
-        assertEquals(Path.of("/p"), plan.directory());
+        assertEquals(abs("/p"), plan.directory());
         assertEquals("my-app.core", plan.mainNamespace());
         assertTrue(plan.inProject());
         assertNull(plan.extraPath(), "src is on the default classpath");
@@ -71,7 +76,7 @@ class ClojureRunTest {
 
     @Test
     void aNamespaceOutsideSrcIsPutOnTheClasspathThroughAnAlias() {
-        Path file = Path.of("/p/scripts/tool.clj");
+        Path file = abs("/p/scripts/tool.clj");
         ClojureRun.Plan plan = ClojureRun.plan(file, "(ns tool)\n(defn -main [])\n", files("/p/deps.edn"));
         assertEquals("scripts", plan.extraPath());
         assertEquals(
@@ -87,16 +92,16 @@ class ClojureRunTest {
 
     @Test
     void aStandaloneFileRunsAsAScriptOrItsFolderBecomesTheClasspath() {
-        Path script = Path.of("/w/tally.clj");
+        Path script = abs("/w/tally.clj");
         ClojureRun.Plan plain = ClojureRun.plan(script, "(println 1)\n", files());
         assertEquals(ClojureRun.Tool.CLI, plain.tool());
-        assertEquals(Path.of("/w"), plain.directory());
+        assertEquals(abs("/w"), plain.directory());
         assertNull(plain.mainNamespace());
         assertEquals(
                 List.of("clojure", "-M", "/w/tally.clj", "x"),
                 ClojureRun.argv(plain, "clojure", "/w/tally.clj", List.of(), List.of("x")));
 
-        Path hello = Path.of("/w/hello.clj");
+        Path hello = abs("/w/hello.clj");
         ClojureRun.Plan main = ClojureRun.plan(hello, "(ns hello)\n(defn -main [])\n", files());
         assertEquals("hello", main.mainNamespace());
         assertFalse(main.inProject());
@@ -105,22 +110,22 @@ class ClojureRunTest {
                 ClojureRun.argv(main, "clojure", "/w/hello.clj", List.of(), List.of()));
 
         // A -main in a namespace that does not match the file's path cannot be found by name: run as a script.
-        ClojureRun.Plan mismatch = ClojureRun.plan(Path.of("/w/other.clj"), "(ns hello)\n(defn -main [])\n", files());
+        ClojureRun.Plan mismatch = ClojureRun.plan(abs("/w/other.clj"), "(ns hello)\n(defn -main [])\n", files());
         assertNull(mismatch.mainNamespace());
     }
 
     @Test
     void leiningenRunsAProjectWithoutDepsEdnAndAScriptThroughClojureMain() {
-        Path file = Path.of("/l/src/my_app/core.clj");
+        Path file = abs("/l/src/my_app/core.clj");
         ClojureRun.Plan plan = ClojureRun.plan(file, CORE, files("/l/project.clj"));
         assertEquals(ClojureRun.Tool.LEIN, plan.tool());
-        assertEquals(Path.of("/l"), plan.directory());
+        assertEquals(abs("/l"), plan.directory());
         assertEquals(
                 List.of("lein", "run", "-m", "my-app.core", "a"),
                 ClojureRun.argv(plan, "lein", file.toString(), List.of("-Dx"), List.of("a")),
                 "JVM options go in JVM_OPTS, not the command line");
         assertEquals("JVM_OPTS", ClojureRun.jvmOptionsVariable(ClojureRun.Tool.LEIN));
-        ClojureRun.Plan script = ClojureRun.plan(Path.of("/l/dev/scratch.clj"), "(println 1)", files("/l/project.clj"));
+        ClojureRun.Plan script = ClojureRun.plan(abs("/l/dev/scratch.clj"), "(println 1)", files("/l/project.clj"));
         assertEquals(
                 List.of("lein", "run", "-m", "clojure.main", "/l/dev/scratch.clj"),
                 ClojureRun.argv(script, "lein", "/l/dev/scratch.clj", List.of(), List.of()));
@@ -133,7 +138,7 @@ class ClojureRunTest {
 
     @Test
     void babashkaRunsItsScriptsAndBbEdnProjectsButIsNeverDebugged() {
-        ClojureRun.Plan shebang = ClojureRun.plan(Path.of("/w/deploy"), "#!/usr/bin/env bb\n(println 1)", files());
+        ClojureRun.Plan shebang = ClojureRun.plan(abs("/w/deploy"), "#!/usr/bin/env bb\n(println 1)", files());
         assertEquals(ClojureRun.Tool.BB, shebang.tool());
         assertEquals(
                 List.of("bb", "/w/deploy", "x"),
@@ -141,10 +146,10 @@ class ClojureRunTest {
                 "Babashka has no JVM to take options");
         assertEquals(
                 ClojureRun.Tool.BB,
-                ClojureRun.plan(Path.of("/w/t.bb"), "(println 1)", files()).tool());
-        ClojureRun.Plan project = ClojureRun.plan(Path.of("/b/src/x.clj"), "(println 1)", files("/b/bb.edn"));
+                ClojureRun.plan(abs("/w/t.bb"), "(println 1)", files()).tool());
+        ClojureRun.Plan project = ClojureRun.plan(abs("/b/src/x.clj"), "(println 1)", files("/b/bb.edn"));
         assertEquals(ClojureRun.Tool.BB, project.tool());
-        assertEquals(Path.of("/b"), project.directory());
+        assertEquals(abs("/b"), project.directory());
         assertFalse(ClojureRun.debuggable(ClojureRun.Tool.BB));
         assertTrue(ClojureRun.debuggable(ClojureRun.Tool.CLI));
         assertNull(ClojureRun.jvmOptionPrefix(ClojureRun.Tool.BB));
@@ -154,8 +159,8 @@ class ClojureRunTest {
     @Test
     void theNearestProjectWins() {
         ClojureRun.Plan plan = ClojureRun.plan(
-                Path.of("/mono/svc/src/a.clj"), "(println 1)", files("/mono/deps.edn", "/mono/svc/project.clj"));
+                abs("/mono/svc/src/a.clj"), "(println 1)", files("/mono/deps.edn", "/mono/svc/project.clj"));
         assertEquals(ClojureRun.Tool.LEIN, plan.tool());
-        assertEquals(Path.of("/mono/svc"), plan.directory());
+        assertEquals(abs("/mono/svc"), plan.directory());
     }
 }
