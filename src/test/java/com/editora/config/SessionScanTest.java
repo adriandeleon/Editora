@@ -50,6 +50,17 @@ class SessionScanTest {
     }
 
     @Test
+    void aRootIsNeverRestoredAsATab() {
+        Path root = Path.of("/").toAbsolutePath().getRoot(); // "/" here, the current drive's root on Windows
+        var entry = new WorkspaceState.OpenFile(root.toString(), 0, false);
+        // A root is readable and a folder: before, it was openable, and opening it aborted the whole restore.
+        SessionScan scan = SessionScan.of(List.of(entry), Path::of, p -> true, p -> true, p -> false);
+
+        assertEquals(List.of(), scan.openable());
+        assertEquals(List.of(), scan.missing());
+    }
+
+    @Test
     void keepUnreadableDropsOnlyKnownDeletions() {
         Path file = Path.of("/p/q/file.txt");
         assertTrue(SessionScan.keepUnreadable(file, p -> false, p -> true), "folder missing: nothing learned");

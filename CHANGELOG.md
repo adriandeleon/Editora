@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marked, and the list of packages written before the rule may only shrink (docs/conventions.md, "Null
   annotations"). There is no change in behaviour.
 
+### Fixed
+
+- **Opening a root as a file no longer throws.** `editora /` (or `editora D:\`), and Remote > Open File on
+  `sftp://host` with no path, used to hit a `NullPointerException` in the open path. From the command line that
+  stopped the session restore and left an empty window. Now the status bar says the path is a folder, and no tab
+  opens. A session entry that names a root is dropped instead of restored.
+
 ## [0.23.0] - 2026-10-19
 
 ### Security

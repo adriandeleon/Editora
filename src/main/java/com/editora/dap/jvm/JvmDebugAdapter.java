@@ -959,10 +959,12 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
 
     @Override
     public CompletableFuture<SetExceptionBreakpointsResponse> setExceptionBreakpoints(
-            SetExceptionBreakpointsArguments args) {
+            @Nullable SetExceptionBreakpointsArguments args) {
+
         return CompletableFuture.supplyAsync(
                 () -> {
-                    List<String> filters = args.getFilters() == null ? List.of() : List.of(args.getFilters());
+                    List<String> filters =
+                            args == null || args.getFilters() == null ? List.of() : List.of(args.getFilters());
                     stopOnUncaught = filters.contains(FILTER_UNCAUGHT);
                     stopOnCaught = filters.contains(FILTER_CAUGHT);
                     EventRequestManager erm = vm().eventRequestManager();
