@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Remote: a 2FA code asked after the password no longer says "That was not accepted. Try again."** A server
+  that asks in rounds (a password, then a code) had each round counted as another try; only the same question
+  asked again is a retry now.
+- **Remote: a login or host-key question left unanswered for two minutes closes its dialog.** The login gave up
+  but the dialog stayed on screen, and an answer typed into it went nowhere.
+
 ## [0.23.0] - 2026-10-19
 
 ### Security
