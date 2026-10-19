@@ -13,8 +13,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DapServerRegistryTest {
 
     @Test
-    void languageIdsForDebugAreJavaPythonJavascriptAndGroovy() {
-        assertEquals(Set.of("java", "python", "javascript", "groovy"), DapServerRegistry.languageIdsForDebug());
+    void languageIdsForDebugAreJavaPythonJavascriptGroovyAndKotlin() {
+        assertEquals(
+                Set.of("java", "python", "javascript", "groovy", "kotlin"), DapServerRegistry.languageIdsForDebug());
+    }
+
+    @Test
+    void kotlinIsDebuggedByEditorasOwnJvmAdapterNotKotlinLsps() {
+        assertEquals(DapServerRegistry.Kind.JVM, DapServerRegistry.kindFor("kotlin"));
+        assertTrue(DapServerRegistry.isDebuggable("kotlin"));
+        assertEquals(
+                java.util.List.of(
+                        new com.editora.dap.DapModels.ExceptionFilterOption("caught", "Caught Exceptions", false),
+                        new com.editora.dap.DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", true)),
+                ExceptionFilterCatalog.known("kotlin"));
     }
 
     @Test

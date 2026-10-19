@@ -107,6 +107,17 @@ class RunConfigDefaultsTest {
                 RunConfigDefaults.forScript("python", outside, root).target());
         org.junit.jupiter.api.Assertions.assertNull(RunConfigDefaults.forScript("java", outside, root));
         assertEquals(
+                "kotlin",
+                RunConfigDefaults.forScript("kotlin", root.resolve("App.kt"), root)
+                        .type());
+        assertEquals(
+                "report.main.kts",
+                RunConfigDefaults.forScript("kotlin", root.resolve("tools/report.main.kts"), root)
+                        .name());
+        org.junit.jupiter.api.Assertions.assertNull(
+                RunConfigDefaults.forScript("kotlin", root.resolve("build.gradle.kts"), root),
+                "Gradle runs its build script");
+        assertEquals(
                 "deploy.sh (2)",
                 RunConfigDefaults.uniquelyNamed(c, java.util.List.of("deploy.sh"))
                         .name());

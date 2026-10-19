@@ -5103,6 +5103,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Implements {@link CoordinatorHost} by delegating to this controller's private helpers. */
     private final class Services implements CoordinatorHost {
         @Override
+        public Path configDir() {
+            return config.getConfigDir();
+        }
+
+        @Override
         public long fileSize(Path file) {
             return FileWorkflowCoordinator.fileSize(file);
         }
@@ -9385,7 +9390,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * <p>Shared by {@code run.saveConfig} and Run Configurations → Add, so the two cannot disagree
      * about what "the obvious main class here" is.
      */
-    /** A configuration for the active Python or shell script (Add / Save as Run Configuration), or null. */
+    /** A configuration for the active Python, shell, Groovy or Kotlin file (Add / Save as Run Configuration), or null. */
     com.editora.config.RunConfiguration suggestedScriptConfiguration() {
         EditorBuffer b = activeBuffer();
         if (b == null || b.getPath() == null) {
@@ -9397,7 +9402,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                         ? "python"
                         : com.editora.run.NodeRunPlan.isNodeLanguage(b.getLanguage())
                                 ? "node"
-                                : "groovy".equals(b.getLanguage()) ? "groovy" : null;
+                                : com.editora.run.ScriptRunCommand.isJvmScript(b.getLanguage())
+                                        ? b.getLanguage()
+                                        : null;
         return com.editora.run.RunConfigDefaults.forScript(type, b.getPath(), windowProjectRoot());
     }
 

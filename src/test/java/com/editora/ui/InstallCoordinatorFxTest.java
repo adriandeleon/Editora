@@ -191,6 +191,26 @@ class InstallCoordinatorFxTest {
     }
 
     @Test
+    void theKotlinServerSaysItsDownloadSizeFirstAndADeclineFetchesNothing() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "kotlin-declined");
+            List<String> asked = new ArrayList<>();
+            rig.coordinator.setConfirmForTest(message -> {
+                asked.add(message);
+                return false;
+            });
+
+            rig.installServer("kotlin");
+            scope.awaitFx();
+
+            assertEquals(List.of(false), rig.outcomes);
+            assertEquals(List.of(tr("dialog.install.largeDownload", tr("install.lang.kotlin"), 370, 1200)), asked);
+            assertEquals(List.of(), rig.web.requests(), "nothing fetched");
+            assertFalse(Files.exists(rig.dir("plugins/lsp/kotlin")));
+        }
+    }
+
+    @Test
     void aFailedInstallShowsTheReasonChangesNothingAndCanBeRetried() throws Exception {
         assumeTrue(onPath("java"), "the Maven pom.xml server needs java on PATH");
         try (AsyncTestScope scope = new AsyncTestScope()) {

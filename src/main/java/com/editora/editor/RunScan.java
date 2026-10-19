@@ -95,6 +95,10 @@ final class RunScan {
         } else if (in.eligible() && "groovy".equals(language)) {
             line = groovyRunLine(in.name(), text);
             runnable = line >= 0;
+        } else if (in.eligible() && "kotlin".equals(language)) {
+            // A script from line 0, a program at its top-level `fun main`; none for a Gradle build script.
+            line = com.editora.run.KotlinRun.runLine(in.name(), text);
+            runnable = line >= 0;
         } else if (in.eligible()
                 && com.editora.run.NodeRunPlan.isNodeLanguage(language)
                 && com.editora.run.NodeRunPlan.runnableName(in.name())) {

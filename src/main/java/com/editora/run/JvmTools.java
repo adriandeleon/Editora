@@ -8,12 +8,13 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Finds the command-line tool that runs a JVM language's files — {@code groovy} today — on this machine.
+ * Finds the command-line tool that runs a JVM language's files — {@code groovy}, {@code kotlinc} — on this machine.
  *
  * <p>The tool's own home variable comes first ({@code GROOVY_HOME}: whoever set it chose that install), then the
  * {@linkplain com.editora.process.ProcessRunner#augmentedPath augmented PATH} (the login shell's, which already
  * holds SDKMAN, asdf, mise and Homebrew when the profile sets them up), then SDKMAN's {@code current} candidate
- * for a profile that only sources SDKMAN in interactive shells.
+ * for a profile that only sources SDKMAN in interactive shells (its candidate is named for the language:
+ * {@code kotlinc} is in {@code candidates/kotlin}).
  *
  * <p>{@link #candidates} is pure; {@link #locate} looks at the disk.
  */
@@ -22,7 +23,10 @@ public final class JvmTools {
     private JvmTools() {}
 
     /** The tools {@link #locate} knows, with the variable naming each one's install. */
-    private static final Map<String, String> HOME_VARIABLES = Map.of("groovy", "GROOVY_HOME");
+    private static final Map<String, String> HOME_VARIABLES = Map.of("groovy", "GROOVY_HOME", "kotlinc", "KOTLIN_HOME");
+
+    /** SDKMAN candidates named otherwise than their tool. */
+    private static final Map<String, String> SDKMAN_CANDIDATES = Map.of("kotlinc", "kotlin");
 
     /** Whether {@code tool} is one this resolves. */
     public static boolean knows(String tool) {
@@ -51,7 +55,7 @@ public final class JvmTools {
         if (sdkmanDir != null) {
             out.add(sdkmanDir
                     .resolve("candidates")
-                    .resolve(tool)
+                    .resolve(SDKMAN_CANDIDATES.getOrDefault(tool, tool))
                     .resolve("current")
                     .resolve("bin")
                     .resolve(file));

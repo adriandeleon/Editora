@@ -32,7 +32,9 @@ public record RuntimeVersion(String label, String detail) {
         ZSH("--version"),
         FISH("--version"),
         MAKE("--version"),
-        GROOVY("--version");
+        GROOVY("--version"),
+        /** {@code kotlinc}: the compiler that runs a Kotlin script, and compiles a Kotlin program. */
+        KOTLIN("-version");
 
         final List<String> versionArgs;
 
@@ -95,6 +97,7 @@ public record RuntimeVersion(String label, String detail) {
             case "fish" -> kind = Kind.FISH;
             case "make", "gmake" -> kind = Kind.MAKE;
             case "groovy" -> kind = Kind.GROOVY;
+            case "kotlinc", "kotlinc-jvm" -> kind = Kind.KOTLIN;
             default -> kind = PYTHON_NAME.matcher(name).matches() ? Kind.PYTHON : null;
         }
         if (kind == null) {
@@ -125,6 +128,7 @@ public record RuntimeVersion(String label, String detail) {
             case FISH -> simple(output, FISH_VERSION, "fish ", probe.argv().get(0));
             case MAKE -> simple(output, MAKE_VERSION, "GNU Make ", probe.argv().get(0));
             case GROOVY -> parseGroovy(output, probe.argv().get(0));
+            case KOTLIN -> parseKotlin(output, probe.argv().get(0));
         };
     }
 
@@ -202,6 +206,16 @@ public record RuntimeVersion(String label, String detail) {
             }
         }
         return null;
+    }
+
+    /** {@code Kotlin 2.4.21 (Java 25.0.4)}, from {@code info: kotlinc-jvm 2.4.21 (JRE 25.0.4+7-LTS)}. */
+    private static RuntimeVersion parseKotlin(String output, String executable) {
+        String[] version = KotlinRun.compilerVersion(output);
+        if (version == null) {
+            return null; // not the Kotlin compiler (JetBrains' toolchain CLI prints something else)
+        }
+        String label = "Kotlin " + version[0] + (version[1] == null ? "" : " (Java " + version[1] + ")");
+        return new RuntimeVersion(label, detail(bannerLines(output), executable));
     }
 
     /** A runtime whose first matching line holds its version; the tooltip names the executable asked. */

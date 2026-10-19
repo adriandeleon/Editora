@@ -71,7 +71,9 @@ not new logic:
    `settings-controls.properties` rows, a schema bump with an additive migration, and the i18n keys in
    all six catalogs.
 5. An installer, if it has one: `InstallCatalog.serverInstall` (`ARCHIVE` for a per-OS binary,
-   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle), and the
+   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle,
+   `PINNED_SERVER` for a pinned per-platform distribution too big to hold in memory — streamed to disk,
+   hash-checked, unpacked by `tar`, and announced with its size before it starts), and the
    persist case in `InstallCoordinator.applyServerCommand`. A server run by `java` gets the Settings JDK
    through `JvmServerCommand.withJdk`.
 
@@ -89,10 +91,15 @@ debug commands, and the Settings → Debugging page is data-driven over
 JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by
 `dap/DebugAdapterLocator` and installed by the `scripts/install-*.sh` helpers.
 
-A JVM language other than Java (Groovy today) uses `Kind.JVM`: Editora's own JDI adapter
+A JVM language other than Java (Groovy, Kotlin) uses `Kind.JVM`: Editora's own JDI adapter
 ([ADR 0018](decisions/0018-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
-the variable its launcher passes JVM options in), a `run/JvmTools` home variable, a `DapServerRegistry`
-`Def`, its `RunScan` branch, and its runtime-internal packages in `JvmSourceMap.stepFilters`.
+the variable its launcher passes JVM options in), a `run/JvmTools` home variable (and its SDKMAN candidate
+when that is named otherwise), a `DapServerRegistry` `Def`, its `RunScan` branch, its runtime-internal
+packages in `JvmSourceMap.stepFilters`, and the `ExceptionFilterCatalog` filters. A language whose files are
+compiled before they run (a Kotlin `.kt` program) plans the compile itself (`run/KotlinRun`,
+`run/KotlinBuild`), runs it as a `BeforeLaunchStep.Command`, and starts `java` with the agent on its command
+line (`jvmOptionsInArgv`). An attach to a build's JVM anchored at such a file goes to the same adapter
+(`DebugCoordinator.jvmAdapterLanguage`).
 
 ## Add a language / TextMate grammar
 

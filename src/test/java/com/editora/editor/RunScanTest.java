@@ -72,6 +72,25 @@ class RunScanTest {
     }
 
     @Test
+    void aKotlinScriptRunsFromTheTopAProgramFromItsMainAndABuildScriptNever() {
+        RunScan.Result script = RunScan.scan(inputs("kotlin", "tool.main.kts"), "println(\"hi\")\n");
+        assertTrue(script.runnable());
+        assertEquals(0, script.line());
+        RunScan.Result program = RunScan.scan(
+                inputs("kotlin", "Hello.kt"), "package demo\n\nfun greet() = 1\n\nfun main(args: Array<String>) {}\n");
+        assertTrue(program.runnable());
+        assertEquals(4, program.line());
+        assertFalse(
+                RunScan.scan(inputs("kotlin", "Util.kt"), "fun twice(x: Int) = 2 * x\n")
+                        .runnable(),
+                "a .kt without a top-level main is not a program");
+        assertFalse(RunScan.scan(inputs("kotlin", "build.gradle.kts"), "plugins { kotlin(\"jvm\") }\n")
+                .runnable());
+        assertFalse(RunScan.scan(inputs("kotlin", "settings.gradle.kts"), "rootProject.name = \"x\"\n")
+                .runnable());
+    }
+
+    @Test
     void aShellScriptIsRunnableWheneverRunIsOn() {
         // No LSP or Bash-server condition any more: like Python, only the Run feature gates it.
         RunScan.Result r = RunScan.scan(inputs("shell", "a.sh"), "echo hi\n");

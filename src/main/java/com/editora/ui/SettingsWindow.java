@@ -7322,7 +7322,8 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_KOTLIN_COMMAND,
                         "settings.lsp.enableKotlin",
                         "settings.lsp.kotlinCommand",
-                        "lsp kotlin language server found installed not found command path executable",
+                        "lsp kotlin language server jetbrains kotlin-lsp intellij-server gradle found installed not found"
+                                + " command path executable",
                         v -> config.getSettings().setKotlinLspEnabled(v),
                         () -> config.getSettings().isKotlinLspEnabled(),
                         v -> config.getSettings().setKotlinLspCommand(v),

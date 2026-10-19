@@ -50,9 +50,11 @@ public final class RunConfigDefaults {
                 || !(ScriptRunCommand.PYTHON.equals(type)
                         || ScriptRunCommand.SHELL.equals(type)
                         || ScriptRunCommand.NODE.equals(type)
-                        || ScriptRunCommand.GROOVY.equals(type))
-                || script.getFileName() == null) {
-            return null;
+                        || ScriptRunCommand.isJvmScript(type))
+                || script.getFileName() == null
+                || ScriptRunCommand.KOTLIN.equals(type)
+                        && KotlinRun.shape(script.getFileName().toString()) == KotlinRun.Shape.NONE) {
+            return null; // (a Gradle build script is Gradle's to run)
         }
         String target = script.toString();
         java.nio.file.Path folder = script.normalize().getParent();

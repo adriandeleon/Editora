@@ -45,9 +45,12 @@ It ships **twenty-three** general-purpose servers (plus the Maven-aware `pom.xml
 | `clangd` | `clangd` | `compile_commands.json`, `CMakeLists.txt`, …, `.git` |
 | `astro` | `astro-ls --stdio` | `astro.config.mjs`, `astro.config.ts`, `package.json`, `.git` |
 
-The rest cover XML (lemminx), JSON, Bash, YAML, PHP, Ruby, HTML, CSS, Kotlin, Groovy (gvy's `gls` jar, pinned,
-run with `java -jar` on the Settings JDK; CodeNarc style rules off), Lua, Dockerfile, SQL, Terraform, TOML, C#,
-Typst, and Astro. Commands are user-configurable (Settings) and **never bundled** — servers
+The rest cover XML (lemminx), JSON, Bash, YAML, PHP, Ruby, HTML, CSS, Kotlin (JetBrains' Kotlin LSP: a pinned
+~370 MB distribution with its own Java runtime, installed by `InstallCatalog.Kind.PINNED_SERVER` and launched
+as `bin/intellij-server --stdio`; `kotlin-lsp --stdio` on PATH by default, fwcd's `kotlin-language-server` as a
+configured command; a Gradle settings file is the root before any build file, and there is no `.git` fallback),
+Groovy (gvy's `gls` jar, pinned, run with `java -jar` on the Settings JDK; CodeNarc style rules off), Lua,
+Dockerfile, SQL, Terraform, TOML, C#, Typst, and Astro. Commands are user-configurable (Settings) and **never bundled** — servers
 are auto-detected on the augmented PATH or installed in-app.
 
 Useful pure methods: `serverIdFor(languageId)`, `isSupported(languageId)`, `rootMarkersFor(...)`,
@@ -537,7 +540,7 @@ Editora debugs Java, Python, and JavaScript (Node), off by default
 (`Settings.debugSupport`). [`dap/DapServerRegistry`](../../src/main/java/com/editora/dap/DapServerRegistry.java)
 is the pure language → adapter spec (a `Kind` transport, the DAP `launch` type, the `initialize`
 adapter id, and the default interpreter + adapter args). `languageIdsForDebug()` =
-`{java, python, javascript, groovy}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
+`{java, python, javascript, groovy, kotlin}`; `typescript`, `javascriptreact` and `typescriptreact` files are served by the
 `javascript` adapter (`adapterLanguage`): Node 22.18+/23.6+ runs a `.ts` file itself, and a compiled
 project's breakpoints live in its `.ts`/`.tsx` sources.
 
@@ -547,6 +550,7 @@ project's breakpoints live in its `.ts`/`.tsx` sources.
 | `python` | `STDIO` | `<python> -m debugpy.adapter`; `DapClient.connectStdio(proc, "python")` wires DAP to the process's stdin/stdout. |
 | `javascript` | `SOCKET` | `node <dapDebugServer.js> 0 127.0.0.1`, the port read from its "listening at" line; `DapClient.connect(port, "pwa-node")`. |
 | `groovy` | `JVM` | Editora's own JDI adapter (`dap/jvm`, [ADR 0018](../decisions/0018-jvm-debug-adapter.md)), served in-process on a loopback port; `DapClient.connect(port, "editora-jvm")`. The program is `groovy <file>` started through `runInTerminal`, with the JDWP agent (`server=n`, connecting back) in `JAVA_OPTS`. Breakpoints bind by source name. |
+| `kotlin` | `JVM` | The same adapter. A script is `kotlinc -script <file>` (agent in `JAVA_OPTS`); a program is compiled first (`kotlinc <file> -include-runtime -d <jar>`, cached by content under `<config>/cache/kotlin-run`) and run as `java <agent> -jar <jar>` (`jvmOptionsInArgv`). A file's declared `package` matches its classes' source path wherever the file sits. Debug via Build Tool and Attach from a Kotlin file attach this adapter (`attach`, `hostName`/`port`) instead of java-debug, which never binds a `.kt` breakpoint. kotlin-lsp's own undocumented DAP (`start_debug_server`) is not used. |
 
 [`dap/DapClient`](../../src/main/java/com/editora/dap/DapClient.java) (mirrors `LanguageServerSession`)
 runs the handshake over an lsp4j.debug `DSPLauncher`: `initialize` → on the `initialized` event send

@@ -165,6 +165,23 @@ class RuntimeVersionTest {
     }
 
     @Test
+    void kotlinSaysTheCompilersVersionAndItsJavaButNotTheToolchainClis() {
+        assertEquals(
+                List.of("/sdk/kotlin/bin/kotlinc", "-version"),
+                RuntimeVersion.probeFor(List.of("/sdk/kotlin/bin/kotlinc", "-script", "a.main.kts"))
+                        .argv());
+        assertEquals(
+                "Kotlin 2.4.21 (Java 25.0.4)",
+                parse(List.of("kotlinc", "-script", "a.kts"), "info: kotlinc-jvm 2.4.21 (JRE 25.0.4+7-LTS)\n")
+                        .label());
+        assertEquals(
+                "Kotlin 2.4.21",
+                parse(List.of("kotlinc.bat"), "info: kotlinc-jvm 2.4.21\n").label());
+        assertNull(parse(List.of("kotlinc"), "kotlin toolchain 0.1.0\n"));
+        assertNull(RuntimeVersion.probeFor(List.of("kotlin", "a.main.kts")), "`kotlin` may be the toolchain CLI");
+    }
+
+    @Test
     void unknownRuntimesAreNotProbed() {
         assertNull(RuntimeVersion.probeFor(List.of("sh", "x.sh")));
         assertNull(RuntimeVersion.probeFor(List.of("/w/build/app")));

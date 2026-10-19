@@ -15,6 +15,7 @@ import com.editora.install.InstallCatalog.Prereq;
 import com.editora.install.InstallCatalog.Step;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -236,7 +237,7 @@ class InstallCatalogTest {
 
     @Test
     void archiveSpecsCoverEveryPlatformAndTheRightBinary() {
-        for (String id : new String[] {"clangd", "kotlin", "lua", "xml", "terraform"}) {
+        for (String id : new String[] {"clangd", "lua", "xml", "terraform"}) {
             // It's an ARCHIVE step with a recipe.
             assertEquals(
                     Kind.ARCHIVE,
@@ -258,6 +259,33 @@ class InstallCatalogTest {
                         .assetByPlatform()
                         .get(Platform.MAC_ARM));
         assertTrue(InstallCatalog.archiveSpec("unknown").isEmpty());
+        assertTrue(InstallCatalog.archiveSpec("kotlin").isEmpty(), "fwcd's server is no longer installed");
+    }
+
+    @Test
+    void theKotlinServerIsJetBrainsPinnedForEveryPlatformAndSaysItsSize() {
+        Step step = InstallCatalog.serverInstall("kotlin").orElseThrow().get(0);
+        assertEquals(Kind.PINNED_SERVER, step.kind());
+        assertEquals(InstallCatalog.KOTLIN_LSP_STEP, step.id());
+        assertEquals(java.util.Set.of(InstallCatalog.Prereq.TAR), step.prereqs());
+        assertEquals("plugins/lsp/kotlin", step.destSubpath());
+        InstallCatalog.PinnedServer server =
+                InstallCatalog.pinnedServer(step.id()).orElseThrow();
+        assertEquals("intellij-server", server.launcher());
+        assertEquals(" --stdio", server.arguments());
+        for (Platform p : Platform.values()) {
+            InstallCatalog.PinnedAsset asset = server.assetFor(p);
+            assertNotNull(asset, "no asset for " + p);
+            assertTrue(InstallCatalog.isTrustedDownloadUrl(asset.url()), asset.url());
+            assertTrue(asset.url().contains("/" + InstallCatalog.KOTLIN_LSP_VERSION + "/"), asset.url());
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), asset.sha256());
+        }
+        assertTrue(server.assetFor(Platform.MAC_ARM).url().endsWith("-aarch64.sit"));
+        assertTrue(server.assetFor(Platform.WIN_X64).url().endsWith(".win.zip"));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl("https://download-cdn.jetbrains.com/x.tar.gz"), "its CDN");
+        assertArrayEquals(new int[] {370, 1200}, InstallCatalog.largeDownload("kotlin"));
+        assertNull(InstallCatalog.largeDownload("lua"), "a small download is not asked about");
+        assertTrue(InstallCatalog.installableServerIds().contains("kotlin"));
     }
 
     @Test

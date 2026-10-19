@@ -212,7 +212,10 @@ final class RunCoordinator {
     /** Watches the next program's output (a deployed program's JDWP banner); null for most runs. */
     private java.util.function.BiConsumer<String, Boolean> pendingOutputWatcher;
 
-    /** What Rerun repeats for the next program (a deployed configuration: deploy, then run); null for most. */
+    /**
+     * What Rerun repeats for the next program, null for most: a deployed configuration (deploy, then run), a Kotlin
+     * program (compile an edited file again).
+     */
     private Runnable pendingRerun;
 
     /** {@link #pendingRerun} of the last program. */
@@ -438,7 +441,7 @@ final class RunCoordinator {
             runPythonConfig(cfg, cwd, script, args, env, remote);
             return;
         }
-        if (ScriptRunCommand.GROOVY.equals(cfg.type())) {
+        if (ScriptRunCommand.isJvmScript(cfg.type())) {
             runJvmScriptConfig(cfg, cwd, script, args, env, elsewhere);
             return;
         }
@@ -589,8 +592,9 @@ final class RunCoordinator {
     }
 
     /**
-     * Runs a Groovy script configuration: its tool on the configuration's JDK (else the Settings one), with the
-     * configuration's VM arguments in {@code JAVA_OPTS} — the variable Groovy's launcher hands its JVM.
+     * Runs a Groovy or Kotlin script configuration: its tool on the configuration's JDK (else the Settings one),
+     * with the configuration's VM arguments in {@code JAVA_OPTS} — the variable the launcher hands its JVM. A
+     * Kotlin program ({@code .kt}) is compiled and run by {@code java} instead, its VM arguments on that command.
      */
     private void runJvmScriptConfig(
             RunConfiguration cfg,
@@ -621,7 +625,106 @@ final class RunCoordinator {
         String target = script != null
                 ? com.editora.process.ExecTargets.forPath(script).toTargetPath(script)
                 : cfg.target().strip();
-        streamRun(cfg.name(), cwd, com.editora.run.JvmScriptRun.argv(tool, target, args), launch, script);
+        if (com.editora.run.KotlinRun.shape(target) == com.editora.run.KotlinRun.Shape.PROGRAM
+                && ScriptRunCommand.KOTLIN.equals(language)) {
+            if (elsewhere || script == null) {
+                host.setStatus(tr("status.run.kotlinProgramRemote"));
+                return;
+            }
+            java.util.Map<String, String> programEnv =
+                    new java.util.LinkedHashMap<>(JdkToolchain.environment(jdkHome, processPath()));
+            programEnv.putAll(env);
+            String java = JdkToolchain.javaExecutable(jdkHome);
+            runKotlinProgram(
+                    cfg.name(),
+                    script,
+                    cwd,
+                    java.isBlank() ? "java" : java,
+                    ProgramArgs.tokenize(cfg.vmArgs()),
+                    args,
+                    programEnv,
+                    tool);
+            return;
+        }
+        streamRun(cfg.name(), cwd, com.editora.run.JvmScriptRun.argv(language, tool, target, args), launch, script);
+    }
+
+    /**
+     * Runs Kotlin program {@code source}: compiled by {@code kotlinc} into a jar cached by its content (in the Run
+     * console, as a before-launch step the user can watch and stop), then {@code java -jar} — or straight to
+     * {@code java -jar} when this content's jar is already there. The runtime chip shows the compiler's Kotlin
+     * and the JDK both run on.
+     */
+    private void runKotlinProgram(
+            String label,
+            Path source,
+            Path cwd,
+            String javaExecutable,
+            List<String> jvmOptions,
+            List<String> args,
+            java.util.Map<String, String> env,
+            String kotlinc) {
+        com.editora.run.KotlinBuild.Plan plan;
+        try {
+            plan = com.editora.run.KotlinBuild.plan(source, kotlinc, host.configDir());
+        } catch (java.io.IOException e) {
+            host.setStatus(tr("status.run.failed", e.getMessage()));
+            return;
+        }
+        List<String> command = com.editora.run.KotlinRun.programArgv(
+                javaExecutable, jvmOptions, plan.jar().toString(), args);
+        Runnable launch = () -> {
+            runtimeCommand = List.of(kotlinc);
+            // Rerun compiles an edited file again rather than replaying the old jar.
+            pendingRerun = () -> runKotlinProgram(label, source, cwd, javaExecutable, jvmOptions, args, env, kotlinc);
+            streamRun(label, cwd, command, env, source);
+        };
+        if (plan.compile().isEmpty()) {
+            launch.run();
+            return;
+        }
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(
+                        source.getFileName().toString(), plan.compile(), "status.run.kotlinCompile"),
+                cwd,
+                env,
+                new BeforeLaunchStep.Console() {
+                    @Override
+                    public void started(String commandLine) {
+                        consoleDir = source.getParent(); // kotlinc's error lines name the file: links resolve
+                        consoleUsed = true;
+                        ops.openToolWindow();
+                        panel().started(commandLine);
+                        runtimeGeneration++; // the compile is not the program: no runtime chip for it
+                        panel().setRuntime(null);
+                    }
+
+                    @Override
+                    public void output(String line, boolean stderr) {
+                        panel().appendOutput(line, stderr);
+                    }
+
+                    @Override
+                    public void ended(int code, String launchError) {
+                        if (launchError != null) {
+                            panel().failed(launchError);
+                        } else if (code != 0) {
+                            panel().finished(code);
+                        }
+                        ops.onRunStateChanged();
+                    }
+                },
+                () -> {
+                    try {
+                        com.editora.run.KotlinBuild.finish(plan);
+                    } catch (java.io.IOException e) {
+                        host.setStatus(tr("status.run.failed", e.getMessage()));
+                        return;
+                    }
+                    launch.run();
+                });
+        ops.onRunStateChanged(); // the compile is running now: the toolbar's Stop button applies to it
     }
 
     /**
@@ -1776,6 +1879,28 @@ final class RunCoordinator {
             return;
         }
         java.util.Map<String, String> env = launchEnv;
+        if ("kotlin".equals(buffer.getLanguage())
+                && com.editora.run.KotlinRun.shape(path.getFileName().toString())
+                        == com.editora.run.KotlinRun.Shape.PROGRAM) {
+            String kotlinc = jvmTool(buffer);
+            if (!com.editora.process.ExecTargets.runsHere(path) || kotlinc == null) {
+                host.setStatus(tr(
+                        kotlinc == null
+                                ? com.editora.run.JvmScriptRun.missingToolKey("kotlin")
+                                : "status.run.kotlinProgramRemote"));
+                return;
+            }
+            runKotlinProgram(
+                    path.getFileName().toString(),
+                    path,
+                    path.getParent(),
+                    javaExecutable,
+                    List.of(),
+                    args,
+                    env,
+                    kotlinc);
+            return;
+        }
         ShellCommand.Launch shell = null;
         if (buffer.isShell()) {
             boolean remote = !com.editora.process.ExecTargets.runsHere(path);
@@ -1872,6 +1997,7 @@ final class RunCoordinator {
         if (com.editora.run.JvmScriptRun.supports(buffer.getLanguage())) {
             String tool = jvmTool(buffer);
             return com.editora.run.JvmScriptRun.argv(
+                    buffer.getLanguage(),
                     tool == null ? com.editora.run.JvmScriptRun.tool(buffer.getLanguage()) : tool,
                     com.editora.process.ExecTargets.forPath(path).toTargetPath(path),
                     args);
@@ -1959,11 +2085,18 @@ final class RunCoordinator {
     /** Set by a configuration whose program runs in a Terminal tab; its launch, built later, goes there. */
     private boolean terminalRun;
 
+    /**
+     * The command whose runtime the next run's chip shows instead of the run's own: {@code kotlinc} for a Kotlin
+     * program run as {@code java -jar}, which reports both its Kotlin and the JDK the program runs on.
+     */
+    private List<String> runtimeCommand;
+
     /** As above; {@code script} is the file being run (saved before a Rerun), null for a Java launch. */
     private void streamRun(
             String label, Path workingDir, List<String> command, java.util.Map<String, String> env, Path script) {
         if (terminalRun) {
             terminalRun = false;
+            runtimeCommand = null;
             pendingDeploySummary = null; // the console's extras do not apply to a Terminal tab
             pendingOutputWatcher = null;
             pendingRerun = null;
@@ -1997,7 +2130,9 @@ final class RunCoordinator {
         if (deploySummary != null) {
             panel().showCommandLine(deploySummary);
         }
-        showRuntime(command, workingDir, env);
+        List<String> runtime = runtimeCommand != null ? runtimeCommand : command;
+        runtimeCommand = null;
+        showRuntime(runtime, workingDir, env);
         host.setStatus(tr("status.run.started", label));
         service.runInDir(workingDir, command, env, new RunService.Listener() {
             @Override

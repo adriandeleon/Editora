@@ -199,6 +199,9 @@ public final class InstallService {
             case JVM_LSP_JAR -> {
                 return installJvmLspJar(s, configDir);
             }
+            case PINNED_SERVER -> {
+                return installPinnedServer(s, configDir);
+            }
         }
         return null;
     }
@@ -310,6 +313,102 @@ public final class InstallService {
             return null;
         });
         return InstallCatalog.jvmJarCommand(dest.resolve(jar.fileName()));
+    }
+
+    /** Where pinned server distributions come from ({@link InstallCatalog#pinnedServer}); a test supplies its own. */
+    private java.util.function.Function<String, java.util.Optional<InstallCatalog.PinnedServer>> pinnedServers =
+            InstallCatalog::pinnedServer;
+
+    /** Test seam for {@link #pinnedServers}: a recipe whose hash matches a test's own small archive. */
+    void setPinnedServersForTest(
+            java.util.function.Function<String, java.util.Optional<InstallCatalog.PinnedServer>> recipes) {
+        this.pinnedServers = recipes;
+    }
+
+    /**
+     * Streams a pinned server distribution for this platform to a file beside its install folder (a few hundred
+     * MB: not into memory, nor into a {@code /tmp} that may be RAM), refuses it unless its SHA-256 is the
+     * recipe's, unpacks it with the system {@code tar} and returns its launcher's command.
+     */
+    private String installPinnedServer(Step s, Path configDir) throws Exception {
+        InstallCatalog.PinnedServer server = pinnedServers.apply(s.id()).orElse(null);
+        if (server == null) {
+            throw new InstallException(s.id() + ": no recipe");
+        }
+        InstallCatalog.PinnedAsset asset = server.assetFor(InstallCatalog.currentPlatform());
+        if (asset == null) {
+            throw new InstallException(s.id() + ": no prebuilt server for this OS/architecture");
+        }
+        Path dest = configDir.resolve(s.destSubpath());
+        Files.createDirectories(dest.getParent());
+        Path archive = Files.createTempFile(dest.getParent(), "." + s.id() + "-download", ".part");
+        try {
+            String actual = downloadTo(asset.url(), archive, server.maxBytes());
+            if (!actual.equalsIgnoreCase(asset.sha256())) {
+                throw new InstallException(s.id() + ": the download does not match its published checksum (expected "
+                        + asset.sha256() + ", got " + actual + ") — not installed");
+            }
+            Path launcherInInstall = replaceInstall(dest, staged -> {
+                ProcessRunner.Result r = ProcessRunner.runInUserLocale(
+                        null, CMD_TIMEOUT, InstallCatalog.tarExtractArgvAuto(archive, staged));
+                if (!r.ok()) {
+                    throw new InstallException(s.id() + ": tar failed — " + r.message());
+                }
+                Path launcher = findBinary(staged, server.launcher(), false);
+                if (launcher == null) {
+                    throw new InstallException(s.id() + ": '" + server.launcher() + "' not found in the download");
+                }
+                makeExecutable(launcher);
+                return staged.relativize(launcher);
+            });
+            return InstallCatalog.binaryCommand(dest.resolve(launcherInInstall.toString()), server.arguments());
+        } finally {
+            deleteQuietly(archive);
+        }
+    }
+
+    /**
+     * Downloads {@code url} into {@code file} (at most {@code maxBytes}) and returns its SHA-256, computed as it
+     * arrives. The same URL rules as {@link #download}.
+     */
+    private String downloadTo(String url, Path file, long maxBytes) throws Exception {
+        if (!PluginRegistry.isHttps(url)) {
+            throw new InstallException("download url must be https: " + url);
+        }
+        if (!InstallCatalog.isTrustedDownloadUrl(url)) {
+            throw new InstallException("download host is not one the install catalog uses: " + url);
+        }
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                .timeout(NET_TIMEOUT)
+                .header("User-Agent", "Editora")
+                .GET()
+                .build();
+        HttpResponse<InputStream> resp = client.get().send(req, HttpResponse.BodyHandlers.ofInputStream());
+        if (resp.statusCode() / 100 != 2) {
+            resp.body().close();
+            throw new InstallException("HTTP " + resp.statusCode() + " for " + url);
+        }
+        java.security.MessageDigest sha;
+        try {
+            sha = java.security.MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is always available", e);
+        }
+        long total = 0;
+        try (InputStream in = resp.body();
+                java.io.OutputStream out = Files.newOutputStream(file)) {
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                total += n;
+                if (total > maxBytes) {
+                    throw new InstallException("download larger than " + maxBytes + " bytes: " + url);
+                }
+                sha.update(buf, 0, n);
+                out.write(buf, 0, n);
+            }
+        }
+        return java.util.HexFormat.of().formatHex(sha.digest());
     }
 
     private static boolean hasTopLevelJar(Path dir) throws IOException {

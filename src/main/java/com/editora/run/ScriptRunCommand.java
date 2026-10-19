@@ -34,6 +34,12 @@ public final class ScriptRunCommand {
     /** A Groovy script, run by {@code groovy} on the configuration's JDK ({@link JvmScriptRun}). */
     public static final String GROOVY = "groovy";
 
+    /**
+     * A Kotlin file: a script ({@code .kts}) run by {@code kotlinc -script}, or a program ({@code .kt}) compiled by
+     * {@code kotlinc} and run by {@code java -jar}, both on the configuration's JDK ({@link KotlinRun}).
+     */
+    public static final String KOTLIN = "kotlin";
+
     public static final String JAVA = "java";
 
     private ScriptRunCommand() {}
@@ -45,7 +51,15 @@ public final class ScriptRunCommand {
                 || MAKE.equals(type)
                 || NPM.equals(type)
                 || NODE.equals(type)
-                || GROOVY.equals(type);
+                || isJvmScript(type);
+    }
+
+    /**
+     * Whether {@code type} is a JVM language's file run through its own tool on the configuration's JDK
+     * ({@link #GROOVY}, {@link #KOTLIN}): its type is its language id in {@link JvmScriptRun}.
+     */
+    public static boolean isJvmScript(String type) {
+        return JvmScriptRun.supports(type);
     }
 
     /**
@@ -80,7 +94,7 @@ public final class ScriptRunCommand {
      * {@code make} does, so it is a valid configuration rather than an incomplete one.
      */
     public static boolean needsTarget(String type) {
-        return isPython(type) || SHELL.equals(type) || NPM.equals(type) || NODE.equals(type) || GROOVY.equals(type);
+        return isPython(type) || SHELL.equals(type) || NPM.equals(type) || NODE.equals(type) || isJvmScript(type);
     }
 
     /**
@@ -131,6 +145,16 @@ public final class ScriptRunCommand {
                 // The shape only: the real tool and JDK come from JvmTools and the configuration's JDK.
                 argv.add(JvmScriptRun.tool(GROOVY));
                 argv.add(t);
+            }
+            case KOTLIN -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                // The shape only: a program's compile and `java -jar` are planned by KotlinRun at launch.
+                argv.addAll(
+                        KotlinRun.shape(t) == KotlinRun.Shape.PROGRAM
+                                ? List.of(KotlinRun.TOOL, t)
+                                : KotlinRun.scriptArgv(KotlinRun.TOOL, t, null));
             }
             case MAKE -> {
                 argv.add("make");
