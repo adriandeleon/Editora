@@ -2839,7 +2839,7 @@ final class LspCoordinator {
 
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.Line line) {
         if (line != null) {
-            String server = line.serverId() == null ? "LSP" : serverLabel(line.serverId());
+            String server = line.serverId() == null ? "LSP" : serverProgram(line.serverId());
             host.setStatus(
                     line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
         }
