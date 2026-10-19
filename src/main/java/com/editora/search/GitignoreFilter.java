@@ -55,9 +55,31 @@ public final class GitignoreFilter {
      */
     private final boolean nests;
 
+    /**
+     * Whether a dependency folder ({@link DependencyDirs}, i.e. {@code node_modules}) is ignored when no rule
+     * decides it — a built-in rule below every {@code .gitignore}, so {@code !node_modules/} still re-includes it.
+     * True for a project filter from {@link #load(Path)}.
+     */
+    private final boolean prunesDependencies;
+
     private GitignoreFilter(List<Layer> layers, boolean nests) {
+        this(layers, nests, false);
+    }
+
+    private GitignoreFilter(List<Layer> layers, boolean nests, boolean prunesDependencies) {
         this.layers = layers;
         this.nests = nests;
+        this.prunesDependencies = prunesDependencies;
+    }
+
+    /** See the field: whether dependency folders are skipped when no {@code .gitignore} rule decides them. */
+    public boolean prunesDependencies() {
+        return prunesDependencies;
+    }
+
+    /** This filter with the built-in dependency-folder rule switched off (an include glob that names one). */
+    public GitignoreFilter withoutDependencyPruning() {
+        return prunesDependencies ? new GitignoreFilter(layers, nests, false) : this;
     }
 
     /** See the field: whether {@link #nested} can ever return anything but this filter. */
@@ -83,7 +105,7 @@ public final class GitignoreFilter {
         List<Layer> all = new ArrayList<>(layers.size() + 1);
         all.add(new Layer(own.get(0).rules(), "", relDir.endsWith("/") ? relDir : relDir + "/"));
         all.addAll(layers); // innermost first: the deeper file outranks the ones above it
-        return new GitignoreFilter(List.copyOf(all), true);
+        return new GitignoreFilter(List.copyOf(all), true, prunesDependencies);
     }
 
     public boolean isEmpty() {
@@ -99,6 +121,14 @@ public final class GitignoreFilter {
      * in the top-level file — walked, indexed and charged against the caps.
      */
     public static GitignoreFilter load(Path root) {
+        return load(root, true);
+    }
+
+    /**
+     * As {@link #load(Path)}; {@code pruneDependencies} false gives the {@code .gitignore} files' own verdict
+     * only (a folder comparison shows {@code node_modules} unless a rule says otherwise).
+     */
+    public static GitignoreFilter load(Path root, boolean pruneDependencies) {
         if (root == null) {
             return NONE;
         }
@@ -111,7 +141,7 @@ public final class GitignoreFilter {
         } catch (RuntimeException e) {
             // the root's own file is still worth having
         }
-        return new GitignoreFilter(List.copyOf(layers), true);
+        return new GitignoreFilter(List.copyOf(layers), true, pruneDependencies);
     }
 
     private static void addAncestors(List<Layer> layers, Path root) {
@@ -213,7 +243,9 @@ public final class GitignoreFilter {
                 return decided; // a deeper .gitignore outranks the ones above it
             }
         }
-        return false;
+        // The built-in rule, below every file's: a node_modules folder no .gitignore decides is skipped (review
+        // E1). Folders only, as git does: a walk prunes the folder, and a re-included one keeps its files.
+        return prunesDependencies && isDir && DependencyDirs.isDependencyDir(relPath);
     }
 
     /** What {@code rules} say about {@code relPath} (relative to their own directory), or null for nothing. */

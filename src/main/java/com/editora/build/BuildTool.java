@@ -81,18 +81,21 @@ public enum BuildTool {
         public Detected parse(Path root) throws Exception {
             NpmProject project = NpmProject.parse(Files.readString(root.resolve("package.json")));
             return new Detected(
-                    new NpmActionsProvider(project.scripts(), npmPackageManager(root, project)), project.name());
+                    new NpmActionsProvider(
+                            project.scripts(), npmManager(root, null).manager(), project.scriptCommands()),
+                    project.name());
         }
 
         @Override
         public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
             String pm;
             try {
-                pm = npmPackageManager(root, NpmProject.parse(Files.readString(root.resolve("package.json"))));
-            } catch (Exception e) {
-                pm = "npm"; // unreadable/removed package.json — fall back to the plain default command
+                pm = npmManager(root, projectRoot).manager();
+            } catch (RuntimeException e) {
+                pm = "npm"; // unreadable folder — fall back to the plain default command
             }
-            return BuildExecutable.resolve(List.of(), override, pm);
+            return BuildExecutable.resolve(
+                    List.of(), NpmPackageManager.overrideApplies(override, pm) ? override : "", pm);
         }
     },
 
@@ -526,14 +529,18 @@ public enum BuildTool {
         }
     }
 
-    private static String npmPackageManager(Path root, NpmProject project) {
-        return NpmPackageManager.detect(
-                project.packageManagerField(),
-                Files.exists(root.resolve("package-lock.json")),
-                Files.exists(root.resolve("yarn.lock")),
-                Files.exists(root.resolve("pnpm-lock.yaml")),
-                // bun.lock is Bun >= 1.2's default text lockfile; bun.lockb is the legacy binary one. Probing
-                // only the legacy name made every modern Bun project fall through to "npm".
-                Files.exists(root.resolve("bun.lock")) || Files.exists(root.resolve("bun.lockb")));
+    /**
+     * The package manager for the npm package in {@code root} — its own lockfile or {@code packageManager} field,
+     * else its workspace root's (looked for up to {@code projectRoot}). See {@link NpmPackageManager#detect(Path,
+     * Path, Path, java.util.function.Predicate, java.util.function.Function)}.
+     */
+    public static NpmPackageManager.Detection npmManager(Path root, Path projectRoot) {
+        return NpmPackageManager.detect(root, projectRoot, userHome(), Files::exists, p -> {
+            try {
+                return Files.isRegularFile(p) ? java.util.Optional.of(Files.readString(p)) : java.util.Optional.empty();
+            } catch (java.io.IOException | RuntimeException e) {
+                return java.util.Optional.empty();
+            }
+        });
     }
 }

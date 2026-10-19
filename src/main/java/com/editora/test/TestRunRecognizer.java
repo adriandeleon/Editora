@@ -131,10 +131,18 @@ public final class TestRunRecognizer {
     }
 
     private static boolean isNpmTest(List<String> a) {
-        if (a.size() >= 2 && a.get(0).equals("run") && a.get(1).startsWith("test")) {
+        if (a.size() >= 2 && a.get(0).equals("run") && isTestScriptName(a.get(1))) {
             return true;
         }
         return a.size() == 1 && a.get(0).equals("test");
+    }
+
+    /**
+     * Whether an npm script name is a test script: {@code test}, or a variant of it ({@code test:unit},
+     * {@code test-e2e}, {@code test_ci}) — not any name that merely starts with "test" ({@code testdata-gen}).
+     */
+    static boolean isTestScriptName(String name) {
+        return name.equals("test") || name.matches("test[:\\-_].+");
     }
 
     private static String firstNonFlag(List<String> a) {

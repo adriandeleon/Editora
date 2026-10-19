@@ -74,7 +74,14 @@ public final class OutputPump {
     public static final String LINE_TRUNCATED = " … [line truncated]";
 
     private static final int MAX_PENDING_OUTPUT_CHARS = 256 * 1024;
-    private static final int MAX_PENDING_OUTPUT_EVENTS = 2_048;
+    /**
+     * Sized so that, for lines of 32 characters or more, the character bound decides — and what is queued when a
+     * flood ends (the newest {@value #MAX_PENDING_OUTPUT_CHARS} characters) covers a whole console (Run keeps
+     * 200,000), so the newest screenful a console keeps has no gap in it. At 2,048 a flood of 60-character
+     * lines kept only about 120,000 contiguous characters, and the rest of the console was older lines with
+     * drop markers between them.
+     */
+    private static final int MAX_PENDING_OUTPUT_EVENTS = 8_192;
     /** Counted in bytes as read, so a line is never more characters than this either. */
     private static final int MAX_OUTPUT_LINE_CHARS = 64 * 1024;
 

@@ -259,12 +259,13 @@ class ProjectWalkTest {
                         "packages/a/src/dist/kept.js",
                         "packages/a/src/index.js",
                         "packages/b/dist/bundle.js",
-                        "packages/b/node_modules/dep/index.js",
                         "packages/b/src/main.js"),
                 files);
         assertFalse(entered.contains("packages/a/node_modules"), "pruned before it is listed: " + entered);
         assertFalse(entered.contains("packages/a/dist"));
-        assertTrue(entered.contains("packages/b/node_modules"), "a's rules do not reach its sibling");
+        assertTrue(entered.contains("packages/b/dist"), "a's rules do not reach its sibling");
+        // b's node_modules goes too, by the built-in dependency rule (review E1), not by a's file.
+        assertFalse(entered.contains("packages/b/node_modules"), entered.toString());
     }
 
     @Test

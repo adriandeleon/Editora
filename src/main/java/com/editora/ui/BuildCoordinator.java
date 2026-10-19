@@ -189,6 +189,17 @@ final class BuildCoordinator {
         return detectedLabel;
     }
 
+    /** Why the build file could not be parsed (with its line and column), or null. */
+    private String parseError;
+
+    /** For npm: the package manager the detected project uses and what said so; null otherwise. */
+    private com.editora.build.NpmPackageManager.Detection detectedManager;
+
+    /** For npm: {@code pnpm (pnpm-lock.yaml)} for the detected project, or null (Settings shows it). */
+    com.editora.build.NpmPackageManager.Detection detectedManager() {
+        return markerRoot == null ? null : detectedManager;
+    }
+
     /** Whether a launched build is still alive — the same state {@link #runTask} / {@link #rerunLast} gate on. */
     boolean isRunning() {
         return service.isRunning();
@@ -218,16 +229,24 @@ final class BuildCoordinator {
             return;
         }
         Path context = contextPath();
+        if (context != null && com.editora.run.NodeRuntimes.inNodeModules(context)) {
+            // A dependency's file (Go to Definition into node_modules) still belongs to the project that holds
+            // node_modules: its own package.json must not take over the tool window, or install/scripts run
+            // inside node_modules/<pkg>.
+            context = com.editora.run.NodeRuntimes.outsideNodeModules(context);
+        }
         if (context == null || !RemoteExec.runsFor(context)) {
             appliedStamp = null;
             applyDetected(null, null, null);
             return;
         }
         BuildDetection.Stamp known = appliedStamp;
+        Path searchFrom = context;
+        Path project = ops.projectRoot();
         BuildDetection.execute(() -> {
             // filesOnly: every build marker is a file (pom.xml/package.json/go.mod/…), so a directory
             // merely named like one must not root the tool there (it would then fail to parse) — #451.
-            Path root = RootResolver.findMarkerRoot(context, tool.markers(), true);
+            Path root = RootResolver.findMarkerRoot(searchFrom, tool.markers(), true);
             BuildDetection.Stamp stamp = BuildDetection.Stamp.of(root, tool.markers());
             if (stamp.equals(known)) {
                 // Same build file, untouched: what is applied is what a parse would produce, so keep the
@@ -242,6 +261,8 @@ final class BuildCoordinator {
             }
             BuildActionsProvider parsed = null;
             String label = null;
+            String error = null;
+            com.editora.build.NpmPackageManager.Detection manager = null;
             if (root != null) {
                 BuildDetection.countParse();
                 try {
@@ -250,13 +271,25 @@ final class BuildCoordinator {
                     label = detected.label();
                 } catch (Exception e) {
                     parsed = null; // marker found but malformed — applyDetected reports it distinctly
+                    error = e.getMessage();
+                }
+                if (tool == BuildTool.NPM) {
+                    try {
+                        manager = BuildTool.npmManager(root, project);
+                    } catch (RuntimeException e) {
+                        manager = null;
+                    }
                 }
             }
             BuildActionsProvider finalProvider = parsed;
             String finalLabel = label;
+            String finalError = error;
+            com.editora.build.NpmPackageManager.Detection finalManager = manager;
             Platform.runLater(() -> {
                 if (gen == detectGeneration) {
                     appliedStamp = stamp;
+                    parseError = finalError;
+                    detectedManager = finalManager;
                     applyDetected(root, finalProvider, finalLabel);
                 }
             });
@@ -293,7 +326,10 @@ final class BuildCoordinator {
             return;
         }
         if (provider == null) {
-            host.setStatus(tr("status.build.malformed", tool.displayName()));
+            host.setStatus(
+                    parseError == null || parseError.isBlank()
+                            ? tr("status.build.malformed", tool.displayName())
+                            : tr("status.build.malformedAt", tool.displayName(), parseError));
             return;
         }
         popup.show(host.window(), provider);
@@ -475,7 +511,10 @@ final class BuildCoordinator {
             ops.openConsole();
         }
         String label = String.join(" ", taskArgs);
-        panel.started(this, tool.displayName(), label, tool.outputStyle(), this::stop);
+        // npm's tab is named after the manager that runs (pnpm, yarn, bun), not always "npm".
+        String tabName =
+                tool == BuildTool.NPM ? com.editora.run.MissingProgram.baseName(runArgv.get(0)) : tool.displayName();
+        panel.started(this, tabName, label, tool.outputStyle(), this::stop);
         if (tree != null) {
             tree.setRunning(true);
         }
@@ -489,15 +528,20 @@ final class BuildCoordinator {
                                 com.editora.process.ExecTargets.remoteTool(root, "jdk.home"))
                         : com.editora.run.JdkToolchain.environment(
                                 host.settings().getMavenJdkHome(), com.editora.process.ProcessRunner.augmentedPath());
+        if (tool == BuildTool.NPM) {
+            environment = NpmRunSupport.environment(System.getenv("NO_COLOR"));
+            long generation = ++runtimeGeneration;
+            com.editora.run.RuntimeProbe.probe(runArgv, root, environment, version -> {
+                if (generation == runtimeGeneration) {
+                    panel.setRuntime(BuildCoordinator.this, version); // the Node (or Bun) the script runs under
+                }
+            });
+        }
         service.run(root, runArgv, environment, new BuildService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 panel.started(
-                        BuildCoordinator.this,
-                        tool.displayName(),
-                        commandLine,
-                        tool.outputStyle(),
-                        BuildCoordinator.this::stop);
+                        BuildCoordinator.this, tabName, commandLine, tool.outputStyle(), BuildCoordinator.this::stop);
             }
 
             @Override
@@ -531,6 +575,15 @@ final class BuildCoordinator {
                         code == 0
                                 ? tr("status.build.ok", tool.displayName())
                                 : tr("status.build.exit", tool.displayName(), code));
+                if (code > 0 && tool == BuildTool.NPM) {
+                    // A script that failed because nothing is installed yet (a fresh clone, a new template):
+                    // say so, instead of leaving "tsc: not found" or a missing-module trace to be decoded.
+                    NpmRunSupport.whenDependenciesMissing(root, ops.projectRoot(), manager -> {
+                        String hint = tr("status.build.npmInstallFirst", manager);
+                        panel.appendOutput(BuildCoordinator.this, hint, true);
+                        host.setStatus(hint);
+                    });
+                }
             }
 
             @Override
@@ -543,10 +596,22 @@ final class BuildCoordinator {
                 if (claimed) {
                     testRunHook.onTestError(message);
                 }
-                host.setStatus(tr("status.build.failed", tool.displayName(), message));
+                runtimeGeneration++; // nothing ran: drop the runtime chip and any late probe answer
+                panel.setRuntime(BuildCoordinator.this, null);
+                String friendly = NpmRunSupport.missingMessage(
+                        runArgv.get(0), message, detectedManager == null ? "" : detectedManager.reason());
+                if (friendly != null) {
+                    panel.appendOutput(BuildCoordinator.this, friendly, true);
+                    host.setStatus(friendly);
+                } else {
+                    host.setStatus(tr("status.build.failed", tool.displayName(), message));
+                }
             }
         });
     }
+
+    /** Guards a runtime probe's late answer against a newer run. */
+    private long runtimeGeneration;
 
     /** Observes the next run's output lines (line, isStderr) until the run ends — the Debug-via-build flow
      *  watches for the JDWP banner. Set before {@link #runTask}; auto-cleared on run completion. */

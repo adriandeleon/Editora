@@ -271,6 +271,53 @@ class DeclarationScannerTest {
         }
 
         @Test
+        void javascriptMethodsExportsAndOnlyTopLevelVariables() {
+            String src = """
+                    const fs = require('node:fs');
+                    class Server {
+                      #port = 0;
+                      constructor(port) {
+                        const local = port;
+                      }
+                      static async create(port) { return new Server(port); }
+                      get port() { return this.#port; }
+                      #listen() {}
+                    }
+                    const api = {
+                      get(path) { return path; },
+                      remove: function (id) { return id; },
+                      update: (id) => id,
+                    };
+                    exports.formatBytes = (n) => `${n} B`;
+                    module.exports.VERSION = '1.0';
+                    const escape = (s) => s.split(/`/).join('');
+                    function after() {
+                      if (ok) {
+                      }
+                      for (const x of xs) {
+                      }
+                    }
+                    """;
+            assertEquals(
+                    List.of(
+                            "fs",
+                            "Server",
+                            "constructor",
+                            "create",
+                            "port",
+                            "#listen",
+                            "api",
+                            "get",
+                            "remove",
+                            "update",
+                            "formatBytes",
+                            "VERSION",
+                            "escape",
+                            "after"),
+                    names(src, "javascript"));
+        }
+
+        @Test
         void shellFunctions() {
             String src = """
                     usage() {

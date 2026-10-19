@@ -65,4 +65,29 @@ class DapErrorsTest {
                 ExceptionFilterCatalog.displayLabel(
                         new DapModels.ExceptionFilterOption("promiseRejects", "Promise Rejects", false)));
     }
+
+    @Test
+    void jsDebugsBodyOnlyErrorIsRead() {
+        // js-debug answers a failed evaluation with no message, only body.error.format (review D6): lsp4j then
+        // puts "Unset error message." where the text should be.
+        com.google.gson.JsonObject body = com.google.gson.JsonParser.parseString(
+                        "{\"error\":{\"id\":9238,\"format\":\"Uncaught ReferenceError ReferenceError: undefinedThing"
+                                + " is not defined\\n    at eval (repl:1:1)\\n\",\"showUser\":false}}")
+                .getAsJsonObject();
+        assertEquals(
+                "ReferenceError: undefinedThing is not defined", DapErrors.responseText("Unset error message.", body));
+        assertEquals("refused", DapErrors.responseText("refused", body)); // a real message wins
+        assertEquals(
+                "Cannot find file a.js",
+                DapErrors.responseText(
+                        "",
+                        java.util.Map.of(
+                                "error",
+                                java.util.Map.of(
+                                        "format",
+                                        "Cannot find file {path}",
+                                        "variables",
+                                        java.util.Map.of("path", "a.js")))));
+        assertEquals(null, DapErrors.responseText("Unset error message.", null));
+    }
 }

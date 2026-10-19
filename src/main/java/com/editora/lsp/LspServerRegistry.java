@@ -315,6 +315,11 @@ public final class LspServerRegistry {
      * (review B9). Every other server: its markers as one tier.
      */
     public static List<List<String>> rootMarkerTiersForServer(String serverId) {
+        if (TypeScriptServer.SERVER_ID.equals(serverId)) {
+            // As the markers' comment says: a tsconfig/jsconfig wins over a nearer package.json (a workspace
+            // package inside a repository whose tsconfig spans it), then the package, then the repository (B10).
+            return List.of(List.of("tsconfig.json", "jsconfig.json"), List.of("package.json"), List.of(".git"));
+        }
         if ("python".equals(serverId)) {
             return List.of(
                     List.of("pyproject.toml", "setup.py", "setup.cfg"),

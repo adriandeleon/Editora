@@ -492,6 +492,7 @@ final class LspCoordinator {
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnStartFailed(this::onStartFailed);
+        lspManager.setOnStartRefused(this::onStartRefused);
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
@@ -686,6 +687,19 @@ final class LspCoordinator {
     private final Map<String, java.util.ArrayDeque<Long>> recentCrashes = new java.util.HashMap<>();
 
     /**
+     * (serverId + root) keys that are not started again by opening or showing a tab: the server crash-looped,
+     * refused initialize, or has no TypeScript it may run. Before this, every tab open forked (and lost) the
+     * server again (Node review E5). Cleared by Restart Language Servers, a settings apply (an install or a
+     * trust decision goes through one), and a remote host reconnecting.
+     */
+    private final java.util.Set<String> startBlocked = new java.util.HashSet<>();
+
+    /** Whether opening a tab may start {@code serverId} on {@code root}. Package-visible for tests. */
+    boolean startAllowed(String serverId, Path root) {
+        return !startBlocked.contains(crashKey(serverId, root));
+    }
+
+    /**
      * A session died on its own — process crash or failed/timed-out handshake, never a deliberate shutdown
      * (already on the FX thread; see {@code LspManager.setOnSessionCrashed}). Before this hook existed a
      * crashed server stayed dead for the rest of the session: {@code syncBuffer} (which would re-open) only
@@ -741,6 +755,7 @@ final class LspCoordinator {
         }
         String onHost = "sftp://" + authority + "/";
         recentCrashes.keySet().removeIf(key -> key.contains(onHost));
+        startBlocked.removeIf(key -> key.contains(onHost));
         resyncRemoteBuffers(authority);
     }
 
@@ -779,6 +794,9 @@ final class LspCoordinator {
             return;
         }
         boolean restart = shouldAutoRestart(crashKey(serverId, root), System.nanoTime());
+        if (!restart) {
+            startBlocked.add(crashKey(serverId, root)); // E5: given up — opening another tab must not fork it again
+        }
         host.setStatus(tr(restart ? "status.lsp.crashed" : "status.lsp.crashLoop", serverLabel(serverId)));
         forEachCrashedBuffer(serverId, root, b -> {
             Path p = lspPath(b);
@@ -847,6 +865,44 @@ final class LspCoordinator {
      * own error status already said why. Not a crash, so nothing is retried here — the same command would
      * only fail again, and a remote tab comes back through {@link #remoteHostConnected}.
      */
+    /**
+     * A server whose command exists is not running, and starting it again would not help: it refused
+     * initialize (its own words are shown), or Editora did not start the TypeScript server because there is no
+     * TypeScript it may run. Its tabs go inactive, the reason is an error (so it is not lost when the status line
+     * moves on), and opening more tabs does not retry it until something changes (Node review B3, E5).
+     */
+    private void onStartRefused(String serverId, Path root, com.editora.lsp.StartRefusal refusal) {
+        if (!ops.lspFeatureEnabled() || !serverEnabled(serverId)) {
+            return;
+        }
+        startBlocked.add(crashKey(serverId, root));
+        host.forEachBuffer(b -> {
+            Path p = lspPath(b);
+            if (p != null
+                    && serverId.equals(serverIdForBuffer(b))
+                    && sameLspRoot(lspRootFor(b, serverId), root)
+                    && !lspManager.isManaged(p)) {
+                b.setLspActive(false);
+                clearDiagnostics(p);
+            }
+        });
+        ops.setLspLoading(false);
+        host.setError(startRefusedMessage(serverLabel(serverId), refusal));
+        updateStatusBar();
+    }
+
+    /** The status-line words for a {@link com.editora.lsp.StartRefusal}. */
+    static String startRefusedMessage(String server, com.editora.lsp.StartRefusal refusal) {
+        return switch (refusal.kind()) {
+            case SERVER_REFUSED -> tr("status.lsp.startRefused", server, refusal.detail());
+            case NO_TYPESCRIPT ->
+                refusal.detail().isBlank()
+                        ? tr("status.lsp.tsNoSdk")
+                        : tr("status.lsp.tsSdkWithoutTsserver", refusal.detail());
+            case UNTRUSTED_TYPESCRIPT -> tr("status.lsp.tsSdkUntrusted", tr("command.lsp.trustProjectSettings"));
+        };
+    }
+
     private void onStartFailed(String serverId, Path root) {
         forEachCrashedBuffer(serverId, root, b -> b.setLspActive(false));
         ops.setLspLoading(false);
@@ -1141,6 +1197,7 @@ final class LspCoordinator {
      * init and on every settings apply.
      */
     void applySupport() {
+        startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -1571,7 +1628,23 @@ final class LspCoordinator {
     /** Hands the current {@link #bashIdeConfig()} to the manager, which pushes it to running Bash servers. */
     void applyBashIde() {
         lspManager.setBashIde(bashIdeConfig());
+        applyTypeScriptConfig();
     }
+
+    /**
+     * What the TypeScript server is started with (type acquisition, the Node.js that runs it), its inlay-hint and
+     * code-lens settings, and the shared root of loose JavaScript files.
+     */
+    private void applyTypeScriptConfig() {
+        var s = host.settings();
+        lspManager.setTypeScriptStart(s.isTypescriptTypeAcquisition(), s.getNodePath());
+        lspManager.setTypeScriptSettings(s.isInlayHints(), s.isCodeLens());
+        com.editora.config.ConfigManager config = ops.config();
+        lspManager.setLooseRoot(config == null ? null : config.getConfigDir().resolve(LOOSE_ROOT));
+    }
+
+    /** The shared root of loose JavaScript/TypeScript files, under the config folder. */
+    static final String LOOSE_ROOT = "lsp/loose-files";
 
     /** The project root whose withheld overrides were last announced, so a gating pass does not repeat it. */
     private Path withheldNoticeRoot;
@@ -1621,7 +1694,7 @@ final class LspCoordinator {
             host.setStatus(tr("status.trust.noProject"));
             return;
         }
-        List<String> sdkRequests = astroSdkTrustRequests(root);
+        List<String> sdkRequests = sdkTrustRequests(root);
         List<String> requests = new java.util.ArrayList<>(projectTrustRequests());
         requests.addAll(sdkRequests);
         if (requests.isEmpty()) {
@@ -1635,8 +1708,11 @@ final class LspCoordinator {
             config.getTrustStore().trust(root);
             config.saveTrust(); // durable: a security decision must survive a crash
         }
-        if (!sdkRequests.isEmpty()) {
+        if (sdkRequests.stream().anyMatch(r -> r.startsWith(ASTRO_SERVER_ID + ": "))) {
             lspManager.shutdownServer(ASTRO_SERVER_ID); // restart it on the SDK the folder may now supply
+        }
+        if (sdkRequests.stream().anyMatch(r -> r.startsWith(com.editora.lsp.TypeScriptServer.SERVER_ID + ": "))) {
+            lspManager.shutdownServer(com.editora.lsp.TypeScriptServer.SERVER_ID); // now on the folder's own TypeScript
         }
         projectScope.reload(); // now trusted: the editor, build and debug values apply too
         applySupport();
@@ -1651,12 +1727,13 @@ final class LspCoordinator {
      * TypeScript SDK, whose JavaScript astro-ls loads and runs. One {@code "astro: <sdk dir>"} line per SDK
      * found at the project root or at the server root of an open Astro file, never above the project root.
      */
-    private List<String> astroSdkTrustRequests(Path root) {
+    private List<String> sdkTrustRequests(Path root) {
+        List<String> out = new java.util.ArrayList<>(typeScriptSdkTrustRequests(root));
         if (!serverEnabled(ASTRO_SERVER_ID)) {
-            return List.of();
+            return List.copyOf(out);
         }
         Path top = root.toAbsolutePath().normalize();
-        java.util.Set<String> found = new java.util.TreeSet<>();
+        java.util.Set<String> found = new java.util.TreeSet<>(out);
         java.util.function.Consumer<Path> look = start -> {
             if (start != null && start.toAbsolutePath().normalize().startsWith(top)) {
                 Path sdk = LspManager.findTypeScriptSdk(start, top);
@@ -1669,6 +1746,36 @@ final class LspCoordinator {
         host.forEachBuffer(b -> {
             if (lspPath(b) != null && ASTRO_SERVER_ID.equals(serverIdForBuffer(b))) {
                 look.accept(lspRootFor(b, ASTRO_SERVER_ID));
+            }
+        });
+        return List.copyOf(found);
+    }
+
+    /**
+     * What trusting {@code root} hands the TypeScript / JavaScript server: the folder's own TypeScript, whose
+     * {@code tsserver.js} the server runs. Untrusted, it runs the TypeScript installed beside itself instead
+     * (Node review B2). One {@code "typescript: <tsserver.js>"} line per SDK at the project root or at the server
+     * root of an open JS/TS file, never above the project root.
+     */
+    private List<String> typeScriptSdkTrustRequests(Path root) {
+        String id = com.editora.lsp.TypeScriptServer.SERVER_ID;
+        if (!serverEnabled(id)) {
+            return List.of();
+        }
+        Path top = root.toAbsolutePath().normalize();
+        java.util.Set<String> found = new java.util.TreeSet<>();
+        java.util.function.Consumer<Path> look = start -> {
+            if (start != null && start.toAbsolutePath().normalize().startsWith(top)) {
+                Path sdk = com.editora.lsp.TypeScriptServer.findTsserver(start, top);
+                if (sdk != null) {
+                    found.add(id + ": " + sdk);
+                }
+            }
+        };
+        look.accept(top);
+        host.forEachBuffer(b -> {
+            if (lspPath(b) != null && id.equals(serverIdForBuffer(b))) {
+                look.accept(lspRootFor(b, id));
             }
         });
         return List.copyOf(found);
@@ -2033,6 +2140,8 @@ final class LspCoordinator {
 
     /** Re-applies the inlay-hints gate to every open buffer (the palette/Settings toggle's apply). */
     void applyInlayHints() {
+        lspManager.setTypeScriptSettings(
+                host.settings().isInlayHints(), host.settings().isCodeLens());
         boolean on = lineAnnotationsOn();
         host.forEachBuffer(b -> {
             b.setInlayHintsActive(on && lspPath(b) != null && lspManager.isManaged(lspPath(b)));
@@ -2204,6 +2313,12 @@ final class LspCoordinator {
                 && (remote
                         ? remoteServerAvailable(buffer, path, serverId)
                         : Boolean.TRUE.equals(serverAvailable.get(serverId)));
+        if (eligible
+                && !startBlocked.isEmpty()
+                && !serverId.equals(lspManager.managedServerId(path))
+                && !startAllowed(serverId, lspRootFor(buffer, serverId))) {
+            eligible = false; // crash-looped or refused: not started again by a tab (E5)
+        }
         buffer.setHeavyFileLspAllowed(buffer.isHeavyFile() && eligible); // B10: within the language's limit
         watchedProjectRoot = ops.lspProjectRoot();
         if (eligible && "python".equals(serverId)) {
@@ -2227,6 +2342,7 @@ final class LspCoordinator {
                 }
                 host.setStatus(tr("status.lsp.starting", serverLabel(serverId)));
                 ops.setLspLoading(true); // show the loading bar until the server reports ready
+                lspManager.setDocumentIndent(path, formattingIndent(buffer)); // quick fixes keep its indent (B8)
                 lspManager.openDocument(
                         path, lspRootFor(buffer, serverId), routeLanguageId(buffer, serverId), buffer.text());
             }
@@ -2256,6 +2372,9 @@ final class LspCoordinator {
             requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
             if ("bash".equals(serverId) && !remote) {
                 noticeMissingShellcheck();
+            }
+            if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
+                noticeMissingNodeTypes(buffer, path);
             }
         } else {
             buffer.setLspActive(false);
@@ -2287,6 +2406,28 @@ final class LspCoordinator {
         }
     }
 
+    /** The folders the "Node.js APIs have no types" hint was shown for (once each per window). */
+    private final java.util.Set<Path> nodeTypesHinted = new java.util.HashSet<>();
+
+    /**
+     * Says once per folder that Node.js APIs have no types for this JavaScript file, and how to add them: without
+     * {@code @types/node} (and with type acquisition off) hover says {@code any} and {@code fs.} completes only
+     * words from the file (Node review B9). TypeScript files get the compiler's own error for this instead.
+     */
+    private void noticeMissingNodeTypes(EditorBuffer buffer, Path path) {
+        String lang = buffer.getLanguage();
+        if (host.settings().isTypescriptTypeAcquisition()
+                || !("javascript".equals(lang) || "javascriptreact".equals(lang))
+                || path.getParent() == null
+                || nodeTypesHinted.contains(path.getParent())
+                || !com.editora.lsp.NodeTypesHint.usesNodeApis(buffer.text())
+                || com.editora.lsp.NodeTypesHint.hasNodeTypes(path)) {
+            return;
+        }
+        nodeTypesHinted.add(path.getParent());
+        host.setStatus(tr("status.lsp.nodeTypesHint"));
+    }
+
     /** Workspace root for a buffer under {@code serverId}: active project (if Projects on), else nearest build
      *  file (that server's markers), else the file's dir. */
     private Path lspRootFor(EditorBuffer buffer, String serverId) {
@@ -2307,6 +2448,13 @@ final class LspCoordinator {
         LibraryOrigin origin = libraryOrigin(file, serverId);
         if (origin != null) {
             return origin.root(); // a library file reached from the project: read in the project's server (B4)
+        }
+        Path loose = lspManager.looseRoot();
+        if (loose != null
+                && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)
+                && com.editora.lsp.RootResolver.isLoose(
+                        ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId))) {
+            return loose; // one server for every loose script, wherever it is (B7)
         }
         return com.editora.lsp.RootResolver.resolveTiered(
                 ops.lspProjectRoot(),
@@ -2594,7 +2742,7 @@ final class LspCoordinator {
         updatePythonStatus(b);
         // The actually-managing server (so a pom.xml on lemminx-maven reads "maven-pom", not the language's "xml").
         String serverId = b == null || lspPath(b) == null ? null : lspManager.managedServerId(lspPath(b));
-        ops.setStatusBarLsp(serverId != null ? serverLabel(serverId) : null);
+        ops.setStatusBarLsp(serverId != null ? serverProgram(serverId) : null);
         updateProblemsAvailability(); // the Problems window tracks the same active-file LSP-managed condition
     }
 
@@ -2611,7 +2759,19 @@ final class LspCoordinator {
     }
 
     /** The short server name shown in the status bar — the configured command's basename for {@code serverId}. */
+    /**
+     * The name a status message gives a server: its language as Doctor and Settings name it ("TypeScript /
+     * JavaScript"), not its command ("typescript-language-server language server keeps crashing", Node review
+     * E8); the program's name when no such label exists.
+     */
     private String serverLabel(String serverId) {
+        String key = "install.lang." + serverId;
+        String label = tr(key);
+        return label.equals(key) ? serverProgram(serverId) : label;
+    }
+
+    /** The program a server runs ("typescript-language-server"), as the status bar's LSP segment shows it. */
+    private String serverProgram(String serverId) {
         // The Maven server launches via `java -cp ...`, whose basename ("java") is meaningless — name it directly.
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             return "lemminx-maven";
@@ -2694,7 +2854,7 @@ final class LspCoordinator {
 
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.Line line) {
         if (line != null) {
-            String server = line.serverId() == null ? "LSP" : serverLabel(line.serverId());
+            String server = line.serverId() == null ? "LSP" : serverProgram(line.serverId());
             host.setStatus(
                     line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
         }
@@ -2702,6 +2862,7 @@ final class LspCoordinator {
 
     /** Restarts every running server, clears diagnostics, then re-gates each buffer ({@code lsp.restartServers}). */
     void restartServers() {
+        startBlocked.clear();
         statusNarrator.forget(null);
         lspManager.shutdownAll();
         clearAllDiagnostics();

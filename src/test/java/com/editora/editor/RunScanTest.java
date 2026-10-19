@@ -36,6 +36,26 @@ class RunScanTest {
         assertEquals(2, RunScan.pythonRunLine("a\nb\n  if __name__ == '__main__':\n"));
     }
 
+    /** Node.js: every script runs from the top; a declaration file holds no code; JSX/TSX need a bundler. */
+    @Test
+    void aNodeScriptRunsFromItsFirstLine() {
+        for (String[] c : new String[][] {
+            {"javascript", "app.js"}, {"javascript", "app.mjs"}, {"javascript", "app.cjs"},
+            {"typescript", "main.ts"}, {"typescript", "main.mts"}, {"typescript", "main.cts"},
+            {"javascript", "tool"}, {"javascript", "a.test.js"}
+        }) {
+            RunScan.Result r = RunScan.scan(inputs(c[0], c[1]), "console.log(1)\n");
+            assertTrue(r.runnable(), c[1]);
+            assertEquals(0, r.line(), c[1]);
+        }
+        assertFalse(RunScan.scan(inputs("typescript", "types.d.ts"), "export type A = 1;\n")
+                .runnable());
+        assertFalse(RunScan.scan(inputs("typescriptreact", "App.tsx"), "x\n").runnable());
+        assertFalse(RunScan.scan(inputs("javascriptreact", "App.jsx"), "x\n").runnable());
+        RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "javascript", "app.js", false);
+        assertFalse(RunScan.scan(off, "x\n").runnable(), "the Run feature off: no ▶");
+    }
+
     @Test
     void aClojureFileRunsFromItsMainOrTheTopButDataAndClojureScriptNeverRun() {
         RunScan.Result ns = RunScan.scan(
