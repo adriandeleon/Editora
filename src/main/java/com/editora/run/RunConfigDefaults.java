@@ -47,7 +47,10 @@ public final class RunConfigDefaults {
     public static com.editora.config.RunConfiguration forScript(
             String type, java.nio.file.Path script, java.nio.file.Path projectRoot) {
         if (script == null
-                || !(ScriptRunCommand.PYTHON.equals(type) || ScriptRunCommand.SHELL.equals(type))
+                || !(ScriptRunCommand.PYTHON.equals(type)
+                        || ScriptRunCommand.SHELL.equals(type)
+                        || ScriptRunCommand.NODE.equals(type)
+                        || ScriptRunCommand.GROOVY.equals(type))
                 || script.getFileName() == null) {
             return null;
         }
@@ -62,6 +65,9 @@ public final class RunConfigDefaults {
             workingDir = folder == null || folder.equals(root)
                     ? ""
                     : root.relativize(folder).toString();
+        }
+        if (ScriptRunCommand.NODE.equals(type)) {
+            workingDir = ""; // blank: the package root (nearest package.json), as the gutter ▶ runs it
         }
         return new com.editora.config.RunConfiguration(
                 script.getFileName().toString(), type, target, "", "", "", "", workingDir, "", "", "");
@@ -114,21 +120,9 @@ public final class RunConfigDefaults {
     /** {@code cfg} renamed with a {@link #uniqueName} among {@code existingNames}. */
     public static com.editora.config.RunConfiguration uniquelyNamed(
             com.editora.config.RunConfiguration cfg, Collection<String> existingNames) {
-        String name = uniqueName(cfg.name(), existingNames);
-        return new com.editora.config.RunConfiguration(
-                name,
-                cfg.type(),
-                cfg.target(),
-                cfg.mainClass(),
-                cfg.projectName(),
-                cfg.args(),
-                cfg.vmArgs(),
-                cfg.workingDir(),
-                cfg.env(),
-                cfg.beforeLaunch(),
-                cfg.jdkHome(),
-                cfg.interpreter(),
-                cfg.interpreterOptions());
+        // A copy of every field but the name: rebuilding it field by field dropped the ones added later
+        // (Run in Terminal, the deployment).
+        return cfg.withName(uniqueName(cfg.name(), existingNames));
     }
 
     /**

@@ -21,6 +21,16 @@ class ModelineTest {
         assertEquals("py", ext("x = 1\n# vim: ft=python\n"));
     }
 
+    @Test
+    void reactAndEmacsJavaScriptModes() {
+        assertEquals("tsx", ext("// vim: ft=typescriptreact\n"));
+        assertEquals("jsx", ext("/* vim: set filetype=javascriptreact : */\n"));
+        assertEquals("jsx", ext("// vim: set ft=jsx:\n"));
+        assertEquals("js", ext("// -*- mode: js2 -*-\n"));
+        assertEquals("jsx", ext("// -*- mode: rjsx -*-\n"));
+        assertEquals("tsx", ext("// -*- mode: typescript-tsx -*-\n"));
+    }
+
     /** vim reads the first and last five lines only. */
     @Test
     void vimModelinesAreReadAtEitherEnd() {
@@ -47,5 +57,13 @@ class ModelineTest {
         assertNull(ext("# vim: ft=cobol\n"));
         assertNull(ext("just some prose about vim and emacs\n"));
         assertNull(Modeline.detect(null, null));
+    }
+
+    @Test
+    void scalaAndClojureModes() {
+        assertEquals("scala", ext("// vim: ft=scala\nobject A\n"));
+        assertEquals("clj", ext(";; -*- mode: clojure -*-\n(ns a)\n"));
+        assertEquals("cljs", ext(";; -*- clojurescript -*-\n"));
+        assertEquals("clj", ext("(ns a)\n;; vim: set filetype=clojure :\n"));
     }
 }

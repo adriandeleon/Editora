@@ -92,6 +92,16 @@ final class RunScan {
             // toggle (both off for a new user), so a .sh had no ▶ until someone found that out.
             runnable = true;
             line = 0; // run the whole script from the top (the shebang line, if any)
+        } else if (in.eligible() && "groovy".equals(language)) {
+            line = groovyRunLine(in.name(), text);
+            runnable = line >= 0;
+        } else if (in.eligible()
+                && com.editora.run.NodeRunPlan.isNodeLanguage(language)
+                && com.editora.run.NodeRunPlan.runnableName(in.name())) {
+            // A Node script (.js/.mjs/.cjs/.ts/.mts/.cts, or a node/deno/bun/tsx shebang): run from the top. A test
+            // file's ▶ runs its tests (node --test) — decided at launch, where the path is known.
+            runnable = true;
+            line = 0;
         } else if (in.eligible()
                 && "java".equals(language)
                 && (CompactSource.isLaunchable(in.name(), text)
@@ -126,6 +136,32 @@ final class RunScan {
             mainLines = ml;
         }
         return new Result(runnable, line, httpLines, makeTargets, testLines, mainLines);
+    }
+
+    /** A {@code static void main(…)} at the start of a line — a Groovy class run as a program. */
+    private static final Pattern GROOVY_MAIN =
+            Pattern.compile("^\\s*(?:public\\s+)?static\\s+(?:void|def)\\s+main\\s*\\(");
+
+    /**
+     * The gutter Run line for a Groovy file: its {@code static void main} when it has one, else line 0 (a script
+     * runs from the top) — or -1 for a file Groovy reads but nobody runs as a program: a Gradle build script and
+     * a Jenkins pipeline.
+     */
+    static int groovyRunLine(String name, String text) {
+        if (name == null) {
+            return 0;
+        }
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        if (lower.endsWith(".gradle") || lower.startsWith("jenkinsfile") || lower.endsWith(".jenkinsfile")) {
+            return -1;
+        }
+        String[] lines = text.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (GROOVY_MAIN.matcher(lines[i]).find()) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     /**

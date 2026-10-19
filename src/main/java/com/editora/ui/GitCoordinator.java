@@ -411,7 +411,13 @@ final class GitCoordinator {
         }
         // Only diff a real, non-huge file (huge files disable the gutter anyway). A narrowed buffer shows
         // region-relative lines, so whole-file change bars would land on the wrong ones: it gets none.
-        Path diffFile = (file != null && !b.isLargeFile() && !b.isNarrowed()) ? file : null;
+        // An encrypted file's text would be diffed against its ciphertext in the repository: meaningless bars.
+        Path diffFile = (file != null
+                        && !b.isLargeFile()
+                        && !b.isNarrowed()
+                        && !b.encryption().isEncrypted())
+                ? file
+                : null;
         service.refresh(context, diffFile, this::applyState);
     }
 
@@ -488,7 +494,11 @@ final class GitCoordinator {
         host.forEachBuffer(buf -> {
             // The active buffer is handled by refresh(); skip non-file/huge buffers + files outside this repo.
             if (buf.isNarrowed()
-                    || !GitChangeBars.shouldRediff(buf.getPath(), root, buf == active, buf.isLargeFile())) {
+                    || !GitChangeBars.shouldRediff(
+                            buf.getPath(),
+                            root,
+                            buf == active,
+                            buf.isLargeFile() || buf.encryption().isEncrypted())) {
                 return;
             }
             Path path = buf.getPath().toAbsolutePath();

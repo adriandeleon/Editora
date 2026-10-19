@@ -47,7 +47,8 @@ class ChildLocalePolicyTest {
     /** Output is parsed, or only the exit code is read: these may start a child with {@code LC_ALL=C}. */
     private static final Set<String> PARSE_STABLE_FILES = Set.of(
             "AppInfo.java", // git rev-parse of the build's own checkout
-            "dap/DapManager.java", // probe(): `node --version`, `python -c "import debugpy"`
+            "crypto/Pinentry.java", // `gpgconf --list-dirs homedir`: a path
+            "dap/DapManager.java", // probe(): `node --version` (also js-debug's minimum), `python -c "import debugpy"`
             "diagram/DiagramRenderer.java", // detect(): --version / --help
             "doctor/DoctorProbes.java", // version probes
             "git/GitService.java", // background reads: porcelain output
@@ -60,17 +61,21 @@ class ChildLocalePolicyTest {
             "mermaid/Mermaid.java", // detect() + maid's JSON report
             "run/RunService.java", // `java -version`
             "run/RuntimeProbe.java", // the Run/Debug runtime chip: `java -XshowSettings`, `--version`
+            "ui/NodeRunLauncher.java", // `node --version`: whether this Node strips TypeScript types
             "search/RemoteFiles.java", // rg --version and file lists on a remote host
             "search/Ripgrep.java", // rg --version
             "search/SearchService.java", // rg matches
             "typst/TypstRenderer.java", // detect()
             "io/Trash.java", // `gio trash` (exit code)
+            "ui/EncryptionCoordinator.java", // `git ls-files --error-unmatch`: whether a file is tracked (exit code)
             "ui/FileWorkflowCoordinator.java", // pkexec probe + elevated save (exit code)
             "ui/GitPathScope.java", // `find` on a remote host: where a project's .git entries are
             "ui/PythonTestRunner.java", // `python -c "import pytest"`: whether pytest is there (exit code)
             "ui/TerminalCoordinator.java", // `ps -A -o ppid=,comm=` on a target: what a remote shell is running
             "process/ProcessRegistry.java", // `kill -INT` before Stop escalates (exit code)
-            "container/ContainerEngine.java"); // the engine's inspect / ps output
+            "container/ContainerEngine.java", // the engine's inspect / ps output
+            "deploy/Deployer.java", // a deployment folder's file listing on its host, and removing files there
+            "deploy/LocalFiles.java"); // `git ls-files`: what a deploy sends
 
     /**
      * Long-lived, shown to the user, or a JVM tool on the user's paths: the inherited locale. The number is
@@ -82,8 +87,10 @@ class ChildLocalePolicyTest {
             Map.entry("agent/AcpClient.java", 1), // the agent CLI
             Map.entry("build/BuildService.java", 1), // Maven/Gradle/npm/cargo/go builds
             Map.entry("build/BuildTool.java", 1), // `gradle tasks` (a JVM in the project dir)
-            Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter
+            Map.entry("build/GradleHostClasspath.java", 1), // Gradle building a deployment's copy on its host
+            Map.entry("dap/DapManager.java", 2), // debugpy adapter, js-debug adapter (one helper: launch and attach)
             Map.entry("dap/JavaCompilation.java", 2), // javac of the user's file, here and on its host
+            Map.entry("dap/jvm/JvmDebugAdapter.java", 1), // the debugged program, when the client cannot start it
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
             Map.entry("format/PythonFormatter.java", 1), // Ruff/Black on the user's file names (decision 4)
@@ -106,6 +113,7 @@ class ChildLocalePolicyTest {
 
     /** Build their own {@code ProcessBuilder} and then apply one of the two environments above. */
     private static final Set<String> RAW_SPAWN_FILES = Set.of(
+            "dap/jvm/JvmDebugAdapter.java", // the debugged program, with applyUserEnv
             "Relaunch.java", // applyUserEnv: Editora itself, started again by Restart Now
             "agent/AcpClient.java",
             "container/ContainerExecTarget.java", // the engine's exec client: the user's environment, here only
@@ -160,8 +168,8 @@ class ChildLocalePolicyTest {
         // DapManager starts both kinds. Its adapters (and JavaCompilation's javac) are counted above; what
         // may still use the C locale is the local availability probe and, for a remote file, the host's three
         // (whether debugpy imports there, and pytest for a test: exit codes; where its vscode-js-debug is: a
-        // path).
-        assertTrue(count(PARSE_STABLE).getOrDefault("dap/DapManager.java", 0) <= 4);
+        // path), plus the Node version js-debug needs.
+        assertTrue(count(PARSE_STABLE).getOrDefault("dap/DapManager.java", 0) <= 5);
         // The language server session has none at all.
         assertEquals(0, count(PARSE_STABLE).getOrDefault("lsp/LanguageServerSession.java", 0));
     }

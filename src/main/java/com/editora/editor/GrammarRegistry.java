@@ -106,13 +106,29 @@ public final class GrammarRegistry {
         if (name == null) {
             return null;
         }
-        String scope = languageNameToScope.get(name.toLowerCase(Locale.ROOT));
+        String lower = name.toLowerCase(Locale.ROOT);
+        String scope = languageNameToScope.getOrDefault(lower, LANGUAGE_ALIASES.get(lower));
         return scope == null ? null : grammarForScope(scope);
     }
 
-    /** Language names that have a bundled grammar, sorted alphabetically. */
+    /**
+     * Languages with no grammar file of their own, highlighted by another language's grammar: JavaScript reuses
+     * TSX (see the extension table). They are languages a person picks, so {@link #pickableLanguageNames} lists
+     * them — without them a .js buffer's status-bar picker showed Plain Text and offered only TypeScript.
+     */
+    private static final Map<String, String> LANGUAGE_ALIASES =
+            Map.of("javascript", "source.tsx", "javascriptreact", "source.tsx");
+
+    /** Language names that have a bundled grammar file (the grammar's resource name), sorted alphabetically. */
     public Set<String> availableLanguageNames() {
         return new TreeSet<>(languageNameToScope.keySet());
+    }
+
+    /** {@link #availableLanguageNames} plus the languages that reuse another's grammar: what a picker offers. */
+    public Set<String> pickableLanguageNames() {
+        Set<String> names = availableLanguageNames();
+        names.addAll(LANGUAGE_ALIASES.keySet());
+        return names;
     }
 
     private IGrammar grammarForScope(String scope) {
@@ -171,6 +187,8 @@ public final class GrammarRegistry {
         scopeToResource.put("source.python", "python");
         scopeToResource.put("source.groovy", "groovy");
         scopeToResource.put("source.kotlin", "kotlin");
+        scopeToResource.put("source.scala", "scala");
+        scopeToResource.put("source.clojure", "clojure");
         scopeToResource.put("source.ruby", "ruby");
         scopeToResource.put("source.c", "c");
         scopeToResource.put("source.cpp", "cpp");
@@ -241,6 +259,10 @@ public final class GrammarRegistry {
         mapExtensions("source.python", "py", "pyw", "pyi");
         mapExtensions("source.groovy", "groovy", "gvy", "gradle");
         mapExtensions("source.kotlin", "kt", "kts");
+        // Scala sources, Scala CLI / Ammonite scripts (.sc), sbt build files and Mill builds.
+        mapExtensions("source.scala", "scala", "sc", "sbt", "mill");
+        // Clojure, ClojureScript, shared .cljc (and the older .cljx), EDN data files and Babashka scripts.
+        mapExtensions("source.clojure", "clj", "cljs", "cljc", "cljx", "edn", "bb"); // .bb: a Babashka script
         mapExtensions("source.ruby", "rb", "rake", "gemspec");
         mapExtensions("source.c", "c", "h");
         mapExtensions("source.cpp", "cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx", "h++", "ipp", "inl");
@@ -263,10 +285,12 @@ public final class GrammarRegistry {
         mapExtensions("source.dot", "dot", "gv");
         mapExtensions("source.plantuml", "puml", "plantuml", "pu", "iuml");
         mapExtensions("source.typst", "typ");
-        // The TypeScript grammar tokenizes plain JS well, so .js/.mjs/.cjs reuse source.ts and
-        // .jsx reuses the TSX (React) grammar — no separate JS grammars to bundle.
-        mapExtensions("source.ts", "ts", "mts", "cts", "js", "mjs", "cjs");
-        mapExtensions("source.tsx", "tsx", "jsx");
+        // JavaScript reuses the TSX grammar, as VS Code does (its JavaScript grammar is generated from
+        // TypeScriptReact): JSX is common in .js files, and the plain TS grammar reads `<p>` as a type cast,
+        // so JSX text such as `Use /* sparingly` commented out the rest of the file. TypeScript keeps source.ts,
+        // where `<T>x` is a cast.
+        mapExtensions("source.ts", "ts", "mts", "cts");
+        mapExtensions("source.tsx", "tsx", "jsx", "js", "mjs", "cjs");
         // PHP: source.php embeds text.html.basic/source.css/source.sql/source.json/text.xml (all bundled).
         mapExtensions("source.php", "php", "phtml", "php3", "php4", "php5", "phps");
         mapExtensions("source.lua", "lua");

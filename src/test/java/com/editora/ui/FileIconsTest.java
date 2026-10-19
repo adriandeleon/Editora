@@ -25,7 +25,10 @@ class FileIconsTest {
         assertEquals("css", FileIcons.iconKeyFor("style.css"));
         assertEquals("markdown", FileIcons.iconKeyFor("README.md"));
         assertEquals("yaml", FileIcons.iconKeyFor("config.yml"));
-        assertEquals("json", FileIcons.iconKeyFor("package.json"));
+        assertEquals("json", FileIcons.iconKeyFor("data.json"));
+        assertEquals("npm", FileIcons.iconKeyFor("package.json"));
+        assertEquals("npm", FileIcons.iconKeyFor("/p/package-lock.json"));
+        assertEquals("npm", FileIcons.iconKeyFor(".npmrc"));
         assertEquals("shell", FileIcons.iconKeyFor("build.sh"));
         assertEquals("mermaid", FileIcons.iconKeyFor("diagram.mmd"));
         assertEquals("markdown", FileIcons.iconKeyFor("report.typ")); // typst -> document glyph
@@ -106,5 +109,18 @@ class FileIconsTest {
         assertEquals("image", FileIcons.iconKeyFor("logo.png", "shell"));
         assertEquals("text", FileIcons.iconKeyFor("app.log", "log"));
         assertEquals("java", FileIcons.iconKeyFor("A.java", "java"));
+    }
+
+    @Test
+    void jvmLanguagesHaveBrandGlyphs() {
+        assertEquals("groovy", FileIcons.iconKeyFor("build.gradle"));
+        assertEquals("groovy", FileIcons.iconKeyFor("Jenkinsfile"));
+        assertEquals("scala", FileIcons.iconKeyFor("Main.scala"));
+        assertEquals("scala", FileIcons.iconKeyFor("build.sbt"));
+        assertEquals("clojure", FileIcons.iconKeyFor("core.clj"));
+        assertEquals("clojure", FileIcons.iconKeyFor("deps.edn"));
+        assertEquals("kotlin", FileIcons.iconKeyFor("build.gradle.kts"));
+        assertEquals("scala", FileIcons.iconKeyFor("script", "scala"), "a shebang-detected buffer");
+        assertEquals("clojure", FileIcons.iconKeyFor("tool", "clojure"));
     }
 }

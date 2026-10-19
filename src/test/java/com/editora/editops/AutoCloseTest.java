@@ -72,4 +72,51 @@ class AutoCloseTest {
         assertFalse(AutoClose.isEmptyPair('(', ']'));
         assertFalse(AutoClose.isEmptyPair('a', 'b'));
     }
+
+    @Test
+    void aQuoteInsideALiteralIsNotPairedButBracketsAndTypeOverStillWork() {
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('"', "const r = /['", '\'', false, "javascript", true)
+                        .action());
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('\'', "// it is ", (char) 0, false, "javascript", true)
+                        .action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('(', "'a ", '\'', false, "javascript", true).action());
+        assertEquals(
+                Action.SKIP_OVER,
+                AutoClose.decide('\'', "'abc", '\'', false, "javascript", true).action());
+        assertEquals(
+                Action.WRAP_SELECTION,
+                AutoClose.decide('"', "'", 'x', true, "javascript", true).action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('"', "x = ", (char) 0, false, "javascript", false)
+                        .action());
+    }
+
+    /** Clojure's ' and backtick are the quote reader macros: they never pair, nor wrap a selection. */
+    @Test
+    void clojureQuotesDoNotPair() {
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('\'', "(map ", '[', false, "clojure").action());
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('`', "(defmacro m [] ", ')', false, "clojure").action());
+        assertEquals(
+                Action.NONE, AutoClose.decide('\'', "", 'x', true, "clojure").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('"', "(str ", ')', false, "clojure").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('(', "", (char) 0, false, "clojure").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('\'', "val c = ", (char) 0, false, "scala").action());
+    }
 }

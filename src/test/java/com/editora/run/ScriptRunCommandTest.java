@@ -25,6 +25,12 @@ class ScriptRunCommandTest {
     @Test
     void aMakeTargetRunsUnderMake() {
         assertEquals(List.of("make", "test"), ScriptRunCommand.build("make", "test", List.of()));
+        assertEquals(
+                List.of("groovy", "tools/report.groovy", "-v"),
+                ScriptRunCommand.build("groovy", "tools/report.groovy", List.of("-v")));
+        assertTrue(ScriptRunCommand.isScript("groovy"));
+        assertTrue(ScriptRunCommand.needsTarget("groovy"));
+        assertEquals(List.of(), ScriptRunCommand.build("groovy", " ", List.of()));
     }
 
     @Test
@@ -88,5 +94,28 @@ class ScriptRunCommandTest {
         assertTrue(ScriptRunCommand.build("python-module", " ", List.of()).isEmpty());
         assertTrue(RunConfigFields.usesInterpreter("python"), "C1: a Python configuration can name its interpreter");
         assertFalse(RunConfigFields.usesScriptFile("python-module"));
+    }
+
+    @Test
+    void aNodeConfigurationIsAScriptTypeWithATarget() {
+        assertTrue(ScriptRunCommand.isScript("node"));
+        assertTrue(ScriptRunCommand.needsTarget("node"));
+        assertEquals(
+                java.util.List.of("node", "src/a.js", "x"),
+                ScriptRunCommand.build("node", "src/a.js", java.util.List.of("x")));
+        assertTrue(ScriptRunCommand.build("node", " ", java.util.List.of()).isEmpty());
+    }
+
+    @Test
+    void anNpmConfigurationRunsTheProjectsManager() {
+        assertEquals(
+                java.util.List.of("npm", "run", "build", "--", "--watch"),
+                ScriptRunCommand.npm(java.util.List.of("npm"), "build", java.util.List.of("--watch")));
+        assertEquals(
+                java.util.List.of("pnpm", "run", "build", "--watch"),
+                ScriptRunCommand.npm(java.util.List.of("pnpm"), "build", java.util.List.of("--watch")));
+        assertEquals(
+                java.util.List.of("/opt/yarn", "run", "build"),
+                ScriptRunCommand.npm(java.util.List.of("/opt/yarn"), "build", java.util.List.of()));
     }
 }

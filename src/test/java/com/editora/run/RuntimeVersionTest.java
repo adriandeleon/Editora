@@ -148,6 +148,23 @@ class RuntimeVersionTest {
     }
 
     @Test
+    void groovySaysItsOwnVersionAndItsJava() {
+        assertEquals(
+                List.of("/sdk/groovy/bin/groovy", "--version"),
+                RuntimeVersion.probeFor(List.of("/sdk/groovy/bin/groovy", "x.groovy"))
+                        .argv());
+        assertEquals(
+                "Groovy 5.1.3 (Java 25.0.4)",
+                parse(
+                                List.of("groovy", "x.groovy"),
+                                "Groovy Version: 5.1.3 JVM: 25.0.4 Vendor: Eclipse Adoptium OS: Linux\n")
+                        .label());
+        assertEquals(
+                "Groovy 4.0.33",
+                parse(List.of("groovy.bat"), "Groovy Version: 4.0.33\n").label());
+    }
+
+    @Test
     void unknownRuntimesAreNotProbed() {
         assertNull(RuntimeVersion.probeFor(List.of("sh", "x.sh")));
         assertNull(RuntimeVersion.probeFor(List.of("/w/build/app")));
@@ -161,5 +178,17 @@ class RuntimeVersionTest {
         assertNull(parse(List.of("python3"), ""));
         assertNull(parse(List.of("make"), "make: unknown option -- -\n")); // a BSD make
         assertNull(parse(List.of("node"), null));
+    }
+
+    @Test
+    void bunAndDenoReportTheirOwnRuntime() {
+        RuntimeVersion.Probe bun = RuntimeVersion.probeFor(java.util.List.of("/home/u/.bun/bin/bun", "run", "x"));
+        assertEquals(java.util.List.of("/home/u/.bun/bin/bun", "--version"), bun.argv());
+        assertEquals("Bun 1.1.30", RuntimeVersion.parse(bun, "1.1.30\n").label());
+        RuntimeVersion.Probe deno = RuntimeVersion.probeFor(java.util.List.of("deno", "run", "a.ts"));
+        assertEquals(
+                "Deno 2.0.1",
+                RuntimeVersion.parse(deno, "deno 2.0.1 (stable, release, x86_64)\nv8 12\n")
+                        .label());
     }
 }

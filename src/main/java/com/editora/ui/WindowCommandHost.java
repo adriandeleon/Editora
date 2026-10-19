@@ -342,6 +342,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public DeploymentCoordinator deployments() {
+        return mc.deployments;
+    }
+
+    @Override
     public GitCoordinator git() {
         return mc.git;
     }
@@ -644,6 +649,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     @Override
     public EncodingCommands encodings() {
         return mc.fileWorkflows.encodings();
+    }
+
+    @Override
+    public EncryptionCoordinator encryption() {
+        return mc.fileWorkflows.encryption();
     }
 
     @Override

@@ -79,6 +79,20 @@ public final class NewFileCatalog {
             {cursor}
             """;
 
+    /** The "Node.js Script" template's shape (shebang, async main, failure as the exit code). */
+    private static final String NODE = """
+            #!/usr/bin/env node
+
+            async function main(args) {
+              {cursor}
+            }
+
+            main(process.argv.slice(2)).catch((error) => {
+              console.error(error);
+              process.exitCode = 1;
+            });
+            """;
+
     /** The "Python Script" template's shape (shebang, docstring, main guard), so both ways of starting one agree. */
     private static final String PYTHON = """
             #!/usr/bin/env python3
@@ -98,6 +112,37 @@ public final class NewFileCatalog {
             #!/usr/bin/env zsh
             emulate -L zsh
             setopt errexit nounset pipefail
+
+            {cursor}
+            """;
+
+    /**
+     * A Scala 3 entry point; {@code scala-cli run} and sbt both find it. The body needs a statement: an indented
+     * caret on an otherwise empty last line is trimmed with it, and a {@code def … =} with no body does not compile.
+     */
+    private static final String SCALA_MAIN = """
+            object {name}:
+              def main(args: Array[String]): Unit =
+                {cursor}println("Hello from {name}")
+            """;
+
+    /** A Scala CLI script: the shebang runs it, the using directive pins the language version. */
+    private static final String SCALA_CLI = """
+            #!/usr/bin/env -S scala-cli shebang
+            //> using scala 3
+
+            {cursor}
+            """;
+
+    /** A namespace named after its file: <code>{ns}</code> is the base name with Clojure's dashes. */
+    private static final String CLOJURE_NS = """
+            (ns {ns})
+
+            {cursor}
+            """;
+
+    private static final String BABASHKA = """
+            #!/usr/bin/env bb
 
             {cursor}
             """;
@@ -171,6 +216,8 @@ public final class NewFileCatalog {
                     List.of(
                             NewFileType.named("scripts.python", "Python", "script", "py")
                                     .withTemplate(PYTHON),
+                            NewFileType.named("scripts.node", "Node.js", "script", "js")
+                                    .withTemplate(NODE),
                             NewFileType.named("scripts.shell", "Shell", "script", "sh")
                                     .withTemplate(BASH),
                             NewFileType.named("scripts.zsh", "Zsh", "script", "zsh")
@@ -179,7 +226,11 @@ public final class NewFileCatalog {
                             NewFileType.named("scripts.powershell", "PowerShell", "script", "ps1"),
                             NewFileType.named("scripts.batch", "Batch", "script", "bat"),
                             NewFileType.named("scripts.lua", "Lua", "script", "lua"),
-                            NewFileType.named("scripts.groovy", "Groovy", "script", "groovy"))),
+                            NewFileType.named("scripts.groovy", "Groovy", "script", "groovy"),
+                            NewFileType.named("scripts.scalaCli", "Scala CLI", "script", "sc")
+                                    .withTemplate(SCALA_CLI),
+                            NewFileType.named("scripts.babashka", "Babashka", "script", "bb")
+                                    .withTemplate(BABASHKA))),
             new Category(
                     "languages",
                     List.of(
@@ -190,6 +241,10 @@ public final class NewFileCatalog {
                             NewFileType.named("lang.go", "Go", "main", "go"),
                             NewFileType.named("lang.rust", "Rust", "main", "rs"),
                             NewFileType.named("lang.kotlin", "Kotlin", "Main", "kt"),
+                            NewFileType.named("lang.scala", "Scala", "Main", "scala")
+                                    .withTemplate(SCALA_MAIN),
+                            NewFileType.named("lang.clojure", "Clojure", "core", "clj")
+                                    .withTemplate(CLOJURE_NS),
                             NewFileType.named("lang.php", "PHP", "index", "php"))),
             new Category(
                     "data",

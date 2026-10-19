@@ -45,6 +45,14 @@ public final class Modeline {
             Map.entry("javascript", "js"),
             Map.entry("js", "js"),
             Map.entry("typescript", "ts"),
+            Map.entry("typescriptreact", "tsx"),
+            Map.entry("tsx", "tsx"),
+            Map.entry("typescript-tsx", "tsx"), // emacs typescript-tsx-mode
+            Map.entry("javascriptreact", "jsx"),
+            Map.entry("jsx", "jsx"),
+            Map.entry("js2", "js"), // emacs js2-mode
+            Map.entry("js2-jsx", "jsx"),
+            Map.entry("rjsx", "jsx"), // emacs rjsx-mode
             Map.entry("json", "json"),
             Map.entry("yaml", "yaml"),
             Map.entry("xml", "xml"),
@@ -69,6 +77,9 @@ public final class Modeline {
             Map.entry("ini", "ini"),
             Map.entry("groovy", "groovy"),
             Map.entry("kotlin", "kt"),
+            Map.entry("scala", "scala"),
+            Map.entry("clojure", "clj"),
+            Map.entry("clojurescript", "cljs"),
             Map.entry("ps1", "ps1"),
             Map.entry("powershell", "ps1"));
 

@@ -962,6 +962,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return switch (value) {
             case "abstract",
                     "async",
+                    "const",
+                    "let",
+                    "var",
+                    "get",
+                    "set",
+                    "readonly",
+                    "override",
+                    "declare",
                     "default",
                     "def",
                     "export",
@@ -1138,6 +1146,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         int paras = area.getParagraphs().size();
         List<Region> regions =
                 new ArrayList<>(new LinkedHashSet<>(buffer.getFoldManager().regions()));
+        if ("clojure".equals(buffer.getLanguage())) {
+            return clojureFormNodes(area.getText(), regions);
+        }
         // Sort so each region precedes the regions it contains: by start asc, then by end desc.
         regions.sort(Comparator.comparingInt(Region::startLine)
                 .thenComparing(Comparator.comparingInt(Region::endLine).reversed()));
@@ -1190,7 +1201,65 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             // do not fold: the symbols are still the structure (one marker used to empty the outline).
             return symbolNodes(area, symbolByLine, paras, Map.of());
         }
+        String language = buffer.getLanguage();
+        if (language != null && (language.startsWith("javascript") || language.startsWith("typescript"))) {
+            addFoldlessSymbols(rootNodes, symbolByLine, paras);
+        }
         return rootNodes;
+    }
+
+    /**
+     * Adds the symbols no region is headed by — a one-line method ({@code get(key) { return x; }}), a one-line
+     * arrow function ({@code const twice = (x) => x * 2;}) — as leaves under the innermost node whose block holds
+     * their line. In JavaScript those are most declarations, and the outline used to leave every one of them out.
+     */
+    private static void addFoldlessSymbols(
+            List<StructureNode> rootNodes, Map<Integer, Symbol> symbolByLine, int paras) {
+        java.util.Set<Integer> used = new java.util.HashSet<>();
+        collectLines(rootNodes, used);
+        boolean added = false;
+        for (Map.Entry<Integer, Symbol> e : symbolByLine.entrySet()) {
+            int line = e.getKey();
+            if (used.contains(line)
+                    || line < 0
+                    || line >= paras
+                    || "tag".equals(e.getValue().kind())) {
+                continue; // a JSX element (`<p>`) is markup, not a declaration
+            }
+            List<StructureNode> siblings = rootNodes;
+            for (boolean deeper = true; deeper; ) {
+                deeper = false;
+                for (StructureNode n : siblings) {
+                    if (n.region() != null
+                            && n.region().startLine() < line
+                            && line <= n.region().endLine()) {
+                        siblings = n.children();
+                        deeper = true;
+                        break;
+                    }
+                }
+            }
+            siblings.add(
+                    new StructureNode(null, e.getValue().name(), e.getValue().kind(), line));
+            added = true;
+        }
+        if (added) {
+            sortByLine(rootNodes);
+        }
+    }
+
+    private static void collectLines(List<StructureNode> nodes, java.util.Set<Integer> out) {
+        for (StructureNode n : nodes) {
+            out.add(n.line());
+            collectLines(n.children(), out);
+        }
+    }
+
+    private static void sortByLine(List<StructureNode> nodes) {
+        nodes.sort(Comparator.comparingInt(StructureNode::line));
+        for (StructureNode n : nodes) {
+            sortByLine(n.children());
+        }
     }
 
     /**
@@ -1360,6 +1429,95 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return roots;
     }
 
+    /**
+     * One node per top-level Clojure definition — {@code ns}, {@code def}/{@code defonce}, {@code defn},
+     * {@code defmacro}, {@code defmulti}, {@code deftest}, {@code defprotocol}, {@code defrecord}/{@code deftype}
+     * — read by the server-free declaration scanner. The Clojure grammar names none of them (it emits no
+     * {@code entity.name.*} scope), so the TextMate path found no structure in a Clojure file at all. Each node
+     * takes the fold region its form opens, when the form spans lines.
+     */
+    static List<StructureNode> clojureFormNodes(String text, List<Region> regions) {
+        Map<Integer, Region> formByLine = new HashMap<>();
+        for (Region r : regions) {
+            formByLine.merge(r.startLine(), r, (a, b) -> a.endLine() >= b.endLine() ? a : b); // the outermost
+        }
+        List<StructureNode> roots = new ArrayList<>();
+        List<Integer> lineStarts = new ArrayList<>(List.of(0));
+        for (int i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+            lineStarts.add(i + 1);
+        }
+        for (com.editora.index.Symbol s : com.editora.index.DeclarationScanner.scan(text, "clojure")) {
+            String kind = switch (s.kind()) {
+                case MODULE -> "namespace";
+                case INTERFACE -> "interface";
+                case TYPE, ENUM -> "struct";
+                case VARIABLE, FIELD -> "variable";
+                case FUNCTION, METHOD -> "function";
+            };
+            String params = "function".equals(kind) && s.line() < lineStarts.size()
+                    ? clojureParams(
+                            text,
+                            lineStarts.get(s.line()) + s.column() + s.name().length())
+                    : "";
+            roots.add(new StructureNode(formByLine.get(s.line()), s.name(), kind, s.line(), params));
+        }
+        return roots;
+    }
+
+    /** How far past a Clojure definition's name its parameter vector is looked for. */
+    private static final int MAX_CLOJURE_PARAMS_REACH = 400;
+
+    /**
+     * The parameter vector of the Clojure {@code defn}/{@code defmacro} whose name ends at {@code from} —
+     * {@code [x y]}, past a docstring and an attribute map — whitespace collapsed; {@code ""} for a multi-arity
+     * definition or none within reach. Shown in place of the {@code ()} every other function gets.
+     */
+    static String clojureParams(String text, int from) {
+        int n = Math.min(text.length(), from + MAX_CLOJURE_PARAMS_REACH);
+        int i = skipClojureSpace(text, from, n);
+        if (i < n && text.charAt(i) == '"') { // the docstring
+            for (i++; i < n && text.charAt(i) != '"'; i++) {
+                if (text.charAt(i) == '\\') {
+                    i++;
+                }
+            }
+            i = skipClojureSpace(text, i + 1, n);
+        }
+        if (i < n && text.charAt(i) == '{') { // an attribute map
+            int depth = 0;
+            for (; i < n; i++) {
+                char c = text.charAt(i);
+                depth += c == '{' ? 1 : c == '}' ? -1 : 0;
+                if (depth == 0) {
+                    break;
+                }
+            }
+            i = skipClojureSpace(text, i + 1, n);
+        }
+        if (i >= n || text.charAt(i) != '[') {
+            return "";
+        }
+        int depth = 0;
+        for (int j = i; j < n; j++) {
+            char c = text.charAt(j);
+            if (c == '[' || c == '{' || c == '(') {
+                depth++;
+            } else if (c == ']' || c == '}' || c == ')') {
+                if (--depth == 0) {
+                    return text.substring(i, j + 1).replaceAll("\\s+", " ");
+                }
+            }
+        }
+        return "";
+    }
+
+    private static int skipClojureSpace(String text, int i, int n) {
+        while (i < n && (Character.isWhitespace(text.charAt(i)) || text.charAt(i) == ',')) {
+            i++;
+        }
+        return i;
+    }
+
     /** The Structure kind of a {@code .http} request (its icon: {@link StructureIcons}). */
     static final String HTTP_REQUEST_KIND = "request";
 
@@ -1416,7 +1574,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     /** Languages whose folds are brace-delimited (Allman braces put the signature above the start line). */
     private static boolean isBraceLanguage(String language) {
         return switch (language == null ? "" : language) {
-            case "java", "json", "c", "cpp", "rust", "go", "kotlin", "groovy", "csharp", "css" -> true;
+            case "java", "json", "c", "cpp", "rust", "go", "kotlin", "groovy", "scala", "csharp", "css" -> true;
             default -> false;
         };
     }
@@ -1558,6 +1716,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             String d = n.detail() == null ? "" : n.detail().strip();
             if (d.isEmpty()) {
                 return n.label() != null && n.label().indexOf('(') >= 0 ? "" : "()";
+            }
+            if (d.startsWith("[")) {
+                return " " + d; // a Clojure parameter vector: `add! [item]`, not `add!([item])`
             }
             return d.startsWith("(") ? d : "(" + d + ")";
         }

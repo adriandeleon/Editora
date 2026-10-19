@@ -153,11 +153,11 @@ class CloseCoordinatorFxTest {
         try (WindowRig w = new WindowRig()) {
             CloseCoordinator closes = w.controller.closes;
             CountDownLatch cancel = w.answer(tr("dialog.quit.header"), tr("dialog.cancel"));
-            assertFalse(FxTestSupport.callOnFx(closes::confirmQuit));
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmQuit()));
             w.async.await(cancel, "the quit question");
 
             CountDownLatch quit = w.answer(tr("dialog.quit.header"), tr("dialog.quit.button"));
-            assertTrue(FxTestSupport.callOnFx(closes::confirmQuit));
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmQuit()));
             w.async.await(quit, "the quit question");
         }
     }

@@ -128,7 +128,7 @@ class LspStartFailureFxTest {
             assertNull(ops.statusBarLabels.get(ops.statusBarLabels.size() - 1), "no server named in the status bar");
         });
         assertEquals(1, startsAnnounced(), "a failed start is not retried");
-        String crashed = tr("status.lsp.crashed", "not-a-server");
+        String crashed = tr("status.lsp.crashed", tr("install.lang.python"));
         assertFalse(host.statuses.contains(crashed), "a failed start is not reported as a crash: " + host.statuses);
     }
 

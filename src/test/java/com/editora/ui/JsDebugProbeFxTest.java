@@ -41,6 +41,8 @@ class JsDebugProbeFxTest {
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();
+        // As App.main does: the js-debug server is killed in the background after Stop, and the fork may exit first.
+        com.editora.process.ProcessRegistry.installShutdownHook();
     }
 
     @Test
@@ -103,11 +105,15 @@ class JsDebugProbeFxTest {
             assertEquals(real, atBreakpoint.frames().get(0).file().toRealPath());
             assertEquals(DapManager.State.SUSPENDED, FxTestSupport.callOnFx(manager::state));
 
+            // The session runs once the adapter acknowledges the step (not at the click), then stops again.
+            int before = states.size();
             FxTestSupport.runOnFx(manager::stepOver);
-            assertEquals(DapManager.State.RUNNING, FxTestSupport.callOnFx(manager::state));
             Stop afterStep = stops.poll(60, TimeUnit.SECONDS);
             assertNotNull(afterStep, "the step never completed; errors: " + errors);
             assertEquals(2, afterStep.frames().get(0).line(), "Step Over advances one line");
+            assertTrue(
+                    states.subList(before, states.size()).contains(DapManager.State.RUNNING),
+                    "the step ran the program before it stopped again: " + states);
 
             FxTestSupport.runOnFx(manager::resume);
             assertTrue(ended.await(60, TimeUnit.SECONDS), "the session must end when the program does: " + states);

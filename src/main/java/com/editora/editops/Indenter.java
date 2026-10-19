@@ -29,6 +29,8 @@ public final class Indenter {
         SHELL,
         RUBY,
         LUA,
+        /** Lisp (Clojure): indented by the innermost open bracket ({@link LispIndent}). */
+        LISP,
         PLAIN
     }
 
@@ -126,8 +128,10 @@ public final class Indenter {
             // In leading whitespace: snap the line up to the indent the surrounding code implies, and put
             // the caret where typing starts.
             String leading = leadingWhitespace(text.substring(ls, lineEnd(text, caret)));
-            String suggested = suggestedIndent(text, ls, style, unit, isHtml(language), tabSize);
-            if (width(leading, tabSize) >= width(suggested, tabSize)) {
+            String suggested = suggestedIndent(text, ls, style, unit, language, tabSize);
+            // Lisp's indent is computed exactly from the open brackets, so Tab also pulls a line back to it.
+            boolean exact = style == Style.LISP && !leading.equals(suggested);
+            if (!exact && width(leading, tabSize) >= width(suggested, tabSize)) {
                 // Already at (or past) that level, so the text is left alone — repeated Tab must not keep
                 // piling on indentation (use Shift-Tab to dedent). The caret still moves to the end of the
                 // indent, which is the whole point of pressing Tab there: after Enter inside a block the
@@ -151,7 +155,12 @@ public final class Indenter {
      * else one unit less than a body line would get. {@code ""} when there's no line above.
      */
     private static String suggestedIndent(
-            String text, int lineStart, Style style, String unit, boolean html, int tabSize) {
+            String text, int lineStart, Style style, String unit, String language, int tabSize) {
+        boolean html = isHtml(language);
+        if (style == Style.LISP) {
+            String lisp = LispIndent.indentAfter(text, lineStart);
+            return lisp != null ? lisp : leadingWhitespace(text.substring(lineStart, lineEnd(text, lineStart)));
+        }
         if (style == Style.SHELL) {
             String shell = ShellIndent.forLine(text, lineStart, unit, tabSize);
             if (shell != null) {
@@ -174,7 +183,7 @@ public final class Indenter {
             scanned += pos - prevStart;
             if (!prevLine.isBlank()) {
                 String ind = leadingWhitespace(prevLine);
-                boolean opens = opensBlock(style, prevLine, html);
+                boolean opens = opensBlock(style, prevLine, html) || opensScalaBlock(language, prevLine);
                 if (closer) {
                     return opens ? ind : removeOneIndent(ind, dedentWidth(unit, tabSize));
                 }
@@ -252,6 +261,7 @@ public final class Indenter {
                     "go",
                     "kotlin",
                     "groovy",
+                    "scala",
                     "css",
                     "json",
                     "php",
@@ -270,6 +280,7 @@ public final class Indenter {
             case "shell" -> Style.SHELL;
             case "ruby" -> Style.RUBY;
             case "lua" -> Style.LUA;
+            case "clojure" -> Style.LISP;
             default -> Style.PLAIN;
         };
     }
@@ -292,7 +303,9 @@ public final class Indenter {
 
     /** As {@link #enterEdit(String, int, String, int, Boolean, Integer)} with the indent unit already decided;
      *  reads only the caret's own line of {@code text} — except in shell, whose blocks, quotes and here-docs
-     *  are read from the bounded stretch above it ({@link ShellIndent}). */
+     *  are read from the bounded stretch above it ({@link ShellIndent}), and brace languages, whose case labels,
+     *  brace-less headers and open argument lists are read from above ({@link BraceIndent}) and whether a
+     *  {@code /**} is closed yet from below ({@link CommentContinuation}). */
     static EnterEdit enterEdit(String text, int caret, String language, String unit) {
         Style style = styleFor(language);
         int ls = lineStart(text, caret);
@@ -303,15 +316,29 @@ public final class Indenter {
         // of code that is still indented by its own four.
         String indent = leadingWhitespace(before);
 
+        EnterEdit comment = style == Style.BRACES ? CommentContinuation.enter(text, caret, before, after) : null;
+        if (comment != null) {
+            return comment; // ` * ` inside a /** … */ comment
+        }
         if (isPairSplit(style, before, after)) {
             String body = indent + unit;
             return new EnterEdit("\n" + body + "\n" + indent, 1 + body.length());
         }
-        String newIndent = style == Style.SHELL
-                ? ShellIndent.afterEnter(text, caret, unit)
-                : "python".equals(language)
-                        ? PythonIndent.afterEnter(text, caret, unit, unit.startsWith("\t") ? 4 : unit.length())
-                        : opensBlock(style, before, isHtml(language)) ? indent + unit : indent;
+        String brace = style == Style.BRACES ? BraceIndent.afterEnter(text, ls, before, unit) : null;
+        String newIndent;
+        if (brace != null) {
+            newIndent = brace; // case bodies, brace-less if, open argument lists, `.then()` chains
+        } else if (style == Style.SHELL) {
+            newIndent = ShellIndent.afterEnter(text, caret, unit);
+        } else if ("python".equals(language)) {
+            newIndent = PythonIndent.afterEnter(text, caret, unit, unit.startsWith("\t") ? 4 : unit.length());
+        } else if (style == Style.LISP) {
+            String lisp = LispIndent.indentAfter(text, caret);
+            newIndent = lisp != null ? lisp : indent;
+        } else {
+            boolean opens = opensBlock(style, before, isHtml(language)) || opensScalaBlock(language, before);
+            newIndent = opens ? indent + unit : indent;
+        }
         return new EnterEdit("\n" + newIndent, 1 + newIndent.length());
     }
 
@@ -415,6 +442,11 @@ public final class Indenter {
             if (shell != null) {
                 return shell;
             }
+        }
+        if (style == Style.BRACES && (typed == ':' || typed == '.')) {
+            String clause = BraceIndent.clauseIndent(
+                    text, ls, typed, currentIndent, unit != null ? unit : indentUnit(currentIndent, tabSize));
+            return clause != null ? clause : currentIndent;
         }
         if (style == Style.PY && (typed == ':' || typed == '\n')) {
             String clause = PythonIndent.clauseIndent(text, caret, tabSize, currentIndent);
@@ -578,6 +610,9 @@ public final class Indenter {
         if (style == Style.PY && "python".equals(language)) {
             return PythonIndent.completesClause(lineUpToCaretPlusChar); // `else:` / `except …:` — on its `:`
         }
+        if (style == Style.BRACES) {
+            return BraceIndent.completesClause(lineUpToCaretPlusChar); // `case 2:` on its `:`, a leading `.`
+        }
         return completesCloserKeyword(style, lineUpToCaretPlusChar);
     }
 
@@ -670,6 +705,11 @@ public final class Indenter {
 
     // --- block-open detection ---------------------------------------------------------------------
 
+    /** A Scala line ending with a Scala 3 optional-brace opener ({@code class A:}, {@code def f =}, {@code then}). */
+    private static boolean opensScalaBlock(String language, String line) {
+        return "scala".equals(language) && ScalaIndent.opensIndentedBlock(line);
+    }
+
     private static boolean isHtml(String language) {
         return "html".equals(language) || "astro".equals(language);
     }
@@ -695,7 +735,7 @@ public final class Indenter {
                         || rubyOpener(code)
                         || startsWithWord(code, "else", "elsif", "when", "rescue", "ensure", "begin");
             case LUA -> last == '{' || luaOpener(code);
-            case PLAIN -> false;
+            case LISP, PLAIN -> false;
         };
     }
 
@@ -809,8 +849,8 @@ public final class Indenter {
         if (style == Style.XML) {
             return endsWithOpenTag(b) && a.startsWith("</");
         }
-        if (style == Style.PLAIN) {
-            return false;
+        if (style == Style.PLAIN || style == Style.LISP) {
+            return false; // a Lisp closer stays on the line of the form's last element
         }
         char open = b.charAt(b.length() - 1);
         char close = a.charAt(0);

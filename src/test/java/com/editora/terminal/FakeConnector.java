@@ -79,7 +79,11 @@ public final class FakeConnector implements TerminalConnector {
     @Override
     public void resize(TermSize size) {
         lastResize.set(size);
+        resizes.incrementAndGet();
     }
+
+    /** How many resizes reached the "shell". */
+    public final java.util.concurrent.atomic.AtomicInteger resizes = new java.util.concurrent.atomic.AtomicInteger();
 
     @Override
     public int waitFor() throws InterruptedException {
@@ -124,5 +128,13 @@ public final class FakeConnector implements TerminalConnector {
     /** Whether the terminal closed this connector (its tab was closed, or its window). */
     public boolean wasClosed() {
         return closed.getCount() == 0;
+    }
+
+    /** The shell's pid on "another machine"; -1 for a shell on this one. */
+    public volatile long remotePid = -1;
+
+    @Override
+    public long remotePid() {
+        return remotePid;
     }
 }

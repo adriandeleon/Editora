@@ -26,10 +26,13 @@ public record RuntimeVersion(String label, String detail) {
         JAVA("-XshowSettings:properties", "-version"),
         PYTHON("--version"),
         NODE("--version"),
+        BUN("--version"),
+        DENO("--version"),
         BASH("--version"),
         ZSH("--version"),
         FISH("--version"),
-        MAKE("--version");
+        MAKE("--version"),
+        GROOVY("--version");
 
         final List<String> versionArgs;
 
@@ -51,10 +54,15 @@ public record RuntimeVersion(String label, String detail) {
     private static final Pattern PYTHON_VERSION = Pattern.compile("Python (\\d+\\.\\d+(?:\\.\\d+)?\\S*)");
     private static final Pattern PYPY_VERSION = Pattern.compile("PyPy (\\d+\\.\\d+(?:\\.\\d+)?)");
     private static final Pattern NODE_VERSION = Pattern.compile("^v(\\d+\\.\\d+\\.\\d+\\S*)");
+    private static final Pattern BUN_VERSION = Pattern.compile("^(\\d+\\.\\d+\\.\\d+\\S*)$");
+    private static final Pattern DENO_VERSION = Pattern.compile("^deno (\\d+\\.\\d+\\.\\d+\\S*)");
     private static final Pattern BASH_VERSION = Pattern.compile("bash, version (\\d+\\.\\d+(?:\\.\\d+)?)");
     private static final Pattern ZSH_VERSION = Pattern.compile("^zsh (\\d+\\.\\d+(?:\\.\\d+)?)");
     private static final Pattern FISH_VERSION = Pattern.compile("^fish, version (\\d+\\.\\d+(?:\\.\\d+)?)");
     private static final Pattern MAKE_VERSION = Pattern.compile("^GNU Make (\\d+\\.\\d+(?:\\.\\d+)?)");
+    /** {@code Groovy Version: 5.1.3 JVM: 25.0.4 Vendor: Eclipse Adoptium OS: Linux} → 5.1.3 on Java 25.0.4. */
+    private static final Pattern GROOVY_VERSION =
+            Pattern.compile("^Groovy Version: (\\d+\\.\\d+(?:\\.\\d+)?\\S*)(?:\\s+JVM: (\\S+))?");
     /** The distribution in {@code java.vendor.version}: "Temurin-25.0.3+9" → "Temurin", "Zulu21.38+21-CA" → "Zulu". */
     private static final Pattern DISTRIBUTION = Pattern.compile("^([A-Za-z][A-Za-z ]*?)[\\s-]*(?:\\d.*)?$");
 
@@ -76,6 +84,8 @@ public record RuntimeVersion(String label, String detail) {
         switch (name) {
             case "java" -> kind = Kind.JAVA;
             case "node", "nodejs" -> kind = Kind.NODE;
+            case "bun", "bunx" -> kind = Kind.BUN; // its own runtime, not the Node beside it
+            case "deno" -> kind = Kind.DENO;
             case "npm", "npx", "pnpm", "yarn" -> {
                 kind = Kind.NODE;
                 executable = sibling(executable, "node");
@@ -84,6 +94,7 @@ public record RuntimeVersion(String label, String detail) {
             case "zsh" -> kind = Kind.ZSH;
             case "fish" -> kind = Kind.FISH;
             case "make", "gmake" -> kind = Kind.MAKE;
+            case "groovy" -> kind = Kind.GROOVY;
             default -> kind = PYTHON_NAME.matcher(name).matches() ? Kind.PYTHON : null;
         }
         if (kind == null) {
@@ -107,10 +118,13 @@ public record RuntimeVersion(String label, String detail) {
             case JAVA -> parseJava(output);
             case PYTHON -> parsePython(output, probe.argv().get(0));
             case NODE -> simple(output, NODE_VERSION, "Node.js ", probe.argv().get(0));
+            case BUN -> simple(output, BUN_VERSION, "Bun ", probe.argv().get(0));
+            case DENO -> simple(output, DENO_VERSION, "Deno ", probe.argv().get(0));
             case BASH -> simple(output, BASH_VERSION, "Bash ", probe.argv().get(0));
             case ZSH -> simple(output, ZSH_VERSION, "Zsh ", probe.argv().get(0));
             case FISH -> simple(output, FISH_VERSION, "fish ", probe.argv().get(0));
             case MAKE -> simple(output, MAKE_VERSION, "GNU Make ", probe.argv().get(0));
+            case GROOVY -> parseGroovy(output, probe.argv().get(0));
         };
     }
 
@@ -176,6 +190,18 @@ public record RuntimeVersion(String label, String detail) {
                 ? "PyPy " + pypy.group(1) + " (Python " + python.group(1) + ")"
                 : "Python " + python.group(1);
         return new RuntimeVersion(label, detail(bannerLines(output), executable));
+    }
+
+    /** {@code Groovy 5.1.3 (Java 25.0.4)}: the JVM it runs on matters as much as Groovy's own version. */
+    private static RuntimeVersion parseGroovy(String output, String executable) {
+        for (String line : output.split("\\R")) {
+            Matcher m = GROOVY_VERSION.matcher(line.strip());
+            if (m.find()) {
+                String label = "Groovy " + m.group(1) + (m.group(2) == null ? "" : " (Java " + m.group(2) + ")");
+                return new RuntimeVersion(label, detail(bannerLines(output), executable));
+            }
+        }
+        return null;
     }
 
     /** A runtime whose first matching line holds its version; the tooltip names the executable asked. */

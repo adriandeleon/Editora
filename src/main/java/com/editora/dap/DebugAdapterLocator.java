@@ -210,7 +210,7 @@ public final class DebugAdapterLocator {
      * directory is searched (bounded depth) for that entry. Otherwise the common install roots under
      * {@code home} are searched — Editora's own {@code plugins/dap/javascript/} (where
      * {@code install-js-debug.sh} extracts the release → {@code js-debug/src/dapDebugServer.js}), nvim
-     * mason's {@code js-debug-adapter}, and VS Code's {@code ms-vscode.js-debug-*} extension. The newest
+     * and mason's {@code js-debug-adapter} (VS Code's copy has no DAP server entry). The newest
      * (by an embedded version in the path, else any) is returned. Filesystem-touching like {@link #locate}.
      */
     public static Optional<Path> locateJsDebugServer(String configuredPath, Path home) {
@@ -236,20 +236,8 @@ public final class DebugAdapterLocator {
                 .resolve("mason")
                 .resolve("packages")
                 .resolve("js-debug-adapter"));
-        for (Path ext : List.of(
-                home.resolve(".vscode").resolve("extensions"),
-                home.resolve(".vscode-server").resolve("extensions"),
-                home.resolve(".vscode-oss").resolve("extensions"))) {
-            if (Files.isDirectory(ext)) {
-                try (Stream<Path> s = Files.list(ext)) {
-                    s.filter(Files::isDirectory)
-                            .filter(d -> d.getFileName().toString().startsWith("ms-vscode.js-debug"))
-                            .forEach(roots::add);
-                } catch (IOException | RuntimeException ignored) {
-                    // unreadable — skip
-                }
-            }
-        }
+        // Not VS Code's extension folders: its js-debug (built in, or the marketplace copy) ships extension.js
+        // and no dapDebugServer.js, so searching them never found anything (review D14).
         return roots;
     }
 

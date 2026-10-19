@@ -119,7 +119,7 @@ class PluginManagerTest {
         assertTrue(pm.descriptors().isEmpty());
     }
 
-    // --- #442: class-loader lifecycle (close leaked loaders; never close a pinned one) -------------------
+    // --- the launch set: what the first discover found is what this session runs -------------------------
 
     private static PluginManager oneEnabledPlugin(Path pluginsDir) throws Exception {
         Path a = Files.createDirectories(pluginsDir.resolve("alpha"));
@@ -127,52 +127,160 @@ class PluginManagerTest {
         return new PluginManager(pluginsDir, id -> true);
     }
 
+    /**
+     * Only the launch builds class loaders. A Reload, an install or a removal rescans the manifests for the
+     * Settings list; the windows keep applying the launch set, whose loader stays open until the last window
+     * closes (#442 closed superseded loaders; now there are none to supersede).
+     */
     @Test
-    void reDiscoverClosesTheOrphanedLoaderInsteadOfLeakingIt(@TempDir Path pluginsDir) throws Exception {
+    void onlyTheLaunchDiscoverBuildsClassLoadersAndALaterOneLeavesTheLaunchSetAlone(@TempDir Path pluginsDir)
+            throws Exception {
         PluginManager pm = oneEnabledPlugin(pluginsDir);
         pm.discover();
         assertEquals(1, pm.liveLoaderCount(), "one loader for the enabled plugin");
+        ClassLoader running = pm.launchSet().get(0).classLoader();
+        assertNotNull(running);
 
-        // A Settings Reload / install / uninstall re-discovers. With nothing pinned, the previous loader was
-        // orphaned (never re-instantiated) — it must be closed, not accumulated (the leak).
-        pm.discover();
-        assertEquals(1, pm.liveLoaderCount(), "the old loader is closed; only the freshly-built one remains");
-    }
-
-    @Test
-    void aPinnedLoaderSurvivesReDiscoverAndIsClosedOnceReleased(@TempDir Path pluginsDir) throws Exception {
-        PluginManager pm = oneEnabledPlugin(pluginsDir);
-        pm.discover();
-        ClassLoader running = pm.descriptors().get(0).classLoader(); // a window instantiated this
-        pm.pin(running);
-
+        Files.writeString(
+                pluginsDir.resolve("alpha/plugin.json"),
+                "{ \"id\": \"alpha\", \"version\": \"2\", \"main\": \"x.Z\" }");
+        Files.createDirectories(pluginsDir.resolve("beta"));
+        Files.writeString(pluginsDir.resolve("beta/plugin.json"), "{ \"id\": \"beta\", \"main\": \"b.B\" }");
         pm.discover(); // a Settings Reload while the plugin is live in a window
-        assertEquals(2, pm.liveLoaderCount(), "the running (pinned) loader stays open beside the new one");
-        assertTrue(pm.descriptors().get(0).classLoader() != running, "a fresh loader was built");
 
-        pm.release(running); // the window closes → the superseded, now-unpinned loader is closed
-        assertEquals(1, pm.liveLoaderCount(), "the released, superseded loader is closed");
+        assertEquals(1, pm.liveLoaderCount(), "a rescan builds no loader");
+        assertEquals(2, pm.descriptors().size(), "but the Settings list sees what is on disk now");
+        assertNull(pm.descriptors().get(0).classLoader());
+        assertEquals("2", pm.descriptors().get(0).manifest().version);
+        assertEquals(1, pm.launchSet().size(), "new windows still get what the launch loaded");
+        assertTrue(pm.launchSet().get(0).classLoader() == running);
+        assertEquals("x.Y", pm.launchSet().get(0).manifest().main, "the version that runs, not the one on disk");
+        assertNotNull(pm.running("alpha"));
+        assertNull(pm.running("beta"), "found after launch: runs after a restart");
 
         pm.closeAll();
-        assertEquals(0, pm.liveLoaderCount(), "shutdown closes everything");
+        assertEquals(0, pm.liveLoaderCount(), "the last window closing closes everything");
+    }
+
+    /** E2/E4: a plugin switched off (or an update declined) mid-session is still the launch's: nothing re-arms. */
+    @Test
+    void consentGivenOrWithdrawnMidSessionChangesOnlyTheList(@TempDir Path pluginsDir) throws Exception {
+        Path a = Files.createDirectories(pluginsDir.resolve("alpha"));
+        Files.writeString(a.resolve("plugin.json"), "{ \"id\": \"alpha\", \"main\": \"x.Y\" }");
+        java.util.Set<String> on = new java.util.HashSet<>();
+        PluginManager pm = new PluginManager(pluginsDir, on::contains);
+        pm.discover();
+        assertFalse(pm.launchSet().get(0).enabled());
+
+        on.add("alpha"); // enabled in Settings
+        pm.discover();
+        assertTrue(pm.descriptors().get(0).enabled(), "the row says enabled");
+        assertFalse(pm.launchSet().get(0).enabled(), "but nothing of it runs before a restart");
+        assertNull(pm.running("alpha"));
+    }
+
+    // --- identity: a plugin is its folder --------------------------------------------------------------
+
+    /** B1/C11/E14: a folder whose manifest claims another plugin's id is listed with an error, never loaded. */
+    @Test
+    void aFolderThatDeclaresAnotherIdIsAnErrorRowAndNeverLoads(@TempDir Path pluginsDir) throws Exception {
+        Path real = Files.createDirectories(pluginsDir.resolve("word-count"));
+        Files.writeString(real.resolve("plugin.json"), "{ \"id\": \"word-count\" }");
+        Path fork = Files.createDirectories(pluginsDir.resolve("zz-cool-theme"));
+        Files.writeString(
+                fork.resolve("plugin.json"),
+                "{ \"id\": \"word-count\", \"main\": \"evil.Main\", \"keymap\": { \"C-x C-s\": \"app.quit\" } }");
+        PluginManager pm = new PluginManager(pluginsDir, "word-count"::equals);
+        pm.discover();
+
+        assertEquals(2, pm.descriptors().size());
+        PluginDescriptor impostor = pm.descriptors().get(1);
+        assertEquals("zz-cool-theme", impostor.id(), "listed under its folder's name");
+        assertFalse(impostor.enabled());
+        assertNull(impostor.classLoader());
+        assertEquals(
+                PluginDescriptor.LoadProblem.Kind.ID_MISMATCH,
+                impostor.problem().kind());
+        assertEquals(List.of("word-count", "zz-cool-theme"), impostor.problem().args());
+        assertTrue(pm.descriptors().get(0).enabled(), "the real one is unaffected");
+    }
+
+    // --- consent fingerprints ----------------------------------------------------------------------------
+
+    @Test
+    void theDigestChangesWithWhatTheConsentDisclosesAndOnlyWithThat() throws Exception {
+        PluginManifest base = parse("""
+                { "id": "x", "name": "X", "version": "1.0", "main": "a.Main",
+                  "commands": [ { "id": "c", "title": "C", "run": ["sh", "-c", "a b"] } ],
+                  "keymap": { "C-c x": "c" } }
+                """);
+        String d = PluginDescriptor.digest(base, List.of("x.jar"));
+        assertEquals(
+                d,
+                PluginDescriptor.digest(parse("""
+                { "id": "x", "name": "Renamed", "version": "2.0", "description": "new", "main": "a.Main",
+                  "commands": [ { "id": "c", "title": "C", "run": ["sh", "-c", "a b"] } ],
+                  "keymap": { "C-c x": "c" } }
+                """), List.of("x.jar")),
+                "name, version and description disclose nothing");
+        assertFalse(d.equals(PluginDescriptor.digest(base, List.of("x.jar", "lib/more.jar"))), "a new jar");
+        assertFalse(
+                d.equals(PluginDescriptor.digest(parse("""
+                { "id": "x", "main": "a.Main",
+                  "commands": [ { "id": "c", "title": "C", "run": ["sh", "-c", "a", "b"] } ],
+                  "keymap": { "C-c x": "c" } }
+                """), List.of("x.jar"))),
+                "[\"a b\"] and [\"a\", \"b\"] are different commands");
+        assertFalse(d.equals(PluginDescriptor.digest(parse("""
+                { "id": "x", "main": "a.Main",
+                  "commands": [ { "id": "c", "title": "C", "run": ["sh", "-c", "a b"] } ],
+                  "keymap": { "C-c x": "c", "C-x C-s": "" } }
+                """), List.of("x.jar"))), "a new chord (an unbind too)");
+        assertFalse(d.equals(PluginDescriptor.digest(parse("""
+                { "id": "x", "main": "a.Main",
+                  "commands": [ { "id": "c", "title": "C", "run": ["sh", "-c", "a b"] } ],
+                  "keymap": { "C-c x": "c" }, "keymaps": { "cua": { "C-q": "c" } } }
+                """), List.of("x.jar"))), "a keymap-specific chord");
+    }
+
+    /** E5: the store allows a plugin only with the fingerprint it was enabled with. */
+    @Test
+    void aStoredConsentCoversOnlyWhatWasShown(@TempDir Path pluginsDir) throws Exception {
+        Path a = Files.createDirectories(pluginsDir.resolve("ghost"));
+        Files.writeString(a.resolve("plugin.json"), "{ \"id\": \"ghost\" }");
+        com.editora.config.PluginStore store = new com.editora.config.PluginStore();
+        PluginManager pm = new PluginManager(pluginsDir, (PluginManager.Consent) store::allows);
+        pm.discover();
+        store.enable("ghost", pm.descriptors().get(0).digest());
+        pm.discover();
+        assertTrue(pm.descriptors().get(0).enabled());
+
+        // Removed by hand and replaced by something else under the same name: not what was agreed to.
+        Files.writeString(a.resolve("plugin.json"), "{ \"id\": \"ghost\", \"main\": \"rm.Rf\" }");
+        pm.discover();
+        assertFalse(pm.descriptors().get(0).enabled());
+        assertTrue(store.changedSinceConsent("ghost", pm.descriptors().get(0).digest()));
     }
 
     @Test
-    void releasingTheCurrentLoaderKeepsItOpenForItsStillLivePlugin(@TempDir Path pluginsDir) throws Exception {
-        // Two windows share one loader; closing one window must not close the loader the other still uses.
-        PluginManager pm = oneEnabledPlugin(pluginsDir);
-        pm.discover();
-        ClassLoader shared = pm.descriptors().get(0).classLoader();
-        pm.pin(shared); // window A
-        pm.pin(shared); // window B
+    void reconcileAdoptsAnOldConsentOnceAndDropsThoseOfMissingFolders() {
+        com.editora.config.PluginStore store = new com.editora.config.PluginStore();
+        store.enabled.put("kept", true);
+        store.consent.put("kept", com.editora.config.PluginStore.ADOPT);
+        store.enabled.put("gone", true);
+        store.consent.put("gone", com.editora.config.PluginStore.ADOPT);
+        store.enabled.put("off", false);
+        java.util.Map<String, String> present = new java.util.HashMap<>();
+        present.put("kept", "d1");
+        present.put("off", "d2");
 
-        pm.release(shared); // window B closes
-        assertEquals(1, pm.liveLoaderCount(), "still open — window A is using it and it's the current loader");
-
-        pm.release(shared); // window A closes; still the current descriptor's loader → kept until closeAll
-        assertEquals(1, pm.liveLoaderCount(), "kept open (still current) until shutdown");
-        pm.closeAll();
-        assertEquals(0, pm.liveLoaderCount());
+        assertTrue(store.reconcile(present));
+        assertEquals("d1", store.consent.get("kept"), "the plugin there now is the one the user had enabled");
+        assertTrue(store.allows("kept", "d1"));
+        assertFalse(store.allows("kept", "d2"));
+        assertFalse(store.enabled.containsKey("gone"), "a stale true would arm whatever appears there later");
+        assertFalse(store.consent.containsKey("gone"));
+        assertFalse(store.reconcile(present), "nothing left to change");
     }
 
     @Test

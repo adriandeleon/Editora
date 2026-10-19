@@ -135,13 +135,12 @@ class RemoteTerminalPanelFxTest {
 
     private Button reconnectButton() {
         var content = (StackPane) panel.activeTab().getContent();
-        return content.getChildren().stream()
-                .filter(n -> n.getStyleClass().contains("terminal-lost-banner"))
-                .flatMap(n -> ((HBox) n).getChildren().stream())
-                .filter(n -> n instanceof Button)
-                .map(n -> (Button) n)
-                .findFirst()
-                .orElseThrow();
+        return ((HBox) content.lookup(".terminal-lost-banner"))
+                .getChildren().stream()
+                        .filter(n -> n instanceof Button)
+                        .map(n -> (Button) n)
+                        .findFirst()
+                        .orElseThrow();
     }
 
     private static <T> T call(Callable<T> work) {

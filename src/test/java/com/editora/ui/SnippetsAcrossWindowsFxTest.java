@@ -168,10 +168,10 @@ class SnippetsAcrossWindowsFxTest {
                     .fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, false, false, false, false));
             assertTrue(bufferA.hasActiveSnippet(), "the bundled fori expanded through the window's own wiring");
             assertTrue(hint.isVisible(), "N3: nothing used to say a session was running");
-            assertEquals(tr("statusbar.snippet", 1, 4), hint.getText());
+            assertEquals(tr("statusbar.snippet", 1, 2), hint.getText(), "fori: the index, then the bound");
             bufferA.getArea()
                     .fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, false, false, false, false));
-            assertEquals(tr("statusbar.snippet", 2, 4), hint.getText());
+            assertEquals(tr("statusbar.snippet", 2, 2), hint.getText());
 
             CommandRegistry registry = FxTestSupport.field(a, "registry");
             assertTrue(registry.run("snippets.endSession"));

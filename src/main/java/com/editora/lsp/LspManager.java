@@ -97,6 +97,77 @@ public final class LspManager {
     private volatile boolean javaOnTypeFormatting;
     /** bash-language-server's {@code bashIde} settings (null = its defaults until the coordinator sets them). */
     private volatile BashIdeConfig bashIde;
+
+    /** Whether the TypeScript server may fetch type definitions from npm (Settings; off by default). */
+    private volatile boolean typeScriptTypeAcquisition;
+
+    /** The user's Node.js setting ("" = automatic), whose bin folder goes first on the TypeScript server's PATH. */
+    private volatile String nodePathSetting = "";
+
+    /** The TypeScript server's javascript/typescript settings ({@link TypeScriptServer#settings}). */
+    private volatile Map<String, Object> typeScriptSettings = TypeScriptServer.settings(false, false);
+
+    /** Open documents' indentation by wire URI, answered to the TypeScript server's formattingOptions question. */
+    private final Map<String, FormattingIndent> documentIndents = new ConcurrentHashMap<>();
+
+    /**
+     * The one root every loose JavaScript/TypeScript file (no project, no tsconfig/jsconfig/package.json/.git
+     * above it) shares, so ten scripts in ten folders run one server instead of ten (Node review B7). A folder
+     * of Editora's own that holds none of them: the server then gives each file an inferred project of its own.
+     * Null until the coordinator sets it.
+     */
+    private volatile Path looseRoot;
+
+    /** Sets what the TypeScript server is started with; a change restarts the running ones. */
+    public void setTypeScriptStart(boolean typeAcquisition, String nodePath) {
+        String node = nodePath == null ? "" : nodePath.strip();
+        boolean changed = typeAcquisition != typeScriptTypeAcquisition || !node.equals(nodePathSetting);
+        typeScriptTypeAcquisition = typeAcquisition;
+        nodePathSetting = node;
+        if (changed) {
+            shutdownServer(TypeScriptServer.SERVER_ID);
+        }
+    }
+
+    /** Sets the TypeScript server's inlay-hint and code-lens settings, pushed to the running ones. */
+    public void setTypeScriptSettings(boolean inlayHints, boolean codeLens) {
+        Map<String, Object> settings = TypeScriptServer.settings(inlayHints, codeLens);
+        typeScriptSettings = settings;
+        String prefix = sessionKeyPrefix(TypeScriptServer.SERVER_ID);
+        sessionsByRoot.forEach((key, session) -> {
+            if (key.startsWith(prefix)) {
+                session.setTypeScriptSettings(settings);
+            }
+        });
+    }
+
+    /** Records {@code file}'s indentation, for the server's formatting of quick fixes (call before opening it). */
+    public void setDocumentIndent(Path file, FormattingIndent indent) {
+        if (file != null && indent != null) {
+            documentIndents.put(uri(file), indent);
+        }
+    }
+
+    /** Sets the shared root of loose JavaScript/TypeScript files (see {@link #looseRoot}). */
+    public void setLooseRoot(Path root) {
+        Path next = root == null ? null : root.toAbsolutePath().normalize();
+        if (next != null && !next.equals(looseRoot)) {
+            // Made now, not at the first start: a session key names a folder with a trailing slash only once it
+            // exists, so a root created after its first key was taken would get a second session.
+            try {
+                Files.createDirectories(next);
+            } catch (java.io.IOException e) {
+                LOG.log(java.util.logging.Level.FINE, "Could not create the loose-files root " + next, e);
+                next = null;
+            }
+        }
+        looseRoot = next;
+    }
+
+    /** The shared root of loose JavaScript/TypeScript files, or null. */
+    public Path looseRoot() {
+        return looseRoot;
+    }
     /** jdtls {@code initializationOptions.bundles} — the java-debug plugin jar(s) that enable debugging.
      *  Applied only to the java server, at {@code initialize}; empty = no debug bundle. */
     private volatile List<String> debugBundles = List.of();
@@ -636,6 +707,7 @@ public final class LspManager {
         }
         String uri = uri(file);
         LanguageServerSession s = sessionByDocUri.remove(uri);
+        documentIndents.remove(uri);
         semanticTokenState.remove(uri); // the next open starts from a full request (#679)
         semanticRequestGeneration.remove(uri);
         wholeDocumentTokens.remove(uri);
@@ -1084,6 +1156,10 @@ public final class LspManager {
         diagnosticSource[0] = session;
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         session.setBashIde(bashIde);
+        if (TypeScriptServer.SERVER_ID.equals(serverId)) {
+            session.setTypeScriptSettings(typeScriptSettings);
+            session.setIndentForUri(documentIndents::get);
+        }
         // Drop the session the moment it can no longer serve requests — the process died on its own, or the
         // handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps returning true
         // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
@@ -1135,7 +1211,12 @@ public final class LspManager {
         List<String> bundles = List.copyOf(debugBundles);
         boolean onTypeFormatting = javaOnTypeFormatting;
         // Trust is read here, on the caller's thread, where the trust list is also edited.
-        Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) ? trustedCeiling(root, folderTrust) : null;
+        Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) || TypeScriptServer.SERVER_ID.equals(serverId)
+                ? trustedCeiling(root, folderTrust)
+                : null;
+        boolean typeAcquisition = typeScriptTypeAcquisition;
+        String nodeSetting = nodePathSetting;
+        boolean loose = root.toAbsolutePath().normalize().equals(looseRoot);
         startExec.execute(() -> {
             awaitPriorExit(key); // a restart: let the server being replaced release what it holds
             if (closed || session.isDisposed()) {
@@ -1191,6 +1272,27 @@ public final class LspManager {
                 Platform.runLater(() -> onStartWithheld.accept(serverId, root));
                 return;
             }
+            Path tsserver = null;
+            if (TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
+                TypeScriptServer.Choice choice = typeScriptChoice(root, sdkCeiling, startCommand, loose);
+                if (!choice.starts()) {
+                    // Not a crash and not worth retrying: the same start would only fail (or run a folder's code).
+                    session.dispose();
+                    dropSession(key, session);
+                    StartRefusal refusal = choice.outcome() == TypeScriptServer.Outcome.WITHHELD_UNTRUSTED
+                            ? new StartRefusal(StartRefusal.Kind.UNTRUSTED_TYPESCRIPT, root.toString())
+                            : new StartRefusal(StartRefusal.Kind.NO_TYPESCRIPT, choice.installedVersion());
+                    Platform.runLater(() -> {
+                        if (!closed) {
+                            onStartRefused.refused(serverId, root, refusal);
+                        }
+                    });
+                    return;
+                }
+                tsserver = choice.tsserver();
+                session.setPathPrepend(nodeBinDir(root, nodeSetting));
+            }
+            Path tsserverPath = tsserver;
             List<JavaRuntimes.Jdk> jdks = hostJdks;
             // A remote jdtls is told about the host's JDKs, and gets the debug bundles as files on the host.
             List<String> startBundles = remote && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
@@ -1206,7 +1308,11 @@ public final class LspManager {
             session.configureStart(
                     startCommand,
                     remoteEnvironment,
-                    () -> initOptionsFor(serverId, startBundles, astroTsdk, onTypeFormatting, jdks));
+                    () -> TypeScriptServer.SERVER_ID.equals(serverId) && !remote
+                            ? TypeScriptServer.initializationOptions(tsserverPath, typeAcquisition, loose)
+                            : TypeScriptServer.SERVER_ID.equals(serverId)
+                                    ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
+                                    : initOptionsFor(serverId, startBundles, astroTsdk, onTypeFormatting, jdks));
             if (!session.start()) {
                 dropSession(key, session);
                 if (session.startFailed()) {
@@ -1405,6 +1511,20 @@ public final class LspManager {
         // timed-out handshake). Only that case notifies the coordinator to auto-restart — a shutdownServer/
         // shutdownAll/putCommand teardown, or a start() whose fork failed (dispose()d in its catch), must
         // not re-fork in a loop (#666). A failed start is reported on its own, through onStartFailed.
+        String refused = session.initializeRefusal();
+        if (!session.isDisposed() && refused != null && !LspServerRegistry.JAVA_SERVER_ID.equals(session.serverId())) {
+            // The server answered initialize with an error and exited: the same start would only be refused
+            // again, so say why instead of restarting it into the crash-loop cap (Node review B3).
+            session.dispose();
+            releaseJdtlsWorkspaceName(workspaceName);
+            StartRefusal refusal = new StartRefusal(StartRefusal.Kind.SERVER_REFUSED, refused);
+            Platform.runLater(() -> {
+                if (!closed) {
+                    onStartRefused.refused(session.serverId(), session.root(), refusal);
+                }
+            });
+            return;
+        }
         if (!session.isDisposed()) {
             boolean failedJdtlsInitialization = workspaceName != null
                     && LspServerRegistry.JAVA_SERVER_ID.equals(session.serverId())
@@ -3812,6 +3932,9 @@ public final class LspManager {
             case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting, jdks);
             case "go" -> Map.of("semanticTokens", true);
             case "json", "css", "html" -> Map.of("provideFormatter", true);
+            // gvy reads a flat map of its VS Code settings. CodeNarc's style rules flag nearly every line of
+            // ordinary Groovy at Information level; compiler errors are what an editor needs by default.
+            case "groovy" -> Map.of("groovy.codenarc.enabled", false);
             case ASTRO_SERVER_ID ->
                 astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->
@@ -3848,6 +3971,73 @@ public final class LspManager {
 
     public void setOnStartFailed(BiConsumer<String, Path> callback) {
         this.onStartFailed = callback == null ? (id, root) -> {} : callback;
+    }
+
+    /** Told (on the FX thread) why a server whose command exists is not running; see {@link StartRefusal}. */
+    public interface StartRefusedListener {
+        void refused(String serverId, Path root, StartRefusal refusal);
+    }
+
+    private volatile StartRefusedListener onStartRefused = (id, root, why) -> {};
+
+    public void setOnStartRefused(StartRefusedListener callback) {
+        this.onStartRefused = callback == null ? (id, root, why) -> {} : callback;
+    }
+
+    /**
+     * The tsserver for a local TypeScript-server root: the folder's own only within its trusted part, else the
+     * one beside the installed server; never a folder's own for the shared loose-files root. Off the FX thread
+     * (PATH and disk).
+     */
+    static TypeScriptServer.Choice typeScriptChoice(
+            Path root, Path trustedCeiling, List<String> command, boolean loose) {
+        Path trusted = trustedCeiling == null || loose ? null : TypeScriptServer.findTsserver(root, trustedCeiling);
+        Path any = loose ? null : TypeScriptServer.findTsserver(root, null);
+        Path executable = typeScriptServerExecutable(command);
+        return TypeScriptServer.choose(
+                trusted,
+                any,
+                TypeScriptServer.installedTsserver(executable),
+                TypeScriptServer.installedPackageVersion(executable),
+                loose);
+    }
+
+    /**
+     * Where typescript-language-server itself is, links followed: the command's word naming it (a custom command
+     * may run it through {@code node} or a wrapper), else the command's program. Null when it cannot be found.
+     */
+    public static Path typeScriptServerExecutable(List<String> command) {
+        if (command == null || command.isEmpty()) {
+            return null;
+        }
+        String word = command.get(0);
+        for (String w : command) {
+            if (w.contains("typescript-language-server")) {
+                word = w;
+                break;
+            }
+        }
+        List<String> resolved = ProcessRunner.resolveExecutable(List.of(word));
+        if (resolved.isEmpty()) {
+            return null;
+        }
+        try {
+            Path exe = Path.of(resolved.get(0)).toAbsolutePath().normalize();
+            return Files.exists(exe) ? exe.toRealPath() : null;
+        } catch (java.io.IOException | java.nio.file.InvalidPathException e) {
+            return null;
+        }
+    }
+
+    /** The bin folder of the Node.js a root's Node tools run with (Settings, .nvmrc, PATH), or null. */
+    private static Path nodeBinDir(Path root, String nodeSetting) {
+        try {
+            return com.editora.run.NodeRuntimes.resolveLocal(root.resolve("package.json"), null, "", nodeSetting)
+                    .binDir()
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**
@@ -4689,6 +4879,10 @@ public final class LspManager {
                     });
             return;
         }
+        if (TypeScriptServer.SERVER_ID.equals(serverId)) {
+            organizeTypeScriptImports(s, file, cb);
+            return;
+        }
         codeActions(file, 0, 0, lastLine, lastChar, items -> {
             CodeActionItem organize = items.stream()
                     .filter(i -> i.kind().startsWith("source.organizeImports"))
@@ -4700,6 +4894,35 @@ public final class LspManager {
                 applyCodeAction(
                         file, organize, ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.UNCHANGED));
             }
+        });
+    }
+
+    /**
+     * typescript-language-server's own Organize Imports ({@code _typescript.organizeImports}): it sorts, combines
+     * and removes unused imports, and sends the edit back as {@code workspace/applyEdit}. Its
+     * {@code source.organizeImports} code action only sorts, and was never offered at all without {@code only}
+     * (Node review B5). No edit coming back means the imports were already organized.
+     */
+    private void organizeTypeScriptImports(LanguageServerSession s, Path file, Consumer<OrganizeOutcome> cb) {
+        PendingApply pending =
+                new PendingApply(editBasis(s).sentNow(), new java.util.concurrent.atomic.AtomicReference<>());
+        if (pendingApplyExpected.putIfAbsent(s, pending) != null) {
+            Platform.runLater(() -> cb.accept(OrganizeOutcome.UNCHANGED));
+            return;
+        }
+        String serverPath;
+        try {
+            serverPath = Path.of(java.net.URI.create(serverUri(file))).toString();
+        } catch (RuntimeException e) {
+            serverPath = java.net.URI.create(serverUri(file)).getPath();
+        }
+        executeCommand(file, "_typescript.organizeImports", List.of(serverPath), (result, error) -> {
+            pendingApplyExpected.remove(s, pending);
+            Boolean applied = pending.applied().get();
+            cb.accept(
+                    error != null
+                            ? OrganizeOutcome.UNSUPPORTED
+                            : Boolean.TRUE.equals(applied) ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.UNCHANGED);
         });
     }
 

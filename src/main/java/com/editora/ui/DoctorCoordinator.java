@@ -99,6 +99,11 @@ final class DoctorCoordinator {
         /** Opens Settings focused on the page for a Doctor settings key ({@code git}/{@code lsp}/…). */
         void openSettingsFor(String settingsKey);
 
+        /** The shared plugin manager (the Plugins section), or null when there is none. */
+        default com.editora.plugin.PluginManager plugins() {
+            return null;
+        }
+
         /** This window's project root (where Python's venv is looked for), or null. */
         default java.nio.file.Path projectRoot() {
             return null;
@@ -399,6 +404,39 @@ final class DoctorCoordinator {
             specs.add(terminal(offRow(rg, "search")));
         }
 
+        // Encryption ------------------------------------------------------------------------------
+        // Optional: only encrypted files need gpg, so its absence is a fact, not a fault. Resolved in the probe
+        // (the lookup can read the login shell's PATH), not here on the FX thread.
+        String gpgConfigured = s.getEncryptionGpgPath();
+        String gpgLabel = gpgConfigured.isBlank() ? "gpg" : gpgConfigured;
+        DoctorCheck gpg =
+                DoctorCheck.checking("gpg", "security", "GnuPG", gpgLabel).withSettings("encryption");
+        specs.add(probe(gpg, base -> {
+            String exe = com.editora.crypto.Gpg.resolve(gpgConfigured);
+            String version = new com.editora.crypto.Gpg(exe, java.util.Map.of()).version();
+            return version != null ? base.ok(version) : base.optional("doctor.tip.gpgOptional");
+        }));
+        boolean editoraAsks =
+                com.editora.config.Settings.PASSPHRASE_PROMPT_EDITORA.equals(s.getEncryptionPassphrasePrompt());
+        DoctorCheck pinentry = DoctorCheck.checking("pinentry", "security", tr("doctor.label.pinentry"), "gpgconf")
+                .withSettings("encryption");
+        specs.add(probe(pinentry, base -> {
+            if (editoraAsks) {
+                return base.ok(tr("doctor.detail.pinentryEditora"));
+            }
+            String exe = com.editora.crypto.Gpg.resolve(gpgConfigured);
+            if (new com.editora.crypto.Gpg(exe, java.util.Map.of()).version() == null) {
+                return base.optional("doctor.tip.gpgOptional");
+            }
+            com.editora.crypto.Pinentry.Verdict v = com.editora.crypto.Pinentry.check(exe, java.util.Map.of());
+            if (!v.found()) {
+                return base.warn(tr("doctor.detail.pinentryMissing"), "doctor.tip.pinentryMissing");
+            }
+            return v.graphical()
+                    ? base.ok(v.program())
+                    : base.warn(v.program(), "doctor.tip.pinentryTerminal", v.program());
+        }));
+
         // Preview & diagrams ----------------------------------------------------------------------
         List<String> mmdcCmd = ops.mermaidService().mmdcCommand();
         List<String> maidCmd = ops.mermaidService().maidCommand();
@@ -532,7 +570,7 @@ final class DoctorCoordinator {
             }
             if (s.isJsDebugEnabled()) {
                 String jsPath = scope.debugTool("javascript", s.getJsDebugPath());
-                List<String> node = DapServerRegistry.interpreterArgv("javascript", "");
+                String nodeSetting = s.getNodePath();
                 DoctorCheck jsDebug = DoctorCheck.checking("debug.javascript", "debug", tr("doctor.label.jsDebug"), "")
                         .withSettings("debug")
                         .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.JAVASCRIPT.name());
@@ -541,10 +579,20 @@ final class DoctorCoordinator {
                     if (server.isEmpty()) {
                         return base.missing("doctor.tip.missingInstallable", "js-debug");
                     }
-                    DoctorProbes.Presence nodeP = DoctorProbes.version(node);
-                    return nodeP.present()
-                            ? base.ok(server.get().toString())
-                            : base.missing("doctor.tip.missing", "node");
+                    // The Node.js that runs js-debug: the Debugging setting's, else node on PATH (as a launch does).
+                    String node = com.editora.run.NodeRuntimes.resolveLocal(null, null, "", nodeSetting)
+                            .executable();
+                    DoctorProbes.Presence nodeP = DoctorProbes.version(List.of(node));
+                    if (!nodeP.present()) {
+                        return base.missing("doctor.tip.missing", node);
+                    }
+                    return com.editora.dap.JsLaunch.runsAdapter(nodeP.version())
+                            ? base.ok(server.get() + " · Node.js " + nodeP.version())
+                            : base.warn(
+                                    server.get().toString(),
+                                    "doctor.tip.jsDebugOldNode",
+                                    nodeP.version(),
+                                    String.valueOf(com.editora.dap.JsLaunch.MIN_ADAPTER_NODE_MAJOR));
                 }));
             }
         } else {
@@ -571,18 +619,26 @@ final class DoctorCoordinator {
             };
         }));
         specs.add(pythonRun(s));
+        specs.add(nodeRun(s, needs));
         specs.add(optionalRunTool("run.make", "Make", List.of("make"), null, "Makefile"));
         specs.add(optionalRunTool("run.shell", "Bash", List.of("bash"), null, "shell"));
 
         // HTTP Client: its JavaScript response handlers run on the user's Node.js ------------------
         if (s.isHttpClientSupport() && !simple) {
-            String nodeSetting = s.getHttpNodePath().isBlank() ? "node" : s.getHttpNodePath();
+            // A blank HTTP field runs the shared Node.js, as the run itself does (review E6).
+            String httpNode = s.getHttpNodePath();
+            String sharedNode = s.getNodePath();
+            java.nio.file.Path httpRoot = ops.projectRoot();
+            String nodeSetting = com.editora.http.HttpNodeChoice.displayed(httpNode, sharedNode);
             DoctorCheck handlers = DoctorCheck.checking(
                             "http.scripts", "http", tr("doctor.label.httpScripts"), nodeSetting)
                     .withSettings("web");
             if (s.isHttpScriptsEnabled()) {
                 specs.add(probe(handlers, base -> {
-                    String exe = com.editora.process.ProcessRunner.resolveExecutable(List.of(nodeSetting))
+                    String command = com.editora.vfs.Vfs.isRemote(httpRoot)
+                            ? nodeSetting
+                            : com.editora.http.HttpNodeChoice.resolveLocal(httpNode, sharedNode, null, httpRoot);
+                    String exe = com.editora.process.ProcessRunner.resolveExecutable(List.of(command))
                             .get(0);
                     int[] v = com.editora.http.NodeResponseScripts.version(exe);
                     if (v == null) {
@@ -700,12 +756,57 @@ final class DoctorCoordinator {
                             .orElse(""))));
         }
 
+        // Plugins ---------------------------------------------------------------------------------
+        specs.addAll(pluginRows(s, ops.plugins()));
+
         return specs;
     }
 
     // --- rows --------------------------------------------------------------------------------------
 
     /** A feature-off row: gray, never probed, with a "Turn on" for {@code enableKey} ("" = none offered). */
+    /**
+     * The Plugins section: what this session runs, then one row per plugin that failed to load or to start,
+     * started slowly, or changed since it was enabled — what used to show nowhere but the log. No "Turn on":
+     * enabling plugins is a security decision made on the Settings page. Pure over the manager's state.
+     */
+    static List<DoctorService.CheckSpec> pluginRows(Settings s, com.editora.plugin.PluginManager plugins) {
+        List<DoctorService.CheckSpec> rows = new ArrayList<>();
+        if (plugins == null) {
+            return rows;
+        }
+        DoctorCheck summary = DoctorCheck.checking("plugins", "plugins", tr("doctor.label.plugins"), "")
+                .withSettings("plugins");
+        if (com.editora.plugin.PluginManager.disabledForSession()) {
+            rows.add(terminal(summary.warn(tr("doctor.plugins.disabledForSession"), "")));
+            return rows;
+        }
+        if (!s.isPluginSupport()) {
+            rows.add(terminal(summary.disabled()));
+            return rows;
+        }
+        long running = plugins.launchSet().stream()
+                .filter(d -> d.enabled() && d.loadError() == null)
+                .count();
+        rows.add(terminal(summary.ok(
+                tr("doctor.plugins.summary", running, plugins.descriptors().size()))));
+        for (com.editora.plugin.PluginDescriptor d : plugins.descriptors()) {
+            com.editora.plugin.PluginDescriptor.LoadProblem runtime = plugins.runtimeProblem(d.id());
+            String problem = d.loadError() != null
+                    ? PluginLoadProblems.text(d)
+                    : runtime != null ? PluginLoadProblems.text(runtime) : null;
+            if (problem == null) {
+                continue;
+            }
+            DoctorCheck row = DoctorCheck.checking("plugin:" + d.id(), "plugins", d.displayName(), d.id())
+                    .withSettings("plugins");
+            boolean slow = d.loadError() == null
+                    && runtime.kind() == com.editora.plugin.PluginDescriptor.LoadProblem.Kind.SLOW_START;
+            rows.add(terminal(slow ? row.warn(problem, "") : row.missing("doctor.tip.pluginProblem", problem)));
+        }
+        return rows;
+    }
+
     private static DoctorCheck offRow(DoctorCheck placeholder, String enableKey) {
         // A whole section that is off says so in its label; a tip repeating it would be noise.
         boolean section = placeholder.label().equals(tr("doctor.label.sectionOff"));
@@ -714,6 +815,25 @@ final class DoctorCoordinator {
     }
 
     /**
+     * The TypeScript / JavaScript server's row once its command is found: OK with the TypeScript it runs, or a
+     * warning when there is no TypeScript with a tsserver beside it (TypeScript 7 has none), in which case the
+     * server does not start outside a trusted folder that has its own (Node review B1, E4).
+     */
+    private static DoctorCheck typeScriptServerRow(DoctorCheck base, List<String> argv, String path) {
+        Path exe = com.editora.lsp.LspManager.typeScriptServerExecutable(argv);
+        Path tsserver = com.editora.lsp.TypeScriptServer.installedTsserver(exe);
+        if (tsserver == null) {
+            String version = com.editora.lsp.TypeScriptServer.installedPackageVersion(exe);
+            return version.isEmpty()
+                    ? base.warn(path, "doctor.tip.typescriptSdkMissing")
+                    : base.warn(path, "doctor.tip.typescriptSdkWithoutTsserver", version);
+        }
+        String version = com.editora.lsp.TypeScriptServer.sdkVersion(tsserver);
+        return base.ok(version.isEmpty() ? path : tr("doctor.detail.typescriptSdk", version, path));
+    }
+
+    /**
+     * One language server: its resolved path    /**
      * One language server: its resolved path (and Pyright's npm version) when found. Missing, it is a problem
      * only when something in this window needs it (review A1); otherwise it is "not installed", Install… kept.
      */
@@ -746,6 +866,9 @@ final class DoctorCoordinator {
                                 ? "doctor.tip.missing"
                                 : "doctor.tip.missingInstallable",
                         argv.get(0));
+            }
+            if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
+                return typeScriptServerRow(base, argv, path); // found is not enough: it needs a tsserver (E4)
             }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
             String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";
@@ -927,6 +1050,34 @@ final class DoctorCoordinator {
                 return base.warn(what, "doctor.tip.pythonInterpreter", String.join(" ", py.command()));
             }
             return base.ok(version + " — " + what);
+        });
+    }
+
+    /**
+     * The one Node.js row (review E6): the Node.js {@link com.editora.run.NodeRuntimes} picks for this project —
+     * what Run, Debug, npm scripts, the TypeScript server and the HTTP Client share — with its version and why.
+     * Red only when the project needs Node (a {@code package.json}, or a JavaScript/TypeScript file open).
+     */
+    private DoctorService.CheckSpec nodeRun(Settings s, Needs needs) {
+        java.nio.file.Path root = ops.projectRoot();
+        String setting = s.getNodePath();
+        DoctorCheck row = DoctorCheck.checking(
+                        "run.node", "run", tr("doctor.label.node"), setting.isBlank() ? "node" : setting)
+                .withSettings("debug");
+        return probe(row, base -> {
+            boolean local = com.editora.vfs.Vfs.isLocal(root);
+            com.editora.run.NodeRuntimes.NodeRuntime node = com.editora.run.NodeRuntimes.resolveLocal(
+                    local && root != null ? root.resolve("package.json") : null, local ? root : null, "", setting);
+            base = base.withCommand(String.join(" ", node.command()));
+            List<String> argv = new ArrayList<>(node.command());
+            argv.add("--version");
+            String version = DoctorRules.firstLine(DoctorProbes.output(argv).strip(), "");
+            boolean needed = needs.openServers().contains("typescript") || needs.rootHasAny(List.of("package.json"));
+            return switch (com.editora.doctor.NodeRuntimeRow.status(version, needed)) {
+                case OK -> base.ok(com.editora.doctor.NodeRuntimeRow.detail(version, node));
+                case MISSING -> base.missing("doctor.tip.nodeMissing", node.executable());
+                default -> base.optional("doctor.tip.nodeOptional");
+            };
         });
     }
 

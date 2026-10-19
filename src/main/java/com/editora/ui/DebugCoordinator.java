@@ -59,6 +59,9 @@ final class DebugCoordinator {
         /** Shows the Debug window without moving keyboard focus into it (review C2). */
         void openToolWindow();
 
+        /** Debugs a configuration that runs on a deployment: deployed, started on its host, attached here. */
+        default void debugDeployed(RunConfiguration cfg) {}
+
         /** The active keymap's chord for {@code commandId}, formatted, or null when it is unbound. */
         default String chordFor(String commandId) {
             return null;
@@ -322,6 +325,7 @@ final class DebugCoordinator {
         if (!debugSupportEnabled() || language == null) {
             return false;
         }
+        language = DapServerRegistry.adapterLanguage(language); // TypeScript/JSX: the JavaScript debugger
         var s = host.settings();
         return switch (language) {
             case "java" ->
@@ -331,6 +335,8 @@ final class DebugCoordinator {
                         && dapManager.isAdapterAvailable();
             case "python" -> s.isPythonDebugEnabled() && dapManager.isLanguageAvailable("python");
             case "javascript" -> s.isJsDebugEnabled() && dapManager.isLanguageAvailable("javascript");
+            // Editora's own JVM adapter: nothing to install; the groovy tool is checked when the session starts.
+            case "groovy" -> dapManager.isLanguageAvailable("groovy");
             default -> false;
         };
     }
@@ -346,6 +352,7 @@ final class DebugCoordinator {
         if (!debugSupportEnabled() || language == null || !DapManager.debuggableOnHost(language)) {
             return false;
         }
+        language = DapServerRegistry.adapterLanguage(language);
         var s = host.settings();
         boolean enabled = switch (language) {
             case "python" -> s.isPythonDebugEnabled();
@@ -524,6 +531,7 @@ final class DebugCoordinator {
                 s.isJsDebugEnabled(),
                 scope.debugTool("javascript", s.getJsDebugPath()));
         dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
+        dapManager.setNodePath(s.getNodePath()); // the Node.js a JavaScript session runs on (and js-debug)
         dapManager.setProgramTerminal(
                 s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
         dapManager.setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
@@ -854,8 +862,11 @@ final class DebugCoordinator {
         List<Breakpoint> stored = map.get(key);
         // Not the snapshot alone: a second window on this file has its own copy of the breakpoints, and
         // writing this one as the whole list deleted every breakpoint the other had set.
-        List<Breakpoint> bps = MarkMerge.withForeign(
-                stored, seenInStore.get(buffer), buffer.getBreakpointManager().snapshot(), Breakpoint::line);
+        List<Breakpoint> snapshot = buffer.getBreakpointManager().snapshot();
+        if (buffer.encryption().isEncrypted()) {
+            snapshot = snapshot.stream().map(b -> b.withLineText("")).toList(); // see persistBookmarks
+        }
+        List<Breakpoint> bps = MarkMerge.withForeign(stored, seenInStore.get(buffer), snapshot, Breakpoint::line);
         if (bps.isEmpty()) {
             map.remove(key);
         } else {
@@ -1449,7 +1460,7 @@ final class DebugCoordinator {
                 if (values.size() == MAX_INLINE_VALUES) {
                     break;
                 }
-                values.put(v.name(), v.value());
+                values.put(v.name(), DebugValues.display(v.value())); // a function: its first line (review D9)
             }
             EditorBuffer b = ops.bufferForPath(frame.file());
             if (b == null) {
@@ -1667,6 +1678,34 @@ final class DebugCoordinator {
 
     /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */
     private void launchBuffer(EditorBuffer b) {
+        launchBuffer(b, List.of());
+    }
+
+    /**
+     * Debug Test at Caret on a JavaScript/TypeScript test file ({@link com.editora.dap.JsLaunch#isTestFile}): the
+     * file runs under {@code node --test}, narrowed to the test at the caret by name when there is one. False —
+     * nothing done — for any other buffer.
+     */
+    boolean debugJsTestAtCaret(EditorBuffer b) {
+        if (b == null
+                || b.getPath() == null
+                || !"javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))
+                || !com.editora.dap.JsLaunch.isTestFile(b.getPath())) {
+            return false;
+        }
+        int caret = b.getFocusedArea().getCurrentParagraph()
+                + b.getBreakpointManager().regionFirstLine();
+        List<String> nodeArgs = new java.util.ArrayList<>(List.of("--test"));
+        com.editora.dap.JsLaunch.testNameAt(b.getContent(), caret).ifPresent(name -> {
+            nodeArgs.add("--test-name-pattern");
+            nodeArgs.add(com.editora.dap.JsLaunch.literalPattern(name));
+        });
+        launchBuffer(b, nodeArgs);
+        return true;
+    }
+
+    /** {@link #launchBuffer(EditorBuffer)} with Node.js arguments for a JavaScript program ({@code --test}). */
+    private void launchBuffer(EditorBuffer b, List<String> nodeArgs) {
         if (b != null && b.isHttpFile()) {
             ops.debugHttpRequest(); // its scripts, around the request at the caret
             return;
@@ -1686,7 +1725,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.saveFirst"));
             return;
         }
-        String language = b.getLanguage();
+        String language = DapServerRegistry.adapterLanguage(b.getLanguage()); // a .ts file: JavaScript
         if (!debugEffectiveFor(language, b.getPath())) {
             host.setStatus(unavailableMessage(language, b.getPath()));
             return;
@@ -1713,6 +1752,9 @@ final class DebugCoordinator {
         if (b.isPython()) {
             planPython(b.getPath(), firstLine(b.getContent()));
         }
+        dapManager.setJsProjectRoot(ops.projectRoot()); // a JavaScript file's Node.js, package root, workspace
+        dapManager.setJsNodeArgs(nodeArgs);
+        dapManager.setJsProgram(null); // the file itself, not a configuration's planned launch
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
         boolean java = "java".equals(language);
         Path projectRoot = java ? JavaProjectRoot.find(b.getPath()) : null;
@@ -1733,14 +1775,16 @@ final class DebugCoordinator {
             }
         }
         // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
-        String jdkHome = !java || !com.editora.process.ExecTargets.runsHere(b.getPath())
+        // A Groovy script runs on the Settings JDK too (its JAVA_HOME), as Run runs it.
+        boolean jvmScript = com.editora.run.JvmScriptRun.supports(language);
+        String jdkHome = !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(b.getPath())
                 ? ""
-                : compactSource ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
+                : compactSource || jvmScript ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
         String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
         dapManager.setEnv(
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
         Path launched = b.getPath();
-        relaunch = () -> relaunchFor(launched, this::launchBuffer);
+        relaunch = () -> relaunchFor(launched, again -> launchBuffer(again, nodeArgs));
         Path looseCwd = projectRoot == null ? project : null;
         Runnable start = () -> withClosedBreakpoints(() -> {
             if (compactSource && shebangSource != null) {
@@ -1874,7 +1918,7 @@ final class DebugCoordinator {
             return tr("status.debug.unavailable");
         }
         var s = host.settings();
-        return switch (language == null ? "" : language) {
+        return switch (language == null ? "" : DapServerRegistry.adapterLanguage(language)) {
             case "python" ->
                 !s.isPythonDebugEnabled()
                         ? tr("status.debug.pythonOff")
@@ -2104,9 +2148,22 @@ final class DebugCoordinator {
      * Debugs a saved {@link RunConfiguration} — its main class, program args, VM args, environment and
      * working directory, and its before-launch step.
      *
-     * <p>Java only: the script types run but do not debug yet.
+     * <p>Java and Groovy: the other script types run but do not debug yet.
      */
     void debugConfig(RunConfiguration cfg) {
+        if (cfg.isDeployed()) {
+            ops.debugDeployed(cfg); // the program runs on the host; the debugger attaches through a tunnel
+            return;
+        }
+        if (com.editora.run.ScriptRunCommand.GROOVY.equals(cfg.type())) {
+            debugJvmScriptConfig(cfg);
+            return;
+        }
+        if (com.editora.run.ScriptRunCommand.NODE.equals(cfg.type())
+                || com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
+            debugNodeConfig(cfg); // planned as Run plans it (NodeRunPlan / the package manager)
+            return;
+        }
         if (!cfg.isJava()) {
             // Script types run but do not debug yet. Say so plainly: falling through would resolve a Java
             // main class that a Python configuration does not have and report a confusing Java error.
@@ -2213,6 +2270,78 @@ final class DebugCoordinator {
         });
     }
 
+    /**
+     * Debugs a Groovy script configuration on Editora's JVM adapter: its script, arguments, folder, environment,
+     * JDK and VM arguments (in {@code JAVA_OPTS}, beside the debugger's agent), after its before-launch step.
+     * On this machine only: a configuration whose folder is on a remote host runs there but does not debug yet.
+     */
+    private void debugJvmScriptConfig(RunConfiguration cfg) {
+        List<String> args = debugArgs(cfg.args());
+        if (args == null) {
+            return;
+        }
+        Path root = ops.projectRoot();
+        Path cwd = com.editora.run.RunConfigWorkingDirectory.resolve(cfg, root);
+        Path script = cwd == null ? null : com.editora.run.RunConfigWorkingDirectory.script(cfg, root, cwd);
+        if (cwd == null || script == null) {
+            host.setStatus(tr("status.run.configNeedsTarget", cfg.name()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (!com.editora.process.ExecTargets.runsHere(script)) {
+            host.setStatus(tr("debug.error.remoteLanguage"));
+            return;
+        }
+        if (!java.nio.file.Files.isRegularFile(script)) {
+            host.setStatus(tr("status.run.scriptMissing", cfg.name(), script.toString()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (!debugEffectiveFor(cfg.type(), script)) {
+            host.setStatus(unavailableMessage(cfg.type(), script));
+            return;
+        }
+        java.util.Map<String, String> env;
+        try {
+            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false));
+        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (beforeLaunch.isActive() || pendingBuild != null) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        String jdkHome = cfg.jdkHome().isBlank() ? host.settings().getMavenJdkHome() : cfg.jdkHome();
+        java.util.Map<String, String> launchEnv = new java.util.LinkedHashMap<>(
+                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
+        launchEnv.putAll(env);
+        launchEnv = com.editora.run.JvmScriptRun.withJvmOption(
+                launchEnv,
+                System.getenv(),
+                com.editora.run.JvmScriptRun.jvmOptionsVariable(cfg.type()),
+                cfg.vmArgs().strip());
+        java.util.Map<String, String> programEnv = launchEnv;
+        String name = cfg.name();
+        relaunch = () -> debugConfig(currentConfiguration(name, cfg));
+        beforeLaunch.run(
+                host,
+                cfg,
+                cwd,
+                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()),
+                beforeLaunchConsole(),
+                () -> {
+                    ops.openToolWindow();
+                    nameSession(cfg.name());
+                    dapManager.setProgramArgs(args);
+                    dapManager.setVmArgs("");
+                    dapManager.setHostJavaExec("");
+                    dapManager.setEnv(programEnv);
+                    withClosedBreakpoints(() -> dapManager.startJvmScript(script, cfg.type(), cwd));
+                });
+    }
+
     /** The saved configuration called {@code name} as it is now, else {@code fallback} (it was deleted). */
     private RunConfiguration currentConfiguration(String name, RunConfiguration fallback) {
         for (RunConfiguration c : ops.runConfigurations()) {
@@ -2252,6 +2381,11 @@ final class DebugCoordinator {
     }
 
     private void startMainClassDebug(EditorBuffer b, String targetFqn) {
+        if (b != null && b.getLanguage() != null && !"java".equals(b.getLanguage())) {
+            // Said first: "turn on LSP for Java" on a JavaScript file sent the user the wrong way (review D7).
+            host.setStatus(tr("status.debug.needJavaFile"));
+            return;
+        }
         if (!debugEffectiveFor("java", b == null ? null : b.getPath())) {
             host.setStatus(unavailableMessage("java", b == null ? null : b.getPath()));
             return;
@@ -2508,8 +2642,16 @@ final class DebugCoordinator {
 
     void debugAttach() {
         EditorBuffer b = host.activeBuffer();
+        if (b != null && "javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))) {
+            attachToNode(b); // review D7: a Node.js inspector, not a JVM
+            return;
+        }
         if (b == null || b.getPath() == null) {
             host.setStatus(tr("status.debug.saveFirst"));
+            return;
+        }
+        if (!"java".equals(b.getLanguage())) {
+            host.setStatus(tr("status.debug.attachLanguages"));
             return;
         }
         if (!debugEffectiveFor("java", b.getPath())) { // a remote file attaches from its host (review A9)
@@ -2536,6 +2678,155 @@ final class DebugCoordinator {
                 host.setStatus(tr("status.debug.badAddress", text));
             }
         });
+    }
+
+    /**
+     * Debug ▸ Attach on a JavaScript or TypeScript file: asks for the inspector's {@code host:port} (a Node.js started
+     * with {@code --inspect} or {@code --inspect-brk}) and attaches vscode-js-debug to it, with every breakpoint.
+     * Restart attaches again; Stop detaches.
+     */
+    private void attachToNode(EditorBuffer b) {
+        if (!debugEffectiveFor("javascript")) {
+            host.setStatus(unavailableMessage("javascript", null));
+            return;
+        }
+        String defaultAddress = "localhost:" + com.editora.dap.JsLaunch.DEFAULT_INSPECTOR_PORT;
+        host.promptText(
+                tr("dialog.debug.attachNodeTitle"), tr("dialog.debug.attachNodeContent"), defaultAddress, input -> {
+                    if (input == null) {
+                        return; // cancelled
+                    }
+                    var address = com.editora.dap.JsLaunch.parseAddress(input);
+                    if (address.isEmpty()) {
+                        host.setStatus(tr("status.debug.badAddress", input.strip()));
+                        return;
+                    }
+                    String label = address.get().host() + ":" + address.get().port();
+                    Path dir = b.getPath() != null ? b.getPath().getParent() : ops.projectRoot();
+                    ops.openToolWindow();
+                    nameSession(label);
+                    relaunch = null; // an attach is re-attached as it was
+                    withClosedBreakpoints(() -> dapManager.startJsAttach(
+                            address.get().host(),
+                            address.get().port(),
+                            label,
+                            dir,
+                            List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
+                            false));
+                });
+    }
+
+    /**
+     * Debug on a {@code node} or {@code npm} run configuration: the same launch Run makes ({@link NodeDebugConfigs}),
+     * under vscode-js-debug. Restart reads the configuration again.
+     */
+    private void debugNodeConfig(RunConfiguration cfg) {
+        if (!debugEffectiveFor("javascript")) {
+            host.setStatus(unavailableMessage("javascript", null));
+            return;
+        }
+        String name = cfg.name();
+        List<String> args;
+        List<String> nodeOptions;
+        try {
+            args = com.editora.run.ProgramArgs.parse(cfg.args());
+        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.argsUnclosedQuote", String.valueOf(e.quote())));
+            ops.editConfiguration(name);
+            return;
+        }
+        try {
+            nodeOptions = com.editora.run.ProgramArgs.parse(cfg.interpreterOptions());
+        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.optionsUnclosedQuote", name, String.valueOf(e.quote())));
+            ops.editConfiguration(name);
+            return;
+        }
+        Path root = ops.projectRoot();
+        Path cwd = com.editora.run.RunConfigWorkingDirectory.resolve(cfg, root);
+        if (cwd == null) {
+            host.setStatus(tr("status.run.configNeedsWorkingDir", name));
+            ops.editConfiguration(name);
+            return;
+        }
+        if (!com.editora.process.ExecTargets.runsHere(cwd)) {
+            host.setStatus(tr("status.debug.nodeConfigRemote", tr("settings.runConfig.type." + cfg.type())));
+            return;
+        }
+        Map<String, String> env;
+        try {
+            env = com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(false));
+        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.envUnclosedQuote", name, String.valueOf(e.quote())));
+            ops.editConfiguration(name);
+            return;
+        }
+        relaunch = () -> debugConfig(currentConfiguration(name, cfg));
+        if (com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
+            // The project's own package manager, as Run and the npm tool window use it.
+            var detected = com.editora.build.BuildTool.npmManager(cwd, root);
+            String override = host.settings().getNpmCommand();
+            List<String> manager = com.editora.build.BuildExecutable.resolve(
+                    List.of(),
+                    com.editora.build.NpmPackageManager.overrideApplies(override, detected.manager()) ? override : "",
+                    detected.manager());
+            Map<String, String> npmEnv = new LinkedHashMap<>(NpmRunSupport.environment(System.getenv("NO_COLOR")));
+            npmEnv.putAll(env);
+            startJsProgram(
+                    cwd.resolve("package.json"),
+                    NodeDebugConfigs.forPackageManager(
+                            com.editora.run.ScriptRunCommand.npm(manager, cfg.target(), args), cwd, npmEnv),
+                    name);
+            return;
+        }
+        Path script = com.editora.run.RunConfigWorkingDirectory.script(cfg, root, cwd);
+        if (script == null || !Files.isRegularFile(script)) {
+            host.setStatus(tr("status.run.scriptMissing", name, String.valueOf(script)));
+            ops.editConfiguration(name);
+            return;
+        }
+        NodeRunLauncher.plan(
+                new NodeRunLauncher.Spec(
+                        script,
+                        root,
+                        cfg.interpreter(),
+                        host.settings().getNodePath(),
+                        args,
+                        nodeOptions,
+                        false,
+                        env,
+                        cfg.workingDir().isBlank() ? null : cwd),
+                ready -> {
+                    if (ready.plan().error() != null) {
+                        host.setStatus(tr(ready.plan().error()));
+                        return;
+                    }
+                    var program = NodeDebugConfigs.fromRunPlan(
+                            ready.plan().argv(),
+                            com.editora.process.ExecTargets.forPath(script).toTargetPath(script),
+                            ready.plan().env(),
+                            ready.dir());
+                    if (program == null) {
+                        host.setStatus(
+                                tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type." + cfg.type())));
+                        return;
+                    }
+                    startJsProgram(script, program, name);
+                });
+    }
+
+    /** Starts a planned JavaScript session called {@code label}, anchored at {@code anchor} (FX thread). */
+    private void startJsProgram(Path anchor, com.editora.dap.DapManager.JsProgram program, String label) {
+        if (program == null) {
+            return;
+        }
+        ops.openToolWindow();
+        nameSession(label);
+        dapManager.setProgramArgs(List.of());
+        dapManager.setJsNodeArgs(List.of());
+        dapManager.setJsProjectRoot(ops.projectRoot());
+        dapManager.setJsProgram(program);
+        withClosedBreakpoints(() -> dapManager.startLaunch(anchor, "javascript", this::pickMainClass, "", null));
     }
 
     /** Main-class chooser (QuickOpen) when jdtls finds several. */
@@ -2677,11 +2968,17 @@ final class DebugCoordinator {
                 false);
     }
 
-    /** A small muted hint label under a form field. */
+    /**
+     * A small muted hint label under a form field, wrapped at a fixed width. Left at its own preferred width a
+     * wrapping label asks for its whole text on one line, and the overlay card hugs its content, so the hint
+     * stretched the form across the window and squeezed the field labels to an ellipsis. (A width bound to the
+     * field's instead changes mid-layout and leaves the card at a stale height.)
+     */
     private static Label note(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("settings-note");
         l.setWrapText(true);
+        l.setPrefWidth(420);
         return l;
     }
 
@@ -2738,7 +3035,9 @@ final class DebugCoordinator {
         }
         EditorBuffer b = host.activeBuffer();
         String language = b == null ? null : b.getLanguage();
-        return language != null && DapServerRegistry.isDebuggable(language) ? language : null;
+        return language != null && DapServerRegistry.isDebuggable(language)
+                ? DapServerRegistry.adapterLanguage(language)
+                : null;
     }
 
     // --- Caught / Uncaught exception toggles (Run menu + Debug window) ---------------------------------

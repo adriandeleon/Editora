@@ -29,7 +29,8 @@ public class HelloPlugin implements Plugin {
         // 1) A palette command + a keybinding bound from code.
         ctx.registerCommand("sayHello", "Example: Say Hello",
                 () -> ctx.setStatus("Hello from the example plugin!"));
-        ctx.bindKey("C-c C-h", "sayHello");
+        // Ctrl+Alt+Shift+Y: free in every bundled keymap (C-c C-h is Copy then H in CUA, and taken in Emacs).
+        ctx.bindKey("C-M-S-y", "sayHello");
 
         // 2) A command that edits the active buffer (also bound via plugin.json's keymap).
         ctx.registerCommand("insertStamp", "Example: Insert Marker", () -> {

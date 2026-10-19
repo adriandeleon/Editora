@@ -30,6 +30,9 @@ import com.editora.typst.TypstOutline;
  *       {@code ( )} / {@code $( )}, and here-documents.</li>
  *   <li><b>Python</b>: blocks by indentation, plus statements that span lines (wrapped calls, multi-line
  *       literals, docstrings).</li>
+ *   <li><b>Scala</b>: braces, plus Scala 3's optional-brace blocks by indentation (through their {@code end}
+ *       marker).</li>
+ *   <li><b>Clojure</b>: every form that spans lines — {@code ( )}, {@code [ ]}, {@code &#123; &#125;}.</li>
  *   <li><b>Other line/indentation-based languages</b> (ruby, yaml, ini, sql, powershell, batch) and
  *       plaintext: no delimiter folding.</li>
  * </ul>
@@ -81,6 +84,8 @@ public final class FoldRegions {
                     "javascriptreact",
                     "typescriptreact",
                     "dot" -> braces(text, Syntax.of(language));
+            case "scala" -> scala(text);
+            case "clojure" -> lisp(text);
             case "typst" -> typst(text);
             case "http" -> http(text);
             case "shell" -> shell(text);
@@ -159,6 +164,7 @@ public final class FoldRegions {
             "go",
             "kotlin",
             "groovy",
+            "scala",
             "csharp",
             "css",
             "php",
@@ -223,6 +229,8 @@ public final class FoldRegions {
             } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
                 blockStartLine = line;
                 i++;
+            } else if (c == '/') {
+                i = syntax.regexEnd(text, i);
             } else if (c == '"' || c == '\'' || c == '`') {
                 int end = syntax.literalEnd(text, i);
                 line += newlinesIn(text, i, end);
@@ -329,6 +337,7 @@ public final class FoldRegions {
      * @param tripleQuote     {@code """} opens a multi-line text block / raw string
      * @param multiLineDouble a {@code "} string may span lines
      * @param lifetimes       a {@code '} may be a Rust lifetime or loop label rather than a char literal
+     * @param regexLiterals   a {@code /} where an operand is expected opens a regular expression (JS/TS)
      */
     record Syntax(
             boolean slashSlash,
@@ -337,7 +346,8 @@ public final class FoldRegions {
             boolean backtickEscapes,
             boolean tripleQuote,
             boolean multiLineDouble,
-            boolean lifetimes) {
+            boolean lifetimes,
+            boolean regexLiterals) {
 
         static Syntax of(String language) {
             String l = language == null ? "" : language;
@@ -347,9 +357,25 @@ public final class FoldRegions {
                     l.equals("terraform") || l.equals("php") || l.equals("graphql") || l.equals("caddyfile"),
                     script || l.equals("go"),
                     script,
-                    l.equals("java") || l.equals("kotlin") || l.equals("groovy") || l.equals("csharp"),
+                    l.equals("java")
+                            || l.equals("kotlin")
+                            || l.equals("groovy")
+                            || l.equals("scala")
+                            || l.equals("csharp"),
                     l.equals("rust") || l.equals("php"),
-                    l.equals("rust"));
+                    // Rust lifetimes, and Scala 2's 'symbol literals: a quote no quote closes one character later
+                    l.equals("rust") || l.equals("scala"),
+                    script);
+        }
+
+        /**
+         * Index of the last character of the regular-expression literal opened by the {@code /} at {@code i}, or
+         * {@code i} itself when that slash divides or the language has no regex literals (see {@link
+         * RegexLiterals}). Without this a regex holding a backtick ({@code s.split(/`/)}) opened a template
+         * literal that swallowed every brace below it. The caller has ruled out {@code //} and {@code /*}.
+         */
+        int regexEnd(String text, int i) {
+            return regexLiterals ? RegexLiterals.end(text, i) : i;
         }
 
         /** Whether a line comment starts at {@code i}. */
@@ -439,6 +465,8 @@ public final class FoldRegions {
             } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
                 inBlockComment = true;
                 i++;
+            } else if (c == '/') {
+                i = syntax.regexEnd(text, i);
             } else if (c == '"' || c == '\'' || c == '`') {
                 int end = syntax.literalEnd(text, i);
                 line += newlinesIn(text, i, end);
@@ -452,6 +480,130 @@ public final class FoldRegions {
                         out.add(new Region(start, line));
                     }
                 }
+            }
+        }
+        return out;
+    }
+
+    // --- Scala (braces, and Scala 3's indentation-based blocks) ---
+
+    /**
+     * Scala folds on its braces and, for Scala 3's optional braces, on indentation: a line ending with a block
+     * opener ({@link com.editora.editops.ScalaIndent#opensIndentedBlock}: {@code class A:}, {@code def f =},
+     * {@code case x =>}, {@code then} …) folds over the deeper lines below it, and through the {@code end}
+     * marker at its own indent when one closes the block. Trailing blank lines stay outside the fold.
+     */
+    static List<Region> scala(String text) {
+        List<Region> out = new ArrayList<>(braces(text, Syntax.of("scala")));
+        String[] lines = text.split("\n", -1);
+        boolean inComment = false;
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            // A line inside a /* */ comment opens nothing, whatever it ends with.
+            boolean wasInComment = inComment;
+            int open = line.lastIndexOf("/*");
+            int close = line.lastIndexOf("*/");
+            if (open > close) {
+                inComment = true;
+            } else if (close >= 0) {
+                inComment = false;
+            }
+            if (wasInComment || !com.editora.editops.ScalaIndent.opensIndentedBlock(line)) {
+                continue;
+            }
+            int width = indentWidth(line);
+            int end = i;
+            int j = i + 1;
+            for (; j < lines.length; j++) {
+                if (lines[j].isBlank()) {
+                    continue;
+                }
+                if (indentWidth(lines[j]) <= width) {
+                    break;
+                }
+                end = j;
+            }
+            if (end == i) {
+                continue;
+            }
+            if (j < lines.length
+                    && indentWidth(lines[j]) == width
+                    && com.editora.editops.ScalaIndent.isEndMarker(lines[j])) {
+                end = j;
+            }
+            out.add(new Region(i, end));
+        }
+        return canonicalOrder(out);
+    }
+
+    /** A line's indent width, a tab counting as four columns. */
+    private static int indentWidth(String line) {
+        int w = 0;
+        for (int k = 0; k < line.length(); k++) {
+            char c = line.charAt(k);
+            if (c == ' ') {
+                w++;
+            } else if (c == '\t') {
+                w += 4;
+            } else {
+                break;
+            }
+        }
+        return w;
+    }
+
+    // --- Lisp forms (clojure) ---
+
+    /**
+     * Clojure folds on every form that spans lines: {@code ( )}, {@code [ ]} and {@code &#123; &#125;} (the
+     * {@code #&#123;} set and {@code #(} function included). Brackets inside strings (and {@code #"…"} regexes,
+     * which may span lines), {@code ;} comments and {@code \c} character literals ({@code \(}, {@code \;},
+     * {@code "}) are skipped.
+     */
+    static List<Region> lisp(String text) {
+        List<Region> out = new ArrayList<>();
+        Deque<Integer> stack = new ArrayDeque<>();
+        int line = 0;
+        int n = text.length();
+        boolean inString = false;
+        for (int i = 0; i < n; i++) {
+            char c = text.charAt(i);
+            if (c == '\n') {
+                line++;
+                continue;
+            }
+            if (inString) {
+                if (c == '\\' && i + 1 < n) {
+                    if (text.charAt(i + 1) == '\n') {
+                        line++;
+                    }
+                    i++;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            switch (c) {
+                case '\\' -> {
+                    if (i + 1 < n && text.charAt(i + 1) != '\n') {
+                        i++; // a character literal
+                    }
+                }
+                case ';' -> {
+                    int nl = text.indexOf('\n', i);
+                    i = (nl < 0 ? n : nl) - 1; // the newline itself is counted on the next turn
+                }
+                case '"' -> inString = true;
+                case '(', '[', '{' -> stack.push(line);
+                case ')', ']', '}' -> {
+                    if (!stack.isEmpty()) {
+                        int start = stack.pop();
+                        if (line > start) {
+                            out.add(new Region(start, line));
+                        }
+                    }
+                }
+                default -> {}
             }
         }
         return out;

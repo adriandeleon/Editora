@@ -2,7 +2,6 @@ package com.editora.terminal;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -112,21 +111,100 @@ public final class ShellIntegration {
      * itself when a shell sent a bare path. Null when it is neither.
      */
     static String pathOfCwdUrl(String url) {
+        CwdReport report = parseCwdUrl(url);
+        return report == null ? null : report.path();
+    }
+
+    /** What an OSC 7 report says: the host it names ("" for none) and the folder's path. */
+    record CwdReport(String host, String path) {}
+
+    /**
+     * Parses an OSC 7 report by hand: strips {@code file://host}, then percent-decodes the rest as UTF-8 bytes.
+     * {@code URI} cut a path at {@code #} and {@code ?} and refused {@code [}, {@code "}, {@code |} and
+     * {@code \}, so a folder named {@code dir #1} became {@code dir }. Null when it is not a folder report.
+     */
+    static CwdReport parseCwdUrl(String url) {
         if (url == null || url.isBlank()) {
             return null;
         }
         String text = url.strip();
         if (text.startsWith("/")) {
-            return text;
+            return new CwdReport("", text);
         }
         if (!text.regionMatches(true, 0, "file:", 0, 5)) {
             return null;
         }
-        try {
-            String path = new URI(text.replace(" ", "%20")).getPath();
-            return path == null || path.isEmpty() ? null : path;
-        } catch (Exception e) {
+        String rest = text.substring(5);
+        String host = "";
+        if (rest.startsWith("//")) {
+            int slash = rest.indexOf('/', 2);
+            if (slash < 0) {
+                return null;
+            }
+            host = rest.substring(2, slash);
+            rest = rest.substring(slash);
+        }
+        if (!rest.startsWith("/")) {
             return null;
+        }
+        String path = percentDecode(rest);
+        return path == null || path.isEmpty() ? null : new CwdReport(host, path);
+    }
+
+    /** {@code %XX} escapes as UTF-8 bytes; a malformed escape is kept as it is. */
+    static String percentDecode(String text) {
+        if (text.indexOf('%') < 0) {
+            return text;
+        }
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '%' && i + 2 < text.length() && isHex(text.charAt(i + 1)) && isHex(text.charAt(i + 2))) {
+                bytes.write(Integer.parseInt(text.substring(i + 1, i + 3), 16));
+                i += 2;
+            } else {
+                bytes.writeBytes(String.valueOf(c).getBytes(StandardCharsets.UTF_8));
+            }
+        }
+        return bytes.toString(StandardCharsets.UTF_8);
+    }
+
+    private static boolean isHex(char c) {
+        return Character.digit(c, 16) >= 0;
+    }
+
+    /**
+     * Whether a report's host is this machine: none, {@code localhost}, or this machine's name. A local tab takes
+     * only those: after {@code ssh host}, the remote prompt's reports (or a printed file holding one) name another
+     * machine's folder, and following them pointed relative links and New Terminal Here at the wrong place.
+     */
+    static boolean isThisMachine(String host) {
+        if (host == null || host.isEmpty() || host.equalsIgnoreCase("localhost")) {
+            return true;
+        }
+        String own = LocalHostName.NAME;
+        if (own.isEmpty()) {
+            return true; // cannot tell: as before
+        }
+        String shortHost = host.contains(".") ? host.substring(0, host.indexOf('.')) : host;
+        String shortOwn = own.contains(".") ? own.substring(0, own.indexOf('.')) : own;
+        return host.equalsIgnoreCase(own) || shortHost.equalsIgnoreCase(shortOwn);
+    }
+
+    /** This machine's name, asked once (and off the FX thread: reports arrive on the emulator's). */
+    private static final class LocalHostName {
+        static final String NAME = find();
+
+        private static String find() {
+            String env = System.getenv("HOSTNAME");
+            if (env != null && !env.isBlank()) {
+                return env.strip();
+            }
+            try {
+                return java.net.InetAddress.getLocalHost().getHostName();
+            } catch (java.io.IOException | RuntimeException e) {
+                return "";
+            }
         }
     }
 }

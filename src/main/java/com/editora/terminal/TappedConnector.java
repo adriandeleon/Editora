@@ -34,6 +34,9 @@ final class TappedConnector implements TerminalConnector {
                 return -1;
             }
             tap.feed(buffer, 0, read);
+            if (!inner.ready()) {
+                tap.releaseTrailingEscape();
+            }
         }
     }
 

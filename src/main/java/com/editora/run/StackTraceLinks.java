@@ -6,8 +6,9 @@ import java.util.regex.Pattern;
 
 /**
  * Pure detection of source locations in program output (unit-tested), so the Run/Debug consoles can make
- * stack-trace lines clickable. Recognizes the frame formats of the three runnable/debuggable languages:
- * Java ({@code at pkg.Cls.m(File.java:12)} — bare file name), Python ({@code File "/path/x.py", line 12}
+ * stack-trace lines clickable. Recognizes the frame formats of the runnable/debuggable languages:
+ * the JVM's ({@code at pkg.Cls.m(File.java:12)} — bare file name — for Java, Kotlin, Groovy, Scala and
+ * Clojure sources, and Clojure's own {@code at my-app.core/f (core.clj:4)}), Python ({@code File "/path/x.py", line 12}
  * — usually absolute — plus warnings, pytest and linters' {@code x.py:12:} and pdb's {@code > x.py(12)}), and Node ({@code at fn (/path/x.js:12:5)} or a bare {@code /path/x.js:12:5}).
  *
  * <p>Shell scripts too: bash's errors ({@code /path/x.sh: line 7: foo: command not found}), dash's
@@ -25,21 +26,32 @@ public final class StackTraceLinks {
      * frame inside a dependency or the JDK (#744) — and it wants the <em>whole line</em>, not the pieces
      * we picked out of it.
      */
-    public record Link(String file, int line, String raw) {
+    public record Link(String file, int line, String raw, int column) {
         /** The two-arg form, for callers (and tests) that don't need the original line. */
         public Link(String file, int line) {
-            this(file, line, null);
+            this(file, line, null, 0);
+        }
+
+        /** Without a column (Java, Python and shell locations have none). */
+        public Link(String file, int line, String raw) {
+            this(file, line, raw, 0);
         }
     }
 
+    /** The extensions a Node frame's file has: JavaScript and TypeScript, ESM/CJS, JSX/TSX. */
+    private static final String NODE_EXT = "js|mjs|cjs|jsx|ts|mts|cts|tsx";
+
     // Line numbers are {@code \d{1,9}}: a longer digit run is not a line number, and would overflow parseInt.
-    private static final Pattern JAVA = Pattern.compile("\\(([A-Za-z0-9_$]+\\.java):(\\d{1,9})\\)");
+    /** The source files a JVM stack frame can name: Java, Kotlin (and its scripts), Groovy, Scala, Clojure. */
+    private static final String JVM_SOURCE = "(?:java|kts?|groovy|scala|clj[cs]?)";
+
+    private static final Pattern JAVA = Pattern.compile("\\(([A-Za-z0-9_$-]+\\." + JVM_SOURCE + "):(\\d{1,9})\\)");
     /**
      * javac's (and a Java build's) error location at a word start: {@code /src/demo/Main.java:12: error: …}.
      * Not a stack frame — those are {@link #JAVA}, which is tried first.
      */
     private static final Pattern JAVA_LOCATION =
-            Pattern.compile("(?<![^\\s(])((?:[A-Za-z]:)?[^\\s:()]+\\.java):(\\d{1,9}):");
+            Pattern.compile("(?<![^\\s(])((?:[A-Za-z]:)?[^\\s:()]+\\." + JVM_SOURCE + "):(\\d{1,9}):");
     /**
      * A traceback frame: {@code File "<path>", line N}. Any path — an extensionless script run through its
      * shebang is still Python, and a path may hold a {@code "} (Python prints it unescaped) — but not the
@@ -59,8 +71,26 @@ public final class StackTraceLinks {
      * long unbroken token — a 64K base64 line — each time consuming the rest and backing off, which froze the
      * FX thread for seconds on a double-click.
      */
-    private static final Pattern NODE =
-            Pattern.compile("(?<![^\\s():])((?:[A-Za-z]:)?[^\\s():]+\\.(?:js|mjs|cjs|ts)):(\\d{1,9})(?!\\d)(?::\\d+)?");
+    private static final Pattern NODE = Pattern.compile(
+            "(?<![^\\s():'\"])((?:[A-Za-z]:)?[^\\s():'\"]+\\.(?:" + NODE_EXT + ")):(\\d{1,9})(?!\\d)(?::(\\d{1,9}))?");
+
+    /**
+     * An ESM frame: {@code file:///home/u/app/index.mjs:3:9} (percent-encoded; {@code file:///C:/…} on Windows).
+     * Matched as a whole URL, so its path is decoded and a drive letter kept.
+     */
+    private static final Pattern NODE_FILE_URL =
+            Pattern.compile("file://(/[^\\s()]+?\\.(?:" + NODE_EXT + ")):(\\d{1,9})(?!\\d)(?::(\\d{1,9}))?");
+
+    /**
+     * A frame whose location is in parentheses — {@code at fn (/srv/my app/x.js:3:9)} — read up to the closing
+     * parenthesis, so a folder with a space in its name stays part of the path.
+     */
+    private static final Pattern NODE_PAREN =
+            Pattern.compile("\\((?!file:)((?:[A-Za-z]:)?[^()]*?\\.(?:" + NODE_EXT + ")):(\\d{1,9}):(\\d{1,9})\\)");
+
+    /** tsc's error location when its output is not a terminal: {@code src/a.ts(1,7): error TS2322: …}. */
+    private static final Pattern TSC = Pattern.compile("(?<![^\\s(])((?:[A-Za-z]:)?[^\\s:()]+\\.(?:" + NODE_EXT
+            + "))\\((\\d{1,9}),(\\d{1,9})\\): (?:error|warning)");
 
     /** bash: {@code path: line N: message} — the script path as it was run, then a 1-based line. */
     private static final Pattern BASH_ERROR = Pattern.compile("^(.+?): line (\\d{1,9}): ");
@@ -74,10 +104,65 @@ public final class StackTraceLinks {
      * Group 1 is the qualified class, group 2 the file. The loader/module prefix ({@code app//},
      * {@code java.base/}) is skipped, and the method may be {@code <init>} or a {@code lambda$x$0}.
      */
-    private static final Pattern JAVA_FRAME = Pattern.compile(
-            "\\bat\\s+(?:[^\\s/(]*+/)*+([\\p{L}\\p{N}_$.]+)\\.[^.\\s(]+\\(([A-Za-z0-9_$]+\\.java):\\d+\\)");
+    private static final Pattern JAVA_FRAME =
+            Pattern.compile("\\bat\\s+(?:[^\\s/(]*+/)*+([\\p{L}\\p{N}_$.]+)\\.[^.\\s(]+\\(([A-Za-z0-9_$-]+\\."
+                    + JVM_SOURCE + "):\\d+\\)");
+
+    /**
+     * Clojure's own report of where an error happened: {@code at my-app.core/divide (core.clj:4)} — the
+     * namespace as written (dashes, not the JVM's underscores), a {@code /}, the var, then the file. Group 1 is
+     * the namespace, group 2 the file.
+     */
+    private static final Pattern CLOJURE_FRAME =
+            Pattern.compile("\\bat\\s+([\\p{L}\\p{N}_.*+!?<>=-]+)/\\S+\\s+\\(([A-Za-z0-9_$-]+\\.clj[cs]?):\\d+\\)");
 
     private StackTraceLinks() {}
+
+    /** A Node.js location in {@code line} — an ESM URL, a parenthesized frame, tsc's {@code (l,c)}, or a bare path. */
+    private static Link node(String line) {
+        Matcher m = NODE_FILE_URL.matcher(line);
+        if (m.find()) {
+            return new Link(fileUrlPath(m.group(1)), Integer.parseInt(m.group(2)), line, column(m.group(3)));
+        }
+        m = NODE_PAREN.matcher(line);
+        if (m.find()) {
+            return new Link(m.group(1), Integer.parseInt(m.group(2)), line, column(m.group(3)));
+        }
+        m = TSC.matcher(line);
+        if (m.find()) {
+            return new Link(m.group(1), Integer.parseInt(m.group(2)), line, column(m.group(3)));
+        }
+        m = NODE.matcher(line);
+        while (m.find()) {
+            int start = m.start(1);
+            // webpack:///src/x.js, node:internal/…: another scheme's URL, not a file on disk.
+            if (start > 1
+                    && line.charAt(start - 1) == ':'
+                    && SCHEME_BEFORE.matcher(line.substring(0, start - 1)).find()) {
+                continue;
+            }
+            return new Link(m.group(1), Integer.parseInt(m.group(2)), line, column(m.group(3)));
+        }
+        return null;
+    }
+
+    /** A URL scheme ending right where a match starts ({@code webpack}, {@code node}) — two letters or more. */
+    private static final Pattern SCHEME_BEFORE = Pattern.compile("(?:^|[\\s(])[A-Za-z][\\w+.-]+$");
+
+    /** A {@code file://} URL's path part, percent-decoded; {@code /C:/x} → {@code C:/x}. */
+    static String fileUrlPath(String urlPath) {
+        String decoded;
+        try {
+            decoded = java.net.URLDecoder.decode(urlPath.replace("+", "%2B"), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            decoded = urlPath; // a stray % that is not an escape: as written
+        }
+        return decoded.matches("^/[A-Za-z]:/.*") ? decoded.substring(1) : decoded;
+    }
+
+    private static int column(String group) {
+        return group == null ? 0 : Integer.parseInt(group);
+    }
 
     /**
      * Where a Java frame's source file sits below a source root — {@code com/foo/Bar.java} for
@@ -95,14 +180,34 @@ public final class StackTraceLinks {
         }
         Matcher m = JAVA_FRAME.matcher(link.raw());
         if (!m.find() || !m.group(2).equals(link.file())) {
-            return null;
+            return clojureSourcePath(link);
         }
+        // A Clojure function's class is its namespace, munged, then `$` and the function: my_app.core$greet,
+        // my_app.core$fn__123. The package part below already ends at the namespace's last segment.
         String qualifiedClass = m.group(1);
         int lastDot = qualifiedClass.lastIndexOf('.');
         if (lastDot <= 0) {
             return null;
         }
         return qualifiedClass.substring(0, lastDot).replace('.', '/') + "/" + m.group(2);
+    }
+
+    /**
+     * {@link #javaSourcePath} for Clojure's own frame ({@code at my-app.core/divide (core.clj:4)}): the
+     * namespace's directories, munged as the JVM loads them ({@code my-app} → {@code my_app}), then the file —
+     * {@code my_app/core.clj}. {@code null} for a namespace with one segment, or any other line.
+     */
+    private static String clojureSourcePath(Link link) {
+        Matcher m = CLOJURE_FRAME.matcher(link.raw());
+        if (!m.find() || !m.group(2).equals(link.file())) {
+            return null;
+        }
+        String namespace = m.group(1);
+        int lastDot = namespace.lastIndexOf('.');
+        if (lastDot <= 0) {
+            return null;
+        }
+        return namespace.substring(0, lastDot).replace('-', '_').replace('.', '/') + "/" + m.group(2);
     }
 
     /** Whether {@code line} is a trace line under Run with Trace's prompt ({@code +path:N: command}). */
@@ -132,9 +237,9 @@ public final class StackTraceLinks {
                 return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
             }
         }
-        m = NODE.matcher(line);
-        if (m.find()) {
-            return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
+        Link node = node(line);
+        if (node != null) {
+            return node;
         }
         for (Pattern shell : List.of(TRACE, BASH_ERROR, SH_ERROR)) {
             m = shell.matcher(line);

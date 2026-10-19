@@ -55,6 +55,24 @@ class ConfigMigrationsTest {
     }
 
     @Test
+    void aScrollbackAboveTheNewMaximumIsClampedAndASmallerOneKept() throws Exception {
+        ObjectNode big = (ObjectNode) mapper.readTree("{\"terminalScrollback\":100000}");
+        assertEquals(
+                50_000,
+                ConfigMigrations.clampTerminalScrollback(big)
+                        .get("terminalScrollback")
+                        .asInt());
+        ObjectNode small = (ObjectNode) mapper.readTree("{\"terminalScrollback\":8000}");
+        assertEquals(
+                8000,
+                ConfigMigrations.clampTerminalScrollback(small)
+                        .get("terminalScrollback")
+                        .asInt());
+        ObjectNode none = (ObjectNode) mapper.readTree("{}");
+        assertFalse(ConfigMigrations.clampTerminalScrollback(none).has("terminalScrollback"));
+    }
+
+    @Test
     void anOpenaiShapedLeftoverEndpointLeavesAnthropicButAProxyStays() throws Exception {
         ObjectNode leftover = (ObjectNode) mapper.readTree("""
                 {"aiProvider":"anthropic","aiEndpoint":"http://192.168.1.5:8080/v1/chat/completions/",
@@ -893,5 +911,19 @@ class ConfigMigrationsTest {
         assertEquals(
                 com.editora.config.Settings.SCHEMA_VERSION,
                 out.get("schemaVersion").asInt());
+    }
+
+    /** plugins.json v1 → v2: every enabled plugin keeps its consent until the next launch fingerprints it. */
+    @Test
+    void pluginConsentIsCarriedAsAdoptForEveryEnabledPlugin() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode v1 = mapper.readTree("{\"schemaVersion\":1,\"enabled\":{\"a\":true,\"b\":false}}");
+        JsonNode v2 = ConfigMigrations.pluginConsentAdopt(v1);
+        assertEquals("*", v2.get("consent").get("a").asText());
+        assertFalse(v2.get("consent").has("b"), "a plugin that was off has nothing to carry");
+        assertTrue(v2.get("enabled").get("a").asBoolean());
+        com.editora.config.PluginStore store = mapper.treeToValue(v2, com.editora.config.PluginStore.class);
+        assertTrue(store.allows("a", "whatever is installed"), "nobody's plugins switch off on the upgrade");
+        assertFalse(store.allows("b", "x"));
     }
 }

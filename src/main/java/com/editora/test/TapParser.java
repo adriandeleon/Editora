@@ -16,6 +16,11 @@ import java.util.regex.Pattern;
  * nested by indentation — {@code Parser › handles empty input}), and a name that still repeats gets an
  * occurrence suffix ({@code should be equal (2)}). Keyed by the bare description, two tests with the same
  * name shared one row whose status was whichever arrived last — a failure shown as passed.
+ *
+ * <p>node:test closes each {@code describe} with a result line of its own; a result whose subtest had results
+ * nested under it is that suite, not a test, and gets no row ("3 of 5 failed" for two failures in four tests).
+ * A failure's YAML is read by {@link NodeTestFailure}: its {@code error} is the message, {@code stack} and
+ * {@code location} the frames — not the {@code duration_ms}/{@code type} lines it used to show.
  */
 public final class TapParser implements TestResultParser {
 
@@ -24,10 +29,13 @@ public final class TapParser implements TestResultParser {
     private static final Pattern LINE = Pattern.compile("^(not ok|ok)(?:\\s+(\\d+))?(?:\\s*-\\s*|\\s+|$)(.*)$");
     private static final Pattern DIRECTIVE = Pattern.compile("\\s*#\\s*(SKIP|TODO)\\b.*$", Pattern.CASE_INSENSITIVE);
     private static final Pattern SUBTEST = Pattern.compile("^#\\s*Subtest:\\s*(.+)$");
-    private static final String PARENT_SEPARATOR = " \u203a ";
+    static final String PARENT_SEPARATOR = " \u203a ";
 
+    private final String suite;
     /** The {@code # Subtest:} names still open, outermost first; index = nesting level. */
     private final java.util.List<String> openSubtests = new java.util.ArrayList<>();
+    /** Per nesting level: how many results were reported one level deeper since that level's last result. */
+    private final java.util.List<Integer> nested = new java.util.ArrayList<>();
     /** How many results have used each full name so far. */
     private final java.util.Map<String, Integer> occurrences = new java.util.HashMap<>();
 
@@ -35,12 +43,22 @@ public final class TapParser implements TestResultParser {
     private String lastName;
     private TestStatus lastStatus;
     private boolean inYaml;
-    private StringBuilder yaml;
+    private final java.util.List<String> yaml = new java.util.ArrayList<>();
+    private boolean sawSubtests;
+
+    public TapParser() {
+        this(SUITE);
+    }
+
+    /** A parser whose results group under {@code suite} (a test file's name, for a file's own run). */
+    public TapParser(String suite) {
+        this.suite = suite;
+    }
 
     /** True if the first lines look like TAP (a {@code 1..N} plan, an {@code ok}/{@code not ok}, or the header). */
     public static boolean looksLikeTap(List<String> firstLines) {
         for (String raw : firstLines) {
-            String line = raw.strip();
+            String line = NodeTestFailure.stripAnsi(raw).strip();
             if (line.matches("^\\d+\\.\\.\\d+.*")
                     || line.startsWith("ok ")
                     || line.startsWith("not ok ")
@@ -52,28 +70,34 @@ public final class TapParser implements TestResultParser {
         return false;
     }
 
+    /** Whether this run's TAP came from node:test (its {@code # Subtest:} lines) — it can filter by name. */
+    public boolean nodeTest() {
+        return sawSubtests;
+    }
+
     @Override
-    public List<ParsedSuite> onLine(String line, boolean stderr) {
+    public List<ParsedSuite> onLine(String rawLine, boolean stderr) {
+        String line = NodeTestFailure.stripAnsi(rawLine);
         String trimmed = line.strip();
 
         if (inYaml) {
             if (trimmed.equals("...")) {
                 inYaml = false;
-                String msg = yaml.toString().strip();
-                return msg.isEmpty()
-                        ? List.of()
-                        : List.of(new ParsedSuite(
-                                SUITE,
-                                List.of(new ParsedTest(
-                                        SUITE, lastName, lastStatus, 0, null, msg, msg, null, null, 0))));
+                NodeTestFailure failure = NodeTestFailure.fromYaml(yaml, lastName);
+                yaml.clear();
+                if (lastName == null || lastStatus != TestStatus.FAILED || failure.suite()) {
+                    return List.of();
+                }
+                return List.of(new ParsedSuite(suite, List.of(failure.toParsedTest(suite, lastName, lastStatus))));
             }
-            yaml.append(line).append('\n');
+            yaml.add(line);
             return List.of();
         }
 
         int level = nestingLevel(line);
         Matcher subtest = SUBTEST.matcher(trimmed);
         if (subtest.matches()) {
+            sawSubtests = true;
             truncate(openSubtests, level);
             openSubtests.add(subtest.group(1).strip());
             return List.of();
@@ -88,12 +112,23 @@ public final class TapParser implements TestResultParser {
             if (name.isEmpty()) {
                 name = "test " + (number != null ? number : Integer.toString(++unnamed));
             }
+            // A result whose subtest had results of its own is a suite (node:test's describe): no row.
+            boolean isSuite = count(level) > 0;
+            set(level, 0);
+            if (level > 0) {
+                set(level - 1, count(level - 1) + 1);
+            }
             // The parents are the subtests open above this level; the result closes its own.
             List<String> parents = openSubtests.subList(0, Math.min(level, openSubtests.size()));
             if (!parents.isEmpty()) {
                 name = String.join(PARENT_SEPARATOR, parents) + PARENT_SEPARATOR + name;
             }
             truncate(openSubtests, level);
+            if (isSuite) {
+                lastName = null;
+                lastStatus = null;
+                return List.of();
+            }
             int seen = occurrences.merge(name, 1, Integer::sum);
             if (seen > 1) {
                 name = name + " (" + seen + ")";
@@ -101,13 +136,27 @@ public final class TapParser implements TestResultParser {
             TestStatus status = skip ? TestStatus.SKIPPED : (ok ? TestStatus.PASSED : TestStatus.FAILED);
             lastName = name;
             lastStatus = status;
-            return List.of(new ParsedSuite(SUITE, List.of(ParsedTest.of(SUITE, name, status, 0))));
+            return List.of(new ParsedSuite(suite, List.of(ParsedTest.of(suite, name, status, 0))));
         }
-        if (trimmed.equals("---") && lastName != null && lastStatus == TestStatus.FAILED) {
-            inYaml = true;
-            yaml = new StringBuilder();
+        if (trimmed.equals("---")) {
+            inYaml = true; // read even for a pass: a suite's block must not be taken for a result line
+            yaml.clear();
         }
         return List.of();
+    }
+
+    private int count(int level) {
+        return level < nested.size() ? nested.get(level) : 0;
+    }
+
+    private void set(int level, int value) {
+        while (nested.size() <= level) {
+            nested.add(0);
+        }
+        nested.set(level, value);
+        for (int i = level + 1; i < nested.size(); i++) {
+            nested.set(i, 0);
+        }
     }
 
     /** TAP nests a subtest's lines four spaces deeper than its parent's. */

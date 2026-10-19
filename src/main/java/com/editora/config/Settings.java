@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 134;
+    public static final int SCHEMA_VERSION = 138;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -505,6 +505,19 @@ public class Settings {
     private boolean ripgrepSearch = true;
     /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
     private String ripgrepCommand = "";
+
+    /** Path/command for GnuPG; blank = resolve "gpg" on PATH and in the installers' folders. */
+    private String encryptionGpgPath = "";
+    /** Encrypting a file also encrypts it for the user's own key, so they can open it again. */
+    private boolean encryptionIncludeSelf = true;
+    /** Fingerprint of the user's own key for "include me" and signing; blank = their first secret key. */
+    private String encryptionDefaultKey = "";
+    /** Who asks for a secret key's passphrase: {@code "agent"} (gpg-agent's pinentry) or {@code "editora"}. */
+    private String encryptionPassphrasePrompt = PASSPHRASE_PROMPT_AGENT;
+    /** Language servers may read encrypted files' decrypted text (off: their text stays in Editora). */
+    private boolean encryptionLanguageServers = false;
+    /** Fingerprints of the people most recently encrypted for, newest first: the recipient picker lists them early. */
+    private java.util.List<String> encryptionRecentRecipients = new java.util.ArrayList<>();
     /** Exclude files/folders matched by the project's {@code .gitignore} from Find in Files (default on). */
     private boolean searchRespectGitignore = true;
     /** HTTP Client support (run {@code .http} requests via the built-in JDK HTTP client): on by default. */
@@ -516,6 +529,17 @@ public class Settings {
     private boolean httpScriptsEnabled = true;
     /** The Node.js that runs HTTP response handlers: blank = {@code node} on the PATH. */
     private String httpNodePath = "";
+    /**
+     * The Node.js Run, run configurations, Debug, npm scripts and the TypeScript server use (and HTTP response
+     * handlers when {@link #httpNodePath} is blank): blank = automatic — a {@code .nvmrc}/{@code .node-version}
+     * version nvm has, else {@code node} on the PATH (see {@code run/NodeRuntimes}).
+     */
+    private String nodePath = "";
+    /**
+     * Let the TypeScript server download type definitions for plain JavaScript (automatic type acquisition: runs
+     * {@code npm install} against the registry into {@code ~/.cache/typescript}): off by default.
+     */
+    private boolean typescriptTypeAcquisition = false;
     /** Seconds one HTTP response handler may run before it is stopped (1–600). */
     private int httpScriptTimeoutSeconds = 10;
     /**
@@ -701,6 +725,17 @@ public class Settings {
     private boolean terminalTypeAhead = true;
     /** "Open in Terminal" starts the system's terminal application instead of a tab in the Terminal tool window. */
     private boolean terminalUseExternal = false;
+    /**
+     * macOS: the Option key is Meta in a terminal (ESC + key, readline's M-b/M-f) instead of composing characters.
+     * Off by default, as in Terminal.app: on many layouts @ [ ] { } | ~ are Option chords. Alt is always Meta on
+     * Linux and Windows, where AltGr composes.
+     */
+    private boolean terminalMacOptionIsMeta = false;
+    /** Ask before pasting several lines into a program that has not turned on bracketed paste. */
+    private boolean terminalConfirmMultilinePaste = true;
+
+    /** The most scrollback a terminal keeps: about a megabyte per thousand lines, per tab. */
+    public static final int TERMINAL_SCROLLBACK_MAX = 50_000;
 
     /**
      * The commands a focused terminal still lets through; every other key goes to the shell. Exact ids or
@@ -759,6 +794,7 @@ public class Settings {
     private String htmlLspCommand = "";
     private String cssLspCommand = "";
     private String kotlinLspCommand = "";
+    private String groovyLspCommand = "";
     private String luaLspCommand = "";
     private String dockerfileLspCommand = "";
     private String sqlLspCommand = "";
@@ -811,6 +847,7 @@ public class Settings {
     private boolean htmlLspEnabled = true;
     private boolean cssLspEnabled = true;
     private boolean kotlinLspEnabled = true;
+    private boolean groovyLspEnabled = true;
     private boolean luaLspEnabled = true;
     private boolean dockerfileLspEnabled = true;
     private boolean sqlLspEnabled = true;
@@ -1018,6 +1055,22 @@ public class Settings {
 
     public void setHttpInlineResults(boolean httpInlineResults) {
         this.httpInlineResults = httpInlineResults;
+    }
+
+    public String getNodePath() {
+        return nodePath == null ? "" : nodePath;
+    }
+
+    public void setNodePath(String nodePath) {
+        this.nodePath = nodePath == null ? "" : nodePath.strip();
+    }
+
+    public boolean isTypescriptTypeAcquisition() {
+        return typescriptTypeAcquisition;
+    }
+
+    public void setTypescriptTypeAcquisition(boolean typescriptTypeAcquisition) {
+        this.typescriptTypeAcquisition = typescriptTypeAcquisition;
     }
 
     public String getHttpNodePath() {
@@ -2713,12 +2766,36 @@ public class Settings {
      * Sets the registry URL. The built-in URL is stored as blank ("follow the default"), whether it comes
      * from the Settings field (which shows the URL in force and hands it back) or from a file an earlier
      * build froze it into — otherwise such an install would keep the old address after the default moves.
+     *
+     * <p>Anything that is not blank and not an {@code https://} address with a host is refused here, for every
+     * caller: the registry in use stays. The Settings field checked this itself, but the palette's "Plugins: Set
+     * Registry URL…" saved {@code http://…} or plain text, which Browse then refused.
      */
     @JsonProperty("pluginRegistryUrl")
     public void setPluginRegistryUrl(String pluginRegistryUrl) {
+        if (!isAcceptableRegistryUrl(pluginRegistryUrl)) {
+            return;
+        }
         this.pluginRegistryUrl = pluginRegistryUrl != null && DEFAULT_PLUGIN_REGISTRY.equals(pluginRegistryUrl.strip())
                 ? ""
                 : pluginRegistryUrl;
+    }
+
+    /** Whether {@link #setPluginRegistryUrl} takes {@code url}: blank (the default), or https with a host. */
+    public static boolean isAcceptableRegistryUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return true;
+        }
+        String u = url.strip();
+        if (!u.toLowerCase(java.util.Locale.ROOT).startsWith("https://")) {
+            return false;
+        }
+        try {
+            String host = java.net.URI.create(u).getHost();
+            return host != null && !host.isBlank();
+        } catch (IllegalArgumentException notAUri) {
+            return false;
+        }
     }
 
     public boolean isPluginRequireSignature() {
@@ -2915,6 +2992,75 @@ public class Settings {
         this.gradleCommand = gradleCommand == null ? "" : gradleCommand;
     }
 
+    /** gpg-agent's own pinentry asks for passphrases (Editora never sees them). */
+    public static final String PASSPHRASE_PROMPT_AGENT = "agent";
+    /** Editora asks, and hands the passphrase to gpg by loopback (it is never stored). */
+    public static final String PASSPHRASE_PROMPT_EDITORA = "editora";
+
+    public String getEncryptionGpgPath() {
+        return encryptionGpgPath == null ? "" : encryptionGpgPath;
+    }
+
+    public void setEncryptionGpgPath(String encryptionGpgPath) {
+        this.encryptionGpgPath = encryptionGpgPath == null ? "" : encryptionGpgPath.strip();
+    }
+
+    public boolean isEncryptionIncludeSelf() {
+        return encryptionIncludeSelf;
+    }
+
+    public void setEncryptionIncludeSelf(boolean encryptionIncludeSelf) {
+        this.encryptionIncludeSelf = encryptionIncludeSelf;
+    }
+
+    public String getEncryptionDefaultKey() {
+        return encryptionDefaultKey == null ? "" : encryptionDefaultKey;
+    }
+
+    public void setEncryptionDefaultKey(String encryptionDefaultKey) {
+        this.encryptionDefaultKey = encryptionDefaultKey == null ? "" : encryptionDefaultKey.strip();
+    }
+
+    public String getEncryptionPassphrasePrompt() {
+        return PASSPHRASE_PROMPT_EDITORA.equals(encryptionPassphrasePrompt)
+                ? PASSPHRASE_PROMPT_EDITORA
+                : PASSPHRASE_PROMPT_AGENT;
+    }
+
+    public void setEncryptionPassphrasePrompt(String encryptionPassphrasePrompt) {
+        this.encryptionPassphrasePrompt = PASSPHRASE_PROMPT_EDITORA.equals(encryptionPassphrasePrompt)
+                ? PASSPHRASE_PROMPT_EDITORA
+                : PASSPHRASE_PROMPT_AGENT;
+    }
+
+    public boolean isEncryptionLanguageServers() {
+        return encryptionLanguageServers;
+    }
+
+    public void setEncryptionLanguageServers(boolean encryptionLanguageServers) {
+        this.encryptionLanguageServers = encryptionLanguageServers;
+    }
+
+    public java.util.List<String> getEncryptionRecentRecipients() {
+        return encryptionRecentRecipients == null ? java.util.List.of() : encryptionRecentRecipients;
+    }
+
+    public void setEncryptionRecentRecipients(java.util.List<String> recent) {
+        this.encryptionRecentRecipients =
+                recent == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(recent);
+    }
+
+    /** Puts {@code used} first in the recent-recipients list, keeping at most 20. */
+    public void rememberEncryptionRecipients(java.util.List<String> used) {
+        java.util.List<String> next = new java.util.ArrayList<>(used);
+        for (String id : getEncryptionRecentRecipients()) {
+            if (!next.contains(id)) {
+                next.add(id);
+            }
+        }
+        encryptionRecentRecipients = new java.util.ArrayList<>(next.subList(0, Math.min(20, next.size())));
+    }
+
     public boolean isRipgrepSearch() {
         return ripgrepSearch;
     }
@@ -3013,11 +3159,11 @@ public class Settings {
 
     /** Clamped on read too: a hand-edited million-line scrollback would exhaust memory at the next tab. */
     public int getTerminalScrollback() {
-        return Math.clamp(terminalScrollback, 0, 100_000);
+        return Math.clamp(terminalScrollback, 0, TERMINAL_SCROLLBACK_MAX);
     }
 
     public void setTerminalScrollback(int terminalScrollback) {
-        this.terminalScrollback = Math.clamp(terminalScrollback, 0, 100_000);
+        this.terminalScrollback = Math.clamp(terminalScrollback, 0, TERMINAL_SCROLLBACK_MAX);
     }
 
     public int getTerminalFontSize() {
@@ -3085,6 +3231,22 @@ public class Settings {
 
     public void setTerminalUseExternal(boolean terminalUseExternal) {
         this.terminalUseExternal = terminalUseExternal;
+    }
+
+    public boolean isTerminalMacOptionIsMeta() {
+        return terminalMacOptionIsMeta;
+    }
+
+    public void setTerminalMacOptionIsMeta(boolean terminalMacOptionIsMeta) {
+        this.terminalMacOptionIsMeta = terminalMacOptionIsMeta;
+    }
+
+    public boolean isTerminalConfirmMultilinePaste() {
+        return terminalConfirmMultilinePaste;
+    }
+
+    public void setTerminalConfirmMultilinePaste(boolean terminalConfirmMultilinePaste) {
+        this.terminalConfirmMultilinePaste = terminalConfirmMultilinePaste;
     }
 
     public java.util.List<String> getTerminalIdeCommands() {
@@ -3497,6 +3659,22 @@ public class Settings {
 
     public void setKotlinLspEnabled(boolean kotlinLspEnabled) {
         this.kotlinLspEnabled = kotlinLspEnabled;
+    }
+
+    public String getGroovyLspCommand() {
+        return groovyLspCommand == null ? "" : groovyLspCommand;
+    }
+
+    public void setGroovyLspCommand(String groovyLspCommand) {
+        this.groovyLspCommand = groovyLspCommand == null ? "" : groovyLspCommand;
+    }
+
+    public boolean isGroovyLspEnabled() {
+        return groovyLspEnabled;
+    }
+
+    public void setGroovyLspEnabled(boolean groovyLspEnabled) {
+        this.groovyLspEnabled = groovyLspEnabled;
     }
 
     public String getLuaLspCommand() {

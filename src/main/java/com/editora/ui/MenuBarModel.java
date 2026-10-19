@@ -111,6 +111,8 @@ final class MenuBarModel {
                                 "file.saveAsAdmin",
                                 "file.revert",
                                 SEPARATOR,
+                                "file.openTerminal",
+                                SEPARATOR,
                                 "buffer.close",
                                 "buffer.closeOthers",
                                 "buffer.closeAll",
@@ -271,16 +273,28 @@ final class MenuBarModel {
                                 submenu("menubar.run.breakpoints"),
                                 SEPARATOR,
                                 "test.run",
-                                "test.rerunFailed"),
-                        List.of(new MenuSpec(
-                                "menubar.run.breakpoints",
-                                List.of(
-                                        "debug.toggleBreakpointEnabled",
-                                        "debug.editBreakpoint",
-                                        "debug.breakpoints",
-                                        "debug.muteBreakpoints",
-                                        SEPARATOR,
-                                        "debug.toggleExceptionBreakpoints")))),
+                                "test.rerunFailed",
+                                SEPARATOR,
+                                submenu("menubar.run.deploy")),
+                        List.of(
+                                new MenuSpec(
+                                        "menubar.run.breakpoints",
+                                        List.of(
+                                                "debug.toggleBreakpointEnabled",
+                                                "debug.editBreakpoint",
+                                                "debug.breakpoints",
+                                                "debug.muteBreakpoints",
+                                                SEPARATOR,
+                                                "debug.toggleExceptionBreakpoints")),
+                                // A local project run on another machine (Run on in a configuration).
+                                new MenuSpec(
+                                        "menubar.run.deploy",
+                                        List.of(
+                                                "deploy.now",
+                                                "deploy.compare",
+                                                "deploy.terminal",
+                                                SEPARATOR,
+                                                "deploy.edit")))),
                 new MenuSpec(
                         "menubar.vcs",
                         // What is used every day stays at the top level; the rest is grouped below.
@@ -430,18 +444,43 @@ final class MenuBarModel {
                                 "snippets.reload",
                                 "plugins.browse",
                                 SEPARATOR,
+                                // In Tools, not File: the File menu is at the height the screen allows
+                                // (MenuPopupBoundsFxTest). Simple mode's File menu keeps Encrypt File.
+                                submenu("menubar.tools.encryption"),
+                                SEPARATOR,
                                 "install.languageServer",
                                 "view.doctor"),
-                        // The rest of the macro commands: reachable without knowing the palette has them.
-                        List.of(new MenuSpec(
-                                "menubar.tools.macros",
-                                List.of(
-                                        "macro.cancelRecording",
-                                        "macro.replayLastN",
-                                        SEPARATOR,
-                                        "macro.nameAndSave",
-                                        "macro.runSaved",
-                                        "macro.deleteSaved")))),
+                        List.of(
+                                // The rest of the macro commands: reachable without knowing the palette has them.
+                                new MenuSpec(
+                                        "menubar.tools.macros",
+                                        List.of(
+                                                "macro.cancelRecording",
+                                                "macro.replayLastN",
+                                                SEPARATOR,
+                                                "macro.nameAndSave",
+                                                "macro.runSaved",
+                                                "macro.deleteSaved")),
+                                // An encrypted file's own actions first, then the ones on part of a text, then
+                                // signatures, then the keyring.
+                                new MenuSpec(
+                                        "menubar.tools.encryption",
+                                        List.of(
+                                                EncryptionCoordinator.ENCRYPT_FILE,
+                                                EncryptionCoordinator.CHANGE_RECIPIENTS,
+                                                EncryptionCoordinator.REMOVE_ENCRYPTION,
+                                                EncryptionCoordinator.LOCK_FILE,
+                                                EncryptionCoordinator.SHOW_INFO,
+                                                SEPARATOR,
+                                                EncryptionCoordinator.ENCRYPT_SELECTION,
+                                                EncryptionCoordinator.DECRYPT_BLOCK,
+                                                EncryptionCoordinator.DECRYPT_TO_FILE,
+                                                SEPARATOR,
+                                                EncryptionCoordinator.CLEAR_SIGN,
+                                                EncryptionCoordinator.SIGN_DETACHED,
+                                                EncryptionCoordinator.VERIFY,
+                                                SEPARATOR,
+                                                EncryptionCoordinator.IMPORT_KEY)))),
                 new MenuSpec(
                         "menubar.window",
                         List.of(
@@ -457,7 +496,10 @@ final class MenuBarModel {
                                 "tool.project",
                                 "tool.structure",
                                 "tool.search",
-                                "tool.problems")),
+                                "tool.problems",
+                                SEPARATOR,
+                                "tool.terminal",
+                                "terminal.new")),
                 new MenuSpec(
                         "menubar.help",
                         List.of(
@@ -487,6 +529,7 @@ final class MenuBarModel {
                                 SEPARATOR,
                                 "file.save",
                                 "file.saveAs",
+                                EncryptionCoordinator.ENCRYPT_FILE,
                                 SEPARATOR,
                                 "buffer.close",
                                 SEPARATOR,

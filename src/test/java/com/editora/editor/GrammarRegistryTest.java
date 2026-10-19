@@ -4,6 +4,7 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -180,6 +181,21 @@ class GrammarRegistryTest {
     }
 
     @Test
+    void javaScriptIsAPickableLanguageAndUsesTheTsxGrammarLikeVsCode() {
+        GrammarRegistry r = GrammarRegistry.shared();
+        assertTrue(r.pickableLanguageNames().contains("javascript"), "the status-bar picker offers JavaScript");
+        assertTrue(r.pickableLanguageNames().contains("javascriptreact"));
+        assertFalse(r.availableLanguageNames().contains("javascript"), "no grammar file of its own");
+        for (String file : new String[] {"a.js", "a.mjs", "a.cjs", "a.jsx"}) {
+            assertEquals("source.tsx", r.forFileName(file).getScopeName(), file);
+        }
+        assertEquals("source.tsx", r.forLanguageName("javascript").getScopeName());
+        for (String file : new String[] {"a.ts", "a.mts", "a.cts"}) {
+            assertEquals("source.ts", r.forFileName(file).getScopeName(), file); // `<T>x` stays a cast
+        }
+    }
+
+    @Test
     void aGrammarLoadInProgressDoesNotBlockLookupsOfLoadedGrammars() throws Exception {
         GrammarRegistry registry = GrammarRegistry.shared();
         org.eclipse.tm4e.core.grammar.IGrammar loaded = registry.forLanguageName("java");
@@ -231,5 +247,21 @@ class GrammarRegistryTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    void scalaAndClojureFilesLoadTheirGrammars() {
+        for (String file : java.util.List.of("Main.scala", "script.sc", "build.sbt", "build.mill")) {
+            assertNotNull(GrammarRegistry.shared().forFileName(file), file);
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "source.scala", GrammarRegistry.shared().forFileName(file).getScopeName(), file);
+        }
+        for (String file : java.util.List.of("core.clj", "app.cljs", "shared.cljc", "old.cljx", "deps.edn", "x.bb")) {
+            assertNotNull(GrammarRegistry.shared().forFileName(file), file);
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "source.clojure", GrammarRegistry.shared().forFileName(file).getScopeName(), file);
+        }
+        assertNotNull(GrammarRegistry.shared().forLanguageName("scala"));
+        assertNotNull(GrammarRegistry.shared().forLanguageName("clojure"));
     }
 }

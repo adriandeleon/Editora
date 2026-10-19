@@ -128,9 +128,32 @@ class RunCoordinatorFlowsFxTest {
                 Map<String, String> env,
                 java.util.function.IntConsumer onExit) {
             terminalRuns.add(title + " | " + dir.getFileName() + " | " + command.getLast() + " | " + env.keySet());
-            terminalExit = onExit;
-            return null;
+            terminalRunning = true;
+            terminalExit = code -> {
+                terminalRunning = false;
+                onExit.accept(code);
+            };
+            return new com.editora.terminal.ProgramRun() {
+                @Override
+                public long pid() {
+                    return 42;
+                }
+
+                @Override
+                public boolean isRunning() {
+                    return terminalRunning;
+                }
+
+                @Override
+                public void stop() {
+                    terminalStops++;
+                    terminalExit.accept(-1);
+                }
+            };
         }
+
+        volatile boolean terminalRunning;
+        int terminalStops;
 
         @Override
         public void onRunStateChanged() {
@@ -378,7 +401,8 @@ class RunCoordinatorFlowsFxTest {
         open("notes.txt", "just text\n", false);
         FxTestSupport.runOnFx(run::runActiveFile);
 
-        assertEquals(List.of(tr("status.run.notCompact"), tr("status.run.notCompact")), statuses());
+        // It says what Run File does run (review C1), not only that this is not it.
+        assertEquals(List.of(tr("status.run.notRunnable"), tr("status.run.notRunnable")), statuses());
         assertFalse(FxTestSupport.callOnFx(run::consoleInUse));
         assertEquals(tr("run.idle"), panelStatus());
     }
@@ -625,11 +649,20 @@ class RunCoordinatorFlowsFxTest {
         assertTrue(launched.contains("menu.sh"), launched);
         assertTrue(launched.contains("MODE"), "the configuration's own variables: " + launched);
         assertFalse(launched.contains("BASH_ENV"), "a terminal needs no read -p shim: " + launched);
-        assertFalse(FxTestSupport.callOnFx(run::isRunning), "the console runs nothing");
+        assertTrue(FxTestSupport.callOnFx(run::isRunning), "Run's Stop and its stripe see the terminal's program");
         assertEquals("", console());
 
         FxTestSupport.runOnFx(() -> ops.terminalExit.accept(2));
         awaitStatus(tr("status.run.exit", 2));
+        assertFalse(FxTestSupport.callOnFx(run::isRunning), "and its end");
+
+        // Run's Stop ends a program running in a terminal.
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        awaitStatus(tr("status.run.inTerminal", "Menu"));
+        FxTestSupport.runOnFx(run::stopRun);
+        assertEquals(1, ops.terminalStops);
+        awaitStatus(tr("status.run.stopped"));
+        assertFalse(FxTestSupport.callOnFx(run::isRunning));
 
         // The next configuration without the flag runs in the console, as ever.
         RunConfiguration plain = new RunConfiguration("Plain", "shell", "menu.sh", "", "", "", "", "sub", "", "", "");
@@ -637,7 +670,7 @@ class RunCoordinatorFlowsFxTest {
         FxTestSupport.runOnFx(() -> run.runConfig(plain));
         awaitStatus(tr("status.run.ok"));
         assertEquals("console\n", console());
-        assertEquals(1, ops.terminalRuns.size());
+        assertEquals(2, ops.terminalRuns.size());
     }
 
     @Test

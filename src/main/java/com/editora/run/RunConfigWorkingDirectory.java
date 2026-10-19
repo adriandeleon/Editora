@@ -111,7 +111,10 @@ public final class RunConfigWorkingDirectory {
     }
 
     private static boolean isFileScript(RunConfiguration cfg) {
-        return ScriptRunCommand.PYTHON.equals(cfg.type()) || ScriptRunCommand.SHELL.equals(cfg.type());
+        return ScriptRunCommand.PYTHON.equals(cfg.type())
+                || ScriptRunCommand.SHELL.equals(cfg.type())
+                || ScriptRunCommand.NODE.equals(cfg.type())
+                || ScriptRunCommand.GROOVY.equals(cfg.type());
     }
 
     private static boolean isLocal(Path path) {

@@ -4,6 +4,10 @@ Editora can open a folder on another machine over SFTP, treat it as a project, a
 default) run the tools it drives on that machine. This page is the map; the SFTP file layer itself is
 described in the `vfs/` entry of the [architecture catalog](../reference/architecture-catalog.md).
 
+The opposite arrangement — the project on this machine, its programs run on a host in a copy of it — is a
+[deployment](deployment.md); it uses the same connection, consent and execution layers without mounting the
+host's folder.
+
 ## Files
 
 A remote file is an ordinary `java.nio.file.Path` on a non-default filesystem (Apache MINA SSHD's
@@ -420,7 +424,8 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   adapter's environment, the launch's `env`, `python` and `pythonArgs`, because debugpy uses only the first
   word of a `python` array. `-c "import debugpy"` is tried first so a missing debugpy is reported by name.
   JavaScript: `dapDebugServer.js` is the host's `dap.js` tool (the file, or a folder to search) or found where
-  Editora's installer, mason and VS Code's server put it; it is started with port 0 on `127.0.0.1`, the port
+  Editora's installer and mason put it (VS Code's js-debug has no `dapDebugServer.js`); the launch reads its
+  output with `outputCapture: "std"` (Editora cannot start the program on the host); it is started with port 0 on `127.0.0.1`, the port
   it prints is tunnelled (`ExecTarget.forwardLocal`, closed with the session) and child sessions reach it
   through the same tunnel. `node` can be set per host (`node` tool). Every `Source.path` crosses `DapPaths`
   (host path out, path on the connection in; pseudo-sources such as `<node_internals>` come back as no file),

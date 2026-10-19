@@ -388,3 +388,10 @@ falls back to `PollingWatchService` (folders listed every 2 s), logs it once, an
 Watching** row says why. In tests, dispose every `ProjectPanel` (`@ExtendWith(DisposedPanels.class)` +
 `DisposedPanels.track(…)`) and end an `LspManager` with `close()`, not `shutdownAll()` — only `close()`
 stops its folder watchers.
+
+The polling fallback tells a file renamed over another apart by its file key (the inode). Windows has none
+(`fileKey()` is null), so there it compares the creation time at full precision instead: a replacing rename
+(`ATOMIC_MOVE` + `REPLACE_EXISTING`, as `AtomicFileWrite` does) keeps the new file's own creation time. Only
+delete-then-rename gets the old one back (NTFS tunnelling), so that case, with the same size and modified
+time, still goes unseen. Don't assume tunnelling applies to every replace; it was measured on `windows-latest`
+in #1276.

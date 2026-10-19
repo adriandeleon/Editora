@@ -196,7 +196,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final DebugLogWindow debugLogWindow = new DebugLogWindow();
 
     /** Shared in-scene overlay host for the command palette + pickers (replaces focus-stealing Popups). */
-    private final OverlayHost overlayHost = new OverlayHost();
+    final OverlayHost overlayHost = new OverlayHost();
 
     com.editora.snippet.SnippetManager snippets;
     SnippetCoordinator snippetCoordinator;
@@ -494,9 +494,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.closes = new CloseCoordinator(
                 stage, editorArea, pinned, MainController::bufferOf, fileWorkflows, this::persistSessionForClose);
         stage.setOnCloseRequest(e -> {
-            // Save/prompt this window's dirty buffers + persist its session; cancel the close if the
-            // user backs out. (No separate "Quit?" prompt — each window closes independently now.)
-            if (!closes.confirmCloseAll()) {
+            // Busy terminals first (closing ends them), then this window's dirty buffers + its session;
+            // cancel the close if the user backs out. (No separate "Quit?" prompt — each window closes
+            // independently now.)
+            if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll()) {
                 e.consume();
                 return;
             }
@@ -778,7 +779,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 pluginManager,
                 pluginOps());
         this.settingsWindow.setPluginActions(
-                pluginCoordinator::browse, pluginCoordinator::installFromDisk, pluginCoordinator::uninstall);
+                pluginCoordinator::browse,
+                pluginCoordinator::installFromDisk,
+                pluginCoordinator::uninstall,
+                pluginCoordinator::enableFromSettings,
+                pluginCoordinator::disableFromSettings);
         this.settingsWindow.setDictionaryActions(
                 this::openTechnicalDictionary, this::openPersonalDictionary); // Spell Check file links
         this.settingsWindow.setInstallActions(
@@ -814,6 +819,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     setStatus(tr("status.mcp.newToken"));
                 }));
         this.settingsWindow.setRemoteConnect(site -> remoteCoordinator.connect(site)); // Remote page's Connect…
+        this.settingsWindow.setEditDeployments(deployments::editDeployments); // Run on → Deployments…
         this.settingsWindow.setTrustActions(new SettingsWindow.TrustActions() {
             @Override
             public List<String> trustedRoots() {
@@ -929,6 +935,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupProjects();
         pluginCoordinator
                 .applyPlugins(); // register plugin commands/tool windows/hooks (before restore, so visibility restores)
+        palette.refreshBindings(); // built before the plugins bound their chords: show theirs, drop the replaced
         snippetCoordinator.checkUserFilesAtStartup(); // a broken user snippet file is reported now, not on first use
         toolWindows.restore();
         // Honor a persisted Zen/Expert state on launch: the view options + chrome already read the flags via
@@ -1012,9 +1019,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.pluginManager = pm; // the per-window PluginRegistry/PluginInstaller are built in PluginCoordinator
     }
 
-    /** Whether plugins may load — the master gate (also off in Simple UI mode). */
+    /** Whether plugins may be browsed and installed — the master gate (also off in Simple UI mode). */
     private boolean pluginsEnabled() {
-        return pluginManager != null && config.getSettings().isPluginSupport() && !chrome.simpleModeActive();
+        return pluginCoordinator != null && pluginCoordinator.isEnabled();
     }
 
     /** Stops this window's plugins (window close); WindowManager calls this by name. */
@@ -1024,7 +1031,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** Window hooks for {@link PluginCoordinator} (open-path + the shared Git error dialog). */
+    /** Window hooks for {@link PluginCoordinator} (open-path + the plugins' error dialog). */
     private PluginCoordinator.Ops pluginOps() {
         return new PluginCoordinator.Ops() {
             @Override
@@ -1034,7 +1041,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void showError(String summary, String detail) {
-                git.gitError(summary, detail);
+                // Owned by Settings while the user works there; titled "Plugins", not "Git".
+                javafx.stage.Window settings = settingsWindow.stageIfShowing();
+                PluginDialogs.error(settings != null ? settings : stage, summary, detail);
             }
         };
     }
@@ -1537,7 +1546,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * user cancelled (the window stays open). The caller ({@link WindowManager}) closes the stage.
      */
     public boolean closeWindowProgrammatically() {
-        if (!closes.confirmCloseAll()) {
+        if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll()) {
             return false;
         }
         disposeWindow();
@@ -1586,6 +1595,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> exports.shutdown(),
                 () -> runCoordinator.shutdown(),
                 () -> terminalCoordinator.shutdown(), // end every terminal's shell
+                // The WindowManager-wide Settings Sync held this window's Settings listener — and through it the
+                // whole closed window (about 21 MB, its plugins' panes and command closures too) — for good.
+                () -> settingsWindow.setSettingsSync(null),
                 () -> testRunCoordinator.shutdown(), // stop the report poller + elapsed timer
                 installCoordinator == null ? null : () -> installCoordinator.shutdown(),
                 () -> fileWorkflows.shutdown(),
@@ -1630,6 +1642,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * closes that window and returns focus to the editor (instead of starting the go-to prefix).
      */
     public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
+        toolWindows.setFloatingSceneSetup(dispatcher::install);
         // Keyboard macros: the coordinator is told what was typed and which keys were left to the focused
         // control while recording, and the dispatcher stands aside for the keys a replay sends.
         if (macroCoordinator != null) {
@@ -2457,7 +2470,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::setStatus);
         exports.activeTabContent =
                 () -> tabPath(activeTab()) == null ? null : activeTab().getUserData();
-        // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (local files only).
+        // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (Reveal for local files only).
         breadcrumb.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         breadcrumb.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         bookmarkCoordinator.setOnChanged(this::refreshProjectMarkersIfBuilt);
@@ -2508,6 +2521,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     @Override
                     public void openToolWindow() {
                         toolWindows.open(debugToolWindow, false); // never takes focus (review C2)
+                    }
+
+                    @Override
+                    public void debugDeployed(com.editora.config.RunConfiguration cfg) {
+                        runCoordinator.debugDeployedConfig(cfg);
                     }
 
                     @Override
@@ -4606,6 +4624,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void fileSaved(Path file) {
             snippetCoordinator.fileSaved(file);
+            deployments.fileSaved(file); // a deployment that uploads on save
             if (windowManager != null && windowManager.isSettingsFile(file)) {
                 MainController.this.setStatus(windowManager.settingsFileSaved()); // a hand edit applies on save
             }
@@ -4651,6 +4670,26 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public Path pathOf(java.io.File file) {
             return MainController.this.pathOf(file);
+        }
+
+        @Override
+        public CoordinatorHost services() {
+            return coordinatorHost;
+        }
+
+        @Override
+        public void refreshStatusBar() {
+            statusBar.refresh();
+        }
+
+        @Override
+        public javafx.scene.Node encryptionStatusItem() {
+            return statusBar.encryptionNode();
+        }
+
+        @Override
+        public void runCommand(String commandId) {
+            registry.run(commandId);
         }
     });
 
@@ -5619,6 +5658,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
             });
 
+    { // An export, a print or an external tool given an encrypted file's text asks first (ADR 0017).
+        exports.plaintextOut = b -> fileWorkflows.encryption().confirmPlaintextOut(b, tr("encryption.out.export"));
+        externalToolCoordinator.plaintextOut =
+                b -> fileWorkflows.encryption().confirmPlaintextOut(b, tr("encryption.out.tool"));
+    }
+
     /** Build tools (Maven/npm/…): one coordinator per tool — a toolbar icon + actions popup parsed from the
      *  active project's marker file, streaming tasks to a per-tool console (see {@link BuildCoordinator}). */
     final List<BuildCoordinator> buildCoordinators = createBuildCoordinators();
@@ -5939,6 +5984,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void focusEditor() {
+                    toolWindows.focusEditor();
+                }
+
+                @Override
                 public java.nio.file.Path configDir() {
                     return config.getConfigDir();
                 }
@@ -6108,10 +6158,31 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Run-a-file feature; owns the run service/console panel (the tool window + commands stay here). */
+    /** This window's deployments: running configurations on a host, in a copy of the project there. */
+    final DeploymentCoordinator deployments = new DeploymentCoordinator(new DeploymentHost(this));
+
     final RunCoordinator runCoordinator = new RunCoordinator(coordinatorHost, new RunCoordinator.Ops() {
         @Override
         public void openToolWindow() {
             toolWindows.open(runToolWindow);
+        }
+
+        @Override
+        public void deployThen(
+                String name,
+                DeploymentCoordinator.Console console,
+                java.util.function.Consumer<DeploymentCoordinator.Deployed> then) {
+            deployments.deployThen(name, console, then);
+        }
+
+        @Override
+        public void cancelDeploy() {
+            deployments.cancel();
+        }
+
+        @Override
+        public void attachJavaDebugger(Path anchor, int port, Runnable stopOwner) {
+            debugCoordinator.attachToPort(anchor, "localhost", port, stopOwner);
         }
 
         @Override
@@ -6175,6 +6246,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public boolean runPythonTestFile(java.nio.file.Path file, String text) {
             return testNavigation.runPythonTestFile(file, text);
+        }
+
+        @Override
+        public boolean runNodeTestFile(java.nio.file.Path file) {
+            return testNavigation.runNodeTestFile(file);
         }
 
         @Override
@@ -6871,6 +6947,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void openSettingsFor(String settingsKey) {
                     settingsWindow.showDoctorTarget(settingsKey, stage);
+                }
+
+                @Override
+                public com.editora.plugin.PluginManager plugins() {
+                    return pluginManager;
                 }
 
                 @Override
@@ -8391,6 +8472,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         setStatus(note.isEmpty() ? tr("status.opened", com.editora.config.PathDisplay.of(load.file())) : note);
         clearLoading(buffer);
+        fileWorkflows.encryption().opened(buffer); // an encrypted file decrypts now; a public key offers Import
     }
 
     private void failAsyncOpen(Tab tab, EditorBuffer buffer, Path file, Exception error) {
@@ -8714,10 +8796,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         revealInFileManager(buffer.getPath(), false, isLocalBuffer(buffer));
     }
 
-    /** Opens a terminal at the active buffer's containing folder (no-op for an unsaved/remote file). */
+    /**
+     * Opens a terminal at the active buffer's containing folder, on its host for a remote file. With no saved file
+     * active (the Welcome tab, an unsaved buffer) it opens where {@code tool.terminal} would: the project's folder,
+     * or home.
+     */
     void openTerminalForActiveBuffer() {
         EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
+        if (buffer == null || buffer.getPath() == null) {
+            terminalCoordinator.newTerminal();
             return;
         }
         openTerminalAt(buffer.getPath(), false, isLocalBuffer(buffer));
@@ -8945,7 +9032,9 @@ public class MainController implements com.editora.mcp.McpBridge {
      * disposes each window's services); the null case is the unit-test/standalone controller.
      */
     boolean onQuit() {
-        boolean ok = closes.confirmQuit()
+        // One question: quitting, and which terminals that ends (in every window).
+        List<String> busy = windowManager != null ? windowManager.busyTerminals() : terminalCoordinator.busyTerminals();
+        boolean ok = closes.confirmQuit(busy)
                 && (windowManager != null ? windowManager.confirmCloseAllWindows() : closes.confirmCloseAll());
         if (ok) {
             Platform.exit();
@@ -9302,7 +9391,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (b == null || b.getPath() == null) {
             return null;
         }
-        String type = b.isShell() ? "shell" : b.isPython() ? "python" : null;
+        String type = b.isShell()
+                ? "shell"
+                : b.isPython()
+                        ? "python"
+                        : com.editora.run.NodeRunPlan.isNodeLanguage(b.getLanguage())
+                                ? "node"
+                                : "groovy".equals(b.getLanguage()) ? "groovy" : null;
         return com.editora.run.RunConfigDefaults.forScript(type, b.getPath(), windowProjectRoot());
     }
 
@@ -9330,7 +9425,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * not change it), so a window behind it would act on somebody else's project. Every coordinator's
      * {@code projectRoot()} / {@code activeProjectRoot()} reads {@code windowProject} for that reason.
      */
-    private Path windowProjectRoot() {
+    Path windowProjectRoot() {
         Project project = enabledWindowProject();
         return project == null ? null : project.rootPath();
     }
@@ -9629,6 +9724,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // A font zoom changes no feature gate or theme — apply only the fonts/per-buffer view, not the full
         // settings cascade (editor-theme stylesheet swap + ~20 applySupport() calls). #545
         editorSettings.applyFontsAndPerBufferView(s);
+        terminalCoordinator.applySettings(); // terminals zoom with the editors
         statusBar.refresh();
         setStatus(tr("status.textZoom", Math.round(z * 100)));
     }
@@ -9719,10 +9815,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     void exportConfig() {
         // Saved HTTP responses (bodies, URLs) and AI API keys are asked about, off by default.
         boolean askHttp = config.shared().hasHttpHistory(),
-                askKeys = config.shared().hasApiKeys();
-        var choice = askHttp || askKeys
-                ? ExportConfigDialog.ask(stage, askHttp, askKeys)
-                : java.util.Optional.of(new ExportConfigDialog.Choice(false, false));
+                askKeys = config.shared().hasApiKeys(),
+                askPluginData = config.shared().hasPluginData();
+        var choice = askHttp || askKeys || askPluginData
+                ? ExportConfigDialog.ask(stage, askHttp, askKeys, askPluginData)
+                : java.util.Optional.of(new ExportConfigDialog.Choice(false, false, false));
         if (choice.isEmpty()) {
             return;
         }
@@ -9731,7 +9828,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Off the FX thread: the export waits for pending writes and compresses the whole config directory.
         config.shared()
                 .exportConfigAsync(
-                        choice.get().includeHttpHistory(), choice.get().includeApiKeys())
+                        choice.get().includeHttpHistory(),
+                        choice.get().includeApiKeys(),
+                        choice.get().includePluginData())
                 .whenComplete((zip, failure) -> Platform.runLater(() -> {
                     task.done();
                     String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());

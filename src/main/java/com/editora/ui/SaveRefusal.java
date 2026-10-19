@@ -15,7 +15,9 @@ enum SaveRefusal {
     /** Only part of a very large file was read. */
     TRUNCATED("status.truncatedNoSave"),
     /** Log follow mode dropped the oldest lines to bound memory. */
-    LOG_TRIMMED("status.log.trimmedNoSave");
+    LOG_TRIMMED("status.log.trimmedNoSave"),
+    /** An encrypted file that is not decrypted yet: the buffer is empty, the file is not. */
+    LOCKED("status.encryption.lockedNoSave");
 
     private final String messageKey;
 
@@ -29,6 +31,10 @@ enum SaveRefusal {
     }
 
     static SaveRefusal of(boolean disposed, boolean loading, boolean truncated, boolean logTrimmed) {
+        return of(disposed, loading, truncated, logTrimmed, false);
+    }
+
+    static SaveRefusal of(boolean disposed, boolean loading, boolean truncated, boolean logTrimmed, boolean locked) {
         if (disposed) {
             return DISPOSED;
         }
@@ -37,6 +43,9 @@ enum SaveRefusal {
         }
         if (truncated) {
             return TRUNCATED;
+        }
+        if (locked) {
+            return LOCKED;
         }
         return logTrimmed ? LOG_TRIMMED : NONE;
     }

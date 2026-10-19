@@ -78,11 +78,25 @@ public final class AutoClose {
     /**
      * As {@link #decide(char, char, char, boolean)}, knowing the line before the caret and the language. In
      * Python a quote after a string prefix ({@code f'}, {@code rb"}, {@code t'} …) pairs, the third quote of
-     * a triple quote closes it as well (caret between), and a backtick (not Python syntax) does not pair.
+     * a triple quote closes it as well (caret between), and a backtick (not Python syntax) does not pair. In
+     * Clojure {@code '} and a backtick are the quote and syntax-quote reader macros, never string delimiters,
+     * so they neither pair nor wrap a selection.
      */
+    public static Decision decide(
+            char typed, String lineBeforeCaret, char next, boolean hasSelection, String language, boolean inLiteral) {
+        Decision d = decide(typed, lineBeforeCaret, next, hasSelection, language);
+        // Inside a string, comment or regex a quote is text: `/['"]/` and `'He said "hi"'` must not grow pairs.
+        // Brackets still pair there, as in VS Code.
+        return inLiteral && isQuote(typed) && d.action() == Action.INSERT_PAIR ? Decision.NONE : d;
+    }
+
+    /** As {@link #decide(char, String, char, boolean, String, boolean)} outside any literal. */
     public static Decision decide(
             char typed, String lineBeforeCaret, char next, boolean hasSelection, String language) {
         char prev = lineBeforeCaret.isEmpty() ? 0 : lineBeforeCaret.charAt(lineBeforeCaret.length() - 1);
+        if ("clojure".equals(language) && (typed == '\'' || typed == '`')) {
+            return Decision.NONE;
+        }
         if (!"python".equals(language) || hasSelection) {
             return decide(typed, prev, next, hasSelection);
         }

@@ -289,6 +289,10 @@ final class McpTools {
         if (id == null || id.isEmpty()) {
             return errorResult("execute_command requires an 'id'.");
         }
+        String refusal = bridge.commandRefusal(id);
+        if (refusal != null) {
+            return errorResult(refusal);
+        }
         boolean ran = bridge.executeCommand(id);
         return ran
                 ? textResult(m.createObjectNode().put("ran", true).put("id", id))

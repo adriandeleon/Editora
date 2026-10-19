@@ -60,6 +60,43 @@ public final class RunConfigurationsWindow {
     /** Set while the rows are re-read from the workspace state. */
     private boolean reloading;
 
+    /** The Run on choices: "" (this machine), then the project's deployments. */
+    private final ObservableList<String> runOnChoices = FXCollections.observableArrayList("");
+
+    /** Opens the Deployments editor on a deployment (null: the first). */
+    private java.util.function.Consumer<String> editDeployments = name -> {};
+
+    /** Sets what the Run on row's Deployments… button opens. */
+    public void setEditDeployments(java.util.function.Consumer<String> editDeployments) {
+        this.editDeployments = editDeployments == null ? name -> {} : editDeployments;
+    }
+
+    /** Re-reads the project's deployments into the Run on choices (they were edited elsewhere). */
+    public void refreshDeployments() {
+        java.util.List<String> names = new ArrayList<>();
+        names.add("");
+        for (com.editora.config.Deployment d : config.getWorkspaceState().getDeployments()) {
+            if (!d.name().isBlank() && !names.contains(d.name())) {
+                names.add(d.name());
+            }
+        }
+        // A configuration naming a deployment that is gone keeps showing it, so the form does not rewrite it.
+        for (RunConfiguration c : items) {
+            if (!c.deployment().isBlank() && !names.contains(c.deployment())) {
+                names.add(c.deployment());
+            }
+        }
+        if (!names.equals(runOnChoices)) {
+            boolean was = loading;
+            loading = true; // a reset of the choices is not an edit
+            try {
+                runOnChoices.setAll(names);
+            } finally {
+                loading = was;
+            }
+        }
+    }
+
     public RunConfigurationsWindow(ConfigManager config, Supplier<String> suggestion, Runnable onChanged) {
         this(config, suggestion, null, null, onChanged);
     }
@@ -116,8 +153,8 @@ public final class RunConfigurationsWindow {
         });
 
         TextField name = new TextField();
-        ComboBox<String> type = new ComboBox<>(
-                FXCollections.observableArrayList("java", "python", "python-module", "shell", "make", "npm"));
+        ComboBox<String> type = new ComboBox<>(FXCollections.observableArrayList(
+                "java", "python", "python-module", "node", "shell", "groovy", "make", "npm"));
         type.setConverter(new StringConverter<>() {
             @Override
             public String toString(String value) {
@@ -142,6 +179,33 @@ public final class RunConfigurationsWindow {
         ComboBox<JdkChoice> jdk = new ComboBox<>();
         JdkChoice.configure(jdk, tr("settings.runConfig.jdk.global"));
         jdk.setId("run-config-jdk");
+        ComboBox<String> runOn = new ComboBox<>(runOnChoices);
+        runOn.setId("run-config-run-on");
+        runOn.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String value) {
+                if (value == null || value.isEmpty()) {
+                    return tr("settings.runConfig.runOn.local");
+                }
+                return config.getWorkspaceState().deployment(value) == null
+                        ? tr("settings.runConfig.runOn.missing", value)
+                        : value;
+            }
+
+            @Override
+            public String fromString(String value) {
+                return value;
+            }
+        });
+        Button editDeploymentsButton = new Button(tr("settings.runConfig.runOn.edit"));
+        editDeploymentsButton.setId("run-config-edit-deployments");
+        editDeploymentsButton.setMinWidth(Region.USE_PREF_SIZE);
+        editDeploymentsButton.setOnAction(e -> editDeployments.accept(runOn.getValue()));
+        HBox runOnRow = new HBox(6, runOn, editDeploymentsButton);
+        runOnRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(runOn, Priority.ALWAYS);
+        runOn.setMaxWidth(Double.MAX_VALUE);
+        runOn.setTooltip(new javafx.scene.control.Tooltip(tr("settings.runConfig.runOn.hint")));
         CheckBox inTerminal = new CheckBox(tr("settings.runConfig.runInTerminal"));
         inTerminal.setId("run-config-in-terminal");
         inTerminal.setTooltip(new javafx.scene.control.Tooltip(tr("settings.runConfig.runInTerminal.hint")));
@@ -179,6 +243,7 @@ public final class RunConfigurationsWindow {
         formRow(form, 11, "settings.runConfig.beforeLaunch", beforeLaunch);
         formRow(form, 12, "settings.runConfig.jdk", jdk);
         formRow(form, 13, "settings.runConfig.console", inTerminal);
+        formRow(form, 14, "settings.runConfig.runOn", runOnRow);
         form.setDisable(true);
 
         name.setId("run-config-name");
@@ -198,27 +263,17 @@ public final class RunConfigurationsWindow {
         Runnable applyType = () -> {
             String value = type.getValue();
             setRowDisabled(form, !RunConfigFields.usesTarget(value), targetRow);
-            boolean scriptFile = com.editora.run.RunConfigFields.usesScriptFile(value);
-            browse.setVisible(scriptFile);
-            browse.setManaged(scriptFile);
+            boolean browses = com.editora.run.RunConfigPrompts.browses(value);
+            browse.setVisible(browses);
+            browse.setManaged(browses);
             setRowDisabled(form, !RunConfigFields.usesInterpreter(value), interpreter, interpreterOptions);
-            setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClassRow, projectName, vmArgs, jdk);
+            setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClassRow, projectName);
+            setRowDisabled(form, !RunConfigFields.usesJvmFields(value), vmArgs, jdk);
             // The prompts say what a blank field means for this type (a Python script runs in its own folder).
-            boolean python = com.editora.run.ScriptRunCommand.isPython(value);
-            interpreter.setPromptText(
-                    tr(python ? "settings.runConfig.interpreterPromptPython" : "settings.runConfig.interpreterPrompt"));
-            interpreterOptions.setPromptText(tr(
-                    python
-                            ? "settings.runConfig.interpreterOptionsPromptPython"
-                            : "settings.runConfig.interpreterOptionsPrompt"));
-            workingDir.setPromptText(tr(
-                    com.editora.run.ScriptRunCommand.PYTHON.equals(value)
-                            ? "settings.runConfig.workingDirPromptPython"
-                            : "settings.runConfig.workingDirPrompt"));
-            target.setPromptText(tr(
-                    com.editora.run.ScriptRunCommand.PYTHON_MODULE.equals(value)
-                            ? "settings.runConfig.targetPromptModule"
-                            : "settings.runConfig.targetPrompt"));
+            interpreter.setPromptText(tr(com.editora.run.RunConfigPrompts.interpreter(value)));
+            interpreterOptions.setPromptText(tr(com.editora.run.RunConfigPrompts.interpreterOptions(value)));
+            workingDir.setPromptText(tr(com.editora.run.RunConfigPrompts.workingDir(value)));
+            target.setPromptText(tr(com.editora.run.RunConfigPrompts.target(value)));
         };
         java.util.function.Supplier<RunConfiguration> fromForm = () -> new RunConfiguration(
                 name.getText(),
@@ -234,7 +289,8 @@ public final class RunConfigurationsWindow {
                 jdk.getValue() == null ? "" : jdk.getValue().home(),
                 interpreter.getText(),
                 interpreterOptions.getText(),
-                inTerminal.isSelected());
+                inTerminal.isSelected(),
+                runOn.getValue() == null ? "" : runOn.getValue());
         Runnable commit = () -> {
             int index = list.getSelectionModel().getSelectedIndex();
             if (index < 0 || loading) {
@@ -250,6 +306,12 @@ public final class RunConfigurationsWindow {
         });
         jdk.valueProperty().addListener((o, was, now) -> commit.run());
         inTerminal.selectedProperty().addListener((o, was, now) -> commit.run());
+        runOn.valueProperty().addListener((o, was, now) -> commit.run());
+        stage.focusedProperty().addListener((o, was, now) -> {
+            if (now) {
+                refreshDeployments(); // edited in the Deployments window
+            }
+        });
         for (TextField value : List.of(
                 name,
                 target,
@@ -303,6 +365,8 @@ public final class RunConfigurationsWindow {
                 beforeLaunch.setText(now == null ? "" : now.beforeLaunch());
                 JdkChoice.select(jdk, now == null ? "" : now.jdkHome());
                 inTerminal.setSelected(now != null && now.runInTerminal());
+                refreshDeployments();
+                runOn.setValue(now == null ? "" : now.deployment());
                 applyType.run(); // the type listener is silent when two rows share a type
             } finally {
                 loading = false;
@@ -310,6 +374,29 @@ public final class RunConfigurationsWindow {
         });
 
         browse.setOnAction(e -> {
+            if (com.editora.run.ScriptRunCommand.NPM.equals(type.getValue())) {
+                // An npm configuration names a script: offer the package.json's own, not a file picker.
+                java.nio.file.Path root = projectRoot == null ? null : projectRoot.get();
+                javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+                for (String[] script : npmScripts(root, workingDir.getText())) {
+                    javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(
+                            com.editora.build.NpmActionsProvider.label(script[0], script[1]));
+                    item.setMnemonicParsing(false);
+                    item.setOnAction(ev -> {
+                        target.setText(script[0]);
+                        commit.run();
+                    });
+                    menu.getItems().add(item);
+                }
+                if (menu.getItems().isEmpty()) {
+                    javafx.scene.control.MenuItem none =
+                            new javafx.scene.control.MenuItem(tr("settings.runConfig.npmNoScripts"));
+                    none.setDisable(true);
+                    menu.getItems().add(none);
+                }
+                menu.show(browse, javafx.geometry.Side.BOTTOM, 0, 0);
+                return;
+            }
             javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
             chooser.setTitle(tr("settings.runConfig.browseTitle"));
             java.nio.file.Path root = projectRoot == null ? null : projectRoot.get();
@@ -399,6 +486,26 @@ public final class RunConfigurationsWindow {
         TextField field = new TextField();
         field.setPromptText(tr(promptKey));
         return field;
+    }
+
+    /**
+     * The scripts (name, command) of the {@code package.json} an npm configuration runs in: its working directory
+     * (relative to the project root), else the project root. Empty for a remote folder or no readable file.
+     */
+    static List<String[]> npmScripts(java.nio.file.Path root, String workingDir) {
+        if (root == null || root.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+            return List.of();
+        }
+        java.nio.file.Path dir = workingDir == null || workingDir.isBlank() ? root : root.resolve(workingDir.strip());
+        try {
+            com.editora.build.NpmProject p =
+                    com.editora.build.NpmProject.parse(java.nio.file.Files.readString(dir.resolve("package.json")));
+            return p.scripts().stream()
+                    .map(n -> new String[] {n, p.commandOf(n)})
+                    .toList();
+        } catch (java.io.IOException | RuntimeException ex) {
+            return List.of();
+        }
     }
 
     /** The Script / target text for a file picked with Browse: relative to the project when inside it. */
@@ -519,6 +626,7 @@ public final class RunConfigurationsWindow {
         } finally {
             reloading = false;
         }
+        refreshDeployments();
         RunConfiguration selected = null;
         if (previous != null) {
             for (RunConfiguration value : items) {

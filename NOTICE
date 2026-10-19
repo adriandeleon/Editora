@@ -30,8 +30,12 @@ Most grammars were obtained from the shiki "tm-grammars" collection:
     https://github.com/shikijs/textmate-grammars-themes
     (packages/tm-grammars/grammars)
 
-The C#, CSS, dotenv, PowerShell, and SQL grammars are from tm-grammars 1.32.22;
-the other grammars from this source are from earlier releases.
+The C#, CSS, dotenv, PowerShell, SQL, Scala, and Clojure grammars are from
+tm-grammars 1.32.22; the other grammars from this source are from earlier
+releases. The Scala grammar (scala.tmLanguage.json) is shiki's copy of
+scala/vscode-scala-syntax and the Clojure grammar (clojure.tmLanguage.json) of
+the one Microsoft Visual Studio Code ships (from atom/language-clojure), both
+under the MIT License; both are vendored unmodified.
 
 These are aggregated by shiki from their respective upstream projects, each
 under its original license (predominantly MIT, with some under other permissive
@@ -145,7 +149,7 @@ systemd, desktop entries, dotenv, SSH config, Git config, crontab, Caddyfile,
 fstab, hosts, .properties, deb822 (Debian control / APT sources), APT
 sources.list, network interfaces, Debian changelog, unified diff/patch,
 Makefile, justfile, Protocol Buffers, GraphQL, Astro, .gitattributes, pip
-requirements.
+requirements, Scala, Clojure.
 
 ================================================================================
 Bundled fonts
@@ -184,8 +188,12 @@ Markdown, PowerShell, Python, Ruby, Rust, shell, and SQL) are taken from the
 The core language files are vendored unmodified (framework-specific extras are
 not included), except python.json: its shebang names python3, the class
 template uses no Python 2 super() call, and the try/except snippets re-raise
-with a bare raise. The remaining snippet files (xml, batchfile, groovy, json, yaml,
-ini, global) are original to Editora and covered by Editora's own MIT License.
+with a bare raise; and java.json, which started from friendly-snippets and was
+largely rewritten for Editora: fixed bodies (class name, package, semicolons),
+arrow switch, records, sealed types, streams, text blocks, virtual threads,
+JUnit 5, and IntelliJ-style alias triggers. The remaining snippet files (xml,
+batchfile, groovy, scala, clojure, json, yaml, ini, global) are original to
+Editora and covered by Editora's own MIT License.
 
 ================================================================================
 Third-party libraries
@@ -421,7 +429,8 @@ Simple Icons (browser + file-type glyphs)
     browser picker (com.editora.ui.Icons), the Apache Maven feather glyph in the
     Maven toolbar button (com.editora.ui.Icons.maven), and the per-language
     file-type glyphs in com.editora.ui.FileIcons (Java, Python, JavaScript,
-    TypeScript, Go, PHP, Ruby, C, C++, C#, Kotlin, HTML5, CSS, Markdown, YAML,
+    TypeScript, Go, PHP, Ruby, C, C++, C#, Kotlin, Apache Groovy, Scala, Clojure,
+    HTML5, CSS, Markdown, YAML,
     Bash, Docker, Terraform, Mermaid, …), are the single-path SVG logos from the
     Simple Icons collection,
     released under CC0 1.0 Universal (public domain). The brand logos are

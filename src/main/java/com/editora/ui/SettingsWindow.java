@@ -145,6 +145,7 @@ public class SettingsWindow {
         KEYMAPS(tr("settings.cat.keymaps"), Group.SYSTEM),
         MACROS(tr("settings.cat.macros"), Group.SYSTEM),
         REMOTE(tr("settings.cat.remote"), Group.SYSTEM, true),
+        ENCRYPTION(tr("settings.cat.encryption"), Group.SYSTEM),
         PLUGINS(tr("settings.cat.plugins"), Group.SYSTEM),
         SYNC(tr("settings.cat.sync"), Group.SYSTEM, true),
         MCP(tr("settings.cat.mcp"), Group.SYSTEM, true),
@@ -435,6 +436,8 @@ public class SettingsWindow {
     private CheckBox debugStepFiltersCheck;
     private CheckBox debugShowStaticsCheck;
     private TextField debugExceptionTypesField;
+    /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
+    private TextField nodePathField;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
@@ -458,6 +461,14 @@ public class SettingsWindow {
     private final TextField mavenArchetypeCatalogField = new TextField();
     private final java.util.Map<BuildTool, Label> buildToolStatusLabels = new java.util.EnumMap<>(BuildTool.class);
     private CheckBox ripgrepCheck;
+    private TextField encryptionGpgPathField;
+    private Label encryptionGpgStatus;
+    private CheckBox encryptionIncludeSelfCheck;
+    private ComboBox<String> encryptionPromptCombo;
+    private CheckBox encryptionLspCheck;
+    /** Bumped per gpg probe, so a slow answer for a path the user has since changed is dropped. */
+    private int encryptionProbeGen;
+
     private CheckBox searchGitignoreCheck;
     private TextField ripgrepCommandField;
     private Label ripgrepStatusLabel;
@@ -473,7 +484,16 @@ public class SettingsWindow {
     private Runnable onKeymapChanged; // → MainController: reload the shared keymap live
     private Runnable onBrowsePlugins; // → MainController.browsePlugins
     private Runnable onInstallPluginFromFile; // → MainController.installPluginFromDisk
-    private Consumer<String> onUninstallPlugin; // id → MainController.uninstallPlugin
+    private Consumer<com.editora.plugin.PluginDescriptor> onUninstallPlugin; // the clicked row's plugin
+    /** Ticking a row: asks the consent (what it can do) and stores it; false = not enabled. */
+    private java.util.function.Predicate<com.editora.plugin.PluginDescriptor> onEnablePlugin = d -> false;
+    /** Unticking a row: switches it off. */
+    private Consumer<com.editora.plugin.PluginDescriptor> onDisablePlugin = d -> {};
+
+    private Label pluginStatusLabel; // what Browse / Install from file did, said where the user clicked
+    /** What the installed list was last built from; an unchanged list is not rebuilt on every Settings open. */
+    private Object pluginListKey;
+
     private CheckBox lspCheck;
     /** Per-server LSP controls, keyed by server id (data-driven so adding a server is one descriptor). */
     private final java.util.Map<String, CheckBox> lspEnableChecks = new java.util.LinkedHashMap<>();
@@ -680,10 +700,17 @@ public class SettingsWindow {
     }
 
     /** Wires the Plugins-page actions to the controller (browse registry / install zip / uninstall). */
-    public void setPluginActions(Runnable onBrowse, Runnable onInstallFromFile, Consumer<String> onUninstall) {
+    public void setPluginActions(
+            Runnable onBrowse,
+            Runnable onInstallFromFile,
+            Consumer<com.editora.plugin.PluginDescriptor> onUninstall,
+            java.util.function.Predicate<com.editora.plugin.PluginDescriptor> onEnable,
+            Consumer<com.editora.plugin.PluginDescriptor> onDisable) {
         this.onBrowsePlugins = onBrowse;
         this.onInstallPluginFromFile = onInstallFromFile;
         this.onUninstallPlugin = onUninstall;
+        this.onEnablePlugin = onEnable == null ? d -> false : onEnable;
+        this.onDisablePlugin = onDisable == null ? d -> {} : onDisable;
     }
 
     /** Wires the security-notice confirm shown before the MCP checkbox enables the server. */
@@ -705,8 +732,26 @@ public class SettingsWindow {
                     () -> runConfigScriptSuggestion == null ? null : runConfigScriptSuggestion.get(),
                     () -> runConfigProjectRoot == null ? null : runConfigProjectRoot.get(),
                     onRunConfigsChanged);
+            runConfigurationsWindow.setEditDeployments(editDeployments);
         }
         runConfigurationsWindow.show(selectName, owner);
+    }
+
+    /** What the Run Configurations window's Run on → Deployments… opens. */
+    private java.util.function.Consumer<String> editDeployments;
+
+    public void setEditDeployments(java.util.function.Consumer<String> editDeployments) {
+        this.editDeployments = editDeployments;
+        if (runConfigurationsWindow != null) {
+            runConfigurationsWindow.setEditDeployments(editDeployments);
+        }
+    }
+
+    /** The project's deployments changed: the Run Configurations window's Run on choices follow. */
+    public void refreshRunConfigDeployments() {
+        if (runConfigurationsWindow != null) {
+            runConfigurationsWindow.refreshDeployments();
+        }
     }
 
     /** Supplies the active Java main class used to seed a newly added configuration. */
@@ -745,6 +790,8 @@ public class SettingsWindow {
             case "buildTools" -> Category.BUILD_TOOLS;
             case "editor" -> Category.EDITOR;
             case "remote" -> Category.REMOTE;
+            case "encryption" -> Category.ENCRYPTION;
+            case "plugins" -> Category.PLUGINS;
             default -> null;
         };
         showAt(target, owner);
@@ -1656,6 +1703,47 @@ public class SettingsWindow {
             buildToolStatusLabels.put(bt, status);
         }
 
+        encryptionGpgPathField = new TextField();
+        encryptionGpgPathField.setPromptText("gpg");
+        commitOnEnterOrBlur(encryptionGpgPathField, () -> config.getSettings().getEncryptionGpgPath(), now -> {
+            config.getSettings().setEncryptionGpgPath(now);
+            apply();
+            refreshEncryptionStatus();
+        });
+        encryptionIncludeSelfCheck = new CheckBox(tr("settings.encryption.includeSelf"));
+        encryptionIncludeSelfCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setEncryptionIncludeSelf(now);
+            apply();
+        });
+        encryptionPromptCombo = new ComboBox<>();
+        encryptionPromptCombo
+                .getItems()
+                .setAll(
+                        com.editora.config.Settings.PASSPHRASE_PROMPT_AGENT,
+                        com.editora.config.Settings.PASSPHRASE_PROMPT_EDITORA);
+        encryptionPromptCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String id) {
+                return id == null ? "" : tr("settings.encryption.prompt." + id);
+            }
+
+            @Override
+            public String fromString(String text) {
+                return text;
+            }
+        });
+        encryptionPromptCombo.valueProperty().addListener((obs, was, now) -> {
+            if (now != null && !now.equals(config.getSettings().getEncryptionPassphrasePrompt())) {
+                config.getSettings().setEncryptionPassphrasePrompt(now);
+                apply();
+            }
+        });
+        encryptionLspCheck = new CheckBox(tr("settings.encryption.lsp"));
+        encryptionLspCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setEncryptionLanguageServers(now);
+            apply();
+        });
+
         ripgrepCheck = new CheckBox(tr("settings.search.useRipgrep"));
         ripgrepCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setRipgrepSearch(now);
@@ -1934,6 +2022,14 @@ public class SettingsWindow {
             config.getSettings().setDebugExceptionTypes(now);
             apply();
         });
+        nodePathField = new TextField();
+        nodePathField.setPromptText(tr("settings.debug.nodePath.prompt"));
+        commitOnEnterOrBlur(nodePathField, () -> config.getSettings().getNodePath(), now -> {
+            config.getSettings().setNodePath(now.strip());
+            apply();
+            refreshDebugStatus();
+            refreshHttpNodeStatus(); // the Web page's Node.js row follows this field
+        });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             if (dbg.setEnabled() != null) {
                 CheckBox enable = new CheckBox(tr(dbg.enableLabelKey()));
@@ -2152,6 +2248,7 @@ public class SettingsWindow {
         pages.put(Category.KEYMAPS, keymapsPage());
         pages.put(Category.MACROS, macrosPage());
         pages.put(Category.REMOTE, remotePage());
+        pages.put(Category.ENCRYPTION, encryptionPage());
         pages.put(Category.PLUGINS, pluginsPage());
         pages.put(Category.SYNC, syncPage());
         pages.put(Category.MCP, mcpPage());
@@ -4044,7 +4141,7 @@ public class SettingsWindow {
                 display,
                 cat,
                 "terminal.scrollback",
-                100_000,
+                Settings.TERMINAL_SCROLLBACK_MAX,
                 500,
                 Settings::getTerminalScrollback,
                 Settings::setTerminalScrollback,
@@ -4060,6 +4157,22 @@ public class SettingsWindow {
                         .filter(id -> !id.isBlank())
                         .toList()),
                 "terminal keys shortcuts commands shell keyboard ctrl escape allow");
+        switchRow(
+                keys,
+                cat,
+                "terminal.macOptionIsMeta",
+                true,
+                Settings::isTerminalMacOptionIsMeta,
+                Settings::setTerminalMacOptionIsMeta,
+                "terminal option alt meta macos mac compose characters readline");
+        switchRow(
+                keys,
+                cat,
+                "terminal.confirmMultilinePaste",
+                true,
+                Settings::isTerminalConfirmMultilinePaste,
+                Settings::setTerminalConfirmMultilinePaste,
+                "terminal paste multiple lines newline confirm warning bracketed");
         switchRow(
                 keys,
                 cat,
@@ -4745,6 +4858,78 @@ public class SettingsWindow {
         return p;
     }
 
+    private VBox encryptionPage() {
+        VBox p = page(tr("settings.cat.encryption"), tr("settings.encryption.subtitle"));
+        Card c = card(p, tr("settings.encryption.gnupg"));
+        encryptionGpgStatus = new Label(tr("settings.search.checking"));
+        encryptionGpgStatus.getStyleClass().add("settings-git-status");
+        encryptionGpgStatus.setWrapText(true);
+        encryptionGpgStatus.setMaxWidth(340);
+        Button browse = browseButton(tr("settings.encryption.gpgPath"), encryptionGpgPathField);
+        encryptionGpgPathField.setPrefWidth(PATH_FIELD_WIDTH);
+        controlRow(
+                c,
+                Category.ENCRYPTION,
+                tr("settings.encryption.gpgPath"),
+                tr("settings.encryption.gpgPath.desc"),
+                new HBox(6, encryptionGpgPathField, browse),
+                "encryption gnupg gpg pgp openpgp path executable command");
+        controlRow(
+                c,
+                Category.ENCRYPTION,
+                tr("settings.git.detected"),
+                null,
+                encryptionGpgStatus,
+                "encryption gnupg gpg found installed not found version");
+        Card c2 = card(p, tr("settings.encryption.behaviour"));
+        checkRow(
+                c2,
+                Category.ENCRYPTION,
+                encryptionIncludeSelfCheck,
+                tr("settings.encryption.includeSelf.desc"),
+                "encryption encrypt to self me my key recipient include");
+        controlRow(
+                c2,
+                Category.ENCRYPTION,
+                tr("settings.encryption.prompt"),
+                tr("settings.encryption.prompt.desc"),
+                encryptionPromptCombo,
+                "encryption passphrase password pinentry prompt agent dialog ask");
+        checkRow(
+                c2,
+                Category.ENCRYPTION,
+                encryptionLspCheck,
+                tr("settings.encryption.lsp.desc"),
+                "encryption language server lsp privacy sensitive decrypted");
+        return p;
+    }
+
+    /** Shows which gpg Encryption would run, and its version, probed off the FX thread. */
+    private void refreshEncryptionStatus() {
+        if (encryptionGpgStatus == null) {
+            return;
+        }
+        int gen = ++encryptionProbeGen;
+        String configured = config.getSettings().getEncryptionGpgPath();
+        encryptionGpgStatus.getStyleClass().setAll("settings-git-status");
+        encryptionGpgStatus.setText(tr("settings.search.checking"));
+        Thread.ofVirtual().name("settings-gpg-probe").start(() -> {
+            String exe = com.editora.crypto.Gpg.resolve(configured);
+            String version = new com.editora.crypto.Gpg(exe, java.util.Map.of()).version();
+            javafx.application.Platform.runLater(() -> {
+                if (gen != encryptionProbeGen) {
+                    return;
+                }
+                boolean found = version != null;
+                encryptionGpgStatus
+                        .getStyleClass()
+                        .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+                encryptionGpgStatus.setText(
+                        found ? tr("settings.encryption.found", version, exe) : tr("settings.encryption.notFound"));
+            });
+        });
+    }
+
     private VBox searchPage() {
         VBox p = page(tr("settings.cat.search"), tr("settings.search.subtitle"));
         Card c = card(p, null);
@@ -4787,9 +4972,10 @@ public class SettingsWindow {
 
     /** Whether the node the HTTP scripts run is there (a lookup, no process), like the Bash tool rows. */
     private void refreshHttpNodeStatus() {
-        String configured = config.getSettings().getHttpNodePath();
-        String found = ToolStatusRow.pathOf(
-                com.editora.run.ProgramArgs.commandLine(configured.isBlank() ? "node" : configured));
+        // Blank: the shared Node.js setting, as the run uses it (review E6).
+        String shown = com.editora.http.HttpNodeChoice.displayed(
+                config.getSettings().getHttpNodePath(), config.getSettings().getNodePath());
+        String found = ToolStatusRow.pathOf(com.editora.run.ProgramArgs.commandLine(shown));
         httpNodeStatus.show(!found.isEmpty(), found, httpCheck.isSelected() && httpScriptsCheck.isSelected());
     }
 
@@ -4801,15 +4987,30 @@ public class SettingsWindow {
     private void refreshBuildCommandStatus(BuildTool bt) {
         ToolStatusRow status = buildToolCommandStatus.get(bt);
         if (status != null) {
-            List<String> argv = com.editora.build.BuildExecutable.resolve(
-                    null, bt.commandIn(config.getSettings()), bt.commandExample());
+            // npm: the manager the active project uses (pnpm, yarn, bun), not always npm (review E9).
+            String command = bt == BuildTool.NPM ? npmManagerName() : bt.commandExample();
+            String override = bt.commandIn(config.getSettings());
+            if (bt == BuildTool.NPM && !com.editora.build.NpmPackageManager.overrideApplies(override, command)) {
+                override = "";
+            }
+            List<String> argv = com.editora.build.BuildExecutable.resolve(null, override, command);
             String found = ToolStatusRow.pathOf(argv);
-            status.tool(ToolStatusRow.toolName(argv, bt.commandExample()));
+            status.tool(ToolStatusRow.toolName(argv, command));
             status.show(!found.isEmpty(), found, bt.enabledIn(config.getSettings()));
         }
     }
 
     private final Map<BuildTool, ToolStatusRow> buildToolCommandStatus = new java.util.EnumMap<>(BuildTool.class);
+
+    /** The package manager of the npm project detected for the active file, else npm. */
+    private String npmManagerName() {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.tool() == BuildTool.NPM && c.detectedManager() != null) {
+                return c.detectedManager().manager();
+            }
+        }
+        return "npm";
+    }
 
     private VBox mermaidPage() {
         VBox p = page(tr("settings.cat.mermaid"), tr("settings.mermaid.subtitle"));
@@ -6206,7 +6407,28 @@ public class SettingsWindow {
         warn.setMaxWidth(440);
         cardRow(mainCard, Category.PLUGINS, warn, "plugins extensions untrusted security warning");
         checkRow(mainCard, Category.PLUGINS, pluginCheck, null, "plugins extensions enable support");
+        if (com.editora.plugin.PluginManager.disabledForSession()) {
+            Label off = note(tr("settings.plugins.disabledForSession"));
+            off.getStyleClass().add("settings-git-missing");
+            off.setWrapText(true);
+            off.setMaxWidth(440);
+            cardRow(mainCard, Category.PLUGINS, off, "plugins disable session safe mode command line");
+        }
+        Label restart = note(tr("settings.plugins.restart"));
+        restart.setWrapText(true);
+        restart.setMaxWidth(440);
+        cardRow(mainCard, Category.PLUGINS, restart, "plugins restart apply");
 
+        // Installed Plugins first: they are what people come to this page for.
+        Card installed = card(p, tr("settings.plugins.installed"));
+        Button reload = new Button(tr("settings.plugins.reload"));
+        reload.setOnAction(e -> {
+            if (pluginManager != null) {
+                pluginManager.discover(); // the list only: what runs is the launch's set until a restart
+                pluginListKey = null;
+                refreshPluginList();
+            }
+        });
         Label folderLabel = new Label(tr("settings.plugins.folder"));
         Label folderPath =
                 new Label(pluginManager == null ? "" : config.getPluginsDir().toString());
@@ -6215,24 +6437,48 @@ public class SettingsWindow {
         folderPath.setMaxWidth(380);
         HBox folderRow = new HBox(6, folderLabel, folderPath);
         folderRow.setAlignment(Pos.CENTER_LEFT);
-        cardRow(mainCard, Category.PLUGINS, folderRow, "plugins folder directory location path");
-
-        Button reload = new Button(tr("settings.plugins.reload"));
-        reload.setOnAction(e -> {
-            if (pluginManager != null) {
-                pluginManager.discover();
-                refreshPluginList();
-            }
-        });
-        cardRow(mainCard, Category.PLUGINS, reload, "plugins reload rescan discover refresh");
-
-        Label restart = note(tr("settings.plugins.restart"));
-        restart.setWrapText(true);
-        restart.setMaxWidth(440);
-        cardRow(mainCard, Category.PLUGINS, restart, "plugins restart apply");
+        HBox listHeader = new HBox(8, reload, folderRow);
+        listHeader.setAlignment(Pos.CENTER_LEFT);
+        pluginListBox = new VBox(8);
+        cardRow(
+                installed,
+                Category.PLUGINS,
+                new VBox(
+                        6,
+                        SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
+                        listHeader,
+                        pluginListBox),
+                "plugins installed list enable disable reload rescan folder directory");
 
         // --- Marketplace: a curated GitHub-hosted registry + install-from-disk.
         Card market = card(p, tr("settings.plugins.marketplace"));
+        Button browse = new Button(tr("settings.plugins.browse"));
+        browse.setOnAction(e -> {
+            if (onBrowsePlugins != null) {
+                onBrowsePlugins.run(); // the picker hides this window only once it opens (hideForMainWindowPicker)
+            }
+        });
+        Button installFile = new Button(tr("settings.plugins.installFromFile"));
+        installFile.setOnAction(e -> {
+            if (onInstallPluginFromFile != null) {
+                onInstallPluginFromFile.run();
+            }
+        });
+        HBox marketButtons = new HBox(8, browse, installFile);
+        marketButtons.setAlignment(Pos.CENTER_LEFT);
+        // Greyed with the master switch, like the rows: they did nothing visible while plugins were off.
+        SettingsDependents.bind(pluginCheck.selectedProperty(), marketButtons);
+        pluginStatusLabel = new Label();
+        pluginStatusLabel.setWrapText(true);
+        pluginStatusLabel.setMaxWidth(440);
+        pluginStatusLabel.getStyleClass().add("settings-hint");
+        pluginStatusLabel.setVisible(false);
+        pluginStatusLabel.managedProperty().bind(pluginStatusLabel.visibleProperty());
+        cardRow(
+                market,
+                Category.PLUGINS,
+                new VBox(4, marketButtons, pluginStatusLabel),
+                "plugins browse install file zip marketplace registry");
         pluginRegistryField = new TextField();
         pluginRegistryField.setPromptText(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
         // Wide enough to show a full registry URL (the default is ~75 chars); also grows with the page.
@@ -6250,8 +6496,8 @@ public class SettingsWindow {
                         config.getSettings().getPluginRegistryUrl(),
                         config.getSettings().getPluginRegistryUrlRaw()),
                 now -> {
-                    if (!now.isBlank() && !com.editora.plugin.PluginRegistry.isHttps(now)) {
-                        return; // the field is red and says why; the registry in use stays
+                    if (!com.editora.config.Settings.isAcceptableRegistryUrl(now)) {
+                        return; // not https: the field is red and says why; the registry in use stays
                     }
                     config.getSettings().setPluginRegistryUrl(now);
                     apply();
@@ -6279,32 +6525,6 @@ public class SettingsWindow {
                 pluginRequireSigCheck,
                 tr("settings.plugins.requireSignatureNote"),
                 "plugins signature signed verify registry security trust");
-        Button browse = new Button(tr("settings.plugins.browse"));
-        browse.setOnAction(e -> {
-            if (onBrowsePlugins != null) {
-                onBrowsePlugins.run(); // the picker hides this window only once it opens (hideForMainWindowPicker)
-            }
-        });
-        Button installFile = new Button(tr("settings.plugins.installFromFile"));
-        installFile.setOnAction(e -> {
-            if (onInstallPluginFromFile != null) {
-                onInstallPluginFromFile.run();
-            }
-        });
-        HBox marketButtons = new HBox(8, browse, installFile);
-        marketButtons.setAlignment(Pos.CENTER_LEFT);
-        cardRow(market, Category.PLUGINS, marketButtons, "plugins browse install file zip marketplace registry");
-
-        Card installed = card(p, tr("settings.plugins.installed"));
-        pluginListBox = new VBox(8);
-        cardRow(
-                installed,
-                Category.PLUGINS,
-                new VBox(
-                        6,
-                        SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
-                        pluginListBox),
-                "plugins installed list enable disable");
         refreshPluginList();
         return p;
     }
@@ -6312,24 +6532,66 @@ public class SettingsWindow {
     /**
      * The plugin picker is an overlay in the main window, which this window would cover: hidden when the picker
      * actually opens, so a registry that fails to load leaves Settings where it was, with the reason.
+     *
+     * @return whether it was showing (and is now hidden): the caller shows it again with {@link #restoreAfterPicker}
      */
-    void hideForMainWindowPicker() {
+    boolean hideForMainWindowPicker() {
         if (built && stage.isShowing()) {
             stage.hide();
+            return true;
         }
+        return false;
     }
 
-    /** Rebuilds the per-plugin enable list from the shared {@link com.editora.plugin.PluginManager}. */
-    /** Each listed plugin's enabled state when this window first showed it: what the running code reflects. */
-    private final Map<String, Boolean> pluginStateAtStart = new HashMap<>();
+    /** Shows this window again on the Plugins page once the picker it stepped aside for is done. */
+    void restoreAfterPicker() {
+        if (!built || stage.isShowing()) {
+            return;
+        }
+        pluginListKey = null;
+        load();
+        stage.show();
+        sidebar.getSelectionModel().select(Category.PLUGINS);
+        stage.toFront();
+    }
 
+    /** This window's stage while it is open (the owner for plugin dialogs started here), else null. */
+    Window stageIfShowing() {
+        return built && stage.isShowing() ? stage : null;
+    }
+
+    /** Says what a plugin action started here did, under the Browse buttons (error: in the warning colour). */
+    void showPluginStatus(String message, boolean error) {
+        if (pluginStatusLabel == null) {
+            return;
+        }
+        boolean shown = message != null && !message.isBlank();
+        pluginStatusLabel.setText(shown ? message : "");
+        pluginStatusLabel.setVisible(shown);
+        pluginStatusLabel.getStyleClass().removeAll("settings-hint", "settings-git-missing");
+        pluginStatusLabel.getStyleClass().add(error ? "settings-git-missing" : "settings-hint");
+    }
+
+    /**
+     * Rebuilds the per-plugin list from the shared {@link com.editora.plugin.PluginManager}: each row says what
+     * it is (name, version, id, a load or start error) and how it differs from what this session runs — the
+     * launch set — with a Restart now. A row that failed to load cannot be ticked: what it would do cannot be
+     * shown, so it cannot be consented to. Skipped when neither the list nor the store changed since.
+     */
     private void refreshPluginList() {
         if (pluginListBox == null) {
             return;
         }
-        pluginListBox.getChildren().clear();
         java.util.List<com.editora.plugin.PluginDescriptor> ds =
                 pluginManager == null ? java.util.List.of() : pluginManager.descriptors();
+        com.editora.config.PluginStore store = config.getPluginStore();
+        Object key =
+                java.util.List.of(ds, Map.copyOf(store.enabled), Map.copyOf(store.consent), pluginCheck.isSelected());
+        if (key.equals(pluginListKey)) {
+            return; // D6: re-opening Settings no longer rebuilds an unchanged list
+        }
+        pluginListKey = key;
+        pluginListBox.getChildren().clear();
         if (ds.isEmpty()) {
             Label empty = note(tr("settings.plugins.none"));
             empty.setWrapText(true);
@@ -6337,54 +6599,96 @@ public class SettingsWindow {
             return;
         }
         for (com.editora.plugin.PluginDescriptor d : ds) {
-            String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
-            String ver = d.manifest().version == null ? "" : d.manifest().version;
-            String label = ver.isBlank() ? name + "  (" + d.id() + ")" : name + "  " + ver + "  (" + d.id() + ")";
-            CheckBox cb = new CheckBox(label);
-            cb.setSelected(config.getPluginStore().isEnabled(d.id()));
-            // Code is loaded at start: a row switched since then says it needs a restart.
-            boolean atStart = pluginStateAtStart.computeIfAbsent(d.id(), id -> cb.isSelected());
-            Label restartPill = new Label(tr("settings.plugins.restartPill"));
-            restartPill.getStyleClass().add("settings-git-status");
-            restartPill.visibleProperty().bind(atStart ? cb.selectedProperty().not() : cb.selectedProperty());
-            restartPill.managedProperty().bind(restartPill.visibleProperty());
-            SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
-            cb.selectedProperty().addListener((obs, was, now) -> {
-                if (loading) {
-                    return;
-                }
-                // Enabling arms code on the next launch — disclose capabilities + confirm. Disabling is free.
-                if (now && !confirmEnablePlugin(d)) {
-                    cb.setSelected(false); // user declined; revert (fires again with now=false → persists off)
-                    return;
-                }
-                config.getPluginStore().setEnabled(d.id(), now);
-                config.savePlugins();
-            });
-            javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
-            HBox.setHgrow(spacer, Priority.ALWAYS);
-            Button remove = new Button(tr("settings.plugins.remove"));
-            remove.getStyleClass().add("settings-link-button");
-            remove.setOnAction(ev -> {
-                if (onUninstallPlugin != null) {
-                    onUninstallPlugin.accept(d.id());
-                }
-            });
-            HBox header = new HBox(8, cb, restartPill, spacer, remove);
-            header.setAlignment(Pos.CENTER_LEFT);
-            VBox entry = new VBox(2, header);
-            if (d.loadError() != null) {
-                Label err = new Label(PluginLoadProblems.text(d));
-                String detail = PluginLoadProblems.detail(d);
-                err.setTooltip(detail == null ? null : new Tooltip(detail));
-                err.getStyleClass().add("settings-git-missing");
-                err.setWrapText(true);
-                err.setMaxWidth(420);
-                err.setPadding(new Insets(0, 0, 0, 20));
-                entry.getChildren().add(err);
-            }
-            pluginListBox.getChildren().add(entry);
+            pluginListBox.getChildren().add(pluginRow(d, store));
         }
+    }
+
+    private Node pluginRow(com.editora.plugin.PluginDescriptor d, com.editora.config.PluginStore store) {
+        String name = d.displayName();
+        String ver = d.manifest().version == null ? "" : d.manifest().version.strip();
+        com.editora.plugin.PluginDescriptor runningNow = pluginManager.running(d.id());
+        boolean wanted = store.allows(d.id(), d.digest());
+        PluginRowState.Pill pill = PluginRowState.pill(
+                wanted,
+                store.isEnabled(d.id()),
+                runningNow != null,
+                runningNow == null ? null : runningNow.manifest().version,
+                ver,
+                pluginManager.pendingUpdate(d.id()),
+                pluginManager.pendingRemoval(d.id()));
+        CheckBox cb = new CheckBox(PluginDisclosure.clean(ver.isBlank() ? name : name + "  " + ver, 120));
+        cb.setSelected(wanted || pill == PluginRowState.Pill.UPDATE_PENDING);
+        cb.setMinWidth(0);
+        cb.setTooltip(new Tooltip(name + (ver.isBlank() ? "" : " " + ver) + " (" + d.id() + ")"));
+        SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
+        if (d.loadError() != null || pill == PluginRowState.Pill.REMOVAL_PENDING) {
+            SettingsDependents.lockOf(cb).set(true); // a broken (or departing) plugin cannot be ticked at all
+        }
+        cb.selectedProperty().addListener((obs, was, now) -> {
+            if (loading) {
+                return;
+            }
+            // Enabling arms code on the next launch — disclose capabilities + confirm. Disabling is free.
+            if (now) {
+                if (!onEnablePlugin.test(d)) {
+                    cb.setSelected(false); // declined: revert (fires again with now=false, was=true → off)
+                    return;
+                }
+            } else if (was && store.isEnabled(d.id())) {
+                onDisablePlugin.accept(d);
+            }
+            pluginListKey = null;
+            javafx.application.Platform.runLater(this::refreshPluginList); // the row's pill follows
+        });
+        Label id = new Label(d.id());
+        id.getStyleClass().add("settings-hint");
+        id.setMinWidth(Region.USE_PREF_SIZE);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Button remove = new Button(tr("settings.plugins.remove"));
+        remove.getStyleClass().add("settings-link-button");
+        remove.setMinWidth(Region.USE_PREF_SIZE); // a long name elides the label, never the button
+        remove.setAccessibleText(tr("settings.plugins.removeNamed", name));
+        remove.setDisable(pill == PluginRowState.Pill.REMOVAL_PENDING);
+        remove.setOnAction(ev -> {
+            if (onUninstallPlugin != null) {
+                onUninstallPlugin.accept(d);
+            }
+        });
+        HBox header = new HBox(8, cb, id, spacer, remove);
+        header.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(cb, Priority.SOMETIMES);
+        VBox entry = new VBox(2, header);
+        String pillText = PluginRowState.text(pill, pluginManager.pendingUpdate(d.id()));
+        if (pillText != null) {
+            Label restartPill = new Label(pillText);
+            restartPill.getStyleClass().add("settings-git-status");
+            HBox pillRow = new HBox(8, restartPill);
+            pillRow.setAlignment(Pos.CENTER_LEFT);
+            if (pill != PluginRowState.Pill.CHANGED && onRestart != null) {
+                Button restartNow = new Button(tr("settings.restart.now"));
+                restartNow.getStyleClass().add("settings-link-button");
+                restartNow.setOnAction(e -> onRestart.run());
+                pillRow.getChildren().add(restartNow);
+            }
+            pillRow.setPadding(new Insets(0, 0, 0, 20));
+            entry.getChildren().add(pillRow);
+        }
+        com.editora.plugin.PluginDescriptor.LoadProblem runtime = pluginManager.runtimeProblem(d.id());
+        String problemText = d.loadError() != null
+                ? PluginLoadProblems.text(d)
+                : runtime != null ? PluginLoadProblems.text(runtime) : null;
+        if (problemText != null) {
+            Label err = new Label(problemText);
+            String detail = d.loadError() != null ? PluginLoadProblems.detail(d) : PluginLoadProblems.detail(runtime);
+            err.setTooltip(detail == null ? null : new Tooltip(detail));
+            err.getStyleClass().add("settings-git-missing");
+            err.setWrapText(true);
+            err.setMaxWidth(420);
+            err.setPadding(new Insets(0, 0, 0, 20));
+            entry.getChildren().add(err);
+        }
+        return entry;
     }
 
     /** Warns (with the host) when the registry URL isn't the bundled default — a phishing-vector guard. */
@@ -6407,22 +6711,6 @@ public class SettingsWindow {
         pluginRegistryWarn.setText(custom ? tr("settings.plugins.customRegistry", host == null ? "?" : host) : "");
         pluginRegistryWarn.setVisible(custom);
         pluginRegistryWarn.setManaged(custom);
-    }
-
-    /** Capability-disclosure confirm before enabling a plugin (mirrors the install gate). */
-    private boolean confirmEnablePlugin(com.editora.plugin.PluginDescriptor d) {
-        String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
-        String body = tr(
-                "dialog.plugins.enableBody",
-                name,
-                d.manifest().version == null ? "" : d.manifest().version,
-                PluginCoordinator.pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
-        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL));
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("dialog.plugins.enableTitle"));
-        confirm.setHeaderText(tr("dialog.plugins.enableHeader"));
-        confirm.getDialogPane().setMinWidth(480);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
     /** The page's "Turn on “X” to change these settings." note, shown while {@code master} is off. */
@@ -6501,6 +6789,18 @@ public class SettingsWindow {
                         tr("settings.debug.exceptionTypes.hint"),
                         debugExceptionTypesField,
                         "debug java exception breakpoint class type filter caught uncaught");
+            }
+            if ("javascript".equals(dbg.id())) {
+                // E6: one Node.js for everything Node in Editora, here beside the debugger that needs it.
+                nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
+                String node = tr("settings.debug.nodePath");
+                controlRow(
+                        c,
+                        Category.DEBUG,
+                        node,
+                        tr("settings.debug.nodePath.hint"),
+                        new HBox(6, nodePathField, browseButton(node, nodePathField)),
+                        "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
             }
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
             ToolStatusRow status = new ToolStatusRow(
@@ -6595,7 +6895,14 @@ public class SettingsWindow {
                         () -> config.getSettings().getJsDebugPath(),
                         cb -> {
                             if (dapManager != null) {
-                                dapManager.detectJs(found -> cb.accept(found, ""));
+                                // installed, whether or not switched on (review D13): its path and the Node.js
+                                dapManager.detectJsInstalled((server, node) -> cb.accept(
+                                        server != null && node != null,
+                                        server == null
+                                                ? ""
+                                                : node == null
+                                                        ? tr("settings.debug.jsNoNode")
+                                                        : tr("settings.debug.jsFound", node, server)));
                             } else {
                                 cb.accept(false, "");
                             }
@@ -6663,9 +6970,35 @@ public class SettingsWindow {
             c.body().getChildren().add(project);
             if ("bash".equals(srv.id())) {
                 bashServerRows(c);
+            } else if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(srv.id())) {
+                typeScriptServerRows(c);
             }
         }
         return p;
+    }
+
+    /** The TypeScript card's "TypeScript" line (the SDK its server runs). */
+    private ToolStatusRow typeScriptSdkStatus;
+
+    /** The TypeScript card's own rows: the TypeScript its server runs, and automatic type acquisition. */
+    private void typeScriptServerRows(Card c) {
+        String words = "lsp typescript javascript node tsserver sdk ";
+        typeScriptSdkStatus = new ToolStatusRow("TypeScript").install(() -> installSupport("javascript"));
+        controlRow(
+                c,
+                Category.LSP,
+                tr("settings.lsp.typescriptSdk"),
+                tr("settings.lsp.typescriptSdk.desc"),
+                typeScriptSdkStatus.node(),
+                words + "version found not found install");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.typescriptTypeAcquisition",
+                true,
+                Settings::isTypescriptTypeAcquisition,
+                Settings::setTypescriptTypeAcquisition,
+                words + "types npm automatic type acquisition download @types");
     }
 
     /** The ShellCheck / shfmt status lines on the Bash card, by tool id. */
@@ -6995,6 +7328,17 @@ public class SettingsWindow {
                         v -> config.getSettings().setKotlinLspCommand(v),
                         () -> config.getSettings().getKotlinLspCommand()),
                 new LspServerUi(
+                        "groovy",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_GROOVY_COMMAND,
+                        "settings.lsp.enableGroovy",
+                        "settings.lsp.groovyCommand",
+                        "lsp groovy gvy gls gradle jenkinsfile language server found installed not found command path"
+                                + " java jar",
+                        v -> config.getSettings().setGroovyLspEnabled(v),
+                        () -> config.getSettings().isGroovyLspEnabled(),
+                        v -> config.getSettings().setGroovyLspCommand(v),
+                        () -> config.getSettings().getGroovyLspCommand()),
+                new LspServerUi(
                         "lua",
                         com.editora.lsp.LspServerRegistry.DEFAULT_LUA_COMMAND,
                         "settings.lsp.enableLua",
@@ -7294,6 +7638,10 @@ public class SettingsWindow {
                                             c.tool().displayName())
                                     : tr("settings.buildTools.found", detected))
                             : tr("settings.buildTools.notFound", c.tool().displayName()));
+            if (found && c.detectedManager() != null) {
+                label.setText(label.getText() + " · " + c.detectedManager().describe()); // "pnpm (pnpm-lock.yaml)"
+            }
+            refreshBuildCommandStatus(c.tool());
         }
     }
 
@@ -7378,6 +7726,8 @@ public class SettingsWindow {
         if (lspManager == null || lspStatusLabels.isEmpty()) {
             return;
         }
+        TypeScriptSdkStatus.refresh(
+                typeScriptSdkStatus, lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID), lspCheck.isSelected());
         // Probe the commands this page shows, without configuring the manager. This window must not
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
         // shut its running server down every time Settings was merely opened.
@@ -8333,6 +8683,11 @@ public class SettingsWindow {
                 }
             }
             refreshBuildToolStatus();
+            encryptionGpgPathField.setText(settings.getEncryptionGpgPath());
+            encryptionIncludeSelfCheck.setSelected(settings.isEncryptionIncludeSelf());
+            encryptionPromptCombo.setValue(settings.getEncryptionPassphrasePrompt());
+            encryptionLspCheck.setSelected(settings.isEncryptionLanguageServers());
+            refreshEncryptionStatus();
             ripgrepCheck.setSelected(settings.isRipgrepSearch());
             searchGitignoreCheck.setSelected(settings.isSearchRespectGitignore());
             ripgrepCommandField.setText(settings.getRipgrepCommand());
@@ -8384,6 +8739,7 @@ public class SettingsWindow {
             debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
             debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
             debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
+            nodePathField.setText(settings.getNodePath());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
                 if (enable != null && dbg.getEnabled() != null) {

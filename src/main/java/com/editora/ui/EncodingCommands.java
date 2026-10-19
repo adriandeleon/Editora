@@ -80,6 +80,10 @@ final class EncodingCommands {
             host.setStatus(tr("status.encoding.partial", buffer.getTitle()));
             return;
         }
+        if (buffer.encryption().isEncrypted()) {
+            host.setStatus(tr("encryption.status.noReopenEncoding")); // the file on disk is ciphertext
+            return;
+        }
         pick(REOPEN, buffer.getEffectiveCharset(), name -> reopenAs(buffer, name, done -> {}));
     }
 

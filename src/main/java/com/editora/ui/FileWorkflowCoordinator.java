@@ -65,7 +65,14 @@ final class FileWorkflowCoordinator {
             boolean saveAs,
             String lineEnding,
             String charsetFallback,
-            SaveNotes notes) {}
+            SaveNotes notes,
+            EncryptionCoordinator.Seal seal) {
+
+        /** What goes on disk: the encoded text, or — for an encrypted file — its ciphertext, once sealed. */
+        byte[] diskBytes() {
+            return seal == null ? bytes : seal.sealed();
+        }
+    }
 
     private record SaveAsOrigin(Path path) {}
 
@@ -210,6 +217,18 @@ final class FileWorkflowCoordinator {
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
 
         Path pathOf(java.io.File file);
+
+        /** The window's shared services (the overlay host, the error echo, …). */
+        CoordinatorHost services();
+
+        /** Re-derives the status bar from the active buffer (after a buffer's encryption changes). */
+        void refreshStatusBar();
+
+        /** The status bar's encryption item, which the encryption details card is anchored to; may be null. */
+        javafx.scene.Node encryptionStatusItem();
+
+        /** Runs a registered command (Open Doctor from a locked encrypted file). */
+        void runCommand(String commandId);
     }
 
     private final Host host;
@@ -300,6 +319,7 @@ final class FileWorkflowCoordinator {
     FileWorkflowCoordinator(Host host) {
         this.host = host;
         this.encodings = new EncodingCommands(host, this);
+        this.encryption = new EncryptionCoordinator(host, this);
     }
 
     /** Reopen / Save with Encoding. */
@@ -307,6 +327,13 @@ final class FileWorkflowCoordinator {
 
     EncodingCommands encodings() {
         return encodings;
+    }
+
+    private final EncryptionCoordinator encryption;
+
+    /** Encrypted files: decrypting on open, encrypting on save, and the commands around them. */
+    EncryptionCoordinator encryption() {
+        return encryption;
     }
 
     void setDocumentWriter(DocumentWriter documentWriter) {
@@ -354,6 +381,16 @@ final class FileWorkflowCoordinator {
 
     /** A paragraph this wide makes RichTextFX layout pathological even when the file itself is small. */
     static final int LONG_LINE_FILE_CHARS = 64 * 1024;
+
+    /** A line at least this long counts toward {@link #LONG_LINES_FILE_CHARS}. */
+    static final int LONG_LINE_CHARS = 10_000;
+
+    /**
+     * So many characters in {@link #LONG_LINE_CHARS long} lines make a file long-lined too, though no one line
+     * reaches {@link #LONG_LINE_FILE_CHARS}: a minified bundle wrapped at ~19,000 characters (757 KB in 40 lines)
+     * held the FX thread 2.4 s laying out its styled paragraphs, and its tokenizing took ~30 s.
+     */
+    static final int LONG_LINES_FILE_CHARS = 200_000;
 
     /** Buffers whose tab shell exists but whose document has not reached the FX thread yet. FX-thread only. */
     final Set<EditorBuffer> loadingBuffers = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -695,7 +732,8 @@ final class FileWorkflowCoordinator {
             byte[] sourceBytes,
             String declaredCharset,
             String fingerprint,
-            com.editora.editor.InitialDocument document) {
+            com.editora.editor.InitialDocument document,
+            boolean encrypted) {
 
         /**
          * Hashes the file's bytes where the load is prepared — the read worker — so the SHA-256 of a large
@@ -740,7 +778,70 @@ final class FileWorkflowCoordinator {
                     sourceBytes,
                     declaredCharset,
                     binary ? null : FileWorkflowCoordinator.fingerprint(sourceBytes), // a hex view compares nothing
-                    null);
+                    null,
+                    false);
+        }
+
+        /**
+         * An encrypted file, read but not decrypted: no text, its ciphertext in {@code sourceBytes} (null when it
+         * is too large to decrypt into an editor) and the fingerprint of those bytes, so the save-time conflict
+         * check and external-change detection compare the file without ever decrypting it.
+         */
+        static PreparedLoad locked(
+                Path file,
+                long size,
+                long mtime,
+                com.editora.editorconfig.EditorConfigProperties editorConfig,
+                byte[] ciphertext,
+                String fingerprint) {
+            return new PreparedLoad(
+                    file,
+                    null,
+                    size,
+                    mtime,
+                    0,
+                    0,
+                    null,
+                    editorConfig,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    0,
+                    false,
+                    ciphertext,
+                    null,
+                    fingerprint,
+                    null,
+                    true);
+        }
+
+        /** This load with {@code fingerprint} and {@code mtime}/{@code size} of the file it was decrypted from. */
+        PreparedLoad decryptedFrom(long fileSize, long fileMtime, String fileFingerprint) {
+            return new PreparedLoad(
+                    file,
+                    content,
+                    fileSize,
+                    fileMtime,
+                    lines,
+                    maxLineLength,
+                    charset,
+                    editorConfig,
+                    binary,
+                    large,
+                    heavy,
+                    longLine,
+                    truncated,
+                    log,
+                    logOffset,
+                    tail,
+                    null, // never plaintext bytes: nothing may write them back verbatim or keep a copy
+                    declaredCharset,
+                    fileFingerprint,
+                    document,
+                    false);
         }
 
         /**
@@ -772,7 +873,8 @@ final class FileWorkflowCoordinator {
                     sourceBytes,
                     declaredCharset,
                     fingerprint,
-                    buffer.prepareInitialContent(content, longLine));
+                    buffer.prepareInitialContent(content, longLine),
+                    encrypted);
         }
 
         /**
@@ -804,7 +906,8 @@ final class FileWorkflowCoordinator {
                     sourceBytes,
                     declaredCharset,
                     fingerprint,
-                    com.editora.editor.InitialDocument.ofText(content));
+                    com.editora.editor.InitialDocument.ofText(content),
+                    encrypted);
         }
 
         /** The declared charset could not decode the file, so {@link #charset} is a lossless stand-in. */
@@ -814,22 +917,35 @@ final class FileWorkflowCoordinator {
     }
 
     /** Document shape computed while the decoded text is already in background-thread memory. */
-    record TextStats(int lines, int maxLineLength) {}
+    record TextStats(int lines, int maxLineLength, long longLineChars) {
+
+        TextStats(int lines, int maxLineLength) {
+            this(lines, maxLineLength, 0);
+        }
+
+        /** Whether the file opens in long-line (large-file) mode: one giant line, or many long ones. */
+        boolean longLined() {
+            return maxLineLength >= LONG_LINE_FILE_CHARS || longLineChars >= LONG_LINES_FILE_CHARS;
+        }
+    }
 
     static TextStats textStats(String text) {
         int lines = 1;
         int lineLength = 0;
         int maxLineLength = 0;
+        long longLineChars = 0;
         for (int i = 0; i < text.length(); i++) {
             if (text.charAt(i) == '\n') {
                 lines++;
                 maxLineLength = Math.max(maxLineLength, lineLength);
+                longLineChars += lineLength >= LONG_LINE_CHARS ? lineLength : 0;
                 lineLength = 0;
             } else {
                 lineLength++;
             }
         }
-        return new TextStats(lines, Math.max(maxLineLength, lineLength));
+        longLineChars += lineLength >= LONG_LINE_CHARS ? lineLength : 0;
+        return new TextStats(lines, Math.max(maxLineLength, lineLength), longLineChars);
     }
 
     PreparedLoad prepareLoad(Path file, boolean sniffBinary) throws IOException {
@@ -857,6 +973,12 @@ final class FileWorkflowCoordinator {
                 host.editorSettings().editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)
                         ? com.editora.editorconfig.EditorConfig.resolveFor(file)
                         : com.editora.editorconfig.EditorConfigProperties.EMPTY;
+        if (com.editora.crypto.EncryptedFiles.hasEncryptionExtension(String.valueOf(file.getFileName()))) {
+            PreparedLoad locked = EncryptionCoordinator.lockedLoad(file, size, mtime, editorConfig);
+            if (locked != null) {
+                return locked; // decrypted later, by the window's encryption feature (never as part of a read)
+            }
+        }
         long cap = forDocument && size >= EditorBuffer.LARGE_FILE_BYTES
                 ? heapCap(size)
                 : Math.min(size, EditorBuffer.HUGE_FILE_BYTES);
@@ -899,7 +1021,7 @@ final class FileWorkflowCoordinator {
                         false,
                         true,
                         false,
-                        stats.maxLineLength() >= LONG_LINE_FILE_CHARS,
+                        stats.longLined(),
                         true,
                         true,
                         tail.offset(),
@@ -921,7 +1043,7 @@ final class FileWorkflowCoordinator {
                     false,
                     true,
                     false,
-                    stats.maxLineLength() >= LONG_LINE_FILE_CHARS,
+                    stats.longLined(),
                     true,
                     false,
                     0,
@@ -930,6 +1052,32 @@ final class FileWorkflowCoordinator {
                     null);
         }
         byte[] bytes = Files.readAllBytes(file);
+        return prepareFromBytes(file, size, mtime, isLog, editorConfig, bytes, sniffBinary);
+    }
+
+    /**
+     * An encrypted file's decrypted bytes, prepared as any file's are (encoding, binary sniff, size tiers) but
+     * remembered as the file on disk is: its size, time and the fingerprint of its <em>ciphertext</em>. Off the
+     * FX thread.
+     */
+    PreparedLoad prepareDecrypted(Path file, byte[] plaintext, long size, long mtime, String fingerprint) {
+        com.editora.editorconfig.EditorConfigProperties editorConfig =
+                host.editorSettings().editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)
+                        ? com.editora.editorconfig.EditorConfig.resolveFor(file.resolveSibling(
+                                com.editora.crypto.EncryptedFiles.innerName(String.valueOf(file.getFileName()))))
+                        : com.editora.editorconfig.EditorConfigProperties.EMPTY;
+        return prepareFromBytes(file, plaintext.length, mtime, false, editorConfig, plaintext, true)
+                .decryptedFrom(size, mtime, fingerprint);
+    }
+
+    private PreparedLoad prepareFromBytes(
+            Path file,
+            long size,
+            long mtime,
+            boolean isLog,
+            com.editora.editorconfig.EditorConfigProperties editorConfig,
+            byte[] bytes,
+            boolean sniffBinary) {
         // An encoding the user chose for this file wins over detection and .editorconfig — while the bytes are
         // still valid in it. When they are not, the file opens as it would without the choice, and the FX side
         // (applyPreparedLoad) forgets it.
@@ -979,7 +1127,7 @@ final class FileWorkflowCoordinator {
         // but drops the minimap + LSP — the two heaviest features for a huge source — so it stays responsive.
         int threshold = host.config().getSettings().getLargeFileThreshold();
         TextStats stats = textStats(content);
-        boolean longLine = stats.maxLineLength() >= LONG_LINE_FILE_CHARS;
+        boolean longLine = stats.longLined();
         boolean heavy = !large && !longLine && threshold > 0 && stats.lines() >= threshold;
         return new PreparedLoad(
                 file,
@@ -1078,6 +1226,9 @@ final class FileWorkflowCoordinator {
      * — unless the load needs the segmented or capped profile, which only a whole-document install provides.
      */
     String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load, boolean inPlace) {
+        if (load.encrypted()) {
+            return encryption.applyLocked(buffer, load); // its text arrives once it is decrypted
+        }
         buffer.setDiskSnapshot(load.mtime(), load.size(), load.fingerprint());
         buffer.setTruncatedLoad(load.truncated());
         host.editorSettings().applyResolvedEditorConfig(buffer, load.editorConfig());
@@ -1722,7 +1873,8 @@ final class FileWorkflowCoordinator {
                         buffer.isDisposed(),
                         buffer.isLoading() || loadingBuffers.contains(buffer),
                         buffer.isTruncatedLoad(),
-                        buffer.isLogTrimmed());
+                        buffer.isLogTrimmed(),
+                        buffer.encryption().isLocked());
     }
 
     boolean save(EditorBuffer buffer) {
@@ -1732,6 +1884,9 @@ final class FileWorkflowCoordinator {
         host.previews().lint().beforeSave(buffer); // "fix Markdown lint issues on save", one undo step
         if (buffer.getPath() == null) {
             return saveAs(buffer);
+        }
+        if (!encryption.beforeSave(buffer, buffer.getPath(), () -> save(buffer))) {
+            return false; // a new encrypted file: its recipients are chosen first, then this save runs again
         }
         updateTocForExplicitSave(buffer);
         if (adminSaveApplicable(buffer.getPath())) {
@@ -1798,7 +1953,7 @@ final class FileWorkflowCoordinator {
      * An explicit save of a file-backed buffer whose outcome can be awaited: completes on the FX thread with
      * whether the bytes reached the disk. Null for an elevated (administrator) save, which reports itself.
      */
-    private CompletableFuture<Boolean> saveTracked(EditorBuffer buffer) {
+    CompletableFuture<Boolean> saveTracked(EditorBuffer buffer) {
         if (refuseUnsavable(buffer)) {
             return CompletableFuture.completedFuture(false);
         }
@@ -1933,6 +2088,9 @@ final class FileWorkflowCoordinator {
                         () -> {
                             try {
                                 var outcome = request.ticket().runIfCurrent(() -> {
+                                    if (request.seal() != null) {
+                                        request.seal().seal(request.bytes());
+                                    }
                                     // The same preimage check as an ordinary save: the elevated copy truncates
                                     // in place, so an external edit would otherwise be overwritten unasked.
                                     if (Files.exists(target)
@@ -1944,7 +2102,7 @@ final class FileWorkflowCoordinator {
                                         return new AdminResult(-2, "refused", -1, -1);
                                     }
                                     keepMixedOriginal(request);
-                                    return elevatedWriter.write(request.target(), request.bytes());
+                                    return elevatedWriter.write(request.target(), request.diskBytes());
                                 });
                                 AdminResult result = outcome.executed()
                                         ? outcome.value()
@@ -1991,6 +2149,7 @@ final class FileWorkflowCoordinator {
             EditorBuffer buffer = request.buffer();
             Path target = request.target();
             if (result.exit() == 0) {
+                encryption.saved(buffer, target, request.seal());
                 host.historyCoordinator().record(target, request.content(), HistoryRevision.REASON_SAVE);
                 acknowledgeLatestCommit(buffer);
                 settleSaveNotes(request);
@@ -2072,6 +2231,9 @@ final class FileWorkflowCoordinator {
     private boolean applySaveAsTarget(EditorBuffer buffer, Path file, boolean synchronous) {
         if (refuseUnsavable(buffer) || refuseTargetOpenElsewhere(buffer, file)) {
             return false; // before the buffer is re-pointed: a refused write must not leave it renamed
+        }
+        if (!encryption.beforeSaveAs(buffer, file, () -> applySaveAsTarget(buffer, file, synchronous))) {
+            return false; // asked first: leaving encryption, or choosing who a new encrypted file is for
         }
         Path previousPath = buffer.getPath();
         saveAsOrigins.putIfAbsent(buffer, new SaveAsOrigin(previousPath));
@@ -2236,7 +2398,7 @@ final class FileWorkflowCoordinator {
         return new SavePayload(text, plan, notes);
     }
 
-    private static String fingerprint(byte[] bytes) {
+    static String fingerprint(byte[] bytes) {
         if (bytes == null) {
             return null;
         }
@@ -2377,6 +2539,10 @@ final class FileWorkflowCoordinator {
                                             first == null ? "?" : String.valueOf(first.line())));
             return null;
         }
+        EncryptionCoordinator.Seal seal = encryption.sealFor(buffer, file);
+        if (seal == EncryptionCoordinator.Seal.REFUSED) {
+            return null; // an encrypted file that cannot be encrypted right now: never written in plain text
+        }
         pendingSaves.merge(buffer, 1, Integer::sum);
         SaveRequest request = new SaveRequest(
                 buffer,
@@ -2395,7 +2561,8 @@ final class FileWorkflowCoordinator {
                 saveAs,
                 buffer.getLineEnding(),
                 payload.encoding().fallbackFrom(),
-                payload.notes());
+                payload.notes(),
+                seal);
         activeSaveRequests.add(request);
         return request;
     }
@@ -2410,7 +2577,7 @@ final class FileWorkflowCoordinator {
                         ? Files.notExists(request.target())
                         : plan.expectedBytes() == null || diskBytesEqual(request.target(), plan.expectedBytes()));
         keepMixedOriginal(request);
-        AtomicFileWrite.Outcome written = documentWriter.writeDocument(request.target(), request.bytes(), commit);
+        AtomicFileWrite.Outcome written = documentWriter.writeDocument(request.target(), request.diskBytes(), commit);
         if (written == AtomicFileWrite.Outcome.SKIPPED) {
             return null;
         }
@@ -2679,6 +2846,9 @@ final class FileWorkflowCoordinator {
         try {
             var outcome = request.ticket().runIfCurrent(() -> {
                 Path target = request.target();
+                if (request.seal() != null) {
+                    request.seal().seal(request.bytes()); // gpg, here on the save worker; fails closed
+                }
                 if (com.editora.vfs.RemoteFileSystems.isDisconnected(target)) {
                     throw new IOException(connectionLost(target)); // before a request that can only fail oddly
                 }
@@ -2707,7 +2877,7 @@ final class FileWorkflowCoordinator {
                     DiskWrite disk = writeToDisk(request, plan);
                     if (disk != null) {
                         // Local History keeps what this save replaced when it was not our own earlier save.
-                        host.historyCoordinator().saveReplaced(target, plan.expectedBytes(), request.bytes());
+                        host.historyCoordinator().saveReplaced(target, plan.expectedBytes(), request.diskBytes());
                     }
                     if (disk != null || !request.ticket().isCurrent()) {
                         return disk;
@@ -2750,6 +2920,9 @@ final class FileWorkflowCoordinator {
                         String why = com.editora.vfs.RemoteFileSystems.isDisconnected(request.target())
                                 ? connectionLost(request.target())
                                 : e.getMessage();
+                        if (e instanceof EncryptionCoordinator.SealFailure failure) {
+                            encryption.saveFailed(request.buffer(), failure); // the banner: why, and what to do
+                        }
                         host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", why));
                     }
                     rollbackFailedSaveAs(request);
@@ -2771,6 +2944,7 @@ final class FileWorkflowCoordinator {
     }
 
     private void completeSave(SaveRequest request, DiskWrite disk, boolean autoSave, boolean showFeedback) {
+        encryption.saved(request.buffer(), request.target(), request.seal());
         host.historyCoordinator()
                 .record(
                         request.target(),
@@ -3003,8 +3177,8 @@ final class FileWorkflowCoordinator {
                 request.documentVersion(),
                 request.content().length(),
                 com.editora.editor.TextFingerprint.of(request.content()),
-                fingerprint(request.bytes()),
-                request.bytes().length,
+                fingerprint(request.diskBytes()),
+                request.diskBytes().length,
                 disk,
                 request.lineEnding());
         committedSaves.compute(

@@ -36,7 +36,21 @@ final class DeclarationRules {
      * signature shape on top of it just rejects real declarations: Python's {@code def render(self):}
      * ends in a colon and Ruby's {@code def run!} ends in the name itself.
      */
-    record Rule(Pattern pattern, SymbolKind kind, boolean needsSignatureShape) {}
+    record Rule(Pattern pattern, SymbolKind kind, boolean needsSignatureShape, String mustContain) {
+
+        Rule(Pattern pattern, SymbolKind kind, boolean needsSignatureShape) {
+            this(pattern, kind, needsSignatureShape, null);
+        }
+
+        /**
+         * Whether the rule can match {@code line} at all: a plain {@code contains} of text every match holds, so the
+         * regex runs only where it might succeed. Every line used to run every rule, and JavaScript's eleven
+         * rules made a 20,000-line file's scan (at each save, on the FX thread) four times slower.
+         */
+        boolean mayMatch(String line) {
+            return mustContain == null || line.contains(mustContain);
+        }
+    }
 
     /** Identifiers that a call-shaped pattern would otherwise mistake for a declaration. */
     static final java.util.Set<String> CONTROL_KEYWORDS = java.util.Set.of(
@@ -89,6 +103,11 @@ final class DeclarationRules {
 
     private static Rule rule(String regex, SymbolKind kind) {
         return new Rule(Pattern.compile(unicodeWords(regex)), kind, false);
+    }
+
+    /** {@link #rule(String, SymbolKind)} that can only match a line containing {@code mustContain}. */
+    private static Rule rule(String regex, SymbolKind kind, String mustContain) {
+        return new Rule(Pattern.compile(unicodeWords(regex)), kind, false, mustContain);
     }
 
     /** A rule whose pattern has no declaring keyword, so the line's shape must confirm it. */
@@ -158,6 +177,65 @@ final class DeclarationRules {
             rule("(?:^|\\s)fun\\s+(?:<[^>]*>\\s*)?(?:" + ID + "\\.)?(?<n>" + ID + ")", SymbolKind.METHOD),
             rule("^\\s*(?:va[lr])\\s+(?<n>" + ID + ")", SymbolKind.FIELD));
 
+    /**
+     * A Groovy method with a declared return type. Groovy scripts and Gradle builds are mostly DSL calls
+     * ({@code task copy(type: Copy) &#123;}), which {@link #JAVA_MEMBER} reads as a declaration, so the type
+     * must look like one: a capitalised name or a primitive.
+     */
+    private static final String GROOVY_TYPED_MEMBER = "^\\s*(?:@" + ID + "(?:\\([^)]*\\))?\\s+)*"
+            + "(?:(?:public|protected|private|static|final|abstract|synchronized)\\s+)*"
+            + "(?:<[^>]*>\\s*)?"
+            + "(?:[A-Z][A-Za-z0-9_$.]*(?:<[^>]*>)?(?:\\[\\])*|void|boolean|byte|char|short|int|long|float|double)\\s+"
+            + "(?<n>" + ID + ")\\s*\\(";
+
+    private static final List<Rule> GROOVY = List.of(
+            rule("^\\s*package\\s+(?<n>[\\w.]+)", SymbolKind.MODULE),
+            rule("(?:^|\\s)(?:class|record)\\s+(?<n>" + ID + ")", SymbolKind.TYPE),
+            rule("(?:^|\\s)(?:interface|trait)\\s+(?<n>" + ID + ")", SymbolKind.INTERFACE),
+            rule("(?:^|\\s)enum\\s+(?<n>" + ID + ")", SymbolKind.ENUM),
+            // `def name(` is a method (or a script's function); a quoted name is a Spock feature method.
+            rule(
+                    "^\\s*(?:(?:public|protected|private|static|final|abstract|synchronized)\\s+)*def\\s+(?<n>" + ID
+                            + ")\\s*\\(",
+                    SymbolKind.METHOD),
+            signatureRule(GROOVY_TYPED_MEMBER, SymbolKind.METHOD),
+            rule(
+                    "^\\s*(?:(?:public|protected|private|static|final)\\s+)+(?:def\\s+|" + TYPE + ")(?<n>" + ID
+                            + ")\\s*(?:=|$)",
+                    SymbolKind.FIELD));
+
+    /** Scala's modifiers, a qualified {@code private[pkg]} included. */
+    private static final String SCALA_MODIFIERS = "(?:(?:private|protected)(?:\\[\\w*\\])?\\s+"
+            + "|(?:final|sealed|abstract|override|implicit|lazy|case|inline|transparent|opaque|open|infix)\\s+)*";
+
+    private static final List<Rule> SCALA = List.of(
+            rule("^\\s*package\\s+object\\s+(?<n>" + ID + ")", SymbolKind.MODULE),
+            rule("^\\s*package\\s+(?<n>[\\w.]+)", SymbolKind.MODULE),
+            rule("^\\s*" + SCALA_MODIFIERS + "(?:class|object)\\s+(?<n>" + ID + ")", SymbolKind.TYPE),
+            rule("^\\s*" + SCALA_MODIFIERS + "trait\\s+(?<n>" + ID + ")", SymbolKind.INTERFACE),
+            rule("^\\s*" + SCALA_MODIFIERS + "enum\\s+(?<n>" + ID + ")", SymbolKind.ENUM),
+            rule("^\\s*" + SCALA_MODIFIERS + "type\\s+(?<n>" + ID + ")", SymbolKind.TYPE),
+            rule("^\\s*" + SCALA_MODIFIERS + "def\\s+(?<n>" + ID + ")", SymbolKind.METHOD),
+            rule("^\\s*" + SCALA_MODIFIERS + "(?:val|var|given)\\s+(?<n>" + ID + ")\\s*[:=]", SymbolKind.FIELD));
+
+    /**
+     * A Clojure symbol as a definition names it ({@code my-fn}, {@code valid?}, {@code *dynamic*}, {@code ->Map}),
+     * after optional {@code ^:private} / {@code ^String} metadata.
+     */
+    private static final String CLJ_NAME = "(?:\\^\\S+\\s+)*(?<n>[\\p{L}*+!_?<>=$&%-][\\p{L}\\p{N}*+!_?<>=$&%.'-]*)";
+
+    /**
+     * Clojure's top-level definition forms. A form in column 0 only: a {@code (defn …)} indented inside a
+     * {@code (comment …)} block or a {@code let} is scratch code, not part of the namespace's surface. An optional
+     * namespace alias on the operator ({@code (s/def …)}, {@code (t/deftest …)}) is allowed.
+     */
+    private static final List<Rule> CLOJURE = List.of(
+            rule("^\\((?:in-)?ns\\s+" + CLJ_NAME, SymbolKind.MODULE),
+            rule("^\\((?:[\\w.-]+/)?(?:defprotocol|definterface)\\s+" + CLJ_NAME, SymbolKind.INTERFACE),
+            rule("^\\((?:[\\w.-]+/)?(?:defrecord|deftype|defstruct)\\s+" + CLJ_NAME, SymbolKind.TYPE),
+            rule("^\\((?:[\\w.-]+/)?(?:defn-?|defmacro|defmulti|deftest|defspec)\\s+" + CLJ_NAME, SymbolKind.FUNCTION),
+            rule("^\\((?:[\\w.-]+/)?(?:def|defonce)\\s+" + CLJ_NAME, SymbolKind.VARIABLE));
+
     private static final List<Rule> PYTHON = List.of(
             rule("^\\s*class\\s+(?<n>\\w+)", SymbolKind.TYPE),
             // Type aliases: the 3.12 `type X = …` / `type X[T] = …` statement, and `X: TypeAlias = …`.
@@ -166,18 +244,39 @@ final class DeclarationRules {
             rule("^\\s*(?:async\\s+)?def\\s+(?<n>\\w+)", SymbolKind.METHOD),
             rule("^(?<n>[A-Z][A-Z0-9_]*)\\s*(?::[^=]+)?=", SymbolKind.VARIABLE));
 
+    /** A JavaScript/TypeScript function value on the right of {@code =} or {@code :}. */
+    private static final String JS_FUNCTION_VALUE =
+            "(?:async\\s*)?(?:function\\b|\\([^)]*+\\)\\s*(?::[^=]++)?=>|" + ID + "\\s*=>)";
+
     private static final List<Rule> JS = List.of(
-            rule("(?:^|\\s)class\\s+(?<n>" + ID + ")", SymbolKind.TYPE),
-            rule("(?:^|\\s)interface\\s+(?<n>" + ID + ")", SymbolKind.INTERFACE),
-            rule("(?:^|\\s)enum\\s+(?<n>" + ID + ")", SymbolKind.ENUM),
-            rule("(?:^|\\s)type\\s+(?<n>" + ID + ")\\s*=", SymbolKind.TYPE),
-            rule("(?:^|\\s)(?:async\\s+)?function\\s*\\*?\\s*(?<n>" + ID + ")", SymbolKind.FUNCTION),
-            // `const foo = () => …` / `const foo = function …` — the modern declaration form.
+            rule("(?:^|\\s)class\\s+(?<n>" + ID + ")", SymbolKind.TYPE, "class"),
+            rule("(?:^|\\s)interface\\s+(?<n>" + ID + ")", SymbolKind.INTERFACE, "interface"),
+            rule("(?:^|\\s)enum\\s+(?<n>" + ID + ")", SymbolKind.ENUM, "enum"),
+            rule("(?:^|\\s)type\\s+(?<n>" + ID + ")\\s*=", SymbolKind.TYPE, "type"),
+            // CommonJS: `exports.parse = (s) => …`, `module.exports.VERSION = '1.0'`.
             rule(
-                    "^\\s*(?:export\\s+)?(?:const|let|var)\\s+(?<n>" + ID
-                            + ")\\s*=\\s*(?:async\\s*)?(?:function\\b|\\([^)]*\\)\\s*=>|" + ID + "\\s*=>)",
-                    SymbolKind.FUNCTION),
-            rule("^\\s*(?:export\\s+)?(?:const|let|var)\\s+(?<n>" + ID + ")\\s*=", SymbolKind.VARIABLE));
+                    "^\\s*(?:module\\.)?exports\\.(?<n>" + ID + ")\\s*=\\s*" + JS_FUNCTION_VALUE,
+                    SymbolKind.FUNCTION,
+                    "exports."),
+            rule("^\\s*(?:module\\.)?exports\\.(?<n>" + ID + ")\\s*=(?!=)", SymbolKind.VARIABLE, "exports."),
+            rule("(?:^|\\s)(?:async\\s+)?function\\s*\\*?\\s*(?<n>" + ID + ")", SymbolKind.FUNCTION, "function"),
+            // `const foo = () => …` / `const foo = function …` — the modern declaration form, at any depth.
+            rule(
+                    "^\\s*(?:export\\s+)?(?:const|let|var)\\s+(?<n>" + ID + ")\\s*=\\s*" + JS_FUNCTION_VALUE,
+                    SymbolKind.FUNCTION,
+                    "="),
+            // A class or object method: `start() {`, `static async create(port) { … }`, `get size() {`, `#tick() {}`.
+            // The `) {` it must end in is what no call has; control keywords and `function` are not names.
+            rule(
+                    "^\\s*(?:(?:static|async|get|set|public|private|protected|readonly|override|abstract|accessor)\\s+)*"
+                            + "\\*?\\s*(?!(?:if|for|while|switch|catch|function|with|return|await|typeof|new)\\b)"
+                            + "(?<n>#?" + ID + ")\\s*\\([^()]*+(?:\\([^()]*+\\)[^()]*+)*+\\)\\s*(?::\\s*[^{=]++)?\\{",
+                    SymbolKind.METHOD,
+                    "{"),
+            // An object property holding a function: `remove: function (id) {`, `update: (id) => id,`.
+            rule("^\\s*(?<n>" + ID + ")\\s*:\\s*" + JS_FUNCTION_VALUE, SymbolKind.METHOD, ":"),
+            // A variable only at the top level (column 0): every local `const result =` used to be indexed too.
+            rule("^(?:export\\s+)?(?:const|let|var)\\s+(?<n>" + ID + ")\\s*=", SymbolKind.VARIABLE, "="));
 
     private static final List<Rule> GO = List.of(
             rule("^\\s*package\\s+(?<n>\\w+)", SymbolKind.MODULE),
@@ -239,6 +338,9 @@ final class DeclarationRules {
     private static final Map<String, List<Rule>> BY_LANGUAGE = Map.ofEntries(
             Map.entry("java", JAVA),
             Map.entry("kotlin", KOTLIN),
+            Map.entry("groovy", GROOVY),
+            Map.entry("scala", SCALA),
+            Map.entry("clojure", CLOJURE),
             Map.entry("python", PYTHON),
             Map.entry("javascript", JS),
             Map.entry("javascriptreact", JS),
@@ -266,6 +368,9 @@ final class DeclarationRules {
 
     /** True when the language's members live inside braces, so a container can be tracked by depth. */
     static boolean braceScoped(String language) {
-        return !("python".equals(language) || "ruby".equals(language) || "shell".equals(language));
+        return !("python".equals(language)
+                || "ruby".equals(language)
+                || "shell".equals(language)
+                || "clojure".equals(language));
     }
 }

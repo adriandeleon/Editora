@@ -35,6 +35,32 @@ class FoldRegionsTest {
     }
 
     @Test
+    void aJavaScriptRegexLiteralIsSkippedLikeAString() {
+        // A backtick inside a regex used to open a template literal that swallowed every brace below it.
+        String js = "function md(s) {\n  return s.split(/`/).join('');\n}\n"
+                + "function count(s) {\n  return (s.match(/\\{/g) || []).length;\n}\n"
+                + "function later() {\n  if (x) {\n    y();\n  }\n}\n";
+        List<Region> regions = FoldRegions.detect(js, "javascript");
+        assertTrue(hasRegion(regions, 0, 2), "the function holding /`/ folds");
+        assertTrue(hasRegion(regions, 3, 5), "the function holding /\\{/ folds as a whole");
+        assertFalse(hasRegion(regions, 4, 5), "the escaped brace opens nothing");
+        assertTrue(hasRegion(regions, 6, 10), "everything below still folds");
+        assertTrue(hasRegion(regions, 7, 9));
+
+        // A slash after an operand divides; a regex after `return`, `(`, `=` or a line start is skipped.
+        String division = "const a = {\n  b: x / 2 / y,\n  c: (a) / `x`.length,\n};\nconst r = /[/{]/;\nif (z) {\n}\n";
+        List<Region> d = FoldRegions.detect(division, "typescript");
+        assertTrue(hasRegion(d, 0, 3), "divisions do not open regexes");
+        assertTrue(hasRegion(d, 5, 6), "a slash inside a regex's [class] does not end it");
+        // Not in other languages: Java has no regex literals.
+        assertTrue(
+                FoldRegions.detect("class A {\n  int x = a /`/ b;\n}\n", "java").contains(new Region(0, 2)));
+        // The block-comment pass skips regexes too: /\/*/ is not a comment opener.
+        assertTrue(FoldRegions.blockComments("const re = /\\/*/;\nx();\n/* a\n b */\n", "javascript")
+                .contains(new Region(2, 3)));
+    }
+
+    @Test
     void bracesOnSameLineDoNotFold() {
         List<Region> regions = FoldRegions.detect("int[] a = {1, 2, 3};\n", "java");
         assertTrue(regions.isEmpty());
@@ -291,5 +317,56 @@ class FoldRegionsTest {
     void shellKeywordsInStringsCommentsAndHereDocsFoldNothing() {
         String sh = "echo \"if x; then\"\n# for a in b; do\ncat <<EOF\nif {\nEOF\n";
         assertEquals(List.of(new Region(2, 4)), FoldRegions.detect(sh, "shell"));
+    }
+
+    @Test
+    void clojureFoldsEveryMultiLineForm() {
+        String clj = "(ns demo.core\n  (:require [a.b :as b]))\n\n(defn f\n  [x]\n  {:a 1\n   :b [2\n       3]})\n";
+        List<Region> regions = FoldRegions.detect(clj, "clojure");
+        assertTrue(hasRegion(regions, 0, 1), "the ns form");
+        assertTrue(hasRegion(regions, 3, 7), "the defn");
+        assertTrue(hasRegion(regions, 5, 7), "the map");
+        assertTrue(hasRegion(regions, 6, 7), "the vector");
+        assertEquals(3 + 1, regions.size(), regions.toString());
+    }
+
+    @Test
+    void clojureSkipsBracketsInStringsCommentsCharactersAndRegexes() {
+        String clj =
+                "(defn f\n  \"doc ( with\n  a paren\"\n  [x] ; ( not a form\n  (str \\( \\\" #\"[(]\" x))\n(def y 1)\n";
+        List<Region> regions = FoldRegions.detect(clj, "clojure");
+        assertEquals(
+                List.of(new Region(0, 4)),
+                regions,
+                "only the defn: the docstring, comment, \\( and regex open nothing");
+    }
+
+    @Test
+    void scalaFoldsBracesAndBlockComments() {
+        String scala = "object A {\n  /* a\n   * b */\n  def f = {\n    1\n  }\n}\n";
+        List<Region> regions = FoldRegions.detect(scala, "scala");
+        assertTrue(hasRegion(regions, 0, 6), "the object braces");
+        assertTrue(hasRegion(regions, 3, 5), "the method braces");
+        assertEquals(List.of(new Region(1, 2)), FoldRegions.blockComments(scala, "scala"));
+    }
+
+    @Test
+    void scalaSymbolLiteralsDoNotSwallowBraces() {
+        String scala = "object A {\n  val s = 'sym\n  val c = '}'\n  def f = {\n    1\n  }\n}\n";
+        List<Region> regions = FoldRegions.detect(scala, "scala");
+        assertTrue(hasRegion(regions, 0, 6), regions.toString());
+        assertTrue(hasRegion(regions, 3, 5), regions.toString());
+    }
+
+    @Test
+    void scala3OptionalBracesFoldByIndentationThroughTheirEndMarker() {
+        String scala = "class Shelf:\n  def add(x: Int): Unit =\n    if x > 0 then\n      println(x)\n"
+                + "    total += x\n  end add\n\n  def size = 1\nend Shelf\n\nobject B:\n  val x = 1\n";
+        List<Region> regions = FoldRegions.detect(scala, "scala");
+        assertTrue(hasRegion(regions, 0, 8), "the class through `end Shelf`: " + regions);
+        assertTrue(hasRegion(regions, 1, 5), "the method through `end add`: " + regions);
+        assertTrue(hasRegion(regions, 2, 3), "the then branch: " + regions);
+        assertTrue(hasRegion(regions, 10, 11), "an object with no end marker: " + regions);
+        assertTrue(regions.stream().noneMatch(r -> r.startLine() == 7), "a one-line def folds nothing");
     }
 }

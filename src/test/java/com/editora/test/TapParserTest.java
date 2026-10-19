@@ -93,7 +93,7 @@ class TapParserTest {
                 TestStatus.PASSED,
                 suite.childById(TapParser.SUITE + "#Lexer \u203a handles empty input")
                         .status());
-        assertEquals(4, suite.children().size());
+        assertEquals(2, suite.children().size(), "the describe blocks' own results are suites, not tests");
         assertEquals(TestStatus.FAILED, root.status());
     }
 
@@ -122,5 +122,76 @@ class TapParserTest {
                 TestStatus.FAILED, suite.childById(TapParser.SUITE + "#second").status());
         assertEquals(3, suite.children().size());
         assertEquals(0, parse("okay then", "ok: true").children().size(), "prose is not a result");
+    }
+
+    /** node:test's real TAP (Node 24): suites skipped, the error and stack lifted out of the YAML. */
+    @Test
+    void nodeTestTapGivesTheErrorStackAndLocation() {
+        TapParser p = new TapParser();
+        TestNode root = TestNode.root();
+        String[] lines = {
+            "TAP version 13",
+            "# Subtest: adds",
+            "ok 1 - adds",
+            "  ---",
+            "  duration_ms: 0.4",
+            "  type: 'test'",
+            "  ...",
+            "# Subtest: fails",
+            "not ok 2 - fails",
+            "  ---",
+            "  duration_ms: 0.5",
+            "  type: 'test'",
+            "  location: '/p/a.test.js:4:1'",
+            "  failureType: 'testCodeFailure'",
+            "  error: |-",
+            "    Expected values to be strictly equal:",
+            "    ",
+            "    2 !== 3",
+            "    ",
+            "  code: 'ERR_ASSERTION'",
+            "  name: 'AssertionError'",
+            "  stack: |-",
+            "    TestContext.<anonymous> (/p/a.test.js:4:30)",
+            "    Test.run (node:internal/test_runner/test:1325:25)",
+            "  ...",
+            "# Subtest: group",
+            "    # Subtest: inner bad",
+            "    not ok 1 - inner bad",
+            "      ---",
+            "      location: '/p/a.test.js:5:68'",
+            "      error: 'boom'",
+            "      ...",
+            "    1..1",
+            "not ok 3 - group",
+            "  ---",
+            "  type: 'suite'",
+            "  error: '1 subtest failed'",
+            "  ...",
+            "1..3",
+        };
+        for (String l : lines) {
+            for (ParsedSuite s : p.onLine(l, false)) {
+                TestTreeBuilder.merge(root, s);
+            }
+        }
+        root.rollUp();
+        TestNode suite = root.childById(TapParser.SUITE);
+        assertEquals(3, suite.children().size(), "adds, fails, group › inner bad — not group");
+        TestNode fails = suite.childById(TapParser.SUITE + "#fails");
+        assertEquals("Expected values to be strictly equal:\n\n2 !== 3", fails.failureMessage());
+        assertTrue(fails.stackTrace().contains("at fails (/p/a.test.js:4:1)"), fails.stackTrace());
+        assertTrue(fails.stackTrace().contains("at TestContext.<anonymous> (/p/a.test.js:4:30)"));
+        assertEquals(
+                "boom",
+                suite.childById(TapParser.SUITE + "#group \u203a inner bad").failureMessage());
+        assertEquals(2, root.tally().failed());
+        assertTrue(p.nodeTest());
+    }
+
+    @Test
+    void colourEscapesDoNotHideResults() {
+        TestNode root = parse("\u001B[32mok 1 - green\u001B[0m");
+        assertEquals(1, root.childById(TapParser.SUITE).children().size());
     }
 }

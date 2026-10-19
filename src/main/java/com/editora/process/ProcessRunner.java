@@ -277,6 +277,34 @@ public final class ProcessRunner {
         return decoded(runRaw(workingDir, timeout, command, Map.of(), null, false, false, stopAfter));
     }
 
+    /**
+     * Bytes in, bytes out: feeds {@code stdin} (may be null) to the child and returns its raw stdout — for a
+     * filter whose output is not text, or is text that must not pass through a String on its way (GnuPG's
+     * plaintext and ciphertext). {@code userLocale} keeps the user's locale, so a dialog the child opens (a
+     * passphrase prompt) speaks the user's language. {@code cancel} (may be null) kills the process tree.
+     * {@link #timedOut(BytesResult)} and {@link #cancelled(BytesResult)} tell a run that did not finish.
+     */
+    public static BytesResult runBytesWithInput(
+            Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            byte[] stdin,
+            boolean userLocale,
+            Cancellation cancel) {
+        return runRaw(workingDir, timeout, command, extraEnv, stdin, userLocale, false, null, null, cancel);
+    }
+
+    /** Whether {@code result} is a run that was killed at its timeout. */
+    public static boolean timedOut(BytesResult result) {
+        return result.exit() == -1 && TIMED_OUT.equals(result.err());
+    }
+
+    /** Whether {@code result} is a run the user cancelled. */
+    public static boolean cancelled(BytesResult result) {
+        return result.exit() == -1 && CANCELLED.equals(result.err());
+    }
+
     /** Runs {@code command} and returns its raw stdout bytes (undecoded). No stdin. */
     public static BytesResult runBytes(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {

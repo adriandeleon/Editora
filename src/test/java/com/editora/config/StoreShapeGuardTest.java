@@ -64,15 +64,15 @@ class StoreShapeGuardTest {
         ROOTS.put(ConfigSchema.TRUST, TrustStore.class);
         ROOTS.put(ConfigSchema.HTTP_HISTORY, HttpResponseHistory.Stored.class);
 
-        PINNED.put(ConfigSchema.SETTINGS, "134:f206b5b6e8a09a49");
-        PINNED.put(ConfigSchema.WORKSPACE, "21:9c4149eab90a7c1f");
+        PINNED.put(ConfigSchema.SETTINGS, "138:b393848403f14eb8");
+        PINNED.put(ConfigSchema.WORKSPACE, "22:0c4722d3fe6b04c9");
         PINNED.put(ConfigSchema.BOOKMARKS, "2:c932fc9b729bab63");
         PINNED.put(ConfigSchema.BREAKPOINTS, "2:fce8c823144b83b9");
         PINNED.put(ConfigSchema.PROJECTS, "2:a373bb1579a65406");
         PINNED.put(ConfigSchema.RECENT, "1:d784f4ce61c5c2a8");
         PINNED.put(ConfigSchema.NOTES, "2:f89de7207bb41420");
         PINNED.put(ConfigSchema.CONNECTIONS, "2:ce8f958024ef9829");
-        PINNED.put(ConfigSchema.PLUGINS, "1:44ba1632b30d33b8");
+        PINNED.put(ConfigSchema.PLUGINS, "2:5a0d8ea1a54352ef");
         PINNED.put(ConfigSchema.HISTORY, "4:808e4a3b0917d64e");
         PINNED.put(ConfigSchema.SEARCH_HISTORY, "1:5b92e22ca7e96bc2");
         PINNED.put(ConfigSchema.AGENT_SESSIONS, "2:3d4af4d26bc417e4");

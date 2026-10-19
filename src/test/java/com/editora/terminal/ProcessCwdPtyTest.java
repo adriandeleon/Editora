@@ -47,7 +47,7 @@ class ProcessCwdPtyTest {
         AtomicReference<String> reported = new AtomicReference<>();
         try {
             session.start();
-            assumeTrue(awaitReady(session), "shell did not start");
+            assertTrue(awaitReady(session), "the shell started");
 
             // The shell is started in the user's home, and that is what a fresh tab should say.
             assertEquals(
@@ -68,7 +68,9 @@ class ProcessCwdPtyTest {
             // And it stops when closed: whatever it reported last stays put through another cd.
             String afterClose = reported.get();
             session.sendString("cd /\r");
-            Thread.sleep(2 * 750);
+            // The cd has to have run, or the check below proves nothing on a slow shell.
+            assertTrue(await(() -> "/".equals(ProcessCwd.of(session.pid()).orElse(null))), "the shell ran the cd");
+            Thread.sleep(2 * 750); // two of the watcher's polls: a running one would have reported "/"
             assertEquals(afterClose, reported.get(), "a closed watcher went on polling");
         } finally {
             session.close();

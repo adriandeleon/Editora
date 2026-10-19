@@ -357,7 +357,8 @@ public final class MarkdownRenderer {
             java.util.function.Predicate<CheckBox> onTask,
             java.util.function.Consumer<Node> onEnlarge,
             boolean hideFrontMatter,
-            boolean remoteGranted) {
+            boolean remoteGranted,
+            boolean diagrams) {
 
         /** Whether the reader allowed this document's remote images where the policy is to ask first. */
         boolean loadsRemote(String url) {
@@ -572,7 +573,10 @@ public final class MarkdownRenderer {
             return renderList(ol, ctx, true, start == null ? 1 : start);
         }
         if (node instanceof FencedCodeBlock f) {
-            if (isMermaidInfo(f.getInfo()) && MermaidImages.isEnabled()) {
+            // An encrypted file's diagrams stay code: rendering one hands its source to mmdc in a file.
+            if (isMermaidInfo(f.getInfo())
+                    && MermaidImages.isEnabled()
+                    && (ctx.live() == null || ctx.live().diagrams())) {
                 if (ctx.assets() != null) { // print: already rendered (light), so its size is final now
                     return new ShrinkToFit(MermaidImages.printNode(
                             ctx.assets().diagram(stripTrailingNewline(f.getLiteral())),
@@ -1380,6 +1384,10 @@ public final class MarkdownRenderer {
             Map.entry("c#", "cs"),
             Map.entry("kotlin", "kt"),
             Map.entry("kt", "kt"),
+            Map.entry("kts", "kts"),
+            Map.entry("sc", "sc"), // Scala CLI / Ammonite
+            Map.entry("clj", "clj"),
+            Map.entry("cljs", "cljs"),
             Map.entry("yml", "yaml"),
             Map.entry("yaml", "yaml"),
             Map.entry("markdown", "md"),

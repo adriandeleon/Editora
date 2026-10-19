@@ -164,6 +164,11 @@ public final class ConfigFileType {
             default:
                 break;
         }
+        // Clojure project files: Leiningen's project.clj and Babashka's bb.edn. Their extensions already map to
+        // Clojure; naming them here keeps them Clojure files whatever the extension tables say.
+        if (lower.equals("project.clj") || lower.equals("bb.edn")) {
+            return "clojure";
+        }
         // Jenkins pipeline — Groovy (literal "Jenkinsfile" or a "Jenkinsfile.<env>" suffix).
         if (lower.equals("jenkinsfile") || lower.startsWith("jenkinsfile.")) {
             return "groovy";
@@ -206,6 +211,15 @@ public final class ConfigFileType {
             case ".stylelintrc":
             case ".swcrc":
             case ".bowerrc":
+            // Node test, coverage and release tools: JSON (or YAML, which the JSON grammar reads acceptably), not
+            // the INI the generic *rc rule below would make them.
+            case ".mocharc":
+            case ".nycrc":
+            case ".c8rc":
+            case ".lintstagedrc":
+            case ".huskyrc":
+            case ".releaserc":
+            case ".jshintrc":
                 return "json";
             default:
                 break;

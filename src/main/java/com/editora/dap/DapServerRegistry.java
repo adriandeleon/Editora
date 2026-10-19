@@ -10,7 +10,7 @@ import java.util.Set;
  * {@code initialize} adapter id, and (for the standalone adapters) the default interpreter + adapter
  * arguments. Mirrors {@code LspServerRegistry}, but debug-adapter-centric.
  *
- * <p>Three transports:
+ * <p>Four transports:
  * <ul>
  *   <li><b>java</b> → {@link Kind#JDTLS}: the Microsoft java-debug adapter is started <em>inside</em> jdtls
  *       via {@code workspace/executeCommand} (which returns a socket port); the registry carries no command
@@ -19,6 +19,7 @@ import java.util.Set;
  *       stdin/stdout; launch {@code type="python"}.</li>
  *   <li><b>javascript</b> → {@link Kind#SOCKET}: {@code node <dapDebugServer.js> <port>}, DAP over a TCP
  *       socket; launch {@code type="pwa-node"}.</li>
+ *   <li><b>groovy</b> → {@link Kind#JVM}: Editora's own JDI adapter, in-process; nothing to install.</li>
  * </ul>
  *
  * <p>All methods are static + pure (no process launch, no I/O), so they are unit-testable. The
@@ -31,7 +32,9 @@ public final class DapServerRegistry {
     public enum Kind {
         JDTLS,
         STDIO,
-        SOCKET
+        SOCKET,
+        /** Editora's own JDI adapter ({@code com.editora.dap.jvm}), served in-process on a loopback socket. */
+        JVM
     }
 
     /**
@@ -48,6 +51,9 @@ public final class DapServerRegistry {
             String adapterId,
             String defaultInterpreter,
             List<String> adapterArgs) {}
+
+    /** The launch {@code type} and adapter id of Editora's own JVM adapter. */
+    public static final String JVM_LAUNCH_TYPE = "editora-jvm";
 
     /** Default interpreter when the user leaves the Settings command field blank. */
     public static final String DEFAULT_PYTHON_INTERPRETER = "python3";
@@ -72,7 +78,12 @@ public final class DapServerRegistry {
                 "pwa-node",
                 DEFAULT_NODE_INTERPRETER,
                 List.of(),
-                Set.of("javascript"));
+                // TypeScript too: Node 22.18+/23.6+ runs a .ts file itself, and a compiled project's .ts/.tsx
+                // sources are where its breakpoints go (source maps). One adapter, one "javascript" session.
+                Set.of("javascript", "typescript", "javascriptreact", "typescriptreact")),
+        // A Groovy script runs under `groovy` with the JDWP agent in JAVA_OPTS; Editora's own adapter maps its
+        // breakpoints by source name (java-debug parses every file as Java).
+        GROOVY("groovy", Kind.JVM, JVM_LAUNCH_TYPE, JVM_LAUNCH_TYPE, "", List.of(), Set.of("groovy"));
 
         final String language;
         final Kind kind;
@@ -114,9 +125,19 @@ public final class DapServerRegistry {
         return null;
     }
 
-    /** The editor language ids that can be debugged ({@code java}, {@code python}, {@code javascript}). */
+    /** The adapter languages ({@code java}, {@code python}, {@code javascript}). */
     public static Set<String> languageIdsForDebug() {
-        return Set.of("java", "python", "javascript");
+        return Set.of("java", "python", "javascript", "groovy");
+    }
+
+    /**
+     * The adapter language serving editor language {@code languageId} — {@code javascript} for TypeScript and
+     * JSX/TSX files too — or {@code languageId} itself when no adapter serves it. Settings, exception choices and
+     * messages are kept per adapter language.
+     */
+    public static String adapterLanguage(String languageId) {
+        Def d = defFor(languageId);
+        return d == null ? languageId : d.language;
     }
 
     /** Whether a debug adapter is registered for {@code languageId}. */

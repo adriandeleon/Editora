@@ -176,17 +176,58 @@ public class WindowManager {
     }
 
     /**
-     * Lists the plugins directory and reads every manifest (startup I/O + class loaders). The predicate
-     * factors the master gate, so no untrusted code loads unless plugins are enabled; the Settings page
-     * still lists all of them. Safe off the FX thread: the launch runs it on the config-prefetch thread.
+     * Lists the plugins directory and reads every manifest (startup I/O + class loaders): the session's launch
+     * set. The consent factors the master gate and {@code --disable-plugins}, so no untrusted code loads unless
+     * plugins are enabled, and a plugin loads only with the capabilities the user enabled it with; the Settings
+     * page still lists all of them. Then the store is brought in line with what is on disk ({@link
+     * com.editora.config.PluginStore#reconcile}). Safe off the FX thread: the launch runs it on the
+     * config-prefetch thread, before any window exists.
      */
     public static com.editora.plugin.PluginManager discoverPlugins(SharedConfig shared) {
+        retirePlugins(shared);
         var manager = new com.editora.plugin.PluginManager(
                 shared.getPluginsDir(),
-                id -> shared.getSettings().isPluginSupport()
-                        && shared.getPluginStore().isEnabled(id));
+                (id, digest) -> shared.getSettings().isPluginSupport()
+                        && !com.editora.plugin.PluginManager.disabledForSession()
+                        && shared.getPluginStore().allows(id, digest));
         manager.discover();
+        java.util.Map<String, String> present = new java.util.HashMap<>();
+        for (com.editora.plugin.PluginDescriptor d : manager.descriptors()) {
+            present.put(d.id(), d.loadError() == null ? d.digest() : null);
+        }
+        if (shared.getPluginStore().reconcile(present)) {
+            shared.savePlugins();
+        }
         return manager;
+    }
+
+    /**
+     * Removes plugins whose feature is now built in ({@link com.editora.plugin.RetiredPlugins}), carrying over
+     * what the built-in feature can use: the GnuPG plugin's gpg path and last recipient become the encrypted
+     * files settings, unless those are already set.
+     */
+    static void retirePlugins(SharedConfig shared) {
+        com.editora.config.Settings settings = shared.getSettings();
+        boolean[] settingsChanged = {false};
+        java.util.List<String> removed = com.editora.plugin.RetiredPlugins.retire(shared.getPluginsDir(), carried -> {
+            if (settings.getEncryptionGpgPath().isEmpty() && !carried.gpgPath().isEmpty()) {
+                settings.setEncryptionGpgPath(carried.gpgPath());
+                settingsChanged[0] = true;
+            }
+            if (!carried.recipient().isEmpty()
+                    && !settings.getEncryptionRecentRecipients().contains(carried.recipient())) {
+                settings.rememberEncryptionRecipients(java.util.List.of(carried.recipient()));
+                settingsChanged[0] = true;
+            }
+        });
+        if (removed.isEmpty()) {
+            return;
+        }
+        shared.getPluginStore().enabled.remove(com.editora.plugin.RetiredPlugins.GPG_TOOLS);
+        shared.savePlugins();
+        if (settingsChanged[0]) {
+            shared.saveSettings();
+        }
     }
 
     /**
@@ -1088,6 +1129,15 @@ public class WindowManager {
      *
      * @return false if the user cancelled at some window's save prompt (the quit is off).
      */
+    /** Every window's terminals that are running something, for the quit question. */
+    List<String> busyTerminals() {
+        List<String> busy = new ArrayList<>();
+        for (Holder h : windows) {
+            busy.addAll(h.controller().terminalCoordinator.busyTerminals());
+        }
+        return busy;
+    }
+
     boolean confirmCloseAllWindows() {
         // The prompts below run nested event loops; a pending restored window must not be built under them.
         // Left paused when the quit goes ahead: the unbuilt windows keep their saved sessions and their
@@ -1460,7 +1510,8 @@ public class WindowManager {
      */
     public void reloadSharedKeymap() {
         Settings settings = shared.getSettings();
-        List<java.util.Map<String, String>> pluginKeymaps = KeymapLayers.pluginKeymaps(settings, pluginManager);
+        List<java.util.Map<String, String>> pluginKeymaps = KeymapLayers.pluginKeymaps(
+                settings, pluginManager, com.editora.command.KeymapManager.resolveName(settings.getKeymap()));
         KeymapLayers.rebuild(
                 keymap,
                 settings.getKeymap(),

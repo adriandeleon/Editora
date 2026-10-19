@@ -347,4 +347,19 @@ class ConfigExporterTest {
             assertEquals(null, zf.getEntry("http-history/abc.json"), "left out by default");
         }
     }
+
+    /** E10/B12: a plugin's private data goes only when asked for; the installer's own folders never. */
+    @Test
+    void pluginDataIsAskedForAndInstallerStagingIsNeverExported() {
+        assertTrue(ConfigExporter.included("plugins/notes/plugin.json", false, false));
+        assertTrue(ConfigExporter.included("plugins/notes/notes.jar", false, false));
+        assertFalse(ConfigExporter.included("plugins/notes/data/token.txt", false, false));
+        assertTrue(ConfigExporter.included("plugins/notes/data/token.txt", false, true));
+        assertTrue(ConfigExporter.included("plugins/notes/database.txt", false, false), "only the data folder");
+        for (String staging : java.util.List.of(
+                "plugins/.installing-123/x.jar", "plugins/.pending-notes/plugin.json", "plugins/.remove-notes")) {
+            assertFalse(ConfigExporter.included(staging, true, true), staging);
+        }
+        assertTrue(ConfigExporter.included("plugins/notes/data/x", false), "the copy before an import keeps it");
+    }
 }

@@ -68,7 +68,9 @@ final class HttpScriptGate {
                         settings.getHttpNodePath(),
                         Duration.ofSeconds(settings.getHttpScriptTimeoutSeconds()),
                         cache,
-                        debugger),
+                        debugger,
+                        settings.getNodePath(), // blank HTTP field: the shared Node.js (review E6)
+                        project),
                 trust,
                 file,
                 folder);

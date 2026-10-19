@@ -345,6 +345,7 @@ final class InstallCoordinator {
         switch (serverId) {
             case "clangd" -> s.setClangdLspCommand(command);
             case "kotlin" -> s.setKotlinLspCommand(command);
+            case "groovy" -> s.setGroovyLspCommand(command); // java -jar over the downloaded gls jar
             case "lua" -> s.setLuaLspCommand(command);
             case "xml" -> s.setXmlLspCommand(command);
             case "terraform" -> s.setTerraformLspCommand(command);

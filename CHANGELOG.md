@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Encrypted files are a core feature, and their text stays encrypted everywhere Editora writes.** Opening a
+  `.gpg`, `.pgp` or `.asc` encrypted file decrypts it with GnuPG (the `gpg` you have installed, on this machine),
+  and saving encrypts it again for the same people, in the same format. A save that cannot be encrypted (a
+  recipient's public key missing, GnuPG failing) writes nothing and says why in a banner. While an encrypted
+  file is open, its text gets no crash-recovery copy and no Local History, bookmarks and breakpoints keep only
+  line numbers, no personal notes can be added, language servers do not read it (a setting turns them on),
+  agents, MCP clients and AI actions are refused, and diagrams are not rendered through temporary files. Save
+  As to a plain name, export, print and external tools ask first. Settings schema 136.
+- **Plugins: consent belongs to a plugin's folder and to what you were shown.** A plugin's id must be its folder's
+  name (a folder that copies another plugin's id is listed with an error and never loads), and plugins.json stores
+  a fingerprint of the disclosure with each consent: a plugin whose code, commands or chords changed since does not
+  load until you enable it again. Entries of plugins whose folder is gone are dropped at start. plugins.json
+  schema 2 carries existing consents over.
+- **Plugins: nothing is replaced before you agree.** An install is unpacked beside the plugins and put in place only
+  on Enable; a registry archive must be the plugin and version its entry names; installing a different plugin
+  under an installed plugin's id asks "Replace A with B?" first. Remove deletes the row you clicked.
+- **The plugin consent dialog cannot be forged.** Manifest text is escaped (line breaks, control and bidi
+  characters are shown, not obeyed) and capped, the capability list scrolls in a fixed box, and it lists the main
+  class and every jar, each command's exact argv and folder, and what each chord replaces. A plugin whose
+  plugin.json cannot be read can no longer be ticked.
+- **MCP clients cannot switch plugins on, change the signed-registry requirement, install or remove plugins, or
+  trust a folder.** The registry URL setter refuses anything but https for every caller.
+
 - **AI API keys are kept in the system keychain** (macOS Keychain, Windows Credential Manager, the Secret Service on
   Linux). Keys in settings.json move there on first start, and Settings → AI Actions says where each key is. Where no
   keychain answers, keys stay in settings.json and the page says so. Keys in the keychain are never exported.
@@ -26,6 +49,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   export or the clone.
 
 ### Added
+
+- **Groovy: language server, Run and Debug.** Groovy files get completion, diagnostics, outline, rename and
+  formatting from the gvy language server, installed in one click (a pinned jar, run on the JDK chosen in Settings).
+  Run File, the gutter ▶ and a new Groovy script run configuration run a script with `groovy` on that JDK, and the
+  Run window shows the Groovy and Java versions. Debug stops at breakpoints in scripts, classes and closures, steps
+  over Groovy's own runtime, shows locals and fields, and stops on uncaught exceptions — through a new debugger
+  built into Editora, so there is nothing else to install. Settings schema 138.
+- **Run File runs Node.js scripts.** A `.js`, `.mjs`, `.cjs`, `.ts`, `.mts` or `.cts` file, or a script with a
+  `node` (or `deno`, `bun`, `tsx`) shebang, gets a gutter ▶ and runs in the Run console under the Node.js Editora
+  resolves (the Node.js setting, the project's `.nvmrc`/`.node-version`, else `node` on PATH), from its package
+  folder, with `--enable-source-maps` and colours on. TypeScript runs on plain Node 22.18+; an older Node says so.
+  The ▶ of a test file (`*.test.*`, `*.spec.*`, `test/`, `__tests__/`) runs `node --test` into Test Results, with
+  Rerun Failed and Rerun This Test. Run configurations gain a **Node.js script** type (script, Node.js arguments,
+  interpreter, arguments, environment).
+- **One Node.js for everything.** Settings → Debugging → JavaScript has a **Node.js** field used by Run, run
+  configurations, Debug, npm scripts, the TypeScript language server and (when its own field is blank) HTTP
+  response handlers. Left blank, Editora uses the version a project's `.nvmrc` or `.node-version` names when nvm has
+  it, else `node` on PATH. Doctor has one **Node.js** row saying which Node runs and why.
+- **Debugging JavaScript and TypeScript.** `.ts`, `.mts` and `.cts` files can be debugged on Node 22.18+, and a
+  breakpoint in a compiled project's `.ts` source stops there through source maps. **Debug ▸ Attach** on a JS/TS file
+  connects to a Node started with `--inspect`. **Debug Test at Caret** runs the node:test test at the caret. Node.js
+  and npm run configurations can be debugged, started the way Run starts them.
+- **TypeScript server settings:** **Download type definitions automatically** (off), and inlay hints and code
+  lenses now work for JavaScript and TypeScript.
+- **A Node.js Script template** (New ▸ Scripts ▸ Node.js), and an npm icon on `package.json`, `package-lock.json`
+  and `.npmrc`.
+- **Test Results reads node:test's default output**, so `"test": "node --test"` fills the tree without a TAP
+  reporter flag, and node:test results can be rerun one by one or failed-only.
+- **Encrypted files** (Tools ▸ Encryption; [ADR 0017](docs/decisions/0017-encrypted-files.md)). An encrypted
+  file opens as the text inside it, in that text's language (`notes.md.gpg` is Markdown), with a lock on its tab
+  and an "Encrypted · 2" item in the status bar that opens the details: who can read it (you, verified or not),
+  its format, its signature.
+  - **Locked tabs** instead of hex or errors: a cancelled prompt, a file none of your keys opens, or GnuPG not
+    installed shows what happened and the next step. Restored tabs stay locked until you decrypt them, so
+    startup never asks for a run of passphrases.
+  - **Encrypt File…** (also on the Project tree and tab menus, and Save As to a `.gpg`/`.asc` name) opens a
+    recipient picker: searchable, several people at once or a passphrase instead, your own key included by
+    default, unverified keys warned about with their fingerprint, expired and sign-only keys shown with the
+    reason. It can write the folder's `.gpg-id` (the `pass` format) so new files there get the same people.
+    The plain original stays until you move it to the trash from the banner.
+  - **Change Recipients…** (applied on the next save), **Remove Encryption…**, **Lock File**, **Decrypt to
+    File…**, **Encrypt Selection…** and **Decrypt Block at Caret** (an armored message pasted into a note opens
+    in a read-only card), **Import Public Key…** (and an opened `.asc` key offers it), **Clear-Sign**, **Sign
+    File (Detached)** and **Verify Signature**.
+  - Passphrases go to gpg-agent's own prompt; when it cannot show one (a terminal pinentry), Editora asks and
+    hands the passphrase straight to GnuPG. A passphrase-only file is asked once and saves without asking again.
+  - Settings ▸ Encryption (gpg path, always include my key, who asks for passphrases, language servers) and two
+    Doctor rows (GnuPG, passphrase prompt). Samples in `samples/encrypted/` (passphrase `editora`).
+- **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
+  files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
+  `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),
+  folding (Scala 3's indentation blocks through their `end` marker; every multi-line Clojure form), Lisp indentation
+  (to the first argument, two spaces for a body form), Go to Symbol without a language server, a Structure outline,
+  snippets, brand file icons, and New ▸ Scala, Scala CLI script, Clojure and Babashka script. Groovy gets its own
+  icon and a server-free symbol index too, and stack-trace lines from Kotlin, Groovy, Scala and Clojure code are
+  links (including Clojure's `at my-app.core/f (core.clj:4)`).
+- **`--disable-plugins`** starts Editora with no plugin loaded for the session: the way out of a plugin that hangs or
+  breaks startup. Settings and Doctor say when it is on.
+- **Doctor → Plugins** lists what runs and every plugin that failed to load or start, started slowly, or changed
+  since it was enabled.
+- **Plugin chords per keymap**: a manifest's `keymaps` gives chords for one keymap (`emacs`, `cua`, …) in place of
+  `keymap`.
+- **Plugins: Restart now** on a Settings row whose change waits for a restart, and status and errors shown on the
+  Plugins page itself.
 
 - **Settings shows what you changed.** A row whose value differs from the default carries a marker, the sidebar counts
   them per page, each row has **Reset to default**, and the **Modified** toggle (or `@modified` in the search) lists
@@ -46,13 +133,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Each Settings page links to its documentation** with a **?** beside the title.
 - **File Watching** row in the Doctor: says when the system has no file watcher to give and Editora checks folders by
   polling instead.
+- **Deployments: develop locally, run on another machine.** A run configuration's new **Run on** setting names a
+  deployment — an SSH host and a folder there. Before the run, Editora copies what changed in the project to
+  that folder over the connection it already uses for remote folders (one compressed stream; no rsync or ssh
+  needed on this machine), then runs the before-launch step and the program there, with the host's tools.
+  - Only files whose contents changed are sent; a branch switch that only touched times sends nothing.
+  - Files Editora put on the host and the project no longer has are removed; nothing else on the host is ever
+    removed. A file changed on the host since it was sent is asked about, a first deploy into a folder with other
+    files asks first, and `/`, system folders and the home folder are refused.
+  - Java builds on the host with its Maven or Gradle. Debug starts the program on the host and attaches the
+    debugger here through a tunnel; breakpoints are the local files'.
+  - Run → Deployment: Deploy Now, Compare with Deployed, Open Terminal in Deployment, Edit Deployments. A
+    deployment can also upload a file when it is saved. Deployments are exported and imported with the run
+    configurations.
 - **A Terminal tool window**: shells on this machine, in tabs, inside Editora. Open it with Tool Window:
   Terminal (Alt+F12 in the IntelliJ keymap, Ctrl+` in VS Code, CUA and Sublime). It starts in the project's
   folder; Terminal: New Terminal adds a tab.
-  - A focused terminal owns the keyboard: Ctrl+C interrupts, Ctrl+W deletes a word, Escape reaches vim. Only
-    the tool-window toggles, the command palette and Search Everywhere still reach Editora (Settings →
-    Terminal → Commands that reach Editora), plus every Cmd shortcut on macOS. Copy and Paste are
-    Ctrl+Shift+C/V (Cmd+C/V on macOS).
+  - A focused terminal owns the keyboard: Ctrl+C interrupts, Ctrl+W deletes a word, Escape reaches vim. The
+    tool windows, the command palette and Search Everywhere still reach Editora, but only on keys a shell does
+    not use: a plain Ctrl+letter, Alt+letter, Alt+digit or F-key always goes to the shell, whatever the keymap
+    binds to it (IntelliJ's Ctrl+K, VS Code's Ctrl+B and F1). The terminal's own commands and the Emacs
+    keymap's M-x pass on any key, and a key typed into Settings → Terminal → Commands that reach Editora (say
+    `M-1`) passes too. Every Cmd shortcut on macOS reaches Editora. Copy and Paste are Ctrl+Shift+C/V
+    (Cmd+C/V on macOS), shown in the terminal's menu. Shift+Escape returns to the editor and leaves the
+    terminal open; Shift+PageUp/PageDown/Home/End scroll the history.
+  - On macOS, Option types the characters your keyboard layout puts on it (@ [ ] { } on many layouts);
+    Settings → Terminal → "Option key as Meta" makes it readline's Meta instead. Alt is Meta on Linux and
+    Windows.
+  - Tabs can be renamed, moved (drag, Ctrl+Shift+PageUp/PageDown, or the tab's menu) and closed from a tab
+    menu; Ctrl+PageUp/PageDown switch between them, and tabs with the same title are numbered. A bell in a
+    tab out of sight marks it.
+  - The terminal is in the Window menu (Terminal, New Terminal) and the File menu (Open Terminal Here); the
+    Emacs keymap opens it with M-0. It follows the editor's text zoom. It hides when its last shell exits.
+  - Pasting several lines into a program that would run each at once (sh, a REPL) asks first; a paste can no
+    longer carry control characters or end bash's bracketed paste early.
+  - Closing a window or quitting asks when terminals are running programs, in one question.
   - Its colours follow the editor theme: the keyword colour is its red, the number colour its blue, and so on.
     Its font is the editor's.
   - Build Output's stripe icon is now the tools glyph; the terminal glyph is the Terminal's.
@@ -82,7 +197,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     It starts only when echoes take over 100 ms (Settings → Terminal → Type-ahead).
   - **Run in a Terminal tab**: a run configuration's Console option runs its program in the Terminal (programs
     that draw on the screen or read single keys), locally or on the project's host. The tab stays when it
-    ends, with the exit code; closing it while the program runs asks first.
+    ends, with the exit code; closing it while the program runs asks first. Run's Stop button and stripe
+    follow it, the next run of the same configuration reuses its tab, the configuration's variables win over
+    the login profile's, and a missing working folder fails the run as in the console.
   - **Debug in a Terminal tab**: Settings → Debugging → Java → "Run the program in a Terminal tab instead" does the same
     for a debugged Java or Python program.
   - A terminal on a host or in a container opens without freezing the window: its tab says "Connecting to …"
@@ -230,7 +347,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name is filled in (`src/main/java/test/App.java` → `test.App`), from the file's `main` method or else its
   package and name. A configuration still called "New Configuration" is renamed after the class.
 
+### Removed
+
+- **The GnuPG registry plugin (`gpg-tools`)**: GnuPG is built in now. An installed copy is removed at startup
+  (its gpg path and last recipient are kept), and it can no longer be installed.
+
 ### Changed
+
+- **What a session runs is what it started with.** Every window applies the plugins that loaded at launch; an
+  install, update, enable, disable or removal takes effect at the next start, as the Settings page says. An update
+  or removal of a running plugin is applied at the next start before anything loads (Windows cannot replace an
+  open jar), and a declined update keeps the installed version, enabled.
+- **Plugin commands and tool windows are always in the plugin's namespace** (`plugin.<id>.…`), so a plugin can no
+  longer replace a built-in command; an untitled one shows the plugin's name, and tool-window toggles read
+  "Tool Window: …".
+- **`activeEditor()` stays on the buffer it was asked for**: a plugin that finishes on a worker writes into the
+  file it started on, never the tab in front by then (format-runner overwrote another file). Plugin API reads off
+  the JavaFX thread throw; writes are handed to it.
+- **Plugin feedback is visible and translated**: start and main-class failures go to the Message Log and the
+  Settings row, a failed start's commands, chords and segments are taken back, failing plugin commands name the
+  plugin, declared commands show their output, and install and registry errors are sentences in your language in
+  a dialog titled "Plugins".
+- **Settings → Plugins**: installed plugins come first, Browse comes back to Settings when its picker closes,
+  Browse and Install from file are greyed while plugins are off (Simple mode says it is the reason), Remove names
+  the plugin and its saved data, and "Require signed plugins" is now "Require a signed registry".
+- **Export Configuration asks before including the data plugins saved**, and never includes the installer's
+  staging folders.
+- **The example plugin uses chords that are free in every keymap** (Ctrl+Alt+Shift+E / Y).
 
 - **Changing tab size or another view setting with many files open is about nine times faster**; tabs that are not
   shown catch up when you show them.
@@ -381,11 +524,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JavaScript editing without a language server:**
+  - JSX in a `.js` file no longer turns the rest of the file into a comment or string (`.js` uses the TSX grammar,
+    as VS Code does), and JavaScript is in the status-bar language picker.
+  - A regex such as `/`/` or `/\{/` no longer removes every fold, sticky-scroll header and Structure entry below it.
+  - Structure lists one-line methods and arrow functions; Go to Symbol finds class and object methods and
+    `exports.x =`; Go to Definition picks the nearest declaration; `$` and `#` are part of names.
+  - Enter continues a `/** */` comment; Toggle Comment never touches a `#!` shebang and lines its markers up.
+  - Smart indent handles `case` bodies, brace-less `if`/`for`/`while`, open argument lists and call chains (in every
+    brace language).
+  - A quote typed inside a string, comment or regex is not paired.
+  - Template literals, `.length`, `import.meta` and BigInt literals get the right colours.
+  - `npx`/`pnpm exec`/`bunx` and `zx` shebangs and React modelines are recognised; `.mocharc`, `.nycrc`,
+    `.lintstagedrc` and similar open as JSON.
+- **A minified file with many long lines no longer stalls highlighting** in every JavaScript tab for about 45 s: it
+  opens in long-line mode, and the tokenizer gives long lines a time budget. Typing in a one-line bundle is about 30%
+  faster.
+- **The TypeScript / JavaScript language server did not start on a fresh install.** npm's latest TypeScript is now
+  7, which has no tsserver; Editora's install step (and the Node.js TypeScript Project template) now take
+  TypeScript 6. When no usable TypeScript is found the server is not started and the message says why, instead of
+  three crashes and "keeps crashing"; Doctor and Settings no longer show it as OK, and opening more tabs no longer
+  starts it again.
+- **An untrusted folder's own `node_modules/typescript` no longer runs** when a JS/TS file opens: the TypeScript
+  installed beside the server is used until the folder is trusted, and the trust prompt lists the folder's copy.
+- **The TypeScript server no longer downloads type definitions silently** (`npm install` against the registry into
+  `~/.cache/typescript`), and loose scripts in different folders share one server (about 320 MB instead of 550 MB
+  each).
+- **Organize Imports works on JavaScript and TypeScript**, and the code-action menu offers Fix all, Add missing
+  imports and Remove unused. Quick fixes follow the file's indentation. A monorepo without a project open roots at
+  its tsconfig/jsconfig.
+- **Debugging JavaScript:** `process.stdout.write` / `process.stderr.write` output and `readline` prompts reach the
+  Debug console, and the program reads typed input; the program runs from its package folder; node-internal frames
+  are skipped; errors in the console and watches say what went wrong instead of "Unset error message."; a js-debug
+  that cannot start (or a Node older than 18) says so instead of stopping silently; function values take one line;
+  a bad breakpoint condition marks the breakpoint as rejected, once; child processes and workers list all their
+  threads; js-debug is pinned to v1.117.0.
+- **`node_modules` no longer floods search.** Find in Files, the symbol index, Go to File, Search Everywhere, TODO
+  and the Project filter skip `node_modules` even without a `.gitignore` (a 60,000-file `node_modules` used to push
+  every project file out of the index); `!node_modules/` in a `.gitignore`, or an include glob naming it, looks
+  inside. Find in Files also says when it stopped at its 5,000-match limit exactly at a file boundary.
+- **Run console after a flood:** the newest output on screen no longer has gaps when a program printed faster than
+  the console could show, and the status line says when output was skipped.
+- **npm scripts:** a workspace member runs its workspace's package manager (pnpm, yarn, bun), not npm; an npm run
+  configuration uses the project's manager too, and the npm command setting no longer replaces a different manager.
+  Settings → Build Tools names the detected manager and why ("pnpm (pnpm-lock.yaml)"). A file inside
+  `node_modules` no longer turns the npm tool window into the dependency's. A missing node, npm, pnpm, yarn or bun
+  says how to get it instead of showing the Java error; a script that fails with no `node_modules` suggests
+  installing first. The Output console draws colours, names the runtime ("Node.js 24.18.1"), and its tab is named
+  after the manager. Stop sends Ctrl+C (SIGINT) first to Node and its package managers. A malformed package.json
+  says where. Script rows show their command.
+- **Test Results with TAP:** a `describe` block is no longer counted as a failed test, and a failure shows its error
+  and stack instead of the YAML block.
+- **Node.js stack-trace links** work for ESM `file://` frames (spaces, Windows drives), paths with spaces,
+  `.jsx/.tsx/.mts/.cts` files and tsc errors, and jump to the column.
+- **Run and Output consoles** say when the oldest output was dropped to stay under the size cap.
+- **Closing a window no longer keeps it in memory** (about 21 MB each, plugin panes included): the Settings Sync
+  listener of every closed window was never removed.
+- **A plugin thread can no longer keep Editora running after quit**, where the next launch was "handed to" an
+  editor with no window.
+- **Chords a plugin bound in code survive a keymap switch or a key-binding edit**, and a keymap rebuild in Simple
+  mode no longer turns plugin chords on.
+- **A plugin's `start()` is timed**; one that holds up window opening is named.
+- **Registry and download reads have an overall deadline**, a second Browse while one is fetching joins it, a picked
+  file over the size cap is refused before it is read, and an install worker that fails always reports back.
+- **Removing a plugin deletes its plugin.json last**, so a folder that cannot be fully deleted stays listed and
+  removable; staging folders a crash left behind are swept at start; concurrent rescans can no longer close class
+  loaders in use.
+- **Plugin versions compare by semver**: `rc10 > rc2`, `+build` is ignored, `v2.0 < 10.0`; the install question
+  says Update, Reinstall or Downgrade where that is what an install would do, and Browse marks a newer installed
+  version.
+- **The palette shows plugin chords**, plugin right-click items have their own separator, a plugin status segment is
+  reachable by keyboard and names its plugin, and `caretLine()` is right in a narrowed buffer.
 - **The minimise, maximise and close buttons were nearly invisible with a dark theme and the menu bar in the
   title bar.** They followed the desktop's light or dark setting rather than Editora's theme, so a dark theme on
   a light desktop drew them dark on dark. They now follow the app theme, and change with it.
 - **When the system had no file watcher to give** (Linux: inotify instances used up), the project tree and language
-  servers silently stopped following the disk. They now check folders every 2 seconds.
+  servers silently stopped following the disk. They now check folders every 2 seconds, and on Windows also notice
+  a save that replaces a file with one of the same size and time.
 - **Plugins: Set Registry URL** accepted an address that is not https; it now refuses it like the Settings field.
 - **A submenu's › arrow sat in the middle of its menu** (VCS → Changes, Branches, …), just past the longest
   submenu name. It now sits at the menu's right edge, past the shortcut column.

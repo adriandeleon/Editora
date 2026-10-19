@@ -111,4 +111,17 @@ class SourceFileFinderTest {
 
         assertEquals(test, SourceFileFinder.find(root, "com/acme/InOutTest.java", () -> false));
     }
+
+    @Test
+    void groovyScalaAndClojureSourceRootsAreTried(@TempDir Path root) throws Exception {
+        Path groovy = file(root, "src/main/groovy/demo/Shelf.groovy");
+        Path scala = file(root, "src/test/scala/demo/ShelfSpec.scala");
+        Path clojure = file(root, "src/main/clojure/my_app/core.clj");
+        Path lein = file(root, "test/my_app/core_test.clj");
+
+        assertEquals(groovy, SourceFileFinder.find(root, "demo/Shelf.groovy", () -> false));
+        assertEquals(scala, SourceFileFinder.find(root, "demo/ShelfSpec.scala", () -> false));
+        assertEquals(clojure, SourceFileFinder.find(root, "my_app/core.clj", () -> false));
+        assertEquals(lein, SourceFileFinder.find(root, "my_app/core_test.clj", () -> false));
+    }
 }

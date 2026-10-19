@@ -25,11 +25,28 @@ final class SourceBlanker {
 
     /** {@code text} with comment and string-literal contents replaced by spaces, same length. */
     static String blank(String text, CommentStyle style) {
+        return blank(text, style, null);
+    }
+
+    /**
+     * As {@link #blank(String, CommentStyle)}, reading quotes as {@code language} does. In Clojure {@code '} and
+     * a backtick are the quote reader macros ({@code 'sym}, {@code `(list)}), {@code \c} is a character literal
+     * ({@code \'}, {@code \"}, {@code \;}), a single {@code ;} starts a comment and a string may span lines; in
+     * Scala a {@code '} opens a character literal only ({@code 'a'}, {@code '\n'}), never Scala 2's
+     * {@code 'symbol}, and a backtick quotes an identifier ({@code `type`}), which stays code. Read as strings,
+     * each of those blanked the code after it up to the next quote — and a Clojure {@code \"}, opening a string
+     * that spans lines, everything after it. In JavaScript/TypeScript regex literals are blanked too, so a
+     * backtick or brace inside one is not read as a template literal or a block.
+     */
+    static String blank(String text, CommentStyle style, String language) {
         if (text == null || text.isEmpty()) {
             return text == null ? "" : text;
         }
+        boolean clojure = "clojure".equals(language);
+        boolean scala = "scala".equals(language);
+        boolean regexLiterals = com.editora.editor.RegexLiterals.in(language);
         char[] out = text.toCharArray();
-        String lineComment = style != null && style.hasLine() ? style.line() : null;
+        String lineComment = clojure ? ";" : style != null && style.hasLine() ? style.line() : null;
         String blockStart = style != null && style.hasBlock() ? style.blockStart() : null;
         String blockEnd = style != null && style.hasBlock() ? style.blockEnd() : null;
 
@@ -37,6 +54,14 @@ final class SourceBlanker {
         int n = text.length();
         while (i < n) {
             char c = text.charAt(i);
+            if (clojure && (c == '\\' || c == '\'' || c == '`')) {
+                i += c == '\\' ? 2 : 1; // a character literal skips the character it names
+                continue;
+            }
+            if (scala && ((c == '\'' && !isScalaCharLiteral(text, i)) || c == '`')) {
+                i++;
+                continue;
+            }
             if (blockStart != null && text.startsWith(blockStart, i)) {
                 int end = text.indexOf(blockEnd, i + blockStart.length());
                 int stop = end < 0 ? n : end + blockEnd.length();
@@ -52,12 +77,33 @@ final class SourceBlanker {
                 continue;
             }
             if (c == '"' || c == '\'' || c == '`') {
-                i = blankString(text, out, i, c);
+                i = blankString(text, out, i, c, clojure); // every Clojure string may span lines
                 continue;
+            }
+            if (c == '/' && regexLiterals) {
+                int end = com.editora.editor.RegexLiterals.end(text, i);
+                if (end > i) {
+                    blankRange(out, i, end + 1);
+                    i = end + 1;
+                    continue;
+                }
             }
             i++;
         }
         return new String(out);
+    }
+
+    /** Whether the {@code '} at {@code i} opens a Scala character literal: {@code 'a'} or an escape {@code '\n'}. */
+    private static boolean isScalaCharLiteral(String text, int i) {
+        int n = text.length();
+        if (i + 1 >= n || text.charAt(i + 1) == '\n') {
+            return false;
+        }
+        if (text.charAt(i + 1) == '\\') {
+            return true;
+        }
+        int next = i + 1 + Character.charCount(text.codePointAt(i + 1));
+        return next < n && text.charAt(next) == '\'';
     }
 
     /**
@@ -66,7 +112,7 @@ final class SourceBlanker {
      * tripled — cheap, and harmless for languages that have no such form, since three quotes in a row
      * would otherwise be read as an empty string followed by a stray opening quote.
      */
-    private static int blankString(String text, char[] out, int start, char quote) {
+    private static int blankString(String text, char[] out, int start, char quote, boolean multiLine) {
         int n = text.length();
         String triple = String.valueOf(quote).repeat(3);
         boolean isTriple = text.startsWith(triple, start);
@@ -86,7 +132,7 @@ final class SourceBlanker {
             // An unterminated single-quoted literal must not swallow the rest of the file; a newline ends
             // it. A triple-quoted one legitimately spans lines, so it keeps going — and so does a backtick
             // literal (a JS template, a Go raw string), whose body was otherwise scanned as code.
-            if (c == '\n' && !isTriple && quote != '`') {
+            if (c == '\n' && !isTriple && quote != '`' && !multiLine) {
                 blankRange(out, start, i);
                 return i;
             }
