@@ -260,6 +260,143 @@ class JvmDebugAdapterTest {
         }
     }
 
+    /**
+     * The SMAP Kotlin 2.4.10 wrote into its own script host's classes: the KotlinDebug stratum maps line -1, which
+     * JDI refuses with an {@link InternalError} on every line and source lookup in that class.
+     */
+    private static final String KOTLIN_2_4_10_SMAP = """
+            SMAP
+            Host.kt
+            Kotlin
+            *S Kotlin
+            *F
+            + 1 Host.kt
+            p/Host
+            + 2 Inline.kt
+            p/InlineKt
+            *L
+            1#1,9:1
+            21#2:10
+            *S KotlinDebug
+            *F
+            + 1 Host.kt
+            p/Host
+            *L
+            -1#1:10
+            *E
+            """;
+
+    @Test
+    void aClassWhoseSmapJdiCannotReadDoesNotBreakBreakpointsOrFrames(@TempDir Path dir) throws Exception {
+        Path pkg = Files.createDirectories(dir.resolve("p"));
+        Path main = pkg.resolve("Main.java");
+        Files.writeString(main, """
+                package p;
+                public class Main {
+                    public static void main(String[] args) {
+                        Host.run(() -> {
+                            int x = 1;
+                            System.out.println("x=" + x);
+                        });
+                    }
+                }
+                """);
+        Path host = pkg.resolve("Host.java");
+        Files.writeString(host, """
+                package p;
+                public class Host {
+                    public static void run(Runnable r) {
+                        r.run();
+                    }
+                }
+                """);
+        var javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        assertNotNull(javac, "tests run on a JDK");
+        Path out = dir.resolve("out");
+        assertEquals(0, javac.run(null, null, null, "-g", "-d", out.toString(), main.toString(), host.toString()));
+        Path hostClass = out.resolve("p/Host.class");
+        var classFile = java.lang.classfile.ClassFile.of();
+        Files.write(
+                hostClass,
+                classFile.transformClass(
+                        classFile.parse(hostClass),
+                        java.lang.classfile.ClassTransform.endHandler(
+                                b -> b.with(java.lang.classfile.attribute.SourceDebugExtensionAttribute.of(
+                                        KOTLIN_2_4_10_SMAP.getBytes(java.nio.charset.StandardCharsets.UTF_8))))));
+
+        Session s = open();
+        try {
+            Map<String, Object> launch = Map.of(
+                    "argv",
+                    List.of(javaExecutable(), "-cp", out.toString(), "p.Main"),
+                    "cwd",
+                    dir.toString(),
+                    "jvmOptionsVariable",
+                    "JDK_JAVA_OPTIONS",
+                    "language",
+                    "java");
+            CompletableFuture<Void> launched = s.server().launch(launch);
+            s.client().initialized.get(WAIT, TimeUnit.SECONDS);
+            breakAt(s.server(), main, 6);
+            s.server().configurationDone(null);
+            launched.get(WAIT, TimeUnit.SECONDS);
+
+            StoppedEventArguments stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(stop, "the breakpoint is hit: " + s.client().output);
+            StackTraceArguments st = new StackTraceArguments();
+            st.setThreadId(stop.getThreadId());
+            StackFrame[] frames =
+                    s.server().stackTrace(st).get(WAIT, TimeUnit.SECONDS).getStackFrames();
+            assertEquals(6, frames[0].getLine());
+            assertEquals(main.toString(), frames[0].getSource().getPath());
+            StackFrame hostFrame = java.util.Arrays.stream(frames)
+                    .filter(f -> f.getName().equals("Host.run"))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError(frames(s.server(), stop.getThreadId())));
+            assertEquals(0, hostFrame.getLine(), "no line JDI can read");
+            assertEquals(null, hostFrame.getSource());
+
+            breakAt(s.server(), main); // walks every loaded class, the unreadable one among them
+            ContinueArguments cont = new ContinueArguments();
+            cont.setThreadId(stop.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            assertEquals(0, s.client().exited.get(WAIT, TimeUnit.SECONDS));
+            assertTrue(
+                    s.client().output.toString().contains("x=1"),
+                    s.client().output.toString());
+        } finally {
+            s.socket().close();
+        }
+    }
+
+    @Test
+    void anUnreadableSmapReadsAsNoSourceAndAnyOtherInternalErrorStillFails() {
+        assertEquals(
+                "none",
+                JvmDebugAdapter.sourceInfo(
+                        () -> {
+                            throw new InternalError("bad SourceDebugExtension syntax - position 341");
+                        },
+                        "none"));
+        assertEquals(
+                "none",
+                JvmDebugAdapter.sourceInfo(
+                        () -> {
+                            throw new com.sun.jdi.AbsentInformationException();
+                        },
+                        "none"));
+        assertEquals("Host.kt", JvmDebugAdapter.sourceInfo(() -> "Host.kt", "none"));
+        InternalError other = new InternalError("something else");
+        InternalError thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                InternalError.class,
+                () -> JvmDebugAdapter.sourceInfo(
+                        () -> {
+                            throw other;
+                        },
+                        "none"));
+        assertTrue(thrown == other);
+    }
+
     @Test
     void aGroovyScriptStopsInsideAClosureWhereGroovyIsInstalled(@TempDir Path dir) throws Exception {
         String groovy = com.editora.run.JvmTools.locate("groovy");

@@ -755,17 +755,16 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 return false;
             }
             try {
+                List<String> paths = sourceInfo(() -> t.sourcePaths(null), List.of());
                 return JvmSourceMap.resolve(
-                                t.sourcePaths(null).isEmpty()
-                                        ? null
-                                        : t.sourcePaths(null).get(0),
+                                paths.isEmpty() ? null : paths.getFirst(),
                                 knownFiles(),
                                 this::packageOf,
                                 sourceRoots,
                                 Files::isRegularFile,
                                 language)
                         != null;
-            } catch (AbsentInformationException | RuntimeException e) {
+            } catch (RuntimeException e) {
                 return false;
             }
         });
@@ -868,33 +867,56 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 continue;
             }
             try {
-                for (Location at : type.locationsOfLine(bp.line())) {
+                for (Location at : sourceInfo(() -> type.locationsOfLine(bp.line()), List.<Location>of())) {
                     BreakpointRequest request = erm.createBreakpointRequest(at);
                     request.setSuspendPolicy(EventRequest.SUSPEND_ALL);
                     request.enable();
                     bp.requests().add(request);
                     bp.verified()[0] = true;
                 }
-            } catch (AbsentInformationException | ClassNotPreparedException e) {
-                LOG.log(Level.FINEST, "no line table in " + type.name(), e);
+            } catch (ClassNotPreparedException e) {
+                LOG.log(Level.FINEST, "not prepared yet: " + type.name(), e);
             }
         }
     }
 
     private boolean compiledFrom(ReferenceType type, Path file) {
+        if (!JvmSourceMap.sourceName(file).equals(sourceInfo(type::sourceName, null))) {
+            return false;
+        }
+        String pkg = packageOf(file);
+        for (String path : sourceInfo(() -> type.sourcePaths(null), List.<String>of())) {
+            if (JvmSourceMap.compiledFrom(path, file, pkg, language)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A JDI lookup of a class's source names, paths or lines. */
+    @FunctionalInterface
+    interface SourceLookup<T> {
+        T get() throws AbsentInformationException;
+    }
+
+    /**
+     * {@code lookup}'s answer, or {@code absent} when the class has no source information JDI can read: none
+     * compiled in, or an SMAP ({@code SourceDebugExtension}) JDI's parser refuses. JDI throws {@link InternalError}
+     * for such an SMAP on every line and source lookup in that class — Kotlin 2.4.10 wrote {@code -1#1:23} into
+     * the KotlinDebug strata of its own script host's classes — and that one class must not fail a request that
+     * walks every loaded class or every frame.
+     */
+    static <T> T sourceInfo(SourceLookup<T> lookup, T absent) {
         try {
-            if (!JvmSourceMap.sourceName(file).equals(type.sourceName())) {
-                return false;
-            }
-            String pkg = packageOf(file);
-            for (String path : type.sourcePaths(null)) {
-                if (JvmSourceMap.compiledFrom(path, file, pkg, language)) {
-                    return true;
-                }
-            }
-            return false;
+            return lookup.get();
         } catch (AbsentInformationException e) {
-            return false;
+            return absent;
+        } catch (InternalError e) {
+            if (e.getMessage() == null || !e.getMessage().startsWith("bad SourceDebugExtension")) {
+                throw e;
+            }
+            LOG.log(Level.FINEST, "unreadable SMAP", e);
+            return absent;
         }
     }
 
@@ -1096,7 +1118,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 f.setId(handle(new FrameHandle(thread, i)));
                 f.setName(JvmSourceMap.frameName(
                         at.declaringType().name(), at.method().name(), sourceNameOf(at), language));
-                f.setLine(Math.max(0, at.lineNumber()));
+                f.setLine(Math.max(0, sourceInfo(at::lineNumber, 0)));
                 f.setColumn(1);
                 Path file = sourceOf(at, known);
                 if (file != null) {
@@ -1119,20 +1141,17 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     }
 
     private Path sourceOf(Location at, List<Path> known) {
-        try {
-            return JvmSourceMap.resolve(
-                    at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile, language);
-        } catch (AbsentInformationException e) {
-            return null;
-        }
+        return JvmSourceMap.resolve(
+                sourceInfo(() -> at.sourcePath(null), null),
+                known,
+                this::packageOf,
+                sourceRoots,
+                Files::isRegularFile,
+                language);
     }
 
     private static String sourceNameOf(Location at) {
-        try {
-            return at.sourceName(null);
-        } catch (AbsentInformationException e) {
-            return null;
-        }
+        return sourceInfo(() -> at.sourceName(null), null);
     }
 
     @Override
