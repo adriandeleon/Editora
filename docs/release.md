@@ -93,11 +93,14 @@ version.
   released, and does nothing when the branch already exists. If a human already moved the pom, the
   job logs and exits cleanly.
 - **Its CI is held until approved, and the job approves it.** Opening the pull request queues a
-  `pull_request` CI run, but GitHub holds it ("action_required") because the Actions bot opened the
-  pull request. The pull request counts that held run as its CI, so it stays blocked, even though the
-  job also dispatches `ci.yml` on the branch and those checks pass on the same commit (v0.22.0, #1223).
-  The job therefore finds the held run and approves it. If the approval is refused, it warns and its
-  summary gives the command to run:
+  `pull_request` run of every workflow whose trigger matches (CI, Terminal image for `pom.xml`, Full
+  tests), but GitHub holds each one ("action_required") because the Actions bot opened the pull
+  request. The pull request counts the held CI run as its CI, so it stays blocked, even though the job
+  also dispatches `ci.yml` on the branch and those checks pass on the same commit (v0.22.0, #1223).
+  The job therefore approves **every** held `pull_request` run on the commit, polling until CI's held
+  run has appeared (about two minutes at most) so a late-queued run is not missed. Approving only the
+  first one is not enough: on v0.23.0 (#1296) that was Full tests, and CI and Terminal image stayed
+  held. For each approval that is refused, it warns and its log and summary give the command to run:
   `gh api -X POST repos/<owner>/<repo>/actions/runs/<id>/approve`. The dispatched run is kept for the
   case where no `pull_request` run is queued.
 - **Opening the pull request needs a repository setting**: *Settings → Actions → General → Allow
