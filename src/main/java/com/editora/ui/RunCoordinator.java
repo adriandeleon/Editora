@@ -2468,11 +2468,13 @@ final class RunCoordinator {
      * is therefore useful rather than a silent no-op: it returns the user to the process that already owns
      * the console, then reports that another launch cannot start yet. A refused request leaves the launch under
      * way as it is: clearing its deployment while its before-launch step ran sent a deployed program to the local
-     * project instead of the host's copy.
+     * project instead of the host's copy. A deploy counts too: a second one was refused only after it had marked
+     * the first one ended, and Stop then no longer reached the upload.
      */
     private boolean beginRunRequest() {
         ops.openToolWindow();
-        if (consoleRunning()) { // a before-launch build counts: a second Run must not start a second build
+        // A before-launch build counts: a second Run must not start a second build.
+        if (consoleRunning() || deploying) {
             host.setStatus(tr("status.run.busy"));
             return false;
         }

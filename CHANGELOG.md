@@ -45,7 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this machine.** The second Run was refused ("A program is already running"), but it cleared the launch's
   deployment on the way, so when the step finished the program ran in the local project instead of the
   host's copy. A deployed Java configuration lost its launch altogether. A refused Run now leaves the launch
-  under way as it is.
+  under way as it is. A Run during the deploy's upload is refused the same way; it used to start a second
+  deploy, which was refused but marked the first one ended, so Stop no longer cancelled the upload.
 - **Null pointer exceptions found by the new null checking.** Each would have failed the action, or a
   background thread, with a `NullPointerException`:
   - **Terminal Find** after a newer search or the terminal's closing had already replaced the scan.
