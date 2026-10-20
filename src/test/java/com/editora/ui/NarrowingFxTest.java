@@ -195,6 +195,72 @@ class NarrowingFxTest {
         assertEquals(DOC, visible(b));
     }
 
+    // --- what the editor itself shows while narrowed ------------------------------------------------
+
+    /** The non-blank line-number labels of the rows the area has built, in gutter order. */
+    private List<String> gutterNumbers(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            CodeArea area = b.getArea();
+            area.applyCss();
+            area.layout();
+            return area.lookupAll(".lineno").stream()
+                    .filter(n -> n.getScene() != null)
+                    .map(n -> ((javafx.scene.control.Label) n).getText().trim())
+                    .filter(t -> !t.isEmpty())
+                    .toList();
+        });
+    }
+
+    @Test
+    void theGutterKeepsTheFilesLineNumbersWhileNarrowed() throws Exception {
+        EditorBuffer b = narrowed(); // lines 2–3 of the file
+        assertEquals(1, FxTestSupport.callOnFx(b::narrowFirstLine), "the region starts on 0-based line 1");
+        List<String> numbers = gutterNumbers(b);
+        assertEquals(List.of("2", "3"), numbers, "the region's rows are numbered as in the file, not from 1");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> b.getArea().getStyleClass().contains("narrowed")),
+                "the area wears the narrowed style while narrowed");
+        run("edit.widen");
+        assertEquals(List.of("1", "2", "3", "4", "5"), gutterNumbers(b), "widening numbers the rows plainly again");
+        assertEquals(0, FxTestSupport.callOnFx(b::narrowFirstLine));
+        assertFalse(FxTestSupport.callOnFx(() -> b.getArea().getStyleClass().contains("narrowed")));
+    }
+
+    @Test
+    void theStatusBarLnIsTheFileLineWhileNarrowed() throws Exception {
+        EditorBuffer b = narrowed();
+        FxTestSupport.runOnFx(() -> b.getArea().moveTo(1, 0)); // "three", line 3 of the file
+        javafx.scene.control.Label position =
+                FxTestSupport.field(FxTestSupport.field(fx.controller, "statusBar"), "position");
+        assertTrue(
+                FxTestSupport.callOnFx(position::getText).startsWith("Ln 3, Col 1"),
+                "Ln counts from the top of the file, not of the region: " + position.getText());
+        run("edit.widen");
+        assertTrue(FxTestSupport.callOnFx(position::getText).startsWith("Ln 3, Col 1"), "same line once widened");
+    }
+
+    @Test
+    void aBannerOverTheTextNamesTheRegionAndWidens() throws Exception {
+        EditorBuffer b = narrowed();
+        assertEquals(
+                "Narrowed to lines 2–3 of 5 — the rest of the file is out of reach",
+                FxTestSupport.callOnFx(b::narrowBarText));
+        javafx.scene.Node bar = FxTestSupport.callOnFx(() -> b.getNode().lookup(".narrow-bar"));
+        assertTrue(bar != null, "the banner is in the editor's top slot");
+
+        FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "\n"));
+        assertEquals(
+                "Narrowed to lines 2–4 of 6 — the rest of the file is out of reach",
+                FxTestSupport.callOnFx(b::narrowBarText),
+                "a new line in the region moves the region's end and the file's length");
+
+        javafx.scene.control.Button widen = (javafx.scene.control.Button) bar.lookup(".narrow-bar-widen");
+        FxTestSupport.runOnFx(widen::fire);
+        assertFalse(FxTestSupport.callOnFx(b::isNarrowed), "the banner's Widen widens (through the command)");
+        assertTrue(FxTestSupport.callOnFx(() -> b.getNode().lookup(".narrow-bar")) == null, "and the banner is gone");
+        assertTrue(FxTestSupport.callOnFx(b::narrowBarText) == null);
+    }
+
     // --- gutter marks across the boundary ---
 
     /** Bookmarks on lines 0, 2 and 4 of {@code DOC}, breakpoints on 1 and 4, and a note on "three". */

@@ -668,6 +668,16 @@ public final class FoldManager {
         return span < 0 ? area.getParagraphs().size() : Math.max(span, 1);
     }
 
+    /**
+     * Re-numbers the rows on screen after the mapping behind {@link #setLineNumbers} changed meaning (the buffer
+     * narrowed or widened). The text swap keeps the visible cells, and a cell re-reads its number only when it
+     * is rebuilt — so without this the first rows would keep showing 1, 2, 3 over lines 120, 121, 122.
+     */
+    void refreshLineNumbers() {
+        lastLineDigits = digits(lineCount());
+        repadVisibleLineNumbers(area.getParagraphs().size());
+    }
+
     private void repadVisibleLineNumbers(int total) {
         recreateVisibleGutter(area, null, total);
         CodeArea second = secondView.get();

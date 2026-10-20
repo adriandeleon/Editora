@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Narrowing from the Structure panel, and a narrowed editor that says so.** The Structure tool window's toolbar
+  gains three segments — Widen, Defun, Fold region. Defun narrows the editor to the selected symbol's function
+  (`narrow-to-defun`) and Fold region to its foldable block; while either is on, picking another symbol narrows
+  to that one instead, and Widen shows the whole file again. The segments follow the buffer: one is lit while
+  the panel narrowed it, none while a command did, and Widen whenever the file is whole. A narrowed editor now
+  shows it in the text itself, not only in the status bar pill: an amber banner above the code names the
+  accessible lines ("Narrowed to lines 120–180 of 950") with a Widen button, and the gutter's line numbers —
+  which now keep the file's numbering while narrowed instead of restarting at 1 — turn amber. The status bar's
+  Ln and the Structure rows' line numbers count from the top of the file too.
 - **A Java debugging sample.** `samples/debug/java/` is a small standalone Java 25 Maven project (six
   classes, nine green JUnit tests) with a `break here` comment at every spot worth a breakpoint: plain,
   conditional, hit count, logpoint, inside a lambda, in a caught and an uncaught exception, on three named

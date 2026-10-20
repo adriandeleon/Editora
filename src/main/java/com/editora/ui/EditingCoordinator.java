@@ -1556,15 +1556,19 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
+        narrowToDefunAt(buffer, area, area.getCaretPosition());
+    }
+
+    /** Narrows {@code buffer} to the top-level definition around area offset {@code pos}; false when there is none. */
+    boolean narrowToDefunAt(EditorBuffer buffer, CodeArea area, int pos) {
         String text = area.getText();
-        int caret = area.getCaretPosition();
-        int start = com.editora.editops.SexpNav.beginningOfDefun(text, caret);
-        int end = com.editora.editops.SexpNav.endOfDefun(text, caret);
+        int start = com.editora.editops.SexpNav.beginningOfDefun(text, pos);
+        int end = com.editora.editops.SexpNav.endOfDefun(text, pos);
         if (start >= end) {
             host.setStatus(tr("status.narrow.noDefun"));
-            return;
+            return false;
         }
-        applyNarrow(buffer, start, end);
+        return applyNarrow(buffer, start, end);
     }
 
     /** Narrow to the innermost foldable region around the caret — the fold machinery already knows it. */
@@ -1574,7 +1578,11 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        int line = area.getCurrentParagraph();
+        narrowToFoldRegionAt(buffer, area, area.getCurrentParagraph());
+    }
+
+    /** Narrows {@code buffer} to the innermost foldable region holding area line {@code line}; false when none. */
+    boolean narrowToFoldRegionAt(EditorBuffer buffer, CodeArea area, int line) {
         com.editora.editor.FoldRegions.Region best = null;
         for (var r : buffer.getFoldManager().regions()) {
             if (r.startLine() <= line && line <= r.endLine() && (best == null || r.startLine() > best.startLine())) {
@@ -1583,11 +1591,42 @@ final class EditingCoordinator {
         }
         if (best == null) {
             host.setStatus(tr("status.narrow.noFoldRegion"));
-            return;
+            return false;
         }
         int start = area.getAbsolutePosition(best.startLine(), 0);
         int end = area.getAbsolutePosition(best.endLine(), area.getParagraphLength(best.endLine()));
-        applyNarrow(buffer, start, end);
+        return applyNarrow(buffer, start, end);
+    }
+
+    /**
+     * The Structure panel's narrowing segments. A symbol row names a line of the editor; the defun around it is
+     * found from just inside that line (from its very start {@code beginning-of-defun} would walk to the
+     * <em>previous</em> definition, as in Emacs), and the fold region is the innermost one holding the line —
+     * for a symbol that is itself a region header, its own block. Widening a buffer that is not narrowed is
+     * silent: the panel's segment is a state, not a command that can be wrong.
+     */
+    StructurePanel.NarrowActions structureNarrowActions() {
+        return new StructurePanel.NarrowActions() {
+            @Override
+            public boolean narrowToDefun(EditorBuffer buffer, int line) {
+                CodeArea area = buffer.getArea();
+                int pos = area.getAbsolutePosition(line, Math.min(1, area.getParagraphLength(line)));
+                return narrowToDefunAt(buffer, area, pos);
+            }
+
+            @Override
+            public boolean narrowToFoldRegion(EditorBuffer buffer, int line) {
+                return narrowToFoldRegionAt(buffer, buffer.getArea(), line);
+            }
+
+            @Override
+            public void widen(EditorBuffer buffer) {
+                if (buffer.isNarrowed()) {
+                    buffer.widen(); // the narrow-changed hook reconciles the UI
+                    host.setStatus(tr("status.narrow.widened"));
+                }
+            }
+        };
     }
 
     /** Emacs {@code widen} (`C-x n w`): restore access to the whole document. */
@@ -1604,15 +1643,16 @@ final class EditingCoordinator {
         host.setStatus(tr("status.narrow.widened"));
     }
 
-    void applyNarrow(EditorBuffer buffer, int start, int end) {
+    boolean applyNarrow(EditorBuffer buffer, int start, int end) {
         if (!activeEditable() && !buffer.isViewMode()) {
-            return; // a huge read-only buffer cannot be narrowed (the text swap is the mechanism)
+            return false; // a huge read-only buffer cannot be narrowed (the text swap is the mechanism)
         }
         if (!buffer.narrowTo(start, end)) {
             host.setStatus(tr("status.narrow.cannot"));
-            return;
+            return false;
         }
         host.setStatus(tr("status.narrow.narrowed"));
+        return true;
     }
 
     /**
