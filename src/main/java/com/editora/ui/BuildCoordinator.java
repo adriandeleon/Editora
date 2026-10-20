@@ -128,6 +128,16 @@ final class BuildCoordinator {
     }
 
     /**
+     * The argv prefix a launch may start this tool with from {@code root} — the tasks tree's own choice
+     * (wrapper, override, PATH command) after the tasks tree's own trust gate — or null when the user declined
+     * to trust the project's wrapper, in which case the gate has said so and nothing may run. For Run and
+     * Debug's build before a launch and the Maven classpath fallback (reviews D2, D3).
+     */
+    List<String> trustedExecutable(Path root) {
+        return allowRun(root) ? executable(root) : null;
+    }
+
+    /**
      * The IntelliJ-style tasks-tree tool window content, built on first use and brought up to the state
      * detection and a running build have reached meanwhile. Every window used to build one per build tool at
      * open — five trees, most for tools the project does not use and whose stripe is never even shown.

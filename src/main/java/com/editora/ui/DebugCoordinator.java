@@ -31,6 +31,7 @@ import com.editora.dap.DapServerRegistry;
 import com.editora.editor.BreakpointManager;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
+import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.ProgramArgs;
 import com.editora.run.StackTraceLinks;
 import com.editora.vfs.Vfs;
@@ -72,6 +73,15 @@ final class DebugCoordinator {
 
         /** Opens the Run Configurations page on {@code name} — see {@code RunCoordinator.Ops}. */
         void editConfiguration(String name);
+
+        /**
+         * The argv prefix a launch may start {@code tool} with from {@code root} (the tasks tree's choice after
+         * its trust gate), or null when the user declined to trust the project's wrapper — see
+         * {@code RunCoordinator.Ops#buildExecutable}.
+         */
+        default List<String> buildExecutable(com.editora.build.BuildTool tool, Path root) {
+            return List.of(tool.commandExample());
+        }
 
         void toggleToolWindow();
 
@@ -2276,13 +2286,55 @@ final class DebugCoordinator {
         // A before-launch step builds the project the user's way, in the project root (review A12); without
         // one, jdtls builds it (review A2). A plain folder has nothing to build: its class is compiled at launch.
         boolean hasStep = cfg.beforeLaunch() != null && !cfg.beforeLaunch().isBlank();
-        beforeLaunch.run(host, cfg, root, plan.jdkEnvironment(), beforeLaunchConsole(), () -> {
-            if (!hasStep && !plainFolder) {
-                buildThenLaunch(routing, launch);
-            } else {
-                launch.run();
-            }
-        });
+        Path toolRoot = buildRoot != null ? buildRoot : root;
+        beforeLaunch.run(
+                host,
+                cfg,
+                tool -> ops.buildExecutable(tool, toolRoot), // a symbolic step (maven:compile) runs the tree's Maven
+                root,
+                plan.jdkEnvironment(),
+                beforeLaunchConsole(),
+                () -> {
+                    if (!hasStep && !plainFolder) {
+                        buildToolThenLaunch(
+                                buildRoot, routing, shortName(cfg.mainClass()), plan.jdkEnvironment(), launch);
+                    } else {
+                        launch.run();
+                    }
+                });
+    }
+
+    /**
+     * The build before a main-class launch in a Maven or Gradle project: with "Build before Run and Debug" on,
+     * the build tool's compile ({@code test-compile} / {@code compileTestJava} for a class under
+     * {@code src/test}) in the Debug console, through the executable the tasks tree uses, aborting the launch
+     * when it fails (review D2) — the tool is the authority on how the project compiles, where jdtls's own
+     * build knows nothing of annotation processors or generated sources; with the setting off, jdtls's
+     * workspace build as before (review A2). {@code source} decides the scope; {@code env} is the JDK's.
+     */
+    private void buildToolThenLaunch(
+            Path buildRoot, Path source, String label, Map<String, String> env, Runnable launch) {
+        com.editora.build.BuildTool tool = buildRoot != null && com.editora.process.ExecTargets.runsHere(buildRoot)
+                ? BuildBeforeLaunch.toolAt(buildRoot)
+                : null;
+        if (!BuildBeforeLaunch.wanted(host.settings().isBuildBeforeRun(), "", tool)) {
+            buildThenLaunch(source, launch);
+            return;
+        }
+        List<String> executable = ops.buildExecutable(tool, buildRoot);
+        if (executable == null) {
+            return; // the trust gate said why
+        }
+        List<String> argv =
+                BuildBeforeLaunch.compileArgv(tool, executable, BuildBeforeLaunch.isTestSource(source, buildRoot));
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
+                buildRoot,
+                env,
+                beforeLaunchConsole(),
+                launch);
+        updateDebugAvailability();
     }
 
     /**
@@ -2534,7 +2586,14 @@ final class DebugCoordinator {
                 if (plainFolder) {
                     go.run();
                 } else {
-                    buildThenLaunch(routing, go);
+                    Path source =
+                            opt.filePath() == null || opt.filePath().isBlank() ? routing : Path.of(opt.filePath());
+                    buildToolThenLaunch(
+                            buildRoot,
+                            source,
+                            shortName(opt.mainClass()),
+                            configuredJdkEnvironment(buildRoot, null),
+                            go);
                 }
             };
             if (targetFqn != null) {

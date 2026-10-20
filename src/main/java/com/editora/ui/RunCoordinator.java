@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 
 import com.editora.config.RunConfiguration;
 import com.editora.editor.EditorBuffer;
+import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.JavaLaunchInfo;
 import com.editora.run.JavaMainClass;
 import com.editora.run.JavaRunCommand;
@@ -131,6 +132,30 @@ final class RunCoordinator {
         /** Same resolution under a selected JDK. The default preserves test/alternate hosts. */
         default void resolveMavenClasspath(Path root, String jdkHome, Consumer<List<String>> cb) {
             resolveMavenClasspath(root, cb);
+        }
+
+        /**
+         * Same resolution with {@code executable} (the tasks tree's argv prefix for Maven) and the launch's
+         * {@code scope} — a project elsewhere (a host) resolves this way; here the Run console runs the
+         * resolution as a streamed step instead.
+         */
+        default void resolveMavenClasspath(
+                Path root,
+                String jdkHome,
+                List<String> executable,
+                com.editora.maven.MavenClasspath.Scope scope,
+                Consumer<List<String>> cb) {
+            resolveMavenClasspath(root, jdkHome, cb);
+        }
+
+        /**
+         * The argv prefix a launch may start {@code tool} with from {@code root}: what the tasks tree would
+         * run (the project's wrapper, the command override, the PATH command), after the tasks tree's trust
+         * gate — or null when the user declined to trust the project's wrapper, in which case the gate has
+         * said so and nothing may run.
+         */
+        default List<String> buildExecutable(com.editora.build.BuildTool tool, Path root) {
+            return List.of(tool.commandExample());
         }
 
         /** Runs the Gradle Run task via the build tool (streams to Output) — the no-jdtls Gradle
@@ -1042,7 +1067,13 @@ final class RunCoordinator {
         };
         host.setStatus(tr("status.deploy.building", deployed.deployment().name()));
         if (maven) {
-            ops.resolveMavenClasspath(hostModule, plan.jdkHome(), cp -> {
+            List<String> mvn = ops.buildExecutable(com.editora.build.BuildTool.MAVEN, hostModule);
+            if (mvn == null) {
+                return; // the trust gate said why
+            }
+            com.editora.maven.MavenClasspath.Scope scope =
+                    com.editora.maven.MavenClasspath.Scope.forSource(routing, localModule);
+            ops.resolveMavenClasspath(hostModule, plan.jdkHome(), mvn, scope, cp -> {
                 if (cp == null || cp.isEmpty()) {
                     host.setStatus(tr("status.deploy.buildFailed", cfg.name()));
                 }
@@ -1205,40 +1236,187 @@ final class RunCoordinator {
         Path routing = routingFor(host, cfg);
         Path project = onLaunchHost(routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing));
         String jdkHome = project == null ? effectiveMavenJdk(null, cfg) : jdkHomeFor(project, cfg);
+        Path toolRoot = project != null ? project : cwd;
         beforeLaunch.run(
                 host,
                 cfg,
+                tool -> ops.buildExecutable(tool, toolRoot), // a symbolic step (maven:compile) runs the tree's Maven
                 cwd,
                 project == null
                         ? JdkToolchain.environment(jdkHome, processPath())
                         : javaEnvironment(project, jdkHome, null),
+                stepConsole(cwd),
+                then);
+        ops.onRunStateChanged(); // the step is running now: the toolbar's Stop button applies to it
+    }
+
+    /** The Run console as a before-launch step shows itself in it: a build, or the Maven classpath resolution. */
+    private BeforeLaunchStep.Console stepConsole(Path cwd) {
+        return new BeforeLaunchStep.Console() {
+            @Override
+            public void started(String commandLine) {
+                consoleDir = cwd; // so a compiler error's file link in the build output resolves
+                consoleUsed = true;
+                panel().started(commandLine);
+                runtimeGeneration++; // the build step is not the program: no runtime chip for it
+                panel().setRuntime(null);
+            }
+
+            @Override
+            public void output(String line, boolean stderr) {
+                panel().appendOutput(line, stderr);
+            }
+
+            @Override
+            public void ended(int code, String launchError) {
+                if (launchError != null) {
+                    panel().failed(launchError);
+                } else {
+                    panel().finished(code);
+                }
+                ops.onRunStateChanged();
+            }
+        };
+    }
+
+    /**
+     * The build before a jdtls launch (review D2): in a Maven or Gradle project on this machine, with "Build
+     * before Run and Debug" on and no before-launch step of the configuration's own ({@code configuredStep}),
+     * compiles with the build tool — Maven {@code compile}, or {@code test-compile} for a class declared under
+     * {@code src/test}; Gradle {@code compileJava} / {@code compileTestJava} — in the Run console, on the
+     * project's JDK, through the executable the tasks tree uses, and aborts the launch when it fails. Then
+     * {@code then} with whether a build ran. jdtls runs with autobuild off, so without this the launch ran
+     * nothing after a clone and the previous binary after every edit.
+     */
+    private void buildBeforeLaunch(
+            Path root, Path source, String configuredStep, String label, String jdkHome, Consumer<Boolean> then) {
+        com.editora.build.BuildTool tool = null;
+        if (com.editora.process.ExecTargets.runsHere(root)) {
+            tool = ops.mavenProjectAt(root)
+                    ? com.editora.build.BuildTool.MAVEN
+                    : ops.gradleProjectAt(root) ? com.editora.build.BuildTool.GRADLE : null;
+        }
+        if (!BuildBeforeLaunch.wanted(host.settings().isBuildBeforeRun(), configuredStep, tool)) {
+            then.accept(false);
+            return;
+        }
+        List<String> executable = ops.buildExecutable(tool, root);
+        if (executable == null) {
+            return; // the trust gate said why
+        }
+        List<String> argv =
+                BuildBeforeLaunch.compileArgv(tool, executable, BuildBeforeLaunch.isTestSource(source, root));
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
+                root,
+                javaEnvironment(root, jdkHome, null),
+                stepConsole(root),
+                () -> then.accept(true));
+        ops.onRunStateChanged();
+    }
+
+    /**
+     * Resolves the Maven classpath of {@code root} for a launch of the class declared in {@code source}, then
+     * {@code then} with it. On this machine the resolution runs in the Run console as a before-launch step —
+     * its output streams, Stop ends it, a second Run is refused while it runs, the window's close kills it
+     * (reviews D4, D8) — with the executable the tasks tree uses (review D3), and a failure's status quotes
+     * Maven's first {@code [ERROR]} line. A project on a host resolves there, silently, as before.
+     */
+    private void resolveMavenClasspath(
+            Path root, Path source, String jdkHome, String label, Consumer<List<String>> then) {
+        com.editora.maven.MavenClasspath.Scope scope = com.editora.maven.MavenClasspath.Scope.forSource(source, root);
+        List<String> executable = ops.buildExecutable(com.editora.build.BuildTool.MAVEN, root);
+        if (executable == null) {
+            return; // the trust gate said why
+        }
+        if (!com.editora.process.ExecTargets.runsHere(root)) {
+            host.setStatus(tr("status.run.resolvingClasspath"));
+            ops.resolveMavenClasspath(root, jdkHome, executable, scope, cp -> {
+                if (cp == null || cp.isEmpty()) {
+                    host.setStatus(tr("status.run.resolveFailed"));
+                    return;
+                }
+                then.accept(cp);
+            });
+            return;
+        }
+        if (consoleRunning()) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        com.editora.maven.MavenClasspathResolver.Plan plan;
+        try {
+            plan = com.editora.maven.MavenClasspathResolver.plan(root, executable, scope);
+        } catch (java.io.IOException | RuntimeException e) {
+            host.setStatus(tr("status.run.resolveClasspathFailed", label, String.valueOf(e.getMessage())));
+            return;
+        }
+        BeforeLaunchStep.Console console = stepConsole(plan.workingDirectory());
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(label, plan.argv(), "status.run.resolveClasspath"),
+                plan.workingDirectory(),
+                javaEnvironment(root, jdkHome, null),
                 new BeforeLaunchStep.Console() {
                     @Override
                     public void started(String commandLine) {
-                        consoleDir = cwd; // so a compiler error's file link in the build output resolves
-                        consoleUsed = true;
-                        panel().started(commandLine);
-                        runtimeGeneration++; // the build step is not the program: no runtime chip for it
-                        panel().setRuntime(null);
+                        console.started(commandLine);
                     }
 
                     @Override
                     public void output(String line, boolean stderr) {
-                        panel().appendOutput(line, stderr);
+                        console.output(line, stderr);
                     }
 
                     @Override
                     public void ended(int code, String launchError) {
-                        if (launchError != null) {
-                            panel().failed(launchError);
-                        } else {
-                            panel().finished(code);
+                        console.ended(code, launchError);
+                        if (code != 0 || launchError != null) {
+                            com.editora.maven.MavenClasspathResolver.discard(plan); // the step said why
                         }
-                        ops.onRunStateChanged();
                     }
                 },
-                then);
-        ops.onRunStateChanged(); // the step is running now: the toolbar's Stop button applies to it
+                () -> {
+                    List<String> cp = com.editora.maven.MavenClasspathResolver.finish(plan);
+                    if (cp == null || cp.isEmpty()) {
+                        host.setStatus(
+                                tr("status.run.resolveClasspathFailed", label, tr("status.run.noClasspathWritten")));
+                        return;
+                    }
+                    then.accept(cp);
+                });
+        ops.onRunStateChanged();
+    }
+
+    /**
+     * Watches a program's first lines for the JVM not finding its main class and appends the hint to build
+     * (review D15) — for a launch that ran without the build before it ("Build before Run and Debug" off).
+     */
+    private java.util.function.BiConsumer<String, Boolean> missingClassHint(String mainClass) {
+        int[] seen = {0};
+        boolean[] said = {false};
+        return (line, stderr) -> {
+            if (said[0] || seen[0]++ >= BuildBeforeLaunch.HINT_WINDOW) {
+                return;
+            }
+            if (BuildBeforeLaunch.missingClass(line, mainClass)) {
+                said[0] = true;
+                panel().appendNotice(tr("run.console.buildHint"));
+            }
+        };
+    }
+
+    /** The file jdtls says declares {@code mc}, else the launch's routing file: what decides the build's scope. */
+    private static Path sourceOf(JavaMainClass mc, Path routing) {
+        if (mc != null && mc.filePath() != null && !mc.filePath().isBlank()) {
+            try {
+                return Path.of(mc.filePath());
+            } catch (RuntimeException notAPath) {
+                return routing;
+            }
+        }
+        return routing;
     }
 
     /** Where a before-launch command runs: the configuration's working directory, else the project root. */
@@ -1334,43 +1512,48 @@ final class RunCoordinator {
                         .filter(o -> cfg.mainClass().equals(o.className()))
                         .findFirst()
                         .orElseGet(() -> new JavaMainClass(cfg.mainClass(), cfg.projectName(), routing.toString()));
-                ops.resolveJavaLaunch(routing, mc, info -> {
-                    if (info == null || !info.ok()) {
-                        host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
-                        return;
-                    }
-                    streamRun(
-                            label,
-                            cwd,
-                            JavaRunCommand.build(
-                                    javaOverride.isBlank() ? info.javaExec() : javaOverride,
-                                    info.modulePaths(),
-                                    info.classPaths(),
-                                    cfg.mainClass(),
-                                    info.vmArgs(vm),
-                                    args),
-                            launchEnv);
+                // The build first (review D2): the classpath jdtls resolves is right, the class files in it
+                // are whatever the last build left — nothing, or the previous code.
+                buildBeforeLaunch(root, sourceOf(mc, routing), cfg.beforeLaunch(), label, jdkHome, built -> {
+                    ops.resolveJavaLaunch(routing, mc, info -> {
+                        if (info == null || !info.ok()) {
+                            host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
+                            return;
+                        }
+                        if (!built) {
+                            pendingOutputWatcher = missingClassHint(cfg.mainClass());
+                        }
+                        streamRun(
+                                label,
+                                cwd,
+                                JavaRunCommand.build(
+                                        javaOverride.isBlank() ? info.javaExec() : javaOverride,
+                                        info.modulePaths(),
+                                        info.classPaths(),
+                                        cfg.mainClass(),
+                                        info.vmArgs(vm),
+                                        args),
+                                launchEnv);
+                    });
                 });
             });
         } else if (ops.mavenProjectAt(root)) {
-            host.setStatus(tr("status.run.resolvingClasspath"));
-            ops.resolveMavenClasspath(root, jdkHome, cp -> {
-                if (cp == null || cp.isEmpty()) {
-                    host.setStatus(tr("status.run.resolveFailed"));
-                    return;
-                }
-                streamRun(
-                        label,
-                        cwd,
-                        JavaRunCommand.build(
-                                javaOverride.isBlank() && onHost ? "java" : javaOverride,
-                                List.of(),
-                                cp,
-                                cfg.mainClass(),
-                                vm,
-                                args),
-                        launchEnv);
-            });
+            resolveMavenClasspath(
+                    root,
+                    routing,
+                    jdkHome,
+                    label,
+                    cp -> streamRun(
+                            label,
+                            cwd,
+                            JavaRunCommand.build(
+                                    javaOverride.isBlank() && onHost ? "java" : javaOverride,
+                                    List.of(),
+                                    cp,
+                                    cfg.mainClass(),
+                                    vm,
+                                    args),
+                            launchEnv));
         } else {
             host.setStatus(tr("status.run.javaUnavailable"));
         }
@@ -1537,13 +1720,8 @@ final class RunCoordinator {
     }
 
     private void resolveMavenAndRun(EditorBuffer b, Path root, com.editora.run.MainMethodScanner.MainMethod m) {
-        host.setStatus(tr("status.run.resolvingClasspath"));
         String jdkHome = jdkHomeFor(root, null);
-        ops.resolveMavenClasspath(root, jdkHome, cp -> {
-            if (cp == null || cp.isEmpty()) {
-                host.setStatus(tr("status.run.resolveFailed"));
-                return;
-            }
+        resolveMavenClasspath(root, b.getPath(), jdkHome, shortName(m.fqn()), cp -> {
             List<String> args = programArgs(ops.programArgs(b.getPath()), null);
             if (args == null) {
                 return;
@@ -1574,25 +1752,36 @@ final class RunCoordinator {
         if (mc == null) {
             return;
         }
-        ops.resolveJavaLaunch(routing, mc, info -> {
-            if (info == null || !info.ok()) {
-                host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
-                return;
-            }
-            List<String> args = programArgs(programArgsForMain(mc), null);
-            if (args == null) {
-                return;
-            }
-            List<String> command = JavaRunCommand.build(
-                    javaExecutableFor(root, info.javaExec()),
-                    info.modulePaths(),
-                    info.classPaths(),
-                    mc.fqn(),
-                    info.vmArgs(List.of()),
-                    args);
-            String jdkHome = jdkHomeFor(root, null);
-            streamRun(shortName(mc.className()), root, command, javaEnvironment(root, jdkHome, null));
-        });
+        String jdkHome = jdkHomeFor(root, null);
+        String label = shortName(mc.className());
+        // The arguments are asked for before the build: a prompt after a minute of compiling is a surprise.
+        List<String> args = programArgs(programArgsForMain(mc), null);
+        if (args == null) {
+            return;
+        }
+        buildBeforeLaunch(
+                root,
+                sourceOf(mc, routing),
+                "",
+                label,
+                jdkHome,
+                built -> ops.resolveJavaLaunch(routing, mc, info -> {
+                    if (info == null || !info.ok()) {
+                        host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
+                        return;
+                    }
+                    List<String> command = JavaRunCommand.build(
+                            javaExecutableFor(root, info.javaExec()),
+                            info.modulePaths(),
+                            info.classPaths(),
+                            mc.fqn(),
+                            info.vmArgs(List.of()),
+                            args);
+                    if (!built) {
+                        pendingOutputWatcher = missingClassHint(mc.className());
+                    }
+                    streamRun(label, root, command, javaEnvironment(root, jdkHome, null));
+                }));
     }
 
     /** Global Maven JDK, with a saved configuration's project override taking precedence. */
