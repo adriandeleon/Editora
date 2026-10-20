@@ -15,6 +15,7 @@ import com.editora.editor.FoldManager;
 import com.editora.editor.TextNav;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -55,8 +56,10 @@ final class EditingCoordinator {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
+        @Nullable
         CodeArea activeArea();
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
@@ -84,7 +87,7 @@ final class EditingCoordinator {
     boolean markActive() {
         EditorBuffer buffer = host.activeBuffer();
         Long version = buffer == null ? null : activeMarks.get(buffer);
-        if (version == null) {
+        if (buffer == null || version == null) {
             return false;
         }
         if (version != buffer.docVersion()) {
@@ -115,6 +118,7 @@ final class EditingCoordinator {
      * deliberately scrolled view back to the caret. Work a command starts and finishes later (a save, a
      * language-server format) is outside the run and never follows either.
      */
+    @Nullable
     Runnable revealCaretAfterEdit(String commandId) {
         if (runChanges != null) {
             runChanges.unsubscribe(); // left behind by a command that threw: its follow-up never ran
@@ -158,7 +162,7 @@ final class EditingCoordinator {
     }
 
     /** The change subscription of the command run in progress (see {@link #revealCaretAfterEdit}). */
-    private org.reactfx.Subscription runChanges;
+    private org.reactfx.@Nullable Subscription runChanges;
 
     /** Expand/shrink-selection history (the pure stack); see {@link #expandSelection}/{@link #shrinkSelection}. */
     final com.editora.editops.SmartSelectStack smartSelect = new com.editora.editops.SmartSelectStack();
@@ -287,7 +291,7 @@ final class EditingCoordinator {
      * selected" is off: Cut and Copy then have nothing to act on, exactly as with one caret. The fork's
      * multi-caret cut/copy fall back to whole lines unconditionally.
      */
-    private boolean nothingSelectedAtAnyCaret(EditorBuffer b) {
+    private boolean nothingSelectedAtAnyCaret(@Nullable EditorBuffer b) {
         return b != null
                 && b.hasMultipleCarets()
                 && !host.config().getSettings().isCopyLineWhenNoSelection()
@@ -544,7 +548,7 @@ final class EditingCoordinator {
      * "prompt for alt text" setting is on (Markdown only — Typst's {@code #image} has none), else
      * {@code fallback} (null: the inserter picks its own, the file's name).
      */
-    private void withAltText(EditorBuffer b, String fallback, java.util.function.Consumer<String> insert) {
+    private void withAltText(EditorBuffer b, @Nullable String fallback, java.util.function.Consumer<String> insert) {
         if (b.isMarkdown() && host.config().getSettings().isMarkdownImageAltPrompt()) {
             host.promptText(
                     tr("image.alt.title"),
@@ -559,13 +563,19 @@ final class EditingCoordinator {
     /** Writes a pasted image into the assets folder under the configured name pattern and links it. */
     private void savePastedImage(EditorBuffer b, javafx.scene.image.Image img, String alt) {
         try {
-            java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
+            java.nio.file.Path file = b.getPath(); // the caller checked: the buffer is saved
+            java.nio.file.Path baseDir =
+                    file == null ? null : file.toAbsolutePath().getParent();
+            if (file == null || baseDir == null) {
+                host.setStatus(tr("status.markdown.imageNeedsSave"));
+                return;
+            }
             java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
                     baseDir, host.config().getSettings().getMarkdownAssetsFolder());
             java.nio.file.Files.createDirectories(assets);
             String base = com.editora.markdown.MarkdownImagePaste.baseName(
                     host.config().getSettings().getMarkdownImageNamePattern(),
-                    b.getPath().getFileName().toString(),
+                    file.getFileName().toString(),
                     java.time.LocalDateTime.now());
             String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
                     n -> java.nio.file.Files.exists(assets.resolve(n)), base, "png");
@@ -594,9 +604,15 @@ final class EditingCoordinator {
     }
 
     /** {@code alt}: the alt text for every image; null gives each its file's name. */
-    private void insertDroppedImages(EditorBuffer b, java.util.List<java.io.File> files, String alt) {
+    private void insertDroppedImages(EditorBuffer b, java.util.List<java.io.File> files, @Nullable String alt) {
         try {
-            java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
+            java.nio.file.Path file = b.getPath(); // the caller checked: the buffer is saved
+            java.nio.file.Path baseDir =
+                    file == null ? null : file.toAbsolutePath().getParent();
+            if (baseDir == null) {
+                host.setStatus(tr("status.markdown.imageNeedsSave"));
+                return;
+            }
             java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
                     baseDir, host.config().getSettings().getMarkdownAssetsFolder());
             java.nio.file.Files.createDirectories(assets);
@@ -633,13 +649,14 @@ final class EditingCoordinator {
      * falls back to referencing the remote URL directly (the preview loads http(s) images).
      */
     void insertWebImage(EditorBuffer b, javafx.scene.image.Image image, String url) {
-        if (b.getPath() == null || !host.isLocalBuffer(b)) {
+        java.nio.file.Path file = b.getPath();
+        java.nio.file.Path baseDir = file == null ? null : file.toAbsolutePath().getParent();
+        if (baseDir == null || !host.isLocalBuffer(b)) {
             host.setStatus(tr("status.markdown.imageNeedsSave"));
             return;
         }
         // Encode a raw dragged image now, on the FX thread (PixelReader), before going off-thread.
         byte[] inlinePng = image != null ? com.editora.editor.PreviewImageLoader.imageToPng(image) : null;
-        java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
         // The drop moved the caret to where the image goes; the download may end after the caret left.
         CodeArea view = b.getFocusedArea();
         int at = view.getCaretPosition();
@@ -654,17 +671,19 @@ final class EditingCoordinator {
                                 }
                             });
                             String snippet;
+                            byte[] bytes = found.bytes();
+                            String ext = found.ext(); // set whenever bytes are
                             try {
-                                if (found.bytes() != null) {
+                                if (bytes != null && ext != null) {
                                     java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
                                             baseDir, host.config().getSettings().getMarkdownAssetsFolder());
                                     java.nio.file.Files.createDirectories(assets);
                                     String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
                                             n -> java.nio.file.Files.exists(assets.resolve(n)),
                                             webImageBaseName(url),
-                                            found.ext());
+                                            ext);
                                     java.nio.file.Path target = assets.resolve(name);
-                                    java.nio.file.Files.write(target, found.bytes());
+                                    java.nio.file.Files.write(target, bytes);
                                     javafx.application.Platform.runLater(
                                             () -> b.markdown().sessionImages().add(target));
                                     snippet = markupImageSnippet(
@@ -698,7 +717,11 @@ final class EditingCoordinator {
      * {@code remote} image to reference by its address (it could not be fetched now); else a {@code link}
      * to insert because the address did not hold an image; all empty when there is nothing to insert.
      */
-    record WebImage(byte[] bytes, String ext, boolean remote, String link) {}
+    record WebImage(
+            byte @Nullable [] bytes,
+            @Nullable String ext,
+            boolean remote,
+            @Nullable String link) {}
 
     /**
      * Decides what to insert for a web image drop of {@code url} (may be null) and/or an already encoded
@@ -706,10 +729,11 @@ final class EditingCoordinator {
      * ({@link com.editora.markdown.MarkdownImagePaste#sniffImageType}) — a page of HTML is never written into
      * {@code assets/} under an image's name — and their type decides the extension when the address has none.
      */
-    static WebImage resolveWebImage(String url, byte[] inlinePng, java.util.function.Function<String, byte[]> fetch) {
+    static WebImage resolveWebImage(
+            String url, byte @Nullable [] inlinePng, java.util.function.Function<String, byte @Nullable []> fetch) {
         boolean hasUrl = url != null && !url.isBlank();
         byte[] fetched = hasUrl ? fetch.apply(url) : null;
-        String type = com.editora.markdown.MarkdownImagePaste.sniffImageType(fetched);
+        String type = fetched == null ? null : com.editora.markdown.MarkdownImagePaste.sniffImageType(fetched);
         if (type != null) {
             return new WebImage(
                     fetched, com.editora.markdown.MarkdownImagePaste.extensionForUrl(url, type), false, null);
@@ -793,6 +817,7 @@ final class EditingCoordinator {
     }
 
     /** The prefix argument ({@code C-u}) available while a count-aware command runs, else null. */
+    @Nullable
     Integer currentPrefixArg;
 
     /** Inserts {@code ch} {@code count} times at the caret as one undoable edit ({@code C-u 40 -}). */
@@ -810,7 +835,7 @@ final class EditingCoordinator {
     void setMark() {
         EditorBuffer buffer = host.activeBuffer();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        if (area == null) {
+        if (buffer == null || area == null) {
             return;
         }
         if (currentPrefixArg != null) {
@@ -832,7 +857,7 @@ final class EditingCoordinator {
     void popMark() {
         EditorBuffer buffer = host.activeBuffer();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        if (area == null) {
+        if (buffer == null || area == null) {
             return;
         }
         java.util.OptionalInt target = buffer.popMark(area.getCaretPosition());
@@ -1012,7 +1037,7 @@ final class EditingCoordinator {
 
     /** A block form of a {@link com.editora.editops.LineOps} command: {@code (text, selStart, selEnd)}. */
     interface LineBlockOp {
-        com.editora.editops.LineOps.BlockEdit apply(String text, int selStart, int selEnd);
+        com.editora.editops.LineOps.@Nullable BlockEdit apply(String text, int selStart, int selEnd);
     }
 
     /**
@@ -1021,7 +1046,8 @@ final class EditingCoordinator {
      * moved.
      */
     void lineOp(
-            java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op, LineBlockOp blockOp) {
+            java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op,
+            @Nullable LineBlockOp blockOp) {
         renumberingList(() -> applyLineOp(op, blockOp));
     }
 
@@ -1032,9 +1058,12 @@ final class EditingCoordinator {
      */
     void renumberingList(Runnable edit) {
         EditorBuffer buffer = host.activeBuffer();
-        boolean markdown = buffer != null && buffer.isMarkdown() && activeEditable();
-        boolean inOrder = markdown && buffer.markdown().listInOrder();
-        long version = markdown ? buffer.docVersion() : 0;
+        if (buffer == null || !buffer.isMarkdown() || !activeEditable()) {
+            edit.run();
+            return;
+        }
+        boolean inOrder = buffer.markdown().listInOrder();
+        long version = buffer.docVersion();
         edit.run();
         if (inOrder && buffer.docVersion() != version) {
             buffer.markdown().renumberListAtCaret();
@@ -1042,7 +1071,8 @@ final class EditingCoordinator {
     }
 
     private void applyLineOp(
-            java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op, LineBlockOp blockOp) {
+            java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op,
+            @Nullable LineBlockOp blockOp) {
         if (!activeEditable()) {
             return;
         }
@@ -1173,7 +1203,7 @@ final class EditingCoordinator {
         lastYankEnd = end;
     }
 
-    void setClipboardString(String text) {
+    void setClipboardString(@Nullable String text) {
         if (text == null || text.isEmpty()) {
             return;
         }
@@ -1316,6 +1346,7 @@ final class EditingCoordinator {
     static final int KILL_RING_LABEL_MAX = 80;
 
     /** The interactive query-replace in progress, or null. At most one runs at a time per window. */
+    @Nullable
     QueryReplaceSession queryReplaceSession;
 
     /** Emacs {@code query-replace} (`M-%`): prompt for search + replacement, then confirm each match. */
@@ -1390,7 +1421,7 @@ final class EditingCoordinator {
             }
         };
         private int from;
-        private com.editora.editor.QueryReplace.Match current;
+        private com.editora.editor.QueryReplace.@Nullable Match current;
         private int replaced;
         private boolean active;
 
@@ -1437,9 +1468,13 @@ final class EditingCoordinator {
 
         /** Applies the current match's replacement and moves the search anchor past it. */
         private void replaceCurrentOnly() {
-            area.replaceText(current.start(), current.end(), current.replacement());
+            var match = current; // set while the session is active, the only time keys reach here
+            if (match == null) {
+                return;
+            }
+            area.replaceText(match.start(), match.end(), match.replacement());
             replaced++;
-            from = com.editora.editor.QueryReplace.afterReplace(current);
+            from = com.editora.editor.QueryReplace.afterReplace(match);
         }
 
         private void replaceCurrentAndAdvance() {
@@ -1450,7 +1485,11 @@ final class EditingCoordinator {
         }
 
         private void skip() {
-            from = com.editora.editor.QueryReplace.afterSkip(current);
+            var match = current;
+            if (match == null) {
+                return;
+            }
+            from = com.editora.editor.QueryReplace.afterSkip(match);
             if (!showNext()) {
                 finish();
             }
@@ -1556,15 +1595,19 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
+        narrowToDefunAt(buffer, area, area.getCaretPosition());
+    }
+
+    /** Narrows {@code buffer} to the top-level definition around area offset {@code pos}; false when there is none. */
+    boolean narrowToDefunAt(EditorBuffer buffer, CodeArea area, int pos) {
         String text = area.getText();
-        int caret = area.getCaretPosition();
-        int start = com.editora.editops.SexpNav.beginningOfDefun(text, caret);
-        int end = com.editora.editops.SexpNav.endOfDefun(text, caret);
+        int start = com.editora.editops.SexpNav.beginningOfDefun(text, pos);
+        int end = com.editora.editops.SexpNav.endOfDefun(text, pos);
         if (start >= end) {
             host.setStatus(tr("status.narrow.noDefun"));
-            return;
+            return false;
         }
-        applyNarrow(buffer, start, end);
+        return applyNarrow(buffer, start, end);
     }
 
     /** Narrow to the innermost foldable region around the caret — the fold machinery already knows it. */
@@ -1574,7 +1617,11 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        int line = area.getCurrentParagraph();
+        narrowToFoldRegionAt(buffer, area, area.getCurrentParagraph());
+    }
+
+    /** Narrows {@code buffer} to the innermost foldable region holding area line {@code line}; false when none. */
+    boolean narrowToFoldRegionAt(EditorBuffer buffer, CodeArea area, int line) {
         com.editora.editor.FoldRegions.Region best = null;
         for (var r : buffer.getFoldManager().regions()) {
             if (r.startLine() <= line && line <= r.endLine() && (best == null || r.startLine() > best.startLine())) {
@@ -1583,11 +1630,42 @@ final class EditingCoordinator {
         }
         if (best == null) {
             host.setStatus(tr("status.narrow.noFoldRegion"));
-            return;
+            return false;
         }
         int start = area.getAbsolutePosition(best.startLine(), 0);
         int end = area.getAbsolutePosition(best.endLine(), area.getParagraphLength(best.endLine()));
-        applyNarrow(buffer, start, end);
+        return applyNarrow(buffer, start, end);
+    }
+
+    /**
+     * The Structure panel's narrowing segments. A symbol row names a line of the editor; the defun around it is
+     * found from just inside that line (from its very start {@code beginning-of-defun} would walk to the
+     * <em>previous</em> definition, as in Emacs), and the fold region is the innermost one holding the line —
+     * for a symbol that is itself a region header, its own block. Widening a buffer that is not narrowed is
+     * silent: the panel's segment is a state, not a command that can be wrong.
+     */
+    StructurePanel.NarrowActions structureNarrowActions() {
+        return new StructurePanel.NarrowActions() {
+            @Override
+            public boolean narrowToDefun(EditorBuffer buffer, int line) {
+                CodeArea area = buffer.getArea();
+                int pos = area.getAbsolutePosition(line, Math.min(1, area.getParagraphLength(line)));
+                return narrowToDefunAt(buffer, area, pos);
+            }
+
+            @Override
+            public boolean narrowToFoldRegion(EditorBuffer buffer, int line) {
+                return narrowToFoldRegionAt(buffer, buffer.getArea(), line);
+            }
+
+            @Override
+            public void widen(EditorBuffer buffer) {
+                if (buffer.isNarrowed()) {
+                    buffer.widen(); // the narrow-changed hook reconciles the UI
+                    host.setStatus(tr("status.narrow.widened"));
+                }
+            }
+        };
     }
 
     /** Emacs {@code widen} (`C-x n w`): restore access to the whole document. */
@@ -1604,15 +1682,16 @@ final class EditingCoordinator {
         host.setStatus(tr("status.narrow.widened"));
     }
 
-    void applyNarrow(EditorBuffer buffer, int start, int end) {
+    boolean applyNarrow(EditorBuffer buffer, int start, int end) {
         if (!activeEditable() && !buffer.isViewMode()) {
-            return; // a huge read-only buffer cannot be narrowed (the text swap is the mechanism)
+            return false; // a huge read-only buffer cannot be narrowed (the text swap is the mechanism)
         }
         if (!buffer.narrowTo(start, end)) {
             host.setStatus(tr("status.narrow.cannot"));
-            return;
+            return false;
         }
         host.setStatus(tr("status.narrow.narrowed"));
+        return true;
     }
 
     /**
@@ -2052,7 +2131,7 @@ final class EditingCoordinator {
     }
 
     /** The buffer language's line-comment token (e.g. {@code "//"}), or {@code null} — for the fill prefix. */
-    static String lineCommentFor(EditorBuffer buffer) {
+    static @Nullable String lineCommentFor(EditorBuffer buffer) {
         String line =
                 com.editora.editops.Commenter.styleFor(buffer.getLanguage()).line();
         return line == null || line.isBlank() ? null : line;
@@ -2601,7 +2680,7 @@ final class EditingCoordinator {
      * Emacs {@code kill-line} (`C-k`) as a pure span: from the caret to the end of the line, or — when the
      * caret is already there — the line break itself, so repeated presses eat successive lines.
      */
-    static com.editora.editops.EmacsEdits.Edit killLineEdit(String text, int caret) {
+    static com.editora.editops.EmacsEdits.@Nullable Edit killLineEdit(String text, int caret) {
         int eol = caret;
         while (eol < text.length() && text.charAt(eol) != '\n') {
             eol++;

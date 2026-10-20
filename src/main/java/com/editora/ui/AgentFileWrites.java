@@ -7,6 +7,7 @@ import java.nio.file.Path;
 
 import com.editora.agent.AcpFsGuard;
 import com.editora.editor.LineEndings;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What an agent's {@code fs/write_text_file} does to a file that has no open buffer: the bytes that go to disk
@@ -33,12 +34,17 @@ final class AgentFileWrites {
      * @param replacement the bytes to write
      * @param replacementText {@code replacement} as a later read will serve it
      */
-    record Plan(byte[] existing, String previousText, String currentText, byte[] replacement, String replacementText) {}
+    record Plan(
+            byte @Nullable [] existing,
+            @Nullable String previousText,
+            @Nullable String currentText,
+            byte[] replacement,
+            String replacementText) {}
 
     private AgentFileWrites() {}
 
     /** The text of {@code bytes} as the editor would read the file: BOM, {@code .editorconfig}, UTF-8, stand-in. */
-    static String decode(byte[] bytes, String editorConfigCharset) {
+    static String decode(byte[] bytes, @Nullable String editorConfigCharset) {
         return HistoryCoordinator.decodeCaptured(bytes, editorConfigCharset);
     }
 
@@ -47,7 +53,7 @@ final class AgentFileWrites {
      *
      * @param editorConfigCharset the {@code .editorconfig} charset for the file, or {@code null}
      */
-    static Plan plan(Path file, String content, String editorConfigCharset) throws IOException {
+    static Plan plan(Path file, String content, @Nullable String editorConfigCharset) throws IOException {
         String body = content == null ? "" : content;
         byte[] existing = null;
         if (Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {

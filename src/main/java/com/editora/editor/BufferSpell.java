@@ -198,7 +198,7 @@ public final class BufferSpell {
         return languageOverride;
     }
 
-    public void setLanguageOverride(String id) {
+    public void setLanguageOverride(@Nullable String id) {
         languageOverride = id;
     }
 

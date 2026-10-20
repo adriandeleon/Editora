@@ -2,6 +2,8 @@ package com.editora.plugin;
 
 import java.nio.file.Path;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A narrow facade over one editor buffer handed to plugins — the one active when it was obtained
  * ({@link PluginContext#activeEditor()}) or the one a right-click menu was opened on — so a plugin can
@@ -13,6 +15,7 @@ import java.nio.file.Path;
 public interface ActiveEditor {
 
     /** The active file's path, or {@code null} when there is no file-backed buffer (untitled/none). */
+    @Nullable
     Path filePath();
 
     /** The active buffer's full text, or {@code ""} when there is none. */

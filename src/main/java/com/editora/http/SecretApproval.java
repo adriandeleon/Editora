@@ -67,7 +67,10 @@ public final class SecretApproval {
      * result. Reads the request's body files, so call it off the FX thread.
      */
     public static Preview preview(
-            HttpFile.Parsed request, Map<String, String> vars, Path baseDir, CapturedResponses captured) {
+            HttpFile.Parsed request,
+            Map<String, String> vars,
+            @Nullable Path baseDir,
+            @Nullable CapturedResponses captured) {
         PreparedRequest.Dry dry = PreparedRequest.dry(request, vars, baseDir, captured);
         PreparedRequest p = dry.prepared();
         // What the host is made of: the request line up to its path, and a Host header (origin form).
@@ -101,7 +104,7 @@ public final class SecretApproval {
             BooleanSupplier cancelled,
             List<HttpFile.Parsed> requests,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured) {
         if (gate == null || gate == SecretGate.UNCHECKED) {
             return null;
@@ -181,7 +184,7 @@ public final class SecretApproval {
     static HttpExchange unsentReport(
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             String why,
             List<String> extraWarnings) {

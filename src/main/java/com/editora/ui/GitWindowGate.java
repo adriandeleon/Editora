@@ -3,6 +3,7 @@ package com.editora.ui;
 import javafx.scene.control.Tab;
 
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which tabs keep the Git Log and Commit tool windows usable.
@@ -29,7 +30,7 @@ final class GitWindowGate {
     }
 
     /** Whether {@code content} is a diff or review surface: a tab the Git windows open, with no file of its own. */
-    static boolean gitView(Object content) {
+    static boolean gitView(@Nullable Object content) {
         return localGitView(content) || content instanceof PrReviewPane;
     }
 
@@ -38,7 +39,7 @@ final class GitWindowGate {
      * review is not one — it is bound to the repository the pull request came from by
      * {@code GitHubCoordinator}, and deliberately has no Git context of its own.
      */
-    static boolean localGitView(Object content) {
+    static boolean localGitView(@Nullable Object content) {
         return content instanceof DiffViewerPane
                 || content instanceof PatchReviewPane
                 || content instanceof DirectoryReviewPane;

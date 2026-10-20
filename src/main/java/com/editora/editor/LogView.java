@@ -275,7 +275,7 @@ final class LogView {
      * {@code atEpoch}. Returns false, changing nothing, when the text has since changed in any way other than
      * growing at its end — the caller computes again. Lines appended in the meantime are filtered here.
      */
-    boolean install(LogFilter.Run run, int atEpoch, LogLevel min, String pattern) {
+    boolean install(LogFilter.Run run, int atEpoch, @Nullable LogLevel min, @Nullable String pattern) {
         if (atEpoch != epoch) {
             return false;
         }

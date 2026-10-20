@@ -11,6 +11,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The shared worker and change stamp behind every {@link BuildCoordinator}'s marker-file detection.
  *
@@ -66,10 +68,10 @@ final class BuildDetection {
      * time, and the directory's own modification time (a lockfile or wrapper script appearing beside the
      * build file changes what the parse reports without touching the build file).
      */
-    record Stamp(Path root, List<Long> markers, long directoryModified) {
+    record Stamp(@Nullable Path root, List<Long> markers, long directoryModified) {
 
         /** Stats {@code root}'s marker files; blocking, so off the FX thread. {@code root} may be null. */
-        static Stamp of(Path root, List<String> markerNames) {
+        static Stamp of(@Nullable Path root, List<String> markerNames) {
             if (root == null) {
                 return new Stamp(null, List.of(), 0);
             }

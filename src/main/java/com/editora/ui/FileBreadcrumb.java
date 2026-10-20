@@ -25,6 +25,7 @@ import atlantafx.base.controls.Breadcrumbs;
 import atlantafx.base.controls.Breadcrumbs.BreadCrumbActionEvent;
 import atlantafx.base.controls.Breadcrumbs.BreadCrumbItem;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -45,9 +46,9 @@ public class FileBreadcrumb extends StackPane {
     /** The window's open project root (null when none): a file inside it is shown from that folder down. */
     private final java.util.function.Supplier<Path> projectRoot;
     /** Injected by MainController: reveal a crumb in the OS file manager. Args: (path, isDirectory). */
-    private BiConsumer<Path, Boolean> onReveal;
+    private @Nullable BiConsumer<Path, Boolean> onReveal;
     /** Injected by MainController: open a terminal at a crumb's folder. Args: (path, isDirectory). */
-    private BiConsumer<Path, Boolean> onOpenTerminal;
+    private @Nullable BiConsumer<Path, Boolean> onOpenTerminal;
 
     private final Breadcrumbs<Path> breadcrumbs = new Breadcrumbs<>();
 
@@ -65,7 +66,7 @@ public class FileBreadcrumb extends StackPane {
     private final ScrollPane scroll = new ScrollPane(crumbHolder);
 
     /** The crumb node for the trailing (leaf) segment, used to anchor a re-opened dropdown. */
-    private Node leafCrumbNode;
+    private @Nullable Node leafCrumbNode;
 
     /** Crumb path → its button node, so a crumb-action click can anchor the dropdown on the clicked crumb.
      *  Rebuilt on each {@link #showPath}. (The AtlantaFX skin owns each crumb button's {@code onAction} —
@@ -80,9 +81,9 @@ public class FileBreadcrumb extends StackPane {
      * The user's home directory, collapsed to a single "~" crumb. Read once: it cannot change while the
      * process runs, and the trail is rebuilt on every tab switch.
      */
-    private static final Path HOME = userHome();
+    private static final @Nullable Path HOME = userHome();
 
-    private static Path userHome() {
+    private static @Nullable Path userHome() {
         try {
             String home = System.getProperty("user.home");
             return home == null || home.isBlank() ? null : Path.of(home);
@@ -94,9 +95,9 @@ public class FileBreadcrumb extends StackPane {
     /** The bar is shown only when enabled (the user setting) and a file is active. */
     private boolean enabled;
 
-    private Path currentFile;
+    private @Nullable Path currentFile;
 
-    private com.editora.editor.EditorBuffer attached;
+    private com.editora.editor.@Nullable EditorBuffer attached;
 
     public FileBreadcrumb(Consumer<Path> onOpenFile) {
         this(onOpenFile, () -> null);
@@ -155,7 +156,7 @@ public class FileBreadcrumb extends StackPane {
     }
 
     /** Points the bar at {@code buffer}'s file, and at the caret's heading path when it is Markdown. */
-    public void setActiveBuffer(com.editora.editor.EditorBuffer buffer) {
+    public void setActiveBuffer(com.editora.editor.@Nullable EditorBuffer buffer) {
         setActiveFile(buffer == null ? null : buffer.getPath());
         headingCrumbs.attach(enabled ? buffer : null);
         attached = buffer;
@@ -167,7 +168,7 @@ public class FileBreadcrumb extends StackPane {
     }
 
     /** Points the bar at {@code file} (shown as its home-collapsed path), or clears it when {@code null}. */
-    public void setActiveFile(Path file) {
+    public void setActiveFile(@Nullable Path file) {
         this.currentFile = file;
         if (file != null) {
             showPath(file.toAbsolutePath());
@@ -202,7 +203,7 @@ public class FileBreadcrumb extends StackPane {
         breadcrumbs.setSelectedCrumb(Breadcrumbs.buildTreeModel(cumulative.toArray(new Path[0])));
     }
 
-    private Path projectRootOrNull() {
+    private @Nullable Path projectRootOrNull() {
         try {
             Path root = projectRoot.get();
             return root == null ? null : root.toAbsolutePath().normalize();
@@ -211,7 +212,7 @@ public class FileBreadcrumb extends StackPane {
         }
     }
 
-    private Callback<BreadCrumbItem<Path>, ButtonBase> crumbFactory() {
+    private Callback<BreadCrumbItem<Path>, @Nullable ButtonBase> crumbFactory() {
         return item -> {
             Path p = item.getValue();
             Hyperlink link = new Hyperlink(crumbLabel(p));
@@ -267,6 +268,7 @@ public class FileBreadcrumb extends StackPane {
     volatile java.util.function.BiFunction<Path, Boolean, DirectoryListing> directoryReader = DirectoryListing::read;
 
     /** The menu most recently shown, for tests. */
+    @Nullable
     ContextMenu lastMenuForTest;
 
     private void showCrumbMenu(Path crumbPath, boolean isDir, DirectoryListing listing, Node anchor) {
@@ -275,15 +277,17 @@ public class FileBreadcrumb extends StackPane {
         // Reveal / Open Terminal act on this crumb. Reveal is local files only (meaningless over SFTP); a terminal
         // on a remote crumb opens on its host.
         boolean local = Vfs.isLocal(crumbPath);
-        if ((onReveal != null && local) || onOpenTerminal != null) {
-            if (onReveal != null && local) {
+        BiConsumer<Path, Boolean> revealAction = onReveal;
+        BiConsumer<Path, Boolean> terminalAction = onOpenTerminal;
+        if ((revealAction != null && local) || terminalAction != null) {
+            if (revealAction != null && local) {
                 MenuItem reveal = new MenuItem(tr("menu.revealInFileManager"), Icons.revealInFiles());
-                reveal.setOnAction(e -> onReveal.accept(crumbPath, isDir));
+                reveal.setOnAction(e -> revealAction.accept(crumbPath, isDir));
                 menu.getItems().add(reveal);
             }
-            if (onOpenTerminal != null) {
+            if (terminalAction != null) {
                 MenuItem terminal = new MenuItem(tr("menu.openTerminal"), Icons.terminal());
-                terminal.setOnAction(e -> onOpenTerminal.accept(crumbPath, isDir));
+                terminal.setOnAction(e -> terminalAction.accept(crumbPath, isDir));
                 menu.getItems().add(terminal);
             }
             if (!entries.isEmpty()) {

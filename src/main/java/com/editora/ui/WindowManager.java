@@ -26,6 +26,7 @@ import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.config.WorkspaceState;
 import com.editora.i18n.Messages;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Owns the set of top-level editor windows and the shared config behind them. In single-window terms
@@ -57,7 +58,7 @@ public class WindowManager {
 
     private final List<Holder> windows = new ArrayList<>();
     /** The JavaFX primary stage, reused for the first window built (then null — others get a new Stage). */
-    private Stage primaryStage;
+    private @Nullable Stage primaryStage;
 
     /** Set by {@code --single-window}: freezes the persisted open-window set this session (so quitting a
      *  one-window run never shrinks the saved multi-window layout). See {@link #reconcileOpenSet()}. */
@@ -102,7 +103,7 @@ public class WindowManager {
      * The window that made the pending change; it applied the change itself and is skipped. Known only when
      * its own save carried the change with no other window's save waiting — see {@link #changerOf}.
      */
-    private ConfigManager settingsChangeOrigin;
+    private @Nullable ConfigManager settingsChangeOrigin;
     /** Set when the pending changes came from different (or unknown) windows: then none can be skipped. */
     private boolean settingsChangeFromSeveral;
 
@@ -132,7 +133,7 @@ public class WindowManager {
             SharedConfig shared,
             KeymapManager keymap,
             HostServices hostServices,
-            com.editora.plugin.PluginManager discoveredPlugins) {
+            com.editora.plugin.@Nullable PluginManager discoveredPlugins) {
         this.shared = shared;
         RestartPending.captureStart(shared.getSettings()); // what this run uses of the restart-only settings
         this.keymap = keymap;
@@ -237,7 +238,8 @@ public class WindowManager {
      * (its session is the bootstrap config's), when a {@code --project} folder is not a project yet (its
      * session file does not exist), or for a {@code --single-window} launch.
      */
-    public static Path primaryWindowStateFile(SharedConfig shared, String projectArg, boolean singleWindow) {
+    public static @Nullable Path primaryWindowStateFile(
+            SharedConfig shared, @Nullable String projectArg, boolean singleWindow) {
         if (singleWindow) {
             return null;
         }
@@ -300,7 +302,7 @@ public class WindowManager {
     }
 
     /** The background-activity indicator of the window the user is in; null when no window is open. */
-    BackgroundTasks.Handle startSyncTask(String label) {
+    BackgroundTasks.@Nullable Handle startSyncTask(String label) {
         Holder h = focusedHolder();
         return h == null ? null : h.controller().backgroundTasks().start(label);
     }
@@ -402,13 +404,13 @@ public class WindowManager {
      */
     public void launch(
             Stage primaryStage,
-            String projectArg,
+            @Nullable String projectArg,
             List<MainController.OpenTarget> targets,
             boolean zen,
             boolean expert,
-            String newFile,
+            @Nullable String newFile,
             boolean simple,
-            String singleWindow,
+            @Nullable String singleWindow,
             boolean noSession) {
         this.primaryStage = primaryStage; // reused for the first window built
         this.noSession = noSession;
@@ -485,14 +487,14 @@ public class WindowManager {
      * same file again on the FX thread. Only for the launch itself — a default window opened later must read
      * what is on disk then.
      */
-    private ConfigManager bootstrapConfig;
+    private @Nullable ConfigManager bootstrapConfig;
 
     /**
      * Likewise for the project (or untitled) window the launch focuses first: its session, read by the
      * prefetch thread against the file {@link #primaryWindowStateFile} named. Adopted only by the window
      * built for exactly that file.
      */
-    private ConfigManager bootstrapProjectConfig;
+    private @Nullable ConfigManager bootstrapProjectConfig;
 
     /** Offers {@code bootstrap} to the default window of the launch that follows. */
     public void adoptBootstrapConfig(ConfigManager bootstrap) {
@@ -500,7 +502,7 @@ public class WindowManager {
     }
 
     /** As above, plus the prefetched session of the first project window ({@code null}: none was read). */
-    public void adoptBootstrapConfig(ConfigManager bootstrap, ConfigManager projectWindow) {
+    public void adoptBootstrapConfig(ConfigManager bootstrap, @Nullable ConfigManager projectWindow) {
         if (bootstrap != null && bootstrap.shared() == shared) {
             bootstrapConfig = bootstrap;
         }
@@ -509,21 +511,22 @@ public class WindowManager {
         }
     }
 
-    private ConfigManager takeBootstrapConfig() {
+    private @Nullable ConfigManager takeBootstrapConfig() {
         ConfigManager boot = bootstrapConfig;
         bootstrapConfig = null;
         return boot;
     }
 
     /** The prefetched project-window config when it was read from {@code stateFile}, else {@code null}. */
-    private ConfigManager takeBootstrapProjectConfig(Path stateFile) {
+    private @Nullable ConfigManager takeBootstrapProjectConfig(Path stateFile) {
         ConfigManager boot = bootstrapProjectConfig;
         bootstrapProjectConfig = null;
         return boot != null && boot.getWorkspaceStateFile().equals(stateFile) ? boot : null;
     }
 
     /** A restored window waiting for its turn to be built; see {@link #launch}. */
-    private record PendingWindow(String key, Project project, Path stateFile) {}
+    private record PendingWindow(
+            String key, @Nullable Project project, @Nullable Path stateFile) {}
 
     /** Restored windows not built yet, in build order. Their saved sessions are untouched until they are. */
     private final java.util.ArrayDeque<PendingWindow> pendingRestore = new java.util.ArrayDeque<>();
@@ -532,7 +535,7 @@ public class WindowManager {
     private final List<Runnable> deferredExternalLaunches = new ArrayList<>();
 
     /** The window that ends up focused once the restore completes. */
-    private String restoreFocusKey;
+    private @Nullable String restoreFocusKey;
 
     /** Set while a quit is asking its questions, so no window is built underneath the prompts. */
     private boolean restorePaused;
@@ -556,7 +559,7 @@ public class WindowManager {
             List<MainController.OpenTarget> targets,
             boolean zen,
             boolean expert,
-            String newFile,
+            @Nullable String newFile,
             boolean simple) {
         try {
             buildWindow(w.key(), w.project(), w.stateFile(), targets, zen, expert, newFile, simple);
@@ -612,7 +615,7 @@ public class WindowManager {
     }
 
     /** The window that really has the focus, or {@code null} — unlike {@link #focusedHolder()}, no fallback. */
-    private Holder actuallyFocusedHolder() {
+    private @Nullable Holder actuallyFocusedHolder() {
         for (Holder h : windows) {
             if (h.stage() != null && h.stage().isFocused()) {
                 return h;
@@ -656,7 +659,7 @@ public class WindowManager {
             List<MainController.OpenTarget> targets,
             boolean zen,
             boolean expert,
-            String newFile,
+            @Nullable String newFile,
             boolean simple) {
         singleWindowSession = true;
         boolean projectsOn = shared.getSettings().isProjectSupport();
@@ -685,7 +688,7 @@ public class WindowManager {
     }
 
     /** Finds a project by display name (exact first, then case-insensitive), or {@code null} if none match. */
-    private Project findProjectByName(String name) {
+    private @Nullable Project findProjectByName(String name) {
         for (Project p : projects().list()) {
             if (p.name().equals(name)) {
                 return p;
@@ -810,7 +813,7 @@ public class WindowManager {
     }
 
     /** The live window that already has any of {@code files} open, or {@code null} if none does. */
-    private Holder holderWithAnyOf(List<MainController.OpenTarget> files) {
+    private @Nullable Holder holderWithAnyOf(List<MainController.OpenTarget> files) {
         for (Holder h : windows) {
             if (h.controller() == null) {
                 continue;
@@ -852,7 +855,7 @@ public class WindowManager {
     }
 
     /** The currently-focused window, else the most recently built one (null when no window is open). */
-    private Holder focusedHolder() {
+    private @Nullable Holder focusedHolder() {
         for (Holder h : windows) {
             if (h.stage() != null && h.stage().isFocused()) {
                 return h;
@@ -867,6 +870,7 @@ public class WindowManager {
      * which runs <em>before</em> {@link #onWindowClosed} removes the closing window, so {@code exclude} is
      * still in the list and must be skipped.
      */
+    @Nullable
     MainController otherLiveController(MainController exclude) {
         for (Holder h : windows) {
             if (h.controller() != null && h.controller() != exclude) {
@@ -958,7 +962,7 @@ public class WindowManager {
     }
 
     /** Opens (or focuses) {@code project}'s window. A null/empty-id project routes to the global window. */
-    public Stage openOrFocus(Project project) {
+    public Stage openOrFocus(@Nullable Project project) {
         if (project == null || project.id().isEmpty()) {
             return openOrFocusGlobal();
         }
@@ -976,6 +980,7 @@ public class WindowManager {
     }
 
     /** The controller of {@code project}'s open window, or null when it has none. */
+    @Nullable
     MainController controllerOf(Project project) {
         Holder holder = project == null ? null : findHolder(project.id());
         return holder == null ? null : holder.controller();
@@ -989,8 +994,8 @@ public class WindowManager {
     void openRemoteProject(
             Project project,
             com.editora.vfs.RemoteConnection conn,
-            com.editora.vfs.RemoteFileSystems.LiveConnection live,
-            char[] secret) {
+            com.editora.vfs.RemoteFileSystems.@Nullable LiveConnection live,
+            char @Nullable [] secret) {
         openOrFocus(project);
         MainController window = controllerOf(project);
         if (window != null && live != null) {
@@ -1029,7 +1034,7 @@ public class WindowManager {
             return;
         }
         if (line < 0) {
-            Path stateFile = key.isEmpty() ? null : projects().stateFile(project);
+            Path stateFile = project == null ? null : projects().stateFile(project);
             buildWindow(key, project, stateFile, List.of(), false, false, null, false);
             projects().markOpen(key);
             setActiveAndSave(key);
@@ -1042,7 +1047,7 @@ public class WindowManager {
         // Not open — build it, passing the file as a startup target (1-based line) so it opens + jumps after
         // this window's own session restore, exactly like a command-line FILE:line argument.
         List<MainController.OpenTarget> targets = List.of(new MainController.OpenTarget(file, line + 1, 1));
-        Path stateFile = key.isEmpty() ? null : projects().stateFile(project);
+        Path stateFile = project == null ? null : projects().stateFile(project);
         buildWindow(key, project, stateFile, targets, false, false, null, false);
         projects().markOpen(key);
         setActiveAndSave(key);
@@ -1067,7 +1072,7 @@ public class WindowManager {
             existing.controller().openRecentHere(file);
             return;
         }
-        Path stateFile = key.isEmpty() ? null : projects().stateFile(project);
+        Path stateFile = project == null ? null : projects().stateFile(project);
         buildWindow(
                 key, project, stateFile, List.of(new MainController.OpenTarget(file, 0, 0)), false, false, null, false);
         projects().markOpen(key);
@@ -1167,7 +1172,9 @@ public class WindowManager {
             for (Holder h : closing) {
                 h.stage().toFront(); // make it obvious which window is asking about unsaved changes
                 h.stage().requestFocus();
-                CloseCoordinator.Sweep sweep = h.controller().closes.confirmSweep(approvals.get(h.controller()));
+                CloseCoordinator.ApprovalState approval =
+                        approvals.computeIfAbsent(h.controller(), c -> new CloseCoordinator.ApprovalState());
+                CloseCoordinator.Sweep sweep = h.controller().closes.confirmSweep(approval);
                 if (!sweep.allowed()) {
                     return false; // cancelled — the app keeps running and nothing was disposed
                 }
@@ -1279,7 +1286,7 @@ public class WindowManager {
      * other window's Settings window, if open, re-reads its controls too. Left showing the old values, its
      * next edit of any stale control would write that value back over this change.
      */
-    public void broadcastSettingsApplied(MainController origin) {
+    public void broadcastSettingsApplied(@Nullable MainController origin) {
         settingsRebroadcast.stop(); // every window is about to apply everything, pending changes included
         settingsChangePending = false;
         settingsSync.settingsChanged(); // e.g. "Reset to defaults" switched sync off
@@ -1330,7 +1337,7 @@ public class WindowManager {
      * A window saved preferences that the other windows have not applied — the change came from a palette
      * command or key binding, which applies it only in its own window. Schedules the others to catch up.
      */
-    private void onSharedSettingsChanged(ConfigManager saver) {
+    private void onSharedSettingsChanged(@Nullable ConfigManager saver) {
         if (!javafx.application.Platform.isFxApplicationThread()) {
             // By the time this runs the saves around the change are over, so who made it can't be told.
             javafx.application.Platform.runLater(() -> onSharedSettingsChanged(null));
@@ -1355,7 +1362,7 @@ public class WindowManager {
      * waiting, the saver may merely have saved first (its own save was queued before the command ran in the
      * other window), and skipping it would leave it on the old preferences for good.
      */
-    private ConfigManager changerOf(ConfigManager saver) {
+    private @Nullable ConfigManager changerOf(@Nullable ConfigManager saver) {
         if (saver == null) {
             return null;
         }
@@ -1411,7 +1418,7 @@ public class WindowManager {
 
     private boolean localHistoryBroadcastQueued;
     /** The one window whose changes the queued broadcast carries; {@code null} once a second one made some. */
-    private MainController localHistoryOrigin;
+    private @Nullable MainController localHistoryOrigin;
 
     /**
      * Local History's index is one shared object, and each window's panel lists a file from it. A window that
@@ -1448,7 +1455,7 @@ public class WindowManager {
     }
 
     /** A user snippet file changed in {@code origin}'s window: every other window drops its snippet cache. */
-    public void broadcastSnippetsChanged(MainController origin) {
+    public void broadcastSnippetsChanged(@Nullable MainController origin) {
         if (origin != null) {
             settingsSync.markDirty(); // a window changed a snippet (null: a sync brought it)
         }
@@ -1533,7 +1540,7 @@ public class WindowManager {
      * or a keymap a newer build provides. Reported as an error so it stays in the message log, since the
      * startup status echo is overwritten almost immediately.
      */
-    private void reportUnknownKeymap(MainController controller) {
+    private void reportUnknownKeymap(@Nullable MainController controller) {
         if (controller == null) {
             return; // no window to tell yet; the name stays pending for the next one
         }
@@ -1548,26 +1555,26 @@ public class WindowManager {
 
     private Stage buildWindow(
             String key,
-            Project project,
-            Path stateFile,
+            @Nullable Project project,
+            @Nullable Path stateFile,
             List<MainController.OpenTarget> targets,
             boolean zen,
             boolean expert,
-            String newFile,
+            @Nullable String newFile,
             boolean simple) {
         return buildWindow(key, project, stateFile, targets, zen, expert, newFile, simple, null);
     }
 
     private Stage buildWindow(
             String key,
-            Project project,
-            Path stateFile,
+            @Nullable Project project,
+            @Nullable Path stateFile,
             List<MainController.OpenTarget> targets,
             boolean zen,
             boolean expert,
-            String newFile,
+            @Nullable String newFile,
             boolean simple,
-            DiffUiRequest diffUi) {
+            @Nullable DiffUiRequest diffUi) {
         try {
             Stage stage = primaryStage != null ? primaryStage : new Stage();
             primaryStage = null; // only the first window reuses the JavaFX primary stage
@@ -1848,7 +1855,7 @@ public class WindowManager {
         }
     }
 
-    private Project findProject(String id) {
+    private @Nullable Project findProject(String id) {
         for (Project p : projects().list()) {
             if (p.id().equals(id)) {
                 return p;
@@ -1857,7 +1864,7 @@ public class WindowManager {
         return null;
     }
 
-    private Holder findHolder(String key) {
+    private @Nullable Holder findHolder(@Nullable String key) {
         for (Holder h : windows) {
             if (h.key.equals(key)) {
                 return h;
@@ -1866,7 +1873,7 @@ public class WindowManager {
         return null;
     }
 
-    private void focusKey(String key) {
+    private void focusKey(@Nullable String key) {
         Holder h = findHolder(key);
         if (h != null) {
             focus(h.stage);

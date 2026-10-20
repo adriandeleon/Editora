@@ -9,6 +9,7 @@ import java.util.Map;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import com.github.difflib.patch.Patch;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The text of each file as the debugged program was built from it, and the line mapping between that text and
@@ -102,10 +103,10 @@ final class LaunchedLines {
         /** No change: every line maps to itself. */
         static final Mapping IDENTITY = new Mapping(null, null);
 
-        private final int[] currentToLaunched;
-        private final int[] launchedToCurrent;
+        private final int @Nullable [] currentToLaunched;
+        private final int @Nullable [] launchedToCurrent;
 
-        private Mapping(int[] currentToLaunched, int[] launchedToCurrent) {
+        private Mapping(int @Nullable [] currentToLaunched, int @Nullable [] launchedToCurrent) {
             this.currentToLaunched = currentToLaunched;
             this.launchedToCurrent = launchedToCurrent;
         }

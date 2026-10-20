@@ -79,7 +79,7 @@ public final class BuildService {
     }
 
     /** As {@link #run(Path, List, Listener)}, with environment overrides such as Maven's selected JDK. */
-    public void run(Path workingDir, List<String> argv, Map<String, String> environment, Listener listener) {
+    public void run(@Nullable Path workingDir, List<String> argv, Map<String, String> environment, Listener listener) {
         if (workingDir == null || argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }

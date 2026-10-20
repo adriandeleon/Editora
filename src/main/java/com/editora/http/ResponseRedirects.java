@@ -113,7 +113,7 @@ public final class ResponseRedirects {
      */
     static void write(
             List<HttpFile.Redirect> redirects,
-            Path baseDir,
+            @Nullable Path baseDir,
             int status,
             byte[] body,
             boolean truncated,

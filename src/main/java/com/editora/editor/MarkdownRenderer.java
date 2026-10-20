@@ -297,7 +297,7 @@ public final class MarkdownRenderer {
      * background as the preview's do and code prints uncoloured. Only for callers that cannot block first.
      */
     public static Node renderForPrint(
-            org.commonmark.node.Node ast, Path baseDir, @Nullable MarkdownPrintAssets assets) {
+            org.commonmark.node.Node ast, @Nullable Path baseDir, @Nullable MarkdownPrintAssets assets) {
         return renderDocument(
                 ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null, null));
     }

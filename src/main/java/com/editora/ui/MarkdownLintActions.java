@@ -22,6 +22,7 @@ import com.editora.markdown.MarkdownLintConfig;
 import com.editora.markdown.MarkdownLintFix;
 import com.editora.markdown.MarkdownLintOptions;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -85,12 +86,14 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     // --- project config -------------------------------------------------------------------------------
 
     /** The nearest markdownlint config governing {@code file}, or null when there is none. */
+    @Nullable
     ConfigHit configFor(Path file) {
         return configFor(file, host.activeProjectRoot());
     }
 
     /** As {@link #configFor(Path)}, with the project root already in hand (a project lint asks off-thread). */
-    ConfigHit configFor(Path file, Path projectRoot) {
+    @Nullable
+    ConfigHit configFor(Path file, @Nullable Path projectRoot) {
         Path stop = boundary(file, projectRoot);
         for (Path dir = file.getParent(); dir != null; dir = dir.getParent()) {
             if (stop == null && isHomeOrRoot(dir)) {
@@ -113,7 +116,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     }
 
     /** The directory the walk-up stops at: the project root, else the Git repository root, else none. */
-    private Path boundary(Path file, Path project) {
+    private @Nullable Path boundary(Path file, @Nullable Path project) {
         if (project != null && file.startsWith(project)) {
             return project;
         }
@@ -193,7 +196,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
      * unsaved or remote buffer (the link-target rules then say nothing). Asked on the lint thread: it reads the
      * disk, and remembers what it read for the one lint run it serves.
      */
-    MarkdownLint.LinkTargets linkTargets(EditorBuffer buffer) {
+    MarkdownLint.@Nullable LinkTargets linkTargets(EditorBuffer buffer) {
         Path path = buffer == null ? null : buffer.getPath();
         if (path == null || !com.editora.vfs.Vfs.isLocal(path) || path.getParent() == null) {
             return null;
@@ -205,9 +208,9 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     }
 
     /** The project's file names for wiki links; rebuilt when stale, and after its files change. */
-    private volatile WikiNoteNames wikiNames;
+    private volatile @Nullable WikiNoteNames wikiNames;
 
-    private WikiNoteNames wikiNames(Path root, boolean respectGitignore) {
+    private WikiNoteNames wikiNames(@Nullable Path root, boolean respectGitignore) {
         WikiNoteNames names = wikiNames;
         if (names == null || names.stale(root)) {
             names = WikiNoteNames.of(root, respectGitignore);
@@ -226,10 +229,11 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
      * most once per run); without it only a note in the document's own folder can be vouched for, and a wiki
      * link that is not there is left unjudged.
      */
-    static MarkdownLint.LinkTargets linkTargets(Path folder, java.util.function.Supplier<WikiNoteNames> names) {
+    static MarkdownLint.LinkTargets linkTargets(
+            Path folder, java.util.function.@Nullable Supplier<WikiNoteNames> names) {
         Map<String, Boolean> exists = new HashMap<>();
         WikiNoteNames[] project = new WikiNoteNames[1];
-        Map<String, Set<String>> anchors = new HashMap<>();
+        Map<String, @Nullable Set<String>> anchors = new HashMap<>();
         return new MarkdownLint.LinkTargets() {
             @Override
             public boolean exists(String relative) {
@@ -243,7 +247,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             }
 
             @Override
-            public Set<String> anchors(String relative) {
+            public @Nullable Set<String> anchors(String relative) {
                 if (!anchors.containsKey(relative)) {
                     Set<String> found = null;
                     try {
@@ -260,7 +264,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             }
 
             @Override
-            public String wikiFile(String target) {
+            public @Nullable String wikiFile(String target) {
                 try {
                     if (names == null) {
                         for (String candidate : new String[] {target, target + ".md", target + ".markdown"}) {
@@ -409,7 +413,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     // --- at the caret ---------------------------------------------------------------------------------
 
     /** The diagnostic under the caret of {@code b}, else the first on the caret's line, else null. */
-    static Diagnostic atCaret(EditorBuffer b) {
+    static @Nullable Diagnostic atCaret(EditorBuffer b) {
         int line = b.getArea().getCurrentParagraph() + 1;
         int column = b.getArea().getCaretColumn() + 1;
         Diagnostic onLine = null;
@@ -514,7 +518,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     }
 
     /** The active buffer when it is Markdown and linting is on; otherwise says why not and returns null. */
-    private EditorBuffer lintable() {
+    private @Nullable EditorBuffer lintable() {
         EditorBuffer b = host.activeBuffer();
         if (b == null || !b.isMarkdown()) {
             host.setStatus(tr("status.markdownLint.notMarkdown"));
@@ -590,7 +594,11 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             return;
         }
         Path root = boundary(path, host.activeProjectRoot());
-        Path proposed = (root == null ? path.getParent() : root).resolve(".markdownlint.json");
+        Path dir = root == null ? path.getParent() : root;
+        if (dir == null) {
+            return;
+        }
+        Path proposed = dir.resolve(".markdownlint.json");
         host.promptText(
                 tr("prompt.markdownLint.createConfig.title"),
                 tr("prompt.markdownLint.createConfig.label", d.code()),
@@ -771,7 +779,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     }
 
     /** Shows {@code buffer}'s issue count in the status bar (hidden for anything that is not linted). */
-    void updateStatusBar(EditorBuffer buffer) {
+    void updateStatusBar(@Nullable EditorBuffer buffer) {
         StatusBar bar = host.statusBar();
         if (bar == null) {
             return;
@@ -800,7 +808,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
 
     private long lastConfigCheck;
     /** The configs the open buffers resolved to, with their modification times, at the last look. */
-    private String configSignature;
+    private @Nullable String configSignature;
 
     private static final int MAX_BUFFERS_CHECKED = 50;
 

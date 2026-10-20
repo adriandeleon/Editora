@@ -1557,7 +1557,7 @@ final class LanguageServerSession implements LanguageClient {
     CompletableFuture<org.eclipse.lsp4j.SignatureHelp> signatureHelp(
             String uri,
             Position pos,
-            String triggerChar,
+            @Nullable String triggerChar,
             boolean retrigger,
             org.eclipse.lsp4j.@Nullable SignatureHelp activeHelp) {
         if (!ready()) {

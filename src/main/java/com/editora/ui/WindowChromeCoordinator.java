@@ -22,6 +22,7 @@ import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -94,8 +95,10 @@ final class WindowChromeCoordinator {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
+        @Nullable
         CodeArea activeArea();
 
         void requestSave();
@@ -105,7 +108,9 @@ final class WindowChromeCoordinator {
         void setExpertMode(boolean on);
     }
 
+    @Nullable
     SearchEverywherePopup searchEverywherePopup;
+
     private final Host host;
 
     WindowChromeCoordinator(Host host) {
@@ -131,20 +136,24 @@ final class WindowChromeCoordinator {
      * mode would silently lose the user's docked tool windows on the next launch. {@code null} = no CLI
      * focus-mode override is in effect (including after an in-app toggle takes over from the flag).
      */
-    String[] cliFocusToolWindows;
+    String @Nullable [] cliFocusToolWindows;
 
     /** Tool windows closed by the transient standalone diff workspace, restored by its toolbar action. */
     List<String> cliDiffUiToolWindows = List.of();
 
     /** Floating "exit Zen" button overlaid top-right of the window; shown only while in Zen mode. */
+    @Nullable
     Button zenExitButton;
 
     /** Floating "exit Expert" button hosted inside the active code viewport; shown only in Expert mode. */
+    @Nullable
     Button expertExitButton;
 
+    @Nullable
     EditorBuffer expertExitButtonBuffer;
 
     /** Floating "show toolbar" button overlaid top-left; shown only when the toolbar is hidden (not in Zen). */
+    @Nullable
     Button toolbarRestoreButton;
 
     /** Shows/hides the toolbar and status bar per the saved settings (hidden nodes also unmanaged so
@@ -349,7 +358,10 @@ final class WindowChromeCoordinator {
         host.navigation().snippetPalette.setOverlayHost(host.overlayHost());
         host.projectPicker().setOverlayHost(host.overlayHost());
         host.navigation().fileFinder.setOverlayHost(host.overlayHost());
-        host.navigation().folderFinder.setOverlayHost(host.overlayHost());
+        FileFinder folderFinder = host.navigation().folderFinder;
+        if (folderFinder != null) {
+            folderFinder.setOverlayHost(host.overlayHost());
+        }
         host.switcher().setOverlayHost(host.overlayHost());
         host.gitWindows().branchPopup.setOverlayHost(host.overlayHost());
         // The dropdown's folded sections belong to the workspace, like the tool-window layout.
@@ -419,7 +431,7 @@ final class WindowChromeCoordinator {
         boolean show = expertActive() && active != null;
         expertExitButton.setVisible(show);
         expertExitButton.setManaged(show);
-        if (show) {
+        if (show && active != null) {
             active.setExpertExitControl(expertExitButton);
         } else if (active != null) {
             active.setExpertExitControl(null);
@@ -593,7 +605,7 @@ final class WindowChromeCoordinator {
     }
 
     /** Index of the target that contains (or is) the focus owner, or -1 if none. */
-    static int indexOfContaining(List<Node> targets, Node focusOwner) {
+    static int indexOfContaining(List<Node> targets, @Nullable Node focusOwner) {
         for (int i = 0; i < targets.size(); i++) {
             for (Node n = focusOwner; n != null; n = n.getParent()) {
                 if (n == targets.get(i)) {

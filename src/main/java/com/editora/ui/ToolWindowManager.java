@@ -37,6 +37,7 @@ import javafx.scene.paint.Color;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.WorkspaceState;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -108,7 +109,7 @@ public class ToolWindowManager {
 
     /** Optional observer notified after a tool window opens ({@code true}) or closes ({@code false}); lets a
      *  controller distinguish a user toggle from its own programmatic open/close (e.g. HTTP auto-show). */
-    private java.util.function.BiConsumer<ToolWindow, Boolean> stateListener;
+    private java.util.function.@Nullable BiConsumer<ToolWindow, Boolean> stateListener;
 
     /** When true (Zen mode), all side stripes are force-hidden regardless of their buttons. */
     private boolean zenHidesStripes;
@@ -120,17 +121,17 @@ public class ToolWindowManager {
     private boolean stripeInsetBound;
 
     /** The tool window currently maximized over its split, or null. At most one at a time. */
-    private ToolWindow maximized;
+    private @Nullable ToolWindow maximized;
     /** The split {@link #maximized} took over, and the divider positions to hand back on restore. */
-    private SplitPane maximizedSplit;
+    private @Nullable SplitPane maximizedSplit;
 
-    private double[] maximizedRestorePositions;
+    private double @Nullable [] maximizedRestorePositions;
     /** Min sizes zeroed to let the maximized panel actually take the whole split, and their old values. */
     private final Map<Region, Double> collapsedMinSizes = new java.util.IdentityHashMap<>();
     /** The open tool window holding keyboard focus, or null — the default target of a maximize request. */
-    private ToolWindow activeToolWindow;
+    private @Nullable ToolWindow activeToolWindow;
     /** Non-null only while a count-aware tool-window command is running under {@code C-u}. */
-    private Integer keyboardPrefixArgument;
+    private @Nullable Integer keyboardPrefixArgument;
     /** True while a stripe button is being dragged, which reveals the empty stripes as drop targets. */
     private boolean draggingStripeButton;
 
@@ -293,7 +294,7 @@ public class ToolWindowManager {
     }
 
     /** Whether {@code node} is {@code ancestor} or sits somewhere beneath it in the scene graph. */
-    private static boolean isDescendant(Node node, Node ancestor) {
+    private static boolean isDescendant(Node node, @Nullable Node ancestor) {
         for (Node n = node; n != null; n = n.getParent()) {
             if (n == ancestor) {
                 return true;
@@ -555,7 +556,7 @@ public class ToolWindowManager {
     }
 
     /** The tool window being dragged, if the dragboard carries a known tool-window id. */
-    private ToolWindow dragSource(Dragboard db) {
+    private @Nullable ToolWindow dragSource(Dragboard db) {
         return db.hasString() ? byId.get(db.getString()) : null;
     }
 
@@ -678,7 +679,7 @@ public class ToolWindowManager {
     }
 
     /** True if this tool window is the one currently open on its side. */
-    public boolean isOpen(ToolWindow tw) {
+    public boolean isOpen(@Nullable ToolWindow tw) {
         return tw != null && (openOn(currentSide(tw)).contains(tw) || isFloating(tw));
     }
 
@@ -693,7 +694,7 @@ public class ToolWindowManager {
     }
 
     /** The registered tool window whose content node contains {@code target} (focus), or null. */
-    public ToolWindow toolWindowOf(javafx.event.EventTarget target) {
+    public @Nullable ToolWindow toolWindowOf(javafx.event.EventTarget target) {
         Node n = target instanceof Node node ? node : null;
         while (n != null) {
             for (ToolWindow tw : byId.values()) {
@@ -842,7 +843,7 @@ public class ToolWindowManager {
         ToolWindow maximizeAfterOpen = null;
         for (ToolWindow.Side side : ToolWindow.Side.values()) {
             boolean first = true;
-            for (String id : docked.get(side)) {
+            for (String id : docked.getOrDefault(side, List.of())) { // every side was put above
                 ToolWindow tw = visibleById(id);
                 if (tw != null) {
                     // Session restoration rebuilds the complete dock first. Applying maximize per-window
@@ -881,7 +882,7 @@ public class ToolWindowManager {
         ToolWindowPanel panel =
                 new ToolWindowPanel(tw, () -> close(tw), () -> toggleMaximized(tw), () -> toggleFloating(tw));
         panels.put(tw, panel);
-        stripeButtons.get(tw).pseudoClassStateChanged(OPEN, true);
+        markStripeOpen(tw, true);
         floatOut(tw);
         if (stateListener != null) {
             stateListener.accept(tw, true);
@@ -982,7 +983,7 @@ public class ToolWindowManager {
         if (wasEmpty) {
             applyOuterDivider(side, tw, panel);
         }
-        stripeButtons.get(tw).pseudoClassStateChanged(OPEN, true);
+        markStripeOpen(tw, true);
         persist();
         if (stateListener != null) {
             stateListener.accept(tw, true);
@@ -997,7 +998,7 @@ public class ToolWindowManager {
     // --- Float / detach --------------------------------------------------------------------------
 
     /** True while this tool window lives in its own stage rather than docked to a side. */
-    public boolean isFloating(ToolWindow tw) {
+    public boolean isFloating(@Nullable ToolWindow tw) {
         return tw != null && floatingStages.containsKey(tw);
     }
 
@@ -1205,7 +1206,7 @@ public class ToolWindowManager {
     private static final double DEFAULT_SPLIT_DIVIDER = 0.5;
 
     /** Puts a side's new container into the outer split, replacing/removing/inserting as needed. */
-    private void placeContainer(ToolWindow.Side side, Region next) {
+    private void placeContainer(ToolWindow.Side side, @Nullable Region next) {
         Region old = sideContainers.get(side);
         if (old == next) {
             return;
@@ -1261,7 +1262,7 @@ public class ToolWindowManager {
     }
 
     /** Sets the outer divider for a side that just went from empty to holding its first window. */
-    private void applyOuterDivider(ToolWindow.Side side, ToolWindow tw, Region panel) {
+    private void applyOuterDivider(ToolWindow.Side side, ToolWindow tw, @Nullable Region panel) {
         boolean firstOpen = !config.getWorkspaceState().getToolWindowSizes().containsKey(tw.getId());
         double pos = dividerFor(tw, side);
         SplitPane outer = outerSplitFor(side);
@@ -1293,12 +1294,12 @@ public class ToolWindowManager {
      *
      * @return the target, or null when there is nothing (or nothing unambiguous) to maximize
      */
-    public ToolWindow maximizeTarget() {
+    public @Nullable ToolWindow maximizeTarget() {
         return ToolWindowMaximize.pick(isOpen(activeToolWindow) ? activeToolWindow : null, getOpenToolWindows());
     }
 
     /** True while this tool window is the one expanded over its split. */
-    public boolean isMaximized(ToolWindow tw) {
+    public boolean isMaximized(@Nullable ToolWindow tw) {
         return tw != null && maximized == tw;
     }
 
@@ -1526,7 +1527,7 @@ public class ToolWindowManager {
      * inner split and are not items of the outer one at all, so an {@code indexOf(panel)} would answer -1
      * and the size would silently stop being remembered.
      */
-    private Double outerDividerOf(ToolWindow.Side side) {
+    private @Nullable Double outerDividerOf(ToolWindow.Side side) {
         Region container = sideContainers.get(side);
         if (container == null) {
             return null;
@@ -1542,12 +1543,12 @@ public class ToolWindowManager {
         return outer.getDividers().get(divider).getPosition();
     }
 
-    public void close(ToolWindow tw) {
-        if (panels.get(tw) == null) {
+    public void close(@Nullable ToolWindow tw) {
+        if (tw == null || panels.get(tw) == null) {
             return; // already closed — must not disturb a maximize belonging to some other window
         }
-        if (isFloating(tw)) {
-            javafx.stage.Stage stage = floatingStages.remove(tw);
+        // isFloating(tw) means floatingStages holds its stage
+        if (isFloating(tw) && floatingStages.remove(tw) instanceof javafx.stage.Stage stage) {
             rememberFloatingBounds(tw, stage);
             detachPanelFrom(stage);
             stage.close();
@@ -1575,7 +1576,7 @@ public class ToolWindowManager {
     }
 
     /** Whether keyboard focus is inside {@code tw}'s panel, or on the stripe button that toggles it. */
-    private boolean holdsFocus(ToolWindow tw) {
+    private boolean holdsFocus(@Nullable ToolWindow tw) {
         Region panel = panels.get(tw);
         javafx.scene.Scene scene = panel == null ? null : panel.getScene();
         Node owner = scene == null ? null : scene.getFocusOwner();
@@ -1598,16 +1599,24 @@ public class ToolWindowManager {
         }
     }
 
+    /** Shows a registered window's stripe button as open or closed (registering makes the button). */
+    private void markStripeOpen(ToolWindow tw, boolean open) {
+        Button button = stripeButtons.get(tw);
+        if (button != null) {
+            button.pseudoClassStateChanged(OPEN, open);
+        }
+    }
+
     /** The bookkeeping every close shares, whichever place the window was closed from. */
     private void afterClosed(ToolWindow tw) {
-        stripeButtons.get(tw).pseudoClassStateChanged(OPEN, false);
+        markStripeOpen(tw, false);
         persist();
         if (stateListener != null) {
             stateListener.accept(tw, false);
         }
     }
 
-    private ToolWindow visibleById(String id) {
+    private @Nullable ToolWindow visibleById(String id) {
         if (id == null || id.isEmpty()) {
             return null;
         }
@@ -1617,7 +1626,7 @@ public class ToolWindowManager {
         return tw != null && isVisible(tw) && !unavailable.contains(tw) ? tw : null;
     }
 
-    private String presentationMode(ToolWindow tw) {
+    private @Nullable String presentationMode(ToolWindow tw) {
         String mode =
                 config.getWorkspaceState().getToolWindowPresentationModes().get(tw.getId());
         return MODE_MAXIMIZED.equals(mode) || MODE_FLOATING.equals(mode) ? mode : MODE_DOCKED;
@@ -1638,7 +1647,7 @@ public class ToolWindowManager {
     // --- Stripe ordering -------------------------------------------------------------------------
 
     /** The tool window owning a given stripe button, or null. */
-    private ToolWindow toolWindowFor(Node button) {
+    private @Nullable ToolWindow toolWindowFor(Node button) {
         for (Map.Entry<ToolWindow, Button> e : stripeButtons.entrySet()) {
             if (e.getValue() == button) {
                 return e.getKey();
@@ -1648,7 +1657,7 @@ public class ToolWindowManager {
     }
 
     /** Display order rank for a tool window (its index in the persisted order list; absent = last). */
-    private int orderIndex(ToolWindow tw) {
+    private int orderIndex(@Nullable ToolWindow tw) {
         if (tw == null) {
             return Integer.MAX_VALUE;
         }
@@ -1829,8 +1838,11 @@ public class ToolWindowManager {
      * a snapshot of the rows visible at that moment, so expanding a deep tree node later can still bring
      * the scrollbar back.
      */
-    private void fitToContent(Region panel, int dividerIdx, boolean leftSide) {
-        if (dividerIdx < 0 || dividerIdx >= hSplit.getDividers().size() || !overflowsHorizontally(panel)) {
+    private void fitToContent(@Nullable Region panel, int dividerIdx, boolean leftSide) {
+        if (panel == null
+                || dividerIdx < 0
+                || dividerIdx >= hSplit.getDividers().size()
+                || !overflowsHorizontally(panel)) {
             return;
         }
         double pos = ToolWindowFit.fraction(panel.prefWidth(-1), panel.getWidth(), hSplit.getWidth(), leftSide);
@@ -1874,12 +1886,12 @@ public class ToolWindowManager {
     }
 
     /** A side's primary (first-stacked) window, or null when nothing is open there. */
-    private ToolWindow primaryOn(ToolWindow.Side side) {
+    private @Nullable ToolWindow primaryOn(ToolWindow.Side side) {
         List<ToolWindow> open = openOn(side);
         return open.isEmpty() ? null : open.get(0);
     }
 
-    private static String idOf(ToolWindow tw) {
+    private static String idOf(@Nullable ToolWindow tw) {
         return tw == null ? "" : tw.getId();
     }
 }

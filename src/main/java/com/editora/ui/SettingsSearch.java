@@ -22,6 +22,8 @@ import javafx.scene.control.Labeled;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.layout.VBox;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The Settings window's search: what each row can be found by, how well a row matches, which rows, headings and
  * cards a query leaves visible, and which page it opens.
@@ -38,7 +40,12 @@ import javafx.scene.layout.VBox;
 final class SettingsSearch {
 
     /** A searchable row: its page, its node (hidden when filtered out), its keywords, heading and card. */
-    record Row(Object page, Node node, String keywords, Label section, VBox card) {}
+    record Row(
+            Object page,
+            Node node,
+            String keywords,
+            @Nullable Label section,
+            @Nullable VBox card) {}
 
     /** A row's text by where it shows: each part weighs differently in {@link #score}. */
     record Texts(String title, String description, String shown, String headings, String keywords) {
@@ -55,7 +62,7 @@ final class SettingsSearch {
     record ListSource(Object page, Node inside, Predicate<String> matches) {}
 
     /** What a query found: the pages with a hit, the page to open, and whether the open page {@code sel} ties. */
-    record Result(Map<Object, Integer> pageScores, Object best) {
+    record Result(Map<Object, Integer> pageScores, @Nullable Object best) {
         Set<Object> pages() {
             return pageScores.keySet();
         }
@@ -63,7 +70,8 @@ final class SettingsSearch {
         /** Whether {@code page} is as good a place to show the results as {@link #best} (so the page stays). */
         boolean ties(Object page) {
             Integer mine = pageScores.get(page);
-            return mine != null && best != null && mine >= pageScores.get(best);
+            Integer top = best == null ? null : pageScores.get(best); // best is one of pageScores' pages
+            return mine != null && top != null && mine >= top;
         }
     }
 
@@ -104,7 +112,7 @@ final class SettingsSearch {
     private final List<?> pageOrder;
     private final Function<Object, String> pageName;
     private final Map<Row, Texts> index = new IdentityHashMap<>();
-    private ListSource list;
+    private @Nullable ListSource list;
 
     SettingsSearch(
             List<Row> rows,
@@ -313,12 +321,13 @@ final class SettingsSearch {
                         .strip();
     }
 
-    private Predicate<Row> onlyRows; // a row filter on top of the query ("Show modified only"); null for none
+    private @Nullable Predicate<Row> onlyRows; // a row filter on top of the query ("Show modified only"); null for none
 
-    void setRowFilter(Predicate<Row> filter) {
+    void setRowFilter(@Nullable Predicate<Row> filter) {
         this.onlyRows = filter;
     }
 
+    @Nullable
     Result filter(String query) {
         boolean searching = query != null && !query.isBlank() || onlyRows != null;
         if (!searching) {
@@ -342,7 +351,7 @@ final class SettingsSearch {
             if (onlyRows != null && !onlyRows.test(r)) {
                 s = 0;
             }
-            if (s == 0 && listHit && r.page() == list.page() && isUnder(list.inside(), r.node())) {
+            if (s == 0 && listHit && list != null && r.page() == list.page() && isUnder(list.inside(), r.node())) {
                 s = KEYWORD; // a command name in the list: the weakest hit, a setting named so outranks it
             }
             setShown(r.node(), s > 0);
@@ -363,6 +372,7 @@ final class SettingsSearch {
         sections.forEach(s -> setShown(s, visibleSections.contains(s)));
         cards.forEach(c -> setShown(c, visibleCards.contains(c)));
         Object best = null;
+        int bestScore = 0;
         for (Object page : pageOrder) {
             Integer s = pageScores.get(page);
             if (s == null) {
@@ -372,8 +382,9 @@ final class SettingsSearch {
                 s += NAMED_PAGE;
                 pageScores.put(page, s);
             }
-            if (best == null || s > pageScores.get(best)) {
+            if (best == null || s > bestScore) {
                 best = page;
+                bestScore = s;
             }
         }
         return new Result(pageScores, best);

@@ -100,7 +100,7 @@ public final class Vfs {
 
     /** A stable string for persisting a path: the plain path string for a local file (back-compat with the
      *  existing recent-files/projects JSON), or its URI for a remote file. */
-    public static String toStorableString(Path path) {
+    public static String toStorableString(@Nullable Path path) {
         if (path == null) {
             return "";
         }

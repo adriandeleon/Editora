@@ -6,6 +6,7 @@ import java.util.List;
 import com.editora.config.PathDisplay;
 import com.editora.editorconfig.EditorConfigCharset;
 import com.editora.editorconfig.EditorConfigProperties;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -24,11 +25,11 @@ import static com.editora.i18n.Messages.tr;
  */
 record SaveNotes(
         MixedLineEndings.Decision mixed,
-        MixedLineEndings.Source source,
-        String lineEnding,
-        String charsetFrom,
-        String charsetTo,
-        String charsetRule,
+        MixedLineEndings.@Nullable Source source,
+        @Nullable String lineEnding,
+        @Nullable String charsetFrom,
+        @Nullable String charsetTo,
+        @Nullable String charsetRule,
         int newlinesDropped) {
 
     static final SaveNotes NONE = new SaveNotes(MixedLineEndings.Decision.NORMAL, null, null, null, null, null, 0);
@@ -67,7 +68,7 @@ record SaveNotes(
      */
     static SaveNotes of(
             MixedLineEndings.Decision mixed,
-            MixedLineEndings.Source source,
+            MixedLineEndings.@Nullable Source source,
             String lineEnding,
             String content,
             String written,
@@ -131,16 +132,18 @@ record SaveNotes(
             java.nio.file.Path kept = source.kept().get();
             notes.add(tr("status.save.note.mixedLineEndings", lineEnding, PathDisplay.of(kept)));
         }
-        if (charsetChanged() && charsetRule == null) {
+        String from = charsetFrom;
+        String to = charsetTo;
+        if (from != null && to != null && charsetRule == null) { // set together: charsetChanged()
             notes.add(tr(
                     "status.save.note.charsetChosen",
-                    EditorConfigCharset.displayName(charsetFrom),
-                    EditorConfigCharset.displayName(charsetTo)));
-        } else if (charsetChanged()) {
+                    EditorConfigCharset.displayName(from),
+                    EditorConfigCharset.displayName(to)));
+        } else if (from != null && to != null) {
             notes.add(tr(
                     "status.save.note.charset",
-                    EditorConfigCharset.displayName(charsetFrom),
-                    EditorConfigCharset.displayName(charsetTo),
+                    EditorConfigCharset.displayName(from),
+                    EditorConfigCharset.displayName(to),
                     charsetRule));
         }
         if (newlinesDropped > 0) {

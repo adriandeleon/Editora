@@ -84,13 +84,14 @@ public final class DocxWriter {
     /** What every block needs: the document, where pictures resolve, and the heading bookmarks. */
     private record Ctx(
             XWPFDocument doc,
-            Path baseDir,
-            List<String> mmdc,
+            @Nullable Path baseDir,
+            @Nullable List<String> mmdc,
             DocxScaffold scaffold,
             Map<Heading, String> anchors,
             Map<String, String> bookmarks) {}
 
-    public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
+    public static void write(String markdown, @Nullable Path baseDir, @Nullable List<String> mmdc, Path out)
+            throws IOException {
         // The preview's parse (math is nodes), with alerts and definition lists as blocks this writer knows.
         Node ast = com.editora.markdown.MarkdownExportTree.lower(
                 MarkdownRenderer.parseForRender(markdown), com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
@@ -537,7 +538,7 @@ public final class DocxWriter {
         return c instanceof Image && c.getNext() == null;
     }
 
-    private static void embedImage(XWPFParagraph p, Image img, Path baseDir) {
+    private static void embedImage(XWPFParagraph p, Image img, @Nullable Path baseDir) {
         byte[] bytes = OfficeImages.load(img.getDestination(), baseDir);
         String alt = InlineRun.textOf(img);
         String fallback = alt.isEmpty() ? img.getDestination() : alt;

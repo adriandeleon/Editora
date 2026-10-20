@@ -7,6 +7,7 @@ import javafx.application.Platform;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.format.PythonFormatter;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -20,6 +21,7 @@ final class PythonFormatCoordinator {
 
     /** What this needs from its window. */
     interface Host {
+        @Nullable
         EditorBuffer activeBuffer();
 
         boolean activeEditable();
@@ -28,11 +30,12 @@ final class PythonFormatCoordinator {
         boolean serverFormats(Path file);
 
         /** The environment folder of {@code file}'s interpreter, or null. Called off the FX thread. */
-        Path venvOf(Path file);
+        @Nullable
+        Path venvOf(@Nullable Path file);
 
         void setStatus(String message);
 
-        void setError(String message);
+        void setError(@Nullable String message);
     }
 
     private final Host host;
@@ -77,7 +80,8 @@ final class PythonFormatCoordinator {
 
     private void apply(
             EditorBuffer buffer, String snapshot, PythonFormatter.Found formatter, PythonFormatter.Outcome outcome) {
-        if (!outcome.ok()) {
+        String text = outcome.text(); // set whenever the formatter succeeded
+        if (!outcome.ok() || text == null) {
             host.setError(outcome.error());
             return;
         }
@@ -85,7 +89,7 @@ final class PythonFormatCoordinator {
             host.setStatus(tr("status.lsp.formatStale")); // edited (or left) mid-format: a re-run formats cleanly
             return;
         }
-        int[] span = PythonFormatter.changedSpan(snapshot, outcome.text());
+        int[] span = PythonFormatter.changedSpan(snapshot, text);
         if (span == null) {
             host.setStatus(tr("status.python.formatNoChange", formatter.name()));
             return;
@@ -93,7 +97,7 @@ final class PythonFormatCoordinator {
         if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
             return;
         }
-        buffer.getArea().replaceText(span[0], span[1], outcome.text().substring(span[0], span[2]));
+        buffer.getArea().replaceText(span[0], span[1], text.substring(span[0], span[2]));
         host.setStatus(tr("status.python.formatted", formatter.name()));
     }
 }

@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 import com.editora.config.WorkspaceState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure decisions about which saved open-file entries survive a session save.
@@ -41,7 +42,7 @@ final class SessionEntries {
      * @param resolves whether {@code stored} resolves to a path right now
      * @param projectRoot the window's project root as stored, or null
      */
-    static boolean retainUnreachable(String stored, boolean resolves, String projectRoot) {
+    static boolean retainUnreachable(String stored, boolean resolves, @Nullable String projectRoot) {
         if (resolves || !com.editora.vfs.Vfs.isRemoteUri(stored)) {
             return true;
         }

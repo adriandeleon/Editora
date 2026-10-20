@@ -159,7 +159,12 @@ public final class MarkdownPdfWriter {
      * (the PDF's Title and the footer) and the footer's localised page label.
      */
     public static Outcome write(
-            String markdown, Path baseDir, PdfPageSpec spec, PdfDocMeta meta, List<String> mmdcCommand, Path out)
+            String markdown,
+            @Nullable Path baseDir,
+            PdfPageSpec spec,
+            PdfDocMeta meta,
+            @Nullable List<String> mmdcCommand,
+            Path out)
             throws IOException {
         // The preview's parse: math is recognised by the parser (when the feature is on), not searched for
         // in text the Markdown parser has already rewritten.

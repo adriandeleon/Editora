@@ -30,6 +30,7 @@ import com.editora.diff.ConflictParser.Segment;
 import com.editora.diff.DiffText;
 import com.editora.diff.LossyEdit;
 import com.editora.editor.TabContent;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -304,7 +305,7 @@ public final class MergeViewerPane implements TabContent {
     }
 
     @Override
-    public Object unsavedStateToken() {
+    public @Nullable Object unsavedStateToken() {
         return draftDirty ? resultArea.getText() : null;
     }
 

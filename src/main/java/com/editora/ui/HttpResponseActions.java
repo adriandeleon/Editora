@@ -17,6 +17,7 @@ import com.editora.http.HttpExchange;
 import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
 import com.editora.io.StagedExport;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -36,7 +37,8 @@ final class HttpResponseActions {
     }
 
     void copyAsCurl(HttpExchange ex) {
-        HttpExchange.Details how = ex.details();
+        HttpExchange.Details given = ex.details();
+        HttpExchange.Details how = given == null ? HttpExchange.Details.NONE : given; // what HttpExchange makes of null
         if (HttpExchange.isBodyPlaceholder(ex.requestBody())
                 && how.bodyFile() == null
                 && how.formParts().isEmpty()) {
@@ -71,7 +73,7 @@ final class HttpResponseActions {
      * Save response: the body exactly as received (the default — the bytes, so an image or an archive is the
      * real file), or the whole response with its status line and headers as text.
      */
-    void save(EditorBuffer buffer, HttpExchange ex, HttpHistoryEntry entry) {
+    void save(EditorBuffer buffer, @Nullable HttpExchange ex, @Nullable HttpHistoryEntry entry) {
         if (ex == null || ex.result().failed()) {
             host.setStatus(tr("status.http.noResponseSelected"));
             return;

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Narrowing from the Structure panel, and a narrowed editor that says so.** The Structure tool window's toolbar
+  gains three segments — Widen, Defun, Fold region. Defun narrows the editor to the selected symbol's function
+  (`narrow-to-defun`) and Fold region to its foldable block; while either is on, picking another symbol narrows
+  to that one instead, and Widen shows the whole file again. The segments follow the buffer: one is lit while
+  the panel narrowed it, none while a command did, and Widen whenever the file is whole. A narrowed editor now
+  shows it in the text itself, not only in the status bar pill: an amber banner above the code names the
+  accessible lines ("Narrowed to lines 120–180 of 950") with a Widen button, and the gutter's line numbers —
+  which now keep the file's numbering while narrowed instead of restarting at 1 — turn amber. The status bar's
+  Ln and the Structure rows' line numbers count from the top of the file too.
 - **A Java debugging sample.** `samples/debug/java/` is a small standalone Java 25 Maven project (six
   classes, nine green JUnit tests) with a `break here` comment at every spot worth a breakpoint: plain,
   conditional, hit count, logpoint, inside a lambda, in a caught and an uncaught exception, on three named
@@ -19,9 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Null checking in the build.** NullAway, an Error Prone plugin, now checks every package marked
   `@NullMarked` (JSpecify) during compile and fails the build on a null that is not declared. Every package
-  is marked except the window UI (`ui`), which follows on its own. A
-  new package must start marked, and the list of unmarked packages may only shrink (docs/conventions.md,
-  "Null annotations").
+  is marked, the window UI (`ui`) last, so the whole code base is checked. A new package must start marked
+  (docs/conventions.md, "Null annotations").
 - **Maven tool window (review pass 2).** A module's tree now merges the parent chain found beside it on disk
   (profiles, plugins, `pluginManagement` goal groups shown as managed, `${property}` plugin versions resolved);
   profiles are tri-state (off, `-P`, `-P!id`) with their activation condition (JDK, OS, property, file) beside
@@ -60,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Scala Run:** a file path ending in `/..`.
   - **Local History:** an iterator `remove()` before `next()` (now the `IllegalStateException` the contract
     names).
+  - **Node.js Run:** a configuration whose script is not a valid path (on Windows, one with `<` in it):
+    the run never started and said nothing; it now asks for the script.
 - **Markdown: switching to Preview no longer sometimes opens it at the top.** Switching just after a
   highlighting pass (soon after opening or editing the file) showed the start of the document, not the line
   the editor had at its top. That line now carries over every time.

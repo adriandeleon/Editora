@@ -13,6 +13,7 @@ import com.editora.http.HttpFile;
 import com.editora.http.HttpVars;
 import com.editora.http.Multipart;
 import com.editora.http.SecretApproval;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Two pure decisions about a request before it is sent. {@link #needsFolder} lists what an unsaved
@@ -41,7 +42,7 @@ final class HttpScratch {
                     + request.bodyRef().path());
         }
         String contentType = header(request.headers(), "Content-Type");
-        if (Multipart.isMultipart(contentType)) {
+        if (contentType != null && Multipart.isMultipart(contentType)) {
             String boundary = Multipart.boundaryOf(contentType);
             if (!boundary.isEmpty()) {
                 for (Multipart.Part part : Multipart.parse(request.body(), boundary)) {
@@ -76,7 +77,7 @@ final class HttpScratch {
      * view will. It is built on the FX thread for every run and for each request of a Run All, so it never evaluates a
      * response reference (a JSONPath over a body of up to 4M characters, once per {@code @var} line).
      */
-    static String label(HttpFile.Parsed request, Map<String, String> envVars, Path dir, ZonedDateTime now) {
+    static String label(HttpFile.Parsed request, Map<String, String> envVars, @Nullable Path dir, ZonedDateTime now) {
         String url = request.url() == null ? "" : request.url();
         if (url.indexOf("{{") < 0) {
             return request.method() + " " + url;
@@ -125,7 +126,7 @@ final class HttpScratch {
         return raw != null && raw.replace(" ", "").contains("{{$");
     }
 
-    private static String header(List<String[]> headers, String name) {
+    private static @Nullable String header(List<String[]> headers, String name) {
         if (headers != null) {
             for (String[] h : headers) {
                 if (h.length > 1 && h[0].equalsIgnoreCase(name)) {

@@ -35,6 +35,7 @@ import com.editora.crypto.PacketInfo;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EncryptionState;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -99,15 +100,17 @@ final class EncryptionCoordinator {
     /** A locked buffer's file as read: the ciphertext, and who it is for once that is known. */
     private static final class Locked {
         final Path file;
-        final byte[] ciphertext;
+        final byte @Nullable [] ciphertext;
         final long size;
         final long mtime;
-        final String fingerprint;
+        final @Nullable String fingerprint;
         final CompletableFuture<PacketInfo> packets = new CompletableFuture<>();
-        ProcessRunner.Cancellation cancel;
+        ProcessRunner.@Nullable Cancellation cancel;
+
+        @Nullable
         String shownText;
 
-        Locked(Path file, byte[] ciphertext, long size, long mtime, String fingerprint) {
+        Locked(Path file, byte @Nullable [] ciphertext, long size, long mtime, @Nullable String fingerprint) {
             this.file = file;
             this.ciphertext = ciphertext;
             this.size = size;
@@ -139,7 +142,12 @@ final class EncryptionCoordinator {
     /** How Editora asks for a passphrase (the card, or a test's stand-in). */
     @FunctionalInterface
     interface PassphraseAsker {
-        void ask(String message, String note, String okLabel, PassphrasePrompt.Attempt attempt, Runnable onCancel);
+        void ask(
+                String message,
+                @Nullable String note,
+                String okLabel,
+                PassphrasePrompt.Attempt attempt,
+                Runnable onCancel);
     }
 
     EncryptionCoordinator(FileWorkflowCoordinator.Host host, FileWorkflowCoordinator files) {
@@ -173,7 +181,7 @@ final class EncryptionCoordinator {
     }
 
     /** Whether {@code buffer} holds an encrypted file's text — the privacy guard's question. */
-    static boolean sensitive(EditorBuffer buffer) {
+    static boolean sensitive(@Nullable EditorBuffer buffer) {
         return buffer != null && buffer.encryption().isEncrypted();
     }
 
@@ -184,7 +192,7 @@ final class EncryptionCoordinator {
      * when it is an ordinary file after all (a {@code .asc} public key). Reads the file on the caller's thread —
      * the file-load worker. Never decrypts.
      */
-    static FileWorkflowCoordinator.PreparedLoad lockedLoad(
+    static FileWorkflowCoordinator.@Nullable PreparedLoad lockedLoad(
             Path file, long size, long mtime, com.editora.editorconfig.EditorConfigProperties editorConfig)
             throws IOException {
         byte[] head;
@@ -414,19 +422,22 @@ final class EncryptionCoordinator {
         };
     }
 
-    private void setLock(EditorBuffer buffer, EncryptionState.Lock lock, String detail) {
+    private void setLock(EditorBuffer buffer, EncryptionState.Lock lock, @Nullable String detail) {
         EncryptionState state = buffer.encryption().state();
         if (state == null || buffer.isDisposed()) {
             return;
         }
-        state.setLock(lock, detail);
+        state.setLock(lock, detail == null ? "" : detail);
         showLocked(buffer);
         refreshChrome(buffer);
     }
 
     /** The decrypted text is in place: the editor comes back, and the tab and status bar say so. */
     private void applyDecrypted(
-            EditorBuffer buffer, FileWorkflowCoordinator.PreparedLoad load, GpgStatus status, char[] passphrase) {
+            EditorBuffer buffer,
+            FileWorkflowCoordinator.PreparedLoad load,
+            GpgStatus status,
+            char @Nullable [] passphrase) {
         EncryptionState state = buffer.encryption().state();
         if (state == null) {
             return;
@@ -500,8 +511,8 @@ final class EncryptionCoordinator {
             String message,
             String okLabel,
             boolean passphraseOnly,
-            Function<char[], Gpg.Outcome> op,
-            BiConsumer<Gpg.Outcome, char[]> onSuccess,
+            Function<char @Nullable [], Gpg.Outcome> op,
+            BiConsumer<Gpg.Outcome, char @Nullable []> onSuccess,
             Consumer<GpgFailure> onFailure) {
         boolean editoraAsks = passphraseOnly
                 || com.editora.config.Settings.PASSPHRASE_PROMPT_EDITORA.equals(
@@ -513,13 +524,14 @@ final class EncryptionCoordinator {
         background("gpg-secret", () -> {
             Gpg.Outcome outcome = op.apply(null);
             Platform.runLater(() -> {
-                if (outcome.ok()) {
+                GpgFailure failure = outcome.failure();
+                if (failure == null) {
                     onSuccess.accept(outcome, null);
-                } else if (outcome.failure().kind() == GpgFailure.Kind.NO_PINENTRY) {
+                } else if (failure.kind() == GpgFailure.Kind.NO_PINENTRY) {
                     // gpg-agent cannot ask here (a terminal pinentry, no terminal): Editora asks instead.
                     askAndRun(message, okLabel, tr("encryption.passphrase.noPinentry"), op, onSuccess, onFailure);
                 } else {
-                    onFailure.accept(outcome.failure());
+                    onFailure.accept(failure);
                 }
             });
         });
@@ -528,9 +540,9 @@ final class EncryptionCoordinator {
     private void askAndRun(
             String message,
             String okLabel,
-            String note,
-            Function<char[], Gpg.Outcome> op,
-            BiConsumer<Gpg.Outcome, char[]> onSuccess,
+            @Nullable String note,
+            Function<char @Nullable [], Gpg.Outcome> op,
+            BiConsumer<Gpg.Outcome, char @Nullable []> onSuccess,
             Consumer<GpgFailure> onFailure) {
         boolean[] finished = {false};
         passphraseAsker.ask(
@@ -548,18 +560,19 @@ final class EncryptionCoordinator {
                             wipe(forRun);
                         }
                         Platform.runLater(() -> {
-                            if (outcome.ok()) {
+                            GpgFailure failure = outcome.failure();
+                            if (failure == null) {
                                 finished[0] = true;
                                 result.done();
                                 onSuccess.accept(outcome, mine);
-                            } else if (outcome.failure().kind() == GpgFailure.Kind.BAD_PASSPHRASE) {
+                            } else if (failure.kind() == GpgFailure.Kind.BAD_PASSPHRASE) {
                                 wipe(mine);
                                 result.failed(tr("encryption.passphrase.wrong"));
                             } else {
                                 wipe(mine);
                                 finished[0] = true;
                                 result.done();
-                                onFailure.accept(outcome.failure());
+                                onFailure.accept(failure);
                             }
                         });
                     });
@@ -572,7 +585,11 @@ final class EncryptionCoordinator {
     }
 
     private void showPassphrasePrompt(
-            String message, String note, String okLabel, PassphrasePrompt.Attempt attempt, Runnable onCancel) {
+            String message,
+            @Nullable String note,
+            String okLabel,
+            PassphrasePrompt.Attempt attempt,
+            Runnable onCancel) {
         PassphrasePrompt.show(
                 host.services().overlayHost(),
                 tr("encryption.passphrase.title"),
@@ -583,7 +600,7 @@ final class EncryptionCoordinator {
                 onCancel);
     }
 
-    static void wipe(char[] secret) {
+    static void wipe(char @Nullable [] secret) {
         if (secret != null) {
             Arrays.fill(secret, '\0');
         }
@@ -614,14 +631,19 @@ final class EncryptionCoordinator {
         /** The save must not happen (the reason is already on screen). */
         static final Seal REFUSED = new Seal(null, EncryptionState.Mode.PUBLIC_KEY, List.of(), null, false);
 
-        private final Supplier<Gpg> gpg;
+        private final @Nullable Supplier<Gpg> gpg;
         private final EncryptionState.Mode mode;
         private final List<String> recipients;
         private final boolean armor;
-        private char[] passphrase;
-        private volatile byte[] sealed;
+        private char @Nullable [] passphrase;
+        private volatile byte @Nullable [] sealed;
 
-        Seal(Supplier<Gpg> gpg, EncryptionState.Mode mode, List<String> recipients, char[] passphrase, boolean armor) {
+        Seal(
+                @Nullable Supplier<Gpg> gpg,
+                EncryptionState.Mode mode,
+                List<String> recipients,
+                char @Nullable [] passphrase,
+                boolean armor) {
             this.gpg = gpg;
             this.mode = mode;
             this.recipients = List.copyOf(recipients);
@@ -636,12 +658,17 @@ final class EncryptionCoordinator {
         /** Encrypts {@code plain}. Blocking: the save worker. */
         void seal(byte[] plain) throws SealFailure {
             try {
-                Gpg g = gpg.get();
+                Supplier<Gpg> source = gpg;
+                if (source == null) {
+                    throw new IllegalStateException("a refused save is never sealed");
+                }
+                Gpg g = source.get();
                 Gpg.Outcome outcome = mode == EncryptionState.Mode.PASSPHRASE
                         ? g.encryptSymmetric(plain, passphrase, armor)
                         : g.encrypt(plain, recipients, armor);
-                if (!outcome.ok()) {
-                    throw new SealFailure(outcome.failure());
+                GpgFailure failure = outcome.failure();
+                if (failure != null) {
+                    throw new SealFailure(failure);
                 }
                 if (outcome.out().length == 0) {
                     throw new SealFailure(new GpgFailure(GpgFailure.Kind.OTHER, List.of(), "gpg wrote nothing"));
@@ -668,8 +695,9 @@ final class EncryptionCoordinator {
      * file, or {@link Seal#REFUSED} when it must not be written now (locked, no passphrase, a recipient whose key
      * is missing, a new encrypted file without recipients). The one choke point every save passes. FX thread.
      */
-    Seal sealFor(EditorBuffer buffer, Path target) {
-        String name = target == null ? null : String.valueOf(target.getFileName());
+    @Nullable
+    Seal sealFor(EditorBuffer buffer, @Nullable Path target) {
+        String name = target == null ? "" : String.valueOf(target.getFileName());
         boolean encryptedName = EncryptedFiles.hasEncryptionExtension(name);
         EncryptionState state = buffer.encryption().state();
         if (state == null) {
@@ -721,7 +749,7 @@ final class EncryptionCoordinator {
     }
 
     /** Shows the "Not saved." banner with the next steps for {@code reason}. */
-    private void refuse(EditorBuffer buffer, String reason, String detail) {
+    private void refuse(EditorBuffer buffer, @Nullable String reason, @Nullable String detail) {
         List<EncryptionViews.BannerAction> actions = new ArrayList<>();
         actions.add(new EncryptionViews.BannerAction(
                 tr("encryption.action.changeRecipients"), () -> changeRecipients(buffer)));
@@ -757,7 +785,7 @@ final class EncryptionCoordinator {
     }
 
     /** A save reached the disk. FX thread. */
-    void saved(EditorBuffer buffer, Path target, Seal seal) {
+    void saved(EditorBuffer buffer, Path target, @Nullable Seal seal) {
         EncryptionState state = buffer.encryption().state();
         toldChooseFirst.remove(buffer);
         if (state == null || buffer.isDisposed()) {
@@ -903,6 +931,7 @@ final class EncryptionCoordinator {
     // ---- recipients -------------------------------------------------------------------------------------------
 
     /** The user's own key: the one Settings name, else their first secret key that can encrypt; or null. */
+    @Nullable
     GpgKey selfKey(List<GpgKey> keyring) {
         String chosen = host.config().getSettings().getEncryptionDefaultKey();
         if (!chosen.isBlank()) {
@@ -1059,7 +1088,7 @@ final class EncryptionCoordinator {
         files.openThen(file, () -> encryptBuffer(host.activeBuffer()));
     }
 
-    private void encryptBuffer(EditorBuffer buffer) {
+    private void encryptBuffer(@Nullable EditorBuffer buffer) {
         if (buffer == null) {
             host.setStatus(tr("status.noFileOpen"));
             return;
@@ -1124,7 +1153,7 @@ final class EncryptionCoordinator {
     }
 
     /** The trash the plain original goes to; a test puts its own in. */
-    volatile com.editora.io.Trash.Bin trash = null;
+    volatile com.editora.io.Trash.@Nullable Bin trash = null;
 
     private void trashOriginal(Path original) {
         com.editora.io.Trash.Bin bin = trash != null ? trash : com.editora.io.Trash.system();
@@ -1155,7 +1184,7 @@ final class EncryptionCoordinator {
         changeRecipients(host.activeBuffer());
     }
 
-    void changeRecipients(EditorBuffer buffer) {
+    void changeRecipients(@Nullable EditorBuffer buffer) {
         if (buffer == null) {
             host.setStatus(tr("status.noFileOpen"));
             return;
@@ -1186,8 +1215,8 @@ final class EncryptionCoordinator {
         removeEncryption(host.activeBuffer());
     }
 
-    void removeEncryption(EditorBuffer buffer) {
-        if (!sensitive(buffer)) {
+    void removeEncryption(@Nullable EditorBuffer buffer) {
+        if (buffer == null || !sensitive(buffer)) {
             host.setStatus(tr("encryption.status.notEncrypted"));
             return;
         }
@@ -1210,8 +1239,8 @@ final class EncryptionCoordinator {
         lockFile(host.activeBuffer());
     }
 
-    void lockFile(EditorBuffer buffer) {
-        if (!sensitive(buffer) || buffer.getPath() == null) {
+    void lockFile(@Nullable EditorBuffer buffer) {
+        if (buffer == null || !sensitive(buffer) || buffer.getPath() == null) {
             host.setStatus(tr("encryption.status.notEncrypted"));
             return;
         }
@@ -1269,8 +1298,9 @@ final class EncryptionCoordinator {
                         : gpg().encrypt(plain, ids, true);
                 wipe(passphrase);
                 Platform.runLater(() -> {
-                    if (!o.ok()) {
-                        host.services().setError(messageFor(o.failure()));
+                    GpgFailure failure = o.failure();
+                    if (failure != null) {
+                        host.services().setError(messageFor(failure));
                     } else if (buffer.docVersion() != version) {
                         host.setStatus(tr("encryption.status.changedMeanwhile"));
                     } else {
@@ -1398,7 +1428,7 @@ final class EncryptionCoordinator {
     }
 
     /** {@code crypto.importPublicKey}: imports keys from a file into the keyring; {@code then} runs after. */
-    void importPublicKey(Runnable then) {
+    void importPublicKey(@Nullable Runnable then) {
         EditorBuffer active = host.activeBuffer();
         if (active != null && !sensitive(active) && EncryptedFiles.isArmoredPublicKey(active.getContent())) {
             importKeyBytes(active.getContent().getBytes(java.nio.charset.StandardCharsets.US_ASCII), then);
@@ -1425,7 +1455,7 @@ final class EncryptionCoordinator {
         });
     }
 
-    void importKeyBytes(byte[] bytes, Runnable then) {
+    void importKeyBytes(byte[] bytes, @Nullable Runnable then) {
         background("gpg-import", () -> {
             Gpg.Outcome o = gpg().importKeys(bytes);
             List<GpgKey> keyring = gpg().keys();
@@ -1501,8 +1531,8 @@ final class EncryptionCoordinator {
         decryptToFile(host.activeBuffer());
     }
 
-    void decryptToFile(EditorBuffer buffer) {
-        if (!sensitive(buffer) || buffer.getPath() == null) {
+    void decryptToFile(@Nullable EditorBuffer buffer) {
+        if (buffer == null || !sensitive(buffer) || buffer.getPath() == null) {
             host.setStatus(tr("encryption.status.notEncrypted"));
             return;
         }
@@ -1522,7 +1552,7 @@ final class EncryptionCoordinator {
             Platform.runLater(() -> withSecret(
                     tr("encryption.passphrase.forFile", source.getFileName()),
                     tr("encryption.action.decrypt"),
-                    buffer.encryption().state().mode() == EncryptionState.Mode.PASSPHRASE,
+                    passphraseOnly(buffer),
                     passphrase -> gpg().decryptToFile(
                                     local ? source : null, local ? null : readQuietly(source), target, passphrase),
                     (outcome, passphrase) -> {
@@ -1535,6 +1565,12 @@ final class EncryptionCoordinator {
                         }
                     }));
         });
+    }
+
+    /** Whether {@code buffer}'s file opens with a passphrase only; false once it is no longer encrypted. */
+    private static boolean passphraseOnly(EditorBuffer buffer) {
+        EncryptionState state = buffer.encryption().state();
+        return state != null && state.mode() == EncryptionState.Mode.PASSPHRASE;
     }
 
     private static byte[] readQuietly(Path file) {
@@ -1679,7 +1715,7 @@ final class EncryptionCoordinator {
     }
 
     /** {signature, data} for a detached signature next to {@code path} or of it; null when there is none. */
-    private static Path[] detachedPair(Path path, String text) {
+    private static Path @Nullable [] detachedPair(Path path, String text) {
         String name = String.valueOf(path.getFileName());
         boolean signatureFile = name.endsWith(".sig")
                 || name.endsWith(".asc") && text.stripLeading().startsWith("-----BEGIN PGP SIGNATURE");

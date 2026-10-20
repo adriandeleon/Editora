@@ -46,7 +46,7 @@ public record PomBuildConfig(
     /**
      * Reads {@code pom} and its parents on disk. {@code pom} may be a folder (its {@code pom.xml}) or the file.
      */
-    public static PomBuildConfig read(Path pom) {
+    public static PomBuildConfig read(@Nullable Path pom) {
         if (pom == null) {
             return DEFAULTS;
         }

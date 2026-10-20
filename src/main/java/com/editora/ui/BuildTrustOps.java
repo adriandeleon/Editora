@@ -10,6 +10,7 @@ import javafx.stage.Window;
 
 import com.editora.build.BuildTrust;
 import com.editora.config.ConfigManager;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The half of {@link BuildCoordinator.Ops} that is the configuration store and the trust prompt: whether a
@@ -46,25 +47,29 @@ abstract class BuildTrustOps implements BuildCoordinator.Ops {
     }
 
     @Override
-    public boolean isTrusted(Path root) {
-        return config.get().getTrustStore().isTrusted(root);
+    public boolean isTrusted(@Nullable Path root) {
+        return root != null && config.get().getTrustStore().isTrusted(root);
     }
 
     @Override
-    public boolean confirmTrust(Path root, BuildTrust.Summary summary) {
+    public boolean confirmTrust(@Nullable Path root, BuildTrust.Summary summary) {
         TrustPrompts.Prompt prompt = TrustPrompts.buildProject(owner.get(), root, summary);
         return prompt.alert().showAndWait().orElse(ButtonType.CANCEL) == prompt.trust();
     }
 
     @Override
-    public void trust(Path root) {
-        config.get().getTrustStore().trust(root);
+    public void trust(@Nullable Path root) {
+        if (root != null) {
+            config.get().getTrustStore().trust(root);
+        }
         trustSaved.run();
     }
 
     @Override
-    public void revokeTrust(Path root) {
-        config.get().getTrustStore().revoke(root);
+    public void revokeTrust(@Nullable Path root) {
+        if (root != null) {
+            config.get().getTrustStore().revoke(root);
+        }
         trustSaved.run();
         trustedFoldersChanged.run();
     }

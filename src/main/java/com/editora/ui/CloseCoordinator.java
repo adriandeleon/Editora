@@ -16,13 +16,14 @@ import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
 /** Owns tab/window close prompts and exact-state revalidation across nested JavaFX event loops. */
 final class CloseCoordinator {
 
-    private record BufferToken(Path path, long version, boolean dirty) {}
+    private record BufferToken(@Nullable Path path, long version, boolean dirty) {}
 
     static final class ApprovalState {
         private final IdentityHashMap<EditorBuffer, BufferToken> discardedBuffers = new IdentityHashMap<>();
@@ -34,7 +35,7 @@ final class CloseCoordinator {
     private final Stage stage;
     private final EditorArea editorArea;
     private final Set<Tab> pinned;
-    private final Function<Tab, EditorBuffer> bufferOf;
+    private final Function<Tab, @Nullable EditorBuffer> bufferOf;
     private final FileWorkflowCoordinator files;
     private final Runnable persistSession;
 
@@ -42,7 +43,7 @@ final class CloseCoordinator {
             Stage stage,
             EditorArea editorArea,
             Set<Tab> pinned,
-            Function<Tab, EditorBuffer> bufferOf,
+            Function<Tab, @Nullable EditorBuffer> bufferOf,
             FileWorkflowCoordinator files,
             Runnable persistSession) {
         this.stage = stage;

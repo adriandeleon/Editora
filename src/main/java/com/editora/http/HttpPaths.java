@@ -37,7 +37,7 @@ public final class HttpPaths {
      * <p>A target that does not exist is returned as resolved (its existing parent chain is still checked), so
      * the caller's read fails with its ordinary "missing file" handling.
      */
-    public static @Nullable Path contained(Path baseDir, String reference) {
+    public static @Nullable Path contained(@Nullable Path baseDir, String reference) {
         Path target = lexicallyContained(baseDir, reference);
         if (target == null || !PathContainment.isWithin(baseDir, target)) {
             return null;
@@ -67,7 +67,7 @@ public final class HttpPaths {
     }
 
     /** The lexically normalized target, or null when the reference is unusable or climbs out of the base. */
-    private static @Nullable Path lexicallyContained(Path baseDir, String reference) {
+    private static @Nullable Path lexicallyContained(@Nullable Path baseDir, String reference) {
         if (baseDir == null || reference == null || reference.isBlank()) {
             return null;
         }

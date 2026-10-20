@@ -5,6 +5,8 @@ import java.util.Map;
 
 import javafx.scene.paint.Color;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Catalog of editor color themes — the syntax-token and editor-surface colors, separate from the
  * AtlantaFX control theme ({@link Themes}). Each theme is an override stylesheet layered after
@@ -282,7 +284,7 @@ public final class EditorThemes {
     }
 
     /** The user theme entry for {@code name} (a control theme's adaptive palette, or an override theme), or null. */
-    private static UserThemes.Entry userEntry(String name) {
+    private static UserThemes.@Nullable Entry userEntry(String name) {
         UserThemes.Entry c = UserThemes.controlThemes().get(name);
         return c != null ? c : UserThemes.editorThemes().get(name);
     }
@@ -307,7 +309,7 @@ public final class EditorThemes {
      * (whose colors already live in {@code app.css} / {@code syntax.css}). User AtlantaFX themes use
      * the shared {@code adaptive.css}; user editor-override themes use their own file.
      */
-    public static String stylesheetFor(String name) {
+    public static @Nullable String stylesheetFor(String name) {
         String norm = normalize(name);
         if (UserThemes.controlThemes().containsKey(norm)) {
             return EditorThemes.class

@@ -33,6 +33,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
 import com.editora.io.AtomicFileWrite;
 import com.editora.io.DocumentWriteSequencer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -64,9 +65,9 @@ final class FileWorkflowCoordinator {
             DocumentWriteSequencer.Ticket ticket,
             boolean saveAs,
             String lineEnding,
-            String charsetFallback,
+            @Nullable String charsetFallback,
             SaveNotes notes,
-            EncryptionCoordinator.Seal seal) {
+            EncryptionCoordinator.@Nullable Seal seal) {
 
         /** What goes on disk: the encoded text, or — for an encrypted file — its ciphertext, once sealed. */
         byte[] diskBytes() {
@@ -74,7 +75,7 @@ final class FileWorkflowCoordinator {
         }
     }
 
-    private record SaveAsOrigin(Path path) {}
+    private record SaveAsOrigin(@Nullable Path path) {}
 
     private record SavePayload(String text, SaveEncoding.Plan encoding, SaveNotes notes) {}
 
@@ -110,7 +111,7 @@ final class FileWorkflowCoordinator {
         }
     }
 
-    private record RemoteWritePlan(boolean proceed, byte[] expectedBytes, boolean expectedAbsent) {}
+    private record RemoteWritePlan(boolean proceed, byte @Nullable [] expectedBytes, boolean expectedAbsent) {}
 
     private enum RemoteSaveChoice {
         RELOAD,
@@ -134,6 +135,7 @@ final class FileWorkflowCoordinator {
         ProjectPanel projectPanel();
 
         /** What the Project tree is (or will be) rooted at; {@code null} outside a project with no folder. */
+        @Nullable
         Path projectRoot();
 
         HistoryCoordinator historyCoordinator();
@@ -162,6 +164,7 @@ final class FileWorkflowCoordinator {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         Tab addBuffer(EditorBuffer buffer);
@@ -172,9 +175,9 @@ final class FileWorkflowCoordinator {
 
         Tab addContentTab(TabContent content, boolean select);
 
-        void updateTabMeta(Tab tab, EditorBuffer buffer);
+        void updateTabMeta(@Nullable Tab tab, EditorBuffer buffer);
 
-        void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed);
+        void bufferPathChanged(EditorBuffer buffer, @Nullable Path oldPath, boolean oldAlreadyClosed);
 
         void promoteTab(Tab tab);
 
@@ -186,14 +189,18 @@ final class FileWorkflowCoordinator {
 
         String autoSaveLabel(String mode);
 
-        EditorBuffer bufferOf(Tab tab);
+        @Nullable
+        EditorBuffer bufferOf(@Nullable Tab tab);
 
         /** {@link #bufferOf}, building the editor of a restored tab the session restore has not reached yet. */
+        @Nullable
         EditorBuffer ensureBuffer(Tab tab);
 
+        @Nullable
         Tab tabFor(EditorBuffer buffer);
 
-        Tab tabForPath(Path file);
+        @Nullable
+        Tab tabForPath(@Nullable Path file);
 
         /** Whether a tab of <em>another</em> window shows {@code file}. */
         boolean openInAnotherWindow(Path file);
@@ -208,14 +215,17 @@ final class FileWorkflowCoordinator {
          *  may load the change into the running program (hot code replace). */
         default void sourceSaved(EditorBuffer buffer) {}
 
+        @Nullable
         Path tabPath(Tab tab);
 
         void requestSave();
 
+        @Nullable
         Tab tabForBuffer(EditorBuffer buffer);
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
 
+        @Nullable
         Path pathOf(java.io.File file);
 
         /** The window's shared services (the overlay host, the error echo, …). */
@@ -311,10 +321,10 @@ final class FileWorkflowCoordinator {
             (timeout, argv) -> com.editora.process.ProcessRunner.run(null, timeout, argv);
 
     /** Where Save As writes: the native file chooser's answer, null when it is cancelled. Replaced by tests. */
-    volatile java.util.function.Function<EditorBuffer, Path> saveAsTargetChooser = this::chooseSaveAsTarget;
+    volatile java.util.function.Function<EditorBuffer, @Nullable Path> saveAsTargetChooser = this::chooseSaveAsTarget;
 
     /** Test seam for holding an actual write worker while proving the FX thread remains responsive. */
-    volatile Runnable beforeDocumentWriteForTest;
+    volatile @Nullable Runnable beforeDocumentWriteForTest;
 
     FileWorkflowCoordinator(Host host) {
         this.host = host;
@@ -362,8 +372,8 @@ final class FileWorkflowCoordinator {
     private final Map<String, ExecutorService> remoteSaveExecutors = new ConcurrentHashMap<>();
 
     /** The thread {@code target} is written on: the local writer, or its connection's own. */
-    ExecutorService saveExecutor(Path target) {
-        String authority = shutdown ? null : com.editora.vfs.Vfs.authorityOf(target);
+    ExecutorService saveExecutor(@Nullable Path target) {
+        String authority = shutdown || target == null ? null : com.editora.vfs.Vfs.authorityOf(target);
         if (authority == null) {
             return autoSaveExecutor;
         }
@@ -401,7 +411,7 @@ final class FileWorkflowCoordinator {
     /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
     boolean checkingExternalChanges;
 
-    void openPath(Path file) {
+    void openPath(@Nullable Path file) {
         openPath(file, false);
     }
 
@@ -413,7 +423,10 @@ final class FileWorkflowCoordinator {
      * {@link #openInitialBuffer()} a pulse earlier, so the CLI action's own {@code openPath} always finds it
      * there — reporting "Already open" for a tab Editora itself just made is noise, not information.
      */
-    void openPath(Path file, boolean quietIfOpen) {
+    void openPath(@Nullable Path file, boolean quietIfOpen) {
+        if (file == null) {
+            return;
+        }
         if (file.getFileName() == null) {
             // A root ("/", "D:\", an SFTP host's "/" — what Remote > Open File makes of sftp://host) is a
             // folder with no name. Everything below names the file, so it used to throw instead of answering.
@@ -566,7 +579,7 @@ final class FileWorkflowCoordinator {
      * already loaded, else when the load lands. Never runs when the file has no text tab (an image, a PDF, a
      * hex view), when its load fails, or when the tab is closed first.
      */
-    void whenLoaded(Path file, Runnable action) {
+    void whenLoaded(@Nullable Path file, Runnable action) {
         Tab tab = host.tabForPath(file);
         EditorBuffer buffer = tab == null ? null : host.ensureBuffer(tab); // a restored tab not built yet: build it
         if (buffer == null) {
@@ -602,7 +615,7 @@ final class FileWorkflowCoordinator {
     }
 
     /** Opens {@code file} in a read-only {@link PdfViewerPane} tab (a PDF renders its pages, not its bytes). */
-    Tab openPdfTab(Path file, boolean select) {
+    Tab openPdfTab(@Nullable Path file, boolean select) {
         PdfViewerPane pane = new PdfViewerPane(file);
         Tab tab = host.addContentTab(pane, select);
         Platform.runLater(pane::relayout); // fit-to-window once the tab is laid out
@@ -720,12 +733,12 @@ final class FileWorkflowCoordinator {
     /** Immutable disk-side result; no JavaFX object is touched while this is prepared. */
     record PreparedLoad(
             Path file,
-            String content,
+            @Nullable String content,
             long size,
             long mtime,
             int lines,
             int maxLineLength,
-            String charset,
+            @Nullable String charset,
             com.editora.editorconfig.EditorConfigProperties editorConfig,
             boolean binary,
             boolean large,
@@ -735,10 +748,10 @@ final class FileWorkflowCoordinator {
             boolean log,
             long logOffset,
             boolean tail,
-            byte[] sourceBytes,
-            String declaredCharset,
-            String fingerprint,
-            com.editora.editor.InitialDocument document,
+            byte @Nullable [] sourceBytes,
+            @Nullable String declaredCharset,
+            @Nullable String fingerprint,
+            com.editora.editor.@Nullable InitialDocument document,
             boolean encrypted) {
 
         /**
@@ -747,12 +760,12 @@ final class FileWorkflowCoordinator {
          */
         PreparedLoad(
                 Path file,
-                String content,
+                @Nullable String content,
                 long size,
                 long mtime,
                 int lines,
                 int maxLineLength,
-                String charset,
+                @Nullable String charset,
                 com.editora.editorconfig.EditorConfigProperties editorConfig,
                 boolean binary,
                 boolean large,
@@ -762,8 +775,8 @@ final class FileWorkflowCoordinator {
                 boolean log,
                 long logOffset,
                 boolean tail,
-                byte[] sourceBytes,
-                String declaredCharset) {
+                byte @Nullable [] sourceBytes,
+                @Nullable String declaredCharset) {
             this(
                     file,
                     content,
@@ -783,7 +796,9 @@ final class FileWorkflowCoordinator {
                     tail,
                     sourceBytes,
                     declaredCharset,
-                    binary ? null : FileWorkflowCoordinator.fingerprint(sourceBytes), // a hex view compares nothing
+                    binary || sourceBytes == null
+                            ? null
+                            : FileWorkflowCoordinator.fingerprint(sourceBytes), // a hex view compares nothing
                     null,
                     false);
         }
@@ -798,8 +813,8 @@ final class FileWorkflowCoordinator {
                 long size,
                 long mtime,
                 com.editora.editorconfig.EditorConfigProperties editorConfig,
-                byte[] ciphertext,
-                String fingerprint) {
+                byte @Nullable [] ciphertext,
+                @Nullable String fingerprint) {
             return new PreparedLoad(
                     file,
                     null,
@@ -825,7 +840,7 @@ final class FileWorkflowCoordinator {
         }
 
         /** This load with {@code fingerprint} and {@code mtime}/{@code size} of the file it was decrypted from. */
-        PreparedLoad decryptedFrom(long fileSize, long fileMtime, String fileFingerprint) {
+        PreparedLoad decryptedFrom(long fileSize, long fileMtime, @Nullable String fileFingerprint) {
             return new PreparedLoad(
                     file,
                     content,
@@ -1066,7 +1081,7 @@ final class FileWorkflowCoordinator {
      * remembered as the file on disk is: its size, time and the fingerprint of its <em>ciphertext</em>. Off the
      * FX thread.
      */
-    PreparedLoad prepareDecrypted(Path file, byte[] plaintext, long size, long mtime, String fingerprint) {
+    PreparedLoad prepareDecrypted(Path file, byte[] plaintext, long size, long mtime, @Nullable String fingerprint) {
         com.editora.editorconfig.EditorConfigProperties editorConfig =
                 host.editorSettings().editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)
                         ? com.editora.editorconfig.EditorConfig.resolveFor(file.resolveSibling(
@@ -1090,11 +1105,14 @@ final class FileWorkflowCoordinator {
         String chosen = chosenEncoding(file);
         com.editora.io.TextEncodings.Decoded forced =
                 chosen == null ? null : com.editora.io.TextEncodings.decode(bytes, chosen);
-        boolean useChosen = forced != null && forced.ok();
+        String forcedText = forced == null ? null : forced.text(); // null unless the bytes are valid in it
+        boolean useChosen = forcedText != null;
+        String declaredForSniff = editorConfig.charset();
         // BOM-less UTF-16 is half NUL bytes; when .editorconfig declares it, it is text, not a hex dump.
         if (sniffBinary
                 && !useChosen
-                && !com.editora.editorconfig.EditorConfigCharset.isBomlessUtf16(bytes, editorConfig.charset())) {
+                && !(declaredForSniff != null
+                        && com.editora.editorconfig.EditorConfigCharset.isBomlessUtf16(bytes, declaredForSniff))) {
             byte[] sample = bytes.length <= BinarySniff.SAMPLE_BYTES
                     ? bytes
                     : java.util.Arrays.copyOf(bytes, BinarySniff.SAMPLE_BYTES);
@@ -1121,9 +1139,9 @@ final class FileWorkflowCoordinator {
             }
         }
         // Strict, never with replacement: a U+FFFD substituted here would be written back on the next save.
-        com.editora.editorconfig.EditorConfigCharset.Decoded decoded = useChosen
+        com.editora.editorconfig.EditorConfigCharset.Decoded decoded = forced != null && forcedText != null
                 ? new com.editora.editorconfig.EditorConfigCharset.Decoded(
-                        forced.text(), forced.charset(), forced.charset(), false)
+                        forcedText, forced.charset(), forced.charset(), false)
                 : com.editora.editorconfig.EditorConfigCharset.decodeLossless(
                         bytes, declaredCharset(file, bytes, editorConfig));
         String charset = decoded.charset();
@@ -1160,6 +1178,7 @@ final class FileWorkflowCoordinator {
      * The encoding the user chose for {@code file} (Reopen or Save with Encoding), or null. Safe on the
      * file-load worker: the map is concurrent.
      */
+    @Nullable
     String chosenEncoding(Path file) {
         if (file == null) {
             return null;
@@ -1169,7 +1188,7 @@ final class FileWorkflowCoordinator {
     }
 
     /** Remembers {@code charset} as {@code file}'s encoding, or forgets the choice when it is null. FX thread. */
-    void rememberEncoding(Path file, String charset) {
+    void rememberEncoding(@Nullable Path file, @Nullable String charset) {
         com.editora.config.WorkspaceState ws = host.config().getWorkspaceState();
         if (file == null || ws == null || java.util.Objects.equals(charset, chosenEncoding(file))) {
             return;
@@ -1211,7 +1230,7 @@ final class FileWorkflowCoordinator {
      * {@code utf-8-bom}: a save would write the mark that hides its {@code #!} line. A real BOM is still
      * detected (and the open notice offers to remove it).
      */
-    private static String declaredCharset(
+    private static @Nullable String declaredCharset(
             Path file, byte[] bytes, com.editora.editorconfig.EditorConfigProperties editorConfig) {
         String declared = editorConfig.charset();
         if (!com.editora.editorconfig.EditorConfigCharset.UTF_8_BOM.equals(declared) || file.getFileName() == null) {
@@ -1238,7 +1257,9 @@ final class FileWorkflowCoordinator {
         buffer.setDiskSnapshot(load.mtime(), load.size(), load.fingerprint());
         buffer.setTruncatedLoad(load.truncated());
         host.editorSettings().applyResolvedEditorConfig(buffer, load.editorConfig());
-        buffer.setDetectedCharset(load.charset(), load.charsetAssumed());
+        String loadedCharset = load.charset();
+        String charset = loadedCharset == null ? com.editora.editorconfig.EditorConfigCharset.UTF_8 : loadedCharset;
+        buffer.setDetectedCharset(charset, load.charsetAssumed());
         if (isUtf16(load.charset())
                 && !load.charsetAssumed()
                 && load.sourceBytes() != null
@@ -1260,24 +1281,25 @@ final class FileWorkflowCoordinator {
             // Also back to editable: a reload of a file that is no longer huge used to stay read-only.
             buffer.setReadOnly(load.truncated());
         }
+        // Null only for a binary or encrypted load, neither of which is applied here; empty, as before.
+        String loadedText = load.content();
+        String text = loadedText == null ? "" : loadedText;
         if (inPlace && load.document() != null && !load.longLine() && !load.truncated()) {
             buffer.reloadContent(load.document());
         } else if (load.document() != null) {
             buffer.setInitialContent(load.document());
         } else {
-            buffer.setInitialContent(load.content(), load.longLine());
+            buffer.setInitialContent(text, load.longLine());
         }
         // A mixed file's bytes are kept: its document cannot say which terminator each line had.
         MixedLineEndings.loaded(
                 buffer,
                 load.file(),
                 load.truncated() ? null : load.sourceBytes(),
-                load.document() != null
-                        ? load.document().lineEnding()
-                        : com.editora.editor.LineEndings.dominant(load.content()),
+                load.document() != null ? load.document().lineEnding() : com.editora.editor.LineEndings.dominant(text),
                 load.document() != null
                         ? load.document().mixedLineEndings()
-                        : com.editora.editor.LineEndings.mixed(load.content()));
+                        : com.editora.editor.LineEndings.mixed(text));
         if (load.log()) {
             host.logViewer().recordLoadOffset(buffer, load.logOffset());
         } else if (!load.truncated()) {
@@ -1290,7 +1312,7 @@ final class FileWorkflowCoordinator {
                     load.file().getFileName().toString(),
                     load.document() != null
                             ? load.document().lineEnding()
-                            : com.editora.editor.LineEndings.dominant(load.content()),
+                            : com.editora.editor.LineEndings.dominant(text),
                     buffer.getEffectiveCharset(),
                     host::setStatus);
         }
@@ -1299,7 +1321,7 @@ final class FileWorkflowCoordinator {
                     load.tail() ? "status.load.hugeLog" : "status.load.hugeFile",
                     load.file().getFileName(),
                     StatusBar.formatSize(load.size()),
-                    StatusBar.formatSize(load.content().length()));
+                    StatusBar.formatSize(text.length()));
         }
         MixedLineEndings.Source mixed = MixedLineEndings.of(buffer);
         if (forgotten != null) {
@@ -1307,17 +1329,18 @@ final class FileWorkflowCoordinator {
                     "status.encodingForgotten",
                     load.file().getFileName(),
                     com.editora.editorconfig.EditorConfigCharset.displayName(forgotten),
-                    com.editora.editorconfig.EditorConfigCharset.displayName(load.charset()));
+                    com.editora.editorconfig.EditorConfigCharset.displayName(charset));
         }
-        if (load.charsetAssumed()) {
+        String declared = load.declaredCharset();
+        if (declared != null && load.charsetAssumed()) {
             // "…so no bytes are lost" is only true of a file whose line endings are uniform.
             return tr(
                     mixed == null
                             ? "status.charsetAssumed"
                             : mixed.binary() ? "status.charsetAssumedMixedBinary" : "status.charsetAssumedMixed",
                     load.file().getFileName(),
-                    com.editora.editorconfig.EditorConfigCharset.displayName(load.declaredCharset()),
-                    com.editora.editorconfig.EditorConfigCharset.displayName(load.charset()),
+                    com.editora.editorconfig.EditorConfigCharset.displayName(declared),
+                    com.editora.editorconfig.EditorConfigCharset.displayName(charset),
                     buffer.getLineEnding());
         }
         if (mixed != null) {
@@ -1348,7 +1371,7 @@ final class FileWorkflowCoordinator {
      * the file is no longer valid in that encoding (the load fell back to detection), forgets the choice and
      * returns it for the status line. A capped load ignores choices: it is read as UTF-8 and read-only.
      */
-    private String applyChosenEncoding(EditorBuffer buffer, PreparedLoad load) {
+    private @Nullable String applyChosenEncoding(EditorBuffer buffer, PreparedLoad load) {
         String chosen = load.truncated() || load.content() == null ? null : chosenEncoding(load.file());
         if (chosen != null && !chosen.equals(load.charset())) {
             rememberEncoding(load.file(), null);
@@ -1381,12 +1404,12 @@ final class FileWorkflowCoordinator {
         return tr("status.largeFileOpened", file.getFileName(), StatusBar.formatSize(size));
     }
 
-    private static boolean isUtf16(String charset) {
+    private static boolean isUtf16(@Nullable String charset) {
         return com.editora.editorconfig.EditorConfigCharset.UTF_16LE.equals(charset)
                 || com.editora.editorconfig.EditorConfigCharset.UTF_16BE.equals(charset);
     }
 
-    static long fileSize(Path file) {
+    static long fileSize(@Nullable Path file) {
         try {
             return Files.size(file);
         } catch (IOException e) {
@@ -1395,7 +1418,7 @@ final class FileWorkflowCoordinator {
     }
 
     /** The file's last-modified time in epoch millis, or {@code -1} when unavailable. */
-    static long lastModifiedMillis(Path file) {
+    static long lastModifiedMillis(@Nullable Path file) {
         try {
             return Files.getLastModifiedTime(file).toMillis();
         } catch (IOException e) {
@@ -1525,7 +1548,7 @@ final class FileWorkflowCoordinator {
     }
 
     /** Test seam: runs on the worker before {@link #checkExternalChanges} asks the disk anything. */
-    volatile Runnable beforeExternalStatForTest;
+    volatile @Nullable Runnable beforeExternalStatForTest;
 
     /**
      * Metadata changed; compares the bytes before asking. {@code touch}, a build step or a checkout that
@@ -1579,7 +1602,11 @@ final class FileWorkflowCoordinator {
 
     /** Asks whether to reload an externally-modified file; "keep" just re-baselines so it stops prompting. */
     void promptExternalChange(Tab tab, EditorBuffer buffer, long mtime, long size) {
-        String name = buffer.getPath().getFileName().toString();
+        Path path = buffer.getPath();
+        if (path == null) {
+            return; // untitled: there is no file to have changed
+        }
+        String name = path.getFileName().toString();
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
         alert.initOwner(host.stage());
         alert.setTitle(tr("dialog.externalChange.title"));
@@ -1629,7 +1656,8 @@ final class FileWorkflowCoordinator {
         buffer.markUnsaved();
         missingOnDisk.put(buffer, buffer.docVersion());
         host.updateTabMeta(tab, buffer);
-        host.setStatus(tr("status.fileGoneKeptUnsaved", buffer.getPath().getFileName()));
+        Path gone = buffer.getPath();
+        host.setStatus(tr("status.fileGoneKeptUnsaved", gone == null ? buffer.getTitle() : gone.getFileName()));
     }
 
     /** Whether {@code buffer} is unsaved only because its file went missing: it carries no edit. FX thread. */
@@ -1655,7 +1683,7 @@ final class FileWorkflowCoordinator {
     }
 
     /** Test seam: runs on the worker before {@link #reloadFromDisk} reads the file. */
-    volatile Runnable beforeReloadReadForTest;
+    volatile @Nullable Runnable beforeReloadReadForTest;
 
     /** Reloads a buffer's content from disk, preserving the caret position as best it can. */
     void reloadFromDisk(Tab tab, EditorBuffer buffer) {
@@ -1663,8 +1691,12 @@ final class FileWorkflowCoordinator {
     }
 
     /** Reloads asynchronously and reports on the FX thread whether the prepared snapshot was applied. */
-    void reloadFromDisk(Tab tab, EditorBuffer buffer, java.util.function.Consumer<Boolean> onComplete) {
+    void reloadFromDisk(@Nullable Tab tab, EditorBuffer buffer, java.util.function.Consumer<Boolean> onComplete) {
         Path file = buffer.getPath();
+        if (file == null) {
+            onComplete.accept(false); // untitled: nothing on disk to reload
+            return;
+        }
         invalidatePendingWrite(file);
         // The decision to let the disk win is about the document as it is now. The read comes back on a
         // later FX turn; whatever was typed in between was never part of that decision and must survive.
@@ -1708,7 +1740,7 @@ final class FileWorkflowCoordinator {
     }
 
     /** Applies bytes prepared off-thread after the user explicitly chooses the external copy. FX thread. */
-    private void applyPreparedReload(Tab tab, EditorBuffer buffer, PreparedLoad load) {
+    private void applyPreparedReload(@Nullable Tab tab, EditorBuffer buffer, PreparedLoad load) {
         // Only the span that differs is rewritten, but a change above the viewport still moves it and a fold
         // inside the span is lost: keep the user's place (caret line/column, scroll position, collapsed folds).
         ReloadViewState view = ReloadViewState.capture(buffer);
@@ -1773,7 +1805,7 @@ final class FileWorkflowCoordinator {
      * read-only file of the user's own, in a folder they can write, is not such a file: an ordinary save
      * replaces it once the user agrees ({@link #mayReplaceReadOnly}), and asking for root there is wrong.
      */
-    boolean adminSaveApplicable(Path p) {
+    boolean adminSaveApplicable(@Nullable Path p) {
         return elevationAvailable()
                 && p != null
                 && com.editora.vfs.Vfs.isLocal(p)
@@ -1856,13 +1888,14 @@ final class FileWorkflowCoordinator {
      *
      * @return true when the save was refused (the caller must not write).
      */
-    boolean refuseUnsavable(EditorBuffer buffer) {
+    boolean refuseUnsavable(@Nullable EditorBuffer buffer) {
         SaveRefusal refusal = saveRefusal(buffer);
         if (refusal == SaveRefusal.NONE) {
             return false;
         }
-        if (refusal.messageKey() != null) {
-            host.setStatus(tr(refusal.messageKey(), buffer.getTitle()));
+        String key = refusal.messageKey();
+        if (key != null && buffer != null) { // a null buffer is DISPOSED, which has no message
+            host.setStatus(tr(key, buffer.getTitle()));
         }
         return true;
     }
@@ -1872,7 +1905,7 @@ final class FileWorkflowCoordinator {
      * every write path passes through, so a caller that forgot to ask (autosave, the elevated save, the MCP
      * bridge) still cannot put an incomplete document on disk.
      */
-    SaveRefusal saveRefusal(EditorBuffer buffer) {
+    SaveRefusal saveRefusal(@Nullable EditorBuffer buffer) {
         return buffer == null
                 ? SaveRefusal.DISPOSED
                 : SaveRefusal.of(
@@ -1959,6 +1992,7 @@ final class FileWorkflowCoordinator {
      * An explicit save of a file-backed buffer whose outcome can be awaited: completes on the FX thread with
      * whether the bytes reached the disk. Null for an elevated (administrator) save, which reports itself.
      */
+    @Nullable
     CompletableFuture<Boolean> saveTracked(EditorBuffer buffer) {
         if (refuseUnsavable(buffer)) {
             return CompletableFuture.completedFuture(false);
@@ -1970,7 +2004,7 @@ final class FileWorkflowCoordinator {
             saveAsAdmin(buffer);
             return null;
         }
-        SaveRequest request = captureSave(buffer, file, false);
+        SaveRequest request = file == null ? null : captureSave(buffer, file, false);
         if (request == null) {
             return CompletableFuture.completedFuture(false);
         }
@@ -2110,15 +2144,17 @@ final class FileWorkflowCoordinator {
                                     keepMixedOriginal(request);
                                     return elevatedWriter.write(request.target(), request.diskBytes());
                                 });
-                                AdminResult result = outcome.executed()
-                                        ? outcome.value()
+                                AdminResult written = outcome.value();
+                                AdminResult result = outcome.executed() && written != null
+                                        ? written
                                         : new AdminResult(-2, "superseded", -1, -1);
                                 if (result.exit() == 0) {
                                     publishCommit(request, new DiskWrite(result.modifiedMillis(), result.size()));
                                 }
                                 Platform.runLater(() -> onAdminSaveDone(request, result));
                             } catch (IOException | RuntimeException e) {
-                                AdminResult result = new AdminResult(-1, e.getMessage(), -1, -1);
+                                String message = e.getMessage();
+                                AdminResult result = new AdminResult(-1, message == null ? "" : message, -1, -1);
                                 Platform.runLater(() -> onAdminSaveDone(request, result));
                             }
                         },
@@ -2139,10 +2175,12 @@ final class FileWorkflowCoordinator {
                 // Non-POSIX filesystem: the temp file keeps default permissions.
             }
             Files.write(tmp, bytes);
-            var result = elevationProcess.run(
-                    java.time.Duration.ofMinutes(2),
-                    com.editora.process.ElevatedSave.elevatedArgv(
-                            System.getProperty("os.name"), com.editora.process.ElevatedSave.PKEXEC, tmp, target));
+            List<String> argv = com.editora.process.ElevatedSave.elevatedArgv(
+                    System.getProperty("os.name"), com.editora.process.ElevatedSave.PKEXEC, tmp, target);
+            if (argv == null) { // elevationAvailable() is false on such a system, so no save gets here
+                throw new IllegalStateException("no elevated save on " + System.getProperty("os.name"));
+            }
+            var result = elevationProcess.run(java.time.Duration.ofMinutes(2), argv);
             return new AdminResult(result.exit(), result.err(), lastModifiedMillis(target), fileSize(target));
         } finally {
             Files.deleteIfExists(tmp);
@@ -2216,15 +2254,18 @@ final class FileWorkflowCoordinator {
         return applySaveAsTarget(buffer, file, synchronous);
     }
 
-    private Path chooseSaveAsTarget(EditorBuffer buffer) {
+    private @Nullable Path chooseSaveAsTarget(EditorBuffer buffer) {
         // A remote buffer may be saved as a LOCAL file (the chooser only offers those): with its connection
         // gone that is the one way left to keep the text. A new remote destination is still not offered.
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("dialog.saveAs.title"));
         if (buffer.getDisplayName() != null) {
             chooser.setInitialFileName(buffer.getDisplayName()); // suggested name from --new-file=NAME
-        } else if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
-            chooser.setInitialFileName(String.valueOf(buffer.getPath().getFileName()));
+        } else {
+            Path current = buffer.getPath();
+            if (current != null && com.editora.vfs.Vfs.isRemote(current)) {
+                chooser.setInitialFileName(String.valueOf(current.getFileName()));
+            }
         }
         return host.pathOf(chooser.showSaveDialog(host.stage()));
     }
@@ -2273,7 +2314,7 @@ final class FileWorkflowCoordinator {
      * buffer); a relative name resolves against that folder, {@code ~} expands to home. Confirms before
      * overwriting a different existing file.
      */
-    void saveAsPrompt(EditorBuffer buffer) {
+    void saveAsPrompt(@Nullable EditorBuffer buffer) {
         if (buffer == null || refuseUnsavable(buffer)) {
             return;
         }
@@ -2356,17 +2397,17 @@ final class FileWorkflowCoordinator {
      * (BOM-aware). The live document is not mutated — only what we write. With EditorConfig off this is the
      * content in the file's own line ending and detected charset.
      */
-    byte[] saveBytes(EditorBuffer buffer) {
+    byte @Nullable [] saveBytes(EditorBuffer buffer) {
         return savePayload(buffer, buffer.getContent(), buffer.getPath())
                 .encoding()
                 .bytes();
     }
 
-    private SavePayload savePayload(EditorBuffer buffer, String content, Path target) {
+    private SavePayload savePayload(EditorBuffer buffer, String content, @Nullable Path target) {
         MixedLineEndings.Source mixedSource = MixedLineEndings.of(buffer);
         MixedLineEndings.Decision mixed = MixedLineEndings.decide(
                 mixedSource, content, buffer.getLineEnding(), buffer.isLineEndingForced(), target);
-        if (mixed == MixedLineEndings.Decision.KEEP_BYTES) {
+        if (mixedSource != null && mixed == MixedLineEndings.Decision.KEEP_BYTES) {
             // Unedited, and the document cannot reproduce the file's terminators: its own bytes go back.
             return new SavePayload(
                     content, new SaveEncoding.Plan(mixedSource.bytes(), null, null), SaveNotes.keptBytes(mixedSource));
@@ -2405,9 +2446,6 @@ final class FileWorkflowCoordinator {
     }
 
     static String fingerprint(byte[] bytes) {
-        if (bytes == null) {
-            return null;
-        }
         try {
             byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
             return java.util.HexFormat.of().formatHex(digest);
@@ -2487,7 +2525,7 @@ final class FileWorkflowCoordinator {
             return; // held open because its file was deleted: only an explicit save may bring the file back
         }
         Path file = buffer.getPath();
-        SaveRequest request = captureSave(buffer, file);
+        SaveRequest request = file == null ? null : captureSave(buffer, file);
         if (request == null) {
             return;
         }
@@ -2498,7 +2536,7 @@ final class FileWorkflowCoordinator {
         }
     }
 
-    private SaveRequest captureSave(EditorBuffer buffer, Path file) {
+    private @Nullable SaveRequest captureSave(EditorBuffer buffer, Path file) {
         return captureSave(buffer, file, false);
     }
 
@@ -2507,7 +2545,7 @@ final class FileWorkflowCoordinator {
      * written — see {@link #saveRefusal}. The single choke point for Save, Save As, autosave, the elevated
      * save and every programmatic caller.
      */
-    private SaveRequest captureSave(EditorBuffer buffer, Path file, boolean saveAs) {
+    private @Nullable SaveRequest captureSave(EditorBuffer buffer, Path file, boolean saveAs) {
         if (refuseUnsavable(buffer)) {
             return null;
         }
@@ -2573,7 +2611,7 @@ final class FileWorkflowCoordinator {
         return request;
     }
 
-    private DiskWrite writeToDisk(SaveRequest request, RemoteWritePlan plan) throws IOException {
+    private @Nullable DiskWrite writeToDisk(SaveRequest request, RemoteWritePlan plan) throws IOException {
         Runnable hook = beforeDocumentWriteForTest;
         if (hook != null) {
             hook.run();
@@ -2674,7 +2712,7 @@ final class FileWorkflowCoordinator {
         }
     }
 
-    private static boolean diskBytesEqual(Path target, byte[] expected) {
+    private static boolean diskBytesEqual(@Nullable Path target, byte[] expected) {
         try {
             return java.util.Arrays.equals(expected, Files.readAllBytes(target));
         } catch (IOException missingOrUnreadable) {
@@ -2688,27 +2726,37 @@ final class FileWorkflowCoordinator {
      * conflict detection and commit.
      */
     private RemoteWritePlan prepareRemoteWrite(
-            SaveRequest request, boolean autoSave, boolean raced, java.util.concurrent.atomic.AtomicBoolean blocked)
+            SaveRequest request,
+            boolean autoSave,
+            boolean raced,
+            java.util.concurrent.atomic.@Nullable AtomicBoolean blocked)
             throws IOException {
         PreparedLoad current = prepareLoad(request.target(), false, false);
         byte[] currentBytes = current.sourceBytes();
         CommittedSave ownCommit = committedSaves.get(com.editora.config.PathKeys.key(request.target()));
         // A preceding request may be acknowledged and retired after this request captured its old
         // disk snapshot. Preserve that relationship across FX callbacks instead of consulting live requests.
-        boolean followsOwnCommit = ownCommit != null
-                && ownCommit.sequence() < request.sequence()
-                && request.precedingSaveSequences().contains(ownCommit.sequence());
+        CommittedSave followed = ownCommit != null
+                        && ownCommit.sequence() < request.sequence()
+                        && request.precedingSaveSequences().contains(ownCommit.sequence())
+                ? ownCommit
+                : null;
         boolean changed = raced
                 || (!request.saveAs()
-                        && (followsOwnCommit
-                                ? !ownCommit.fingerprint().equals(current.fingerprint())
+                        && (followed != null
+                                ? !followed.fingerprint().equals(current.fingerprint())
                                 : request.diskSnapshot()
-                                        .differsFrom(current.mtime(), current.size(), fingerprint(currentBytes))));
+                                        .differsFrom(
+                                                current.mtime(),
+                                                current.size(),
+                                                currentBytes == null ? null : fingerprint(currentBytes))));
         if (!changed) {
             return new RemoteWritePlan(true, currentBytes, false);
         }
         if (autoSave) {
-            blocked.set(true); // never prompt from a background save, but do not go quiet either
+            if (blocked != null) {
+                blocked.set(true); // never prompt from a background save, but do not go quiet either
+            }
             return new RemoteWritePlan(false, currentBytes, false);
         }
         RemoteSaveChoice choice = promptRemoteSaveConflict(request, current);
@@ -2825,9 +2873,9 @@ final class FileWorkflowCoordinator {
     }
 
     /** Invalidates queued or staged writes when a buffer stops representing this path. */
-    void invalidatePendingWrite(Path file) {
-        host.config().shared().documentWrites().supersede(file);
+    void invalidatePendingWrite(@Nullable Path file) {
         if (file != null) {
+            host.config().shared().documentWrites().supersede(file);
             committedSaves.remove(com.editora.config.PathKeys.key(file));
         }
     }
@@ -2847,7 +2895,7 @@ final class FileWorkflowCoordinator {
         writeAsync(request, autoSave, null);
     }
 
-    private void writeAsync(SaveRequest request, boolean autoSave, CompletableFuture<Boolean> completed) {
+    private void writeAsync(SaveRequest request, boolean autoSave, @Nullable CompletableFuture<Boolean> completed) {
         java.util.concurrent.atomic.AtomicBoolean autoSaveBlocked = new java.util.concurrent.atomic.AtomicBoolean();
         try {
             var outcome = request.ticket().runIfCurrent(() -> {
@@ -3011,8 +3059,9 @@ final class FileWorkflowCoordinator {
             mixedBinaryAgreed.remove(buffer);
             host.editorSettings().refreshStatusBarFor(buffer);
         }
-        if (notes.charsetChanged()) {
-            buffer.charsetSaved(notes.charsetTo());
+        String charsetTo = notes.charsetTo();
+        if (charsetTo != null) { // notes.charsetChanged()
+            buffer.charsetSaved(charsetTo);
         }
         if (buffer.getUserCharset() != null) {
             // The file is in the chosen encoding now; the next open must read it in that one too.
@@ -3021,9 +3070,10 @@ final class FileWorkflowCoordinator {
     }
 
     /** The trash unused pasted images go to; a test puts its own in. Null: the system's. */
-    com.editora.io.Trash.Bin pastedImageBin;
+    com.editora.io.Trash.@Nullable Bin pastedImageBin;
 
     /** Test seam: runs on the background thread after the sibling scan, before the FX re-check. Null normally. */
+    @Nullable
     Runnable beforePastedImageRecheck;
 
     /** Completes when the clean-up started by the latest save has settled (tests wait on it). */
@@ -3195,7 +3245,7 @@ final class FileWorkflowCoordinator {
 
     private boolean matchesOwnCommit(Path target, long modifiedMillis, long size) {
         CommittedSave committed = committedSaves.get(com.editora.config.PathKeys.key(target));
-        if (!hasOwnCommitMetadata(committed, target, modifiedMillis, size)) {
+        if (committed == null || !hasOwnCommitMetadata(committed, target, modifiedMillis, size)) {
             return false;
         }
         try {
@@ -3210,7 +3260,8 @@ final class FileWorkflowCoordinator {
                 committedSaves.get(com.editora.config.PathKeys.key(target)), target, modifiedMillis, size);
     }
 
-    private static boolean hasOwnCommitMetadata(CommittedSave committed, Path target, long modifiedMillis, long size) {
+    private static boolean hasOwnCommitMetadata(
+            @Nullable CommittedSave committed, Path target, long modifiedMillis, long size) {
         return committed != null
                 && com.editora.config.PathKeys.sameNormalized(committed.target(), target)
                 && committed.disk().modifiedMillis() == modifiedMillis
@@ -3266,7 +3317,7 @@ final class FileWorkflowCoordinator {
         pendingSaves.computeIfPresent(request.buffer(), (ignored, count) -> count > 1 ? count - 1 : null);
     }
 
-    private static void completeFuture(CompletableFuture<Boolean> completed, boolean result) {
+    private static void completeFuture(@Nullable CompletableFuture<Boolean> completed, boolean result) {
         if (completed != null) {
             completed.complete(result);
         }

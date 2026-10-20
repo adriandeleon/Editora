@@ -4,6 +4,7 @@ import javafx.stage.Stage;
 
 import com.editora.config.ConfigManager;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -56,7 +57,7 @@ final class InstallPromptCoordinator {
      * Mermaid CLI) isn't installed, the user hasn't dismissed it for this buffer, and the master nudge toggle
      * is on. Otherwise it hides the banner. Driven on tab switch / addBuffer / after an install.
      */
-    void maybeOfferInstall(EditorBuffer buffer) {
+    void maybeOfferInstall(@Nullable EditorBuffer buffer) {
         if (buffer == null) {
             return;
         }
@@ -199,7 +200,7 @@ final class InstallPromptCoordinator {
     }
 
     /** The language server a bundle installs ({@code null} for Mermaid, which has none). */
-    static String bundleServerId(com.editora.install.InstallCatalog.Lang lang) {
+    static @Nullable String bundleServerId(com.editora.install.InstallCatalog.Lang lang) {
         return switch (lang) {
             case JAVA -> "java";
             case PYTHON -> "python";

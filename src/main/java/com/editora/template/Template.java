@@ -50,7 +50,7 @@ public record Template(
             String language,
             String fileName,
             String body,
-            List<TemplateFile> files) {
+            @Nullable List<TemplateFile> files) {
         this(id, name, description, language, fileName, body, files, Map.of(), Origin.USER, "");
     }
 

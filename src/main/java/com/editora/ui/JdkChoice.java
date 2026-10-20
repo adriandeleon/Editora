@@ -9,6 +9,7 @@ import javafx.scene.control.ComboBox;
 import javafx.util.StringConverter;
 
 import com.editora.lsp.JavaRuntimes;
+import org.jspecify.annotations.Nullable;
 
 /** One installed JDK in a settings/run-configuration selector. Blank {@code home} is the inherited choice. */
 record JdkChoice(String home, int major) {
@@ -44,7 +45,7 @@ record JdkChoice(String home, int major) {
             }
 
             @Override
-            public JdkChoice fromString(String value) {
+            public @Nullable JdkChoice fromString(String value) {
                 return null;
             }
         });

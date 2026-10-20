@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A browser-style back/forward jump list of editor {@link Location}s (file + line + column). Recording a
  * new location truncates any forward history and appends it (deduping a consecutive same-file+line entry);
@@ -24,14 +26,14 @@ public final class NavigationHistory {
      * recorded rather than read back when the list is shown, because by then the file may be closed,
      * edited, or gone.
      */
-    public record Location(Path path, int line, int column, String snippet) {
+    public record Location(@Nullable Path path, int line, int column, String snippet) {
 
         public Location {
             snippet = snippet == null ? "" : snippet;
         }
 
         /** A location with no captured line text, for a caller with no buffer to read it from. */
-        public Location(Path path, int line, int column) {
+        public Location(@Nullable Path path, int line, int column) {
             this(path, line, column, "");
         }
     }
@@ -62,7 +64,7 @@ public final class NavigationHistory {
     }
 
     /** Steps back and returns the previous location, or {@code null} when already at the oldest. */
-    public Location back() {
+    public @Nullable Location back() {
         if (index <= 0) {
             return null;
         }
@@ -71,7 +73,7 @@ public final class NavigationHistory {
     }
 
     /** Steps forward and returns the next location, or {@code null} when already at the newest. */
-    public Location forward() {
+    public @Nullable Location forward() {
         if (index < 0 || index >= entries.size() - 1) {
             return null;
         }
@@ -120,6 +122,6 @@ public final class NavigationHistory {
     }
 
     private static boolean sameLine(Location a, Location b) {
-        return a.path().equals(b.path()) && a.line() == b.line();
+        return java.util.Objects.equals(a.path(), b.path()) && a.line() == b.line();
     }
 }

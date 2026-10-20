@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What is wrong with a value typed into the Settings → Remote site form, as a message key, or {@code null} when
  * it is fine. Used to refuse a value before it is saved (the field turns red and says why), instead of saving it
@@ -10,7 +12,7 @@ final class RemoteSiteCheck {
     private RemoteSiteCheck() {}
 
     /** A host name or address; blank is allowed (a new site has none yet). */
-    static String host(String text) {
+    static @Nullable String host(String text) {
         String t = text == null ? "" : text.strip();
         if (t.isEmpty()) {
             return null;
@@ -31,7 +33,7 @@ final class RemoteSiteCheck {
     }
 
     /** A TCP port, 1–65535; blank means the default SFTP port. */
-    static String port(String text) {
+    static @Nullable String port(String text) {
         String t = text == null ? "" : text.strip();
         if (t.isEmpty()) {
             return null;
@@ -44,7 +46,7 @@ final class RemoteSiteCheck {
     }
 
     /** A login name; blank is allowed (the server's default). */
-    static String user(String text) {
+    static @Nullable String user(String text) {
         String t = text == null ? "" : text.strip();
         return t.chars().anyMatch(c -> Character.isWhitespace(c) || c == '@' || c == ':')
                 ? "settings.remote.check.user"

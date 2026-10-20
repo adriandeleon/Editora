@@ -9,6 +9,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The compiled jar of a Kotlin program that Run and Debug start ({@link KotlinRun}): where it is, whether it has
  * to be compiled first, and putting a finished compile in place. One jar per source file is kept — an edit
@@ -33,7 +35,7 @@ public final class KotlinBuild {
      * The plan for running {@code source} as it is on disk, compiled by {@code kotlinc}, cached under
      * {@code configDir} (a temporary folder when that is null).
      */
-    public static Plan plan(Path source, String kotlinc, Path configDir) throws IOException {
+    public static Plan plan(Path source, String kotlinc, @Nullable Path configDir) throws IOException {
         String content = Files.readString(source);
         Path cache = KotlinRun.cacheDir(configDir, Path.of(System.getProperty("java.io.tmpdir")));
         String name = KotlinRun.jarName(source.toAbsolutePath().normalize().toString(), content, kotlinc);

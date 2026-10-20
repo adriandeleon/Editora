@@ -3,6 +3,8 @@ package com.editora.ui;
 import java.util.Set;
 import java.util.function.IntFunction;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pom-aware labels for the Structure window's XML outline (Maven review C16): a {@code dependency},
  * {@code plugin}, {@code exclusion} or {@code extension} node is named by its {@code groupId:artifactId},
@@ -27,7 +29,8 @@ final class PomOutlineLabels {
      * ending at {@code endLine} (inclusive, 0-based; {@code endLine < startLine} = unknown), reading lines
      * through {@code lineAt}; the plain name when the element is not one with a naming child.
      */
-    static String label(String elementName, int startLine, int endLine, int lineCount, IntFunction<String> lineAt) {
+    static @Nullable String label(
+            @Nullable String elementName, int startLine, int endLine, int lineCount, IntFunction<String> lineAt) {
         if (elementName == null) {
             return null;
         }

@@ -30,6 +30,8 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -67,7 +69,7 @@ final class HttpRunList extends VBox {
 
     private List<HttpRunRows.Row> rows = List.of();
     /** The entry whose row was last selected (kept while "Only failures" hides it), or null. */
-    private HttpHistoryEntry selected;
+    private @Nullable HttpHistoryEntry selected;
 
     private boolean collapsed;
     private boolean syncing;
@@ -189,7 +191,7 @@ final class HttpRunList extends VBox {
      * cancelled (0: it finished), which took {@code tookMs} (-1 unknown), with {@code select}'s row selected (it is
      * shown already, so nobody is told).
      */
-    void show(List<HttpHistoryEntry> entries, int cancelledOf, long tookMs, HttpHistoryEntry select) {
+    void show(List<HttpHistoryEntry> entries, int cancelledOf, long tookMs, @Nullable HttpHistoryEntry select) {
         rows = HttpRunRows.rows(entries);
         HttpRunRows.Title t = HttpRunRows.title(entries, cancelledOf, tookMs);
         pill.setText(t.pill());
@@ -260,7 +262,8 @@ final class HttpRunList extends VBox {
         if (!isShown()) {
             return;
         }
-        selected = rowOf(rows, entry) == null ? null : rowOf(rows, entry).entry();
+        HttpRunRows.Row row = rowOf(rows, entry);
+        selected = row == null ? null : row.entry();
         syncSelection();
     }
 
@@ -286,7 +289,7 @@ final class HttpRunList extends VBox {
         syncing = false;
     }
 
-    private static HttpRunRows.Row rowOf(List<HttpRunRows.Row> rows, HttpHistoryEntry entry) {
+    private static HttpRunRows.@Nullable Row rowOf(List<HttpRunRows.Row> rows, @Nullable HttpHistoryEntry entry) {
         if (entry == null) {
             return null;
         }
@@ -420,6 +423,7 @@ final class HttpRunList extends VBox {
     }
 
     /** The pill's colour class. Test accessor. */
+    @Nullable
     String pillStyleForTest() {
         return pill.getStyleClass().stream()
                 .filter(PILL_STYLES::contains)

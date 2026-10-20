@@ -137,7 +137,7 @@ public final class SearchService {
      */
     public void search(
             SearchQuery query,
-            Path scopeRoot,
+            @Nullable Path scopeRoot,
             Map<Path, String> openContents,
             List<String> include,
             List<String> exclude,
@@ -160,7 +160,7 @@ public final class SearchService {
      */
     public void searchDetached(
             SearchQuery query,
-            Path scopeRoot,
+            @Nullable Path scopeRoot,
             Map<Path, String> openContents,
             Consumer<Outcome> onResult,
             Runnable onAbandoned) {
@@ -171,7 +171,7 @@ public final class SearchService {
     public void search(
             Channel channel,
             SearchQuery query,
-            Path scopeRoot,
+            @Nullable Path scopeRoot,
             Map<Path, String> openContents,
             List<String> include,
             List<String> exclude,
@@ -251,7 +251,7 @@ public final class SearchService {
 
     private Outcome run(
             SearchQuery query,
-            Path scopeRoot,
+            @Nullable Path scopeRoot,
             List<Map.Entry<Path, String>> open,
             List<String> include,
             List<String> exclude,
@@ -259,22 +259,22 @@ public final class SearchService {
         if (query == null || query.text() == null || query.text().isEmpty()) {
             return new Outcome(List.of(), 0, 0, false);
         }
-        boolean haveRoot = scopeRoot != null && Files.isDirectory(scopeRoot);
+        Path root = scopeRoot != null && Files.isDirectory(scopeRoot) ? scopeRoot : null; // null: no folder to walk
         Set<Path> openKeys = keysOn(open, scopeRoot);
         // On-disk results: ripgrep when enabled + local root, else the Java walker. rg falls back to the
         // walker on a pattern/IO error (exit 2) or if it failed to launch (null), so nothing regresses.
         List<FileResult> disk = null;
         boolean[] sourceTruncated = {false};
-        if (haveRoot && Vfs.isLocal(scopeRoot) && useRipgrep) {
-            disk = ripgrepDisk(rgCommand, query, scopeRoot, include, exclude, openKeys, cancelled, sourceTruncated);
-        } else if (haveRoot && Vfs.isRemote(scopeRoot) && ripgrepWanted && RemoteFiles.hasRipgrep(scopeRoot)) {
+        if (root != null && Vfs.isLocal(root) && useRipgrep) {
+            disk = ripgrepDisk(rgCommand, query, root, include, exclude, openKeys, cancelled, sourceTruncated);
+        } else if (root != null && Vfs.isRemote(root) && ripgrepWanted && RemoteFiles.hasRipgrep(root)) {
             // On the host: one rg there instead of reading every file of the tree over SFTP.
-            List<String> remoteRg = RemoteFiles.ripgrepCommand(scopeRoot);
-            disk = ripgrepDisk(remoteRg, query, scopeRoot, include, exclude, openKeys, cancelled, sourceTruncated);
+            List<String> remoteRg = RemoteFiles.ripgrepCommand(root);
+            disk = ripgrepDisk(remoteRg, query, root, include, exclude, openKeys, cancelled, sourceTruncated);
         }
         if (disk == null) {
-            DiskSearch walked = haveRoot
-                    ? walkDisk(query, scopeRoot, include, exclude, openKeys, cancelled)
+            DiskSearch walked = root != null
+                    ? walkDisk(query, root, include, exclude, openKeys, cancelled)
                     : new DiskSearch(new ArrayList<>(), false);
             disk = walked.files();
             sourceTruncated[0] |= walked.truncated();
@@ -429,7 +429,7 @@ public final class SearchService {
     }
 
     /** Root-relative, '/'-separated path for glob matching; falls back to the file name if not under root. */
-    private static String relativize(Path root, Path file) {
+    private static String relativize(@Nullable Path root, Path file) {
         Path abs = file.toAbsolutePath().normalize();
         if (root != null) {
             try {
@@ -451,7 +451,7 @@ public final class SearchService {
      * {@code equals}.
      */
     /** The open buffers' paths that are on {@code root}'s filesystem (all local ones when there is no root). */
-    private static Set<Path> keysOn(List<Map.Entry<Path, String>> open, Path root) {
+    private static Set<Path> keysOn(List<Map.Entry<Path, String>> open, @Nullable Path root) {
         Set<Path> keys = new HashSet<>();
         for (Map.Entry<Path, String> e : open) {
             Path key = e.getKey();
@@ -470,7 +470,7 @@ public final class SearchService {
             List<FileResult> disk,
             SearchQuery query,
             List<Map.Entry<Path, String>> open,
-            Path root,
+            @Nullable Path root,
             List<String> include,
             List<String> exclude,
             BooleanSupplier cancelled,

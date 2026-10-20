@@ -36,7 +36,7 @@ public final class MavenMetadata {
      * list, this avoids standing up a parser (and its XXE hardening) for it, and a malformed or truncated
      * download degrades to "no answer" rather than an exception.
      */
-    public static @Nullable String latestStable(String metadataXml) {
+    public static @Nullable String latestStable(@Nullable String metadataXml) {
         String best = null;
         for (String v : versions(metadataXml)) {
             if (isStable(v) && (best == null || MavenVersion.isNewer(v, best))) {
@@ -47,7 +47,7 @@ public final class MavenMetadata {
     }
 
     /** Every {@code <version>} listed, in document order. */
-    static List<String> versions(String metadataXml) {
+    static List<String> versions(@Nullable String metadataXml) {
         List<String> out = new ArrayList<>();
         if (metadataXml == null) {
             return out;

@@ -5,6 +5,7 @@ import java.util.Map;
 
 import com.editora.command.KeymapManager;
 import com.editora.config.Settings;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The order the shared keymap's layers are applied in: base keymap → the user's overrides → plugin keymaps →
@@ -81,7 +82,7 @@ final class KeymapLayers {
     private static void carry(
             Map<String, String> bindings,
             Map<String, String> active,
-            Map<String, String> parked,
+            @Nullable Map<String, String> parked,
             String keymap,
             boolean mac) {
         Map<String, String> live = new LinkedHashMap<>(KeymapManager.defaults(keymap, mac));

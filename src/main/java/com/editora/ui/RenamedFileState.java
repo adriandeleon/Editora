@@ -8,6 +8,7 @@ import java.util.Map;
 
 import com.editora.config.PathKeys;
 import com.editora.config.WorkspaceState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What is stored about a file under its path, carried along when the path changes.
@@ -34,7 +35,7 @@ final class RenamedFileState {
      *
      * @return whether anything moved
      */
-    static <V> boolean rekey(Map<String, V> map, String oldKey, String newKey, String separator) {
+    static <V> boolean rekey(Map<String, V> map, @Nullable String oldKey, String newKey, String separator) {
         if (map == null || map.isEmpty() || oldKey == null || newKey == null || oldKey.equals(newKey)) {
             return false;
         }
@@ -74,7 +75,7 @@ final class RenamedFileState {
     }
 
     /** {@code key} as it reads after the rename, or null when it is neither {@code oldKey} nor below it. */
-    static String renamed(String key, String oldKey, String newKey, String separator) {
+    static @Nullable String renamed(String key, String oldKey, String newKey, String separator) {
         if (key == null) {
             return null;
         }
@@ -120,7 +121,7 @@ final class RenamedFileState {
      * keeps them too. Folds are not copied here (the window persists them from the buffer itself), nor is
      * the read-only pin, which belongs to the file that was pinned.
      */
-    static void copyWorkspace(WorkspaceState ws, Path old, Path target) {
+    static void copyWorkspace(WorkspaceState ws, @Nullable Path old, @Nullable Path target) {
         if (old == null || target == null) {
             return; // an untitled buffer had nothing stored; a rolled-back Save As has nowhere to copy to
         }
@@ -139,7 +140,7 @@ final class RenamedFileState {
      * is still there, and the name inside it did not change. (For a path that still exists — Save As — this
      * is simply its canonical key.)
      */
-    static String formerCanonicalKey(Path old) {
+    static @Nullable String formerCanonicalKey(Path old) {
         if (old == null) {
             return null;
         }

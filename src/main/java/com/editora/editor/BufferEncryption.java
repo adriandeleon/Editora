@@ -50,7 +50,7 @@ public final class BufferEncryption {
     }
 
     /** Marks the buffer as an encrypted file's, or with null an ordinary one (a kept passphrase is wiped). */
-    public void setState(EncryptionState next) {
+    public void setState(@Nullable EncryptionState next) {
         if (state != null && state != next) {
             state.wipe();
         }
@@ -61,7 +61,7 @@ public final class BufferEncryption {
      * Shows {@code view} in place of the editor while the file is locked (its text is not here), or the editor
      * again with null. A locked buffer is not editable, so nothing can be typed into its empty document.
      */
-    public void setLockedView(Node view) {
+    public void setLockedView(@Nullable Node view) {
         lockedView = view;
         outer.setCenter(view != null ? view : editor);
         editabilityChanged.run();
@@ -76,7 +76,7 @@ public final class BufferEncryption {
     }
 
     /** Shows (or with null removes) the encryption banner above the editor. */
-    public void setNotice(Node banner) {
+    public void setNotice(@Nullable Node banner) {
         notice = banner;
         noticeChanged.run();
     }

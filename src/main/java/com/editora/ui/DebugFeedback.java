@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import com.editora.dap.DapModels;
 import com.editora.editor.BreakpointManager;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure decisions about what a debug adapter's answers mean for the user: how a breakpoint looks in the gutter
@@ -25,7 +26,10 @@ final class DebugFeedback {
      * @param rejectedText hover text of a breakpoint the adapter refused without saying why
      */
     static BreakpointManager.Live live(
-            DapModels.BreakpointStatus status, String evaluationFailure, String pendingText, String rejectedText) {
+            DapModels.@Nullable BreakpointStatus status,
+            @Nullable String evaluationFailure,
+            String pendingText,
+            String rejectedText) {
         if (evaluationFailure != null && !evaluationFailure.isBlank()) {
             return new BreakpointManager.Live(BreakpointManager.LiveState.REJECTED, evaluationFailure);
         }

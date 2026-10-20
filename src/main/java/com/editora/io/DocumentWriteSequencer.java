@@ -19,6 +19,7 @@ public final class DocumentWriteSequencer {
 
     @FunctionalInterface
     public interface IoSupplier<T> {
+        @Nullable
         T get() throws IOException;
     }
 

@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import com.editora.i18n.Messages;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decides how loudly a status message is shown, from the catalog key it was built from.
@@ -45,7 +46,7 @@ final class StatusSeverity {
 
     private record Index(int generation, Map<String, MessageLog.Severity> exact, List<Rule> rules) {}
 
-    private static volatile Index index;
+    private static volatile @Nullable Index index;
 
     private StatusSeverity() {}
 
@@ -62,7 +63,7 @@ final class StatusSeverity {
     }
 
     /** The severity of a message already translated by {@code tr(...)}; INFO when it is not a failure. */
-    static MessageLog.Severity of(String message) {
+    static MessageLog.Severity of(@Nullable String message) {
         if (message == null || message.isBlank()) {
             return MessageLog.Severity.INFO;
         }

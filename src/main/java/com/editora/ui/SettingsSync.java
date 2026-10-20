@@ -37,6 +37,7 @@ import com.editora.sync.SyncAccount;
 import com.editora.sync.SyncCategory;
 import com.editora.sync.SyncEngine;
 import com.editora.sync.SyncReport;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -73,7 +74,10 @@ final class SettingsSync {
      * @param report the last finished run, or null
      * @param at when it finished, or null
      */
-    record State(Phase phase, SyncReport report, LocalTime at) {}
+    record State(
+            Phase phase,
+            @Nullable SyncReport report,
+            @Nullable LocalTime at) {}
 
     private final SharedConfig shared;
     private final WindowManager windows;
@@ -85,14 +89,14 @@ final class SettingsSync {
     private final PauseTransition dirty = new PauseTransition(Duration.seconds(DIRTY_DELAY_SECONDS));
     private final PauseTransition startup = new PauseTransition(Duration.seconds(STARTUP_DELAY_SECONDS));
     private final List<Runnable> listeners = new ArrayList<>();
-    private Timeline timer;
+    private @Nullable Timeline timer;
     /** The interval {@link #timer} runs at; 0 when it is not running. */
     private int timerMinutes;
 
     private State state = new State(Phase.OFF, null, null);
     private boolean running;
     /** The run under way (worker thread), for {@link #cancelSync()}; null between runs. */
-    private volatile SyncEngine runningEngine;
+    private volatile @Nullable SyncEngine runningEngine;
     /** Cancel was asked before the run's engine existed (while the sign-in account was being chosen). */
     private volatile boolean cancelRequested;
 
@@ -100,7 +104,7 @@ final class SettingsSync {
     /** True while a run's result is being written into the stores: those writes are not "the user changed something". */
     private boolean applying;
     /** The failure already reported, so an automatic run that fails the same way every interval says it once. */
-    private SyncReport.Status reportedFailure;
+    private SyncReport.@Nullable Status reportedFailure;
 
     /** The GitHub CLI account the last run signed in as ({@link SyncAccount}); blank when it used git's own. */
     private String account = "";
@@ -318,7 +322,7 @@ final class SettingsSync {
         });
     }
 
-    private void finished(SyncReport report, String login, boolean userAsked, BackgroundTasks.Handle task) {
+    private void finished(SyncReport report, String login, boolean userAsked, BackgroundTasks.@Nullable Handle task) {
         running = false;
         remoteFailed =
                 report.status() == SyncReport.Status.FETCH_FAILED || report.status() == SyncReport.Status.PUSH_FAILED;
@@ -568,16 +572,17 @@ final class SettingsSync {
             return tr("status.sync.secondaryInstance");
         }
         SyncReport report = state.report();
+        LocalTime at = state.at(); // set with every report
         return switch (state.phase()) {
             case OFF -> tr("sync.state.off");
             case SYNCING -> tr("sync.state.syncing");
-            case PROBLEM -> problemText(report);
+            case PROBLEM -> report == null ? tr("sync.state.never") : problemText(report); // PROBLEM has one
             case IDLE ->
-                report == null || !report.ok()
+                report == null || !report.ok() || at == null
                         ? tr("sync.state.never")
                         : tr(
                                 "sync.state.ok",
-                                state.at().format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)),
+                                at.format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)),
                                 summary(report));
         };
     }

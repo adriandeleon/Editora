@@ -30,6 +30,7 @@ import javafx.scene.layout.VBox;
 import com.editora.git.GitService.CommitFile;
 import com.editora.git.StashParser.StashEntry;
 import com.editora.search.FuzzyMatch;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -79,8 +80,8 @@ final class GitStashPopup {
 
     private final ObservableList<StashEntry> items = FXCollections.observableArrayList();
     private List<StashEntry> all = List.of();
-    private Actions actions;
-    private OverlayHost overlayHost;
+    private @Nullable Actions actions;
+    private @Nullable OverlayHost overlayHost;
     private boolean showing;
 
     /** Files already fetched in this showing, by stash commit (or ref). */
@@ -221,7 +222,7 @@ final class GitStashPopup {
         }
     }
 
-    private void showFiles(StashEntry entry) {
+    private void showFiles(@Nullable StashEntry entry) {
         long request = ++filesRequest;
         if (entry == null) {
             files.getItems().clear();

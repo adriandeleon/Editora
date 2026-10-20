@@ -9,6 +9,7 @@ import javafx.scene.layout.Region;
 
 import com.editora.config.WorkspaceState;
 import com.editora.editor.TabContent;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A restored tab whose editor has not been built yet.
@@ -44,7 +45,7 @@ final class RestorePlaceholder implements TabContent {
     }
 
     /** The placeholder in {@code tab}, or {@code null} when the tab is anything else (including a built buffer). */
-    static RestorePlaceholder of(Tab tab) {
+    static @Nullable RestorePlaceholder of(@Nullable Tab tab) {
         return tab != null && tab.getUserData() instanceof RestorePlaceholder p ? p : null;
     }
 

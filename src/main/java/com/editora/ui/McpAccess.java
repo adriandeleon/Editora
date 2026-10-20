@@ -4,6 +4,7 @@ import java.nio.file.Path;
 
 import com.editora.agent.AcpFsGuard;
 import com.editora.io.PathContainment;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which files an MCP client may bring into the editor and which it may write — the MCP counterpart of
@@ -32,7 +33,7 @@ final class McpAccess {
     private McpAccess() {}
 
     /** Why {@code file} may not be opened for a client of a window whose project folder is {@code root}. */
-    static String openRefusal(Path root, Path file, boolean alreadyOpen) {
+    static @Nullable String openRefusal(@Nullable Path root, Path file, boolean alreadyOpen) {
         if (alreadyOpen) {
             return null;
         }
@@ -48,7 +49,7 @@ final class McpAccess {
     }
 
     /** Why a client may not change or save the buffer of {@code file} ({@code null} for an untitled one). */
-    static String writeRefusal(Path configDir, Path file) {
+    static @Nullable String writeRefusal(Path configDir, @Nullable Path file) {
         if (file == null) {
             return null;
         }
@@ -74,7 +75,7 @@ final class McpAccess {
      * registry signature check, install or remove plugins, or trust a folder's settings — each a security
      * decision that is the user's alone, made in Settings or the palette.
      */
-    static String commandRefusal(String id) {
+    static @Nullable String commandRefusal(String id) {
         if (id == null) {
             return null;
         }

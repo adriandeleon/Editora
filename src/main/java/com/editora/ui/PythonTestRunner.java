@@ -18,6 +18,7 @@ import com.editora.test.PytestScanner;
 import com.editora.test.TestNode;
 import com.editora.test.TestNodeKind;
 import com.editora.test.UnittestOutputParser;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -40,6 +41,7 @@ final class PythonTestRunner {
         TestRunCoordinator testRunCoordinator();
 
         /** This window's project root, or null. */
+        @Nullable
         Path projectRoot();
 
         /** The interpreter picked for the project ("" = detect). */
@@ -59,10 +61,10 @@ final class PythonTestRunner {
          * DebugCoordinator.debugPythonTests}); a no-op where there is no debugger.
          */
         default void debugTests(
-                Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, String label) {}
+                Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, @Nullable String label) {}
 
         /** Whether tests run in {@code where} can be debugged (the Python debugger is set up for that machine). */
-        default boolean canDebug(Path where) {
+        default boolean canDebug(@Nullable Path where) {
             return false;
         }
     }
@@ -87,18 +89,19 @@ final class PythonTestRunner {
             Path rootDir,
             List<String> pytestIds,
             Path unittestDir,
-            List<String> unittestIds,
-            String label,
-            Path script) {}
+            @Nullable List<String> unittestIds,
+            @Nullable String label,
+            @Nullable Path script) {}
 
     /** The tests of {@code file} ({@code target} null), or one class/function in it (a gutter ▶ target). */
-    void run(Path file, String text, JavaTestScanner.TestTarget target) {
+    void run(Path file, String text, JavaTestScanner.@Nullable TestTarget target) {
         start(scopeFor(file, text, target, host.projectRoot()));
     }
 
     /** {@code test.run} for Python: every test under the project, or under {@code anchor}'s folder without one. */
-    void runAll(Path anchor) {
-        Path root = host.projectRoot() != null ? host.projectRoot() : anchor == null ? null : anchor.getParent();
+    void runAll(@Nullable Path anchor) {
+        Path project = host.projectRoot();
+        Path root = project != null ? project : anchor == null ? null : anchor.getParent();
         if (root == null) {
             host.setStatus(tr("status.testrunner.noBuildTool"));
             return;
@@ -117,32 +120,28 @@ final class PythonTestRunner {
     }
 
     /** The scope of a file or one target in it (pure apart from the path arithmetic; tested). */
-    static Scope scopeFor(Path file, String text, JavaTestScanner.TestTarget target, Path projectRoot) {
-        Path root = projectRoot != null && file.normalize().startsWith(projectRoot.normalize())
-                ? projectRoot
-                : file.getParent();
+    static Scope scopeFor(
+            Path file, String text, JavaTestScanner.@Nullable TestTarget target, @Nullable Path projectRoot) {
+        Path folder = java.util.Objects.requireNonNull(file.getParent(), "a test file is in a folder");
+        Path root = projectRoot != null && file.normalize().startsWith(projectRoot.normalize()) ? projectRoot : folder;
         String rel = root.relativize(file).toString().replace('\\', '/');
         String fileName = file.getFileName().toString();
         String module = fileName.endsWith(".py") ? fileName.substring(0, fileName.length() - 3) : fileName;
-        boolean wholeFile = target == null
-                || (target.methodName() == null && target.className().isEmpty());
         String cls = target == null ? "" : target.className();
-        String suffix = wholeFile
-                ? ""
-                : cls.isEmpty()
-                        ? target.methodName()
-                        : target.methodName() == null ? cls : cls + "::" + target.methodName();
+        String method = target == null ? null : target.methodName();
+        boolean wholeFile = target == null || (method == null && cls.isEmpty());
+        String suffix = wholeFile ? "" : method == null ? cls : cls.isEmpty() ? method : cls + "::" + method;
         List<String> pytest = List.of(suffix.isEmpty() ? rel : rel + "::" + suffix);
         List<String> unittest = null;
         if (looksLikeUnittest(text)) {
             if (wholeFile) {
                 unittest = List.of(module);
             } else if (!cls.isEmpty()) {
-                unittest = List.of(module + "." + cls + (target.methodName() == null ? "" : "." + target.methodName()));
+                unittest = List.of(module + "." + cls + (method == null ? "" : "." + method));
             }
         }
         String label = wholeFile ? fileName : suffix.replace("::", ".");
-        return new Scope(root, pytest, file.getParent(), unittest, label, file);
+        return new Scope(root, pytest, folder, unittest, label, file);
     }
 
     /** Whether a file's tests are {@code unittest} tests, which Python can run without pytest. */
@@ -192,8 +191,8 @@ final class PythonTestRunner {
     private void launch(Scope scope, boolean hasPytest, String python) {
         if (hasPytest) {
             launchPytest(scope);
-        } else if (scope.unittestIds() != null) {
-            launchUnittest(scope);
+        } else if (scope.unittestIds() instanceof List<String> unittestIds) {
+            launchUnittest(scope, unittestIds);
         } else {
             host.setStatus(tr("status.testrunner.noPytest", python));
         }
@@ -261,14 +260,14 @@ final class PythonTestRunner {
         });
     }
 
-    private void launchUnittest(Scope scope) {
+    private void launchUnittest(Scope scope, List<String> unittestIds) {
         Path dir = scope.unittestDir();
         List<String> args = new ArrayList<>();
-        if (scope.unittestIds().isEmpty()) {
+        if (unittestIds.isEmpty()) {
             args.add("discover");
         }
         args.addAll(List.of("-v", "-b"));
-        args.addAll(scope.unittestIds());
+        args.addAll(unittestIds);
         PythonRunLauncher.plan(request(scope, false, args), dir, plan -> {
             boolean[] shown = {false};
             boolean[] launchFailed = {false};
@@ -359,7 +358,7 @@ final class PythonTestRunner {
      * anchor is the row's file (from its report location or module), else the run's file, else its folder.
      * Null when the row names nothing to run.
      */
-    static DebugTarget debugTarget(Scope scope, TestNode node, boolean pytest) {
+    static @Nullable DebugTarget debugTarget(Scope scope, TestNode node, boolean pytest) {
         if (pytest) {
             String id = pytestId(node);
             if (id == null) {
@@ -370,10 +369,10 @@ final class PythonTestRunner {
             return new DebugTarget(anchor, scope.rootDir(), List.of(id), List.of());
         }
         String id = unittestId(node);
-        if (id == null) {
+        String cls = node.className();
+        if (id == null || cls == null) { // a row with no class has no unittest id
             return null;
         }
-        String cls = node.className();
         String module = cls.contains(".") ? cls.substring(0, cls.lastIndexOf('.')) : cls;
         Path anchor = scope.unittestDir().resolve(module.replace('.', '/') + ".py");
         if (scope.script() != null
@@ -402,7 +401,7 @@ final class PythonTestRunner {
     }
 
     /** A Test Results row's pytest node id: from its file and class, or a suite row's first test's file. */
-    static String pytestId(TestNode n) {
+    static @Nullable String pytestId(TestNode n) {
         if (n.kind() == TestNodeKind.TEST) {
             return PytestReportParser.nodeId(n.sourceFileHint(), n.className(), n.methodName());
         }
@@ -415,7 +414,7 @@ final class PythonTestRunner {
     }
 
     /** A Test Results row's unittest id: {@code module.Class.test} (a suite row: {@code module.Class}). */
-    static String unittestId(TestNode n) {
+    static @Nullable String unittestId(TestNode n) {
         if (n.className() == null) {
             return null;
         }

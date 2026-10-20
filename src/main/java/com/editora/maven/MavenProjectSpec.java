@@ -16,7 +16,7 @@ public record MavenProjectSpec(
         String artifactId,
         String version,
         String packageName,
-        Path parentDir) {
+        @Nullable Path parentDir) {
 
     public MavenProjectSpec {
         groupId = groupId == null ? "" : groupId.strip();

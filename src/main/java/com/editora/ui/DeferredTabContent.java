@@ -7,6 +7,8 @@ import javafx.beans.value.ChangeListener;
 import javafx.scene.Node;
 import javafx.scene.control.Tab;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Keeps a restored background tab's editor <b>out of the scene</b> until the tab is first shown.
  *
@@ -30,7 +32,10 @@ final class DeferredTabContent {
     private static final class Pending {
         final Node content;
         final List<Runnable> onShown = new ArrayList<>();
+
+        @Nullable
         ChangeListener<Boolean> listener;
+
         boolean armed;
 
         Pending(Node content) {
@@ -79,7 +84,7 @@ final class DeferredTabContent {
     }
 
     /** True while {@code tab}'s content has not been attached yet. */
-    static boolean isDeferred(Tab tab) {
+    static boolean isDeferred(@Nullable Tab tab) {
         return tab != null && tab.getProperties().get(KEY) instanceof Pending;
     }
 
@@ -100,7 +105,7 @@ final class DeferredTabContent {
     }
 
     /** Runs {@code action} once {@code tab}'s content is attached: now, unless the tab is still deferred. */
-    static void whenShown(Tab tab, Runnable action) {
+    static void whenShown(@Nullable Tab tab, Runnable action) {
         if (tab != null && tab.getProperties().get(KEY) instanceof Pending pending) {
             pending.onShown.add(action);
         } else {

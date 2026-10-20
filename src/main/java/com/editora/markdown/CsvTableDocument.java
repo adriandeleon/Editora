@@ -53,7 +53,7 @@ public final class CsvTableDocument {
      * header row at all when that is null (the CSV grid with "first row is a header" off: every row is
      * data). Short rows are padded to the widest. Null when there is neither a header nor a row.
      */
-    public static @Nullable Node fromRows(List<String> header, List<List<String>> rows) {
+    public static @Nullable Node fromRows(@Nullable List<String> header, List<List<String>> rows) {
         if (header == null && rows.isEmpty()) {
             return null;
         }

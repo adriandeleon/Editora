@@ -20,6 +20,7 @@ import javafx.scene.layout.Priority;
 
 import com.editora.config.ProjectSettings;
 import com.editora.config.ProjectSettingsFile;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -41,7 +42,7 @@ import static com.editora.i18n.Messages.tr;
 final class ProjectScopeSettings {
 
     /** One scopable control: its row, and how to show a value in the control. */
-    private record Scoped(Node control, Consumer<Object> show) {}
+    private record Scoped(@Nullable Node control, Consumer<Object> show) {}
 
     private final Supplier<ProjectScope> scope;
     private final Runnable applied;
@@ -181,7 +182,7 @@ final class ProjectScopeSettings {
     }
 
     /** Registers the control of setting {@code key}, and how to show a value in it. */
-    void register(String key, Node control, Consumer<Object> show) {
+    void register(String key, @Nullable Node control, Consumer<Object> show) {
         scoped.put(key, new Scoped(control, show));
     }
 
@@ -206,7 +207,7 @@ final class ProjectScopeSettings {
      * shows stored values it writes nothing and returns true in Project mode (a control being shown a value
      * is not an edit).
      */
-    boolean write(String key, Object value) {
+    boolean write(String key, @Nullable Object value) {
         if (!projectMode()) {
             return false;
         }
@@ -352,7 +353,7 @@ final class ProjectScopeSettings {
     }
 
     /** The registered row (one of the window's rows) that holds {@code control}, or null. */
-    private Node rowOf(Node control) {
+    private @Nullable Node rowOf(@Nullable Node control) {
         java.util.Set<Node> all = new java.util.HashSet<>(rows.get());
         for (Node n = control; n != null; n = n.getParent()) {
             if (all.contains(n)) {
@@ -368,7 +369,7 @@ final class ProjectScopeSettings {
         return null;
     }
 
-    private static boolean holdsSwitchFor(Node node, Node check) {
+    private static boolean holdsSwitchFor(Node node, @Nullable Node check) {
         if (node instanceof SettingSwitch sw && sw.getProperties().get(SettingSwitch.CHECK) == check) {
             return true;
         }
@@ -383,7 +384,7 @@ final class ProjectScopeSettings {
     }
 
     /** The project file's value for {@code key}, or null when it sets none (or nothing usable). */
-    static Object valueOf(ProjectSettings ps, String key) {
+    static @Nullable Object valueOf(ProjectSettings ps, String key) {
         int dot = key.indexOf('.');
         String section = key.substring(0, dot);
         String name = key.substring(dot + 1);
@@ -410,7 +411,7 @@ final class ProjectScopeSettings {
         };
     }
 
-    private static String blankToNull(String s) {
+    private static @Nullable String blankToNull(@Nullable String s) {
         return s == null || s.isBlank() ? null : s;
     }
 }

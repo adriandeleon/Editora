@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.charset.CharsetEncoder;
 
 import com.editora.editorconfig.EditorConfigCharset;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decides how a document's text becomes bytes when its charset cannot represent all of it. Pure.
@@ -34,7 +35,10 @@ final class SaveEncoding {
      * @param refused the first character that cannot be written — one the assumed charset cannot
      *     represent, or an unpaired surrogate — when the save is refused
      */
-    record Plan(byte[] bytes, String fallbackFrom, Unencodable refused) {}
+    record Plan(
+            byte @Nullable [] bytes,
+            @Nullable String fallbackFrom,
+            @Nullable Unencodable refused) {}
 
     /** A character the charset has no encoding for, and the 1-based line it is on. */
     record Unencodable(String character, int line) {
@@ -75,7 +79,7 @@ final class SaveEncoding {
     }
 
     /** The first half of a surrogate pair that stands alone in {@code text}, or null when there is none. */
-    static Unencodable firstUnpairedSurrogate(String text) {
+    static @Nullable Unencodable firstUnpairedSurrogate(String text) {
         int line = 1;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
@@ -92,7 +96,7 @@ final class SaveEncoding {
         return null;
     }
 
-    static Unencodable firstUnencodable(String text, String charset) {
+    static @Nullable Unencodable firstUnencodable(String text, String charset) {
         CharsetEncoder encoder = EditorConfigCharset.charsetFor(charset).newEncoder();
         int line = 1;
         for (int i = 0; i < text.length(); ) {

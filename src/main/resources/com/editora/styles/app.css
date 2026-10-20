@@ -2813,6 +2813,36 @@
     -fx-padding: 1 8 1 8;
 }
 
+/* The editor's own signs of narrowing (the pill above is far from the text, which looks like a short, whole
+   file). An amber strip above the code names the accessible lines and offers Widen; the gutter's numbers —
+   which keep the file's numbering while narrowed — turn amber too, so every row says it is a window. */
+.narrow-bar {
+    -fx-background-color: -state-amber-bg;
+    -fx-border-color: transparent transparent -state-amber transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 3 12 3 12;
+}
+.narrow-bar .narrow-bar-text { -fx-text-fill: -state-amber; -fx-font-weight: bold; }
+.narrow-bar .narrow-bar-widen { -fx-padding: 2 12 2 12; }
+.editor-area.narrowed .lineno { -fx-text-fill: -state-amber; }
+
+/* Structure panel: the Widen | Defun | Fold segments. A lit Defun or Fold reads amber like the narrowing
+   indicators; a lit Widen (the normal state) stays quiet. */
+.structure-narrow-toggle {
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 1;
+    -fx-spacing: 1;
+}
+.structure-narrow-segment { -fx-padding: 2 6 2 6; -fx-background-radius: 5; }
+.structure-narrow-segment .icon-line { -fx-stroke: -color-fg-muted; }
+.structure-narrow-segment:hover .icon-line { -fx-stroke: -color-fg-default; }
+.structure-narrow-segment:selected { -fx-background-color: -state-sel; }
+.structure-narrow-segment:selected .icon-line { -fx-stroke: -color-fg-default; }
+.structure-narrow-segment.structure-narrow-on:selected { -fx-background-color: -state-amber-bg; }
+.structure-narrow-segment.structure-narrow-on:selected .icon-line { -fx-stroke: -state-amber; }
+
 /* MCP server segment: a green "running" pill, deliberately noticeable (a local agent endpoint is live). */
 .status-bar .status-mcp {
     -fx-text-fill: -state-green;

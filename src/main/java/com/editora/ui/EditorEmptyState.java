@@ -11,6 +11,7 @@ import javafx.scene.layout.StackPane;
 
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -78,7 +79,7 @@ final class EditorEmptyState {
         row(r, tr("welcome.page"), "view.welcome", null);
     }
 
-    private int row(int r, String text, String commandId, String fallbackChordId) {
+    private int row(int r, String text, String commandId, @Nullable String fallbackChordId) {
         Hyperlink link = new Hyperlink(text);
         link.getStyleClass().add("editor-empty-action");
         link.setOnAction(e -> registry.run(commandId));

@@ -10,6 +10,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.editor.LanguageRegistry;
 import com.editora.editor.WikiLinkTargets;
 import com.editora.markdown.MarkdownAnchors;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -35,7 +36,7 @@ final class HeadingLinks {
     /** Opens a file (when it has no tab) and moves the caret to a 0-based line and column, as a jump. */
     @FunctionalInterface
     interface Jump {
-        void to(Path file, int line, int column);
+        void to(@Nullable Path file, int line, int column);
     }
 
     private HeadingLinks() {}
@@ -47,10 +48,10 @@ final class HeadingLinks {
     static void open(
             String link,
             EditorBuffer buffer,
-            Path projectRoot,
-            javafx.application.HostServices hostServices,
+            @Nullable Path projectRoot,
+            javafx.application.@Nullable HostServices hostServices,
             FileWorkflowCoordinator workflows,
-            Function<Path, EditorBuffer> openBuffer,
+            Function<Path, @Nullable EditorBuffer> openBuffer,
             Jump jump,
             Consumer<String> status) {
         if (WikiLinks.isWikiForm(link)) {
@@ -76,7 +77,7 @@ final class HeadingLinks {
             WikiLinks.Parsed wiki,
             EditorBuffer buffer,
             FileWorkflowCoordinator workflows,
-            Function<Path, EditorBuffer> openBuffer,
+            Function<Path, @Nullable EditorBuffer> openBuffer,
             Jump jump,
             Consumer<String> status) {
         Path here = buffer.getPath() == null
@@ -115,7 +116,7 @@ final class HeadingLinks {
             EditorBuffer clicked,
             Consumer<Path> openFile,
             java.util.function.BiConsumer<Path, Runnable> openThen,
-            Function<Path, EditorBuffer> openBuffer,
+            Function<Path, @Nullable EditorBuffer> openBuffer,
             Jump jump,
             Consumer<String> status) {
         String target = WikiLinkTargets.targetOf(address);
@@ -136,10 +137,10 @@ final class HeadingLinks {
     /** Goes to {@code fragment} in {@code file}, or in {@code clicked} itself when {@code file} is null. */
     static void follow(
             EditorBuffer clicked,
-            Path file,
+            @Nullable Path file,
             String fragment,
             java.util.function.BiConsumer<Path, Runnable> openThen,
-            Function<Path, EditorBuffer> openBuffer,
+            Function<Path, @Nullable EditorBuffer> openBuffer,
             Jump jump,
             Consumer<String> status) {
         if (file == null) {
@@ -173,7 +174,7 @@ final class HeadingLinks {
     }
 
     /** The line {@code fragment} names in {@code file}: from its open buffer (unsaved edits count), else from disk. */
-    private static int lineIn(Path file, EditorBuffer open, String fragment) {
+    private static int lineIn(Path file, @Nullable EditorBuffer open, String fragment) {
         if (open != null && !open.isLoading()) {
             return open.isMarkdown() ? MarkdownAnchors.lineOf(open.getContent(), fragment) : -1;
         }

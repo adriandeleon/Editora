@@ -12,6 +12,7 @@ import com.editora.ai.AiService;
 import com.editora.ai.AiStop;
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -35,6 +36,7 @@ final class AiCoordinator {
     /** The AI-specific window services beyond {@link CoordinatorHost}. */
     interface Ops {
         /** The active Git repo root, or null (Git off / not a repo). */
+        @Nullable
         Path repoRoot();
 
         /** Fetches {@code git diff --cached} off-thread; delivers the diff (or null on failure) on FX. */
@@ -73,7 +75,7 @@ final class AiCoordinator {
     /** The provider/endpoint/key/model combination the last probe (scheduled or completed) was for — lets
      *  {@link #applySupport} tell "the AI config actually changed" from "some unrelated Settings field was
      *  edited", so typing in, say, the tab-size field doesn't re-ping the network. */
-    private String probeSignature;
+    private @Nullable String probeSignature;
     /** Debounces the network probe after a config edit (matches the Settings page's own AI-status
      *  debounce): a keystroke in the endpoint/key/model field must not ping the server per character. */
     private final PauseTransition probeDebounce = new PauseTransition(Duration.millis(600));
@@ -279,7 +281,7 @@ final class AiCoordinator {
                 return;
             }
             String selection = b == null ? "" : b.getFocusedArea().getSelectedText();
-            if (selection.isEmpty()) {
+            if (b == null || selection.isEmpty()) {
                 host.setStatus(tr("status.ai.needSelection"));
                 return;
             }
@@ -489,7 +491,7 @@ final class AiCoordinator {
      * The message key explaining why a generation's text must not be applied, or {@code null} when it may
      * be ({@link AiStop#usable}). Pure.
      */
-    static String refusalKey(String stopReason, String text) {
+    static @Nullable String refusalKey(String stopReason, String text) {
         return switch (AiStop.classify(stopReason)) {
             case COMPLETE -> text == null || text.isBlank() ? "status.ai.cannotApplyEmpty" : null;
             case TRUNCATED -> "status.ai.cannotApplyTruncated";
@@ -546,7 +548,7 @@ final class AiCoordinator {
     /** A finished check: what it checked ({@link #connectionSignature}), its answer, and when (nanoTime). */
     private record CheckResult(String signature, boolean ok, String message, long at) {}
 
-    private CheckResult lastCheck;
+    private @Nullable CheckResult lastCheck;
 
     /** Callers waiting on the request in flight for each signature: a second caller joins, no new request. */
     private final java.util.Map<String, java.util.List<java.util.function.BiConsumer<Boolean, String>>> pending =

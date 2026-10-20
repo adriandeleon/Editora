@@ -7,6 +7,7 @@ import com.editora.http.HttpClientService;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpResult;
 import com.editora.http.HttpTests;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -40,10 +41,10 @@ final class HttpRunRows {
             HttpHistoryEntry entry,
             String status,
             String statusStyle,
-            String name,
-            String detail,
+            @Nullable String name,
+            @Nullable String detail,
             String time,
-            String tests,
+            @Nullable String tests,
             Tests testsStyle,
             boolean failure) {
 

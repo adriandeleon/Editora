@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.editora.build.BuildTool;
 import com.editora.lsp.RootResolver;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Finds the Maven/Gradle project root that owns a file — the working directory (and gate) for running or
@@ -19,7 +20,7 @@ final class JavaProjectRoot {
     private JavaProjectRoot() {}
 
     /** The nearest Maven/Gradle project root above {@code file}, or {@code null} if there is none. */
-    static Path find(Path file) {
+    static @Nullable Path find(Path file) {
         if (file == null) {
             return null;
         }

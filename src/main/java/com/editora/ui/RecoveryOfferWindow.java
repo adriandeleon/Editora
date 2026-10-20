@@ -23,6 +23,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.recovery.RecoveryStore;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -204,9 +205,8 @@ final class RecoveryOfferWindow {
 
     /** The second line of a row: where the buffer belongs and when its copy was taken. */
     static String detail(RecoveryStore.Entry entry) {
-        String where = entry.record().untitled()
-                ? tr("recovery.item.untitled")
-                : com.editora.config.PathDisplay.collapseHome(entry.record().path());
+        String path = entry.record().path(); // null exactly when untitled()
+        String where = path == null ? tr("recovery.item.untitled") : com.editora.config.PathDisplay.collapseHome(path);
         String when = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
                 .withZone(ZoneId.systemDefault())
                 .format(Instant.ofEpochMilli(entry.record().savedAtMillis()));
@@ -214,7 +214,7 @@ final class RecoveryOfferWindow {
     }
 
     /** The warning line of a row, or {@code null} when the file is as the edits left it. */
-    static String warning(RecoveryStore.Entry entry) {
+    static @Nullable String warning(RecoveryStore.Entry entry) {
         return switch (entry.disk()) {
             case CHANGED -> tr("recovery.item.diskChanged");
             case MISSING -> tr("recovery.item.diskMissing");

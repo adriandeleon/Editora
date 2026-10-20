@@ -8,6 +8,7 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 
 import com.editora.AppInfo;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -67,7 +68,7 @@ final class SettingsFrameBits {
     }
 
     /** The sidebar's badges for a page: its modified-row count (none at 0) and the Beta pill; null for neither. */
-    static Node sidebarBadges(boolean beta, int modified) {
+    static @Nullable Node sidebarBadges(boolean beta, int modified) {
         if (!beta && modified <= 0) {
             return null;
         }

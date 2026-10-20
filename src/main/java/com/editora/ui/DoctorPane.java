@@ -43,6 +43,7 @@ import com.editora.doctor.DoctorStatus;
 import com.editora.doctor.DoctorSummary;
 import com.editora.doctor.DoctorText;
 import com.editora.editor.TabContent;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -136,11 +137,11 @@ final class DoctorPane extends Region implements TabContent {
     private final Node copyIcon = Icons.copy();
 
     private boolean running;
-    private LocalTime checkedAt;
-    private String remoteTarget;
+    private @Nullable LocalTime checkedAt;
+    private @Nullable String remoteTarget;
     private List<String> lastPlan = List.of();
     private boolean pulsePending;
-    private Node attentionHeader;
+    private @Nullable Node attentionHeader;
 
     DoctorPane(Actions actions) {
         this.actions = actions;
@@ -271,7 +272,7 @@ final class DoctorPane extends Region implements TabContent {
     }
 
     /** The machine the window's project runs its tools on when that is not this one (null: this computer). */
-    void setMachine(String target) {
+    void setMachine(@Nullable String target) {
         remoteTarget = target == null || target.isBlank() ? null : target;
         updateHeader();
     }
@@ -390,7 +391,12 @@ final class DoctorPane extends Region implements TabContent {
                     int cut = rest.lastIndexOf(':');
                     nodes.add(foldHeader(rest.substring(0, cut), true, Integer.parseInt(rest.substring(cut + 1))));
                 }
-                case "R" -> nodes.add(rows.get(rest).node);
+                case "R" -> {
+                    RowView row = rows.get(rest); // flush() renders every check before planning
+                    if (row != null) {
+                        nodes.add(row.node);
+                    }
+                }
                 case "O", "X" -> {
                     int cut = rest.lastIndexOf(':');
                     nodes.add(optionalFold(
@@ -472,9 +478,10 @@ final class DoctorPane extends Region implements TabContent {
     // --- focus ---
 
     /** Where the keyboard focus is inside the page: a row's control, or a fold link. */
-    private record FocusKey(String rowId, String role) {}
+    private record FocusKey(
+            @Nullable String rowId, @Nullable String role) {}
 
-    private FocusKey focusKey() {
+    private @Nullable FocusKey focusKey() {
         Node f = getScene() == null ? null : getScene().getFocusOwner();
         if (f == null || !isInside(f, body)) {
             return null;
@@ -488,7 +495,7 @@ final class DoctorPane extends Region implements TabContent {
         return role == null ? null : new FocusKey(null, role);
     }
 
-    private void restoreFocus(FocusKey key) {
+    private void restoreFocus(@Nullable FocusKey key) {
         if (key == null) {
             return;
         }
@@ -522,7 +529,7 @@ final class DoctorPane extends Region implements TabContent {
         return false;
     }
 
-    private static String roleOf(Node n) {
+    private static @Nullable String roleOf(Node n) {
         for (Node p = n; p != null; p = p.getParent()) {
             Object r = p.getProperties().get(ROLE);
             if (r != null) {
@@ -532,7 +539,7 @@ final class DoctorPane extends Region implements TabContent {
         return null;
     }
 
-    private static Node findRole(Parent root, String role) {
+    private static @Nullable Node findRole(Parent root, String role) {
         for (Node ch : root.getChildrenUnmodifiable()) {
             if (role.equals(ch.getProperties().get(ROLE))) {
                 return ch;
@@ -547,7 +554,7 @@ final class DoctorPane extends Region implements TabContent {
         return null;
     }
 
-    private static Node firstFocusable(Parent root) {
+    private static @Nullable Node firstFocusable(Parent root) {
         for (Node ch : root.getChildrenUnmodifiable()) {
             if (ch.isFocusTraversable() && ch.isVisible() && !ch.isDisabled()) {
                 return ch;
@@ -636,7 +643,7 @@ final class DoctorPane extends Region implements TabContent {
         remoteNote.setText(remoteTarget == null ? "" : tr("doctor.remoteNote", remoteTarget));
     }
 
-    private static Label summaryText(String text, String styleClass) {
+    private static Label summaryText(String text, @Nullable String styleClass) {
         Label l = new Label(text);
         l.getStyleClass().add("doctor-summary-part");
         if (styleClass != null) {
@@ -653,7 +660,7 @@ final class DoctorPane extends Region implements TabContent {
         return link;
     }
 
-    private void scrollTo(Node target) {
+    private void scrollTo(@Nullable Node target) {
         if (target == null || target.getScene() == null) {
             return;
         }
@@ -914,7 +921,7 @@ final class DoctorPane extends Region implements TabContent {
     }
 
     /** The absolute path in a detail ("1.2 — /usr/bin/x", "/usr/bin/x (PATH)"), when it names an existing file. */
-    static Path pathIn(String detail) {
+    static @Nullable Path pathIn(String detail) {
         if (detail == null || detail.isBlank()) {
             return null;
         }

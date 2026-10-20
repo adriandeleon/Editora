@@ -7,6 +7,7 @@ import java.util.Set;
 import com.editora.config.Settings;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What one window re-applies after a Settings change ({@link MainController#reapplyAfterSharedSettingsChange}):
@@ -57,7 +58,7 @@ final class SettingsReapply {
     private final MainController window;
     private final ObjectMapper json = new ObjectMapper();
     /** The settings as this window last re-applied them; null before the first re-apply. */
-    private JsonNode last;
+    private @Nullable JsonNode last;
 
     SettingsReapply(MainController window) {
         this.window = window;
@@ -78,7 +79,7 @@ final class SettingsReapply {
     }
 
     /** Whether {@code changed} is known, not empty, and holds per-buffer view settings only. Pure. */
-    static boolean viewOnly(Set<String> changed) {
+    static boolean viewOnly(@Nullable Set<String> changed) {
         return changed != null && !changed.isEmpty() && VIEW_ONLY.containsAll(changed);
     }
 

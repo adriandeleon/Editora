@@ -42,7 +42,8 @@ public final class CompletionMapper {
      * resolve + apply a TypeScript auto-import's {@code additionalTextEdits}). A null factory ⇒ no hook.
      */
     public static List<Completion> map(
-            List<CompletionItem> items, java.util.function.@Nullable Function<CompletionItem, Runnable> onAcceptFor) {
+            List<CompletionItem> items,
+            java.util.function.@Nullable Function<CompletionItem, @Nullable Runnable> onAcceptFor) {
         List<Completion> out = new ArrayList<>();
         if (items == null) {
             return out;

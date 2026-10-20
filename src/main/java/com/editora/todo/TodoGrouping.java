@@ -47,7 +47,7 @@ public final class TodoGrouping {
      * dimension-specific order (priority by urgency, tag/keyword alphabetically with the catch-all bucket
      * last) and their rows by file name then line.
      */
-    public static List<Group> group(List<Entry> entries, GroupBy by, Path activeFile) {
+    public static List<Group> group(List<Entry> entries, GroupBy by, @Nullable Path activeFile) {
         if (entries == null || entries.isEmpty()) {
             return List.of();
         }
@@ -69,7 +69,7 @@ public final class TodoGrouping {
         };
     }
 
-    private static List<Group> byFile(List<Entry> entries, Path activeFile) {
+    private static List<Group> byFile(List<Entry> entries, @Nullable Path activeFile) {
         Map<Path, List<Entry>> byPath = new LinkedHashMap<>();
         for (Entry e : entries) {
             byPath.computeIfAbsent(e.file(), k -> new ArrayList<>()).add(e);
@@ -137,7 +137,7 @@ public final class TodoGrouping {
         return p == null ? "" : PathDisplay.fileName(p);
     }
 
-    private static boolean samePath(@Nullable Path a, Path b) {
+    private static boolean samePath(@Nullable Path a, @Nullable Path b) {
         return a != null && a.equals(b);
     }
 

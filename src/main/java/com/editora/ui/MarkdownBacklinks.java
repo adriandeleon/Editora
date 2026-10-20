@@ -17,6 +17,7 @@ import javafx.scene.layout.VBox;
 import com.editora.editor.EditorBuffer;
 import com.editora.markdown.MarkdownLinkIndex;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -34,7 +35,7 @@ final class MarkdownBacklinks {
     static final String ID = "backlinks";
 
     /** One row: a file that links here ({@code line < 0}, with how many links), or one of its links. */
-    record Row(Path file, String label, int line, int count) {
+    record Row(@Nullable Path file, String label, int line, int count) {
         boolean isFile() {
             return line < 0;
         }
@@ -44,10 +45,10 @@ final class MarkdownBacklinks {
     private final MarkdownLinkGraph graph;
     private final IndexCoordinator.Ops ops;
 
-    private ToolWindow window;
-    private ToolWindowManager manager;
-    private Panel panel;
-    private Path shownFor;
+    private @Nullable ToolWindow window;
+    private @Nullable ToolWindowManager manager;
+    private @Nullable Panel panel;
+    private @Nullable Path shownFor;
     private long request;
 
     /** Completes with the rows of the last refresh once they are on show (tests wait on it). */
@@ -105,7 +106,7 @@ final class MarkdownBacklinks {
     }
 
     /** The active tab changed; a closed window does not care. */
-    void activeBufferChanged(EditorBuffer buffer) {
+    void activeBufferChanged(@Nullable EditorBuffer buffer) {
         if (isOpen()) {
             refresh();
         }
@@ -166,6 +167,7 @@ final class MarkdownBacklinks {
         return file.startsWith(root) ? root.relativize(file).toString().replace('\\', '/') : file.toString();
     }
 
+    @Nullable
     Path shownFor() {
         return shownFor;
     }
@@ -214,7 +216,7 @@ final class MarkdownBacklinks {
             getChildren().addAll(title, list);
         }
 
-        void show(Path file, Path root, List<Row> rows, String emptyKey) {
+        void show(@Nullable Path file, @Nullable Path root, List<Row> rows, String emptyKey) {
             long links = rows.stream().filter(r -> !r.isFile()).count();
             title.setText(
                     file == null

@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What "revert this path" has to run, decided from the path's actual status.
@@ -19,7 +20,8 @@ import com.editora.git.GitStatus.FileEntry;
  *     staged rename under it, which has to come back too)
  * @param subject the path to name to the user — for {@link Kind#CONFLICT} the unmerged one
  */
-record GitDiscardPlan(Kind kind, List<String> specs, String subject) {
+record GitDiscardPlan(
+        Kind kind, List<String> specs, @Nullable String subject) {
 
     enum Kind {
         /** No change under the path: nothing to run, nothing to confirm. */
@@ -38,7 +40,7 @@ record GitDiscardPlan(Kind kind, List<String> specs, String subject) {
      * @param status the last status of the repository {@code pathspec} is relative to
      * @param pathspec a repo-relative file or folder
      */
-    static GitDiscardPlan of(GitStatus status, String pathspec) {
+    static GitDiscardPlan of(GitStatus status, @Nullable String pathspec) {
         if (status == null || pathspec == null || pathspec.isBlank()) {
             return new GitDiscardPlan(Kind.NOTHING, List.of(), pathspec);
         }
@@ -48,8 +50,9 @@ record GitDiscardPlan(Kind kind, List<String> specs, String subject) {
         for (FileEntry entry : status.files()) {
             if (entry.untracked()) {
                 // An untracked folder is reported as one entry ("dir/") covering everything inside it.
-                boolean folderEntry = entry.path().endsWith("/");
-                if (entry.path().equals(pathspec) || (folderEntry && (pathspec + "/").startsWith(entry.path()))) {
+                String path = entry.path();
+                boolean folderEntry = path != null && path.endsWith("/");
+                if (path != null && (path.equals(pathspec) || (folderEntry && (pathspec + "/").startsWith(path)))) {
                     return new GitDiscardPlan(Kind.UNTRACKED, List.of(pathspec), pathspec);
                 }
                 continue; // an untracked file inside a tracked folder is not what "revert the folder" means

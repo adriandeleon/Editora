@@ -19,6 +19,7 @@ import com.editora.editor.GrammarRegistry;
 import com.editora.editor.TextMateHighlighter;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -74,7 +75,7 @@ final class PeekPopup {
     private final VBox rows = new VBox();
     private final Label title = new Label();
     private final VBox card;
-    private Runnable onJump;
+    private @Nullable Runnable onJump;
     private long generation;
 
     PeekPopup(OverlayHost overlayHost) {
@@ -163,6 +164,9 @@ final class PeekPopup {
                 spans = TextMateHighlighter.compute(text, grammar);
             } catch (RuntimeException | Error ex) {
                 return; // the plain rendering already on screen is a perfectly good answer
+            }
+            if (spans == null) {
+                return;
             }
             Platform.runLater(() -> {
                 if (gen == generation) {

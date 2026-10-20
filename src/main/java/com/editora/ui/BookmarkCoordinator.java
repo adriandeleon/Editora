@@ -14,6 +14,7 @@ import com.editora.config.Bookmark;
 import com.editora.config.BookmarkMnemonics;
 import com.editora.config.BookmarkStore;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -41,6 +42,7 @@ final class BookmarkCoordinator {
         void openInProjectWindow(String projectKey, Path file, int line);
 
         /** The open buffer for {@code file}, or {@code null} if it isn't open. */
+        @Nullable
         EditorBuffer bufferForPath(Path file);
 
         /** Shows the in-scene single-line prompt (used for a bookmark note). */
@@ -66,7 +68,7 @@ final class BookmarkCoordinator {
          * of the per-project maps of {@link #allBookmarks}): the other windows re-read them (see
          * {@link BookmarkCoordinator#storeChangedElsewhere}).
          */
-        default void bookmarksStored(Map<String, ?> bucket, String fileKey) {}
+        default void bookmarksStored(Map<String, ?> bucket, @Nullable String fileKey) {}
     }
 
     /** A bookmark plus the file it belongs to, for the cross-file jump picker. */
@@ -75,7 +77,7 @@ final class BookmarkCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     /** The Bookmarks panel, built on its first use (the tool window's first open). */
-    private BookmarksPanel panel;
+    private @Nullable BookmarksPanel panel;
 
     private final QuickOpen<BookmarkEntry> jumpPalette;
     private Runnable onChanged = () -> {};
@@ -191,7 +193,7 @@ final class BookmarkCoordinator {
     }
 
     /** Adds a bookmark to a specific line from a read-only code preview without opening an editor tab. */
-    void addBookmark(Path file, int requestedLine) {
+    void addBookmark(@Nullable Path file, int requestedLine) {
         if (file == null) {
             return;
         }
@@ -218,7 +220,7 @@ final class BookmarkCoordinator {
         }
     }
 
-    private List<Bookmark> bookmarksFor(Path file) {
+    private @Nullable List<Bookmark> bookmarksFor(Path file) {
         Map<String, List<Bookmark>> map = ops.bookmarks();
         List<Bookmark> marks = map.get(file.toString());
         return marks != null ? marks : map.get(normalizedKey(file));
@@ -285,7 +287,7 @@ final class BookmarkCoordinator {
         }
         var map = ops.bookmarks();
         String key = file.toString();
-        List<Bookmark> stored = map.get(key);
+        List<Bookmark> stored = map.getOrDefault(key, List.of());
         // Not the snapshot alone: a second window on this file has its own copy of the bookmarks, and
         // writing this one as the whole list deleted every bookmark the other had added.
         List<Bookmark> snapshot = buffer.getBookmarkManager().snapshot();
@@ -317,7 +319,7 @@ final class BookmarkCoordinator {
      * buffer of this window on that file shows them now — it would otherwise keep its stale copy and write
      * it back — and the panel, which lists every project's bookmarks, is redrawn.
      */
-    void storeChangedElsewhere(Map<String, ?> bucket, String fileKey) {
+    void storeChangedElsewhere(Map<String, ?> bucket, @Nullable String fileKey) {
         if (bucket == ops.bookmarks()) {
             host.forEachBuffer(b -> {
                 if (b.getPath() == null || b.isNarrowed()) {
@@ -325,7 +327,7 @@ final class BookmarkCoordinator {
                 }
                 String key = b.getPath().toString();
                 if (fileKey == null || fileKey.equals(key)) {
-                    List<Bookmark> stored = ops.bookmarks().get(key);
+                    List<Bookmark> stored = ops.bookmarks().getOrDefault(key, List.of());
                     b.applyBookmarks(stored);
                     seenInStore.put(b, MarkMerge.keys(stored, Bookmark::line));
                 }
@@ -340,7 +342,7 @@ final class BookmarkCoordinator {
         if (file == null) {
             return;
         }
-        List<Bookmark> stored = ops.bookmarks().get(file.toString());
+        List<Bookmark> stored = ops.bookmarks().getOrDefault(file.toString(), List.of());
         boolean reanchored = buffer.applyBookmarks(stored);
         seenInStore.put(buffer, MarkMerge.keys(stored, Bookmark::line));
         // The file changed outside the editor and a bookmark followed its content to a new line —
@@ -368,7 +370,7 @@ final class BookmarkCoordinator {
      * well. The file it left keeps its own while it is still on disk; an entry for a path that is not (a
      * Save As rolled back after a failed write) is dropped.
      */
-    void bufferPathChanged(EditorBuffer buffer, Path oldPath) {
+    void bufferPathChanged(EditorBuffer buffer, @Nullable Path oldPath) {
         Path now = buffer.getPath();
         var map = ops.bookmarks();
         String oldKey = oldPath == null ? null : oldPath.toString();
@@ -661,7 +663,7 @@ final class BookmarkCoordinator {
     }
 
     /** The bookmark bucket (path → bookmarks) for a project key, or {@code null} if that bucket has no bookmarks. */
-    private Map<String, List<Bookmark>> bucketFor(String projectKey) {
+    private @Nullable Map<String, List<Bookmark>> bucketFor(String projectKey) {
         return ops.allBookmarks().get(projectKey == null ? "" : projectKey);
     }
 

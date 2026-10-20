@@ -11,6 +11,7 @@ import com.editora.config.PathKeys;
 import com.editora.editor.EditorBuffer;
 import com.editora.http.SecretApproval;
 import com.editora.http.SecretGate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The HTTP Client's trust gate for secrets, on the window side. A {@code .http} file is content — often one that
@@ -66,8 +67,10 @@ final class HttpSecretGate {
      * checks them — so a project subfolder that is a link to somewhere else is offered as that real folder, and
      * trusting it covers the next run too.
      */
-    static Path trustRoot(Path file, Path project) {
-        Path dir = PathKeys.canonical(file.toAbsolutePath().getParent());
+    static Path trustRoot(Path file, @Nullable Path project) {
+        Path absolute = file.toAbsolutePath();
+        Path parent = absolute.getParent();
+        Path dir = PathKeys.canonical(parent != null ? parent : absolute); // a file always has a folder
         if (project != null) {
             Path root = PathKeys.canonical(project.toAbsolutePath());
             if (dir.startsWith(root)) {

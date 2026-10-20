@@ -359,7 +359,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
 
     /** Connects (off-thread) and posts the {@link Result} on the FX thread; {@code secret} (a password or
      *  key passphrase) is wiped after use. */
-    public void connect(RemoteConnection conn, char[] secret, Consumer<Result> onResult) {
+    public void connect(RemoteConnection conn, char @Nullable [] secret, Consumer<Result> onResult) {
         exec.submit(() -> {
             Result result;
             try {
@@ -488,7 +488,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         return live.root;
     }
 
-    private SftpFileSystem open(RemoteConnection conn, char[] secret) throws IOException {
+    private SftpFileSystem open(RemoteConnection conn, char @Nullable [] secret) throws IOException {
         // Reset the answering clock: the trust-on-first-use prompt runs during the key exchange, which MINA
         // completes as part of the *auth* wait (the connect future is fulfilled at the transport level, before
         // KEX), so the verifier's time accumulates here and the auth wait below discounts it (#486), as it does
@@ -580,7 +580,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * from "until you disconnect" to "the handshake", after which it is unreachable and eligible for GC.
      * Package-visible so it can be tested against a real SSH server.
      */
-    static void authenticate(ClientSession session, RemoteConnection conn, char[] secret, Duration timeout)
+    static void authenticate(ClientSession session, RemoteConnection conn, char @Nullable [] secret, Duration timeout)
             throws IOException {
         authenticate(session, conn, secret, timeout, () -> 0L);
     }
@@ -592,7 +592,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     static void authenticate(
             ClientSession session,
             RemoteConnection conn,
-            char[] secret,
+            char @Nullable [] secret,
             Duration timeout,
             java.util.function.LongSupplier promptElapsedNanos)
             throws IOException {
@@ -631,7 +631,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         }
     }
 
-    private static void givePassphrase(ClientSession session, char[] secret) {
+    private static void givePassphrase(ClientSession session, char @Nullable [] secret) {
         if (secret != null && secret.length > 0) {
             session.setAttribute(Passphrases.GIVEN, new String(secret));
         }

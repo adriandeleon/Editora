@@ -128,7 +128,7 @@ public final class PytestScanner {
      * The pytest node id for {@code target} in a file at {@code relativePath} (from the folder pytest runs
      * in): {@code tests/test_app.py::TestX::test_y}, with forward slashes on every OS.
      */
-    public static String nodeId(String relativePath, TestTarget target) {
+    public static String nodeId(String relativePath, @Nullable TestTarget target) {
         String path = relativePath.replace('\\', '/');
         return target == null ? path : path + "::" + target.nodeSuffix();
     }

@@ -26,6 +26,7 @@ import com.editora.markdown.MarkdownLinkIndex;
 import com.editora.markdown.MarkdownLinkRewrite;
 import com.editora.markdown.WikiTargets;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -47,7 +48,13 @@ final class MarkdownLinkUpdater {
     record FileChange(Path file, int count) {}
 
     /** Everything one rename would change. */
-    record Plan(Path root, Path from, Path to, List<FileChange> changes, boolean truncated, WikiTargets wiki) {
+    record Plan(
+            Path root,
+            Path from,
+            Path to,
+            List<FileChange> changes,
+            boolean truncated,
+            @Nullable WikiTargets wiki) {
 
         int links() {
             return changes.stream().mapToInt(FileChange::count).sum();
@@ -184,7 +191,8 @@ final class MarkdownLinkUpdater {
     }
 
     /** Whether an indexed link of {@code doc} pointed at {@code from} (or under it) before the rename. */
-    private static boolean pointedUnder(MarkdownLinkIndex index, Path doc, Path from, Path to, WikiTargets wikiBefore) {
+    private static boolean pointedUnder(
+            MarkdownLinkIndex index, Path doc, Path from, Path to, @Nullable WikiTargets wikiBefore) {
         Path docBefore = before(doc, from, to);
         for (MarkdownLinkRewrite.Link link : index.outgoing(doc)) {
             Path target;

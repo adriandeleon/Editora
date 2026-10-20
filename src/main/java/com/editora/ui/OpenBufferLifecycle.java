@@ -12,6 +12,7 @@ import javafx.application.Platform;
 import javafx.scene.control.Tab;
 
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 /** Cross-cutting path lookup and off-thread disk reconciliation for a window's open buffers. */
 final class OpenBufferLifecycle {
@@ -23,7 +24,7 @@ final class OpenBufferLifecycle {
      * component for a local file — is computed on first use, so a window without a file-backed tab (the
      * start of a {@code --no-session} launch) never touches the filesystem.
      */
-    static Tab tabForPath(EditorArea editorArea, Function<Tab, Path> pathOf, Path target) {
+    static @Nullable Tab tabForPath(EditorArea editorArea, Function<Tab, @Nullable Path> pathOf, Path target) {
         String key = null;
         for (Tab tab : editorArea.tabs()) {
             Path path = pathOf.apply(tab);
@@ -40,7 +41,8 @@ final class OpenBufferLifecycle {
     }
 
     /** As {@link #tabForPath}, for the buffers only: the open buffer for {@code target}, or null. */
-    static EditorBuffer bufferForPath(EditorArea editorArea, Function<Tab, EditorBuffer> bufferOf, Path target) {
+    static @Nullable EditorBuffer bufferForPath(
+            EditorArea editorArea, Function<Tab, @Nullable EditorBuffer> bufferOf, Path target) {
         Tab tab = tabForPath(
                 editorArea,
                 t -> {
@@ -51,7 +53,8 @@ final class OpenBufferLifecycle {
         return tab == null ? null : bufferOf.apply(tab);
     }
 
-    static List<EditorBuffer> atOrUnder(EditorArea editorArea, Function<Tab, EditorBuffer> bufferOf, Path target) {
+    static List<EditorBuffer> atOrUnder(
+            EditorArea editorArea, Function<Tab, @Nullable EditorBuffer> bufferOf, Path target) {
         if (target == null) {
             return List.of();
         }
@@ -77,7 +80,7 @@ final class OpenBufferLifecycle {
 
     static void reloadChanged(
             EditorArea editorArea,
-            Function<Tab, EditorBuffer> bufferOf,
+            Function<Tab, @Nullable EditorBuffer> bufferOf,
             FileWorkflowCoordinator files,
             LspCoordinator lsp) {
         List<ReloadCandidate> candidates = new ArrayList<>();
@@ -130,7 +133,7 @@ final class OpenBufferLifecycle {
 
     static void invalidateGitWrites(
             EditorArea editorArea,
-            Function<Tab, EditorBuffer> bufferOf,
+            Function<Tab, @Nullable EditorBuffer> bufferOf,
             FileWorkflowCoordinator files,
             Path root,
             List<String> pathspecs) {
@@ -139,6 +142,9 @@ final class OpenBufferLifecycle {
         }
         for (EditorBuffer buffer : atOrUnder(editorArea, bufferOf, root)) {
             Path file = buffer.getPath();
+            if (file == null) {
+                continue; // atOrUnder only returns buffers with a path
+            }
             String relative = com.editora.git.GitService.repoRelative(root, file);
             if (relative != null
                     && (pathspecs.isEmpty()

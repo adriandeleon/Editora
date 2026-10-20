@@ -20,7 +20,7 @@ public final class LineEndings {
     private LineEndings() {}
 
     /** Whether {@code label} names a line ending this class can apply. */
-    public static boolean isLabel(String label) {
+    public static boolean isLabel(@Nullable String label) {
         return LF.equals(label) || CRLF.equals(label) || CR.equals(label);
     }
 

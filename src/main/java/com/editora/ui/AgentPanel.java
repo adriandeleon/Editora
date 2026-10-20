@@ -22,6 +22,7 @@ import javafx.scene.text.TextFlow;
 
 import com.editora.agent.AcpJson;
 import com.editora.editor.MarkdownRenderer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -99,9 +100,9 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     /** Pops the panel out into (or back from) a separate window. Set by the coordinator; no-op until then. */
     private Runnable onDetach = () -> {};
     /** Receives the prompt text when the user sends (coordinator → agent). */
-    private Consumer<String> onSend;
+    private @Nullable Consumer<String> onSend;
 
-    private Consumer<String> onOpenLink;
+    private @Nullable Consumer<String> onOpenLink;
     /** Cancels the in-flight turn (the header ■ + the Send→Stop toggle + Esc all run this). */
     private final Runnable onStop;
     /** True while a prompt turn is in flight (drives the Send↔Stop toggle + the Esc-stops shortcut). */
@@ -110,11 +111,11 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
      *  opens it, or reports it doesn't exist). */
     private final Consumer<String> onOpenPath;
     /** The plain-text line font, applied to each new {@code agent-line} Label ({@link #setPanelFont}). */
-    private String lineFontFamily;
+    private @Nullable String lineFontFamily;
 
     private double lineFontSize = -1;
     /** The currently-streaming agent message's single-child wrapper, or null between messages. */
-    private VBox currentAgentWrapper;
+    private @Nullable VBox currentAgentWrapper;
     /** Raw Markdown accumulated so far for {@link #currentAgentWrapper}. */
     private final StringBuilder currentAgentMarkdown = new StringBuilder();
 
@@ -123,7 +124,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             new FxThrottle(RENDER_INTERVAL_MILLIS, false, () -> renderCurrentMarkdown(false));
 
     /** The block container of the streaming message's render, or null when it must be rendered whole. */
-    private javafx.scene.layout.Pane streamBlocks;
+    private javafx.scene.layout.@Nullable Pane streamBlocks;
     /** How much of {@link #currentAgentMarkdown} is rendered into blocks that are final. */
     private int settledLength;
     /** How many of {@link #streamBlocks}' children those final blocks are. */
@@ -454,7 +455,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
      * The container holding one node per top-level block of a rendered document, or null when
      * {@code rendered} is not shaped that way (the error fallback) and so cannot be extended block by block.
      */
-    private static javafx.scene.layout.Pane blocksOf(Node rendered) {
+    private static javafx.scene.layout.@Nullable Pane blocksOf(Node rendered) {
         if (rendered instanceof javafx.scene.layout.StackPane wrap
                 && wrap.getChildren().size() == 1
                 && wrap.getChildren().get(0) instanceof VBox blocks
@@ -494,7 +495,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     }
 
     /** The top-level block nodes of {@code md}, detached from their own container; null if not block-shaped. */
-    private List<Node> renderBlocks(String md) {
+    private @Nullable List<Node> renderBlocks(String md) {
         javafx.scene.layout.Pane rendered = blocksOf(renderMarkdown(md));
         if (rendered == null) {
             return null;
@@ -571,12 +572,12 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     }
 
     /** Sets the model-picker label's text (e.g. "Model: Claude Opus"); {@code null}/blank shows a placeholder. */
-    public void setModelLabel(String name) {
+    public void setModelLabel(@Nullable String name) {
         modelLabel.setText(tr("agent.modelLabel", name == null || name.isEmpty() ? "—" : name));
     }
 
     /** Sets the mode-picker label's text (e.g. "Mode: Plan"); {@code null}/blank shows a placeholder. */
-    public void setModeLabel(String name) {
+    public void setModeLabel(@Nullable String name) {
         modeLabel.setText(tr("agent.modeLabel", name == null || name.isEmpty() ? "—" : name));
     }
 

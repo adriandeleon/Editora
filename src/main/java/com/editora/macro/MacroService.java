@@ -187,7 +187,7 @@ public final class MacroService {
      * recording — it has a real name now — but not when another window has since recorded over it. Returns
      * the saved macro, or null when there is nothing to save or the name is blank.
      */
-    public @Nullable Macro saveLastAs(String name, Macro replace) {
+    public @Nullable Macro saveLastAs(String name, @Nullable Macro replace) {
         Macro source = last();
         if (source == null || name == null || name.isBlank()) {
             return null;

@@ -55,6 +55,7 @@ import com.editora.config.PersonalNote;
 import com.editora.editor.NoteDraft;
 import com.editora.editor.PersonalNoteTooltip;
 import com.editora.search.FuzzyMatch;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -177,34 +178,35 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      *  markers, open diffs — which otherwise only re-evaluate on focus-regain / tab switch (#529). */
     private java.util.function.Consumer<ProjectWatchChanges.Plan> onExternalChange = plan -> {};
     /** Raw watcher events (path + kind), forwarded to LSP as didChangeWatchedFiles (#677); null = off. */
-    private volatile java.util.function.Consumer<List<FsChange>> fsChangeSink;
+    private volatile java.util.function.@Nullable Consumer<List<FsChange>> fsChangeSink;
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
-    private Consumer<Path> onNewFromTemplate;
+    private @Nullable Consumer<Path> onNewFromTemplate;
     /** Injected by MainController: "New ▸ &lt;type&gt;" on a folder, given the target dir and the file kind. */
-    private BiConsumer<Path, com.editora.template.NewFileType> onNewFile;
+    private @Nullable BiConsumer<Path, com.editora.template.NewFileType> onNewFile;
 
-    private Consumer<Path> onNewMavenProject;
+    private @Nullable Consumer<Path> onNewMavenProject;
 
     /** Supplies the Maven submenu for a folder, or null when that folder holds no Maven project. */
-    private java.util.function.Function<java.nio.file.Path, javafx.scene.control.Menu> mavenMenu;
+    private java.util.function.@Nullable Function<java.nio.file.Path, javafx.scene.control.@Nullable Menu> mavenMenu;
 
     /** The Maven submenu for a folder, or null — built fresh per right-click, since a folder gains or
      *  loses its pom while the tree is open. */
-    javafx.scene.control.Menu mavenMenuFor(java.nio.file.Path dir) {
+    javafx.scene.control.@Nullable Menu mavenMenuFor(java.nio.file.Path dir) {
         return mavenMenu == null ? null : mavenMenu.apply(dir);
     }
 
-    public void setMavenMenu(java.util.function.Function<java.nio.file.Path, javafx.scene.control.Menu> supplier) {
+    public void setMavenMenu(
+            java.util.function.Function<java.nio.file.Path, javafx.scene.control.@Nullable Menu> supplier) {
         this.mavenMenu = supplier;
     }
     /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
-    private BiConsumer<Path, Boolean> onReveal;
+    private @Nullable BiConsumer<Path, Boolean> onReveal;
     /** Injected by MainController: open a terminal at a path's folder. Args: (path, isDirectory). */
-    private BiConsumer<Path, Boolean> onOpenTerminal;
+    private @Nullable BiConsumer<Path, Boolean> onOpenTerminal;
     /** Injected by MainController: per-file Local History + Git actions for the cell menu (files only). */
-    private FileActions fileActions;
+    private @Nullable FileActions fileActions;
     /** Injected by MainController: file-level entry points into the line-anchored bookmark/note stores. */
-    private MarkerActions markerActions;
+    private @Nullable MarkerActions markerActions;
     /** Injected by MainController: whether Simple UI mode is on, which trims the cell menu. */
     private java.util.function.BooleanSupplier simpleMode = () -> false;
 
@@ -312,7 +314,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
-    private OverlayInput.Prompt prompt;
+    private OverlayInput.@Nullable Prompt prompt;
 
     private final TextField filterField = new TextField();
     private final ToggleButton treeMode = new ToggleButton(tr("project.view.tree"));
@@ -352,10 +354,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         t.setDaemon(true);
         return t;
     });
-    private Path pendingTreeSelection;
-    private Path pendingTreeReveal;
+    private @Nullable Path pendingTreeSelection;
+    private @Nullable Path pendingTreeReveal;
     /** Test seam for holding directory I/O without blocking the JavaFX thread. */
-    volatile Runnable beforeDirectoryListForTest;
+    volatile @Nullable Runnable beforeDirectoryListForTest;
 
     // Filesystem watcher: auto-refresh the tree when files change on disk. Watches only the root + currently
     // -expanded directories (re-synced on expand/collapse and after each refresh) so it's cheap even on huge
@@ -363,8 +365,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     // the directories whose entries came or went (applyWatchChanges). Local roots
     // only (a remote SFTP root has no local WatchService). On macOS the JDK uses a polling watcher, so external
     // changes may take a few seconds to show (the focus-regain refresh covers the immediate case).
-    private java.nio.file.WatchService watchService;
-    private Thread watchThread;
+    private java.nio.file.@Nullable WatchService watchService;
+    private @Nullable Thread watchThread;
     private final java.util.Map<java.nio.file.WatchKey, Path> watchKeys = new java.util.HashMap<>();
     private final PauseTransition watchDebounce = new PauseTransition(Duration.millis(250));
     private volatile boolean disposed;
@@ -401,7 +403,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     int directoryListCountForTest;
 
-    private Path root;
+    private @Nullable Path root;
     private boolean filtering;
     private boolean loading;
     /** Show hidden (dot) files/folders in the tree + filter search. Toggled from Settings. */
@@ -411,7 +413,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** The paths being drag-moved (in-panel drag onto a folder); empty when no drag is in progress. */
     private List<Path> draggedPaths = List.of();
     /** The active file (absolute normalized path), or {@code null} when none is active. */
-    private Path activeFile;
+    private @Nullable Path activeFile;
 
     public ProjectPanel(
             Consumer<Path> onOpenFile,
@@ -436,7 +438,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             Consumer<Path> onFileDeleted,
             java.util.function.Predicate<Path> isModified,
             java.util.function.Predicate<Path> isOpen,
-            java.util.function.Function<Path, ProjectMapPreview.Content> previewContent) {
+            java.util.function.Function<Path, ProjectMapPreview.@Nullable Content> previewContent) {
         this.onOpenFile = onOpenFile;
         this.onFileRenamed = onFileRenamed;
         this.onFileDeleted = onFileDeleted;
@@ -684,7 +686,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Updates the active-file marker used for current-file emphasis in the tree. */
-    public void setActiveFile(Path file) {
+    public void setActiveFile(@Nullable Path file) {
         Path next = file == null ? null : file.toAbsolutePath().normalize();
         if (com.editora.config.PathKeys.samePath(activeFile, next)) {
             return;
@@ -716,12 +718,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Continues an asynchronous tree reveal as each directory level finishes loading. */
     private void continuePendingReveal(PathItem rootItem) {
         Path target = pendingTreeReveal;
-        if (target == null) {
+        Path projectRoot = root; // set whenever a reveal is pending (setRoot clears both)
+        if (target == null || projectRoot == null) {
             return;
         }
         TreeItem<Path> current = rootItem;
         current.setExpanded(true);
-        Path relative = root.toAbsolutePath().normalize().relativize(target);
+        Path relative = projectRoot.toAbsolutePath().normalize().relativize(target);
         for (Path segment : relative) {
             TreeItem<Path> next = current.getChildren().stream()
                     .filter(child -> child.getValue().getFileName().equals(segment))
@@ -942,7 +945,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Finds a (visible) tree item for {@code target} among the expanded items, or null if gone. */
-    private static TreeItem<Path> findVisible(TreeItem<Path> item, Path target) {
+    private static @Nullable TreeItem<Path> findVisible(TreeItem<Path> item, Path target) {
         if (com.editora.config.PathKeys.samePath(target, item.getValue())) {
             return item;
         }
@@ -959,7 +962,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Points the tree at {@code root} (a project folder), or shows the placeholder when {@code null}. */
-    public void setRoot(Path root) {
+    public void setRoot(@Nullable Path root) {
         this.root = root;
         lastMove = List.of(); // an undo must not reach back into the project that was open before
         pendingTreeSelection = null;
@@ -1003,7 +1006,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** The folder the tree is currently rooted at, or {@code null} when showing the placeholder. */
-    public Path getRoot() {
+    public @Nullable Path getRoot() {
         return root;
     }
 
@@ -1139,9 +1142,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** The watcher on the host of a remote root, and the root it watches. */
-    private RemoteWatcher remoteWatcher;
+    private @Nullable RemoteWatcher remoteWatcher;
 
-    private Path remoteWatched;
+    private @Nullable Path remoteWatched;
 
     private void ensureRemoteWatch() {
         if (root == null || disposed || !watchedOnTarget(root)) {
@@ -1472,7 +1475,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     boolean dir = Files.isDirectory(p, java.nio.file.LinkOption.NOFOLLOW_LINKS);
                     String rel = useGitignore || (dir && ignore.nests())
                             ? root.relativize(p).toString().replace(java.io.File.separatorChar, '/')
-                            : null;
+                            : ""; // not needed: "" ignores nothing and nests no filter
                     if (useGitignore && ignore.ignored(rel, dir)) {
                         continue; // .gitignore'd (e.g. target/, node_modules/, *.log) — skip file + subtree
                     }
@@ -1525,7 +1528,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         TreeItem<Path> selected = rowActionKey ? tree.getSelectionModel().getSelectedItem() : null;
         switch (rowKey(e.getCode(), rowActionKey && inTree(e), selected != null && selected.getValue() != null)) {
             case RENAME -> {
-                if (!selected.getValue().equals(root)) { // as the menu: the project root is never renamed
+                if (selected != null // RENAME needs a selected row
+                        && !selected.getValue().equals(root)) { // as the menu: the project root is never renamed
                     renameItem(selected);
                 }
                 e.consume();
@@ -1911,9 +1915,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         Menu newMenu = new Menu(tr("newfile.menu.new"));
         newMenu.setGraphic(Icons.newFile());
         Path dir = dirItem.getValue();
+        BiConsumer<Path, com.editora.template.NewFileType> newFile = onNewFile;
+        Consumer<Path> newFromTemplate = onNewFromTemplate;
+        Consumer<Path> newMavenProject = onNewMavenProject;
 
-        if (onNewFile != null) {
-            newMenu.getItems().add(typeItem(com.editora.template.NewFileCatalog.PLAIN, dirItem));
+        if (newFile != null) {
+            newMenu.getItems().add(typeItem(com.editora.template.NewFileCatalog.PLAIN, dirItem, newFile));
         }
         MenuItem folder = new MenuItem(tr("project.menu.newFolder"));
         folder.setGraphic(Icons.newFolder());
@@ -1923,10 +1930,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (simple) {
             return newMenu; // a text file or a folder: no file-type catalog, templates or Maven project
         }
-        if (onNewFile != null) {
+        if (newFile != null) {
             newMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
             for (com.editora.template.NewFileType type : com.editora.template.NewFileCatalog.topLevel()) {
-                newMenu.getItems().add(typeItem(type, dirItem));
+                newMenu.getItems().add(typeItem(type, dirItem, newFile));
             }
             for (com.editora.template.NewFileCatalog.Category category :
                     com.editora.template.NewFileCatalog.categories()) {
@@ -1934,24 +1941,24 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 // The category's own glyph is its first member's — "Java" gets the Java icon, and so on.
                 submenu.setGraphic(FileIcons.forFileName(category.types().get(0).suggestedFileName()));
                 for (com.editora.template.NewFileType type : category.types()) {
-                    submenu.getItems().add(typeItem(type, dirItem));
+                    submenu.getItems().add(typeItem(type, dirItem, newFile));
                 }
                 newMenu.getItems().add(submenu);
             }
         }
-        if (onNewFromTemplate != null || onNewMavenProject != null) {
+        if (newFromTemplate != null || newMavenProject != null) {
             newMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
-        if (onNewFromTemplate != null) {
+        if (newFromTemplate != null) {
             MenuItem fromTemplate = new MenuItem(tr("project.menu.newFromTemplate"));
             fromTemplate.setGraphic(Icons.template());
-            fromTemplate.setOnAction(e -> onNewFromTemplate.accept(dir));
+            fromTemplate.setOnAction(e -> newFromTemplate.accept(dir));
             newMenu.getItems().add(fromTemplate);
         }
-        if (onNewMavenProject != null) {
+        if (newMavenProject != null) {
             MenuItem maven = new MenuItem(tr("project.menu.newMavenProject"));
             maven.setGraphic(Icons.newFolder());
-            maven.setOnAction(e -> onNewMavenProject.accept(dir));
+            maven.setOnAction(e -> newMavenProject.accept(dir));
             newMenu.getItems().add(maven);
         }
         return newMenu;
@@ -1963,11 +1970,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * picker can never disagree about what a type is called.
      */
     static String labelFor(com.editora.template.NewFileType type) {
-        return type.hasLiteralLabel() ? type.label() : tr(type.labelKey());
+        String literal = type.label(); // null unless type.hasLiteralLabel()
+        return literal != null ? literal : tr(type.labelKey());
     }
 
     /** One "New ▸" entry: the type's label and the glyph the file will carry once it exists. */
-    private MenuItem typeItem(com.editora.template.NewFileType type, TreeItem<Path> dirItem) {
+    private MenuItem typeItem(
+            com.editora.template.NewFileType type,
+            TreeItem<Path> dirItem,
+            BiConsumer<Path, com.editora.template.NewFileType> onNewFile) {
         MenuItem item = new MenuItem(labelFor(type));
         item.setGraphic(
                 type.extension().isEmpty() && type.suggestedFileName().isEmpty()
@@ -2175,7 +2186,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      *  first — a drag that ends on a folder row is easy to make by accident. Notifies {@code onFileRenamed}
      *  per moved path so open buffers (a file, or files under a moved folder) follow, and remembers the moves
      *  so {@link #undoLastMove()} can take them back. */
-    private void moveInto(List<Path> dropped, Path targetDir) {
+    private void moveInto(List<Path> dropped, @Nullable Path targetDir) {
         List<Path> sources = pruneNestedSources(dropped);
         if (sources.isEmpty() || targetDir == null || !Files.isDirectory(targetDir)) {
             return;
@@ -2269,7 +2280,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** The files to act on for a cell action: the whole multi-selection when {@code clicked} is part of it,
      *  else just {@code clicked}. Excludes the root. */
-    private List<TreeItem<Path>> actionTargets(TreeItem<Path> clicked) {
+    private List<TreeItem<Path>> actionTargets(@Nullable TreeItem<Path> clicked) {
         List<TreeItem<Path>> sel = new ArrayList<>(tree.getSelectionModel().getSelectedItems());
         sel.removeIf(i -> i == null || i.getValue() == null || i.getValue().equals(root));
         if (clicked != null && sel.contains(clicked) && sel.size() > 1) {
@@ -2280,7 +2291,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Deletes the selected files (or just {@code clicked}); confirms once. Folders/root are skipped (delete
      *  is files-only, like the single-file menu). */
-    private void deleteSelected(TreeItem<Path> clicked) {
+    private void deleteSelected(@Nullable TreeItem<Path> clicked) {
         List<Path> files = new ArrayList<>();
         for (TreeItem<Path> it : actionTargets(clicked)) {
             if (Files.isRegularFile(it.getValue())) {
@@ -2707,7 +2718,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         /** The folder this cell would drop INTO — the cell's own directory (or the root); {@code null} for a
          *  file cell or the filtered view, so drops only land on folders. */
-        private Path dropTargetDir() {
+        private @Nullable Path dropTargetDir() {
             if (filtering) {
                 return null;
             }
@@ -2841,6 +2852,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** One lazily built file-management menu shared by Tree rows and Canvas map nodes. */
     private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {
+        // Read once: the actions below run later and use what was checked here.
+        FileActions fileOps = fileActions;
+        MarkerActions markerOps = markerActions;
+        BiConsumer<Path, Boolean> revealer = onReveal;
+        BiConsumer<Path, Boolean> terminalOpener = onOpenTerminal;
         ContextMenu menu = new ContextMenu();
         // Read per right-click (the menu is built for each one), so a Simple-mode toggle applies to the next.
         boolean simple = simpleMode.getAsBoolean();
@@ -2877,89 +2893,89 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             delete.setOnAction(e -> deleteSelected(treeItem));
             menu.getItems().add(delete);
             Path target = treeItem.getValue();
-            if (fileActions != null
+            if (fileOps != null
                     && target != null
                     && com.editora.editor.EncryptedNames.extensionOf(String.valueOf(target.getFileName())) == null) {
                 MenuItem encrypt = new MenuItem(tr("project.menu.encrypt"));
                 encrypt.setGraphic(Icons.lock());
-                encrypt.setOnAction(e -> fileActions.encrypt(target));
+                encrypt.setOnAction(e -> fileOps.encrypt(target));
                 menu.getItems().add(encrypt);
             }
         }
-        if (markerActions != null && !simple) {
+        if (markerOps != null && !simple) {
             Path target = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
 
             MenuItem bookmark = new MenuItem(tr(isDir ? "project.menu.addFolderBookmark" : "project.menu.addBookmark"));
             bookmark.setGraphic(Icons.bookmark());
-            bookmark.setOnAction(e -> markerActions.addBookmark(target));
+            bookmark.setOnAction(e -> markerOps.addBookmark(target));
             menu.getItems().add(bookmark);
 
             MenuItem note =
                     new MenuItem(tr(isDir ? "project.menu.addFolderPersonalNote" : "project.menu.addPersonalNote"));
             note.setGraphic(Icons.notes());
-            note.setDisable(!markerActions.personalNotesEnabled());
-            note.setOnAction(e -> markerActions.addPersonalNote(target));
+            note.setDisable(!markerOps.personalNotesEnabled());
+            note.setOnAction(e -> markerOps.addPersonalNote(target));
             menu.getItems().add(note);
         }
-        boolean terminalShown = onOpenTerminal != null && !simple;
-        if (onReveal != null || terminalShown) {
+        boolean terminalShown = terminalOpener != null && !simple;
+        if (revealer != null || terminalShown) {
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
-        if (onReveal != null) {
+        if (revealer != null) {
             MenuItem reveal = new MenuItem(tr("project.menu.revealInFileManager"));
             reveal.setGraphic(Icons.revealInFiles());
-            reveal.setOnAction(e -> onReveal.accept(treeItem.getValue(), isDir));
+            reveal.setOnAction(e -> revealer.accept(treeItem.getValue(), isDir));
             menu.getItems().add(reveal);
         }
-        if (terminalShown) {
+        if (terminalOpener != null && terminalShown) {
             MenuItem terminal = new MenuItem(tr("project.menu.openTerminal"));
             terminal.setGraphic(Icons.terminal());
-            terminal.setOnAction(e -> onOpenTerminal.accept(treeItem.getValue(), isDir));
+            terminal.setOnAction(e -> terminalOpener.accept(treeItem.getValue(), isDir));
             menu.getItems().add(terminal);
         }
         // Local History + Git act on a concrete file (not a folder).
-        if (fileActions != null && !isDir && !simple) {
+        if (fileOps != null && !isDir && !simple) {
             Path file = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
 
             MenuItem localHistory = new MenuItem(tr("project.menu.localHistory"));
             localHistory.setGraphic(Icons.history());
-            localHistory.setOnAction(e -> fileActions.showLocalHistory(file));
+            localHistory.setOnAction(e -> fileOps.showLocalHistory(file));
             menu.getItems().add(localHistory);
 
             Menu git = new Menu(tr("project.menu.git"));
             git.setGraphic(Icons.git());
             MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
             stage.setGraphic(Icons.stageAll());
-            stage.setOnAction(e -> fileActions.gitStage(file));
+            stage.setOnAction(e -> fileOps.gitStage(file));
             MenuItem unstage = new MenuItem(tr("project.menu.git.unstage"));
             unstage.setGraphic(Icons.remove());
-            unstage.setOnAction(e -> fileActions.gitUnstage(file));
+            unstage.setOnAction(e -> fileOps.gitUnstage(file));
             MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
             revert.setGraphic(Icons.undo());
-            revert.setOnAction(e -> fileActions.gitRevert(file));
+            revert.setOnAction(e -> fileOps.gitRevert(file));
             MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
             ignore.setGraphic(Icons.git());
-            ignore.setOnAction(e -> fileActions.gitAddToGitignore(file));
+            ignore.setOnAction(e -> fileOps.gitAddToGitignore(file));
             MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
             compareHead.setGraphic(Icons.diff());
-            compareHead.setOnAction(e -> fileActions.gitCompareWithHead(file));
+            compareHead.setOnAction(e -> fileOps.gitCompareWithHead(file));
             MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
             compareBranch.setGraphic(Icons.diff());
-            compareBranch.setOnAction(e -> fileActions.gitCompareWithBranch(file));
+            compareBranch.setOnAction(e -> fileOps.gitCompareWithBranch(file));
             MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
             compareRevision.setGraphic(Icons.diff());
-            compareRevision.setOnAction(e -> fileActions.gitCompareWithRevision(file));
+            compareRevision.setOnAction(e -> fileOps.gitCompareWithRevision(file));
             MenuItem compareTag = new MenuItem(tr("project.menu.git.compareTag"));
             compareTag.setGraphic(Icons.diff());
-            compareTag.setOnAction(e -> fileActions.gitCompareWithTag(file));
+            compareTag.setOnAction(e -> fileOps.gitCompareWithTag(file));
             MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
             annotate.setGraphic(Icons.blame());
-            annotate.setOnAction(e -> fileActions.gitAnnotate(file));
+            annotate.setOnAction(e -> fileOps.gitAnnotate(file));
             MenuItem fileHistory = new MenuItem(tr("project.menu.git.fileHistory"));
             fileHistory.setGraphic(Icons.gitLog());
-            fileHistory.setOnAction(e -> fileActions.gitShowFileHistory(file));
+            fileHistory.setOnAction(e -> fileOps.gitShowFileHistory(file));
             git.getItems()
                     .addAll(
                             stage,
@@ -2977,8 +2993,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
             // Disable to match the live feature toggles + the file's actual status.
             menu.setOnShowing(e -> {
-                localHistory.setDisable(!fileActions.localHistoryEnabled());
-                GitPathScope scope = fileActions.gitScope(file);
+                localHistory.setDisable(!fileOps.localHistoryEnabled());
+                GitPathScope scope = fileOps.gitScope(file);
                 git.setDisable(scope == GitPathScope.NONE); // grey out the Git submenu when there's no VCS
                 com.editora.git.GitFileStatus st =
                         gitStatus.get(file.toAbsolutePath().normalize());
@@ -2990,34 +3006,34 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             });
         }
         // On a folder: Local History plus subtree-wide Git mutation and comparison actions.
-        if (fileActions != null && isDir && !simple) {
+        if (fileOps != null && isDir && !simple) {
             Path dir = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
             MenuItem folderHistory = new MenuItem(tr("project.menu.localHistory"));
             folderHistory.setGraphic(Icons.history());
-            folderHistory.setOnAction(e -> fileActions.showLocalHistory(dir));
+            folderHistory.setOnAction(e -> fileOps.showLocalHistory(dir));
             menu.getItems().add(folderHistory);
 
             Menu git = new Menu(tr("project.menu.git"));
             git.setGraphic(Icons.git());
             MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
             stage.setGraphic(Icons.stageAll());
-            stage.setOnAction(e -> fileActions.gitStage(dir));
+            stage.setOnAction(e -> fileOps.gitStage(dir));
             MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
             revert.setGraphic(Icons.undo());
-            revert.setOnAction(e -> fileActions.gitRevert(dir));
+            revert.setOnAction(e -> fileOps.gitRevert(dir));
             MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
             compareHead.setGraphic(Icons.diff());
-            compareHead.setOnAction(e -> fileActions.gitCompareWithHead(dir));
+            compareHead.setOnAction(e -> fileOps.gitCompareWithHead(dir));
             MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
             compareBranch.setGraphic(Icons.diff());
-            compareBranch.setOnAction(e -> fileActions.gitCompareWithBranch(dir));
+            compareBranch.setOnAction(e -> fileOps.gitCompareWithBranch(dir));
             MenuItem compareTag = new MenuItem(tr("project.menu.git.compareTag"));
             compareTag.setGraphic(Icons.diff());
-            compareTag.setOnAction(e -> fileActions.gitCompareWithTag(dir));
+            compareTag.setOnAction(e -> fileOps.gitCompareWithTag(dir));
             MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
             compareRevision.setGraphic(Icons.diff());
-            compareRevision.setOnAction(e -> fileActions.gitCompareWithRevision(dir));
+            compareRevision.setOnAction(e -> fileOps.gitCompareWithRevision(dir));
             git.getItems()
                     .addAll(
                             stage,
@@ -3030,8 +3046,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             menu.getItems().add(git);
 
             menu.setOnShowing(e -> {
-                folderHistory.setDisable(!fileActions.localHistoryEnabled());
-                GitPathScope scope = fileActions.gitScope(dir);
+                folderHistory.setDisable(!fileOps.localHistoryEnabled());
+                GitPathScope scope = fileOps.gitScope(dir);
                 git.setDisable(scope == GitPathScope.NONE);
                 revert.setDisable(scope == GitPathScope.ACTIVE
                         && !gitChangedDirs.contains(dir.toAbsolutePath().normalize()));

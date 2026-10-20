@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 import javafx.scene.input.KeyCode;
 
 import com.editora.dap.DapModels;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure text and key decisions of the {@link DebugPanel}: which letter fires which control, what a toolbar
@@ -50,7 +51,7 @@ final class DebugPanelText {
      * The control a key press in the panel fires, or null. A modified chord (Ctrl/Alt/Meta) is never one, Stop and
      * Restart need Shift, and the other letters need it up — so typing a capital letter does not step.
      */
-    static Control controlFor(KeyCode code, boolean shift, boolean otherModifier) {
+    static @Nullable Control controlFor(KeyCode code, boolean shift, boolean otherModifier) {
         if (code == null || otherModifier) {
             return null;
         }
@@ -213,6 +214,7 @@ final class DebugPanelText {
         }
 
         /** The older entry to show for Up from {@code current}, or null when there is none. */
+        @Nullable
         String up(String current) {
             if (cursor == 0 || entries.isEmpty()) {
                 return null;
@@ -224,6 +226,7 @@ final class DebugPanelText {
         }
 
         /** The newer entry for Down (the typed draft past the newest), or null when not browsing. */
+        @Nullable
         String down() {
             if (cursor >= entries.size()) {
                 return null;

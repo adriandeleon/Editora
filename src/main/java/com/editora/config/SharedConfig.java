@@ -1254,7 +1254,7 @@ public class SharedConfig {
         }
     }
 
-    public @Nullable Map<String, List<HistoryRevision>> historyBucket(String key) {
+    public Map<String, List<HistoryRevision>> historyBucket(String key) {
         return historyStore.bucket(key);
     }
 

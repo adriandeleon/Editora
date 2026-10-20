@@ -15,6 +15,7 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LanguageRegistry;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -45,6 +46,7 @@ final class EditorSettingsCoordinator {
 
         OverlayHost overlayHost();
 
+        @Nullable
         WindowManager windowManager();
 
         BuildOutputPanel buildOutputPanel();
@@ -55,8 +57,10 @@ final class EditorSettingsCoordinator {
 
         WelcomePane welcomePane();
 
+        @Nullable
         Tab welcomeTab();
 
+        @Nullable
         Tab doctorTab();
 
         void applyProjectSupport();
@@ -115,17 +119,20 @@ final class EditorSettingsCoordinator {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         void openPath(Path file);
 
         void openPath(Path file, boolean quietIfOpen);
 
+        @Nullable
         EditorBuffer bufferOf(Tab tab);
 
         void requestSave();
 
-        void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
+        void promptText(
+                String title, String label, @Nullable String initial, java.util.function.Consumer<String> onAccept);
 
         void refreshSpellAllTabs();
 
@@ -469,8 +476,9 @@ final class EditorSettingsCoordinator {
 
     /** Rebuilds the shared keymap (base + user + plugin overrides) and re-applies it to every window. */
     void reloadKeymap() {
-        if (host.windowManager() != null) {
-            host.windowManager().reloadSharedKeymap();
+        WindowManager wm = host.windowManager();
+        if (wm != null) {
+            wm.reloadSharedKeymap();
         } else {
             host.keymap().loadNamed(host.config().getSettings().getKeymap());
             host.keymap()
@@ -487,9 +495,9 @@ final class EditorSettingsCoordinator {
     java.util.Map<String, String> baseBindings() {
         com.editora.command.KeymapManager base = new com.editora.command.KeymapManager();
         base.loadNamed(host.config().getSettings().getKeymap());
-        if (host.windowManager() != null) {
-            KeymapLayers.pluginKeymaps(
-                            host.config().getSettings(), host.windowManager().pluginManager(), base.activeName())
+        WindowManager windows = host.windowManager();
+        if (windows != null) {
+            KeymapLayers.pluginKeymaps(host.config().getSettings(), windows.pluginManager(), base.activeName())
                     .forEach(base::applyOverrides);
         }
         return base.bindings();
@@ -684,7 +692,7 @@ final class EditorSettingsCoordinator {
             String commandId,
             java.util.function.BooleanSupplier get,
             java.util.function.Consumer<Boolean> set,
-            Runnable apply) {
+            @Nullable Runnable apply) {
         boolean next = !get.getAsBoolean();
         set.accept(next);
         host.requestSave();
@@ -702,7 +710,7 @@ final class EditorSettingsCoordinator {
             String commandId,
             java.util.function.Supplier<String> get,
             java.util.function.Consumer<String> set,
-            Runnable apply) {
+            @Nullable Runnable apply) {
         promptStringSetting(commandId, get, set, apply, value -> null);
     }
 
@@ -711,8 +719,8 @@ final class EditorSettingsCoordinator {
             String commandId,
             java.util.function.Supplier<String> get,
             java.util.function.Consumer<String> set,
-            Runnable apply,
-            java.util.function.Function<String, String> refuse) {
+            @Nullable Runnable apply,
+            java.util.function.Function<String, @Nullable String> refuse) {
         host.promptText(commandTitle(commandId), tr("palette.setting.value"), get.get(), v -> {
             String value = v.trim();
             String why = refuse.apply(value);
@@ -764,7 +772,7 @@ final class EditorSettingsCoordinator {
             int min,
             int max,
             java.util.function.IntConsumer set,
-            Runnable apply) {
+            @Nullable Runnable apply) {
         promptIntValue(commandId, get, min, max, clamped -> {
             set.accept(clamped);
             host.requestSave();
@@ -819,7 +827,7 @@ final class EditorSettingsCoordinator {
             String commandId,
             java.util.function.Supplier<List<String>> options,
             java.util.function.Function<String, String> label,
-            java.util.function.Supplier<String> current,
+            java.util.function.@Nullable Supplier<String> current,
             java.util.function.Consumer<String> onChoose) {
         QuickOpen<String> picker = new QuickOpen<>(
                 commandTitle(commandId), tr("palette.setting.pick"), options::get, label::apply, id -> "", id -> {
@@ -1004,7 +1012,8 @@ final class EditorSettingsCoordinator {
      * ancestor-directory walk on the FX thread), anything else — a loading shell's {@code EMPTY}, or the
      * result a load worker prepared — is applied as is.
      */
-    void applyViewSettings(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+    void applyViewSettings(
+            EditorBuffer buffer, com.editora.editorconfig.@Nullable EditorConfigProperties editorConfig) {
         staleView.remove(buffer); // whatever was waiting for this buffer is applied now
         Settings s = host.config().getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
@@ -1203,7 +1212,7 @@ final class EditorSettingsCoordinator {
         return scope;
     }
 
-    private ProjectScope listenedScope;
+    private @Nullable ProjectScope listenedScope;
 
     void applyEffectiveIndent(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties p) {
         Boolean insertSpaces = p.insertSpaces();

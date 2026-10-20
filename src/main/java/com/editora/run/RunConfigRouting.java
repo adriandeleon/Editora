@@ -3,6 +3,8 @@ package com.editora.run;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Picks the file a saved run configuration should be resolved against.
  *
@@ -41,7 +43,7 @@ public final class RunConfigRouting {
      * @param workingDir the configuration's working directory, blank when it has none
      * @return the file to resolve against, or null when no Java file is open
      */
-    public static Path pick(List<Path> openJavaFiles, Path activeJavaFile, String workingDir) {
+    public static @Nullable Path pick(List<Path> openJavaFiles, @Nullable Path activeJavaFile, String workingDir) {
         return pick(openJavaFiles, activeJavaFile, workingDir, p -> false);
     }
 
@@ -58,9 +60,9 @@ public final class RunConfigRouting {
      *
      * @param managed whether a path is currently open on a language server
      */
-    public static Path pick(
+    public static @Nullable Path pick(
             List<Path> openJavaFiles,
-            Path activeJavaFile,
+            @Nullable Path activeJavaFile,
             String workingDir,
             java.util.function.Predicate<Path> managed) {
         if (openJavaFiles == null || openJavaFiles.isEmpty()) {

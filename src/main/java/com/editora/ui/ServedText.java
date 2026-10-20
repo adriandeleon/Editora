@@ -7,6 +7,8 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What an agent was last shown of each document, so a whole-document write can be told apart from an
  * overwrite of text the agent has never seen.
@@ -36,6 +38,7 @@ final class ServedText {
          * @param name the document, as the agent named it
          * @param readWith how this agent reads the editor's copy (the protocol call), e.g. {@code read_buffer}
          */
+        @Nullable
         String refusal(String name, String readWith) {
             return switch (this) {
                 case CURRENT -> null;
@@ -83,7 +86,7 @@ final class ServedText {
      * @param unsavedChanges whether {@code current} differs from the file on disk — the only copy of the
      *     difference is then in the editor, where an agent that read the file by its own means never saw it
      */
-    synchronized Verdict check(Object key, String current, boolean unsavedChanges) {
+    synchronized Verdict check(Object key, @Nullable String current, boolean unsavedChanges) {
         byte[] seen = digests.get(key);
         if (seen == null) {
             return unsavedChanges ? Verdict.UNREAD_UNSAVED : Verdict.CURRENT;
@@ -111,7 +114,7 @@ final class ServedText {
      * Line terminators do not count: the same file is served with its own terminators while it has no buffer
      * and with {@code \n} once it is open, and that is not a change anyone typed.
      */
-    private static byte[] digest(String text) {
+    private static byte[] digest(@Nullable String text) {
         String body = text == null ? "" : text;
         if (body.indexOf('\r') >= 0) {
             body = body.replace("\r\n", "\n").replace('\r', '\n');

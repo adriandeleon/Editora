@@ -11,6 +11,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.GitHunk;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -47,7 +48,7 @@ final class GitHunkPopup {
     private final Button next = button("git.hunk.next");
     private final Button openDiff = button("git.hunk.openDiff");
     private final VBox card;
-    private Actions actions;
+    private @Nullable Actions actions;
     private boolean showing;
 
     GitHunkPopup(OverlayHost overlayHost) {
@@ -64,16 +65,19 @@ final class GitHunkPopup {
         // Claim the keys, as every in-scene card does, or the global dispatcher runs editor chords
         // (and Escape never reaches the host).
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        revert.setOnAction(e -> closeThen(actions.revert()));
-        stage.setOnAction(e -> closeThen(actions.stage()));
-        previous.setOnAction(e -> closeThen(actions.previous()));
-        next.setOnAction(e -> closeThen(actions.next()));
-        openDiff.setOnAction(e -> closeThen(actions.openDiff()));
+        revert.setOnAction(e -> closeThen(Actions::revert));
+        stage.setOnAction(e -> closeThen(Actions::stage));
+        previous.setOnAction(e -> closeThen(Actions::previous));
+        next.setOnAction(e -> closeThen(Actions::next));
+        openDiff.setOnAction(e -> closeThen(Actions::openDiff));
         copyOld.setOnAction(e -> {
             ClipboardContent content = new ClipboardContent();
             content.putString(oldText.getText());
             Clipboard.getSystemClipboard().setContent(content);
-            actions.copied().run();
+            Actions shown = actions; // set by show(), before any button can be clicked
+            if (shown != null) {
+                shown.copied().run();
+            }
         });
     }
 
@@ -91,7 +95,12 @@ final class GitHunkPopup {
         return b;
     }
 
-    private void closeThen(Runnable action) {
+    private void closeThen(java.util.function.Function<Actions, Runnable> pick) {
+        Actions shown = actions; // set by show(), before any button can be clicked
+        if (shown == null) {
+            return;
+        }
+        Runnable action = pick.apply(shown);
         overlayHost.hide();
         action.run();
     }

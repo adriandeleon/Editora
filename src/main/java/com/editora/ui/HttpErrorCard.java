@@ -11,6 +11,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.command.TextInputKeymap;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -59,7 +60,7 @@ final class HttpErrorCard extends VBox {
     }
 
     /** Shows a failure of {@code kind} explained by {@code text}. */
-    void show(HttpFailureKind kind, String text) {
+    void show(HttpFailureKind kind, @Nullable String text) {
         this.kind = kind == null ? HttpFailureKind.OTHER : kind;
         title.setText(this.kind.title());
         String shown = text == null ? "" : text.strip();

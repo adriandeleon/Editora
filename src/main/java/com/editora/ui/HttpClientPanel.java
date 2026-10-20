@@ -68,6 +68,7 @@ import com.editora.http.HttpTests;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -121,9 +122,9 @@ public final class HttpClientPanel extends VBox {
     /** Holds Run and its chord, so a tooltip can say why Run is disabled (a disabled control shows none of its own). */
     private final HBox runHost = new HBox(6, runButton, runChord);
     /** Why Run is unavailable for this file (a remote file), or null. */
-    private String runBlockedWhy;
+    private @Nullable String runBlockedWhy;
 
-    private Tooltip runBlockedTip;
+    private @Nullable Tooltip runBlockedTip;
     /** The status pill: "200 OK" coloured by outcome; plain text while running, idle or cancelled. */
     private final Label status = new Label();
     /** "83 ms · 177 B" beside the pill. */
@@ -135,7 +136,7 @@ public final class HttpClientPanel extends VBox {
     /** A note about the last run under the header (Run sent the caret's request instead), until the next run. */
     private final Label runSummary = new Label();
 
-    private String runNotice;
+    private @Nullable String runNotice;
     /** After a Run All: one row per request, until the next run or Clear. */
     private final HttpRunList runList;
     /** How long the last run took from Run to its end (or to Cancel), for the Run All title; -1 unknown. */
@@ -197,9 +198,9 @@ public final class HttpClientPanel extends VBox {
 
     private final ReadOnlyBooleanWrapper emptyShowing = new ReadOnlyBooleanWrapper(false);
     /** The entry the tabs show, or null (empty state, running, cancelled). */
-    private HttpHistoryEntry shown;
+    private @Nullable HttpHistoryEntry shown;
     /** The entry shown when the current (or cancelled) run started, collapsed to {@link #previousRow}; or null. */
-    private HttpHistoryEntry previous;
+    private @Nullable HttpHistoryEntry previous;
     /**
      * After Cancel: History shows {@link #previous} selected, but only its row is on show — so Run sends the caret's
      * request (as it did after a cancel before), and the actions wait for the response to be shown.
@@ -208,7 +209,7 @@ public final class HttpClientPanel extends VBox {
     /** The run waits for the answer to a trust prompt: nothing is sent yet, so no clock runs. */
     private boolean waiting;
     /** The request as resolved ("GET http://…/users/42"), the running status's tooltip; or null. */
-    private String runningDetail;
+    private @Nullable String runningDetail;
 
     private IntConsumer onRunLine = line -> {};
     private Runnable onDisposed = () -> {};
@@ -235,7 +236,7 @@ public final class HttpClientPanel extends VBox {
     /** A Run All row's Enter or double-click: go to that entry's request in the editor. */
     private Consumer<HttpHistoryEntry> onJump = e -> {};
 
-    private Runnable onCancel;
+    private @Nullable Runnable onCancel;
     private Runnable onEscape = () -> {};
     private Runnable onCleared = () -> {};
 
@@ -310,7 +311,7 @@ public final class HttpClientPanel extends VBox {
             }
 
             @Override
-            public HttpHistoryEntry fromString(String s) {
+            public @Nullable HttpHistoryEntry fromString(String s) {
                 return null;
             }
         });
@@ -496,7 +497,7 @@ public final class HttpClientPanel extends VBox {
      * for {@code commandId} when it is bound, read when the tooltip shows (so a keymap change is reflected), and
      * {@code extra} on a line of its own.
      */
-    private static void actionTip(Control control, String name, String commandId, String extra) {
+    private static void actionTip(Control control, String name, @Nullable String commandId, @Nullable String extra) {
         control.setAccessibleText(name);
         Tooltip tip = new Tooltip(name);
         tip.setOnShowing(e -> tip.setText(withChord(name, commandId) + (extra == null ? "" : "\n" + extra)));
@@ -506,13 +507,13 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** {@code name}, then the live keymap's chord for {@code commandId} in brackets when it is bound. */
-    private static String withChord(String name, String commandId) {
+    private static String withChord(String name, @Nullable String commandId) {
         String chord = chordFor(commandId);
         return chord == null ? name : tr("httppanel.actionChord", name, chord);
     }
 
     /** The live keymap's chord for {@code commandId}, or null when unbound (or no keymap is set yet). */
-    private static String chordFor(String commandId) {
+    private static @Nullable String chordFor(@Nullable String commandId) {
         KeymapManager keymap = TextInputKeymap.sharedKeymap();
         String chord = keymap == null || commandId == null ? null : keymap.displayChord(commandId);
         return chord == null || chord.isEmpty() ? null : chord;
@@ -576,7 +577,7 @@ public final class HttpClientPanel extends VBox {
         headersTable.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             KeymapManager keymap = TextInputKeymap.sharedKeymap();
             String token = keymap == null ? null : KeyDispatcher.chord(e);
-            String command = token == null ? null : keymap.commandFor(token);
+            String command = keymap == null || token == null ? null : keymap.commandFor(token);
             boolean copy = "edit.copy".equals(command) || (e.getCode() == KeyCode.C && e.isShortcutDown());
             if (copy) {
                 copyHeaders(true);
@@ -664,7 +665,7 @@ public final class HttpClientPanel extends VBox {
         addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             KeymapManager keymap = TextInputKeymap.sharedKeymap();
             String token = keymap == null || e.getCode() == KeyCode.ESCAPE ? null : KeyDispatcher.chord(e);
-            if (token != null && KeyDispatcher.CANCEL.equals(keymap.commandFor(token))) {
+            if (keymap != null && token != null && KeyDispatcher.CANCEL.equals(keymap.commandFor(token))) {
                 onEscape.run();
                 e.consume();
             }
@@ -738,7 +739,7 @@ public final class HttpClientPanel extends VBox {
      * under the header, and the status says "Sending {@code label}…" with the time it has been running; {@code
      * detail} (the request as resolved, null for none) is its tooltip.
      */
-    public void started(String label, String detail) {
+    public void started(@Nullable String label, @Nullable String detail) {
         runningLabel = label == null ? "" : label;
         runningDetail = detail == null || detail.equals(runningLabel) ? null : detail;
         runningSince = System.nanoTime();
@@ -917,7 +918,7 @@ public final class HttpClientPanel extends VBox {
      * Disables Run for this file, saying why in a tooltip ({@code why}; null enables it again): a remote file's
      * requests do not run from this machine.
      */
-    public void setRunBlocked(String why) {
+    public void setRunBlocked(@Nullable String why) {
         runBlockedWhy = why;
         runButton.setDisable(!running && why != null);
         emptyState.setRunBlocked(why != null);
@@ -1007,7 +1008,7 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** Adds {@code entries} to History and shows the one to land on; returns it (null when there are none). */
-    private HttpHistoryEntry addAndShow(List<HttpHistoryEntry> entries) {
+    private @Nullable HttpHistoryEntry addAndShow(List<HttpHistoryEntry> entries) {
         boolean wasRunning = running;
         stopRunning();
         if (entries == null || entries.isEmpty()) {
@@ -1184,7 +1185,7 @@ public final class HttpClientPanel extends VBox {
      * as plain text when {@code outcome} is null (running, idle, cancelled); {@code timing} beside it; {@code tip}
      * (null for none) as its tooltip.
      */
-    private void setStatus(String text, String outcome, String timing, String tip) {
+    private void setStatus(String text, @Nullable String outcome, String timing, @Nullable String tip) {
         status.setText(text);
         meta.setText(timing == null ? "" : timing);
         statusLine = meta.getText().isEmpty() ? text : tr("httppanel.statusLine", text, meta.getText());
@@ -1210,7 +1211,7 @@ public final class HttpClientPanel extends VBox {
         boolean bodyKept = e != null && !e.bodyDropped() && !e.binaryNotKept();
         // A request that was never sent has no command to copy: its URL and headers may still be templates.
         copyCurlButton.setDisable(e == null || HttpStatusText.notSent(r));
-        openTabButton.setDisable(!has || !bodyKept || r.binary());
+        openTabButton.setDisable(!has || !bodyKept || r == null || r.binary());
         saveButton.setDisable(!has || !bodyKept);
         clearItem.setDisable(running || history.isEmpty());
     }
@@ -1291,7 +1292,7 @@ public final class HttpClientPanel extends VBox {
         errorCard.show(HttpFailureKind.of(r), r.shownError());
     }
 
-    private static void applySpans(CodeArea area, StyleSpans<Collection<String>> spans) {
+    private static void applySpans(CodeArea area, @Nullable StyleSpans<Collection<String>> spans) {
         if (spans != null && spans.length() > 0 && spans.length() <= area.getLength()) {
             try {
                 area.setStyleSpans(0, spans);
@@ -1384,7 +1385,7 @@ public final class HttpClientPanel extends VBox {
             CodeArea requestArea,
             TextArea testsLog,
             Timeline elapsed,
-            Tooltip runBlockedTooltip) {}
+            @Nullable Tooltip runBlockedTooltip) {}
 
     /** The panel's controls as they are now. Test accessor. */
     Controls controlsForTest() {
@@ -1431,6 +1432,7 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** The "Previous" row's text, or null when it is not on show. Test accessor. */
+    @Nullable
     String previousRowForTest() {
         return bodyView == BodyView.PREVIOUS ? previousRow.getText() : null;
     }
@@ -1446,6 +1448,7 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** {@code tab}'s content pane. Test accessor. */
+    @Nullable
     Node tabContentForTest(HttpResponseTab tab) {
         return tabContent.get(tab);
     }
@@ -1456,6 +1459,7 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** What {@code tab} shows ("Tests 2/3", only "2/3" when narrow), or null when it is hidden. Test accessor. */
+    @Nullable
     String tabTextForTest(HttpResponseTab tab) {
         return tabs.shownTextForTest(tab);
     }
@@ -1480,6 +1484,7 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** The note above the body (a cut view or history), or null when none shows. Test accessor. */
+    @Nullable
     String bodyNoteForTest() {
         return bodyNote.isVisible() ? bodyNote.getText() : null;
     }
@@ -1499,7 +1504,7 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** The selected History entry when it is on show — not while only its "Previous" row stands for it. */
-    private HttpHistoryEntry selectedShown() {
+    private @Nullable HttpHistoryEntry selectedShown() {
         return collapsed ? null : historyCombo.getValue();
     }
 
@@ -1527,12 +1532,13 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** The selected exchange (for Copy as cURL / Open in tab), or {@code null}. */
-    public HttpExchange getSelectedExchange() {
+    public @Nullable HttpExchange getSelectedExchange() {
         HttpHistoryEntry e = selectedShown();
         return e == null ? null : e.exchange();
     }
 
     /** The selected history entry, or {@code null}. */
+    @Nullable
     HttpHistoryEntry getSelectedEntry() {
         return selectedShown();
     }
@@ -1541,7 +1547,7 @@ public final class HttpClientPanel extends VBox {
      * A note about the run just started, shown under the header until the next run — Run on a History entry whose
      * request is gone sends the caret's request instead, which a status-bar message alone hid within milliseconds.
      */
-    public void showRunNotice(String notice) {
+    public void showRunNotice(@Nullable String notice) {
         runNotice = notice;
         showSummaryRow();
     }
@@ -1633,6 +1639,7 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** The note about the last run under the header, or null when hidden. Test accessor. */
+    @Nullable
     String runNoticeForTest() {
         return runSummary.isVisible() ? runSummary.getText() : null;
     }
@@ -1651,7 +1658,7 @@ public final class HttpClientPanel extends VBox {
                         || e.result().failed());
     }
 
-    private static void showBadge(Label badge, String text) {
+    private static void showBadge(Label badge, @Nullable String text) {
         boolean on = text != null && !text.isBlank();
         badge.setText(on ? text : "");
         badge.setVisible(on);
@@ -1736,7 +1743,7 @@ public final class HttpClientPanel extends VBox {
         return extra;
     }
 
-    private void showBodyNote(String text) {
+    private void showBodyNote(@Nullable String text) {
         boolean on = text != null && !text.isBlank();
         bodyNote.setText(on ? text : "");
         bodyNote.setVisible(on);

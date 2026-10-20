@@ -12,6 +12,7 @@ import java.util.regex.Matcher;
 
 import com.editora.http.HttpFile;
 import com.editora.http.HttpVars;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which request of the file the response view's Run button re-sends for a history entry. Requests move, get
@@ -62,20 +63,21 @@ final class HttpRerunTarget {
      */
     static int find(
             List<HttpFile.Request> requests,
-            String name,
+            @Nullable String name,
             String method,
             String sentUrl,
-            String urlTemplate,
-            String fingerprint,
+            @Nullable String urlTemplate,
+            @Nullable String fingerprint,
             int formerIndex) {
         if (requests == null || requests.isEmpty()) {
             return -1;
         }
-        boolean named = name != null && !name.isBlank();
+        String wanted = name != null && !name.isBlank() ? name.strip() : null;
+        boolean named = wanted != null;
         List<Integer> pool = new ArrayList<>();
         for (int i = 0; i < requests.size(); i++) {
             HttpFile.Request r = requests.get(i);
-            if (named ? name.strip().equals(nameOf(r)) : sameMethod(method, r.method())) {
+            if (wanted != null ? wanted.equals(nameOf(r)) : sameMethod(method, r.method())) {
                 pool.add(i);
             }
         }
@@ -139,7 +141,7 @@ final class HttpRerunTarget {
         }
     }
 
-    private static String nameOf(HttpFile.Request r) {
+    private static @Nullable String nameOf(HttpFile.Request r) {
         return r.name() == null || r.name().isBlank() ? null : r.name().strip();
     }
 

@@ -25,6 +25,7 @@ import javafx.application.Platform;
 import com.editora.config.HttpResponseHistory;
 import com.editora.config.migration.ConfigLoadProblem;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -64,6 +65,7 @@ final class HttpHistorySync {
     /** What this sync knows of one buffer's history. */
     private static final class Tracked {
         /** The file the history belongs to (null while untitled), to notice a first Save / a Save As. */
+        @Nullable
         Path file;
         /** The keys of every entry this buffer has held (restored or run): see {@link HttpResponseHistory#saveMerged}. */
         final Set<String> seen = new HashSet<>();
@@ -73,7 +75,7 @@ final class HttpHistorySync {
 
     private final CoordinatorHost host;
     private final Supplier<HttpResponseHistory> store;
-    private final Function<EditorBuffer, HttpClientPanel> panels;
+    private final Function<EditorBuffer, @Nullable HttpClientPanel> panels;
     private final Function<EditorBuffer, String> chosenEnvironment;
     private final BiConsumer<EditorBuffer, String> environmentRestored;
     private final Consumer<EditorBuffer> refreshEnvironments;
@@ -92,7 +94,7 @@ final class HttpHistorySync {
     HttpHistorySync(
             CoordinatorHost host,
             Supplier<HttpResponseHistory> store,
-            Function<EditorBuffer, HttpClientPanel> panels,
+            Function<EditorBuffer, @Nullable HttpClientPanel> panels,
             Function<EditorBuffer, String> chosenEnvironment,
             BiConsumer<EditorBuffer, String> environmentRestored,
             Consumer<EditorBuffer> refreshEnvironments) {

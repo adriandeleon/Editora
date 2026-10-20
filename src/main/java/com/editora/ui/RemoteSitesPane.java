@@ -28,6 +28,7 @@ import javafx.util.StringConverter;
 import com.editora.config.ConfigManager;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.SftpUri;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -121,7 +122,7 @@ final class RemoteSitesPane {
             }
 
             @Override
-            public RemoteConnection.AuthMethod fromString(String s) {
+            public RemoteConnection.@Nullable AuthMethod fromString(String s) {
                 return null;
             }
         });
@@ -375,7 +376,7 @@ final class RemoteSitesPane {
     }
 
     /** Marks {@code field} red with {@code problemKey}'s text as its tooltip, or clears that. */
-    private static void mark(TextField field, String problemKey) {
+    private static void mark(TextField field, @Nullable String problemKey) {
         field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, problemKey != null);
         field.setTooltip(problemKey == null ? null : new javafx.scene.control.Tooltip(tr(problemKey)));
     }
@@ -500,7 +501,7 @@ final class RemoteSitesPane {
         }
     }
 
-    private static String nullToEmpty(String s) {
+    private static String nullToEmpty(@Nullable String s) {
         return s == null ? "" : s;
     }
 }

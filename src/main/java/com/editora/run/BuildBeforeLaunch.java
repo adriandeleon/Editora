@@ -82,7 +82,9 @@ public final class BuildBeforeLaunch {
      * args when {@code reactor} is the module's, then the launch-safe part of {@code toggleArgs}.
      */
     public static List<String> mavenExtraArgs(
-            com.editora.maven.MavenReactor.Reactor reactor, String rootPomOnTarget, List<String> toggleArgs) {
+            com.editora.maven.MavenReactor.@Nullable Reactor reactor,
+            @Nullable String rootPomOnTarget,
+            List<String> toggleArgs) {
         List<String> extra = new ArrayList<>();
         if (reactor != null) {
             extra.addAll(com.editora.maven.MavenReactor.reactorArgs(

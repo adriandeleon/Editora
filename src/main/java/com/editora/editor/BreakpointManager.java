@@ -103,7 +103,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
      * (as {@link #documentSnapshot()} numbers them); {@code null} when no session is live, which is when a
      * breakpoint simply looks like itself. An enabled breakpoint with no entry is {@link LiveState#PENDING}.
      */
-    public void setLive(java.util.Map<Integer, Live> byDocumentLine) {
+    public void setLive(java.util.@Nullable Map<Integer, Live> byDocumentLine) {
         java.util.Map<Integer, Live> next = byDocumentLine == null ? null : java.util.Map.copyOf(byDocumentLine);
         if (!java.util.Objects.equals(live, next)) {
             live = next;

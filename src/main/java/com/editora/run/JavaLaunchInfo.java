@@ -13,7 +13,7 @@ public record JavaLaunchInfo(
         @Nullable String javaExec,
         List<String> modulePaths,
         List<String> classPaths,
-        String error,
+        @Nullable String error,
         boolean enablePreview) {
 
     public JavaLaunchInfo(@Nullable String javaExec, List<String> modulePaths, List<String> classPaths, String error) {

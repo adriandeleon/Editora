@@ -7,6 +7,7 @@ import java.util.Map;
 
 import com.editora.http.CapturedResponses;
 import com.editora.http.HttpEnv;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -43,7 +44,7 @@ final class HttpEnvChoice {
      * an environment can define: a built-in ({@code {{$uuid}}}) or a response reference ({@code
      * {{login.response.body.$.token}}}).
      */
-    static String variableOf(String reference) {
+    static @Nullable String variableOf(String reference) {
         if (reference == null || !reference.startsWith("{{") || !reference.endsWith("}}") || reference.length() < 4) {
             return null;
         }

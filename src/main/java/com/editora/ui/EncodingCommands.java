@@ -17,6 +17,7 @@ import javafx.scene.control.Tab;
 import com.editora.editor.EditorBuffer;
 import com.editora.editorconfig.EditorConfigCharset;
 import com.editora.io.TextEncodings;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -230,7 +231,7 @@ final class EncodingCommands {
                         onChoose);
     }
 
-    private String editorConfigCharsetFor(Path file) {
+    private @Nullable String editorConfigCharsetFor(Path file) {
         if (host.editorSettings().editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)) {
             return com.editora.editorconfig.EditorConfig.resolveFor(file).charset();
         }

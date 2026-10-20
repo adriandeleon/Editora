@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import com.editora.build.BuildTool;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The window hooks the New Maven Project wizard and Update Versions need, over one {@link MainController}:
@@ -18,17 +19,18 @@ final class MavenProjectWindowOps implements MavenProjectCoordinator.Ops {
     }
 
     @Override
-    public java.nio.file.Path defaultParentDir() {
+    public java.nio.file.@Nullable Path defaultParentDir() {
         return c.templateActions.defaultNewDir();
     }
 
     @Override
-    public EditorBuffer openBuffer(java.nio.file.Path file) {
+    public @Nullable EditorBuffer openBuffer(java.nio.file.Path file) {
         return MainController.bufferOf(c.tabForPath(file));
     }
 
     @Override
-    public void openProject(java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
+    public void openProject(
+            java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.@Nullable MainClass main) {
         if (projectsEnabled()) { // else still generated on disk; just not registered as a project
             NewMavenProjectSession.open(c.projects, c.config, c.windowManager, root, name, main);
         }
@@ -40,7 +42,7 @@ final class MavenProjectWindowOps implements MavenProjectCoordinator.Ops {
     }
 
     @Override
-    public java.nio.file.Path currentProjectRoot() {
+    public java.nio.file.@Nullable Path currentProjectRoot() {
         return c.windowProjectRoot();
     }
 
@@ -79,7 +81,7 @@ final class MavenProjectWindowOps implements MavenProjectCoordinator.Ops {
     }
 
     @Override
-    public void showActionsAt(java.nio.file.Path root) {
+    public void showActionsAt(java.nio.file.@Nullable Path root) {
         BuildCoordinator maven = c.buildCoordinator(BuildTool.MAVEN);
         if (maven != null) {
             maven.showActionsAt(root);
@@ -87,7 +89,7 @@ final class MavenProjectWindowOps implements MavenProjectCoordinator.Ops {
     }
 
     @Override
-    public void runCustomAt(java.nio.file.Path root) {
+    public void runCustomAt(java.nio.file.@Nullable Path root) {
         BuildCoordinator maven = c.buildCoordinator(BuildTool.MAVEN);
         if (maven != null) {
             maven.runCustomAt(root);

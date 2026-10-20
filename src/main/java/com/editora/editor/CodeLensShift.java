@@ -18,7 +18,7 @@ final class CodeLensShift {
 
     /** Groups {@code lenses} (null = none) by the line each annotates, in their given order. */
     static <L> Map<Integer, java.util.List<L>> byLine(
-            java.util.List<L> lenses, java.util.function.ToIntFunction<L> lineOf) {
+            java.util.@Nullable List<L> lenses, java.util.function.ToIntFunction<L> lineOf) {
         Map<Integer, java.util.List<L>> byLine = new HashMap<>();
         if (lenses != null) {
             for (L lens : lenses) {

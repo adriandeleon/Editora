@@ -75,7 +75,7 @@ public final class NodeResponseScripts implements ResponseScripts {
             boolean enabled,
             String node,
             Duration timeout,
-            Path shimDir,
+            @Nullable Path shimDir,
             @Nullable Debugger debugger,
             String nodeSetting,
             @Nullable Path projectRoot) {
@@ -136,15 +136,15 @@ public final class NodeResponseScripts implements ResponseScripts {
 
     private final Settings settings;
     private final Trust trust;
-    private final Path httpFile;
-    private final Path baseDir;
+    private final @Nullable Path httpFile;
+    private final @Nullable Path baseDir;
     private volatile SecretGate.@Nullable Verdict verdict;
 
     /**
      * Handlers of {@code httpFile} (null for an untitled buffer), whose relative handler paths resolve against
      * {@code baseDir}.
      */
-    public NodeResponseScripts(Settings settings, Trust trust, Path httpFile, Path baseDir) {
+    public NodeResponseScripts(Settings settings, Trust trust, @Nullable Path httpFile, @Nullable Path baseDir) {
         this.settings = settings;
         this.trust = trust;
         this.httpFile = httpFile;
@@ -511,7 +511,7 @@ public final class NodeResponseScripts implements ResponseScripts {
         return b;
     }
 
-    private Path workingDir() {
+    private @Nullable Path workingDir() {
         if (baseDir != null && Files.isDirectory(baseDir)) {
             return baseDir;
         }
@@ -616,7 +616,7 @@ public final class NodeResponseScripts implements ResponseScripts {
      * resolves the script it runs, and under the permission model reading a link on the way ({@code /var} on macOS, a
      * linked home or config folder) is refused — the run fails before the shim starts.
      */
-    static Path shim(Path dir) throws IOException {
+    static Path shim(@Nullable Path dir) throws IOException {
         if (dir == null) {
             throw new IOException(tr("http.warn.handlerShimNoFolder"));
         }
