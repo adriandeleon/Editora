@@ -2,6 +2,8 @@ package com.editora.structured;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A neutral, toolkit-free model of an OpenAPI/Swagger document, built by {@link OpenApiParser} from the
  * parsed JSON/YAML tree and rendered by the editor's {@code OpenApiDoc} into browsable API docs. Kept
@@ -9,28 +11,33 @@ import java.util.List;
  * schemas); {@code $ref}s are shown by their simple name rather than deep-resolved.
  */
 public record OpenApiModel(
-        String title,
-        String version,
-        String description,
+        @Nullable String title,
+        @Nullable String version,
+        @Nullable String description,
         List<Server> servers,
         List<PathItem> paths,
         List<Schema> schemas) {
 
-    public record Server(String url, String description) {}
+    public record Server(String url, @Nullable String description) {}
 
     public record PathItem(String path, List<Operation> operations) {}
 
     public record Operation(
             String method, // upper-case HTTP verb
-            String summary,
-            String description,
+            @Nullable String summary,
+            @Nullable String description,
             boolean deprecated,
             List<Param> parameters,
             List<Response> responses) {}
 
-    public record Param(String name, String in, boolean required, String type, String description) {}
+    public record Param(
+            String name,
+            @Nullable String in,
+            boolean required,
+            String type,
+            @Nullable String description) {}
 
-    public record Response(String code, String description) {}
+    public record Response(String code, @Nullable String description) {}
 
     public record Schema(String name, String type, List<Property> properties) {}
 

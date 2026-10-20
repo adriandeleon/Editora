@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Which files of a project a deployment leaves behind: the built-in patterns plus the deployment's own, one per
  * line. Pure.
@@ -101,7 +103,7 @@ public final class DeployExcludes {
         return out;
     }
 
-    private static Rule parse(String raw) {
+    private static @Nullable Rule parse(String raw) {
         if (raw == null) {
             return null;
         }

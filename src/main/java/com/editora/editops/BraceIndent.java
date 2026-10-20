@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Brace-language indentation the plain "a line ending in an opener indents" rule misses, as WebStorm and
  * Prettier-formatted code lay it out:
@@ -39,7 +41,7 @@ public final class BraceIndent {
      *
      * @param before the caret's line up to the caret
      */
-    static String afterEnter(String text, int ls, String before, String unit) {
+    static @Nullable String afterEnter(String text, int ls, String before, String unit) {
         String indent = Indenter.leadingWhitespace(before);
         String code = code(before);
         if (code.isEmpty()) {
@@ -90,7 +92,7 @@ public final class BraceIndent {
      * The indent for the line the just-typed {@code typed} completed (see {@link #completesClause}), or
      * {@code null} to leave it.
      */
-    static String clauseIndent(String text, int ls, char typed, String currentIndent, String unit) {
+    static @Nullable String clauseIndent(String text, int ls, char typed, String currentIndent, String unit) {
         if (typed == ':') {
             return caseIndent(text, ls, unit);
         }
@@ -110,7 +112,7 @@ public final class BraceIndent {
     }
 
     /** A {@code case} label's indent: the previous label's, or one unit inside the {@code switch}. */
-    private static String caseIndent(String text, int ls, String unit) {
+    private static @Nullable String caseIndent(String text, int ls, String unit) {
         int end = ls - 1;
         for (int n = 0; end > 0 && n < MAX_LINES; n++) {
             int start = text.lastIndexOf('\n', end - 1) + 1;
@@ -152,7 +154,7 @@ public final class BraceIndent {
     }
 
     /** The indent of the line holding the opener a line with {@code balance} unmatched {@code )} closes. */
-    private static String openingLineIndent(String text, int ls, int balance) {
+    private static @Nullable String openingLineIndent(String text, int ls, int balance) {
         int end = ls - 1;
         for (int n = 0; end > 0 && n < MAX_LINES; n++) {
             int start = text.lastIndexOf('\n', end - 1) + 1;
@@ -167,7 +169,7 @@ public final class BraceIndent {
     }
 
     /** The indent of the first line of the {@code .} chain the caret's line ends. */
-    private static String chainHeadIndent(String text, int ls) {
+    private static @Nullable String chainHeadIndent(String text, int ls) {
         int end = ls - 1;
         for (int n = 0; end > 0 && n < MAX_LINES; n++) {
             int start = text.lastIndexOf('\n', end - 1) + 1;
@@ -181,7 +183,7 @@ public final class BraceIndent {
     }
 
     /** The nearest non-blank line above the caret's line, or {@code null}. */
-    private static String previousCodeLine(String text, int ls) {
+    private static @Nullable String previousCodeLine(String text, int ls) {
         int end = ls - 1;
         for (int n = 0; end > 0 && n < MAX_LINES; n++) {
             int start = text.lastIndexOf('\n', end - 1) + 1;

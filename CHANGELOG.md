@@ -10,14 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Null checking in the build.** NullAway, an Error Prone plugin, now checks every package marked
-  `@NullMarked` (JSpecify) during compile and fails the build on a null that is not declared. Nine packages
-  start marked: the JVM debug adapter, EditorConfig, single-instance launch, the OS secret stores, GnuPG
-  encryption, the MCP server, the agent client, settings sync and crash recovery. A new package must start
-  marked, and the list of packages written before the rule may only shrink (docs/conventions.md, "Null
-  annotations"). There is no change in behaviour.
+  `@NullMarked` (JSpecify) during compile and fails the build on a null that is not declared. Every package
+  is marked except the window UI (`ui`) and the editor component (`editor`), which follow on their own. A
+  new package must start marked, and the list of unmarked packages may only shrink (docs/conventions.md,
+  "Null annotations").
 
 ### Fixed
 
+- **Null pointer exceptions found by the new null checking.** Each would have failed the action, or a
+  background thread, with a `NullPointerException`:
+  - **Terminal Find** after a newer search or the terminal's closing had already replaced the scan.
+  - **Debugger:** a `stopped` event that arrived before the session's client was set.
+  - **File watching (polling):** a folder that could not be listed when it was first watched; its first
+    readable listing is now the baseline.
+  - **Plugin registry:** a download without a deadline, on a JVM whose `nanoTime()` is negative.
+  - **Test runner:** a suite reported without a name.
+  - **SSH config:** an `Include ~…` in a config with no home folder above `~/.ssh`.
+  - **Install:** a destination at the root of a drive (now a clear error).
+  - **Scala Run:** a file path ending in `/..`.
+  - **Local History:** an iterator `remove()` before `next()` (now the `IllegalStateException` the contract
+    names).
 - **Opening a root as a file no longer throws.** `editora /` (or `editora D:\`), and Remote > Open File on
   `sftp://host` with no path, used to hit a `NullPointerException` in the open path. From the command line that
   stopped the session restore and left an empty window. Now the status bar says the path is a folder, and no tab

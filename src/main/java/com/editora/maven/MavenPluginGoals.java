@@ -18,6 +18,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import com.editora.plugin.PluginInstaller;
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Element;
 
 /**
@@ -76,7 +77,7 @@ public final class MavenPluginGoals {
      * search would attach a random parameter's prose to the goal (and many mojos — {@code javafx:run} among
      * them — declare no description of their own at all).
      */
-    public static Descriptor parseDescriptor(String xml) {
+    public static @Nullable Descriptor parseDescriptor(@Nullable String xml) {
         if (xml == null || xml.isBlank()) {
             return null;
         }
@@ -107,7 +108,7 @@ public final class MavenPluginGoals {
     }
 
     /** Collapses a descriptor's (often multi-line, HTML-ish) prose into one capped tooltip line. */
-    static String shortDescription(String raw) {
+    static String shortDescription(@Nullable String raw) {
         if (raw == null) {
             return "";
         }
@@ -126,7 +127,7 @@ public final class MavenPluginGoals {
      * any other unexpanded property makes the value unusable, so it is rejected rather than turned into a
      * path with a literal {@code ${...}} segment in it.
      */
-    public static String localRepositoryFromSettings(String settingsXml, String userHome) {
+    public static @Nullable String localRepositoryFromSettings(String settingsXml, String userHome) {
         if (settingsXml == null || settingsXml.isBlank()) {
             return null;
         }
@@ -162,12 +163,12 @@ public final class MavenPluginGoals {
     }
 
     /** Where a plugin jar lives under {@code localRepo}, per the standard repository layout. */
-    public static Path jarPath(Path localRepo, String groupId, String artifactId, String version) {
+    public static @Nullable Path jarPath(Path localRepo, String groupId, String artifactId, String version) {
         Path dir = artifactDirectory(localRepo, groupId, artifactId);
         return dir == null ? null : dir.resolve(version).resolve(artifactId + "-" + version + ".jar");
     }
 
-    private static Path artifactDirectory(Path localRepo, String groupId, String artifactId) {
+    private static @Nullable Path artifactDirectory(Path localRepo, String groupId, String artifactId) {
         if (localRepo == null || isUnusable(groupId) || isUnusable(artifactId)) {
             return null;
         }
@@ -215,7 +216,7 @@ public final class MavenPluginGoals {
     }
 
     /** One plugin's descriptor, or {@code null} when its jar is not in the local repository / unreadable. */
-    public static Descriptor read(PomModel.Plugin plugin, Path localRepo) {
+    public static @Nullable Descriptor read(PomModel.Plugin plugin, Path localRepo) {
         String version = resolveVersion(plugin, localRepo);
         if (version == null) {
             return null;
@@ -250,7 +251,7 @@ public final class MavenPluginGoals {
      * newest local version is safe here because the descriptor is only used to <em>name</em> goals; the build
      * itself still runs through Maven, which resolves the real version.
      */
-    private static String resolveVersion(PomModel.Plugin plugin, Path localRepo) {
+    private static @Nullable String resolveVersion(PomModel.Plugin plugin, Path localRepo) {
         String declared = PomParser.strip(plugin.version());
         if (!declared.isEmpty() && !declared.contains("${")) {
             return declared;
@@ -276,7 +277,7 @@ public final class MavenPluginGoals {
         return best;
     }
 
-    private static String readDescriptor(Path jar) {
+    private static @Nullable String readDescriptor(Path jar) {
         try (ZipFile zip = new ZipFile(jar.toFile())) {
             ZipEntry entry = zip.getEntry("META-INF/maven/plugin.xml");
             if (entry == null || entry.getSize() > MAX_DESCRIPTOR_BYTES) {

@@ -9,6 +9,8 @@ import java.time.Duration;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Lets Editora know the exit code of a Java program java-debug starts itself (the program console off). java-debug
  * 0.53.2 sends {@code exited} with a hard-coded 0 when the VM dies (bytecode of {@code ConfigurationDoneRequestHandler}),
@@ -107,6 +109,7 @@ final class JavaExitCodeWrapper {
      * The exit status the wrapper recorded, waiting up to {@code wait} for it to appear (java-debug reports the
      * VM's death a moment before the process has ended); null when there is none. Blocking: off the FX thread.
      */
+    @Nullable
     Integer awaitExitCode(Duration wait) {
         long end = System.nanoTime() + wait.toNanos();
         while (true) {
@@ -124,7 +127,7 @@ final class JavaExitCodeWrapper {
     }
 
     /** The status in {@code file} ({@code "3\n"}), or null when it is missing or not a number. */
-    static Integer readExitCode(Path file) {
+    static @Nullable Integer readExitCode(Path file) {
         try {
             if (!Files.isRegularFile(file)) {
                 return null;

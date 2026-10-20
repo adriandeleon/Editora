@@ -25,6 +25,7 @@ import java.util.function.BooleanSupplier;
 
 import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -75,9 +76,9 @@ public final class NodeResponseScripts implements ResponseScripts {
             String node,
             Duration timeout,
             Path shimDir,
-            Debugger debugger,
+            @Nullable Debugger debugger,
             String nodeSetting,
-            Path projectRoot) {
+            @Nullable Path projectRoot) {
         public Settings {
             node = node == null || node.isBlank() ? "node" : node.strip();
             timeout = timeout == null || timeout.isNegative() || timeout.isZero() ? DEFAULT_TIMEOUT : timeout;
@@ -89,7 +90,7 @@ public final class NodeResponseScripts implements ResponseScripts {
          * ({@link HttpNodeChoice}): {@code nodeSetting} is Settings → Node.js, {@code projectRoot} bounds the
          * {@code .nvmrc} lookup.
          */
-        public Settings(boolean enabled, String node, Duration timeout, Path shimDir, Debugger debugger) {
+        public Settings(boolean enabled, String node, Duration timeout, Path shimDir, @Nullable Debugger debugger) {
             this(enabled, node, timeout, shimDir, debugger, "", null);
         }
 
@@ -112,7 +113,7 @@ public final class NodeResponseScripts implements ResponseScripts {
          * the permission model because that Node cannot let a debugger in under it ({@link
          * HttpScripts#allowsInspector}), else null.
          */
-        void attach(int port, String label, Path shim, String unguardedNode);
+        void attach(int port, String label, @Nullable Path shim, @Nullable String unguardedNode);
     }
 
     /** How long a debugged script waits for its debugger to attach. */
@@ -137,7 +138,7 @@ public final class NodeResponseScripts implements ResponseScripts {
     private final Trust trust;
     private final Path httpFile;
     private final Path baseDir;
-    private volatile SecretGate.Verdict verdict;
+    private volatile SecretGate.@Nullable Verdict verdict;
 
     /**
      * Handlers of {@code httpFile} (null for an untitled buffer), whose relative handler paths resolve against
@@ -204,7 +205,27 @@ public final class NodeResponseScripts implements ResponseScripts {
     }
 
     /** The Node and shim a script runs with, or why it cannot run ({@code skip}, with {@code detail}). */
-    private record Ready(Node node, Path shim, Skip skip, String detail) {}
+    private record Ready(
+            @Nullable Node node,
+            @Nullable Path shim,
+            @Nullable Skip skip,
+            @Nullable String detail) {
+        /** The Node of a run that can start (no {@code skip}). */
+        Node runNode() {
+            if (node == null) {
+                throw new IllegalStateException("No Node to run scripts with: " + skip);
+            }
+            return node;
+        }
+
+        /** The shim of a run that can start (no {@code skip}). */
+        Path runShim() {
+            if (shim == null) {
+                throw new IllegalStateException("No script shim: " + skip);
+            }
+            return shim;
+        }
+    }
 
     private Ready ready(BooleanSupplier cancelled) {
         if (!settings.enabled()) {
@@ -249,7 +270,9 @@ public final class NodeResponseScripts implements ResponseScripts {
         if (body != null && body.length() > CapturedResponses.MAX_BODY_CHARS) {
             return skipped(tr("http.warn.handlerBodyTooLarge", body.length(), CapturedResponses.MAX_BODY_CHARS));
         }
-        Node node = ready.node();
+        Node node = ready.runNode();
+        HttpExchange.Details details = exchange.details();
+        List<String> secretValues = details == null ? List.of() : details.secretValues();
         HttpTests tests = HttpTests.NONE;
         List<GlobalChange> changes = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
@@ -269,14 +292,8 @@ public final class NodeResponseScripts implements ResponseScripts {
                 continue;
             }
             String nonce = nonce();
-            String stdin = HttpScripts.input(
-                    nonce,
-                    script,
-                    request,
-                    exchange,
-                    input.environment(),
-                    globals,
-                    exchange.details().secretValues());
+            String stdin =
+                    HttpScripts.input(nonce, script, request, exchange, input.environment(), globals, secretValues);
             Launch launch = launch(
                     argv(ready, debugging()),
                     workingDir(),
@@ -339,7 +356,7 @@ public final class NodeResponseScripts implements ResponseScripts {
             };
             return why == null ? cancelled() : notRun(why, HttpTests.NONE, List.of(), List.of());
         }
-        Node node = ready.node();
+        Node node = ready.runNode();
         HttpTests tests = HttpTests.NONE;
         List<GlobalChange> changes = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
@@ -356,7 +373,11 @@ public final class NodeResponseScripts implements ResponseScripts {
             try {
                 script = script(h);
             } catch (IOException | IllegalArgumentException e) {
-                return notRun(tr("http.preScript.why.file", h.path(), e.getMessage()), tests, changes, warnings);
+                return notRun(
+                        tr("http.preScript.why.file", String.valueOf(h.path()), String.valueOf(e.getMessage())),
+                        tests,
+                        changes,
+                        warnings);
             }
             String nonce = nonce();
             String stdin = HttpScripts.preInput(nonce, script, request, input, variables, globals);
@@ -417,7 +438,7 @@ public final class NodeResponseScripts implements ResponseScripts {
     }
 
     /** What one launch reports as tests: its output, or the timeout or crash as the error. */
-    private HttpTests outcome(Launch launch, HttpScripts.Output out) {
+    private HttpTests outcome(Launch launch, HttpScripts.@Nullable Output out) {
         if (launch.debuggerMissing()) {
             return new HttpTests(List.of(), List.of(), tr("http.script.debuggerMissing", ATTACH_DEADLINE.toSeconds()));
         }
@@ -434,11 +455,12 @@ public final class NodeResponseScripts implements ResponseScripts {
     }
 
     private static List<String> argv(Ready ready, boolean debug) {
+        Node node = ready.runNode();
+        Path shim = ready.runShim();
         List<String> argv = new ArrayList<>();
-        argv.add(ready.node().executable());
-        argv.addAll(HttpScripts.launchFlags(
-                ready.node().guard(), HttpScripts.parseVersion(ready.node().version()), ready.shim(), debug));
-        argv.add(ready.shim().toString());
+        argv.add(node.executable());
+        argv.addAll(HttpScripts.launchFlags(node.guard(), HttpScripts.parseVersion(node.version()), shim, debug));
+        argv.add(shim.toString());
         return argv;
     }
 
@@ -447,9 +469,9 @@ public final class NodeResponseScripts implements ResponseScripts {
      * but this Node cannot open the inspector under it ({@link HttpScripts#allowsInspector}).
      */
     private static boolean debugsUnguarded(Ready ready) {
-        return ready.node().guard() != HttpScripts.Guard.NONE
-                && !HttpScripts.allowsInspector(
-                        HttpScripts.parseVersion(ready.node().version()));
+        Node node = ready.runNode();
+        return node.guard() != HttpScripts.Guard.NONE
+                && !HttpScripts.allowsInspector(HttpScripts.parseVersion(node.version()));
     }
 
     private boolean debugging() {
@@ -457,15 +479,15 @@ public final class NodeResponseScripts implements ResponseScripts {
     }
 
     /** What a debugged launch watches for, or null for a run that is not debugged. */
-    private DebugWatch watch(String label, Ready ready) {
+    private @Nullable DebugWatch watch(String label, Ready ready) {
         Debugger d = settings.debugger();
         return d == null
                 ? null
                 : new DebugWatch(
                         d,
                         label,
-                        ready.shim(),
-                        debugsUnguarded(ready) ? ready.node().version() : null);
+                        ready.runShim(),
+                        debugsUnguarded(ready) ? ready.runNode().version() : null);
     }
 
     /** A request as a debug session names it: its {@code @name}, else its method and URL as written. */
@@ -498,12 +520,12 @@ public final class NodeResponseScripts implements ResponseScripts {
 
     /** The script of handler {@code h}: its inline source placed in the {@code .http} file, or its file read. */
     HttpScripts.Script script(HttpFile.Handler h) throws IOException {
-        if (!h.isFile()) {
+        String written = h.path();
+        if (written == null) { // not a file: its source is inline
             String name =
                     httpFile == null ? "handler.js" : httpFile.toAbsolutePath().toString();
             return new HttpScripts.Script(h.source(), name, h.line(), h.column());
         }
-        String written = h.path();
         if (written.isEmpty()) {
             throw new IllegalArgumentException(tr("http.handlerFile.empty"));
         }
@@ -535,7 +557,11 @@ public final class NodeResponseScripts implements ResponseScripts {
     // --- Node --------------------------------------------------------------------------------------------------
 
     /** The Node to run: its executable, version text and guard, or why there is none. */
-    record Node(String executable, String version, HttpScripts.Guard guard, String error) {}
+    record Node(
+            String executable,
+            @Nullable String version,
+            HttpScripts.Guard guard,
+            @Nullable String error) {}
 
     private Node node() {
         String command = nodeCommand();
@@ -562,7 +588,7 @@ public final class NodeResponseScripts implements ResponseScripts {
     }
 
     /** {@code exe}'s {@code node --version}, asked once per executable and modification time; null when it fails. */
-    public static int[] version(String exe) {
+    public static int @Nullable [] version(String exe) {
         String key = exe;
         try {
             Path p = Path.of(exe);
@@ -635,10 +661,16 @@ public final class NodeResponseScripts implements ResponseScripts {
             String stderr,
             boolean timedOut,
             boolean cancelled,
-            String startError,
+            @Nullable String startError,
             boolean debuggerMissing) {
 
-        Launch(int exit, String stdout, String stderr, boolean timedOut, boolean cancelled, String startError) {
+        Launch(
+                int exit,
+                String stdout,
+                String stderr,
+                boolean timedOut,
+                boolean cancelled,
+                @Nullable String startError) {
             this(exit, stdout, stderr, timedOut, cancelled, startError, false);
         }
     }
@@ -650,12 +682,12 @@ public final class NodeResponseScripts implements ResponseScripts {
     static final class DebugWatch {
         private final Debugger debugger;
         private final String label;
-        private final Path shim;
-        private final String unguardedNode;
+        private final @Nullable Path shim;
+        private final @Nullable String unguardedNode;
         private volatile long listeningAt;
         private volatile boolean attached;
 
-        DebugWatch(Debugger debugger, String label, Path shim, String unguardedNode) {
+        DebugWatch(Debugger debugger, String label, @Nullable Path shim, @Nullable String unguardedNode) {
             this.debugger = debugger;
             this.label = label;
             this.shim = shim;
@@ -690,7 +722,8 @@ public final class NodeResponseScripts implements ResponseScripts {
      * Runs {@code argv} in {@code dir} with the minimal environment, {@code stdin} as its input; kills it (and anything
      * it started) after {@code timeout} or once {@code cancelled}.
      */
-    static Launch launch(List<String> argv, Path dir, String stdin, Duration timeout, BooleanSupplier cancelled) {
+    static Launch launch(
+            List<String> argv, @Nullable Path dir, String stdin, Duration timeout, BooleanSupplier cancelled) {
         return launch(argv, dir, stdin, timeout, cancelled, null);
     }
 
@@ -699,7 +732,12 @@ public final class NodeResponseScripts implements ResponseScripts {
      * there is no timeout — a paused script waits for its user — but a debugger that does not attach in time stops it.
      */
     static Launch launch(
-            List<String> argv, Path dir, String stdin, Duration timeout, BooleanSupplier cancelled, DebugWatch watch) {
+            List<String> argv,
+            @Nullable Path dir,
+            String stdin,
+            Duration timeout,
+            BooleanSupplier cancelled,
+            @Nullable DebugWatch watch) {
         ProcessBuilder pb = new ProcessBuilder(argv);
         if (dir != null) {
             pb.directory(dir.toFile());

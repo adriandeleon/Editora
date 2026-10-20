@@ -3,6 +3,8 @@ package com.editora.editops;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Where multi-caret commands put their carets. Ranges are {@code {anchor, caret}} pairs in document
  * offsets; a caret with nothing selected has both equal. Pure.
@@ -55,7 +57,7 @@ public final class CaretPlans {
      * one of the {@code taken} ranges (compared as {@code {start, end}}). Case-sensitive and literal, as
      * Add Caret at Next Occurrence is. Null when every occurrence is taken or there is none.
      */
-    public static int[] nextOccurrence(String text, String term, int from, List<int[]> taken) {
+    public static int @Nullable [] nextOccurrence(String text, String term, int from, List<int[]> taken) {
         if (term == null || term.isEmpty()) {
             return null;
         }

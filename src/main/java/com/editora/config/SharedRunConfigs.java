@@ -12,6 +12,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Reading and writing run configurations as a file inside the project, so a team can commit them.
@@ -138,6 +139,6 @@ public final class SharedRunConfigs {
 
         /** Left out of the file when there are none, so a project without deployments writes what it did. */
         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-        public List<Deployment> deployments;
+        public @Nullable List<Deployment> deployments;
     }
 }

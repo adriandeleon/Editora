@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Turns the HTML a browser, a word processor or a spreadsheet puts on the clipboard into Markdown: headings,
  * paragraphs, emphasis, inline code, links, images, lists (nested, numbered, task), block quotes, code
@@ -88,12 +90,12 @@ public final class HtmlToMarkdown {
 
     /** An element (or, with {@code name} null, a run of text). */
     private static final class Node {
-        final String name;
+        final @Nullable String name;
         final Map<String, String> attrs;
         final List<Node> children = new ArrayList<>();
-        String text;
+        String text = "";
 
-        Node(String name, Map<String, String> attrs) {
+        Node(@Nullable String name, Map<String, String> attrs) {
             this.name = name;
             this.attrs = attrs;
         }
@@ -190,7 +192,7 @@ public final class HtmlToMarkdown {
             if (tag.startsWith("/")) {
                 String name = tag.substring(1).strip().toLowerCase(Locale.ROOT);
                 for (int k = stack.size() - 1; k > 0; k--) {
-                    if (stack.get(k).name.equals(name)) {
+                    if (name.equals(stack.get(k).name)) {
                         while (stack.size() > k) {
                             stack.remove(stack.size() - 1);
                         }
@@ -297,9 +299,10 @@ public final class HtmlToMarkdown {
     private static void blocks(List<Node> nodes, StringBuilder out, String prefix) {
         List<Node> inlineRun = new ArrayList<>();
         for (Node n : nodes) {
-            if (n.name != null && BLOCKS.contains(n.name)) {
+            String name = n.name;
+            if (name != null && BLOCKS.contains(name)) {
                 flush(inlineRun, out, prefix);
-                block(n, out, prefix);
+                block(n, name, out, prefix);
             } else {
                 inlineRun.add(n);
             }
@@ -322,12 +325,12 @@ public final class HtmlToMarkdown {
         out.append(prefix.stripTrailing()).append('\n');
     }
 
-    private static void block(Node n, StringBuilder out, String prefix) {
-        switch (n.name) {
+    private static void block(Node n, String name, StringBuilder out, String prefix) {
+        switch (name) {
             case "h1", "h2", "h3", "h4", "h5", "h6" -> {
                 String t = inline(n.children, false).strip().replace('\n', ' ');
                 if (!t.isEmpty()) {
-                    paragraph(out, prefix, "#".repeat(n.name.charAt(1) - '0') + " " + t);
+                    paragraph(out, prefix, "#".repeat(name.charAt(1) - '0') + " " + t);
                 }
             }
             case "ul", "ol" -> {

@@ -9,6 +9,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Resolves the TextMate/VS Code snippet variables from the editing context (file name, selection,
  * clipboard, caret line, clock, and — when supplied through the {@code with…} methods — the workspace, the
@@ -128,7 +130,7 @@ public final class VariableResolver implements SnippetParser.Variables {
     }
 
     @Override
-    public String resolve(String name) {
+    public @Nullable String resolve(String name) {
         return switch (name) {
             case "TM_FILENAME" -> fileName;
             case "TM_FILENAME_BASE" -> baseName(fileName);

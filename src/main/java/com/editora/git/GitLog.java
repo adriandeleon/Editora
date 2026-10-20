@@ -6,6 +6,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The row model of the Git Log: one {@link Entry} per commit with its parents and the ref names that point
  * at it, a {@link Page} that says whether more history follows, the {@link Request} a page is asked for with
@@ -305,7 +307,7 @@ public final class GitLog {
         return new Page(entries, truncated);
     }
 
-    private static Entry parseRow(String line) {
+    private static @Nullable Entry parseRow(String line) {
         String[] f = line.split("\t", FIELDS);
         if (f.length < FIELDS) {
             return null;
@@ -388,7 +390,7 @@ public final class GitLog {
             "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%D%x00%B";
 
     /** Parses {@link #DETAILS_FORMAT} output; null when it is not one. */
-    public static Details parseDetails(String out) {
+    public static @Nullable Details parseDetails(String out) {
         if (out == null) {
             return null;
         }

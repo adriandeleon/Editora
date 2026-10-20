@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Range;
+import org.jspecify.annotations.Nullable;
 
 /** Pure mapping from LSP {@link Diagnostic}s to the editor's flat {@link LspDiagnostic} value type. */
 public final class DiagnosticMapper {
@@ -18,7 +19,7 @@ public final class DiagnosticMapper {
      * Maps a pull-diagnostics report ({@code textDocument/diagnostic} result) to editor diagnostics, or
      * {@code null} for an <em>unchanged</em> report (the caller should keep the file's current diagnostics).
      */
-    public static List<LspDiagnostic> mapReport(org.eclipse.lsp4j.DocumentDiagnosticReport report) {
+    public static @Nullable List<LspDiagnostic> mapReport(org.eclipse.lsp4j.DocumentDiagnosticReport report) {
         if (report == null) {
             return List.of();
         }
@@ -91,7 +92,7 @@ public final class DiagnosticMapper {
      * The rule's documentation page ({@code codeDescription.href}) when it is a web address — ShellCheck's
      * diagnostics link each SC code to its wiki page — else null.
      */
-    private static String href(Diagnostic d) {
+    private static @Nullable String href(Diagnostic d) {
         String href =
                 d.getCodeDescription() == null ? null : d.getCodeDescription().getHref();
         if (href == null) {
@@ -102,7 +103,7 @@ public final class DiagnosticMapper {
     }
 
     /** The diagnostic code as a string (LSP code is an Either&lt;String,Integer&gt;), or null. */
-    private static String code(Diagnostic d) {
+    private static @Nullable String code(Diagnostic d) {
         if (d.getCode() == null) {
             return null;
         }

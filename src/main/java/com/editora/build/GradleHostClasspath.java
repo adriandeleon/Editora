@@ -11,6 +11,7 @@ import java.util.Map;
 import com.editora.process.ExecTarget;
 import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A Gradle module's runtime classpath, worked out by Gradle on the machine the project is on — a deployment's
@@ -63,14 +64,17 @@ public final class GradleHostClasspath {
      * Builds the module {@code module} of the Gradle build at {@code buildRoot} (both on the host) and returns its
      * runtime classpath as the host names it; null when Gradle fails, with what it said in {@code error[0]}.
      */
-    public static List<String> resolve(Path buildRoot, Path module, String jdkHome, String[] error) {
+    public static @Nullable List<String> resolve(
+            Path buildRoot, Path module, String jdkHome, @Nullable String @Nullable [] error) {
         ExecTarget target = ExecTargets.forPath(buildRoot);
         Path output = null;
         try {
-            String script = target.cache()
-                    .putText(
-                            "gradle/editora-classpath-" + Integer.toHexString(INIT_SCRIPT.hashCode()) + ".gradle",
-                            INIT_SCRIPT);
+            com.editora.process.TargetCache cache = target.cache();
+            if (cache == null) {
+                throw new java.io.IOException("no working folder on " + buildRoot);
+            }
+            String script = cache.putText(
+                    "gradle/editora-classpath-" + Integer.toHexString(INIT_SCRIPT.hashCode()) + ".gradle", INIT_SCRIPT);
             Path buildDir = Files.createDirectories(module.resolve("build"));
             output = buildDir.resolve("editora-cp-" + java.util.UUID.randomUUID() + ".txt");
             String relative = buildRoot.relativize(module).toString().replace('\\', '/');

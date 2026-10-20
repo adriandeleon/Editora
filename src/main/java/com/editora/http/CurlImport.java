@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Converts a {@code curl …} command line into a {@code .http} request block. Tokenizes the command the way a
  * POSIX shell would (single and double quotes, backslash escapes, {@code $'…'} ANSI-C strings, {@code \}-newline
@@ -153,19 +155,33 @@ public final class CurlImport {
 
     /** What the flags describe, collected before the request block is written. */
     private static final class Command {
+        @Nullable
         String method;
+
+        @Nullable
         String url;
+
         final List<String[]> headers = new ArrayList<>();
         final List<String> data = new ArrayList<>(); // -d / --data-* pieces, joined with '&'
         final List<String> json = new ArrayList<>(); // --json pieces, concatenated
         final List<String[]> form = new ArrayList<>(); // -F name=value pieces: [spec, isString]
+
+        @Nullable
         String bodyFile; // -d @file / --json @file
+
+        @Nullable
         String user;
+
         boolean digest;
         boolean head;
         boolean get;
+
+        @Nullable
         String version; // --http1.1 / --http2 → the request line's version
+
+        @Nullable
         String uploadFile; // -T / --upload-file
+
         final List<String> query = new ArrayList<>(); // --url-query pieces
         final java.util.Set<String> removed = new java.util.HashSet<>(); // "-H 'Name:'": headers not to send
     }
@@ -176,7 +192,7 @@ public final class CurlImport {
      * {@code curl} word — a shell prompt ({@code $ curl …}), {@code sudo} — is skipped, and so is a path to it
      * ({@code /usr/bin/curl}); PowerShell's backtick line continuations are ignored.
      */
-    public static String toHttpRequest(String curl) {
+    public static @Nullable String toHttpRequest(String curl) {
         List<String> tokens = tokenize(curl);
         int start = curlWord(tokens);
         if (start < 0) {

@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -33,7 +35,11 @@ public final class Multipart {
     /** One multipart section: its {@code headers}, the {@code inlineBody} (when authored inline), or a
      *  {@code filePath} (relative to the request file) sent instead — streamed as is, or read and its {@code {{vars}}}
      *  substituted when {@code substituteFile} (a {@code <@ ./file} part). */
-    public record Part(Map<String, String> headers, String inlineBody, String filePath, boolean substituteFile) {
+    public record Part(
+            Map<String, String> headers,
+            String inlineBody,
+            @Nullable String filePath,
+            boolean substituteFile) {
 
         public Part(Map<String, String> headers, String inlineBody, String filePath) {
             this(headers, inlineBody, filePath, false);
@@ -139,7 +145,10 @@ public final class Multipart {
      * {@code <@ ./file} part after substitution) or the {@code file} streamed as is; both null when the part's
      * file could not be read (reported in the problems).
      */
-    public record Resolved(Map<String, String> headers, String text, Path file) {}
+    public record Resolved(
+            Map<String, String> headers,
+            @Nullable String text,
+            @Nullable Path file) {}
 
     /**
      * An assembled {@code multipart/form-data} body: the framing and text parts as bytes, each {@code < ./file}

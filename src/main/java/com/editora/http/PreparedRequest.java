@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a request resolves to before anything is sent — method, URL, headers, body, Digest credentials, the label and
  * the details — with every {@code {{…}}} substituted through one function. A send ({@link HttpClientService}) and the
@@ -21,7 +23,7 @@ record PreparedRequest(
         List<String> warnings,
         HttpVersions.Choice version,
         RequestBodies.Content body,
-        DigestAuth.Credentials digest,
+        DigestAuth.@Nullable Credentials digest,
         String label,
         HttpExchange.Details details) {
 
@@ -132,7 +134,7 @@ record PreparedRequest(
         return sb.toString();
     }
 
-    private static DigestAuth.Credentials digestCredentials(List<String[]> headers) {
+    private static DigestAuth.@Nullable Credentials digestCredentials(List<String[]> headers) {
         for (String[] h : headers) {
             if (h[0].equalsIgnoreCase("Authorization")) {
                 return DigestAuth.shorthand(h[1]);

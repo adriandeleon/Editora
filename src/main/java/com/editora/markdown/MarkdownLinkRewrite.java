@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The relative links of a Markdown document, and their rewrite when a file or folder is renamed or moved.
  *
@@ -168,7 +170,7 @@ public final class MarkdownLinkRewrite {
      * The wiki link whose {@code [[…]]} contains {@code caret}, or null. Never one in code, front matter or
      * raw HTML.
      */
-    public static Link wikiAt(String text, int caret) {
+    public static @Nullable Link wikiAt(String text, int caret) {
         if (text == null || caret < 0 || caret > text.length() || text.indexOf("[[") < 0) {
             return null;
         }
@@ -296,7 +298,7 @@ public final class MarkdownLinkRewrite {
         return close + 2;
     }
 
-    private static Link destinationAt(String line, int from, int to, int offset, boolean inline) {
+    private static @Nullable Link destinationAt(String line, int from, int to, int offset, boolean inline) {
         int i = from;
         while (i < to && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) {
             i++;
@@ -398,7 +400,8 @@ public final class MarkdownLinkRewrite {
      * written as a bare name follows its note's new name and is untouched by a mere move; one written with a
      * folder is recomputed like a path.
      */
-    public static Result rewrite(String text, Path docOld, Path docNew, Path from, Path to, WikiTargets wiki) {
+    public static Result rewrite(
+            String text, Path docOld, Path docNew, Path from, Path to, @Nullable WikiTargets wiki) {
         if (text == null || docOld == null || docNew == null || from == null || to == null) {
             return new Result(text, 0);
         }
@@ -416,7 +419,7 @@ public final class MarkdownLinkRewrite {
         Path oldDoc = docOld.toAbsolutePath().normalize();
         for (Link link : links) {
             String replacement = link.isWiki()
-                    ? rewrittenWiki(link, oldDoc, newDir, source, target, wiki)
+                    ? (wiki == null ? null : rewrittenWiki(link, oldDoc, newDir, source, target, wiki))
                     : rewritten(link, oldDir, newDir, source, target);
             if (replacement == null) {
                 continue;
@@ -435,7 +438,8 @@ public final class MarkdownLinkRewrite {
     }
 
     /** The new note name for a wiki link, or null when it stays as written. */
-    private static String rewrittenWiki(Link link, Path oldDoc, Path newDir, Path from, Path to, WikiTargets wiki) {
+    private static @Nullable String rewrittenWiki(
+            Link link, Path oldDoc, Path newDir, Path from, Path to, WikiTargets wiki) {
         String written = link.path();
         WikiTargets.Resolved was = wiki.resolve(oldDoc, written);
         if (was == null || written.isEmpty()) {
@@ -467,7 +471,7 @@ public final class MarkdownLinkRewrite {
     }
 
     /** The new text for {@code link}, or null when it stays as written. */
-    private static String rewritten(Link link, Path oldDir, Path newDir, Path from, Path to) {
+    private static @Nullable String rewritten(Link link, Path oldDir, Path newDir, Path from, Path to) {
         String dest = link.destination();
         if (!isRelative(dest)) {
             return null;

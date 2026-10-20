@@ -4,6 +4,8 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Locates the Maven <b>reactor root</b> for a module so the Run classpath fallback resolves sibling-module
  * dependencies in a multi-module build. {@code mvn dependency:build-classpath} run in a submodule misses
@@ -20,7 +22,7 @@ public final class MavenReactor {
 
     /** The topmost ancestor of {@code moduleDir} in a contiguous chain of pom-bearing dirs, or {@code moduleDir}
      *  itself when its parent has no {@code pom.xml}. {@code hasPom} tests whether a directory holds a pom. */
-    public static Path reactorRoot(Path moduleDir, Predicate<Path> hasPom) {
+    public static @Nullable Path reactorRoot(Path moduleDir, Predicate<Path> hasPom) {
         if (moduleDir == null) {
             return null;
         }

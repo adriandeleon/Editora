@@ -2,6 +2,8 @@ package com.editora.logviewer;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A normalized server-log severity level, ordered least-to-most severe by {@link #rank()}.
  *
@@ -60,7 +62,7 @@ public enum LogLevel {
      * Maps a level token (case-insensitive, any of the common framework spellings) to a {@link LogLevel},
      * or {@code null} when the token is not a recognized level.
      */
-    public static LogLevel fromToken(String token) {
+    public static @Nullable LogLevel fromToken(String token) {
         return token == null ? null : TOKENS.get(token.toUpperCase(Locale.ROOT));
     }
 

@@ -2,6 +2,8 @@ package com.editora.http;
 
 import java.net.URI;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The host of a request URL, read one way for the whole package: what the trust prompt names and the send check
  * compares ({@link #authority}), whether a {@code Host} header only repeats the URL's, the host a redirect led to,
@@ -61,7 +63,7 @@ final class HttpHosts {
     }
 
     /** {@code url} parsed, or null. */
-    static URI uri(String url) {
+    static @Nullable URI uri(String url) {
         try {
             return url == null ? null : URI.create(url);
         } catch (RuntimeException e) {

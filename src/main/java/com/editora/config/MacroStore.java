@@ -9,6 +9,7 @@ import com.editora.macro.Macro;
 import com.editora.macro.MacroIds;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The persisted, app-global set of named keyboard macros (in {@code macros.json}). Macros are not scoped
@@ -62,7 +63,7 @@ public class MacroStore {
     }
 
     /** The saved macro with this id, or {@code null} if none. */
-    public Macro findById(String id) {
+    public @Nullable Macro findById(String id) {
         for (Macro m : macros) {
             if (m.id().equals(id)) {
                 return m;
@@ -72,7 +73,7 @@ public class MacroStore {
     }
 
     /** The first saved macro with exactly this (non-empty) name, or {@code null} if none. */
-    public Macro findByName(String name) {
+    public @Nullable Macro findByName(@Nullable String name) {
         if (name == null || name.isEmpty()) {
             return null;
         }
@@ -86,7 +87,7 @@ public class MacroStore {
 
     /** The unnamed entry holding the most recent recording, or {@code null} if there is none. */
     @JsonIgnore
-    public Macro placeholder() {
+    public @Nullable Macro placeholder() {
         if (lastId == null || lastId.isEmpty()) {
             return null;
         }

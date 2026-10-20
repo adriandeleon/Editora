@@ -3,6 +3,8 @@ package com.editora.git;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The change graph of a pull's diffstat ({@code src/Main.java | 4 ++--}) as a link to that file's diff
  * between the two commits the pull moved between, which Git names on the line above the stat:
@@ -35,7 +37,7 @@ public final class GitOutputDiffs {
      * stat row with one (a binary file, a mode-only change). Says nothing about whether a diff can be opened
      * from it — that takes the transcript ({@link #at}).
      */
-    public static int[] graph(String line) {
+    public static int @Nullable [] graph(String line) {
         if (line == null || line.isEmpty()) {
             return null;
         }
@@ -51,7 +53,7 @@ public final class GitOutputDiffs {
      * not on a change graph, or the rows it belongs to are not under an {@code Updating a..b} line of the
      * same command (a merge commit's stat, a stash).
      */
-    public static Target at(String text, int offset) {
+    public static @Nullable Target at(String text, int offset) {
         if (text == null || offset < 0 || offset >= text.length()) {
             return null;
         }

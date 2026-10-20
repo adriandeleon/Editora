@@ -23,6 +23,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 
+import com.editora.config.PathDisplay;
 import org.fxmisc.richtext.model.StyleSpan;
 
 import static com.editora.i18n.Messages.tr;
@@ -158,7 +159,7 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
             byFile.computeIfAbsent(r.file(), k -> new ArrayList<>()).add(r);
         }
         List<Path> files = new ArrayList<>(byFile.keySet());
-        files.sort(Comparator.comparing(p -> p.getFileName().toString().toLowerCase(Locale.ROOT)));
+        files.sort(Comparator.comparing(p -> PathDisplay.fileName(p).toLowerCase(Locale.ROOT)));
 
         TreeItem<Row> root = new TreeItem<>();
         for (Path file : files) {

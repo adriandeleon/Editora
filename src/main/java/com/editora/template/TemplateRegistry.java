@@ -18,6 +18,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Loads and serves file templates from three places, later ones overriding earlier ones by id:
@@ -75,7 +76,7 @@ public final class TemplateRegistry {
     private final ConfigManager config;
     private final ObjectMapper mapper = new ObjectMapper();
     /** The bundled templates, read once (they are classpath resources and cannot change). */
-    private List<Template> bundled;
+    private @Nullable List<Template> bundled;
     /** Extra template source dirs (a plugin's {@code templates/}); they override bundled, not user. */
     private final List<Path> extraDirs = new ArrayList<>();
 
@@ -200,7 +201,7 @@ public final class TemplateRegistry {
         }
         if (t.isMultiFile()) {
             List<Map<String, Object>> files = new ArrayList<>();
-            for (TemplateFile f : t.files()) {
+            for (TemplateFile f : t.filesOrEmpty()) {
                 LinkedHashMap<String, Object> fm = new LinkedHashMap<>();
                 fm.put("path", f.path());
                 fm.put("body", lines(f.body()));
@@ -331,7 +332,7 @@ public final class TemplateRegistry {
         return List.of();
     }
 
-    private Template readBundled(String id) {
+    private @Nullable Template readBundled(String id) {
         try (InputStream in = TemplateRegistry.class.getResourceAsStream(DIR + id + ".json")) {
             if (in == null) {
                 return null;
@@ -349,7 +350,7 @@ public final class TemplateRegistry {
     }
 
     /** Validates {@code root} and builds the template, or records why not and returns null. */
-    private static Template parse(
+    private static @Nullable Template parse(
             JsonNode root, String id, Template.Origin origin, String source, Path file, List<Problem> problems) {
         if (root == null || !root.isObject()) {
             problems.add(new Problem(file, ProblemKind.NOT_AN_OBJECT, "", 0));
@@ -414,7 +415,7 @@ public final class TemplateRegistry {
      * A field that may be one string or an array of strings (VS Code style), joined with
      * {@code separator}; {@code ""} when absent, null when it is some other shape.
      */
-    private static String textOf(JsonNode node, String separator) {
+    private static @Nullable String textOf(JsonNode node, String separator) {
         if (node == null || node.isNull()) {
             return "";
         }

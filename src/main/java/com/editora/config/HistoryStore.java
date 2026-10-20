@@ -16,6 +16,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The Local File History index, serialized as JSON to {@code history/index.json} in the config dir.
@@ -63,7 +64,7 @@ public class HistoryStore {
 
     private int schemaVersion = SCHEMA_VERSION;
 
-    private Limits acknowledgedLimits;
+    private @Nullable Limits acknowledgedLimits;
 
     private final HistoryHashLedger ledger = new HistoryHashLedger();
 
@@ -80,7 +81,7 @@ public class HistoryStore {
 
     /** The limits last agreed to, or {@code null} when none were recorded yet (an index from before v4). */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public Limits getAcknowledgedLimits() {
+    public @Nullable Limits getAcknowledgedLimits() {
         return acknowledgedLimits;
     }
 
@@ -107,7 +108,7 @@ public class HistoryStore {
     }
 
     /** The history map for one project key, creating an empty bucket if absent. */
-    public Map<String, List<HistoryRevision>> bucket(String projectKey) {
+    public @Nullable Map<String, List<HistoryRevision>> bucket(String projectKey) {
         return byProject.computeIfAbsent(projectKey == null ? "" : projectKey, k -> new LinkedHashMap<>());
     }
 
@@ -160,7 +161,9 @@ public class HistoryStore {
     record Snapshot(
             int schemaVersion,
             Map<String, Map<String, List<HistoryRevision>>> byProject,
-            @JsonInclude(JsonInclude.Include.NON_NULL) Limits acknowledgedLimits) {}
+
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable
+            Limits acknowledgedLimits) {}
 
     // --- the maps ------------------------------------------------------------------------------------------
 
@@ -197,7 +200,7 @@ public class HistoryStore {
         }
 
         @Override
-        public V get(Object key) {
+        public @Nullable V get(Object key) {
             return map.get(key);
         }
 
@@ -212,7 +215,7 @@ public class HistoryStore {
         }
 
         @Override
-        public V remove(Object key) {
+        public @Nullable V remove(Object key) {
             V old = map.remove(key);
             if (old != null) {
                 left(old);
@@ -234,7 +237,7 @@ public class HistoryStore {
 
         /** As the default, but answers the value that was <em>stored</em>, not the one the function made. */
         @Override
-        public V computeIfAbsent(String key, Function<? super String, ? extends V> mapping) {
+        public @Nullable V computeIfAbsent(String key, Function<? super String, ? extends V> mapping) {
             V present = map.get(key);
             if (present != null) {
                 return present;
@@ -259,7 +262,7 @@ public class HistoryStore {
                 public Iterator<Map.Entry<String, V>> iterator() {
                     Iterator<Map.Entry<String, V>> inner = map.entrySet().iterator();
                     return new Iterator<>() {
-                        private Map.Entry<String, V> last;
+                        private Map.@Nullable Entry<String, V> last;
 
                         @Override
                         public boolean hasNext() {
@@ -312,7 +315,11 @@ public class HistoryStore {
 
                         @Override
                         public void remove() {
-                            V gone = last.getValue();
+                            Map.Entry<String, V> removed = last;
+                            if (removed == null) {
+                                throw new IllegalStateException("remove() before next()");
+                            }
+                            V gone = removed.getValue();
                             inner.remove();
                             left(gone);
                             changed();
@@ -356,7 +363,7 @@ public class HistoryStore {
         /** Whether this bucket is in the index: only then do its rows count in the ledger. */
         private boolean attached;
         /** The copy the last {@link #snapshot()} took, until this bucket changes again. */
-        private Map<String, List<HistoryRevision>> frozen;
+        private @Nullable Map<String, List<HistoryRevision>> frozen;
 
         @Override
         List<HistoryRevision> adopt(String key, List<HistoryRevision> value) {

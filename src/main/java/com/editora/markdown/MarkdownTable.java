@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure (no-toolkit, unit-tested) GFM table reflow: given the text block of a pipe table, pad every column
  * to its widest cell and rebuild the delimiter row honoring alignment ({@code :--} left, {@code :-:}
@@ -44,7 +46,7 @@ public final class MarkdownTable {
      * The {@code [start, end)} offsets of the GFM table containing {@code caret} — header row, delimiter row
      * and the rows after it — or {@code null} when the caret's line is not part of one.
      */
-    public static int[] blockBounds(String text, int caret) {
+    public static int @Nullable [] blockBounds(String text, int caret) {
         if (text == null || caret < 0 || caret > text.length()) {
             return null;
         }
@@ -122,7 +124,8 @@ public final class MarkdownTable {
      * Runs {@code op} on {@code block} without its container prefix and puts the prefix back on the result:
      * the first line keeps its own (it may carry the list marker), every other line gets the second line's.
      */
-    private static Nav framed(String block, int caret, java.util.function.BiFunction<String, Integer, Nav> op) {
+    private static @Nullable Nav framed(
+            String block, int caret, java.util.function.BiFunction<String, Integer, Nav> op) {
         String[] lines = block.split("\n", -1);
         String head = lines[0].substring(0, frameLength(lines[0], true));
         String rest = lines.length > 1 ? lines[1].substring(0, frameLength(lines[1], false)) : head;
@@ -178,14 +181,14 @@ public final class MarkdownTable {
             return block;
         }
         Nav n = framed(block, 0, (b, c) -> new Nav(reflowRows(b), 0));
-        return n.block();
+        return n == null ? block : n.block();
     }
 
     /**
      * {@link #reflow} that also says where the caret went: it stays in its cell, on the same character of
      * the cell's text. Returns {@code null} when {@code block} is not a GFM table.
      */
-    public static Nav reflowAt(String block, int caretInBlock) {
+    public static @Nullable Nav reflowAt(String block, int caretInBlock) {
         return framed(block, caretInBlock, (b, caret) -> {
             String[] lines = b.split("\n", -1);
             if (delimiterIndex(lines) < 0) {
@@ -255,11 +258,11 @@ public final class MarkdownTable {
      * (within the reflowed block) at the next/previous cell's content. Forward past the last cell appends a
      * new row. Returns {@code null} when the block is not a GFM table (no delimiter row).
      */
-    public static Nav tab(String block, int caretInBlock, boolean forward) {
+    public static @Nullable Nav tab(String block, int caretInBlock, boolean forward) {
         return framed(block, caretInBlock, (b, c) -> tabRows(b, c, forward));
     }
 
-    private static Nav tabRows(String block, int caretInBlock, boolean forward) {
+    private static @Nullable Nav tabRows(String block, int caretInBlock, boolean forward) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -320,11 +323,11 @@ public final class MarkdownTable {
      * on the blank line after the table. On any other row the caret moves to the same cell of the row
      * below; a cell is never split in two. Returns {@code null} when the block is not a GFM table.
      */
-    public static Nav enter(String block, int caretInBlock) {
+    public static @Nullable Nav enter(String block, int caretInBlock) {
         return framed(block, caretInBlock, MarkdownTable::enterRows);
     }
 
-    private static Nav enterRows(String block, int caretInBlock) {
+    private static @Nullable Nav enterRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -357,7 +360,7 @@ public final class MarkdownTable {
      * {@code int[]{rows, cols}} (rows includes the header), each clamped to {@code [1, }{@link #MAX_SIZE}{@code ]}.
      * Returns {@code null} when the input is not two {@code x}-separated positive integers.
      */
-    public static int[] parseSize(String s) {
+    public static int @Nullable [] parseSize(String s) {
         if (s == null) {
             return null;
         }
@@ -415,11 +418,11 @@ public final class MarkdownTable {
      * delimiter), reflows, and puts the caret in the new row's first cell. Returns {@code null} when the
      * block is not a GFM table.
      */
-    public static Nav addRow(String block, int caretInBlock) {
+    public static @Nullable Nav addRow(String block, int caretInBlock) {
         return framed(block, caretInBlock, MarkdownTable::addRowRows);
     }
 
-    private static Nav addRowRows(String block, int caretInBlock) {
+    private static @Nullable Nav addRowRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -439,11 +442,11 @@ public final class MarkdownTable {
      * {@code null} when not a GFM table or when the caret is on the header or delimiter row (those can't be
      * deleted).
      */
-    public static Nav deleteRow(String block, int caretInBlock) {
+    public static @Nullable Nav deleteRow(String block, int caretInBlock) {
         return framed(block, caretInBlock, MarkdownTable::deleteRowRows);
     }
 
-    private static Nav deleteRowRows(String block, int caretInBlock) {
+    private static @Nullable Nav deleteRowRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -470,11 +473,11 @@ public final class MarkdownTable {
      * Inserts an empty column to the right of the caret's column in every row, reflows, and puts the caret in
      * the new cell. Returns {@code null} when not a GFM table.
      */
-    public static Nav addColumn(String block, int caretInBlock) {
+    public static @Nullable Nav addColumn(String block, int caretInBlock) {
         return framed(block, caretInBlock, MarkdownTable::addColumnRows);
     }
 
-    private static Nav addColumnRows(String block, int caretInBlock) {
+    private static @Nullable Nav addColumnRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -501,11 +504,11 @@ public final class MarkdownTable {
      * Deletes the caret's column from every row, reflows, and keeps the caret in the same row. Returns
      * {@code null} when not a GFM table or when there is only one column left.
      */
-    public static Nav deleteColumn(String block, int caretInBlock) {
+    public static @Nullable Nav deleteColumn(String block, int caretInBlock) {
         return framed(block, caretInBlock, MarkdownTable::deleteColumnRows);
     }
 
-    private static Nav deleteColumnRows(String block, int caretInBlock) {
+    private static @Nullable Nav deleteColumnRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -538,11 +541,11 @@ public final class MarkdownTable {
      * {@code :-:}/{@code --:}), reflows, and keeps the caret in place. Returns {@code null} when not a GFM
      * table.
      */
-    public static Nav setAlignment(String block, int caretInBlock, Align align) {
+    public static @Nullable Nav setAlignment(String block, int caretInBlock, Align align) {
         return framed(block, caretInBlock, (b, c) -> alignRows(b, c, align));
     }
 
-    private static Nav alignRows(String block, int caretInBlock, Align align) {
+    private static @Nullable Nav alignRows(String block, int caretInBlock, Align align) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -565,7 +568,7 @@ public final class MarkdownTable {
      * Inserts an empty row above the caret's row (below the delimiter row when the caret is on the header or
      * the delimiter: a header keeps its place). Returns {@code null} when not a GFM table.
      */
-    public static Nav addRowAbove(String block, int caretInBlock) {
+    public static @Nullable Nav addRowAbove(String block, int caretInBlock) {
         return framed(block, caretInBlock, (b, caret) -> {
             String[] lines = b.split("\n", -1);
             int delim = delimiterIndex(lines);
@@ -582,7 +585,7 @@ public final class MarkdownTable {
     }
 
     /** Inserts an empty column to the left of the caret's column. Returns {@code null} when not a GFM table. */
-    public static Nav addColumnLeft(String block, int caretInBlock) {
+    public static @Nullable Nav addColumnLeft(String block, int caretInBlock) {
         return framed(block, caretInBlock, (b, caret) -> {
             String[] lines = b.split("\n", -1);
             int delim = delimiterIndex(lines);
@@ -604,7 +607,7 @@ public final class MarkdownTable {
      * Moves the caret's body row one row up or down; the caret goes with its cell. Returns {@code null} when
      * not a GFM table, on the header or delimiter row, and when there is no body row to trade places with.
      */
-    public static Nav moveRow(String block, int caretInBlock, boolean up) {
+    public static @Nullable Nav moveRow(String block, int caretInBlock, boolean up) {
         return framed(block, caretInBlock, (b, caret) -> {
             String[] lines = b.split("\n", -1);
             int delim = delimiterIndex(lines);
@@ -625,7 +628,7 @@ public final class MarkdownTable {
      * Moves the caret's column one place left or right, its alignment with it; the caret goes with its cell.
      * Returns {@code null} when not a GFM table or there is no column on that side.
      */
-    public static Nav moveColumn(String block, int caretInBlock, boolean left) {
+    public static @Nullable Nav moveColumn(String block, int caretInBlock, boolean left) {
         return framed(block, caretInBlock, (b, caret) -> {
             String[] lines = b.split("\n", -1);
             int delim = delimiterIndex(lines);
@@ -653,7 +656,7 @@ public final class MarkdownTable {
      * regard to case, empty cells last, rows that compare equal in their old order. The caret goes to the
      * column's header. Returns {@code null} when not a GFM table.
      */
-    public static Nav sort(String block, int caretInBlock, boolean ascending) {
+    public static @Nullable Nav sort(String block, int caretInBlock, boolean ascending) {
         return framed(block, caretInBlock, (b, caret) -> {
             String[] lines = b.split("\n", -1);
             int delim = delimiterIndex(lines);
@@ -675,7 +678,7 @@ public final class MarkdownTable {
 
     private static final Pattern NUMBER = Pattern.compile("[-+]?(\\d[\\d,]*)(\\.\\d+)?\\s*%?");
 
-    private static Double number(String cell) {
+    private static @Nullable Double number(String cell) {
         String c = cell.strip();
         if (!NUMBER.matcher(c).matches()) {
             return null;
@@ -766,7 +769,7 @@ public final class MarkdownTable {
      * RFC-4180 quoting is honored ({@code ""} → {@code "}, and delimiters/newlines inside quotes). A pipe
      * in a cell is escaped (`\|`) and an embedded newline becomes a space, so it stays a single GFM cell.
      */
-    public static String fromCsv(String csv) {
+    public static @Nullable String fromCsv(String csv) {
         if (csv == null || csv.isBlank()) {
             return null;
         }
@@ -822,7 +825,7 @@ public final class MarkdownTable {
      * (a cell containing a comma, quote or newline is wrapped in {@code "…"} with internal quotes doubled).
      * The delimiter row is skipped and {@code \|} unescaped to {@code |}. Returns {@code null} when not a table.
      */
-    public static String toCsv(String block) {
+    public static @Nullable String toCsv(String block) {
         if (block == null) {
             return null;
         }

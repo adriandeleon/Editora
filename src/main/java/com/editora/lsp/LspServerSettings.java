@@ -3,6 +3,8 @@ package com.editora.lsp;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure: the settings Editora gives a language server, chosen <b>per server id</b>.
  *
@@ -36,7 +38,7 @@ final class LspServerSettings {
     private static final String HTML_SERVER_ID = "html";
     private static final String BASH_SERVER_ID = "bash";
 
-    private static Map<String, Object> bashSection(BashIdeConfig bashIde) {
+    private static Map<String, Object> bashSection(@Nullable BashIdeConfig bashIde) {
         return (bashIde == null ? BashIdeConfig.defaults() : bashIde).toSection();
     }
 
@@ -46,7 +48,7 @@ final class LspServerSettings {
      * The settings object to push to {@code serverId} after {@code initialized}, or {@code null} when that
      * server must not be pushed anything.
      */
-    static Map<String, Object> push(String serverId, boolean javaOnTypeFormatting) {
+    static @Nullable Map<String, Object> push(String serverId, boolean javaOnTypeFormatting) {
         return push(serverId, javaOnTypeFormatting, null);
     }
 
@@ -54,7 +56,8 @@ final class LspServerSettings {
      * As {@link #push(String, boolean)}, with bash-language-server's {@code bashIde} section ({@code null} = its
      * defaults) for the Bash server.
      */
-    static Map<String, Object> push(String serverId, boolean javaOnTypeFormatting, BashIdeConfig bashIde) {
+    static @Nullable Map<String, Object> push(
+            String serverId, boolean javaOnTypeFormatting, @Nullable BashIdeConfig bashIde) {
         return push(serverId, javaOnTypeFormatting, bashIde, null);
     }
 
@@ -62,8 +65,11 @@ final class LspServerSettings {
      * As {@link #push(String, boolean, BashIdeConfig)}, with the Python interpreter ({@code null}/blank = let the
      * server pick its own) for the Python server.
      */
-    static Map<String, Object> push(
-            String serverId, boolean javaOnTypeFormatting, BashIdeConfig bashIde, String pythonPath) {
+    static @Nullable Map<String, Object> push(
+            String serverId,
+            boolean javaOnTypeFormatting,
+            @Nullable BashIdeConfig bashIde,
+            @Nullable String pythonPath) {
         if (BASH_SERVER_ID.equals(serverId)) {
             Map<String, Object> settings = new HashMap<>();
             settings.put(BashIdeConfig.SECTION, bashSection(bashIde));
@@ -86,7 +92,7 @@ final class LspServerSettings {
      * The answer to {@code serverId} asking {@code workspace/configuration} for {@code section}; {@code null}
      * (the server keeps its own default) for every section that is not that server's own.
      */
-    static Object answer(String serverId, String section) {
+    static @Nullable Object answer(String serverId, String section) {
         return answer(serverId, section, null);
     }
 
@@ -95,12 +101,13 @@ final class LspServerSettings {
      * defaults). bash-language-server asks for {@code bashIde} once it is initialized; answering {@code null}
      * left every one of its settings at the built-in default with no way to change them.
      */
-    static Object answer(String serverId, String section, BashIdeConfig bashIde) {
+    static @Nullable Object answer(String serverId, String section, @Nullable BashIdeConfig bashIde) {
         return answer(serverId, section, bashIde, null);
     }
 
     /** As {@link #answer(String, String, BashIdeConfig)}, with the Python server's interpreter (may be null). */
-    static Object answer(String serverId, String section, BashIdeConfig bashIde, String pythonPath) {
+    static @Nullable Object answer(
+            String serverId, String section, @Nullable BashIdeConfig bashIde, @Nullable String pythonPath) {
         String s = section == null ? "" : section;
         if (BASH_SERVER_ID.equals(serverId)) {
             return s.equals(BashIdeConfig.SECTION) ? bashSection(bashIde) : null;
@@ -132,12 +139,12 @@ final class LspServerSettings {
         return null;
     }
 
-    private static boolean blank(String s) {
+    private static boolean blank(@Nullable String s) {
         return s == null || s.isBlank();
     }
 
     /** The whole {@code python} object: the analysis settings, and the interpreter when one was resolved. */
-    private static Map<String, Object> pythonSection(String pythonPath) {
+    private static Map<String, Object> pythonSection(@Nullable String pythonPath) {
         Map<String, Object> python = new HashMap<>();
         python.put("analysis", pythonAnalysis());
         if (!blank(pythonPath)) {

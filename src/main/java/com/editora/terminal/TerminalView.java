@@ -41,6 +41,7 @@ import com.jediterm.terminal.model.SelectionUtil;
 import com.jediterm.terminal.model.TerminalSelection;
 import com.jediterm.terminal.model.TerminalTextBuffer;
 import com.jediterm.terminal.util.CharUtils;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -96,8 +97,8 @@ public final class TerminalView extends Region {
 
     private final FxTerminalDisplay display = new FxTerminalDisplay();
 
-    private TerminalSession session;
-    private TerminalTextBuffer buffer;
+    private @Nullable TerminalSession session;
+    private @Nullable TerminalTextBuffer buffer;
 
     /**
      * Theme colours. Held rather than read from a constant so a theme change repaints in place —
@@ -150,10 +151,10 @@ public final class TerminalView extends Region {
      * <p>Volatile because the emulator reads it through {@code TerminalDisplay.getSelection()} on
      * its own thread while the mouse mutates it on the FX thread.
      */
-    private volatile TerminalSelection selection;
+    private volatile @Nullable TerminalSelection selection;
 
     /** Where the current drag began, so a backwards drag extends rather than restarts. */
-    private Point selectionAnchor;
+    private @Nullable Point selectionAnchor;
 
     /** Lines already in history, to derive the delta the history listener does not supply. */
     private int knownHistoryLines;
@@ -373,9 +374,9 @@ public final class TerminalView extends Region {
         }
     }
 
-    private CwdWatcher cwdWatch;
+    private @Nullable CwdWatcher cwdWatch;
 
-    private Runnable onSessionEnded;
+    private @Nullable Runnable onSessionEnded;
 
     public void setOnSessionEnded(Runnable onSessionEnded) {
         this.onSessionEnded = onSessionEnded;
@@ -385,7 +386,7 @@ public final class TerminalView extends Region {
         return display;
     }
 
-    public TerminalSession getSession() {
+    public @Nullable TerminalSession getSession() {
         return session;
     }
 
@@ -503,7 +504,7 @@ public final class TerminalView extends Region {
         this.bellEnabled = bellEnabled;
     }
 
-    private Runnable onBellRung;
+    private @Nullable Runnable onBellRung;
 
     /** Told (on the FX thread) when the bell rings, so a tab out of sight can say so. */
     public void setOnBell(Runnable onBellRung) {
@@ -880,12 +881,13 @@ public final class TerminalView extends Region {
         // JediTerm reports the cursor row 1-based against the live screen; scrolling back moves it
         // out of view rather than dragging it along.
         int row = display.getCursorY() - 1 - scrollOrigin;
-        TypeAheadOverlay.Prediction p = session == null ? null : session.typeAheadPrediction();
+        TerminalSession live = session;
+        TypeAheadOverlay.Prediction p = live == null ? null : live.typeAheadPrediction();
         // The emulator's cursor is a slot of its row's text, which is a column only while nothing
         // to its left is astral: an emoji is two slots and two columns, a Nerd Font icon two slots
         // and one. Mapped through the row's text, as every other overlay is.
         String text = p == null ? lineTextAt(display.getCursorY() - 1) : p.text();
-        int slot = p == null ? display.getCursorX() : session.typeAheadCursorColumn();
+        int slot = p == null || live == null ? display.getCursorX() : live.typeAheadCursorColumn();
         int column = ColumnMap.columnAt(text, slot);
         if (row < 0 || row >= rows || column < 0 || column >= columns) return;
 
@@ -951,9 +953,10 @@ public final class TerminalView extends Region {
         // Escape closes the context menu rather than reaching the shell. This filter runs before
         // the menu would see the key, and Escape now encodes to a real byte, so without this the
         // menu stays open and the shell gets an ESC nobody asked for.
-        if (contextMenu != null && contextMenu.isShowing()) {
+        ContextMenu shown = contextMenu == null ? null : contextMenu.menu();
+        if (shown != null && shown.isShowing()) {
             if (e.getCode() == KeyCode.ESCAPE) {
-                contextMenu.hide();
+                shown.hide();
                 e.consume();
                 return;
             }
@@ -1066,7 +1069,7 @@ public final class TerminalView extends Region {
      * same path on this machine for a local shell, the host's file for an SSH shell, the mounted folder for a
      * container. Null means this machine.
      */
-    private java.util.function.Function<String, java.nio.file.Path> shellPaths;
+    private java.util.function.@Nullable Function<String, java.nio.file.Path> shellPaths;
 
     public void setShellPaths(java.util.function.Function<String, java.nio.file.Path> shellPaths) {
         this.shellPaths = shellPaths;
@@ -1196,7 +1199,7 @@ public final class TerminalView extends Region {
      * What the last command printed: the rows from its output mark (C) up to the mark that followed it (D, or the
      * next prompt), or up to the cursor while it is still running. Null when the shell sent no such mark.
      */
-    public String lastCommandOutput() {
+    public @Nullable String lastCommandOutput() {
         if (buffer == null) {
             return null;
         }
@@ -1291,7 +1294,8 @@ public final class TerminalView extends Region {
             return SearchResult.NONE;
         }
         long generation = searchGeneration.incrementAndGet();
-        return show(query, matchCase, scan(query, matchCase, generation));
+        java.util.List<Hit> hits = scan(query, matchCase, generation);
+        return hits == null ? SearchResult.NONE : show(query, matchCase, hits);
     }
 
     /**
@@ -1319,7 +1323,11 @@ public final class TerminalView extends Region {
         }
         if (searchStale) {
             long generation = searchGeneration.incrementAndGet();
-            state = rescanned(state, scan(state.query(), state.matchCase(), generation));
+            java.util.List<Hit> hits = scan(state.query(), state.matchCase(), generation);
+            if (hits == null) {
+                return SearchResult.NONE; // the view closed while it scanned
+            }
+            state = rescanned(state, hits);
         }
         return step(state, older);
     }
@@ -1421,22 +1429,26 @@ public final class TerminalView extends Region {
      * lock. Output may arrive between chunks: rows are turned into absolute lines under the lock, so the hits stay
      * put. Null when {@code generation} was overtaken.
      */
-    private java.util.List<Hit> scan(String query, boolean matchCase, long generation) {
+    private java.util.@Nullable List<Hit> scan(String query, boolean matchCase, long generation) {
+        TerminalTextBuffer buf = buffer;
+        if (buf == null) {
+            return java.util.List.of(); // no session yet: nothing to find
+        }
         java.util.List<Hit> newestFirst = new java.util.ArrayList<>();
         long next; // the absolute line to scan next, going up
-        buffer.lock();
+        buf.lock();
         try {
-            next = buffer.getHeight() - 1 + pushedLines;
+            next = buf.getHeight() - 1 + pushedLines;
         } finally {
-            buffer.unlock();
+            buf.unlock();
         }
         while (newestFirst.size() < TerminalSearch.MAX_MATCHES) {
             if (searchGeneration.get() != generation || closed) return null;
-            buffer.lock();
+            buf.lock();
             try {
                 long pushed = pushedLines;
-                int top = -buffer.getHistoryLinesCount();
-                int row = (int) Math.min(buffer.getHeight() - 1, next - pushed);
+                int top = -buf.getHistoryLinesCount();
+                int row = (int) Math.min(buf.getHeight() - 1, next - pushed);
                 if (row < top) break;
                 int last = Math.max(top, row - SEARCH_CHUNK + 1);
                 for (; row >= last && newestFirst.size() < TerminalSearch.MAX_MATCHES; row--) {
@@ -1449,7 +1461,7 @@ public final class TerminalView extends Region {
                 }
                 next = last - 1 + pushed;
             } finally {
-                buffer.unlock();
+                buf.unlock();
             }
         }
         return newestFirst.reversed();
@@ -1632,7 +1644,7 @@ public final class TerminalView extends Region {
      * @param spans the run split across the rows it occupies, since a wrapped URL is one link drawn
      *     on two lines
      */
-    private record Hover(LinkMatch match, java.nio.file.Path file, java.util.List<LinkSpan> spans) {}
+    private record Hover(LinkMatch match, java.nio.file.@Nullable Path file, java.util.List<LinkSpan> spans) {}
 
     /** One row's worth of an underline: a line index and the slots it covers. */
     private record LinkSpan(int line, int fromSlot, int toSlot) {}
@@ -1648,9 +1660,9 @@ public final class TerminalView extends Region {
      */
     private static final int MAX_WRAP_ROWS = 8;
 
-    private LinkActions linkActions;
-    private Hover hover;
-    private Hover menuLink;
+    private @Nullable LinkActions linkActions;
+    private @Nullable Hover hover;
+    private @Nullable Hover menuLink;
     private double lastMouseX = -1;
     private double lastMouseY = -1;
 
@@ -1679,13 +1691,13 @@ public final class TerminalView extends Region {
     }
 
     /** Shows where an OSC 8 link goes: its text is the program's to choose, and need not be its address. */
-    private javafx.scene.control.Tooltip linkTip;
+    private javafx.scene.control.@Nullable Tooltip linkTip;
 
-    private void showLinkTarget(Hover target, double x, double y) {
+    private void showLinkTarget(@Nullable Hover target, double x, double y) {
         boolean disguised = target != null
                 && target.match().isUrl()
                 && !target.match().text().equals(target.match().target());
-        if (!disguised) {
+        if (target == null || !disguised) {
             if (linkTip != null) linkTip.hide();
             return;
         }
@@ -1699,17 +1711,17 @@ public final class TerminalView extends Region {
     }
 
     /** The address an OSC 8 link under the pointer shows in its tip, or null; for tests. */
-    public String linkTipText() {
+    public @Nullable String linkTipText() {
         return linkTip != null && linkTip.isShowing() ? linkTip.getText() : null;
     }
 
-    private static boolean sameHover(Hover a, Hover b) {
+    private static boolean sameHover(@Nullable Hover a, @Nullable Hover b) {
         if (a == null || b == null) return a == b;
         return a.spans().equals(b.spans()) && a.match().equals(b.match());
     }
 
     /** The link at a point in the view, or null. Reads the buffer, so it takes the lock. */
-    private Hover linkAt(double x, double y) {
+    private @Nullable Hover linkAt(double x, double y) {
         if (buffer == null || linkActions == null) return null;
         if (x < 0 || y < 0 || x >= getWidth() || y >= getHeight()) return null;
 
@@ -1750,7 +1762,7 @@ public final class TerminalView extends Region {
      * The OSC 8 link at a cell, as a URL match over the run of cells that carry the same target, or null. A program
      * that marked text as a link meant it, so it wins over what the text itself looks like. Caller holds the lock.
      */
-    private LinkMatch osc8At(LogicalLine logical, int line, int slot, int index) {
+    private @Nullable LinkMatch osc8At(LogicalLine logical, int line, int slot, int index) {
         Osc8Links.Target target = osc8TargetAt(line, slot);
         if (target == null) return null;
         int start = index;
@@ -1760,12 +1772,14 @@ public final class TerminalView extends Region {
         return new LinkMatch(LinkMatch.Kind.URL, logical.text().substring(start, end), start, end, target.uri(), 0, 0);
     }
 
-    private Osc8Links.Target osc8TargetAt(int line, int slot) {
-        var row = buffer.getLine(line);
+    private Osc8Links.@Nullable Target osc8TargetAt(int line, int slot) {
+        TerminalTextBuffer buf = buffer;
+        if (buf == null) return null;
+        var row = buf.getLine(line);
         return row == null || slot < 0 || slot >= row.length() ? null : Osc8Links.targetOf(row.getStyleAt(slot));
     }
 
-    private Osc8Links.Target osc8TargetAtIndex(LogicalLine logical, int index) {
+    private Osc8Links.@Nullable Target osc8TargetAtIndex(LogicalLine logical, int index) {
         int offset = 0;
         for (int i = 0; i < logical.rowTexts().size(); i++) {
             int length = logical.rowTexts().get(i).length();
@@ -1783,12 +1797,14 @@ public final class TerminalView extends Region {
      * something that is actually there. A pattern cannot tell a filename from a word; the
      * filesystem can.
      */
-    private java.nio.file.Path fileFor(LinkMatch match) {
+    private java.nio.file.@Nullable Path fileFor(LinkMatch match) {
         String target = match.target();
         if (match.kind() == LinkMatch.Kind.URL) {
             // A remote shell's file:// names a file of its machine: the tab's mapping finds it here.
-            String onShell = shellPaths == null ? null : ShellIntegration.pathOfCwdUrl(target);
-            java.nio.file.Path fromUri = onShell != null ? shellPaths.apply(onShell) : LinkPaths.fromFileUri(target);
+            java.util.function.Function<String, java.nio.file.Path> paths = shellPaths;
+            String onShell = paths == null ? null : ShellIntegration.pathOfCwdUrl(target);
+            java.nio.file.Path fromUri =
+                    paths != null && onShell != null ? paths.apply(onShell) : LinkPaths.fromFileUri(target);
             return exists(fromUri) ? fromUri : null;
         }
         String cwd = display.getCwd();
@@ -1809,7 +1825,7 @@ public final class TerminalView extends Region {
      * the FX thread before, and a slow link froze the editor. Until the answer arrives the link is not offered; when
      * it does, the hover is worked out again.
      */
-    private boolean exists(java.nio.file.Path path) {
+    private boolean exists(java.nio.file.@Nullable Path path) {
         if (path == null) return false;
         if (shellPaths == null || com.editora.vfs.Vfs.isLocal(path)) return java.nio.file.Files.exists(path);
         Boolean known = remoteExists.get(path);
@@ -1841,7 +1857,7 @@ public final class TerminalView extends Region {
     private boolean hoverModifierDown;
 
     /** Opens the hovered link. */
-    private void openLink(Hover target) {
+    private void openLink(@Nullable Hover target) {
         if (target == null || linkActions == null) return;
         if (target.file() != null) {
             linkActions.openFile(
@@ -1852,7 +1868,7 @@ public final class TerminalView extends Region {
     }
 
     /** What the link points at, for the clipboard: the URL, or the resolved file. */
-    private String linkAddress(Hover target) {
+    private String linkAddress(@Nullable Hover target) {
         if (target == null) return "";
         if (target.match().isUrl() && target.file() == null)
             return target.match().target();
@@ -1890,11 +1906,13 @@ public final class TerminalView extends Region {
     }
 
     /** Builds the logical line containing a row. Caller holds the buffer lock. */
-    private LogicalLine logicalLineAt(int line) {
+    private @Nullable LogicalLine logicalLineAt(int line) {
         // Bounded by the history that exists as well as by MAX_WRAP_ROWS: asking for row -1 with an
         // empty scrollback is not an exception but an ERROR line in JediTerm's own log, once per
         // mouse move, which turns a hover into a log flood.
-        int floor = -buffer.getHistoryLinesCount();
+        TerminalTextBuffer buf = buffer;
+        if (buf == null) return null;
+        int floor = -buf.getHistoryLinesCount();
         int first = line;
         int back = 0;
         while (back < MAX_WRAP_ROWS && first - 1 >= floor && isWrapped(first - 1)) {
@@ -1947,21 +1965,27 @@ public final class TerminalView extends Region {
 
     // ---------------------------------------------------------------- context menu
 
-    private ContextMenu contextMenu;
-    private MenuItem copyOutputItem;
-    private MenuItem openLinkItem;
-    private MenuItem copyLinkItem;
-    private SeparatorMenuItem linkSeparator;
-    private MenuItem copyItem;
-    private MenuItem pasteItem;
-    private Function<String, Node> menuIcons = key -> null;
+    /** The menu and the items it updates each time it opens. */
+    private record Menu(
+            ContextMenu menu,
+            MenuItem copyItem,
+            MenuItem pasteItem,
+            MenuItem openLinkItem,
+            MenuItem copyLinkItem,
+            SeparatorMenuItem linkSeparator,
+            MenuItem copyOutputItem) {}
+
+    /** Built on first use, with the icons supplied by then. */
+    private @Nullable Menu contextMenu;
+
+    private Function<String, @Nullable Node> menuIcons = key -> null;
     private Supplier<List<MenuItem>> menuExtras = List::of;
 
     /**
      * Icons for the menu's own items, by key: {@code copy}, {@code paste}, {@code openLink},
      * {@code selectAll}, {@code clear}. The view has no icon set of its own; the window supplies Editora's.
      */
-    public void setMenuIcons(Function<String, Node> menuIcons) {
+    public void setMenuIcons(Function<String, @Nullable Node> menuIcons) {
         this.menuIcons = menuIcons == null ? key -> null : menuIcons;
     }
 
@@ -2002,33 +2026,38 @@ public final class TerminalView extends Region {
         // it — so shift is read from the press that triggered it.
         if (!shouldShowMenu(display.getMouseMode(), shiftOnLastPress, e.isKeyboardTrigger())) return;
 
-        if (contextMenu == null) contextMenu = buildContextMenu();
+        Menu m = contextMenu;
+        if (m == null) {
+            m = buildContextMenu();
+            contextMenu = m;
+        }
         // Refreshed per show: the menu is built once and reused, while everything it reports on
         // moves underneath it. Copy and Paste depend on the selection and the clipboard; the
         // menu-bar checkbox on a setting the View menu, its own chord and the settings window can
         // all change while this menu sits built and invisible.
-        copyItem.setDisable(!hasSelection());
-        copyOutputItem.setVisible(hasPromptMarks());
-        copyOutputItem.setDisable(lastCommandOutput() == null);
-        pasteItem.setDisable(!Clipboard.getSystemClipboard().hasString());
+        m.copyItem().setDisable(!hasSelection());
+        m.copyOutputItem().setVisible(hasPromptMarks());
+        m.copyOutputItem().setDisable(lastCommandOutput() == null);
+        m.pasteItem().setDisable(!Clipboard.getSystemClipboard().hasString());
         // The link items are the menu's answer to a gesture nobody was told about: they need no
         // modifier and they say what is there. Computed for the right-clicked cell, not the last
         // hovered one — the menu can be raised from the keyboard, and the pointer may be elsewhere.
         menuLink = linkAt(e.getX(), e.getY());
         boolean onLink = menuLink != null;
-        openLinkItem.setVisible(onLink);
-        copyLinkItem.setVisible(onLink);
-        linkSeparator.setVisible(onLink);
-        refreshExtras();
-        contextMenu.show(this, e.getScreenX(), e.getScreenY());
+        m.openLinkItem().setVisible(onLink);
+        m.copyLinkItem().setVisible(onLink);
+        m.linkSeparator().setVisible(onLink);
+        refreshExtras(m.menu());
+        m.menu().show(this, e.getScreenX(), e.getScreenY());
         e.consume();
     }
 
-    private ContextMenu buildContextMenu() {
-        copyItem = item(tr("terminal.menu.copy"), menuIcons.apply("copy"), this::copySelection);
-        pasteItem = item(tr("terminal.menu.paste"), menuIcons.apply("paste"), this::paste);
-        openLinkItem = item(tr("terminal.menu.openLink"), menuIcons.apply("openLink"), () -> openLink(menuLink));
-        copyLinkItem = item(tr("terminal.menu.copyLinkAddress"), menuIcons.apply("copy"), () -> {
+    private Menu buildContextMenu() {
+        MenuItem copyItem = item(tr("terminal.menu.copy"), menuIcons.apply("copy"), this::copySelection);
+        MenuItem pasteItem = item(tr("terminal.menu.paste"), menuIcons.apply("paste"), this::paste);
+        MenuItem openLinkItem =
+                item(tr("terminal.menu.openLink"), menuIcons.apply("openLink"), () -> openLink(menuLink));
+        MenuItem copyLinkItem = item(tr("terminal.menu.copyLinkAddress"), menuIcons.apply("copy"), () -> {
             ClipboardContent content = new ClipboardContent();
             content.putString(linkAddress(menuLink));
             Clipboard.getSystemClipboard().setContent(content);
@@ -2036,7 +2065,9 @@ public final class TerminalView extends Region {
 
         // Hidden together with the items they divide: a separator left behind when the pointer was
         // not over a link is a rule across the top of the menu with nothing above it.
-        linkSeparator = new SeparatorMenuItem();
+        SeparatorMenuItem linkSeparator = new SeparatorMenuItem();
+        MenuItem copyOutputItem =
+                item(tr("terminal.menu.copyLastOutput"), menuIcons.apply("copy"), this::copyLastOutput);
 
         ContextMenu menu = new ContextMenu(
                 openLinkItem,
@@ -2045,8 +2076,7 @@ public final class TerminalView extends Region {
                 copyItem,
                 pasteItem,
                 item(tr("terminal.menu.selectAll"), menuIcons.apply("selectAll"), this::selectAll),
-                copyOutputItem =
-                        item(tr("terminal.menu.copyLastOutput"), menuIcons.apply("copy"), this::copyLastOutput),
+                copyOutputItem,
                 new SeparatorMenuItem(),
                 item(tr("terminal.menu.clearScrollback"), menuIcons.apply("clear"), this::clearScrollback));
         menu.setAutoHide(true);
@@ -2055,7 +2085,7 @@ public final class TerminalView extends Region {
         // the panel's key filter is what acts on them, and it consumes them first.
         copyItem.setAccelerator(chord(MAC ? "Meta+C" : "Ctrl+Shift+C"));
         pasteItem.setAccelerator(chord(MAC ? "Meta+V" : "Ctrl+Shift+V"));
-        return menu;
+        return new Menu(menu, copyItem, pasteItem, openLinkItem, copyLinkItem, linkSeparator, copyOutputItem);
     }
 
     /** {@code text} as a key combination for a menu item's accelerator text. */
@@ -2067,8 +2097,8 @@ public final class TerminalView extends Region {
     private int ownItems;
 
     /** Replaces the window's items below the view's own with what it offers now. */
-    private void refreshExtras() {
-        var items = contextMenu.getItems();
+    private void refreshExtras(ContextMenu menu) {
+        var items = menu.getItems();
         items.remove(ownItems, items.size());
         List<MenuItem> extras = menuExtras.get();
         if (extras != null && !extras.isEmpty()) {
@@ -2077,7 +2107,7 @@ public final class TerminalView extends Region {
         }
     }
 
-    private static MenuItem item(String text, Node icon, Runnable action) {
+    private static MenuItem item(String text, @Nullable Node icon, Runnable action) {
         MenuItem menuItem = new MenuItem(text, icon);
         menuItem.setOnAction(e -> action.run());
         return menuItem;
@@ -2139,8 +2169,9 @@ public final class TerminalView extends Region {
         // A click anywhere in the terminal dismisses the menu instead of acting on the terminal.
         // ContextMenu's own auto-hide covers clicks outside the window, but this filter runs first
         // for clicks inside it, which would otherwise start a selection under the open menu.
-        if (contextMenu != null && contextMenu.isShowing()) {
-            contextMenu.hide();
+        ContextMenu shown = contextMenu == null ? null : contextMenu.menu();
+        if (shown != null && shown.isShowing()) {
+            shown.hide();
             e.consume();
             return;
         }
@@ -2301,7 +2332,9 @@ public final class TerminalView extends Region {
     }
 
     private void selectWordAt(Point at) {
-        TerminalSelection word = wordSelection(at, buffer);
+        TerminalTextBuffer buf = buffer;
+        if (buf == null) return; // the press handler has checked; no session, no words
+        TerminalSelection word = wordSelection(at, buf);
         selection = word;
         selectionAnchor = new Point(word.getStart().x, word.getStart().y);
     }

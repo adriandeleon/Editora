@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import com.editora.run.MainMethodScanner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Reads a freshly generated Maven project to decide what a ready-to-run configuration should launch.
@@ -34,7 +35,7 @@ public final class GeneratedProject {
     public record MainClass(String fqn, Path file) {}
 
     /** The FQN only — see {@link #findMain(Path)} when the source file is also needed. */
-    public static String findMainClass(Path projectDir) {
+    public static @Nullable String findMainClass(Path projectDir) {
         MainClass m = findMain(projectDir);
         return m == null ? null : m.fqn();
     }
@@ -47,7 +48,7 @@ public final class GeneratedProject {
      * always yields the same configuration rather than depending on filesystem order. Test sources are not
      * searched — a runnable main in {@code src/test/java} is not what "Run" should mean.
      */
-    public static MainClass findMain(Path projectDir) {
+    public static @Nullable MainClass findMain(Path projectDir) {
         if (projectDir == null) {
             return null;
         }
@@ -74,7 +75,7 @@ public final class GeneratedProject {
         return null;
     }
 
-    private static String mainClassIn(Path file) {
+    private static @Nullable String mainClassIn(Path file) {
         try {
             if (Files.size(file) > MAX_FILE_BYTES) {
                 return null;

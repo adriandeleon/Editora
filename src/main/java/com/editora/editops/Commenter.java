@@ -1,5 +1,7 @@
 package com.editora.editops;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Toggles comments — pure (no toolkit), so it is unit-tested. {@link EditorBuffer}/the controller
  * applies the returned {@link Edit}.
@@ -16,7 +18,10 @@ public final class Commenter {
     private Commenter() {}
 
     /** A language's comment tokens; any field may be null when that form is unsupported. */
-    public record CommentStyle(String line, String blockStart, String blockEnd) {
+    public record CommentStyle(
+            @Nullable String line,
+            @Nullable String blockStart,
+            @Nullable String blockEnd) {
         public boolean hasLine() {
             return line != null && !line.isEmpty();
         }
@@ -97,7 +102,7 @@ public final class Commenter {
      * ({@code !/usr/bin/env bash}) or commenting it ({@code // #!/usr/bin/env node}) breaks the script. A selection
      * that covers it toggles the lines after it; the shebang line alone toggles nothing.
      */
-    public static Edit toggle(String text, int selStart, int selEnd, CommentStyle style) {
+    public static @Nullable Edit toggle(String text, int selStart, int selEnd, CommentStyle style) {
         if (onShebang(text, selStart, style)) {
             int next = lineEnd(text, 0) + 1;
             int end = Math.max(selStart, selEnd);
@@ -115,7 +120,11 @@ public final class Commenter {
         }
         // Multi-line prefers a block/region comment; a single line prefers a line comment.
         boolean useBlock = multi ? style.hasBlock() : !style.hasLine();
-        if (useBlock && style.hasLine() && allLineCommented(selectedLines(text, selStart, effEnd), style.line())) {
+        String lineToken = style.line();
+        if (useBlock
+                && lineToken != null
+                && style.hasLine()
+                && allLineCommented(selectedLines(text, selStart, effEnd), lineToken)) {
             useBlock = false; // lines commented one at a time are uncommented, not wrapped in a block
         }
         Edit edit = useBlock
@@ -135,7 +144,7 @@ public final class Commenter {
      * when the selection reaches into a here-document whose opening line it does not include
      * ({@link #intoHereDoc}): those lines are data, and a {@code #} put there is output, not a comment.
      */
-    public static Edit toggle(String text, int selStart, int selEnd, String language) {
+    public static @Nullable Edit toggle(String text, int selStart, int selEnd, String language) {
         if (intoHereDoc(text, selStart, selEnd, language)) {
             return null;
         }
@@ -245,6 +254,9 @@ public final class Commenter {
 
     private static Edit toggleLines(String text, int selStart, int effEnd, CommentStyle style) {
         String token = style.line();
+        if (token == null) {
+            throw new IllegalStateException("line comment toggled for a style without a line token");
+        }
         int from = lineStart(text, selStart);
         int to = lineEnd(text, effEnd);
         String[] lines = selectedLines(text, selStart, effEnd);
@@ -325,7 +337,7 @@ public final class Commenter {
 
     // --- block comments ---------------------------------------------------------------------------
 
-    private static Edit toggleBlock(String text, int selStart, int selEnd, int effEnd, CommentStyle style) {
+    private static @Nullable Edit toggleBlock(String text, int selStart, int selEnd, int effEnd, CommentStyle style) {
         int from;
         int to;
         if (selStart == selEnd) { // no selection: comment the current line's content
@@ -345,6 +357,9 @@ public final class Commenter {
         String core = r.strip();
         String bs = style.blockStart();
         String be = style.blockEnd();
+        if (bs == null || be == null) {
+            throw new IllegalStateException("block comment toggled for a style without block tokens");
+        }
         if (core.isEmpty()) {
             if (selStart != selEnd) {
                 return new Edit(from, to, r, from, to); // only whitespace selected: nothing to comment

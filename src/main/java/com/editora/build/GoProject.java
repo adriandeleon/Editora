@@ -3,12 +3,14 @@ package com.editora.build;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A parsed {@code go.mod} — just the module path from its {@code module <path>} line (shown as the Settings
  * "Found: …" label; {@code null} when absent, e.g. a {@code go.work} workspace with no root module). Pure — a
  * single regex, no full go.mod parse (Go's task list is static, so the module line is display-only).
  */
-public record GoProject(String moduleName) {
+public record GoProject(@Nullable String moduleName) {
 
     private static final Pattern MODULE = Pattern.compile("(?m)^\\s*module\\s+(\\S+)");
 

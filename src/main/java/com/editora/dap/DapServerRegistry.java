@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Maps an editor language id (as resolved by {@code editor.LanguageRegistry.forFileName}) to a <b>debug
  * adapter</b> spec — its transport {@link Kind}, the DAP {@code launch} request {@code type}, the
@@ -131,7 +133,7 @@ public final class DapServerRegistry {
 
     private DapServerRegistry() {}
 
-    private static Def defFor(String languageId) {
+    private static @Nullable Def defFor(String languageId) {
         if (languageId == null) {
             return null;
         }
@@ -152,7 +154,7 @@ public final class DapServerRegistry {
      * The transport a {@link Kind#LANGUAGE_SERVER} language falls back to for a file its server does not debug
      * (a Scala script outside any build: Editora's {@link Kind#JVM} adapter over Scala CLI), or null.
      */
-    public static Kind fallbackKind(String languageId) {
+    public static @Nullable Kind fallbackKind(String languageId) {
         return "scala".equals(languageId) ? Kind.JVM : null;
     }
 
@@ -172,13 +174,13 @@ public final class DapServerRegistry {
     }
 
     /** The transport kind for {@code languageId}, or {@code null} when unsupported. */
-    public static Kind kindFor(String languageId) {
+    public static @Nullable Kind kindFor(String languageId) {
         Def d = defFor(languageId);
         return d == null ? null : d.kind;
     }
 
     /** The full spec for {@code languageId}, or {@code null} when unsupported. */
-    public static DapServerSpec specFor(String languageId) {
+    public static @Nullable DapServerSpec specFor(String languageId) {
         Def d = defFor(languageId);
         if (d == null) {
             return null;

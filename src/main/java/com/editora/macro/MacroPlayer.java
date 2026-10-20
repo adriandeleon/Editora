@@ -2,6 +2,8 @@ package com.editora.macro;
 
 import java.util.ArrayDeque;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The replay cursor: which step of which macro comes next. A replay is a stack of frames — the macro the
  * user asked for at the bottom, and above it every saved macro a step of the one below invoked — so a macro
@@ -87,7 +89,7 @@ public final class MacroPlayer {
     }
 
     /** The step {@link #advance} will consume next, or null when the replay has run out. */
-    public MacroStep peek() {
+    public @Nullable MacroStep peek() {
         while (!stack.isEmpty()) {
             Frame f = stack.peek();
             if (f.index < f.macro.steps().size()) {

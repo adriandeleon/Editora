@@ -35,7 +35,7 @@ public final class ImagePaging {
      */
     static final double SQUEEZE = 1.15;
 
-    private static final int[] NO_CUTS = new int[0];
+    static final int[] NO_CUTS = new int[0];
 
     private ImagePaging() {}
 

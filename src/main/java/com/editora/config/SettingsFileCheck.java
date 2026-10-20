@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What {@code settings.json}, as written, says that the loaded {@link Settings} does not use: a key no setting
@@ -16,7 +17,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 public final class SettingsFileCheck {
 
     /** One top-level value not used as written. {@code written}/{@code used} are JSON text; null when absent. */
-    public record Issue(String key, Kind kind, String written, String used) {}
+    public record Issue(
+            String key, Kind kind, String written, @Nullable String used) {}
 
     public enum Kind {
         /** No setting has this name; it is ignored and dropped at the next save. */

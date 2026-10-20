@@ -3,6 +3,7 @@ package com.editora.dap;
 import java.nio.file.Path;
 
 import com.editora.process.ExecTarget;
+import org.jspecify.annotations.Nullable;
 
 /**
  * How a debug adapter names files, against how Editora reaches them. A local adapter shares this machine's
@@ -27,7 +28,7 @@ public interface DapPaths {
         }
 
         @Override
-        public Path fromAdapter(String path) {
+        public @Nullable Path fromAdapter(String path) {
             try {
                 return Path.of(path);
             } catch (java.nio.file.InvalidPathException e) {
@@ -46,6 +47,7 @@ public interface DapPaths {
      * The file an adapter-reported path names, or {@code null} for one that is not a file path at all
      * ({@code <node_internals>/…}, {@code jdt://…}, {@code <frozen importlib>}).
      */
+    @Nullable
     Path fromAdapter(String path);
 
     /**
@@ -72,7 +74,7 @@ public interface DapPaths {
             }
 
             @Override
-            public Path fromAdapter(String path) {
+            public @Nullable Path fromAdapter(String path) {
                 // The host is POSIX: anything that is not an absolute path is an adapter's pseudo-source.
                 if (path == null || !path.startsWith("/") || path.indexOf('\0') >= 0) {
                     return null;

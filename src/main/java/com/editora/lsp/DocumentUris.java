@@ -4,6 +4,8 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The {@code file:} URI a document is known to its language server by, remembered per path.
  *
@@ -57,7 +59,7 @@ final class DocumentUris {
      * The file a document key names, or {@code null} when it is not one Editora can open as a path (a
      * {@code jdt:} class file, a malformed URI).
      */
-    static Path toPath(String key) {
+    static @Nullable Path toPath(String key) {
         if (key == null) {
             return null;
         }

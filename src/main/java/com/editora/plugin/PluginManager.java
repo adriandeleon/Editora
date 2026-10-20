@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Discovers and loads plugins from {@code <configDir>/plugins/<id>/plugin.json}. <b>Shared</b> across all
@@ -69,7 +70,7 @@ public final class PluginManager {
 
     private volatile List<PluginDescriptor> descriptors = List.of();
     /** What the first discover found: what every window of this session loads. Null until then. */
-    private volatile List<PluginDescriptor> launchSet;
+    private volatile @Nullable List<PluginDescriptor> launchSet;
 
     /** Plugin id → the version of an update waiting for the next start ({@code .pending-<id>}). */
     private volatile Map<String, String> pendingUpdates = Map.of();
@@ -92,7 +93,7 @@ public final class PluginManager {
      * @param pluginsDir {@code <configDir>/plugins}
      * @param consent    whether a plugin is enabled with the capabilities it has now (the {@code plugins.json} store)
      */
-    public PluginManager(Path pluginsDir, Consent consent) {
+    public PluginManager(Path pluginsDir, @Nullable Consent consent) {
         this.pluginsDir = pluginsDir;
         this.consent = consent == null ? (id, digest) -> false : consent;
     }
@@ -175,7 +176,7 @@ public final class PluginManager {
     }
 
     /** The launch-set descriptor of {@code id} that runs this session (enabled, loaded), or null. */
-    public PluginDescriptor running(String id) {
+    public @Nullable PluginDescriptor running(String id) {
         for (PluginDescriptor d : launchSet()) {
             if (d.id().equals(id) && d.enabled() && d.loadError() == null) {
                 return d;
@@ -185,7 +186,7 @@ public final class PluginManager {
     }
 
     /** The version of {@code id}'s update waiting for the next start, or null when there is none. */
-    public String pendingUpdate(String id) {
+    public @Nullable String pendingUpdate(String id) {
         return pendingUpdates.get(id);
     }
 
@@ -219,7 +220,7 @@ public final class PluginManager {
     }
 
     /** Why {@code id} failed or was slow to start this session, or null. */
-    public PluginDescriptor.LoadProblem runtimeProblem(String id) {
+    public PluginDescriptor.@Nullable LoadProblem runtimeProblem(String id) {
         return id == null ? null : runtimeProblems.get(id);
     }
 
@@ -407,7 +408,7 @@ public final class PluginManager {
      * logged and recorded ({@link #runtimeProblem}), so one bad plugin never blocks the rest and the Settings row
      * says why it does nothing. The caller invokes {@link Plugin#start} once per window.
      */
-    public Plugin instantiate(PluginDescriptor d) {
+    public @Nullable Plugin instantiate(PluginDescriptor d) {
         if (d == null || d.classLoader() == null || !d.hasJavaEntry()) {
             return null;
         }

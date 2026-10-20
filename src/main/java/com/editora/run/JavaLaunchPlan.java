@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.function.Function;
 
 import com.editora.config.RunConfiguration;
+import org.jspecify.annotations.Nullable;
 
 /**
  * How a saved Java run configuration launches — one plan, read by Run and by Debug alike (review D9). Each
@@ -42,7 +43,8 @@ public record JavaLaunchPlan(
     }
 
     /** A plan, or why there is none. */
-    public record Result(JavaLaunchPlan plan, Problem problem) {
+    public record Result(
+            @Nullable JavaLaunchPlan plan, @Nullable Problem problem) {
         public boolean ok() {
             return plan != null;
         }
@@ -181,7 +183,7 @@ public record JavaLaunchPlan(
      * file use, as Run ▶ does, so the configuration's before-launch build, arguments, environment and
      * working directory apply. Only a configuration naming that very class — never one for another class.
      */
-    public static RunConfiguration configurationFor(String mainClass, List<RunConfiguration> all) {
+    public static @Nullable RunConfiguration configurationFor(String mainClass, List<RunConfiguration> all) {
         if (mainClass == null || mainClass.isBlank() || all == null) {
             return null;
         }

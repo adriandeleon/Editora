@@ -12,6 +12,7 @@ import java.util.regex.PatternSyntaxException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -86,7 +87,13 @@ public final class HttpChecks {
      * {@code captureName} is null, else a capture into that name. {@code arg} is the header name or the JSONPath;
      * {@code expected} is the literal (null for a unary operator or a capture).
      */
-    public record Check(String text, Subject subject, String arg, Op op, String expected, String captureName) {
+    public record Check(
+            String text,
+            Subject subject,
+            @Nullable String arg,
+            @Nullable Op op,
+            @Nullable String expected,
+            @Nullable String captureName) {
 
         public boolean isCapture() {
             return captureName != null;
@@ -102,13 +109,16 @@ public final class HttpChecks {
      * Parses the directive {@code body} — what follows {@code @assert} or {@code @capture} (per {@code capture}) — into
      * a check, or adds a warning naming the problem to {@code warnings} and returns null.
      */
-    static Check parse(String body, boolean capture, List<String> warnings) {
+    static @Nullable Check parse(String body, boolean capture, List<String> warnings) {
         String directive = capture ? "@capture" : "@assert";
         String text = body == null ? "" : body.strip();
         try {
             return capture ? parseCapture(text) : parseAssert(text);
         } catch (IllegalArgumentException bad) {
-            warnings.add(tr("http.warn.badCheck", directive + (text.isEmpty() ? "" : " " + text), bad.getMessage()));
+            warnings.add(tr(
+                    "http.warn.badCheck",
+                    directive + (text.isEmpty() ? "" : " " + text),
+                    String.valueOf(bad.getMessage())));
             return null;
         }
     }
@@ -171,7 +181,7 @@ public final class HttpChecks {
     private static final class Scanner {
         private final String s;
         private int i;
-        private String arg;
+        private @Nullable String arg;
 
         Scanner(String s) {
             this.s = s;
@@ -282,16 +292,17 @@ public final class HttpChecks {
         if (checks == null || checks.isEmpty() || result == null) {
             return new Outcome(tests, captures, warnings);
         }
-        JsonNode[] json = new JsonNode[1];
+        @Nullable JsonNode[] json = new @Nullable JsonNode[1];
         boolean[] parsed = new boolean[1];
         for (Check c : checks) {
             JsonNode actual = read(c, result, json, parsed);
-            if (c.isCapture()) {
+            String captureName = c.captureName();
+            if (captureName != null) {
                 if (actual == null || actual.isMissingNode()) {
-                    captures.put(c.captureName(), null);
-                    warnings.add(tr("http.warn.captureMissing", c.captureName(), describe(c)));
+                    captures.put(captureName, null);
+                    warnings.add(tr("http.warn.captureMissing", captureName, describe(c)));
                 } else {
-                    captures.put(c.captureName(), actual.isNull() ? "" : text(actual));
+                    captures.put(captureName, actual.isNull() ? "" : text(actual));
                 }
             } else {
                 String failure = compare(c, actual);
@@ -302,7 +313,7 @@ public final class HttpChecks {
     }
 
     /** The subject's value: a JSON node, or null when it is not there (a missing header, a path that misses). */
-    private static JsonNode read(Check c, HttpResult r, JsonNode[] json, boolean[] parsed) {
+    private static @Nullable JsonNode read(Check c, HttpResult r, @Nullable JsonNode[] json, boolean[] parsed) {
         JsonNodeFactory f = JsonNodeFactory.instance;
         return switch (c.subject()) {
             case STATUS -> f.numberNode(r.status());
@@ -322,16 +333,17 @@ public final class HttpChecks {
                         json[0] = null;
                     }
                 }
-                if (json[0] == null) {
+                JsonNode root = json[0];
+                if (root == null) {
                     yield null;
                 }
-                JsonNode node = JsonPath.node(json[0], c.arg());
+                JsonNode node = JsonPath.node(root, c.arg());
                 yield node == null || node.isMissingNode() ? null : node;
             }
         };
     }
 
-    private static String header(HttpResult r, String name) {
+    private static @Nullable String header(HttpResult r, @Nullable String name) {
         if (r.headers() == null) {
             return null;
         }
@@ -344,7 +356,7 @@ public final class HttpChecks {
     }
 
     /** Null when the assertion holds, else why it does not. */
-    static String compare(Check c, JsonNode actual) {
+    static @Nullable String compare(Check c, @Nullable JsonNode actual) {
         Op op = c.op();
         if (op == Op.EXISTS) {
             return actual != null ? null : tr("http.check.fail.missing", describe(c));
@@ -357,6 +369,9 @@ public final class HttpChecks {
         }
         String expected = c.expected();
         Literal lit = literal(expected);
+        if (op == null) {
+            return null; // only a capture has no operator, and a capture is not compared
+        }
         switch (op) {
             case EQ, NE -> {
                 boolean equal = equal(actual, lit);
@@ -430,7 +445,7 @@ public final class HttpChecks {
         return actual.asText().equals(lit.text());
     }
 
-    private static BigDecimal number(JsonNode n) {
+    private static @Nullable BigDecimal number(JsonNode n) {
         if (n.isNumber()) {
             return n.decimalValue();
         }
@@ -440,7 +455,7 @@ public final class HttpChecks {
         return null;
     }
 
-    private static BigDecimal decimal(String s) {
+    private static @Nullable BigDecimal decimal(String s) {
         if (s == null || s.isEmpty() || s.length() > 64) {
             return null;
         }
@@ -469,7 +484,7 @@ public final class HttpChecks {
             case TIME -> "time";
             case BODY -> "body";
             case HEADER -> "header " + c.arg();
-            case JSON -> c.arg();
+            case JSON -> String.valueOf(c.arg());
         };
     }
 
@@ -479,6 +494,7 @@ public final class HttpChecks {
             return !quoted && text.equals("null");
         }
 
+        @Nullable
         BigDecimal number() {
             return decimal(text.strip());
         }
@@ -490,7 +506,7 @@ public final class HttpChecks {
         }
     }
 
-    private static Literal literal(String expected) {
+    private static Literal literal(@Nullable String expected) {
         String s = expected == null ? "" : expected.strip();
         if (s.length() >= 2 && ((s.startsWith("\"") && s.endsWith("\"")) || (s.startsWith("'") && s.endsWith("'")))) {
             return new Literal(s.substring(1, s.length() - 1), true);

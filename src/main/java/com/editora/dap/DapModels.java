@@ -3,6 +3,8 @@ package com.editora.dap;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Toolkit- and lsp4j.debug-free value types exposed by {@link DapManager} to the {@code ui}/{@code editor}
  * layers, so they never depend on the DAP wire types. {@link DapClient} maps the raw lsp4j.debug objects
@@ -21,7 +23,13 @@ public final class DapModels {
      * this machine — java-debug's {@code jdt://contents/…} for a JDK or library class, whose text jdtls can
      * supply ({@code java/classFileContents}) — and null for an ordinary file ({@code file}).
      */
-    public record StackFrameInfo(int id, String name, Path file, int line, int column, String sourceUri) {
+    public record StackFrameInfo(
+            int id,
+            String name,
+            @Nullable Path file,
+            int line,
+            int column,
+            @Nullable String sourceUri) {
         public StackFrameInfo(int id, String name, Path file, int line, int column) {
             this(id, name, file, line, column, null);
         }
@@ -61,12 +69,12 @@ public final class DapModels {
     public record EvalResult(
             String result,
             int variablesReference,
-            String type,
+            @Nullable String type,
             int namedVariables,
             int indexedVariables,
             boolean failed) {
 
-        public EvalResult(String result, int variablesReference, String type) {
+        public EvalResult(String result, int variablesReference, @Nullable String type) {
             this(result, variablesReference, type, 0, 0, false);
         }
 
@@ -82,8 +90,12 @@ public final class DapModels {
     }
 
     /** A breakpoint to send to the adapter for one file: 0-based {@code line} + optional condition/log. */
-    public record LineBreakpoint(int line, String condition, String logMessage, String hitCondition) {
-        public LineBreakpoint(int line, String condition, String logMessage) {
+    public record LineBreakpoint(
+            int line,
+            @Nullable String condition,
+            @Nullable String logMessage,
+            @Nullable String hitCondition) {
+        public LineBreakpoint(int line, @Nullable String condition, @Nullable String logMessage) {
             this(line, condition, logMessage, null);
         }
     }

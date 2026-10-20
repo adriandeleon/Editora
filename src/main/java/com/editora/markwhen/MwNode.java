@@ -2,6 +2,8 @@ package com.editora.markwhen;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A node in a parsed Markwhen {@link Timeline}: either an {@link Event} (a dated item) or a {@link Group}
  * (a {@code #}-header section that nests other nodes). Sealed so the renderer can switch exhaustively.
@@ -17,7 +19,7 @@ public sealed interface MwNode permits MwNode.Event, MwNode.Group {
      * {@code start.startEpochDay} to {@code end.endEpochDayExclusive}). {@code tags} are the {@code #tags}
      * found in the label, in order.
      */
-    record Event(MwDate start, MwDate end, String label, List<String> tags, int line) implements MwNode {}
+    record Event(MwDate start, @Nullable MwDate end, String label, List<String> tags, int line) implements MwNode {}
 
     /**
      * A {@code #}-header section. {@code isSection} is true when a {@code style: section} property makes it

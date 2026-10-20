@@ -3,6 +3,8 @@ package com.editora.editops;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The expand/shrink selection <em>history</em> that sits on top of {@link SmartSelect}. Pure (no toolkit),
  * so it is unit-tested; the UI just applies the ranges it returns.
@@ -15,13 +17,13 @@ import java.util.Deque;
 public final class SmartSelectStack {
 
     private final Deque<int[]> stack = new ArrayDeque<>();
-    private int[] last; // the selection this stack last handed out, or null
+    private int @Nullable [] last; // the selection this stack last handed out, or null
 
     /**
      * The next range out from the live selection {@code [s, e)}, or {@code null} when there is nothing
      * larger (the whole document). The returned range is recorded as the new "last".
      */
-    public int[] expand(String text, int s, int e) {
+    public int @Nullable [] expand(String text, int s, int e) {
         return expand(text, s, e, null);
     }
 
@@ -35,7 +37,7 @@ public final class SmartSelectStack {
      * a new ladder while the request is still in flight. Whichever source produced the range, the stack
      * records what was <em>applied</em>, so {@link #shrink} retraces a mixed ladder correctly.
      */
-    public int[] expand(String text, int s, int e, java.util.List<int[]> serverChain) {
+    public int @Nullable [] expand(String text, int s, int e, java.util.@Nullable List<int[]> serverChain) {
         if (!isLast(s, e)) {
             stack.clear(); // the selection changed under us → begin a new ladder
         }
@@ -58,7 +60,7 @@ public final class SmartSelectStack {
      * This scans the whole chain and takes the smallest match rather than trusting it to be innermost-first —
      * a server answering outermost-first would otherwise jump straight to the whole file on one press.
      */
-    private static int[] fromChain(java.util.List<int[]> chain, int s, int e) {
+    private static int @Nullable [] fromChain(java.util.@Nullable List<int[]> chain, int s, int e) {
         if (chain == null || chain.isEmpty()) {
             return null;
         }
@@ -89,7 +91,7 @@ public final class SmartSelectStack {
      * The previous range in the current ladder, or {@code null} when the live selection is not the one we
      * produced or there is nothing to shrink back to.
      */
-    public int[] shrink(int s, int e) {
+    public int @Nullable [] shrink(int s, int e) {
         if (!isLast(s, e) || stack.isEmpty()) {
             return null;
         }

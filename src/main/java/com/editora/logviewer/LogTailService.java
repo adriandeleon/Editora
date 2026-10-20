@@ -13,6 +13,8 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Drives {@code tail -f} for the log viewer: polls a file off the FX thread, reads only the bytes
  * written since the last offset (via {@link LogTail#readAppended}), and posts the appended text — or a
@@ -70,7 +72,7 @@ public final class LogTailService {
 
     /** A live follow; call {@link #stop()} to cancel it. */
     public final class Handle {
-        private volatile ScheduledFuture<?> future;
+        private volatile @Nullable ScheduledFuture<?> future;
         private final AtomicBoolean stopped = new AtomicBoolean();
         private final AtomicLong delivered;
 
@@ -120,7 +122,7 @@ public final class LogTailService {
         private final Handle handle;
 
         private long offset;
-        private Object fileKey;
+        private @Nullable Object fileKey;
         private boolean missing;
         /** The last chunk ended in a lone {@code \r}: it is half of a {@code \r\n} until proven otherwise. */
         private boolean pendingCr;

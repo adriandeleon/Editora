@@ -3,6 +3,7 @@ package com.editora.terminal;
 import javafx.scene.paint.Color;
 
 import com.jediterm.terminal.TerminalColor;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The colours a terminal draws with: a background, a default foreground, and the sixteen ANSI
@@ -48,7 +49,7 @@ public record TerminalPalette(Color background, Color foreground, Color[] ansi) 
     }
 
     /** Resolves a cell's colour, or {@code fallback} when the cell specifies none. */
-    public Color resolve(TerminalColor color, Color fallback) {
+    public Color resolve(@Nullable TerminalColor color, Color fallback) {
         if (color == null) return fallback;
         if (color.isIndexed()) {
             int i = color.getColorIndex();

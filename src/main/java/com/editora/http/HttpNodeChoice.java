@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.function.Supplier;
 
 import com.editora.run.NodeRuntimes;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which Node.js runs the HTTP Client's scripts: the HTTP page's own "Node.js for HTTP scripts" when it is set,
@@ -37,7 +38,8 @@ public final class HttpNodeChoice {
      * As {@link #command(String, Supplier)} for a local {@code .http} file in {@code projectRoot}, with the
      * user's Node.js {@code setting}. Touches the disk and the PATH probe: off the FX thread.
      */
-    public static String resolveLocal(String httpNodePath, String setting, Path httpFile, Path projectRoot) {
+    public static String resolveLocal(
+            String httpNodePath, String setting, @Nullable Path httpFile, @Nullable Path projectRoot) {
         return command(httpNodePath, () -> NodeRuntimes.resolveLocal(httpFile, projectRoot, "", setting));
     }
 

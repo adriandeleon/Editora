@@ -8,6 +8,7 @@ import org.commonmark.node.Node;
 import org.commonmark.node.Paragraph;
 import org.commonmark.node.StrongEmphasis;
 import org.commonmark.node.Text;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A parsed document with the newer block syntax rewritten as blocks every exporter already draws, for the
@@ -61,21 +62,22 @@ public final class MarkdownExportTree {
      * to a wiki target should carry, relative to the document, or null when the target does not resolve — an
      * unresolved link is written as its text, an unresolved embed as its name.
      */
-    public static Node lower(Node root, java.util.function.UnaryOperator<String> wikiPath) {
-        lowerWikiLinks(root, wikiPath == null ? t -> null : wikiPath);
+    public static Node lower(Node root, java.util.function.@Nullable UnaryOperator<String> wikiPath) {
+        lowerWikiLinks(root, wikiPath);
         return lower(root);
     }
 
     /** Only the wiki-link half of {@link #lower(Node, java.util.function.UnaryOperator)} (HTML keeps the rest). */
-    public static void wikiLinksToLinks(Node root, java.util.function.UnaryOperator<String> wikiPath) {
-        lowerWikiLinks(root, wikiPath == null ? t -> null : wikiPath);
+    public static void wikiLinksToLinks(Node root, java.util.function.@Nullable UnaryOperator<String> wikiPath) {
+        lowerWikiLinks(root, wikiPath);
     }
 
-    private static void lowerWikiLinks(Node node, java.util.function.UnaryOperator<String> wikiPath) {
+    private static void lowerWikiLinks(Node node, java.util.function.@Nullable UnaryOperator<String> wikiPath) {
         for (Node c = node.getFirstChild(); c != null; ) {
             Node next = c.getNext();
             if (c instanceof MarkdownWikiLinks.WikiLink wiki) {
-                String path = wiki.getTarget().isEmpty() ? "" : wikiPath.apply(wiki.getTarget());
+                String path =
+                        wiki.getTarget().isEmpty() ? "" : wikiPath == null ? null : wikiPath.apply(wiki.getTarget());
                 Node replacement;
                 if (path == null) {
                     replacement = new Text(wiki.getText());
@@ -103,9 +105,6 @@ public final class MarkdownExportTree {
 
     /** Rewrites {@code root} in place and returns it. */
     public static Node lower(Node root) {
-        if (root == null) {
-            return null;
-        }
         List<Node> children = new ArrayList<>();
         for (Node c = root.getFirstChild(); c != null; c = c.getNext()) {
             children.add(c);

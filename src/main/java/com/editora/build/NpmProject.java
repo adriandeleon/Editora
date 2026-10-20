@@ -8,6 +8,7 @@ import java.util.Map;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A parsed {@code package.json} — what the build-tool integration needs: the project {@code name} (shown in the
@@ -20,9 +21,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * {@code scripts} yields an empty list (built-ins only, downstream).
  */
 public record NpmProject(
-        String name,
+        @Nullable String name,
         List<String> scripts,
-        String packageManagerField,
+        @Nullable String packageManagerField,
         Map<String, String> scriptCommands,
         boolean workspaces,
         boolean hasDependencies) {

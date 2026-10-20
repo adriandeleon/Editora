@@ -3,6 +3,8 @@ package com.editora.maven;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Targeted, format-preserving edits to a {@code pom.xml}, as text.
  *
@@ -102,7 +104,8 @@ public final class PomEdits {
     }
 
     /** Shared by the plugin and dependency rewrites — they differ only in element name and group default. */
-    private static String setVersions(String pom, Map<String, String> versions, String element, String groupDefault) {
+    private static String setVersions(
+            String pom, Map<String, String> versions, String element, @Nullable String groupDefault) {
         if (blank(pom) || versions == null || versions.isEmpty()) {
             return pom;
         }
@@ -154,7 +157,7 @@ public final class PomEdits {
      * throws on an incomplete pom, so a minimal or hand-written aggregator would be misread as unparseable
      * — and a caller asking only "what packaging is this" would then have to guess.
      */
-    public static String packaging(String pom) {
+    public static @Nullable String packaging(String pom) {
         if (blank(pom)) {
             return null;
         }
@@ -201,7 +204,7 @@ public final class PomEdits {
     }
 
     /** {@code groupId:artifactId} of a plugin element, defaulting the group as Maven does. */
-    private static String coordinateKey(String pom, int[] span, String groupDefault) {
+    private static @Nullable String coordinateKey(String pom, int[] span, @Nullable String groupDefault) {
         int[] artifact = findChild(pom, span[1], span[2], "artifactId");
         if (artifact == null) {
             return null;
@@ -252,7 +255,7 @@ public final class PomEdits {
     // --- element scanning ------------------------------------------------------------------------
 
     /** The inner range of the root {@code <project>} element: {@code {innerStart, innerEnd}}. */
-    private static int[] rootChildren(String pom) {
+    private static int @Nullable [] rootChildren(String pom) {
         int i = 0;
         while (i < pom.length()) {
             int lt = pom.indexOf('<', i);
@@ -274,7 +277,7 @@ public final class PomEdits {
      *
      * @return {@code {tagStart, innerStart, innerEnd, tagEnd}}, or null
      */
-    private static int[] findChild(String pom, int from, int to, String name) {
+    private static int @Nullable [] findChild(String pom, int from, int to, String name) {
         int i = from;
         while (i < to) {
             int lt = pom.indexOf('<', i);
@@ -306,7 +309,7 @@ public final class PomEdits {
      * @return {@code {tagStart, innerStart, innerEnd, tagEnd}}; for a self-closing tag the inner range is
      *     empty and sits at the end of the tag
      */
-    private static int[] elementAt(String pom, int lt) {
+    private static int @Nullable [] elementAt(String pom, int lt) {
         int gt = tagEnd(pom, lt);
         if (gt < 0) {
             return null;

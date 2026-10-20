@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.cfg.JsonNodeFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -87,7 +88,7 @@ public final class HttpEnv {
     }
 
     /** Lays {@code layer}'s members over {@code target}: objects merge member by member, anything else replaces. */
-    private static void mergeInto(ObjectNode target, JsonNode layer) {
+    private static void mergeInto(ObjectNode target, @Nullable JsonNode layer) {
         if (layer == null || !layer.isObject()) {
             return;
         }
@@ -101,7 +102,7 @@ public final class HttpEnv {
         }
     }
 
-    private static JsonNode read(String json) {
+    private static @Nullable JsonNode read(String json) {
         if (json == null || withoutBom(json).isBlank()) {
             return null;
         }
@@ -122,7 +123,7 @@ public final class HttpEnv {
      * Why an env file's {@code json} contributes nothing — it is not valid JSON (with the line and column), or its
      * top level is not an object — or {@code null} when it is usable (or blank, which is simply empty).
      */
-    public static String problem(String json) {
+    public static @Nullable String problem(String json) {
         if (json == null || withoutBom(json).isBlank()) {
             return null;
         }

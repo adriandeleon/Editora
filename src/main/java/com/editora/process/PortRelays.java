@@ -2,6 +2,8 @@ package com.editora.process;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The commands that join a process's stdin and stdout to a TCP port, run where the port is ({@code nc}, else
  * {@code bash}'s {@code /dev/tcp}, else {@code python3}): how {@link RelayPortForward} reaches a port in a
@@ -16,7 +18,7 @@ public final class PortRelays {
     private PortRelays() {}
 
     /** The relay that joins its stdin and stdout to {@code host:port} with {@code tool}; null for none. */
-    public static List<String> argv(String tool, String host, int port) {
+    public static @Nullable List<String> argv(String tool, String host, int port) {
         String p = String.valueOf(port);
         return switch (tool == null ? "" : tool.strip()) {
             case "nc" -> List.of("nc", host, p);

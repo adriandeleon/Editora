@@ -1,5 +1,7 @@
 package com.editora.markdown;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a typed character does in Markdown prose beyond inserting itself: {@code *} and {@code _} come in
  * pairs the way a backtick does, and — when smart typography is on — straight quotes, double hyphens and
@@ -21,7 +23,7 @@ public final class MarkdownTyping {
      * The edit for typing {@code c} at column {@code col} of {@code line} (offsets in the line), or
      * {@code null} for ordinary typing.
      */
-    public static MarkdownEdit typed(String line, int col, char c, boolean smart) {
+    public static @Nullable MarkdownEdit typed(String line, int col, char c, boolean smart) {
         if (col < 0 || col > line.length() || verbatim(line, col)) {
             return null;
         }
@@ -36,7 +38,7 @@ public final class MarkdownTyping {
         return smart ? typography(line, col, c, prev) : null;
     }
 
-    private static MarkdownEdit marker(String line, int col, char c, char prev, char next) {
+    private static @Nullable MarkdownEdit marker(String line, int col, char c, char prev, char next) {
         if (next == c) {
             // Inside an empty pair (*|* with nothing in front that a marker could be closing): **|** from *|*.
             int run = col;
@@ -55,7 +57,7 @@ public final class MarkdownTyping {
     }
 
     /** A space typed into an empty pair ("2 *|*") means the marker was a plain character: its twin goes. */
-    private static MarkdownEdit spaceInEmptyPair(String line, int col, char prev, char next) {
+    private static @Nullable MarkdownEdit spaceInEmptyPair(String line, int col, char prev, char next) {
         if ((prev != '*' && prev != '_') || next != prev) {
             return null;
         }
@@ -70,7 +72,7 @@ public final class MarkdownTyping {
         return before == after ? new MarkdownEdit(col, col + after, " ", col + 1, col + 1) : null;
     }
 
-    private static MarkdownEdit typography(String line, int col, char c, char prev) {
+    private static @Nullable MarkdownEdit typography(String line, int col, char c, char prev) {
         boolean opening = prev == 0 || Character.isWhitespace(prev) || "([{—–".indexOf(prev) >= 0;
         switch (c) {
             case '"':

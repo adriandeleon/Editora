@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.git.DiffParser.Hunk;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Staging one change from the editor: which of a file's <em>unstaged</em> hunks make up the change the user
@@ -42,7 +43,7 @@ public final class HunkStaging {
      * taking the new lines from {@code workingText}. Returns {@code null} when a hunk does not fit the texts —
      * the file or the index moved on since the diff was taken.
      */
-    public static String apply(String indexText, String workingText, List<Hunk> hunks) {
+    public static @Nullable String apply(String indexText, String workingText, List<Hunk> hunks) {
         Lines index = Lines.of(indexText);
         Lines working = Lines.of(workingText);
         List<String> result = new ArrayList<>(index.lines);

@@ -11,6 +11,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Settings a project overrides for everyone who opens it, kept in a <b>committed file in the project</b> —
@@ -56,7 +57,7 @@ public class ProjectSettings {
     public static final int VERSION = 2;
 
     /** The file's own {@code version}; null in a version-1 file, which never had one. */
-    private Integer version;
+    private @Nullable Integer version;
 
     /** Editor values for the project's files ({@link Editor}); every field null means "the user's own". */
     private Editor editor = new Editor();
@@ -286,13 +287,13 @@ public class ProjectSettings {
         return out;
     }
 
-    private static void putFlag(Map<String, String> out, String key, Boolean value) {
+    private static void putFlag(Map<String, String> out, String key, @Nullable Boolean value) {
         if (value != null) {
             out.put(key, value.toString());
         }
     }
 
-    public Integer getVersion() {
+    public @Nullable Integer getVersion() {
         return version;
     }
 
@@ -347,15 +348,15 @@ public class ProjectSettings {
         private static final int MAX_TAB = 16;
         private static final int MAX_COLUMN = 1000;
 
-        private String indentStyle;
-        private Integer tabSize;
-        private java.util.List<Integer> rulers;
-        private Map<String, java.util.List<Integer>> languageRulers;
-        private Boolean wordWrap;
-        private Boolean wordWrapProse;
-        private Boolean trimTrailingWhitespace;
-        private Boolean insertFinalNewline;
-        private String spellLanguage;
+        private @Nullable String indentStyle;
+        private @Nullable Integer tabSize;
+        private java.util.@Nullable List<Integer> rulers;
+        private @Nullable Map<String, java.util.List<Integer>> languageRulers;
+        private @Nullable Boolean wordWrap;
+        private @Nullable Boolean wordWrapProse;
+        private @Nullable Boolean trimTrailingWhitespace;
+        private @Nullable Boolean insertFinalNewline;
+        private @Nullable String spellLanguage;
 
         @JsonIgnore
         public boolean isEmpty() {
@@ -370,12 +371,14 @@ public class ProjectSettings {
                     && (spellLanguage == null || spellLanguage.isBlank());
         }
 
+        @Nullable
         String validIndentStyle() {
             return "detect".equals(indentStyle) || "space".equals(indentStyle) || "tab".equals(indentStyle)
                     ? indentStyle
                     : null;
         }
 
+        @Nullable
         Integer validTabSize() {
             return tabSize != null && tabSize >= MIN_TAB && tabSize <= MAX_TAB ? tabSize : null;
         }
@@ -454,12 +457,12 @@ public class ProjectSettings {
         }
 
         /** Whether saving trims trailing whitespace, or null when the project leaves it (Editora's default: no). */
-        public Boolean trimTrailingWhitespace(boolean trusted) {
+        public @Nullable Boolean trimTrailingWhitespace(boolean trusted) {
             return trusted ? trimTrailingWhitespace : null;
         }
 
         /** Whether saving ends the file with a newline, or null when the project leaves it. */
-        public Boolean insertFinalNewline(boolean trusted) {
+        public @Nullable Boolean insertFinalNewline(boolean trusted) {
             return trusted ? insertFinalNewline : null;
         }
 
@@ -469,7 +472,7 @@ public class ProjectSettings {
             return trusted && own != null && !own.isEmpty() && available.test(own) ? own : user;
         }
 
-        public String getIndentStyle() {
+        public @Nullable String getIndentStyle() {
             return indentStyle;
         }
 
@@ -477,7 +480,7 @@ public class ProjectSettings {
             this.indentStyle = indentStyle;
         }
 
-        public Integer getTabSize() {
+        public @Nullable Integer getTabSize() {
             return tabSize;
         }
 
@@ -485,7 +488,7 @@ public class ProjectSettings {
             this.tabSize = tabSize;
         }
 
-        public java.util.List<Integer> getRulers() {
+        public java.util.@Nullable List<Integer> getRulers() {
             return rulers;
         }
 
@@ -493,7 +496,7 @@ public class ProjectSettings {
             this.rulers = rulers;
         }
 
-        public Map<String, java.util.List<Integer>> getLanguageRulers() {
+        public @Nullable Map<String, java.util.List<Integer>> getLanguageRulers() {
             return languageRulers;
         }
 
@@ -501,7 +504,7 @@ public class ProjectSettings {
             this.languageRulers = languageRulers;
         }
 
-        public Boolean getWordWrap() {
+        public @Nullable Boolean getWordWrap() {
             return wordWrap;
         }
 
@@ -509,7 +512,7 @@ public class ProjectSettings {
             this.wordWrap = wordWrap;
         }
 
-        public Boolean getWordWrapProse() {
+        public @Nullable Boolean getWordWrapProse() {
             return wordWrapProse;
         }
 
@@ -517,7 +520,7 @@ public class ProjectSettings {
             this.wordWrapProse = wordWrapProse;
         }
 
-        public Boolean getTrimTrailingWhitespace() {
+        public @Nullable Boolean getTrimTrailingWhitespace() {
             return trimTrailingWhitespace;
         }
 
@@ -525,7 +528,7 @@ public class ProjectSettings {
             this.trimTrailingWhitespace = trimTrailingWhitespace;
         }
 
-        public Boolean getInsertFinalNewline() {
+        public @Nullable Boolean getInsertFinalNewline() {
             return insertFinalNewline;
         }
 
@@ -533,7 +536,7 @@ public class ProjectSettings {
             this.insertFinalNewline = insertFinalNewline;
         }
 
-        public String getSpellLanguage() {
+        public @Nullable String getSpellLanguage() {
             return spellLanguage;
         }
 

@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Enter inside a {@code /* … *}{@code /} block comment in a brace language (JSDoc, Javadoc, Doxygen): the new
  * line continues the comment with {@code " * "}, as VS Code's JavaScript/TypeScript rules and IntelliJ do. In a
@@ -38,7 +40,7 @@ public final class CommentContinuation {
      * @param before the caret's line up to the caret
      * @param after the caret's line from the caret
      */
-    public static Indenter.EnterEdit enter(String text, int caret, String before, String after) {
+    public static Indenter.@Nullable EnterEdit enter(String text, int caret, String before, String after) {
         String indent = Indenter.leadingWhitespace(before);
         if (DOC_OPEN.matcher(before).matches()) {
             String body = "\n" + indent + " * ";

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.editora.config.PathKeys;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The operations of a workspace edit that destroy something already on disk: a {@code DeleteFile} of an
@@ -38,7 +39,7 @@ public final class WorkspaceEditHazards {
      * @param kind what happens to it
      * @param renamedFrom for an overwrite caused by a rename, the file that moves onto {@code path}; else null
      */
-    public record Hazard(Path path, Kind kind, Path renamedFrom) {}
+    public record Hazard(Path path, Kind kind, @Nullable Path renamedFrom) {}
 
     /** The two questions the classification asks of the filesystem. */
     public interface Disk {

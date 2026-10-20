@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How Run and Debug start one file of a JVM language other than Java: which tool runs it, the command line,
  * and where the debugger's JDWP agent goes. Groovy ({@code groovy Script.groovy args…}) and Kotlin scripts
@@ -49,7 +51,7 @@ public final class JvmScriptRun {
      * The tool that runs {@code language}'s files ({@code groovy}, {@code scala-cli}, {@code kotlinc},
      * {@code clojure}), or null.
      */
-    public static String tool(String language) {
+    public static @Nullable String tool(String language) {
         return language == null ? null : TOOLS.get(language);
     }
 
@@ -58,7 +60,7 @@ public final class JvmScriptRun {
      * runs under {@code lein} and a Babashka script under {@code bb}. Reads the file's head and looks for its
      * project's files.
      */
-    public static String tool(String language, Path file) {
+    public static @Nullable String tool(String language, Path file) {
         if (!"clojure".equals(language) || file == null) {
             return tool(language);
         }
@@ -73,7 +75,7 @@ public final class JvmScriptRun {
      *     configuration's)
      * @param env the environment additions, the JVM options included where the tool reads them
      */
-    public record Launch(List<String> argv, Path directory, Map<String, String> env) {
+    public record Launch(List<String> argv, @Nullable Path directory, Map<String, String> env) {
 
         /** A launch in the caller's own folder. */
         public Launch(List<String> argv, Map<String, String> env) {
@@ -89,7 +91,7 @@ public final class JvmScriptRun {
      */
     public static Launch launch(
             String language,
-            String tool,
+            @Nullable String tool,
             String executable,
             Path file,
             String fileArg,
@@ -139,7 +141,7 @@ public final class JvmScriptRun {
      * The argument prefix through which {@code tool} passes an option to its JVM — where a debug session puts
      * the JDWP agent when the tool reads no variable: {@code -J} for the Clojure CLI, else null.
      */
-    public static String jvmOptionPrefix(String tool) {
+    public static @Nullable String jvmOptionPrefix(@Nullable String tool) {
         ClojureRun.Tool t = ClojureRun.Tool.of(tool);
         return t == null ? null : ClojureRun.jvmOptionPrefix(t);
     }
@@ -148,13 +150,13 @@ public final class JvmScriptRun {
      * The variable through which the program {@code tool} starts for {@code language} reads JVM options
      * ({@link #jvmOptionsVariable(String)}; Leiningen's {@code JVM_OPTS}), or null when it reads none.
      */
-    public static String jvmOptionsVariable(String language, String tool) {
+    public static @Nullable String jvmOptionsVariable(String language, @Nullable String tool) {
         ClojureRun.Tool t = "clojure".equals(language) ? ClojureRun.Tool.of(tool) : null;
         return t == null ? jvmOptionsVariable(language) : ClojureRun.jvmOptionsVariable(t);
     }
 
     /** Whether the program {@code tool} starts runs on a JVM the debugger can attach to (not Babashka's). */
-    public static boolean debuggable(String tool) {
+    public static boolean debuggable(@Nullable String tool) {
         ClojureRun.Tool t = ClojureRun.Tool.of(tool);
         return t == null || ClojureRun.debuggable(t);
     }
@@ -176,7 +178,7 @@ public final class JvmScriptRun {
      */
     public static Launch launch(
             String language,
-            String tool,
+            @Nullable String tool,
             String target,
             List<String> jvmOptions,
             List<String> args,
@@ -228,7 +230,8 @@ public final class JvmScriptRun {
      * {@code scala run}. {@code --} keeps a program argument that looks like an option ({@code -v}) the
      * program's.
      */
-    public static List<String> scalaCli(String tool, List<String> inputs, List<String> jvmOptions, List<String> args) {
+    public static List<String> scalaCli(
+            @Nullable String tool, List<String> inputs, List<String> jvmOptions, List<String> args) {
         List<String> argv = new ArrayList<>();
         argv.add(tool);
         argv.add("run");
@@ -247,7 +250,7 @@ public final class JvmScriptRun {
     }
 
     /** The command that runs {@code file} (as its host names it) with {@code args}: {@code <tool> <file> args…}. */
-    public static List<String> argv(String toolExecutable, String file, List<String> args) {
+    public static List<String> argv(@Nullable String toolExecutable, String file, List<String> args) {
         List<String> argv = new ArrayList<>();
         argv.add(toolExecutable);
         argv.add(file);
@@ -276,7 +279,7 @@ public final class JvmScriptRun {
      * for Scala CLI, which takes {@code --java-opt} arguments ({@link #takesJvmOptionsInArgv}): its JVM is one
      * of several the command starts (the Bloop compile server is another).
      */
-    public static String jvmOptionsVariable(String language) {
+    public static @Nullable String jvmOptionsVariable(String language) {
         return "groovy".equals(language) || "kotlin".equals(language) ? "JAVA_OPTS" : null;
     }
 
@@ -285,7 +288,7 @@ public final class JvmScriptRun {
      * ({@code inherited}) already put there, so their {@code JAVA_OPTS} still apply.
      */
     public static Map<String, String> withJvmOption(
-            Map<String, String> base, Map<String, String> inherited, String variable, String option) {
+            Map<String, String> base, Map<String, String> inherited, @Nullable String variable, String option) {
         Map<String, String> env = new LinkedHashMap<>(base == null ? Map.of() : base);
         if (variable == null || option == null || option.isBlank()) {
             return env;
@@ -305,7 +308,7 @@ public final class JvmScriptRun {
     }
 
     /** {@link #missingToolKey} for the tool itself ({@code lein}, {@code bb}). */
-    public static String missingToolKeyFor(String tool) {
+    public static String missingToolKeyFor(@Nullable String tool) {
         return "status.run.toolMissing." + tool;
     }
 }

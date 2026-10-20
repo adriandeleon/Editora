@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A parsed {@code Cargo.toml} — the bits the build-tool integration needs: the {@code [package] name} (for the
@@ -14,7 +15,7 @@ import com.fasterxml.jackson.dataformat.toml.TomlMapper;
  * binding → no {@code module-info} {@code opens}). Pure. Implicit autobins ({@code src/main.rs},
  * {@code src/bin/*.rs}) are deliberately not listed — the plain {@code cargo run} covers the default binary.
  */
-public record CargoProject(String packageName, List<String> binNames, List<String> exampleNames) {
+public record CargoProject(@Nullable String packageName, List<String> binNames, List<String> exampleNames) {
 
     private static final TomlMapper MAPPER = new TomlMapper();
 

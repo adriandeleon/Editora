@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Python's typing indentation — pure, unit-tested, used by {@link Indenter} for the {@code python} language.
  *
@@ -162,7 +164,7 @@ public final class PythonIndent {
     }
 
     /** The clause keyword ({@code else}, {@code elif}, …) a complete clause line starts with, or {@code null}. */
-    static String clauseKeyword(String line) {
+    static @Nullable String clauseKeyword(String line) {
         List<PythonScan.Line> lines = PythonScan.scan(line);
         PythonScan.Line l = lines.get(lines.size() - 1);
         if (lines.size() != 1 || l.lastCode() != ':' || l.depthAtEnd() != 0 || l.stringAtEnd()) {
@@ -194,7 +196,7 @@ public final class PythonIndent {
      * an {@code else}, the {@code try} of an {@code except}. {@code null} when the line is not a clause or no
      * such statement is in {@code text}.
      */
-    static String clauseIndent(String text, int caret, int tabSize, String currentIndent) {
+    static @Nullable String clauseIndent(String text, int caret, int tabSize, String currentIndent) {
         int ls = lineStartOf(text, caret);
         int le = text.indexOf('\n', caret);
         String lineText = text.substring(ls, le < 0 ? text.length() : le);
@@ -202,10 +204,10 @@ public final class PythonIndent {
         if (keyword == null) {
             keyword = clauseKeyword(text.substring(ls, caret) + ":");
         }
-        if (keyword == null) {
+        Set<String> openers = keyword == null ? null : CLAUSE_OPENERS.get(keyword);
+        if (openers == null) {
             return null;
         }
-        Set<String> openers = CLAUSE_OPENERS.get(keyword);
         String above = ls == 0 ? "" : text.substring(boundedStart(text, ls), ls - 1);
         if (above.isEmpty()) {
             return null;

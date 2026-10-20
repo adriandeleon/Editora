@@ -2,6 +2,7 @@ package com.editora.github;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Parses a single {@code gh pr view <n> --json number,title,body,author,baseRefName,headRefName,state,url,
@@ -28,7 +29,7 @@ public final class PrViewParser {
             int deletions) {}
 
     /** Parses the {@code gh pr view --json …} object, or {@code null} on bad/empty input. */
-    public static PrDetail parse(String json) {
+    public static @Nullable PrDetail parse(String json) {
         if (json == null || json.isBlank()) {
             return null;
         }

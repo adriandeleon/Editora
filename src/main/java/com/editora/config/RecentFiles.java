@@ -15,6 +15,7 @@ import com.editora.config.migration.ConfigSchema;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Persistent list of recently-opened files in {@code <configDir>/recent-files.json}. Most-recent
@@ -151,7 +152,7 @@ public class RecentFiles {
      * a remote entry resolves only while its connection is open, and is simply not listed until then.
      * {@code known} is the live path for {@code knownKey} (the entry just added), used as given.
      */
-    private void publish(String knownKey, Path known) {
+    private void publish(@Nullable String knownKey, @Nullable Path known) {
         List<Path> resolved = new ArrayList<>(stored.size());
         for (String entry : stored) {
             Path path = entry.equals(knownKey) ? known : resolve(entry);
@@ -162,7 +163,7 @@ public class RecentFiles {
         recents.setAll(resolved);
     }
 
-    private static Path resolve(String entry) {
+    private static @Nullable Path resolve(String entry) {
         try {
             return com.editora.vfs.Vfs.parseStorable(entry);
         } catch (java.nio.file.InvalidPathException notAPathHere) {

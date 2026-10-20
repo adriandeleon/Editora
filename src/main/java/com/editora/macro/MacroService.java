@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.MacroStore;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Per-window model of keyboard macros: owns the {@link MacroRecorder} and the {@link MacroPlayer} cursor,
@@ -24,7 +25,7 @@ public final class MacroService {
     private final MacroRecorder recorder = new MacroRecorder();
     private final MacroPlayer player = new MacroPlayer();
     /** The macro just recorded in this window — the target of "replay last" until another is recorded. */
-    private Macro lastMacro;
+    private @Nullable Macro lastMacro;
     /**
      * True from a recorded key or text step until the next real key press: commands that run in between are
      * consequences of that step (Enter in a picker running the picked command) and replaying the step runs
@@ -130,7 +131,7 @@ public final class MacroService {
      * The macro "replay last" plays: the one recorded in this window, else the one the store kept from the
      * last recording anywhere — so it survives a restart and is there in a second window.
      */
-    public Macro last() {
+    public @Nullable Macro last() {
         if (lastMacro != null && !lastMacro.isEmpty()) {
             return lastMacro;
         }
@@ -150,11 +151,11 @@ public final class MacroService {
         return store().macros;
     }
 
-    public Macro findById(String id) {
+    public @Nullable Macro findById(String id) {
         return store().findById(id);
     }
 
-    public Macro findByName(String name) {
+    public @Nullable Macro findByName(String name) {
         return store().findByName(name == null ? null : name.strip());
     }
 
@@ -166,7 +167,7 @@ public final class MacroService {
      * Stores the last recording in the unnamed slot (replacing the previous unnamed one), so it is visible
      * in Settings and bindable at once. Returns the stored entry, or null when there is nothing recorded.
      */
-    public Macro saveLastAsPlaceholder() {
+    public @Nullable Macro saveLastAsPlaceholder() {
         if (lastMacro == null || lastMacro.isEmpty()) {
             return null;
         }
@@ -186,7 +187,7 @@ public final class MacroService {
      * recording — it has a real name now — but not when another window has since recorded over it. Returns
      * the saved macro, or null when there is nothing to save or the name is blank.
      */
-    public Macro saveLastAs(String name, Macro replace) {
+    public @Nullable Macro saveLastAs(String name, Macro replace) {
         Macro source = last();
         if (source == null || name == null || name.isBlank()) {
             return null;

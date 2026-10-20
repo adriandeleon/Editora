@@ -4,6 +4,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.editora.markdown.MarkdownEdit;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure (no-toolkit, unit-tested) editing helpers for Typst markup — the Typst analogue of the
@@ -162,7 +163,7 @@ public final class TypstMarkup {
      * list item. A {@code +} (auto-numbered) marker carries forward as {@code +}; an explicit {@code N.}
      * increments; leading indentation is preserved.
      */
-    public static String continuation(String line) {
+    public static @Nullable String continuation(String line) {
         if (line == null) {
             return null;
         }

@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Turns a language server's raw status stream into the lines worth putting in the echo area and the message
  * log — above all, one that says when the server is done starting. Pure: the caller supplies the clock and
@@ -31,7 +33,7 @@ public final class ServerStatusNarrator {
     public static final long QUIET_MILLIS = 800;
 
     /** A line to show: either the server's own {@code text}, or the narrator's "ready" line ({@code text} null). */
-    public record Line(String serverId, String text) {
+    public record Line(@Nullable String serverId, @Nullable String text) {
         public boolean ready() {
             return text == null;
         }
@@ -43,10 +45,15 @@ public final class ServerStatusNarrator {
         boolean failed;
         boolean narratesStartup; // sends its own "Starting" statuses (jdtls): only its own ready counts
         int outstanding; // progress Begins without an End yet
+
+        @Nullable
         String held; // a Begin's text not shown yet (after the ready line), with when it began
+
         long heldSince;
         boolean busyShown; // background work was shown, so its end owes a ready line
         long lastActivity;
+
+        @Nullable
         String lastShown;
     }
 
@@ -57,7 +64,7 @@ public final class ServerStatusNarrator {
      * reports (a JDT LS {@code language/status} type, "Progress"/"ProgressEnd", "Message", "Error",
      * "Launching"). Returns the line to show now, or null for none.
      */
-    public Line onStatus(String serverId, String type, String message, long now) {
+    public @Nullable Line onStatus(String serverId, String type, String message, long now) {
         String key = serverId == null ? "" : serverId;
         String t = type == null ? "" : type.toLowerCase(Locale.ROOT);
         String msg = message == null || message.isBlank() ? null : message.strip();
@@ -175,7 +182,7 @@ public final class ServerStatusNarrator {
         }
     }
 
-    private static Line show(String serverId, State s, String msg) {
+    private static @Nullable Line show(String serverId, State s, @Nullable String msg) {
         if (msg == null || msg.equals(s.lastShown)) {
             return null;
         }
@@ -183,7 +190,7 @@ public final class ServerStatusNarrator {
         return new Line(serverId, msg);
     }
 
-    private static boolean isReadyWord(String msg) {
+    private static boolean isReadyWord(@Nullable String msg) {
         return msg == null || msg.equalsIgnoreCase("ready") || msg.equalsIgnoreCase("serviceready");
     }
 }

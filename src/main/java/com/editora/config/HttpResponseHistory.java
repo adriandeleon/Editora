@@ -28,6 +28,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The HTTP Client's remembered state per {@code .http} file, in {@code <configDir>/http-history/<hash>.json}:
@@ -120,10 +121,10 @@ public final class HttpResponseHistory {
             int requestIndex,
             String method,
             String url,
-            List<Header> requestHeaders,
+            @Nullable List<Header> requestHeaders,
             String requestBody,
             int status,
-            List<Header> headers,
+            @Nullable List<Header> headers,
             String body,
             boolean bodyCut,
             boolean binary,
@@ -133,14 +134,14 @@ public final class HttpResponseHistory {
             String error,
             List<String> warnings,
             boolean truncated,
-            String protocol,
-            String charset,
-            Sent sent,
+            @Nullable String protocol,
+            @Nullable String charset,
+            @Nullable Sent sent,
             long landedAt,
-            String urlTemplate,
-            String fingerprint,
-            Tests tests,
-            String environment) {
+            @Nullable String urlTemplate,
+            @Nullable String fingerprint,
+            @Nullable Tests tests,
+            @Nullable String environment) {
 
         /** An entry without its environment (as a version-4 file holds them). */
         public Response(
@@ -162,13 +163,13 @@ public final class HttpResponseHistory {
                 String error,
                 List<String> warnings,
                 boolean truncated,
-                String protocol,
-                String charset,
-                Sent sent,
+                @Nullable String protocol,
+                @Nullable String charset,
+                @Nullable Sent sent,
                 long landedAt,
-                String urlTemplate,
-                String fingerprint,
-                Tests tests) {
+                @Nullable String urlTemplate,
+                @Nullable String fingerprint,
+                @Nullable Tests tests) {
             this(
                     at,
                     name,
@@ -418,7 +419,7 @@ public final class HttpResponseHistory {
                     environment);
         }
 
-        private static List<Header> remask(List<Header> headers) {
+        private static @Nullable List<Header> remask(@Nullable List<Header> headers) {
             if (headers == null) {
                 return null;
             }
@@ -452,7 +453,7 @@ public final class HttpResponseHistory {
 
         /** Where the file was copied before its unreadable entries go on the next save (not saved); null if none. */
         @JsonIgnore
-        public Path damagedCopy;
+        public @Nullable Path damagedCopy;
 
         /** What could not be read as written when this was loaded (not saved); see {@link #load}. */
         @JsonIgnore
@@ -854,7 +855,7 @@ public final class HttpResponseHistory {
     }
 
     /** The {@code file} a history file names, read without loading its responses; null when unreadable. */
-    private String recordedFile(Path history) {
+    private @Nullable String recordedFile(Path history) {
         try (JsonParser p = mapper.getFactory().createParser(history.toFile())) {
             if (p.nextToken() != JsonToken.START_OBJECT) {
                 return null;

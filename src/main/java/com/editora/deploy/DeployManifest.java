@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What the last deploy left on the host: for each file Editora put there, the local file it came from (size,
  * modified time, SHA-256) and what the host's copy looked like afterwards (size, modified second). Kept on this
@@ -59,7 +61,7 @@ public final class DeployManifest {
         return new DeployManifest(new TreeMap<>(entries));
     }
 
-    public Entry get(String relative) {
+    public @Nullable Entry get(String relative) {
         return entries.get(relative);
     }
 

@@ -46,6 +46,7 @@ import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 
 import com.editora.config.NoteScope;
+import com.editora.config.PathDisplay;
 import com.editora.config.TextAnchor;
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LineEndings;
@@ -325,7 +326,7 @@ final class ProjectMapPreview extends StackPane {
         boolean openBuffer = content != null && content.open();
         fromBuffer = openBuffer;
         editorConfigCharset = content == null ? null : content.editorConfigCharset();
-        String name = fileName(path);
+        String name = PathDisplay.fileName(path);
         title.setText(name);
         title.setGraphic(FileIcons.forProjectItem(name, false));
         title.setTooltip(new Tooltip(path.toString()));
@@ -991,7 +992,7 @@ final class ProjectMapPreview extends StackPane {
     }
 
     private static boolean isImage(Path path) {
-        String name = fileName(path).toLowerCase(java.util.Locale.ROOT);
+        String name = PathDisplay.fileName(path).toLowerCase(java.util.Locale.ROOT);
         return name.endsWith(".png")
                 || name.endsWith(".jpg")
                 || name.endsWith(".jpeg")
@@ -1018,11 +1019,6 @@ final class ProjectMapPreview extends StackPane {
             end--;
         }
         return end == text.length() ? text : text.substring(0, end);
-    }
-
-    private static String fileName(Path path) {
-        Path name = path.getFileName();
-        return name == null ? path.toString() : name.toString();
     }
 
     /** {@code requested} held between the card's minimum and the room there is; the room wins when smaller. */

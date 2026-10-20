@@ -2,6 +2,7 @@ package com.editora.macro;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One step of a recorded keyboard macro: an invoked editor <b>command</b> (by id), a run of literal
@@ -27,7 +28,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record MacroStep(
         String kind,
         String value,
-        @JsonInclude(JsonInclude.Include.NON_NULL) String target) {
+        @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String target) {
 
     public static final String COMMAND = "command";
     public static final String TEXT = "text";

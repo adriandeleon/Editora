@@ -3,6 +3,8 @@ package com.editora.cron;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Splits crontab text into its meaningful lines for the preview: environment assignments
  * ({@code NAME=value}), job lines (a schedule plus a command), and the parse errors on malformed job
@@ -18,7 +20,12 @@ public final class Crontab {
     public record Assignment(String name, String value, int line) {}
 
     /** One scheduled job: its raw schedule, decoded expression (null on error), command, and 1-based line. */
-    public record Job(String rawSchedule, CronExpression expr, String error, String command, int line) {
+    public record Job(
+            String rawSchedule,
+            @Nullable CronExpression expr,
+            @Nullable String error,
+            String command,
+            int line) {
         public boolean ok() {
             return error == null;
         }
@@ -64,7 +71,7 @@ public final class Crontab {
     }
 
     /** A {@code NAME=value} assignment, or {@code null} when the line is a job. Cron env names precede any space. */
-    private static Assignment assignment(String line, int lineNo) {
+    private static @Nullable Assignment assignment(String line, int lineNo) {
         int eq = line.indexOf('=');
         if (eq <= 0) {
             return null;
@@ -98,7 +105,7 @@ public final class Crontab {
     }
 
     /** {@code {end,commandStart}} offsets after the 5th whitespace-separated field, or null if there aren't 5. */
-    private static int[] fifthFieldEnd(String line) {
+    private static int @Nullable [] fifthFieldEnd(String line) {
         int i = 0;
         int n = line.length();
         int fieldEnd = -1;

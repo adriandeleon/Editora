@@ -3,6 +3,8 @@ package com.editora.snippet;
 import java.util.Collections;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One tab stop in a parsed snippet: its number (0 is the final caret, {@code $0}), every offset range
  * it occupies in the expanded text (more than one = mirrors), and the initial placeholder text.
@@ -33,7 +35,7 @@ public record TabStop(
         List<String> choices,
         List<SnippetTransform> transforms,
         int primaryIndex,
-        List<int[]> spans) {
+        @Nullable List<int[]> spans) {
 
     /** A stop with no recorded nesting (see {@link #spans()}). */
     public TabStop(
@@ -67,7 +69,7 @@ public record TabStop(
     }
 
     /** The transform for occurrence {@code i}, or null when that occurrence copies the value verbatim. */
-    public SnippetTransform transformAt(int i) {
+    public @Nullable SnippetTransform transformAt(int i) {
         return transforms == null || i >= transforms.size() ? null : transforms.get(i);
     }
 

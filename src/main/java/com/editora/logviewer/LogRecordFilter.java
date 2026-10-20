@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The log viewer's filter, fed one complete line at a time: keeps the lines whose (inherited) severity is at
  * least a floor and whose <em>record</em> matches a pattern. Pure (java.base only), so it is unit-tested.
@@ -24,7 +26,7 @@ public final class LogRecordFilter {
     /** Receives each kept line, in document order. */
     public interface Sink {
         /** {@code line} (0-based {@code index} in the source) is kept; {@code level} is its inherited level. */
-        void keep(String line, int index, LogLevel level);
+        void keep(String line, int index, @Nullable LogLevel level);
     }
 
     /** Most unmatched lines of one record kept waiting for a later line to match — bounds a runaway record. */
@@ -33,7 +35,7 @@ public final class LogRecordFilter {
     private final LogLevel minLevel;
     private final Pattern pattern;
 
-    private LogLevel carry;
+    private @Nullable LogLevel carry;
     /** A record has started: lines without a level belong to it rather than standing alone. */
     private boolean inRecord;
     /** The current record already matched, so the rest of its lines are kept as they come. */
@@ -48,7 +50,7 @@ public final class LogRecordFilter {
     }
 
     /** The inherited level after the last line fed in. */
-    public LogLevel carry() {
+    public @Nullable LogLevel carry() {
         return carry;
     }
 
@@ -101,12 +103,12 @@ public final class LogRecordFilter {
     }
 
     /** The level {@code line} would have if it came next (its own, or the inherited one). */
-    public LogLevel levelIfNext(String line) {
+    public @Nullable LogLevel levelIfNext(String line) {
         LogLevel own = LogPatterns.levelOf(line);
         return own != null ? own : carry;
     }
 
-    private boolean passesLevel(LogLevel effective) {
+    private boolean passesLevel(@Nullable LogLevel effective) {
         // Lines above the first record have no level: they pass only when no floor is set.
         return minLevel == null || (effective != null && effective.atLeast(minLevel));
     }

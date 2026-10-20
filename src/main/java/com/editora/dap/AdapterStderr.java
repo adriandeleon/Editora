@@ -8,6 +8,8 @@ import java.util.ArrayDeque;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The last lines a stdio debug adapter wrote to its standard error. The stream has to be drained (an undrained
  * pipe blocks the adapter), and what it says is the only explanation there is when the adapter fails to start
@@ -61,7 +63,7 @@ final class AdapterStderr {
     }
 
     /** {@code "\n<what the adapter said>"} for a failure message, or "" when there is nothing (or no tail). */
-    static String suffix(AdapterStderr tail) {
+    static String suffix(@Nullable AdapterStderr tail) {
         String text = tail == null ? "" : tail.text();
         return text.isEmpty() ? "" : "\n" + text;
     }

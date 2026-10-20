@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Element;
 
 /**
@@ -32,7 +33,7 @@ import org.w3c.dom.Element;
  * scrolling the file to answer "which version is this?".
  */
 public record PomSummary(
-        Coordinates parent,
+        @Nullable Coordinates parent,
         Coordinates coordinates,
         String packaging,
         String name,
@@ -44,7 +45,7 @@ public record PomSummary(
         List<Plugin> plugins,
         List<Plugin> managedPlugins,
         List<Profile> profiles,
-        String error) {
+        @Nullable String error) {
 
     /** A {@code groupId:artifactId:version} triple; any part may be {@code ""} when not written. */
     public record Coordinates(String groupId, String artifactId, String version) {}
@@ -253,7 +254,7 @@ public record PomSummary(
         }
     }
 
-    private static List<String> parseModules(Element modulesEl) {
+    private static List<String> parseModules(@Nullable Element modulesEl) {
         List<String> out = new ArrayList<>();
         for (Element m : PomParser.childElements(modulesEl, "module")) {
             String name = PomParser.strip(PomParser.text(m));
@@ -264,7 +265,7 @@ public record PomSummary(
         return List.copyOf(out);
     }
 
-    private static List<Property> parseProperties(Element propertiesEl) {
+    private static List<Property> parseProperties(@Nullable Element propertiesEl) {
         List<Property> out = new ArrayList<>();
         if (propertiesEl == null) {
             return List.of();
@@ -281,7 +282,7 @@ public record PomSummary(
     }
 
     private static List<Dependency> parseDependencies(
-            Element dependenciesEl, Map<String, String> props, Map<String, String> managedVersions) {
+            @Nullable Element dependenciesEl, Map<String, String> props, Map<String, String> managedVersions) {
         List<Dependency> out = new ArrayList<>();
         for (Element el : PomParser.childElements(dependenciesEl, "dependency")) {
             String artifactId = childText(el, "artifactId");
@@ -314,7 +315,7 @@ public record PomSummary(
     }
 
     private static List<Plugin> parsePlugins(
-            Element pluginsEl, Map<String, String> props, Map<String, String> managedVersions) {
+            @Nullable Element pluginsEl, Map<String, String> props, Map<String, String> managedVersions) {
         List<Plugin> out = new ArrayList<>();
         for (Element el : PomParser.childElements(pluginsEl, "plugin")) {
             String artifactId = childText(el, "artifactId");
@@ -430,7 +431,7 @@ public record PomSummary(
         return s.replaceAll("\\s+", " ").strip();
     }
 
-    private static String firstLine(String message) {
+    private static String firstLine(@Nullable String message) {
         if (message == null) {
             return "could not be parsed";
         }

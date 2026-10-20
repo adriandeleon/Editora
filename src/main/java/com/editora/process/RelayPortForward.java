@@ -10,6 +10,8 @@ import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A loopback port on this machine that reaches a port where a program runs elsewhere: each connection
  * accepted here starts one relay process ({@link Relay}: a launcher running {@link PortRelays#argv} there)
@@ -30,7 +32,7 @@ public final class RelayPortForward implements PortForward {
     private final ServerSocket server;
     private final Set<AutoCloseable> open = ConcurrentHashMap.newKeySet();
     private volatile boolean closed;
-    private volatile Thread acceptor;
+    private volatile @Nullable Thread acceptor;
 
     private RelayPortForward(ServerSocket server) {
         this.server = server;

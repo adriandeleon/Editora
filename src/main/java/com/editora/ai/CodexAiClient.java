@@ -14,6 +14,7 @@ import java.util.function.BooleanSupplier;
 
 import com.editora.agent.AcpClient;
 import com.editora.agent.AcpJson;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -26,7 +27,7 @@ final class CodexAiClient {
     void run(
             List<String> command,
             String model,
-            String prompt,
+            @Nullable String prompt,
             Duration timeout,
             BooleanSupplier cancelled,
             AiClient.Listener listener) {
@@ -134,12 +135,12 @@ final class CodexAiClient {
         }
 
         @Override
-        public String readTextFile(String path, Integer line, Integer limit) throws IOException {
+        public String readTextFile(String path, @Nullable Integer line, @Nullable Integer limit) throws IOException {
             throw new IOException("AI actions use only the supplied text");
         }
 
         @Override
-        public void writeTextFile(String path, String content) throws IOException {
+        public void writeTextFile(String path, @Nullable String content) throws IOException {
             throw new IOException("AI actions return text; the editor applies edits");
         }
 

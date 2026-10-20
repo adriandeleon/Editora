@@ -3,6 +3,8 @@ package com.editora.maven;
 import java.nio.file.Path;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure validation and derivation for Maven project coordinates. No toolkit, no I/O — the wizard's decisions
  * live here so they can be unit-tested.
@@ -131,7 +133,7 @@ public final class MavenCoordinates {
      * directory is <em>derived</em>, never chosen, which is why the wizard shows it read-only and refuses to
      * proceed when it already exists.
      */
-    public static Path projectDir(Path parentDir, String artifactId) {
+    public static @Nullable Path projectDir(Path parentDir, String artifactId) {
         return parentDir == null || artifactId == null || artifactId.isBlank()
                 ? null
                 : parentDir.resolve(artifactId.strip()).normalize();
@@ -141,7 +143,7 @@ public final class MavenCoordinates {
      * Parses a user-typed {@code groupId:artifactId:version} into an archetype, or returns {@code null} when
      * it isn't three valid non-blank parts. Never throws — the caller reports a status.
      */
-    public static MavenArchetype parseGav(String text) {
+    public static @Nullable MavenArchetype parseGav(String text) {
         if (text == null) {
             return null;
         }

@@ -1,5 +1,7 @@
 package com.editora.git;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure validation of a name the user typed for a branch, a tag or a remote against the rules of
  * {@code git check-ref-format} (the unit test compares it with the installed git over a table of names). Checked before the name reaches an argv, so a bad one is refused
@@ -32,7 +34,7 @@ public final class GitRefNames {
     }
 
     /** The first rule {@code name} breaks as a branch name, or {@code null} when it is a valid one. */
-    public static Problem problem(String name) {
+    public static @Nullable Problem problem(String name) {
         if (name == null || name.isBlank()) {
             return Problem.EMPTY;
         }

@@ -1,5 +1,7 @@
 package com.editora.git;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure helpers for editing a {@code .gitignore} file — used by the Project tree's "Add to .gitignore"
  * action. Toolkit-free and unit-tested; the coordinator does the actual file read/write.
@@ -14,7 +16,7 @@ public final class GitIgnore {
      * {@link #entryFor} and is written verbatim — its backslashes are escapes, not path separators. Existing
      * content is preserved, and a trailing newline is ensured so the new entry sits on its own line.
      */
-    public static String withEntry(String existing, String entry) {
+    public static @Nullable String withEntry(String existing, String entry) {
         String line = entry == null ? "" : entry;
         if (line.isBlank()) {
             return null;

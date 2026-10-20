@@ -7,6 +7,8 @@ import java.util.function.Consumer;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.input.KeyEvent;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Brings the user's configured keybindings (Emacs today) to a plain {@link TextInputControl} — the note
  * editor's {@code TextArea}, and any other dialog text field. Such controls live in their own dialog scene
@@ -31,7 +33,7 @@ public final class TextInputKeymap {
      * {@code WindowManager.reloadSharedKeymap}), set once at startup so generic popup text fields can install
      * Emacs bindings via {@link #installShared} without threading the keymap through their constructors.
      */
-    private static volatile KeymapManager shared;
+    private static volatile @Nullable KeymapManager shared;
 
     private TextInputKeymap() {}
 
@@ -42,7 +44,7 @@ public final class TextInputKeymap {
 
     /** The app-wide keymap registered by {@link #setShared}, or null before startup has set it. Also read by
      *  {@code com.editora.ui.ConsoleNav}, the {@code CodeArea} analogue of this class. */
-    public static KeymapManager sharedKeymap() {
+    public static @Nullable KeymapManager sharedKeymap() {
         return shared;
     }
 
@@ -61,18 +63,18 @@ public final class TextInputKeymap {
     }
 
     /** Installs configured-keymap caret movement + basic editing on {@code control}. */
-    public static void install(TextInputControl control, KeymapManager keymap) {
+    public static void install(TextInputControl control, @Nullable KeymapManager keymap) {
         install(control, keymap, KeymapManager.isMac());
     }
 
     /** Package-visible variant with an explicit platform flag so tests don't depend on the host OS. */
-    static void install(TextInputControl control, KeymapManager keymap, boolean mac) {
+    static void install(TextInputControl control, @Nullable KeymapManager keymap, boolean mac) {
         install(control, keymap, mac, ACTIONS);
     }
 
     private static void install(
             TextInputControl control,
-            KeymapManager keymap,
+            @Nullable KeymapManager keymap,
             boolean mac,
             Map<String, Consumer<TextInputControl>> actions) {
         if (control == null || keymap == null) {

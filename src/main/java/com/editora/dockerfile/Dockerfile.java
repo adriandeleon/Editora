@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses a Dockerfile into build stages for the preview. Handles trailing-backslash line continuations and
  * {@code #} comments (a {@code # syntax=} parser directive is just a comment here). Each {@code FROM} starts
@@ -14,7 +16,7 @@ public final class Dockerfile {
 
     public record Instruction(String keyword, String args, int line) {}
 
-    public record Stage(String baseImage, String name, int index, List<Instruction> instructions) {}
+    public record Stage(String baseImage, @Nullable String name, int index, List<Instruction> instructions) {}
 
     private final List<Instruction> globalArgs;
     private final List<Stage> stages;

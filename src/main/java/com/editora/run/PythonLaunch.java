@@ -11,6 +11,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How a Python program is launched — by Run File, a Python run configuration and the pytest runner — decided in
  * one pure place (unit-tested): which interpreter, the argv, the environment and the working directory.
@@ -61,7 +63,7 @@ public final class PythonLaunch {
     }
 
     /** Classifies a Python file's first line (see the class comment). */
-    public static Shebang shebang(String firstLine) {
+    public static Shebang shebang(@Nullable String firstLine) {
         Map<String, String> env = new LinkedHashMap<>();
         List<String> tokens = ShellCommand.shebang(firstLine, env);
         if (tokens.isEmpty()) {
@@ -108,7 +110,7 @@ public final class PythonLaunch {
      * @return the command and whether a specific shebang interpreter was missing (the caller says so)
      */
     public static Choice choose(
-            PythonInterpreters.PythonInterpreter resolved, Shebang shebang, Predicate<String> exists) {
+            PythonInterpreters.PythonInterpreter resolved, Shebang shebang, @Nullable Predicate<String> exists) {
         if (resolved.source() != PythonInterpreters.Source.CONFIGURATION && shebang.specific()) {
             String exe = shebang.interpreter().get(0);
             if (exists == null || exists.test(exe)) {
@@ -183,7 +185,7 @@ public final class PythonLaunch {
     public static Map<String, String> environment(
             Map<String, String> interpreterEnv,
             List<String> pythonPath,
-            String inheritedPythonPath,
+            @Nullable String inheritedPythonPath,
             String separator,
             Map<String, String> userEnv) {
         Map<String, String> env = new LinkedHashMap<>();

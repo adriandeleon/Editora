@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Encode / decode and escape / unescape transforms for selected text: Base64, URL (percent-encoding), JSON
  * string escapes, HTML entities and {@code \}{@code uXXXX} escapes. Every decode is strict: input it cannot
@@ -249,7 +251,7 @@ public final class TextCodecs {
         return out.toString();
     }
 
-    private static String entity(String name) {
+    private static @Nullable String entity(String name) {
         if (name.startsWith("#")) {
             try {
                 int cp = name.startsWith("#x") || name.startsWith("#X")

@@ -17,6 +17,7 @@ import org.commonmark.parser.delimiter.DelimiterRun;
 import org.commonmark.renderer.NodeRenderer;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.commonmark.renderer.text.TextContentRenderer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Three inline marks of the wider Markdown family: {@code ==highlight==} ({@link Highlight}),
@@ -119,7 +120,7 @@ public final class MarkdownMarks {
     }
 
     /** The text between a delimiter pair when it is one plain run without whitespace; else null. */
-    private static String solidRun(Text opener, Text closer) {
+    private static @Nullable String solidRun(Text opener, Text closer) {
         Node first = opener.getNext();
         if (!(first instanceof Text t) || first.getNext() != closer) {
             return null;

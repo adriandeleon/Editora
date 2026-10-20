@@ -25,6 +25,7 @@ import java.util.function.BooleanSupplier;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.extensions.openssh.OpenSSHPosixRenameExtension;
 import org.apache.sshd.sftp.client.fs.SftpFileSystem;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Writes a <b>document</b> (the user's file) as safely as the platform allows: to a temp file in the same
@@ -365,7 +366,7 @@ public final class AtomicFileWrite {
             BooleanSupplier commit,
             FileOperations files,
             boolean inPlaceAllowed,
-            Path backupDir)
+            @Nullable Path backupDir)
             throws IOException {
         Path target = resolveLink(file);
         refuseSpecialFile(target);
@@ -443,7 +444,11 @@ public final class AtomicFileWrite {
     }
 
     private static Outcome writeUnstagedNewTarget(
-            Path target, byte[] bytes, BooleanSupplier commit, FileOperations files, IOException stagingFailure)
+            Path target,
+            byte[] bytes,
+            BooleanSupplier commit,
+            FileOperations files,
+            @Nullable IOException stagingFailure)
             throws IOException {
         if (!commit.getAsBoolean()) {
             return Outcome.SKIPPED;
@@ -467,7 +472,7 @@ public final class AtomicFileWrite {
     }
 
     /** Removes an unused staging file; over SFTP that can fail with the connection, and must not mask why. */
-    private static void discardStaged(FileOperations files, Path tmp, Path ledgerDir) throws IOException {
+    private static void discardStaged(FileOperations files, Path tmp, @Nullable Path ledgerDir) throws IOException {
         if (isRemote(tmp)) {
             SftpFiles.discardStaged(tmp, ledgerDir);
         } else {
@@ -518,7 +523,12 @@ public final class AtomicFileWrite {
      * are on the device. {@code cause} is why no replacement was possible, when that is what led here.
      */
     private static Outcome writeInPlace(
-            Path target, byte[] bytes, BooleanSupplier commit, FileOperations files, Path backupDir, IOException cause)
+            Path target,
+            byte[] bytes,
+            BooleanSupplier commit,
+            FileOperations files,
+            @Nullable Path backupDir,
+            @Nullable IOException cause)
             throws IOException {
         byte[] previous;
         Path backup;
@@ -593,7 +603,8 @@ public final class AtomicFileWrite {
         }
     }
 
-    private static Path createBackupFile(FileOperations files, Path backupDir, Path target) throws IOException {
+    private static Path createBackupFile(FileOperations files, @Nullable Path backupDir, Path target)
+            throws IOException {
         String prefix = boundedName(target) + ".";
         if (backupDir != null) {
             try {

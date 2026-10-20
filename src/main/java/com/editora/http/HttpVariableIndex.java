@@ -16,6 +16,8 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -46,7 +48,7 @@ public final class HttpVariableIndex {
      */
     public record Context(
             Map<String, String> environment,
-            Path dotenvDir,
+            @Nullable Path dotenvDir,
             Set<String> dotenvKeys,
             Map<String, List<String>> definedIn,
             List<String> envProblems,
@@ -64,7 +66,7 @@ public final class HttpVariableIndex {
         /** A context whose document names no script file. */
         public Context(
                 Map<String, String> environment,
-                Path dotenvDir,
+                @Nullable Path dotenvDir,
                 Set<String> dotenvKeys,
                 Map<String, List<String>> definedIn,
                 List<String> envProblems) {
@@ -179,8 +181,9 @@ public final class HttpVariableIndex {
             List<HttpFile.Handler> scripts = new ArrayList<>(r.preScripts());
             scripts.addAll(HttpFile.parseRequest(r).handlers());
             for (HttpFile.Handler h : scripts) {
-                if (h.isFile() && !h.path().isEmpty() && seen.add(h.path())) {
-                    names.addAll(setNames(readScript(dir, h.path())));
+                String path = h.path(); // null for an inline handler
+                if (path != null && !path.isEmpty() && seen.add(path)) {
+                    names.addAll(setNames(readScript(dir, path)));
                 }
             }
         }
@@ -304,7 +307,7 @@ public final class HttpVariableIndex {
     }
 
     /** Why {@code name} cannot resolve, or {@code null} when it can. */
-    private static String reasonFor(
+    private static @Nullable String reasonFor(
             String name,
             HttpVars.Scope scope,
             Set<String> requests,
@@ -393,7 +396,7 @@ public final class HttpVariableIndex {
         }
 
         /** The request whose lines (request line to the end of its section) include {@code k}, else null. */
-        HttpFile.Request request(int k) {
+        HttpFile.@Nullable Request request(int k) {
             return k >= 0 && k < owner.length ? owner[k] : null;
         }
     }

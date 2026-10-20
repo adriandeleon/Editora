@@ -3,6 +3,8 @@ package com.editora.markdown;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure (no-toolkit, unit-tested) answer to "what is being typed here?" for the places in Markdown source
  * where there is something better to offer than a dictionary word: a link's target path, the anchor after
@@ -51,7 +53,7 @@ public final class MarkdownCompletionContext {
      * The context at {@code column} of {@code line}, or null when nothing structural is being typed there
      * (ordinary prose, a web address, inside a code span).
      */
-    public static Context at(String line, int column) {
+    public static @Nullable Context at(String line, int column) {
         if (line == null || column < 0 || column > line.length()) {
             return null;
         }
@@ -85,7 +87,7 @@ public final class MarkdownCompletionContext {
     }
 
     /** {@code …[[note} or {@code …[[note#heading} with the caret before any {@code |} or {@code ]]}. */
-    private static Context wikiLink(String before) {
+    private static @Nullable Context wikiLink(String before) {
         int open = before.lastIndexOf("[[");
         if (open < 0 || (open > 0 && before.charAt(open - 1) == '\\')) {
             return null;
@@ -107,7 +109,7 @@ public final class MarkdownCompletionContext {
     }
 
     /** {@code …](target} with the caret still inside the target. */
-    private static Context linkTarget(String before) {
+    private static @Nullable Context linkTarget(String before) {
         int open = before.lastIndexOf("](");
         if (open < 0) {
             return null;
@@ -136,7 +138,7 @@ public final class MarkdownCompletionContext {
     }
 
     /** {@code [text][lab} always; a bare {@code [lab} once a character is typed (it may be a link's text). */
-    private static Context reference(String before) {
+    private static @Nullable Context reference(String before) {
         int open = before.lastIndexOf('[');
         if (open < 0) {
             return null;

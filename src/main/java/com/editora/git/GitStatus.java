@@ -2,6 +2,8 @@ package com.editora.git;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A snapshot of {@code git status} for one repository: the current branch, its upstream and
  * ahead/behind counts, and the changed files. Produced by {@link StatusParser} from
@@ -33,7 +35,11 @@ public record GitStatus(boolean repo, String branch, String upstream, int ahead,
      * @param worktree worktree-side status letter (or {@code '.'})
      * @param origPath original path for a rename/copy, else {@code null}
      */
-    public record FileEntry(String path, char index, char worktree, String origPath) {
+    public record FileEntry(
+            @Nullable String path,
+            char index,
+            char worktree,
+            @Nullable String origPath) {
 
         public boolean untracked() {
             return index == '?';

@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The pure, toolkit-free catalog of installable language support: which {@link Step}s make up each
  * {@link Lang}'s LSP server + DAP adapter (Mermaid is render-tools only), plus the small pure helpers that
@@ -226,14 +228,14 @@ public final class InstallCatalog {
             String id,
             Kind kind,
             Set<Prereq> prereqs,
-            List<String> npmPackages,
-            String pipPackage,
-            String apiUrl,
-            String assetPattern,
-            String directUrl,
+            @Nullable List<String> npmPackages,
+            @Nullable String pipPackage,
+            @Nullable String apiUrl,
+            @Nullable String assetPattern,
+            @Nullable String directUrl,
             boolean extractJarOnly,
             String destSubpath,
-            String verifyEntry) {}
+            @Nullable String verifyEntry) {}
 
     /**
      * The missing steps split by whether their prerequisites are {@code present}: {@code runnable} ones install
@@ -267,14 +269,14 @@ public final class InstallCatalog {
     }
 
     /** {@code [npm, install, -g, <pkgs…>]}. Pure. */
-    public static List<String> npmInstallGlobalArgv(List<String> pkgs) {
+    public static List<String> npmInstallGlobalArgv(@Nullable List<String> pkgs) {
         List<String> argv = new ArrayList<>(List.of("npm", "install", "-g"));
         argv.addAll(pkgs);
         return List.copyOf(argv);
     }
 
     /** {@code [<python>, -m, pip, install, --upgrade, --target, <dest>, <pkg>]}. Pure. */
-    public static List<String> pipInstallTargetArgv(String python, Path dest, String pkg) {
+    public static List<String> pipInstallTargetArgv(String python, Path dest, @Nullable String pkg) {
         return List.of(python, "-m", "pip", "install", "--upgrade", "--target", dest.toString(), pkg);
     }
 
@@ -312,7 +314,7 @@ public final class InstallCatalog {
 
     /** Whether {@code url} is an {@code https} URL on one of the {@link #DOWNLOAD_HOSTS} (default port, no
      *  credentials). Pure — unit-tested. */
-    public static boolean isTrustedDownloadUrl(String url) {
+    public static boolean isTrustedDownloadUrl(@Nullable String url) {
         if (url == null) {
             return false;
         }
@@ -329,7 +331,7 @@ public final class InstallCatalog {
     }
 
     /** The first substring of {@code text} matching {@code regex}, or {@code null}. Pure. */
-    public static String firstMatch(String text, String regex) {
+    public static @Nullable String firstMatch(String text, @Nullable String regex) {
         if (text == null) {
             return null;
         }
@@ -747,7 +749,7 @@ public final class InstallCatalog {
             int installedMegabytes) {
 
         /** This platform's asset, or null when upstream publishes none for it. */
-        public PinnedAsset assetFor(Platform platform) {
+        public @Nullable PinnedAsset assetFor(Platform platform) {
             return assets.get(platform);
         }
 
@@ -806,7 +808,7 @@ public final class InstallCatalog {
      * The download a server's install makes, as {@code [download MB, installed MB]}, when it is big enough to ask
      * about first; null otherwise. Pure.
      */
-    public static int[] largeDownload(String serverId) {
+    public static int @Nullable [] largeDownload(String serverId) {
         return serverInstall(serverId).orElse(List.of()).stream()
                 .filter(s -> s.kind() == Kind.PINNED_SERVER)
                 .map(s -> pinnedServer(s.id()).orElse(null))
@@ -860,7 +862,7 @@ public final class InstallCatalog {
             String id, String version, java.util.Map<Platform, PinnedAsset> assets, String binaryName) {
 
         /** This platform's asset, or null when upstream publishes none for it. */
-        public PinnedAsset assetFor(Platform platform) {
+        public @Nullable PinnedAsset assetFor(Platform platform) {
             return assets.get(platform);
         }
     }
@@ -1022,7 +1024,7 @@ public final class InstallCatalog {
     }
 
     /** Editora's own copy of tool {@code id} when it is installed, else null ({@code configDir} may be null). */
-    public static String installedToolIfPresent(Path configDir, String id) {
+    public static @Nullable String installedToolIfPresent(Path configDir, String id) {
         if (configDir == null) {
             return null;
         }

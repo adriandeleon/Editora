@@ -12,6 +12,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Writes one or more raster images into a PDF, each at its logical size (a 2× snapshot is drawn at half its
@@ -38,7 +39,7 @@ public final class ImagePdfWriter {
 
     /** The layout source of a decoded image at {@code pixelScale} image pixels per logical pixel. */
     public static ImagePaging.Source plain(BufferedImage img, double pixelScale) {
-        return new ImagePaging.Source(img.getWidth(), img.getHeight(), pixelScale, null, false);
+        return new ImagePaging.Source(img.getWidth(), img.getHeight(), pixelScale, ImagePaging.NO_CUTS, false);
     }
 
     /** Writes PNG images, decoding one at a time (see {@link PageImage}). */
@@ -69,15 +70,17 @@ public final class ImagePdfWriter {
         PDRectangle rect = CodePdfWriter.pageRectangle(pageSizeKey);
         float availW = rect.getWidth() - 2 * MARGIN;
         float availH = rect.getHeight() - 2 * MARGIN;
-        BufferedImage[] held = new BufferedImage[1];
+        @Nullable BufferedImage[] held = new BufferedImage[1];
         int[] heldIndex = {-1};
         IntFunction<BufferedImage> pixels = i -> {
-            if (heldIndex[0] != i) {
+            BufferedImage image = heldIndex[0] == i ? held[0] : null;
+            if (image == null) {
                 held[0] = null; // let the previous image go before the next one is decoded
-                held[0] = loader.apply(i);
+                image = loader.apply(i);
+                held[0] = image;
                 heldIndex[0] = i;
             }
-            return held[0];
+            return image;
         };
         try (PDDocument doc = new PDDocument()) {
             List<ImagePaging.Page> pages =

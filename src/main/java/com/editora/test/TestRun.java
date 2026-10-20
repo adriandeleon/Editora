@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One test-run session: the results {@link TestNode} tree plus the invocation that produced it (tool, working
@@ -20,7 +21,7 @@ public final class TestRun {
     private final List<String> taskArgs;
     private final List<String> toggleArgs;
     private final long startedAtMillis;
-    private Long finishedAtMillis;
+    private @Nullable Long finishedAtMillis;
     private boolean running = true;
     private int exitCode;
 

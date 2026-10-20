@@ -2,6 +2,8 @@ package com.editora.structured;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A neutral, toolkit-free node in a parsed structured-data tree (JSON / YAML / TOML). The editor's
  * {@code StructuredTree} renders this into a JavaFX {@code TreeView}; keeping it Jackson-free means the
@@ -22,12 +24,13 @@ public final class StructuredNode {
         NULL
     }
 
-    private final String key;
+    private final @Nullable String key;
     private final Kind kind;
-    private final String value;
+    private final @Nullable String value;
     private final List<StructuredNode> children;
 
-    public StructuredNode(String key, Kind kind, String value, List<StructuredNode> children) {
+    public StructuredNode(
+            @Nullable String key, Kind kind, @Nullable String value, @Nullable List<StructuredNode> children) {
         this.key = key;
         this.kind = kind;
         this.value = value;
@@ -35,7 +38,7 @@ public final class StructuredNode {
     }
 
     /** The field name for an object member, or {@code null} for an array element / the root. */
-    public String key() {
+    public @Nullable String key() {
         return key;
     }
 
@@ -44,7 +47,7 @@ public final class StructuredNode {
     }
 
     /** The rendered scalar value (for STRING/NUMBER/BOOLEAN/NULL); {@code null} for containers. */
-    public String value() {
+    public @Nullable String value() {
         return value;
     }
 

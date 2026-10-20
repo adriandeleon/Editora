@@ -12,6 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.editora.io.PathContainment;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure template rendering: variable discovery (which variables the wizard must ask for), substitution,
@@ -47,6 +48,7 @@ public final class TemplateEngine {
     /** Resolves a variable name to its value, or null when nothing supplies one. */
     @FunctionalInterface
     public interface Variables {
+        @Nullable
         String resolve(String name);
     }
 
@@ -121,10 +123,10 @@ public final class TemplateEngine {
         if (t.isMultiFile()) {
             ask.addAll(FILE_IDENTITY);
             ask.add("packageName");
-            for (TemplateFile f : t.files()) {
+            for (TemplateFile f : t.filesOrEmpty()) {
                 collect(f.path(), ask, seen);
             }
-            for (TemplateFile f : t.files()) {
+            for (TemplateFile f : t.filesOrEmpty()) {
                 collect(f.body(), ask, seen);
             }
         } else {
@@ -281,12 +283,12 @@ public final class TemplateEngine {
      *       symbolic link to somewhere else ({@link PathContainment#isWithin}).
      * </ul>
      */
-    public static Path resolveTargetPath(Path dir, String pathPattern, Variables vars) {
+    public static @Nullable Path resolveTargetPath(Path dir, String pathPattern, Variables vars) {
         return containedPath(dir, expand(pathPattern, vars));
     }
 
     /** As {@link #resolveTargetPath}, for a relative path that is already expanded. */
-    public static Path containedPath(Path dir, String relativePath) {
+    public static @Nullable Path containedPath(Path dir, String relativePath) {
         if (dir == null || relativePath == null) {
             return null;
         }

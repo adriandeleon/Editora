@@ -2,6 +2,8 @@ package com.editora.snippet;
 
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The decisions behind "Tab expands the trigger before the caret": which stretch of text is the trigger,
  * and whether Tab may expand a snippet here at all. Pure, so both are unit-tested without an editor.
@@ -25,7 +27,7 @@ public final class TabExpansion {
      * whole non-whitespace token ({@code #include}, {@code ?xml}, {@code [PSCustomObject]}), then the
      * identifier run ending at the caret ({@code fori} in {@code (fori}).
      */
-    public static Match find(String before, Function<String, Snippet> lookup) {
+    public static @Nullable Match find(String before, Function<String, Snippet> lookup) {
         int caret = before.length();
         int limit = Math.max(0, caret - MAX_TRIGGER);
         int token = caret;

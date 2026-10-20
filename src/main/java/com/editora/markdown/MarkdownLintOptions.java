@@ -3,6 +3,8 @@ package com.editora.markdown;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The markdownlint rule options this linter honours — the ones a project sets in its config file (or a
  * {@code markdownlint-configure-file} comment) for the rules that exist here. Everything else in an options
@@ -202,11 +204,12 @@ public record MarkdownLintOptions(
     }
 
     /** The compiled {@link #frontMatterTitle}, or null when front matter never supplies the title. */
+    @Nullable
     Pattern frontMatterTitlePattern() {
         return frontMatterTitle.isEmpty() ? null : Pattern.compile(frontMatterTitle);
     }
 
-    private static boolean level(Integer n) {
+    private static boolean level(@Nullable Integer n) {
         return n != null && n >= 1 && n <= 6;
     }
 
@@ -220,16 +223,16 @@ public record MarkdownLintOptions(
     }
 
     private MarkdownLintOptions copy(
-            Integer br,
-            String punct,
-            String title,
-            Integer titleLvl,
-            Integer firstLvl,
-            Boolean tabs,
-            Integer perTab,
-            Integer maxBlank,
-            Integer above,
-            Integer below) {
+            @Nullable Integer br,
+            @Nullable String punct,
+            @Nullable String title,
+            @Nullable Integer titleLvl,
+            @Nullable Integer firstLvl,
+            @Nullable Boolean tabs,
+            @Nullable Integer perTab,
+            @Nullable Integer maxBlank,
+            @Nullable Integer above,
+            @Nullable Integer below) {
         return new MarkdownLintOptions(
                 br == null ? brSpaces : br,
                 punct == null ? punctuation : punct,

@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure rules that keep the Git commands Editora runs <em>on its own initiative</em> from executing code or
  * options chosen by the repository rather than by the user. Toolkit-free and unit-tested.
@@ -180,7 +182,7 @@ public final class GitSafety {
         return java.util.Collections.unmodifiableMap(env);
     }
 
-    private static boolean notBlank(String value) {
+    private static boolean notBlank(@Nullable String value) {
         return value != null && !value.isBlank();
     }
 

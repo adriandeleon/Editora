@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /** Resolves a configured JDK home into the launcher and environment used by Java run/debug flows. */
 public final class JdkToolchain {
 
@@ -29,7 +31,7 @@ public final class JdkToolchain {
     }
 
     /** The compiler alongside a selected Java launcher, or {@code javac} when PATH supplies Java. */
-    public static String compilerForJavaExecutable(String javaExecutable) {
+    public static String compilerForJavaExecutable(@Nullable String javaExecutable) {
         if (javaExecutable == null || javaExecutable.isBlank()) {
             return "javac";
         }

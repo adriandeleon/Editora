@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Maps an editor language id (as resolved by {@code editor.LanguageRegistry.forFileName}) to a
  * <b>server</b> — its id, launch command, and project-root markers. The registry is server-centric, not
@@ -298,7 +300,7 @@ public final class LspServerRegistry {
 
     private LspServerRegistry() {}
 
-    private static ServerDef defFor(String languageId) {
+    private static @Nullable ServerDef defFor(String languageId) {
         for (ServerDef d : ServerDef.values()) {
             if (d.languageIds.contains(languageId)) {
                 return d;
@@ -308,7 +310,7 @@ public final class LspServerRegistry {
     }
 
     /** The server id that serves {@code languageId} (e.g. {@code typescript} for {@code javascript}), or null. */
-    public static String serverIdFor(String languageId) {
+    public static @Nullable String serverIdFor(String languageId) {
         ServerDef d = defFor(languageId);
         return d == null ? null : d.id;
     }
@@ -417,7 +419,7 @@ public final class LspServerRegistry {
      * (serverId → configured command; a blank/absent entry uses the server's default), or {@code null}
      * when the language is unsupported.
      */
-    public static ServerSpec specFor(String languageId, Map<String, String> commands) {
+    public static @Nullable ServerSpec specFor(String languageId, Map<String, String> commands) {
         ServerDef d = defFor(languageId);
         if (d == null) {
             return null;
@@ -432,7 +434,8 @@ public final class LspServerRegistry {
      * else {@code configured} (the global setting) when it is a bare command name, since a path names a file
      * on this machine; else the server's default. Empty for an unknown server.
      */
-    public static List<String> remoteCommandFor(String serverId, String configured, String hostTool) {
+    public static List<String> remoteCommandFor(
+            String serverId, @Nullable String configured, @Nullable String hostTool) {
         if (hostTool != null && !hostTool.isBlank()) {
             return tokenize(hostTool);
         }

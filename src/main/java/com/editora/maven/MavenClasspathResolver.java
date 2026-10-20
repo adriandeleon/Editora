@@ -7,6 +7,7 @@ import java.util.List;
 
 import com.editora.process.ProcessRunner;
 import com.editora.run.JdkToolchain;
+import org.jspecify.annotations.Nullable;
 
 /** Resolves a Maven module's runtime classpath off the JavaFX application thread. */
 public final class MavenClasspathResolver {
@@ -17,7 +18,7 @@ public final class MavenClasspathResolver {
      * Compiles {@code root} with Maven and returns its runtime classpath, or {@code null} when Maven fails.
      * The selected JDK is exposed to Maven through {@code JAVA_HOME} and the process {@code PATH}.
      */
-    public static List<String> resolve(Path root, String jdkHome) {
+    public static @Nullable List<String> resolve(Path root, String jdkHome) {
         if (!com.editora.process.ExecTargets.runsHere(root)) {
             return resolveOnHost(root, jdkHome);
         }
@@ -25,10 +26,10 @@ public final class MavenClasspathResolver {
         try {
             output = Files.createTempFile("editora-cp", ".txt");
             Path reactor = MavenReactor.reactorRoot(root, dir -> Files.isRegularFile(dir.resolve("pom.xml")));
-            boolean multiModule = reactor != null && !reactor.equals(root);
-            Path workingDirectory = multiModule ? reactor : root;
-            List<String> argv = multiModule
-                    ? MavenClasspath.reactorArgv(output, MavenReactor.moduleSelector(reactor, root))
+            Path multiModule = reactor != null && !reactor.equals(root) ? reactor : null; // null: a lone module
+            Path workingDirectory = multiModule != null ? multiModule : root;
+            List<String> argv = multiModule != null
+                    ? MavenClasspath.reactorArgv(output, MavenReactor.moduleSelector(multiModule, root))
                     : MavenClasspath.argv(output);
             // Maven is a JVM handed the user's paths: the C locale would make it decode them as ASCII.
             ProcessRunner.Result result = ProcessRunner.runInUserLocale(
@@ -59,22 +60,22 @@ public final class MavenClasspathResolver {
      * is a path on the host, or blank for its own) and none of this machine's environment, and writes the
      * classpath into the module's {@code target/}, read back over the connection.
      */
-    private static List<String> resolveOnHost(Path root, String jdkHome) {
+    private static @Nullable List<String> resolveOnHost(Path root, String jdkHome) {
         com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
         Path output = null;
         try {
             Path targetDir = Files.createDirectories(root.resolve("target"));
             output = targetDir.resolve("editora-cp-" + java.util.UUID.randomUUID() + ".txt");
             Path reactor = MavenReactor.reactorRoot(root, dir -> Files.isRegularFile(dir.resolve("pom.xml")));
-            boolean multiModule = reactor != null && !reactor.equals(root);
+            Path multiModule = reactor != null && !reactor.equals(root) ? reactor : null; // null: a lone module
             String outputOnHost = target.toTargetPath(output);
-            List<String> argv = multiModule
-                    ? MavenClasspath.reactorArgv(outputOnHost, MavenReactor.moduleSelector(reactor, root), ":")
+            List<String> argv = multiModule != null
+                    ? MavenClasspath.reactorArgv(outputOnHost, MavenReactor.moduleSelector(multiModule, root), ":")
                     : MavenClasspath.argv(outputOnHost, ":");
             java.util.Map<String, String> env =
                     jdkHome == null || jdkHome.isBlank() ? java.util.Map.of() : java.util.Map.of("JAVA_HOME", jdkHome);
-            ProcessRunner.Result result =
-                    ProcessRunner.runInUserLocale(multiModule ? reactor : root, Duration.ofMinutes(5), argv, env);
+            ProcessRunner.Result result = ProcessRunner.runInUserLocale(
+                    multiModule != null ? multiModule : root, Duration.ofMinutes(5), argv, env);
             if (result.exit() != 0) {
                 return null;
             }

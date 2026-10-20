@@ -7,6 +7,7 @@ import java.util.Map;
 
 import com.editora.vfs.RemoteConnection;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The persisted list of saved SFTP connections (in {@code connections.json}). Only non-secret metadata is
@@ -95,7 +96,7 @@ public class ConnectionStore {
     }
 
     /** The command configured for {@code tool} on host {@code id}, or null to use the host's PATH. */
-    public String tool(String id, String tool) {
+    public @Nullable String tool(String id, String tool) {
         HostExec host = id == null ? null : exec.get(id);
         String command = host == null || host.tools == null ? null : host.tools.get(tool);
         return command == null || command.isBlank() ? null : command;

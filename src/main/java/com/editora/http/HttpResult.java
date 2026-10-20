@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -30,12 +32,12 @@ public record HttpResult(
         String contentType,
         long elapsedMs,
         long sizeBytes,
-        String error,
+        @Nullable String error,
         List<String> warnings,
         byte[] rawBody,
         boolean truncated,
         List<String> written,
-        String protocol,
+        @Nullable String protocol,
         HttpTests tests) {
 
     public HttpResult {
@@ -130,7 +132,7 @@ public record HttpResult(
      * {@link #error()} as shown to the user: the marker of a cancelled run ({@link HttpClientService#CANCELLED},
      * compared as is) reads in the UI language.
      */
-    public String shownError() {
+    public @Nullable String shownError() {
         return HttpClientService.CANCELLED.equals(error) ? tr("http.request.cancelled") : error;
     }
 
@@ -181,7 +183,7 @@ public record HttpResult(
         return StandardCharsets.UTF_8;
     }
 
-    private static Charset forName(String name) {
+    private static Charset forName(@Nullable String name) {
         try {
             return name == null ? StandardCharsets.UTF_8 : Charset.forName(name);
         } catch (RuntimeException e) {
@@ -221,7 +223,7 @@ public record HttpResult(
                 || ct.startsWith("application/vnd.openxmlformats");
     }
 
-    private static String charsetName(String contentType) {
+    private static @Nullable String charsetName(@Nullable String contentType) {
         if (contentType == null) {
             return null;
         }
@@ -245,7 +247,7 @@ public record HttpResult(
      * type that is never text (an image, {@code application/octet-stream}, a PDF, …) or a NUL byte near the
      * start. A declared charset wins (UTF-16 text is full of NULs).
      */
-    static boolean looksBinary(byte[] bytes, String contentType) {
+    static boolean looksBinary(byte[] bytes, @Nullable String contentType) {
         if (charsetName(contentType) != null) {
             return false;
         }

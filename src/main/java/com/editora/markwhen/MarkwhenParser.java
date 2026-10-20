@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, tolerant parser for the <a href="https://markwhen.com">Markwhen</a> timeline format (a useful
  * subset). Line-based, never throws — an unrecognized line is simply skipped — so a half-typed or
@@ -146,7 +148,7 @@ public final class MarkwhenParser {
         return k;
     }
 
-    private static MwNode.Event parseEvent(String t, int line) {
+    private static MwNode.@Nullable Event parseEvent(String t, int line) {
         int colon = t.indexOf(':');
         if (colon < 0) {
             return null;

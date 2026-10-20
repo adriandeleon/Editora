@@ -1,5 +1,7 @@
 package com.editora.todo;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The default per-part colors for a structured TODO comment ({@code KEYWORD [tag] (priority) description}):
  * a color per priority level and one for tags. The keyword's own color comes from its {@link TodoPattern};
@@ -16,7 +18,7 @@ public final class TodoColors {
      * The color (web hex) for a {@code (priority)} level — red→amber by urgency, a muted cyan for {@code low}
      * — or {@code null} when {@code priority} is null / not one of {@link TodoComment#PRIORITY_ORDER}.
      */
-    public static String priorityColor(String priority) {
+    public static @Nullable String priorityColor(String priority) {
         if (priority == null) {
             return null;
         }

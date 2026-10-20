@@ -3,6 +3,8 @@ package com.editora.systemd;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses a systemd unit file (INI-like: {@code [Section]} headers + {@code Key=value} directives, with
  * {@code #}/{@code ;} comments and trailing-backslash line continuations) into ordered sections. Directives
@@ -28,7 +30,7 @@ public final class SystemdUnit {
     }
 
     /** The first directive with {@code key} (case-insensitive) in {@code section}, or {@code null}. */
-    public String first(String section, String key) {
+    public @Nullable String first(String section, String key) {
         for (Section s : sections) {
             if (s.name().equalsIgnoreCase(section)) {
                 for (Directive d : s.directives()) {

@@ -2,6 +2,8 @@ package com.editora.diff;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Toolkit-free value types for the diff viewer (see {@link DiffEngine}). A computed diff is a list of
  * aligned {@link Row}s (one screen row per side, with filler on the absent side) plus a derived list of
@@ -27,12 +29,12 @@ public final class DiffModels {
      */
     public record Row(
             RowType type,
-            String left,
+            @Nullable String left,
             int leftLine,
-            String right,
+            @Nullable String right,
             int rightLine,
-            int[][] leftWordRanges,
-            int[][] rightWordRanges) {
+            int @Nullable [][] leftWordRanges,
+            int @Nullable [][] rightWordRanges) {
 
         public static Row equal(String text, int leftLine, int rightLine) {
             return new Row(RowType.EQUAL, text, leftLine, text, rightLine, null, null);
@@ -70,7 +72,8 @@ public final class DiffModels {
     }
 
     /** One unified-view row; {@code leftLine}/{@code rightLine} is -1 on the side that has no line. */
-    public record UnifiedRow(UnifiedType type, String text, int leftLine, int rightLine, int[][] wordRanges) {}
+    public record UnifiedRow(
+            UnifiedType type, @Nullable String text, int leftLine, int rightLine, int @Nullable [][] wordRanges) {}
 
     /** How much work was safe for the engine to perform for this input size. */
     public enum Quality {

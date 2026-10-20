@@ -31,6 +31,7 @@ import com.editora.pdf.PageImage;
 import com.editora.pdf.PdfText;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Prepares a document for printing via {@code javafx.print} (the {@code PdfExportService} idiom): the
@@ -112,7 +113,8 @@ public final class PrintService {
     }
 
     /** Result of the off-thread prepare step: a {@link Paginator} on success, else an {@code error}. */
-    public record Prepared(Paginator paginator, String error) {
+    public record Prepared(
+            @Nullable Paginator paginator, @Nullable String error) {
         public boolean ok() {
             return paginator != null;
         }
@@ -149,7 +151,7 @@ public final class PrintService {
             boolean highlight,
             boolean lineNumbers,
             int tabSize,
-            String documentName,
+            @Nullable String documentName,
             boolean footer,
             Consumer<Prepared> onReady) {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
@@ -201,7 +203,7 @@ public final class PrintService {
             boolean highlight,
             boolean lineNumbers,
             int tabSize,
-            String documentName,
+            @Nullable String documentName,
             boolean footer,
             Consumer<Prepared> onReady) {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
@@ -221,7 +223,8 @@ public final class PrintService {
      * The highlight spans of {@code text[start, end)}, cut from the spans of the whole text; null when
      * {@code fileName} is null (no highlighting asked for) or has no grammar.
      */
-    public static StyleSpans<Collection<String>> excerptSpans(String text, int start, int end, String fileName) {
+    public static @Nullable StyleSpans<Collection<String>> excerptSpans(
+            String text, int start, int end, @Nullable String fileName) {
         IGrammar grammar = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
         if (grammar == null || end <= start) {
             return null;
@@ -237,7 +240,7 @@ public final class PrintService {
 
     /** As {@link #prepareMarkdown(String, Path, Consumer)}; with {@code footer} every page ends in a {@link PageFooter}. */
     public void prepareMarkdown(
-            String markdown, Path baseDir, String documentName, boolean footer, Consumer<Prepared> onReady) {
+            String markdown, Path baseDir, @Nullable String documentName, boolean footer, Consumer<Prepared> onReady) {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
@@ -261,7 +264,7 @@ public final class PrintService {
     public void prepareDocument(
             org.commonmark.node.Node document,
             Path baseDir,
-            String documentName,
+            @Nullable String documentName,
             boolean footer,
             Consumer<Prepared> onReady) {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
@@ -280,7 +283,8 @@ public final class PrintService {
      * final by then is wrong on paper: an image still loading measures 0px and overflows its page when it
      * arrives, and highlighting applied a pulse later never reaches the printer at all.
      */
-    private static Paginator markdownPaginator(org.commonmark.node.Node ast, Path baseDir, PageFooter footer) {
+    private static Paginator markdownPaginator(
+            org.commonmark.node.Node ast, Path baseDir, @Nullable PageFooter footer) {
         MarkdownPrintAssets assets = MarkdownPrintAssets.resolve(ast, baseDir);
         return layout -> MarkdownPrintLayout.paginate(
                 ast, baseDir, assets, layout.getPrintableWidth(), layout.getPrintableHeight(), footer);
@@ -417,13 +421,14 @@ public final class PrintService {
     }
 
     /** A code paginator whose {@link Paginator#pages} builds each page only when it is asked for. */
-    private static Paginator codePaginator(List<List<PdfText.Run>> lines, boolean lineNumbers, PageFooter footer) {
+    private static Paginator codePaginator(
+            List<List<PdfText.Run>> lines, boolean lineNumbers, @Nullable PageFooter footer) {
         return codePaginator(lines, lineNumbers, footer, 1);
     }
 
     /** The code paginator for an excerpt whose gutter counts from {@code firstLineNumber}. */
     private static Paginator codePaginator(
-            List<List<PdfText.Run>> lines, boolean lineNumbers, PageFooter footer, int firstLineNumber) {
+            List<List<PdfText.Run>> lines, boolean lineNumbers, @Nullable PageFooter footer, int firstLineNumber) {
         return new Paginator() {
             @Override
             public List<Node> paginate(PageLayout layout) {

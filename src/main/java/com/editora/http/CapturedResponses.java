@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -36,7 +38,8 @@ public final class CapturedResponses {
     public static final int MAX_BODY_CHARS = 4 * 1024 * 1024;
 
     /** What a reference can read of one response: {@code body} is null when it was too large to keep. */
-    private record Captured(int status, List<String[]> headers, String body, long bodyChars, boolean failed) {}
+    private record Captured(
+            int status, List<String[]> headers, @Nullable String body, long bodyChars, boolean failed) {}
 
     private final Map<String, Captured> byName = new LinkedHashMap<>();
 
@@ -47,13 +50,13 @@ public final class CapturedResponses {
     private final Map<String, String> globalHeaders = new LinkedHashMap<>();
 
     /** The environment the captured responses were made in; see {@link #resetUnlessEnvironment}. */
-    private String environment;
+    private @Nullable String environment;
 
     /**
      * Records a completed (or failed) request's result under its name; a no-op for a blank name, a null result
      * and a cancelled run ({@link HttpClientService#CANCELLED}), which leaves the previous capture in place.
      */
-    public synchronized void put(String name, HttpResult result) {
+    public synchronized void put(@Nullable String name, HttpResult result) {
         if (name == null || name.isBlank() || result == null) {
             return;
         }
@@ -88,7 +91,7 @@ public final class CapturedResponses {
      * it. A {@code Host} header is never kept: where a request goes is not a script's to change behind the secrets
      * prompt.
      */
-    public synchronized void setGlobalHeader(String name, String value) {
+    public synchronized void setGlobalHeader(@Nullable String name, @Nullable String value) {
         if (name == null || name.isBlank() || name.strip().equalsIgnoreCase("Host")) {
             return;
         }
@@ -105,7 +108,7 @@ public final class CapturedResponses {
     }
 
     /** Sets the session variable {@code name} to {@code value}; a null {@code value} removes it. */
-    public synchronized void setGlobal(String name, String value) {
+    public synchronized void setGlobal(@Nullable String name, @Nullable String value) {
         if (name == null || name.isBlank()) {
             return;
         }
@@ -161,7 +164,7 @@ public final class CapturedResponses {
      * this session, it failed, or the path/header is not in its response — with a short reason in
      * {@code reason[0]} when {@code reason} is non-null.
      */
-    public String lookup(String reference, String[] reason) {
+    public @Nullable String lookup(String reference, String @Nullable [] reason) {
         if (reference == null) {
             return miss(reason, tr("http.unresolved.reason.undefined"));
         }
@@ -202,14 +205,14 @@ public final class CapturedResponses {
         return found == null ? miss(reason, tr("http.unresolved.reason.notFound", name)) : found;
     }
 
-    private static String miss(String[] reason, String text) {
+    private static @Nullable String miss(String @Nullable [] reason, String text) {
         if (reason != null && reason.length > 0) {
             reason[0] = text;
         }
         return null;
     }
 
-    private static String headerValue(Captured r, String name) {
+    private static @Nullable String headerValue(Captured r, String name) {
         for (String[] h : r.headers()) {
             if (h[0].equalsIgnoreCase(name)) {
                 return h[1];

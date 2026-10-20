@@ -1,5 +1,7 @@
 package com.editora.process;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A child running on another machine. It is a {@link Process} so the code that pumps output, waits for exit
  * and speaks a protocol over the streams needs no second path; what it cannot offer is anything tied to this
@@ -31,7 +33,7 @@ public abstract class RemoteProcess extends Process {
      * when the target ends Editora's programs by itself when Editora goes (an SSH session's watchdog). May ask
      * the target: never call it on the FX thread.
      */
-    public java.util.List<String> orphanRecord() {
+    public java.util.@Nullable List<String> orphanRecord() {
         return null;
     }
 

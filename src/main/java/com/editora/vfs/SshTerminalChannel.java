@@ -12,6 +12,7 @@ import com.editora.process.TerminalSpec;
 import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.channel.PtyChannelConfiguration;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A login shell on a pseudo-terminal on an SSH host: an exec channel of the window's own session that asks for a
@@ -130,14 +131,14 @@ final class SshTerminalChannel implements TerminalChannel {
     }
 
     /** As above, with Editora's shell integration from {@code integration} on the host (null for none). */
-    static String commandLine(String cwd, String integration) {
+    static String commandLine(String cwd, @Nullable String integration) {
         return "exec /bin/sh -c "
                 + com.editora.process.PosixShell.quote(
                         com.editora.process.PosixShell.terminalScript(cwd, true, integration));
     }
 
     /** The command line for {@code spec}: its login shell, or the program it names. */
-    static String commandLine(String cwd, com.editora.process.TerminalSpec spec) {
+    static String commandLine(@Nullable String cwd, com.editora.process.TerminalSpec spec) {
         return "exec /bin/sh -c "
                 + com.editora.process.PosixShell.quote(com.editora.process.PosixShell.terminalScript(cwd, true, spec));
     }

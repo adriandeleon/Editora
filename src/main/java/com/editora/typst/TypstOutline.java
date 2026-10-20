@@ -3,6 +3,8 @@ package com.editora.typst;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure extraction of a Typst document's heading outline, the {@code com.editora.markdown.MarkdownOutline}
  * twin for {@code .typ} buffers. It drives both the Structure tool window and heading folding whenever no
@@ -143,7 +145,7 @@ public final class TypstOutline {
      * name nothing a reader can jump to, so they are skipped rather than reported under a punctuation
      * "name".
      */
-    private static Binding binding(String line, int index) {
+    private static @Nullable Binding binding(String line, int index) {
         for (String kind : new String[] {"let", "show"}) {
             String prefix = "#" + kind;
             if (!line.startsWith(prefix)) {
@@ -205,7 +207,7 @@ public final class TypstOutline {
     }
 
     /** The backtick run if {@code line} opens or closes a raw block, else null. */
-    private static String fenceToken(String line) {
+    private static @Nullable String fenceToken(String line) {
         int p = 0;
         while (p < line.length() && (line.charAt(p) == ' ' || line.charAt(p) == '\t')) {
             p++;

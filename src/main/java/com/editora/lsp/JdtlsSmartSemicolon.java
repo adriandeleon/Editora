@@ -2,6 +2,7 @@ package com.editora.lsp;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The wire shape of jdtls's {@code java.edit.smartSemicolonDetection} (#746): typing {@code ;} part-way
@@ -31,7 +32,7 @@ public final class JdtlsSmartSemicolon {
     private JdtlsSmartSemicolon() {}
 
     /** Whether {@code caps} advertises the command (only jdtls does today). */
-    public static boolean supported(org.eclipse.lsp4j.ServerCapabilities caps) {
+    public static boolean supported(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         return caps != null
                 && caps.getExecuteCommandProvider() != null
                 && caps.getExecuteCommandProvider().getCommands() != null
@@ -58,7 +59,7 @@ public final class JdtlsSmartSemicolon {
      * <p>The numbers arrive as JSON doubles through gson's untyped mapping, so they are read as such and
      * truncated — reading them as ints throws on a {@code 29.0}.
      */
-    public static int[] answeredPosition(Object rawResult) {
+    public static int @Nullable [] answeredPosition(@Nullable Object rawResult) {
         if (!(rawResult instanceof JsonElement json) || !json.isJsonObject()) {
             return null;
         }

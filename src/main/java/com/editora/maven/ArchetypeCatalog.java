@@ -10,6 +10,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The archetypes offered by the New Maven Project wizard: a small curated list bundled with the app, plus —
@@ -27,7 +28,7 @@ public final class ArchetypeCatalog {
 
     private static final String RESOURCE = "/com/editora/archetypes/catalog.json";
 
-    private static volatile List<MavenArchetype> curated; // lazily loaded, immutable once set
+    private static volatile @Nullable List<MavenArchetype> curated; // lazily loaded, immutable once set
 
     private ArchetypeCatalog() {}
 

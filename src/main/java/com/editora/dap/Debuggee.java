@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.run.RunService;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The debugged program of one session, when Editora starts it itself (a launch with
@@ -32,17 +33,17 @@ final class Debuggee {
     private boolean inputClosed;
 
     /** Where the program runs instead of {@link #service}: a Terminal tab; null for the Debug console. */
-    private final ProgramTerminal terminal;
+    private final @Nullable ProgramTerminal terminal;
 
     private final String title;
-    private com.editora.terminal.ProgramRun run;
+    private com.editora.terminal.@Nullable ProgramRun run;
 
     Debuggee() {
         this(null, "");
     }
 
     /** A program that runs in a Terminal tab titled {@code title} when {@code terminal} is given. */
-    Debuggee(ProgramTerminal terminal, String title) {
+    Debuggee(@Nullable ProgramTerminal terminal, String title) {
         this.terminal = terminal;
         this.title = title == null ? "" : title;
     }
@@ -64,7 +65,7 @@ final class Debuggee {
      * As above, in {@code dir} — a folder on a remote host's connection starts the program on that host, as
      * Run does.
      */
-    long start(Path dir, List<String> argv, Map<String, String> env, Sink sink) throws java.io.IOException {
+    long start(@Nullable Path dir, List<String> argv, Map<String, String> env, Sink sink) throws java.io.IOException {
         if (terminal != null) {
             run = terminal.start(title, dir, argv, env == null ? Map.of() : env, sink::exited);
             return run.pid(); // -1 on another machine until its pid line arrives: the reply then names none

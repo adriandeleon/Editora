@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 import org.apache.sshd.client.config.hosts.HostConfigEntry;
 import org.apache.sshd.client.config.hosts.HostConfigEntryResolver;
 import org.apache.sshd.common.AttributeRepository;
+import org.jspecify.annotations.Nullable;
 
 /**
  * {@code ~/.ssh/config} for the shared client, read as MINA reads it but with two of {@code ssh}'s habits MINA
@@ -47,7 +48,7 @@ final class SshConfigFile implements HostConfigEntryResolver {
     /** What was read, from which files as they were then. */
     private record Read(List<Path> files, List<FileTime> stamps, String text, HostConfigEntryResolver resolver) {}
 
-    private volatile Read read;
+    private volatile @Nullable Read read;
 
     SshConfigFile(Path config) {
         this.config = config;
@@ -55,7 +56,12 @@ final class SshConfigFile implements HostConfigEntryResolver {
 
     @Override
     public HostConfigEntry resolveEffectiveHost(
-            String host, int port, SocketAddress local, String username, String proxyJump, AttributeRepository context)
+            String host,
+            int port,
+            @Nullable SocketAddress local,
+            @Nullable String username,
+            @Nullable String proxyJump,
+            @Nullable AttributeRepository context)
             throws IOException {
         return current().resolver().resolveEffectiveHost(host, port, local, username, proxyJump, context);
     }
@@ -135,6 +141,9 @@ final class SshConfigFile implements HostConfigEntryResolver {
      */
     private List<Path> resolveInclude(String name) {
         Path sshDir = config.toAbsolutePath().getParent();
+        if (sshDir == null) {
+            return List.of(); // the config is a filesystem root, not a file
+        }
         Path home = sshDir.getParent();
         Path base = sshDir;
         String rest = name;
@@ -145,6 +154,9 @@ final class SshConfigFile implements HostConfigEntryResolver {
         String[] split = splitLeaf(rest, File.separatorChar == '\\');
         String leaf = split[1];
         try {
+            if (base == null) {
+                return List.of(); // "~" with ~/.ssh at the top of the tree: there is no home above it
+            }
             Path dir = split[0].isEmpty() ? base : base.resolve(split[0]); // an absolute directory replaces base
             if (!isGlob(leaf)) {
                 return List.of(leaf.isEmpty() ? dir : dir.resolve(leaf));

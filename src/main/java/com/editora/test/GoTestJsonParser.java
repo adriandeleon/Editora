@@ -10,6 +10,7 @@ import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Folds {@code go test -json} events into suite deltas. Each line is a JSON object
@@ -46,7 +47,7 @@ public final class GoTestJsonParser implements TestResultParser {
     private final Set<String> failedPackages = new HashSet<>(); // packages that have a failed test leaf
 
     /** Whether {@code testName} is one of this parser's synthetic leaves rather than a runnable Go test. */
-    public static boolean isSynthetic(String testName) {
+    public static boolean isSynthetic(@Nullable String testName) {
         return testName != null && testName.startsWith("[");
     }
 
@@ -172,7 +173,7 @@ public final class GoTestJsonParser implements TestResultParser {
     }
 
     @Override
-    public String consoleLine(String raw, boolean stderr) {
+    public @Nullable String consoleLine(String raw, boolean stderr) {
         JsonNode event = read(raw);
         if (event == null) {
             return raw; // not a -json line (e.g. a go build error) — show it verbatim
@@ -192,7 +193,7 @@ public final class GoTestJsonParser implements TestResultParser {
         return new ParsedSuite(pkg, List.of(test));
     }
 
-    private static String drain(Map<String, OutputCap.Accumulator> from, String key) {
+    private static @Nullable String drain(Map<String, OutputCap.Accumulator> from, String key) {
         OutputCap.Accumulator captured = from.remove(key);
         if (captured == null || captured.isEmpty()) {
             return null;
@@ -200,14 +201,14 @@ public final class GoTestJsonParser implements TestResultParser {
         return captured.toString();
     }
 
-    private static String join(String first, String second) {
+    private static @Nullable String join(@Nullable String first, @Nullable String second) {
         if (first == null) {
             return second;
         }
         return second == null ? first : first + second;
     }
 
-    private static JsonNode read(String line) {
+    private static @Nullable JsonNode read(String line) {
         if (line == null || line.isBlank() || line.charAt(0) != '{') {
             return null;
         }
@@ -219,7 +220,7 @@ public final class GoTestJsonParser implements TestResultParser {
         }
     }
 
-    private static String text(JsonNode node, String field) {
+    private static @Nullable String text(JsonNode node, String field) {
         JsonNode v = node.get(field);
         return v == null || v.isNull() ? null : v.asText();
     }

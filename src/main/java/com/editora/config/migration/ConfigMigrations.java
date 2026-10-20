@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The config schema-migration engine. On load a file is parsed to a Jackson tree, its stored
@@ -202,7 +203,7 @@ public final class ConfigMigrations {
     private record Decoded(String text, boolean bytesReplaced) {}
 
     /** {@link #readText} for bytes already in hand (a store re-read in order to merge with it). */
-    public static String decodeText(byte[] bytes) {
+    public static String decodeText(byte @Nullable [] bytes) {
         return decode(null, bytes).text();
     }
 
@@ -210,7 +211,7 @@ public final class ConfigMigrations {
         return decode(file, Files.readAllBytes(file));
     }
 
-    private static Decoded decode(Path file, byte[] bytes) {
+    private static Decoded decode(@Nullable Path file, byte @Nullable [] bytes) {
         String text = new String(bytes, StandardCharsets.UTF_8);
         boolean replaced = text.indexOf('\uFFFD') >= 0 && !isValidUtf8(bytes);
         if (replaced && file != null) {
@@ -222,7 +223,7 @@ public final class ConfigMigrations {
         return new Decoded(!text.isEmpty() && text.charAt(0) == '\uFEFF' ? text.substring(1) : text, replaced);
     }
 
-    private static boolean isValidUtf8(byte[] bytes) {
+    private static boolean isValidUtf8(byte @Nullable [] bytes) {
         try {
             StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes));
             return true;
@@ -291,7 +292,7 @@ public final class ConfigMigrations {
      * The set-aside copy of {@code file} to restore: of those whose schema version this build supports, the
      * one with the newest version, then the one moved aside last. {@code null} when there is none.
      */
-    static Path newestSetAsideCopy(Path file, int currentVersion) throws IOException {
+    static @Nullable Path newestSetAsideCopy(Path file, int currentVersion) throws IOException {
         Path dir = file.toAbsolutePath().getParent();
         if (dir == null || !Files.isDirectory(dir)) {
             return null;
@@ -377,7 +378,7 @@ public final class ConfigMigrations {
      *
      * @return the copy's path, or {@code null} when no copy could be made
      */
-    public static Path keepCopy(Path file) {
+    public static @Nullable Path keepCopy(Path file) {
         return keepCorrupt(file);
     }
 
@@ -416,11 +417,11 @@ public final class ConfigMigrations {
      * Keeps a copy of {@code file} as {@code <name>.corrupt.bak} (see {@link #keepCorrupt}) for a store that reads
      * its own entries one by one and is about to drop the ones it could not read. Returns the copy, or null.
      */
-    public static Path keepCopyOfDamaged(Path file) {
+    public static @Nullable Path keepCopyOfDamaged(Path file) {
         return keepCorrupt(file);
     }
 
-    private static Path keepCorrupt(Path file) {
+    private static @Nullable Path keepCorrupt(Path file) {
         try {
             Path existing = identicalBackup(file, ".corrupt.bak");
             if (existing != null) {
@@ -449,7 +450,7 @@ public final class ConfigMigrations {
      * {@link #MAX_BACKUPS} names with the same bytes; the next launch could then make no copy, and the file
      * became write-protected — so saving a connection silently did nothing.
      */
-    private static Path identicalBackup(Path file, String suffix) throws IOException {
+    private static @Nullable Path identicalBackup(Path file, String suffix) throws IOException {
         Path candidate = file.resolveSibling(file.getFileName() + suffix);
         for (int i = 2; Files.exists(candidate); i++) {
             if (Files.isRegularFile(candidate) && Files.mismatch(file, candidate) == -1) {
@@ -477,7 +478,7 @@ public final class ConfigMigrations {
     }
 
     /** {@link #backup}, returning {@code null} instead of throwing when the file could not be moved aside. */
-    private static Path backupQuietly(Path file, int storedVersion) {
+    private static @Nullable Path backupQuietly(Path file, int storedVersion) {
         try {
             return backup(file, storedVersion);
         } catch (IOException | RuntimeException e) {

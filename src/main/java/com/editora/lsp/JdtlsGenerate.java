@@ -6,6 +6,7 @@ import java.util.List;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The jdtls source-generation prompts (#741) — Generate toString / hashCode+equals / Constructors /
@@ -66,9 +67,9 @@ public final class JdtlsGenerate {
         private final String command;
         private final String checkRequest;
         private final String generateRequest;
-        private final String itemsField;
+        private final @Nullable String itemsField;
 
-        Kind(String command, String checkRequest, String generateRequest, String itemsField) {
+        Kind(String command, String checkRequest, String generateRequest, @Nullable String itemsField) {
             this.command = command;
             this.checkRequest = checkRequest;
             this.generateRequest = generateRequest;
@@ -88,13 +89,13 @@ public final class JdtlsGenerate {
         }
 
         /** The array in the check response holding the choosable candidates; null when the response is the array. */
-        public String itemsField() {
+        public @Nullable String itemsField() {
             return itemsField;
         }
     }
 
     /** The {@link Kind} for a code action's command id, or null when it isn't one of these prompts. */
-    public static Kind forCommand(String command) {
+    public static @Nullable Kind forCommand(String command) {
         if (command == null) {
             return null;
         }
@@ -119,7 +120,7 @@ public final class JdtlsGenerate {
      * malformed or unexpected answer must degrade into "nothing to offer", never an exception on the FX
      * thread.
      */
-    public static List<Candidate> candidates(Kind kind, JsonElement checkResponse) {
+    public static List<Candidate> candidates(Kind kind, @Nullable JsonElement checkResponse) {
         List<Candidate> out = new ArrayList<>();
         if (kind == Kind.ACCESSORS) {
             return accessorCandidates(checkResponse);
@@ -176,7 +177,7 @@ public final class JdtlsGenerate {
      * without a prompt generates every one, so the picker starts from the same result and lets the user
      * take fields out. The label names which accessors the field is still missing.
      */
-    private static List<Candidate> accessorCandidates(JsonElement checkResponse) {
+    private static List<Candidate> accessorCandidates(@Nullable JsonElement checkResponse) {
         List<Candidate> out = new ArrayList<>();
         if (checkResponse == null || !checkResponse.isJsonArray()) {
             return out;
@@ -261,9 +262,9 @@ public final class JdtlsGenerate {
 
     /** A check response together with the choices rendered from it. Constructors need the response's
      *  separate {@code constructors} array when the generate request is assembled. */
-    public record Plan(List<Candidate> candidates, JsonElement status) {}
+    public record Plan(List<Candidate> candidates, @Nullable JsonElement status) {}
 
-    public static Plan plan(Kind kind, JsonElement checkResponse) {
+    public static Plan plan(Kind kind, @Nullable JsonElement checkResponse) {
         return new Plan(List.copyOf(candidates(kind, checkResponse)), checkResponse);
     }
 
@@ -303,10 +304,10 @@ public final class JdtlsGenerate {
      */
     public static JsonObject generateParams(
             Kind kind,
-            JsonElement actionParams,
+            @Nullable JsonElement actionParams,
             List<Candidate> chosen,
             JsonElement checkResponse,
-            List<Candidate> chosenConstructors) {
+            @Nullable List<Candidate> chosenConstructors) {
         JsonArray picked = new JsonArray();
         for (Candidate c : chosen) {
             picked.add(c.raw());
@@ -341,7 +342,7 @@ public final class JdtlsGenerate {
         return params;
     }
 
-    private static String string(JsonObject o, String key) {
+    private static @Nullable String string(JsonObject o, String key) {
         JsonElement e = o.get(key);
         return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
     }

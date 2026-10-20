@@ -23,6 +23,7 @@ import org.commonmark.parser.beta.Scanner;
 import org.commonmark.renderer.NodeRenderer;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.commonmark.renderer.text.TextContentRenderer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Wiki links: {@code [[note]]}, {@code [[note|label]]}, {@code [[note#heading]]},
@@ -51,11 +52,11 @@ public final class MarkdownWikiLinks {
     /** One wiki link, as written. */
     public static final class WikiLink extends CustomNode {
         private final String target;
-        private final String heading;
-        private final String label;
+        private final @Nullable String heading;
+        private final @Nullable String label;
         private final boolean embed;
 
-        public WikiLink(String target, String heading, String label, boolean embed) {
+        public WikiLink(String target, @Nullable String heading, @Nullable String label, boolean embed) {
             this.target = target == null ? "" : target;
             this.heading = heading;
             this.label = label;
@@ -68,12 +69,12 @@ public final class MarkdownWikiLinks {
         }
 
         /** The heading after {@code #}, or null. */
-        public String getHeading() {
+        public @Nullable String getHeading() {
             return heading;
         }
 
         /** The text after {@code |}, or null. */
-        public String getLabel() {
+        public @Nullable String getLabel() {
             return label;
         }
 
@@ -108,7 +109,7 @@ public final class MarkdownWikiLinks {
      * line break inside, neither a target nor a heading). Parts are trimmed; an empty label or heading is as if
      * it were not written. Pure.
      */
-    public static WikiLink parse(String inside, boolean embed) {
+    public static @Nullable WikiLink parse(String inside, boolean embed) {
         if (inside == null || inside.length() > MAX_LENGTH) {
             return null;
         }

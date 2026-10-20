@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import org.apache.sshd.sftp.client.fs.SftpFileSystem;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The backup files an in-place document write ({@link AtomicFileWrite.Outcome#IN_PLACE}) leaves behind when
@@ -45,7 +46,7 @@ public final class SaveBackups {
      * @param target the absolute local path it was taken from, a URI for a remote file, or null when unknown
      * @param modified when the backup was written
      */
-    public record Leftover(Path backup, String target, Instant modified) {
+    public record Leftover(Path backup, @Nullable String target, Instant modified) {
 
         /** Whether the file is on a remote filesystem (named by URI), which a launch cannot reach by itself. */
         public boolean remote() {
@@ -115,7 +116,7 @@ public final class SaveBackups {
         return List.copyOf(found);
     }
 
-    private static String readNote(Path backup) {
+    private static @Nullable String readNote(Path backup) {
         try {
             String name = Files.readString(note(backup), StandardCharsets.UTF_8).strip();
             return name.isEmpty() ? null : name;
@@ -125,7 +126,7 @@ public final class SaveBackups {
     }
 
     /** The local file {@code leftover} belongs to, or null when it is unknown or remote. */
-    public static Path targetPath(Leftover leftover) {
+    public static @Nullable Path targetPath(Leftover leftover) {
         if (leftover.target() == null || leftover.remote()) {
             return null;
         }

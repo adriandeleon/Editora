@@ -17,6 +17,7 @@ import javafx.application.Platform;
 
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Scans for TODO/highlight pattern matches off the JavaFX thread (the {@code SearchService} idiom: a
@@ -140,7 +141,7 @@ public final class TodoService {
         });
     }
 
-    private static String readText(Path file) {
+    private static @Nullable String readText(Path file) {
         try {
             if (Files.size(file) > MAX_FILE_BYTES) {
                 return null;
