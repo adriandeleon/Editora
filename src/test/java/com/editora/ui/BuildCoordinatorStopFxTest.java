@@ -231,6 +231,12 @@ class BuildCoordinatorStopFxTest {
     void theTasksTreeGreysRunWhileABuildRuns() throws Exception {
         FxTestSupport.runOnFx(() -> {
             BuildActionsTree tree = new BuildActionsTree();
+            // Run is also greyed until a task row is selected (review B30): give it one task and select it.
+            tree.setProvider(active -> List.of(new com.editora.build.BuildAction.Section(
+                    "Lifecycle", List.of(new com.editora.build.BuildAction.Task("compile", List.of("compile"))))));
+            FxTestSupport.<javafx.scene.control.TreeView<?>>field(tree, "tree")
+                    .getSelectionModel()
+                    .select(1);
             javafx.scene.control.Button run = FxTestSupport.field(tree, "runButton");
             javafx.scene.control.Button stop = FxTestSupport.field(tree, "stopButton");
             assertFalse(run.isDisable());

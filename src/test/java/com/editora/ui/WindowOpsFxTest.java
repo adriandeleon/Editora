@@ -587,9 +587,10 @@ class WindowOpsFxTest {
             assertEquals(
                     tr("dialog.mavenProject.trustHeader", "quickstart-archetype"),
                     asked.get(0).header());
-            assertEquals(
-                    tr("dialog.mavenProject.trustBody", archetype.gav()),
-                    asked.get(0).content());
+            assertTrue(
+                    asked.get(0).content().startsWith(tr("dialog.mavenProject.trustBody", archetype.gav())),
+                    "the body names the archetype first; a \"Trust and Generate\" sentence follows: "
+                            + asked.get(0).content());
             assertFalse(answer[0]);
             SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> answer[0] = maven.confirmArchetype(archetype));
             assertTrue(answer[0]);
