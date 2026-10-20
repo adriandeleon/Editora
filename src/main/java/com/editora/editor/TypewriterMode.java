@@ -4,6 +4,7 @@ import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Typewriter mode: the line being written stays in the middle of the editor instead of working its way down
@@ -34,7 +35,7 @@ public final class TypewriterMode {
     }
 
     @SuppressWarnings("unchecked")
-    static void apply(CodeArea area, boolean on) {
+    static void apply(@Nullable CodeArea area, boolean on) {
         if (area == null || on == isOn(area)) {
             return;
         }

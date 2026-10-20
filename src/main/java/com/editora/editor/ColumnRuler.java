@@ -11,6 +11,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.shape.Line;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The vertical lines at the ruler columns of one view. {@code EditorBuffer} measures where column 0 is in the
@@ -30,12 +31,12 @@ final class ColumnRuler extends Group implements SecondaryPane.Followed {
 
     private final List<Line> lines = new ArrayList<>();
     /** Column 0's x with the view scrolled fully left; null while the rulers cannot or need not be shown. */
-    private Double unscrolledZero;
+    private @Nullable Double unscrolledZero;
 
     private double advance;
     private List<Integer> columns = List.of();
 
-    private ColumnRuler follower;
+    private @Nullable ColumnRuler follower;
 
     ColumnRuler(CodeArea view) {
         this.view = view;
@@ -55,7 +56,7 @@ final class ColumnRuler extends Group implements SecondaryPane.Followed {
      * the view is scrolled right now) and each column {@code advance} wide. Hides them all when {@code zeroX}
      * is null; a line outside {@code [0, viewportWidth]} is hidden on its own.
      */
-    void place(Double zeroX, double advance, List<Integer> columns, double viewportWidth) {
+    void place(@Nullable Double zeroX, double advance, List<Integer> columns, double viewportWidth) {
         unscrolledZero = zeroX == null ? null : zeroX + view.getEstimatedScrollX();
         this.advance = advance;
         this.columns = columns;
@@ -84,7 +85,7 @@ final class ColumnRuler extends Group implements SecondaryPane.Followed {
         return out;
     }
 
-    private void show(Double zeroX, double viewportWidth) {
+    private void show(@Nullable Double zeroX, double viewportWidth) {
         if (zeroX != null) {
             while (lines.size() < columns.size()) {
                 Line line = new Line();

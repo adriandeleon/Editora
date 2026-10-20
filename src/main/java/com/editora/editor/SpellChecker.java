@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.lucene.analysis.hunspell.Hunspell;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Per-buffer spell checker: wraps the (shared, cached) {@link Hunspell} engine for a language plus the
@@ -172,7 +173,7 @@ public final class SpellChecker {
      * plural is only taken off a stem of three letters or more that does not itself end in {@code s}, so
      * "class" and "is" are left alone. Pure.
      */
-    static String stem(String lower) {
+    static @Nullable String stem(String lower) {
         int n = lower.length();
         if (n > 2 && lower.endsWith("'s")) {
             return lower.substring(0, n - 2);

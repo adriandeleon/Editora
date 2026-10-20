@@ -25,6 +25,7 @@ import javafx.scene.transform.Transform;
 
 import com.editora.structured.StructuredParser;
 import com.editora.structured.XmlParser;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -98,7 +99,11 @@ public final class PreviewSnapshots {
     }
 
     /** What a buffer's preview is, for a snapshot: one laid-out node, or a list of rows to chunk. */
-    private record Plan(Node single, List<Node> rows, int totalRows, String treeClass) {
+    private record Plan(
+            @Nullable Node single,
+            @Nullable List<Node> rows,
+            int totalRows,
+            @Nullable String treeClass) {
         static Plan of(VBox box) {
             box.getStyleClass().add("markdown-preview");
             return new Plan(box, null, 0, null);
@@ -122,32 +127,34 @@ public final class PreviewSnapshots {
             plan = null;
             scene = null;
         }
-        if (plan == null) {
+        if (plan == null || scene == null) {
             Platform.runLater(() -> done.accept(null));
-        } else if (plan.single() != null) {
-            Node node = plan.single();
+        } else if (plan.single() instanceof Node node) {
             Scene sc = scene;
             step(done, () -> {
                 Shot shot = shoot(sc, node, true);
-                encode(shot, done, png -> {
+                encode(shot, done, (s, png) -> {
                     progress.accept(1, 1);
-                    Chunk image = new Chunk(png, shot.scale(), shot.cuts(), false);
+                    Chunk image = new Chunk(png, s.scale(), s.cuts(), false);
                     done.accept(new Result(List.of(image), 0, 0));
                 });
             });
+        } else if (plan.rows() instanceof List<Node> rows) {
+            new RowCapture(plan, rows, scene, progress, done).next();
         } else {
-            new RowCapture(plan, scene, progress, done).next();
+            Platform.runLater(() -> done.accept(null));
         }
     }
 
-    private static Plan plan(EditorBuffer b) {
+    private static @Nullable Plan plan(EditorBuffer b) {
         String text = b.getArea().getText();
         if (b.hasGithubActionsPreview()) {
             return Plan.of(GithubActionsPreview.content(com.editora.ghactions.Workflow.parse(text), EXPORT_WIDTH));
         }
         if (b.isStructured()) {
             StructuredParser.Parsed p = StructuredParser.parse(text, b.structuredFormat());
-            if (!p.ok()) {
+            com.editora.structured.StructuredNode root = p.root();
+            if (root == null || !p.ok()) {
                 return null;
             }
             if (p.isOpenApi() && b.showsApiDocs()) { // what the preview shows: the docs, not the tree behind them
@@ -157,8 +164,8 @@ public final class PreviewSnapshots {
             }
             return new Plan(
                     null,
-                    StructuredTree.printableRows(p.root(), MAX_PRINT_ROWS),
-                    StructuredTree.rowCount(p.root()),
+                    StructuredTree.printableRows(root, MAX_PRINT_ROWS),
+                    StructuredTree.rowCount(root),
                     "structured-tree");
         }
         if (b.hasPomPreview()) {
@@ -166,12 +173,8 @@ public final class PreviewSnapshots {
         }
         if (b.isXml()) {
             XmlParser.Parsed p = XmlParser.parse(text);
-            return p.ok()
-                    ? new Plan(
-                            null,
-                            XmlTree.printableRows(p.root(), MAX_PRINT_ROWS),
-                            XmlTree.rowCount(p.root()),
-                            "xml-tree")
+            return p.ok() && p.root() instanceof com.editora.structured.XmlNode root
+                    ? new Plan(null, XmlTree.printableRows(root, MAX_PRINT_ROWS), XmlTree.rowCount(root), "xml-tree")
                     : null;
         }
         if (b.isCrontab()) {
@@ -230,7 +233,7 @@ public final class PreviewSnapshots {
      * {@link #SCALE} ({@code mayReduce}: less for a very large single preview). The pixels are read straight
      * into a {@code BufferedImage} — one bulk copy — which is what the encoder thread compresses. FX thread.
      */
-    private static Shot shoot(Scene scene, Node node, boolean mayReduce) {
+    private static @Nullable Shot shoot(Scene scene, Node node, boolean mayReduce) {
         Group holder = (Group) scene.getRoot();
         holder.getChildren().setAll(node);
         holder.applyCss();
@@ -308,7 +311,7 @@ public final class PreviewSnapshots {
     }
 
     /** PNG-encodes {@code shot} on the worker thread and continues with {@code then} on the FX thread. */
-    private static void encode(Shot shot, Consumer<Result> done, Consumer<byte[]> then) {
+    private static void encode(@Nullable Shot shot, Consumer<Result> done, BiConsumer<Shot, byte[]> then) {
         if (shot == null) {
             done.accept(null);
             return;
@@ -328,7 +331,7 @@ public final class PreviewSnapshots {
                 if (encoded == null) {
                     done.accept(null);
                 } else {
-                    then.accept(encoded);
+                    then.accept(shot, encoded);
                 }
             });
         });
@@ -337,6 +340,7 @@ public final class PreviewSnapshots {
     /** One row list being captured chunk by chunk; FX thread only. */
     private static final class RowCapture {
         private final Plan plan;
+        private final List<Node> rows;
         private final Scene scene;
         private final BiConsumer<Integer, Integer> progress;
         private final Consumer<Result> done;
@@ -345,12 +349,14 @@ public final class PreviewSnapshots {
         private final int chunks;
         private int at;
 
-        RowCapture(Plan plan, Scene scene, BiConsumer<Integer, Integer> progress, Consumer<Result> done) {
+        RowCapture(
+                Plan plan, List<Node> rows, Scene scene, BiConsumer<Integer, Integer> progress, Consumer<Result> done) {
             this.plan = plan;
+            this.rows = rows;
             this.scene = scene;
             this.progress = progress;
             this.done = done;
-            this.shown = Math.min(plan.rows().size(), MAX_PRINT_ROWS);
+            this.shown = Math.min(rows.size(), MAX_PRINT_ROWS);
             this.chunks = Math.max(1, (shown + ROWS_PER_CHUNK - 1) / ROWS_PER_CHUNK);
         }
 
@@ -362,15 +368,15 @@ public final class PreviewSnapshots {
                 chunk.setFillWidth(false);
                 // The 6 px frame of the whole list: its top on the first chunk, its bottom on the last.
                 chunk.setPadding(new javafx.geometry.Insets(at == 0 ? 6 : 0, 6, end >= shown ? 6 : 0, 6));
-                chunk.getChildren().addAll(plan.rows().subList(at, end));
+                chunk.getChildren().addAll(rows.subList(at, end));
                 if (end >= shown && shown < plan.totalRows()) {
                     chunk.getChildren().add(truncationRow(shown, plan.totalRows()));
                 }
                 boolean first = at == 0;
                 Shot shot = shoot(scene, chunk, false);
                 chunk.getChildren().clear(); // the rows are done with: let them go chunk by chunk
-                encode(shot, done, png -> {
-                    images.add(new Chunk(png, shot.scale(), shot.cuts(), !first));
+                encode(shot, done, (s, png) -> {
+                    images.add(new Chunk(png, s.scale(), s.cuts(), !first));
                     at = end;
                     progress.accept(images.size(), chunks);
                     if (at < shown) {

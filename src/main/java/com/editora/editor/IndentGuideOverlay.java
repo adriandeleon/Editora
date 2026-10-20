@@ -10,6 +10,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.editops.IndentLevels;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Faint vertical lines at each indentation level of the visible lines (VS Code's indent guides), painted on a
@@ -37,7 +38,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
             new java.util.concurrent.atomic.AtomicInteger();
 
     /** Test seam: when set, the guides of the last frame painted are recorded here as {@code {x, top, bottom}}. */
-    static java.util.List<double[]> guidesForTest;
+    static java.util.@Nullable List<double[]> guidesForTest;
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
@@ -48,7 +49,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     private final IntSupplier tabSize;
 
     private Color color = OverlayPalette.of(Color.WHITE).indentGuide();
-    private String fontFamily;
+    private @Nullable String fontFamily;
     private double fontSize = 14;
     private boolean requested;
     private boolean suppressed;
@@ -58,7 +59,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
     private final AfterLayoutPaint afterLayout;
 
-    private IndentGuideOverlay follower;
+    private @Nullable IndentGuideOverlay follower;
 
     IndentGuideOverlay(CodeArea area, IntSupplier unitColumns, IntSupplier tabSize) {
         this.area = area;
@@ -261,8 +262,11 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
                                 .map(canvas::screenToLocal)
                                 .orElse(null);
                 for (int k = 0; k < deepest; k++) {
-                    boolean carries = box != null && k < guides;
-                    if (carries && !Double.isNaN(runTop[k]) && Math.abs(box.getMinY() - runBottom[k]) <= 1) {
+                    boolean carries = k < guides;
+                    if (box != null
+                            && carries
+                            && !Double.isNaN(runTop[k])
+                            && Math.abs(box.getMinY() - runBottom[k]) <= 1) {
                         runBottom[k] = box.getMaxY(); // the run goes on
                         continue;
                     }
@@ -270,7 +274,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
                         stroke(g, guideX(zero, cell, k, unit), runTop[k], runBottom[k], textLeft, w);
                         runTop[k] = Double.NaN;
                     }
-                    if (carries) {
+                    if (box != null && carries) {
                         runTop[k] = box.getMinY();
                         runBottom[k] = box.getMaxY();
                     }
@@ -387,7 +391,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     }
 
     /** The canvas-local bounds of character {@code column} of {@code paragraph}, or null. */
-    private Bounds bounds(int paragraph, int column) {
+    private @Nullable Bounds bounds(int paragraph, int column) {
         int abs = area.getAbsolutePosition(paragraph, column);
         return area.getCharacterBoundsOnScreen(abs, abs + 1)
                 .map(canvas::screenToLocal)

@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import java.util.function.Consumer;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Whether one buffer soft-wraps its lines. The preference is per kind of file — one answer for prose
  * (Markdown, plain text), one for code — and a buffer's kind is its language, which is known only after the
@@ -17,7 +19,7 @@ public final class WordWrap {
     private boolean code;
     private boolean prose;
     private boolean suppressed;
-    private String language;
+    private @Nullable String language;
 
     WordWrap(Consumer<Boolean> apply) {
         this.apply = apply;
@@ -101,7 +103,7 @@ public final class WordWrap {
     }
 
     /** Markdown and plain text: the languages whose lines are paragraphs. */
-    public static boolean isProse(String language) {
+    public static boolean isProse(@Nullable String language) {
         return com.editora.config.Settings.isProseLanguage(language);
     }
 

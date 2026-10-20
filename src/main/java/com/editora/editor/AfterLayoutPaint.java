@@ -8,6 +8,7 @@ import javafx.scene.Node;
 import javafx.scene.Scene;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs an overlay's paint <em>after the layout pass</em> of the pulse that asked for it, and looks again on the
@@ -34,7 +35,7 @@ final class AfterLayoutPaint {
     private final BooleanSupplier drawable;
     private final Runnable afterLayout = this::afterLayoutPulse;
     /** The scene whose post-layout pulses {@link #afterLayout} is listening to, or null. */
-    private Scene armed;
+    private @Nullable Scene armed;
 
     private boolean pending;
     private int checksLeft;
@@ -128,7 +129,7 @@ final class AfterLayoutPaint {
     }
 
     /** The area-local bounds of the first character of the first visible line that has one, or null. */
-    private Bounds firstCharacter() {
+    private @Nullable Bounds firstCharacter() {
         try {
             int total = area.getParagraphs().size();
             int first = Math.max(0, area.firstVisibleParToAllParIndex());

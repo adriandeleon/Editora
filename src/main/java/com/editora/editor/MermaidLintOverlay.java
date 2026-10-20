@@ -11,6 +11,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.mermaid.MaidOutput;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Draws red wavy underlines beneath Mermaid (maid) diagnostics, on top of the editor without touching the
@@ -35,7 +36,7 @@ final class MermaidLintOverlay extends Region implements SecondaryPane.Followed,
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private MermaidLintOverlay follower;
+    private @Nullable MermaidLintOverlay follower;
 
     MermaidLintOverlay(CodeArea area) {
         this.area = area;
@@ -221,7 +222,7 @@ final class MermaidLintOverlay extends Region implements SecondaryPane.Followed,
         g.stroke();
     }
 
-    private Bounds toLocal(Bounds screen) {
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

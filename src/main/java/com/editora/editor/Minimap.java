@@ -16,6 +16,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A lightweight document overview ("minimap") drawn beside the editor. Each paragraph is rendered
@@ -64,7 +65,7 @@ final class Minimap extends Region {
      */
     private final Canvas offscreen = new Canvas(WIDTH, 1);
 
-    private WritableImage contentImage;
+    private @Nullable WritableImage contentImage;
     /** Canvas logical dims at the last successful snapshot, so the {@link #contentImage} buffer can be
      *  reused (rather than reallocated each render) when the size is unchanged — see {@link #renderContent}. */
     private double lastSnapW = -1;
@@ -84,7 +85,7 @@ final class Minimap extends Region {
     private final MinimapRows.RunList lastRuns = new MinimapRows.RunList();
 
     private final MinimapRows.RunList nextRuns = new MinimapRows.RunList();
-    private Color lastTextColor;
+    private @Nullable Color lastTextColor;
     private int lastTotal = -1;
     /** When the last content render ran, for {@link MinimapPacing}; zero before the first. */
     private long lastRenderNanos;
@@ -155,7 +156,7 @@ final class Minimap extends Region {
     private static final double STRIPE_WIDTH = 5;
 
     /** The minimap of the split's second view, given every setting and mark this one is given. */
-    private Minimap follower;
+    private @Nullable Minimap follower;
 
     /** A minimap for a split's second {@code view}, kept in step with this one. */
     Minimap follower(CodeArea view) {
@@ -588,7 +589,7 @@ final class Minimap extends Region {
 
     /** The viewport box as {@link #drawViewport} draws it: {@code {top, height}} in column pixels, or null
      *  when the viewport isn't laid out yet. Package-visible so the FX test can grab the box it draws. */
-    double[] viewportBox() {
+    double @Nullable [] viewportBox() {
         int total = area.getParagraphs().size();
         if (total == 0) {
             return null;

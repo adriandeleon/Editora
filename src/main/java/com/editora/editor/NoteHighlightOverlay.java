@@ -12,6 +12,7 @@ import javafx.scene.paint.Color;
 
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A transparent overlay that paints a soft highlight behind each Personal Note's anchored span, on top of
@@ -59,9 +60,9 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
     private final AfterLayoutPaint afterLayout;
     /** Test seam: when set, every highlight box painted by the last frame is recorded as {@code {x0, y0, x1, y1}}. */
-    static List<double[]> boxesForTest;
+    static @Nullable List<double[]> boxesForTest;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private NoteHighlightOverlay follower;
+    private @Nullable NoteHighlightOverlay follower;
     // Whether the last redraw had visible note spans to paint. When false the canvas is shrunk to 1x1 to
     // release its viewport-sized RTTexture — a buffer with no visible notes shouldn't pin a full-viewport
     // texture (the convention the other overlays follow). layoutChildren re-grows only while this is set.
@@ -362,7 +363,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     }
 
     /** The canvas-local bounds of the first character of the first visible, unfolded line that has one. */
-    private Bounds firstCharacter(int first, int last) {
+    private @Nullable Bounds firstCharacter(int first, int last) {
         for (int p = first; p <= last; p++) {
             if (area.getParagraph(p).getText().isEmpty() || area.isFolded(p)) {
                 continue;
@@ -376,7 +377,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
         return null;
     }
 
-    private Bounds bounds(int start, int end) {
+    private @Nullable Bounds bounds(int start, int end) {
         return toLocal(area.getCharacterBoundsOnScreen(start, end).orElse(null));
     }
 
@@ -386,7 +387,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
      * <em>at</em> the end: there is no character there and no marker is drawn, and asking
      * {@code getCharacterBoundsOnScreen} for that empty range would leak a caret blink timer per call.
      */
-    static Bounds markerBoundsOnScreen(CodeArea area, int start) {
+    static @Nullable Bounds markerBoundsOnScreen(CodeArea area, int start) {
         return start < 0 || start >= area.getLength()
                 ? null
                 : area.getCharacterBoundsOnScreen(start, start + 1).orElse(null);
@@ -396,7 +397,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
         return Math.max(lo, Math.min(hi, v));
     }
 
-    private Bounds toLocal(Bounds screen) {
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

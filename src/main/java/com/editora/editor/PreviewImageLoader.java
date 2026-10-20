@@ -28,6 +28,7 @@ import com.github.weisj.jsvg.SVGDocument;
 import com.github.weisj.jsvg.parser.LoaderContext;
 import com.github.weisj.jsvg.parser.SVGLoader;
 import com.github.weisj.jsvg.view.ViewBox;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Loads images for the Markdown preview off the FX thread, adding support JavaFX's own decoder lacks:
@@ -121,7 +122,7 @@ public final class PreviewImageLoader {
      * the image cannot be shown — missing, unreachable, blocked, not an image — so the caller can say so
      * instead of leaving a 0×0 view that looks like nothing was written there.
      */
-    static void loadInto(ImageView view, String url, double maxWidth, boolean exactWidth, Runnable onFail) {
+    static void loadInto(ImageView view, String url, double maxWidth, boolean exactWidth, @Nullable Runnable onFail) {
         Loaded hit = CACHE.get(url);
         if (hit != null && !fileStamp(url).equals(STAMPS.getOrDefault(url, ""))) {
             CACHE.remove(url); // the file behind a file: URL was replaced since it was decoded
@@ -202,7 +203,7 @@ public final class PreviewImageLoader {
      * a URL says nothing about a file that was exported again: without this a changed image kept showing its
      * old picture until the app restarted. A {@code stat}; cheap enough for the FX thread on a local disk.
      */
-    static String fileStamp(String url) {
+    static String fileStamp(@Nullable String url) {
         if (url == null || !url.regionMatches(true, 0, "file:", 0, 5)) {
             return "";
         }
@@ -220,7 +221,7 @@ public final class PreviewImageLoader {
     }
 
     /** Loads {@code url} on the calling thread and records the outcome in the cache or the failure memory. */
-    private static Loaded loadAndCache(String url) {
+    private static @Nullable Loaded loadAndCache(String url) {
         String stamp = fileStamp(url); // before the read: a write that lands meanwhile is then seen as a change
         Loaded loaded = load(url);
         if (loaded == null) {
@@ -284,7 +285,7 @@ public final class PreviewImageLoader {
         return out;
     }
 
-    private static Loaded finished(java.util.concurrent.Future<Loaded> f) throws InterruptedException {
+    private static @Nullable Loaded finished(java.util.concurrent.Future<Loaded> f) throws InterruptedException {
         try {
             return f.isCancelled() ? null : f.get();
         } catch (java.util.concurrent.ExecutionException e) {
@@ -297,7 +298,7 @@ public final class PreviewImageLoader {
         fit(view, exactWidth ? maxWidth : Math.min(loaded.logicalWidth(), maxWidth));
     }
 
-    private static Loaded load(String url) {
+    private static @Nullable Loaded load(String url) {
         try {
             byte[] bytes = fetch(url);
             if (bytes == null || bytes.length == 0) {
@@ -363,7 +364,7 @@ public final class PreviewImageLoader {
      * Fetches image bytes for a URL — an {@code http(s)} download (with a timeout + User-Agent) or a
      * {@code data:} URI decoded inline. For a browser-image drop; call off the FX thread.
      */
-    public static byte[] fetchBytes(String url) throws IOException {
+    public static byte @Nullable [] fetchBytes(String url) throws IOException {
         return fetch(url);
     }
 
@@ -374,7 +375,7 @@ public final class PreviewImageLoader {
      * {@code baseDir} and read only when it is a regular file within the cap. One fetcher for every surface,
      * so an exported document cannot reach what the preview refuses. Call off the FX thread.
      */
-    public static byte[] fetchForExport(String src, Path baseDir) {
+    public static byte @Nullable [] fetchForExport(String src, @Nullable Path baseDir) {
         if (src == null || src.isBlank()) {
             return null;
         }
@@ -413,7 +414,7 @@ public final class PreviewImageLoader {
 
     /** The bytes of a local regular file within {@link #MAX_IMAGE_BYTES}, else {@code null} (a directory, a
      *  device or FIFO, a missing or oversized file). */
-    private static byte[] readLocal(Path file) throws IOException {
+    private static byte @Nullable [] readLocal(Path file) throws IOException {
         if (!Files.isRegularFile(file) || Files.size(file) > MAX_IMAGE_BYTES) {
             return null;
         }
@@ -423,7 +424,7 @@ public final class PreviewImageLoader {
     }
 
     /** Reads {@code in} to EOF, or returns {@code null} once it exceeds {@link #MAX_IMAGE_BYTES}. */
-    static byte[] readCapped(InputStream in) throws IOException {
+    static byte @Nullable [] readCapped(InputStream in) throws IOException {
         byte[] bytes = in.readNBytes(MAX_IMAGE_BYTES + 1);
         return bytes.length > MAX_IMAGE_BYTES ? null : bytes;
     }
@@ -433,7 +434,7 @@ public final class PreviewImageLoader {
      * pixels through a {@code PixelReader} into an ARGB {@link BufferedImage}, then {@code ImageIO}. Returns
      * {@code null} when the image has no reader (still loading / broken). Read the pixels on the FX thread.
      */
-    public static byte[] imageToPng(javafx.scene.image.Image img) {
+    public static byte @Nullable [] imageToPng(javafx.scene.image.Image img) {
         if (img == null || img.getPixelReader() == null) {
             return null;
         }
@@ -462,7 +463,7 @@ public final class PreviewImageLoader {
     /** Cap on redirect hops we'll follow (each re-checked against the SSRF guard). */
     private static final int MAX_REDIRECTS = 5;
 
-    private static byte[] fetch(String url) throws IOException {
+    private static byte @Nullable [] fetch(String url) throws IOException {
         URI uri = URI.create(url);
         if (isBlockedTarget(uri)) {
             return null; // SSRF / internal-network / UNC-credential-leak guard — see isBlockedTarget
@@ -597,7 +598,7 @@ public final class PreviewImageLoader {
      * The address to fetch an {@code http(s)} {@code uri} from: the first one its host resolves to, provided
      * <em>every</em> address it resolves to is public — else null (also for another scheme, or no host).
      */
-    static java.net.InetAddress publicAddress(URI uri) {
+    static java.net.@Nullable InetAddress publicAddress(URI uri) {
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
         String host = uri.getHost();
         if (!(scheme.equals("http") || scheme.equals("https")) || host == null || host.isBlank()) {
@@ -688,7 +689,7 @@ public final class PreviewImageLoader {
     }
 
     /** Decodes a {@code data:} URI's payload (base64 or percent-encoded). */
-    private static byte[] decodeDataUri(String url) {
+    private static byte @Nullable [] decodeDataUri(String url) {
         int comma = url.indexOf(',');
         if (comma < 0) {
             return null;
@@ -706,7 +707,7 @@ public final class PreviewImageLoader {
      * standalone {@code .svg} file preview ({@code editor/SvgImages}). Returns {@code null} on a
      * parse/render failure so the caller can show an error. Call off the FX thread (touches Java2D).
      */
-    public static Loaded rasterizeSvg(byte[] bytes) {
+    public static @Nullable Loaded rasterizeSvg(byte[] bytes) {
         try {
             return rasterizeSvg(bytes, null);
         } catch (RuntimeException | LinkageError e) {
@@ -723,7 +724,7 @@ public final class PreviewImageLoader {
      * external references an SVG can carry; keep it, or a previewed document can fetch a URL of its
      * choosing (its policy is embedded-data-only, verified against jsvg 2.1.0).
      */
-    public static SVGDocument parseSvg(byte[] bytes) {
+    public static @Nullable SVGDocument parseSvg(byte[] bytes) {
         try {
             return new SVGLoader().load(new ByteArrayInputStream(bytes), null, LoaderContext.createDefault());
         } catch (RuntimeException | LinkageError e) {
@@ -731,7 +732,7 @@ public final class PreviewImageLoader {
         }
     }
 
-    private static Loaded rasterizeSvg(byte[] bytes, String url) {
+    private static @Nullable Loaded rasterizeSvg(byte[] bytes, @Nullable String url) {
         SVGDocument doc =
                 new SVGLoader().load(new ByteArrayInputStream(bytes), uriOrNull(url), LoaderContext.createDefault());
         if (doc == null) {
@@ -794,7 +795,7 @@ public final class PreviewImageLoader {
      * {@code Image} (e.g. the PDF/print writers, which embed via PDFBox and can't decode SVG). Returns
      * {@code null} when the SVG can't be parsed/rendered, so callers degrade gracefully.
      */
-    public static byte[] svgToPng(byte[] svg) {
+    public static byte @Nullable [] svgToPng(byte[] svg) {
         SvgPng r = svgToPng(svg, RASTER_SCALE);
         return r == null ? null : r.png();
     }
@@ -811,7 +812,7 @@ public final class PreviewImageLoader {
      * bitmap at the SVG's logical size. Blocking — a large SVG takes hundreds of milliseconds; never call it
      * on the FX thread.
      */
-    public static SvgPng svgToPng(byte[] svg, double wanted) {
+    public static @Nullable SvgPng svgToPng(byte[] svg, double wanted) {
         try {
             SVGDocument doc = new SVGLoader().load(new ByteArrayInputStream(svg), null, LoaderContext.createDefault());
             if (doc == null) {
@@ -826,7 +827,7 @@ public final class PreviewImageLoader {
         }
     }
 
-    private static URI uriOrNull(String url) {
+    private static @Nullable URI uriOrNull(@Nullable String url) {
         try {
             return URI.create(url);
         } catch (RuntimeException e) {

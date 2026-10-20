@@ -14,6 +14,7 @@ import javafx.scene.text.FontPosture;
 import javafx.scene.text.TextAlignment;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * IntelliJ-style inline debugger values: while execution is suspended, grey italic
@@ -33,7 +34,7 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
     /** Variable name → rendered value for the suspended frame; null = inactive. */
-    private Map<String, String> values;
+    private @Nullable Map<String, String> values;
 
     /** The 0-based line the frame is stopped on (its function is the only one annotated); -1 = unknown. */
     private int frameLine = -1;
@@ -45,7 +46,7 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private InlineValuesOverlay follower;
+    private @Nullable InlineValuesOverlay follower;
 
     private Font font = Font.font("monospace", FontPosture.ITALIC, 14);
 
@@ -116,14 +117,14 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
      * The lines that may carry a value at all (a {@code .http} file: its script lines — the identifiers of a request
      * body are not the script's); null for every line.
      */
-    private java.util.function.IntPredicate lineFilter;
+    private java.util.function.@Nullable IntPredicate lineFilter;
 
-    void setValues(Map<String, String> v, int frameLine, java.util.function.IntPredicate lines) {
+    void setValues(@Nullable Map<String, String> v, int frameLine, java.util.function.@Nullable IntPredicate lines) {
         this.lineFilter = lines;
         setValues(v, frameLine);
     }
 
-    void setValues(Map<String, String> v, int frameLine) {
+    void setValues(@Nullable Map<String, String> v, int frameLine) {
         if (follower != null) {
             follower.setValues(v, frameLine, lineFilter);
         }
@@ -172,7 +173,7 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
         double h = canvas.getHeight();
         g.clearRect(0, 0, w, h);
         Map<String, String> vals = values;
-        if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        if (vals == null || !drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         try {

@@ -6,6 +6,7 @@ import java.util.function.BooleanSupplier;
 import javafx.scene.input.DragEvent;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Accepts dropped images on a Markdown or Typst buffer (copy/download into {@code assets/} + insert
@@ -17,8 +18,8 @@ final class ImageDrop {
     private final BooleanSupplier eligible;
     private final BooleanSupplier markdownLinks;
     private final BiConsumer<CodeArea, DragEvent> caretToDrop;
-    private java.util.function.Consumer<java.util.List<java.io.File>> imageDropHandler;
-    private java.util.function.BiConsumer<javafx.scene.image.Image, String> webImageDropHandler;
+    private java.util.function.@Nullable Consumer<java.util.List<java.io.File>> imageDropHandler;
+    private java.util.function.@Nullable BiConsumer<javafx.scene.image.Image, String> webImageDropHandler;
 
     /** @param eligible whether a drop is accepted right now (a Markdown/Typst buffer that is editable)
      *  @param markdownLinks whether a dropped hyperlink becomes a Markdown link (a Markdown buffer)
@@ -40,7 +41,7 @@ final class ImageDrop {
     }
 
     /** The Markdown link for a dragged hyperlink that is not an image, or null. Typst has its own link form. */
-    private String link(javafx.scene.input.Dragboard db) {
+    private @Nullable String link(javafx.scene.input.Dragboard db) {
         return markdownLinks.getAsBoolean()
                 ? com.editora.markdown.MarkdownImagePaste.linkFromDrag(
                         db.hasUrl() ? db.getUrl() : null, db.hasHtml() ? db.getHtml() : null)
@@ -48,7 +49,7 @@ final class ImageDrop {
     }
 
     /** The image URL a browser drag carries (its URL, an {@code <img src>} in the HTML, or an image string). */
-    private static String webImageUrl(javafx.scene.input.Dragboard db) {
+    private static @Nullable String webImageUrl(javafx.scene.input.Dragboard db) {
         return com.editora.markdown.MarkdownImagePaste.imageUrlFromDrag(
                 db.hasUrl() ? db.getUrl() : null,
                 db.hasHtml() ? db.getHtml() : null,

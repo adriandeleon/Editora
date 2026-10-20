@@ -6,6 +6,8 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -65,7 +67,7 @@ final class PreviewMenu {
      * preview is showing, or its pane has the focus: Select All selects the preview's text, Copy copies its
      * selection. False (nothing done) anywhere else, and for Copy when nothing is selected there.
      */
-    static boolean editCommand(EditorBuffer b, javafx.scene.control.ScrollPane pane, boolean selectAll) {
+    static boolean editCommand(EditorBuffer b, javafx.scene.control.@Nullable ScrollPane pane, boolean selectAll) {
         MarkdownPreview preview = b.markdownPreview;
         if (preview == null || !b.isMarkdown() || pane == null || !preview.isShowing()) {
             return false;
@@ -74,6 +76,14 @@ final class PreviewMenu {
             return false;
         }
         return selectAll ? preview.selection().selectAll() : preview.copySelection();
+    }
+
+    /** Runs {@code action} on {@code b}'s Markdown preview; nothing when it has none yet. */
+    private static void withPreview(EditorBuffer b, java.util.function.Consumer<MarkdownPreview> action) {
+        MarkdownPreview preview = b.markdownPreview;
+        if (preview != null) {
+            action.accept(preview);
+        }
     }
 
     static ContextMenu build(EditorBuffer b) {
@@ -86,13 +96,13 @@ final class PreviewMenu {
             // The selection: Copy is offered while there is one; Select All makes one.
             MenuItem copy = new MenuItem(tr("previewmenu.copy"));
             copy.setGraphic(MenuIcons.copy());
-            copy.setOnAction(ev -> b.markdownPreview.copySelection());
+            copy.setOnAction(ev -> withPreview(b, MarkdownPreview::copySelection));
             MenuItem selectAll = new MenuItem(tr("previewmenu.selectAll"));
-            selectAll.setOnAction(ev -> b.markdownPreview.selection().selectAll());
+            selectAll.setOnAction(ev -> withPreview(b, p -> p.selection().selectAll()));
             MenuItem toSource = new MenuItem(tr("previewmenu.goToSource"));
-            toSource.setOnAction(ev -> b.markdownPreview.jumpToSourceAt(b.previewMenuHit, b.previewMenuY));
+            toSource.setOnAction(ev -> withPreview(b, p -> p.jumpToSourceAt(b.previewMenuHit, b.previewMenuY)));
             MenuItem enlarge = new MenuItem(tr("previewmenu.enlarge"));
-            enlarge.setOnAction(ev -> b.markdownPreview.enlarge(MarkdownPreview.enlargeableAt(b.previewMenuHit)));
+            enlarge.setOnAction(ev -> withPreview(b, p -> p.enlarge(MarkdownPreview.enlargeableAt(b.previewMenuHit))));
             menu.getItems().add(0, copy);
             menu.getItems().addAll(selectAll, toSource, enlarge);
             menu.addEventHandler(javafx.stage.WindowEvent.WINDOW_SHOWING, ev -> {

@@ -4,6 +4,8 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The content pixels of recently shown minimaps, kept on the CPU while their tabs are in the background.
  *
@@ -56,6 +58,7 @@ final class MinimapRetention {
     }
 
     /** The entry kept for {@code key}, now the most recently used, or {@code null}. */
+    @Nullable
     Entry get(Object key) {
         return entries.get(key);
     }

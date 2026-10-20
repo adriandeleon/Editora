@@ -74,6 +74,7 @@ import org.commonmark.parser.Parser;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders Markdown to native JavaFX nodes for the in-editor preview. Parsing (CommonMark + GFM
@@ -214,7 +215,7 @@ public final class MarkdownRenderer {
     }
 
     /** Builds a JavaFX node tree from a parsed AST. MUST run on the FX thread (creates Text/ImageView). */
-    public static Node renderDocument(org.commonmark.node.Node ast, Path baseDir) {
+    public static Node renderDocument(org.commonmark.node.Node ast, @Nullable Path baseDir) {
         return renderDocument(ast, baseDir, null);
     }
 
@@ -226,7 +227,9 @@ public final class MarkdownRenderer {
      * popups pass null since they're ephemeral display surfaces, not meant to be clicked through).
      */
     public static Node renderDocument(
-            org.commonmark.node.Node ast, Path baseDir, java.util.function.Consumer<String> onLinkClick) {
+            org.commonmark.node.Node ast,
+            @Nullable Path baseDir,
+            java.util.function.@Nullable Consumer<String> onLinkClick) {
         return renderDocument(ast, baseDir, onLinkClick, ImagePolicy.DOCUMENT);
     }
 
@@ -245,7 +248,7 @@ public final class MarkdownRenderer {
         DATA_ONLY;
 
         /** Whether an image at {@code url} (already resolved to an absolute URL) may load. Pure; unit-tested. */
-        boolean allows(String url) {
+        boolean allows(@Nullable String url) {
             if (url == null || url.isBlank()) {
                 return false;
             }
@@ -262,8 +265,8 @@ public final class MarkdownRenderer {
      *  file passes {@link ImagePolicy#DATA_ONLY}. */
     public static Node renderDocument(
             org.commonmark.node.Node ast,
-            Path baseDir,
-            java.util.function.Consumer<String> onLinkClick,
+            @Nullable Path baseDir,
+            java.util.function.@Nullable Consumer<String> onLinkClick,
             ImagePolicy images) {
         return renderDocument(
                 ast,
@@ -293,7 +296,8 @@ public final class MarkdownRenderer {
      * <p>With {@code assets} null the document was not resolved: images and diagrams then load in the
      * background as the preview's do and code prints uncoloured. Only for callers that cannot block first.
      */
-    public static Node renderForPrint(org.commonmark.node.Node ast, Path baseDir, MarkdownPrintAssets assets) {
+    public static Node renderForPrint(
+            org.commonmark.node.Node ast, Path baseDir, @Nullable MarkdownPrintAssets assets) {
         return renderDocument(
                 ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null, null));
     }
@@ -340,9 +344,9 @@ public final class MarkdownRenderer {
     /** The context of the live document preview. {@code dark} is the preview's own theme when it has one
      *  (the light/dark toggle), or null to follow the app theme. */
     static RenderContext previewContext(
-            Path baseDir,
+            @Nullable Path baseDir,
             java.util.function.Consumer<String> onLinkClick,
-            Boolean dark,
+            @Nullable Boolean dark,
             Map<String, Integer> footnotes,
             Live live) {
         return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark, footnotes, live);
@@ -427,14 +431,14 @@ public final class MarkdownRenderer {
      *  link's click handler reaches the {@code Link} node without a parameter per call — the pure-{@code
      *  baseDir} idiom this file already used, extended to carry one more per-render input. */
     record RenderContext(
-            Path baseDir,
-            java.util.function.Consumer<String> onLinkClick,
+            @Nullable Path baseDir,
+            java.util.function.@Nullable Consumer<String> onLinkClick,
             ImagePolicy images,
             boolean print,
-            MarkdownPrintAssets assets,
-            Boolean dark,
-            Map<String, Integer> footnotes,
-            Live live) {
+            @Nullable MarkdownPrintAssets assets,
+            @Nullable Boolean dark,
+            @Nullable Map<String, Integer> footnotes,
+            @Nullable Live live) {
 
         /** What a reference to (or the definition of) footnote {@code label} shows: its number, else the label. */
         String footnoteMark(String label) {
@@ -448,6 +452,7 @@ public final class MarkdownRenderer {
          * theme cannot recolour them — drawn for the app theme on a preview toggled the other way, a formula
          * was dark on dark.
          */
+        @Nullable
         Boolean glyphsDark() {
             return print ? Boolean.FALSE : dark;
         }
@@ -475,7 +480,7 @@ public final class MarkdownRenderer {
 
     /** Renders the siblings from {@code first} up to (not including) {@code end} into {@code container}. */
     private static void appendBlocks(
-            org.commonmark.node.Node first, org.commonmark.node.Node end, Pane container, RenderContext ctx) {
+            org.commonmark.node.Node first, org.commonmark.node.@Nullable Node end, Pane container, RenderContext ctx) {
         for (org.commonmark.node.Node n = first; n != null && n != end; ) {
             org.commonmark.node.Node last = groupEnd(n, ctx.print());
             Node fx = renderGroup(n, last, ctx);
@@ -511,11 +516,12 @@ public final class MarkdownRenderer {
     }
 
     /** Renders the unit {@code first}…{@code last} (see {@link #groupEnd}); null when it shows nothing. */
-    static Node renderGroup(org.commonmark.node.Node first, org.commonmark.node.Node last, RenderContext ctx) {
+    static @Nullable Node renderGroup(
+            org.commonmark.node.Node first, org.commonmark.node.Node last, RenderContext ctx) {
         return first == last ? renderBlock(first, ctx) : detailsBlock((HtmlBlock) first, last, ctx);
     }
 
-    private static Node renderBlock(org.commonmark.node.Node node, RenderContext ctx) {
+    private static @Nullable Node renderBlock(org.commonmark.node.Node node, RenderContext ctx) {
         if (node instanceof Heading h) {
             TextFlow tf = inlineFlow(h, ctx);
             tf.getStyleClass().add("md-h" + Math.min(6, Math.max(1, h.getLevel())));
@@ -716,7 +722,7 @@ public final class MarkdownRenderer {
      * {@code <a href>} and {@code <pre>}. Unknown tags are dropped and their text kept; null when nothing is
      * left to show (a comment, an empty wrapper).
      */
-    private static Node htmlBlock(List<MarkdownHtml.Token> tokens, RenderContext ctx) {
+    private static @Nullable Node htmlBlock(List<MarkdownHtml.Token> tokens, RenderContext ctx) {
         HtmlBlocks b = new HtmlBlocks(ctx);
         tokens.forEach(b::add);
         return b.finish();
@@ -730,8 +736,8 @@ public final class MarkdownRenderer {
         /** Open block-level tags, innermost last: name, and whether it centres its content. */
         private final List<MarkdownHtml.Tag> frames = new ArrayList<>();
 
-        private TextFlow flow;
-        private StringBuilder pre;
+        private @Nullable TextFlow flow;
+        private @Nullable StringBuilder pre;
 
         HtmlBlocks(RenderContext ctx) {
             this.ctx = ctx;
@@ -825,6 +831,7 @@ public final class MarkdownRenderer {
             }
         }
 
+        @Nullable
         Node finish() {
             if (pre != null) {
                 out.getChildren().add(codeBlock(pre.toString()));
@@ -959,12 +966,12 @@ public final class MarkdownRenderer {
                 cb.setSelected(task.isChecked());
                 cb.getStyleClass().add("md-task");
                 int line = lineOf(item);
-                if (ctx.live() != null && ctx.live().onTask() != null && line >= 0) {
+                if (ctx.live() instanceof Live live && live.onTask() != null && line >= 0) {
                     // Ticking it edits the source; when the source refuses (read-only), the box goes back.
                     cb.getProperties().put(TASK_LINE, line);
                     cb.setCursor(javafx.scene.Cursor.HAND);
                     cb.setOnAction(e -> {
-                        if (!ctx.live().onTask().test(cb)) {
+                        if (!live.onTask().test(cb)) {
                             cb.setSelected(!cb.isSelected());
                         }
                     });
@@ -1150,7 +1157,7 @@ public final class MarkdownRenderer {
      * makes the block's height the sum of its lines, so a long listing is split by arithmetic rather than by
      * repeated layout. {@code runs} are the fence's tokens ({@link #tokenizeRuns}), or null to print plain.
      */
-    static Node printCodeBlock(String code, List<Run> runs) {
+    static Node printCodeBlock(String code, @Nullable List<Run> runs) {
         VBox box = new VBox();
         box.getStyleClass().addAll("md-code-block", "md-code-lines");
         box.setMaxWidth(Double.MAX_VALUE);
@@ -1309,7 +1316,7 @@ public final class MarkdownRenderer {
             this.maxChars = maxChars;
         }
 
-        synchronized List<Run> get(String key) {
+        synchronized @Nullable List<Run> get(String key) {
             return map.get(key);
         }
 
@@ -1333,9 +1340,12 @@ public final class MarkdownRenderer {
     }
 
     /** Off-thread: tokenizes {@code code} into styled runs, or {@code null} on failure. */
-    static List<Run> tokenizeRuns(String code, IGrammar grammar) {
+    static @Nullable List<Run> tokenizeRuns(String code, IGrammar grammar) {
         try {
             StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(code, grammar);
+            if (spans == null) {
+                return null; // empty code
+            }
             List<Run> runs = new ArrayList<>();
             int pos = 0;
             for (StyleSpan<Collection<String>> span : spans) {
@@ -1394,7 +1404,7 @@ public final class MarkdownRenderer {
             Map.entry("md", "md"));
 
     /** The bundled grammar for a fence info string (first token, case-insensitive), or {@code null}. */
-    public static IGrammar grammarForInfo(String info) {
+    public static @Nullable IGrammar grammarForInfo(String info) {
         if (info == null || info.isBlank()) {
             return null;
         }
@@ -1411,7 +1421,7 @@ public final class MarkdownRenderer {
      * YAML front matter as a two-column table at the top of the document: the key, then its value (a list's
      * items one under the other). Null when it has no entries.
      */
-    private static Node frontMatterBlock(YamlFrontMatterBlock fm) {
+    private static @Nullable Node frontMatterBlock(YamlFrontMatterBlock fm) {
         GridPane grid = new GridPane();
         grid.getStyleClass().add("md-frontmatter");
         int row = 0;
@@ -1564,8 +1574,8 @@ public final class MarkdownRenderer {
      */
     private static final class InlineHtml {
         private final List<String> open = new ArrayList<>();
-        private String href;
-        private String title;
+        private @Nullable String href;
+        private @Nullable String title;
         private int linkFrom;
 
         List<String> styles(List<String> base) {
@@ -1580,7 +1590,7 @@ public final class MarkdownRenderer {
             return out;
         }
 
-        void tag(MarkdownHtml.Tag tag, TextFlow flow, RenderContext ctx) {
+        void tag(MarkdownHtml.@Nullable Tag tag, TextFlow flow, RenderContext ctx) {
             if (tag == null) {
                 return;
             }
@@ -1813,7 +1823,7 @@ public final class MarkdownRenderer {
      * or it has no text at all (a linked badge image). {@code mailto:} is shown as the bare address.
      * Pure; unit-tested.
      */
-    static String printedLinkTarget(String destination, String text) {
+    static @Nullable String printedLinkTarget(String destination, String text) {
         if (destination == null || text == null || text.isBlank()) {
             return null;
         }
@@ -1855,7 +1865,7 @@ public final class MarkdownRenderer {
         }
     }
 
-    private static Text styledText(String s, List<String> styles) {
+    private static Text styledText(@Nullable String s, List<String> styles) {
         Text t = new Text(s);
         t.getStyleClass().add("md-text");
         t.getStyleClass().addAll(styles);
@@ -1868,13 +1878,13 @@ public final class MarkdownRenderer {
      * click, and keyboard focus with Enter/Space, named as a hyperlink for assistive technology. The
      * destination is also left on each node ({@link #LINK_KEY}) for "Copy Link Address".
      */
-    private static void wireLink(TextFlow flow, int from, String dest, String title, RenderContext ctx) {
+    private static void wireLink(TextFlow flow, int from, String dest, @Nullable String title, RenderContext ctx) {
         wireLinkSaying(flow, from, dest, dest == null ? null : linkTooltip(title, dest), ctx);
     }
 
     /** {@link #wireLink} with the tooltip (and accessible) text given, for a link whose address is not what a
      *  reader should be shown (a wiki link's). */
-    private static void wireLinkSaying(TextFlow flow, int from, String dest, String says, RenderContext ctx) {
+    private static void wireLinkSaying(TextFlow flow, int from, String dest, @Nullable String says, RenderContext ctx) {
         if (dest == null || dest.isBlank()) {
             return;
         }
@@ -1913,7 +1923,7 @@ public final class MarkdownRenderer {
 
     /** The value of property {@code key} on {@code from} or its nearest ancestor that has one, else null —
      *  what the pointer is on ({@link #LINK_KEY}, {@link #CODE_KEY}) when the preview menu opens. */
-    static String property(Node from, String key) {
+    static @Nullable String property(@Nullable Node from, String key) {
         for (Node n = from; n != null; n = n.getParent()) {
             if (n.hasProperties() && n.getProperties().get(key) instanceof String value) {
                 return value;
@@ -1923,7 +1933,7 @@ public final class MarkdownRenderer {
     }
 
     /** Puts {@code text} on the system clipboard as plain text (nothing when null). FX thread. */
-    static void copyToClipboard(String text) {
+    static void copyToClipboard(@Nullable String text) {
         if (text != null) {
             javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
             content.putString(text);
@@ -1938,7 +1948,7 @@ public final class MarkdownRenderer {
     }
 
     /** A link's tooltip: its title when it has one, then its destination. Pure. */
-    static String linkTooltip(String title, String dest) {
+    static String linkTooltip(@Nullable String title, String dest) {
         return title == null || title.isBlank() ? dest : title.strip() + "\n" + dest;
     }
 
@@ -1961,7 +1971,8 @@ public final class MarkdownRenderer {
      * own size up to the column. One that cannot be shown — blocked by the policy, missing, unreachable, not
      * an image — is replaced by a placeholder naming its alt text, so a wrong path is visible as such.
      */
-    private static Node imageNode(String dest, String alt, String title, double width, RenderContext ctx) {
+    private static Node imageNode(
+            @Nullable String dest, String alt, @Nullable String title, double width, RenderContext ctx) {
         String url = resolveUrl(dest, ctx.baseDir());
         if (url == null) {
             return inlineCode(imagePlaceholder(alt, null));
@@ -2013,7 +2024,7 @@ public final class MarkdownRenderer {
 
     /** The text shown in place of an image that is not loaded: {@code [image: alt]}, followed by the URL when
      *  the image was <em>blocked</em> by the {@link ImagePolicy} (so the reader sees what was asked for). Pure. */
-    static String imagePlaceholder(String alt, String blockedUrl) {
+    static String imagePlaceholder(String alt, @Nullable String blockedUrl) {
         String label = alt == null || alt.isBlank()
                 ? Messages.tr("markdown.preview.image")
                 : Messages.tr("markdown.preview.imageAlt", alt.strip());
@@ -2037,7 +2048,7 @@ public final class MarkdownRenderer {
      * the document, nearest first — the repository-root convention of a README. Null when there is nothing to
      * resolve against.
      */
-    static String resolveUrl(String dest, Path baseDir) {
+    static @Nullable String resolveUrl(@Nullable String dest, @Nullable Path baseDir) {
         if (dest == null || dest.isBlank()) {
             return null;
         }
@@ -2103,7 +2114,7 @@ public final class MarkdownRenderer {
         return out.toString(java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    private static TaskListItemMarker firstTaskMarker(org.commonmark.node.Node listItem) {
+    private static @Nullable TaskListItemMarker firstTaskMarker(org.commonmark.node.Node listItem) {
         // commonmark-java inserts the marker as the list item's first child (a sibling of the paragraph).
         if (listItem.getFirstChild() instanceof TaskListItemMarker m) {
             return m;

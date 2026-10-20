@@ -62,17 +62,19 @@ public final class MarkdownExportTree {
      * to a wiki target should carry, relative to the document, or null when the target does not resolve — an
      * unresolved link is written as its text, an unresolved embed as its name.
      */
-    public static Node lower(Node root, java.util.function.@Nullable UnaryOperator<String> wikiPath) {
+    public static Node lower(Node root, java.util.function.@Nullable UnaryOperator<@Nullable String> wikiPath) {
         lowerWikiLinks(root, wikiPath);
         return lower(root);
     }
 
     /** Only the wiki-link half of {@link #lower(Node, java.util.function.UnaryOperator)} (HTML keeps the rest). */
-    public static void wikiLinksToLinks(Node root, java.util.function.@Nullable UnaryOperator<String> wikiPath) {
+    public static void wikiLinksToLinks(
+            Node root, java.util.function.@Nullable UnaryOperator<@Nullable String> wikiPath) {
         lowerWikiLinks(root, wikiPath);
     }
 
-    private static void lowerWikiLinks(Node node, java.util.function.@Nullable UnaryOperator<String> wikiPath) {
+    private static void lowerWikiLinks(
+            Node node, java.util.function.@Nullable UnaryOperator<@Nullable String> wikiPath) {
         for (Node c = node.getFirstChild(); c != null; ) {
             Node next = c.getNext();
             if (c instanceof MarkdownWikiLinks.WikiLink wiki) {

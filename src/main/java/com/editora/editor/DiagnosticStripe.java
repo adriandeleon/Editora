@@ -14,6 +14,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A thin severity stripe docked over the editor's vertical scrollbar, mapping the <em>whole document</em>
@@ -43,12 +44,12 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
     private boolean active;
     private boolean redrawPending;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private DiagnosticStripe follower;
+    private @Nullable DiagnosticStripe follower;
 
-    private Tooltip tooltip;
+    private @Nullable Tooltip tooltip;
     /** The message currently shown by {@link #tooltip}; lets a repeated hover over the same mark skip a
      *  re-{@code show()} that would otherwise re-position the popup on every mouse-move (flicker). */
-    private String shownText;
+    private @Nullable String shownText;
     /** Called with a 0-based line when a mark is clicked; injected by {@link EditorBuffer}. */
     private IntConsumer onActivate = line -> {};
 

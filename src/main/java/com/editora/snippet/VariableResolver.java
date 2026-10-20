@@ -104,7 +104,7 @@ public final class VariableResolver implements SnippetParser.Variables {
     }
 
     /** The project root the file belongs to ({@code WORKSPACE_*}, {@code RELATIVE_FILEPATH}); null = none. */
-    public VariableResolver withWorkspace(Path root) {
+    public VariableResolver withWorkspace(@Nullable Path root) {
         this.workspaceFolder =
                 root == null ? "" : root.toAbsolutePath().normalize().toString();
         return this;
@@ -117,7 +117,8 @@ public final class VariableResolver implements SnippetParser.Variables {
     }
 
     /** The buffer language's comment tokens ({@code LINE_COMMENT}, {@code BLOCK_COMMENT_START/_END}). */
-    public VariableResolver withComments(String line, String blockStart, String blockEnd) {
+    public VariableResolver withComments(
+            @Nullable String line, @Nullable String blockStart, @Nullable String blockEnd) {
         this.lineComment = line == null ? "" : line;
         this.blockCommentStart = blockStart == null ? "" : blockStart;
         this.blockCommentEnd = blockEnd == null ? "" : blockEnd;

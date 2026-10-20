@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure anchoring math for Personal Notes (no toolkit; unit-tested). Two concerns:
  *
@@ -49,7 +51,8 @@ public final class NoteAnchors {
      * point). This is what keeps a note through a Replace All, a formatter edit or a history restore that
      * rewrites the lines around it without touching the noted text itself.
      */
-    public static int[] relocateInReplacement(String inserted, int relStart, String selectedText, int length) {
+    public static int @Nullable [] relocateInReplacement(
+            String inserted, int relStart, String selectedText, int length) {
         if (inserted == null || selectedText == null || selectedText.isEmpty()) {
             return null;
         }
@@ -90,7 +93,7 @@ public final class NoteAnchors {
      */
     /** As {@link #relocate(String, int, int, String, String, String, int)} with {@code length} defaulting to
      *  the {@code selectedText} length (the span = the captured text). */
-    public static int[] relocate(
+    public static int @Nullable [] relocate(
             String doc, int savedStart, int savedEnd, String selectedText, String prefix, String suffix) {
         return relocate(
                 doc,
@@ -102,7 +105,7 @@ public final class NoteAnchors {
                 selectedText == null ? 0 : selectedText.length());
     }
 
-    public static int[] relocate(
+    public static int @Nullable [] relocate(
             String doc, int savedStart, int savedEnd, String selectedText, String prefix, String suffix, int length) {
         if (doc == null) {
             return null;

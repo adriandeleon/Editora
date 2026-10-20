@@ -8,6 +8,7 @@ import javafx.scene.paint.Color;
 
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A transparent overlay that highlights <b>all</b> find matches behind the editor text (the active
@@ -38,7 +39,7 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private SearchHighlightOverlay follower;
+    private @Nullable SearchHighlightOverlay follower;
 
     SearchHighlightOverlay(CodeArea area) {
         this.area = area;
@@ -215,7 +216,7 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
         return visited;
     }
 
-    private Bounds toLocal(Bounds screen) {
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

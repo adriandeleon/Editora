@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Moves code lenses with the text they annotate when an edit adds or removes lines. Pure.
  *
@@ -31,7 +33,7 @@ final class CodeLensShift {
      * The lenses after {@code changes} to {@code area}'s text, or {@code null} when nothing moves: a change
      * that adds or removes lines moves the lenses below it and drops those inside the removed text.
      */
-    static <V> Map<Integer, V> afterChanges(
+    static <V> @Nullable Map<Integer, V> afterChanges(
             Map<Integer, V> lenses,
             java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes,
             org.fxmisc.richtext.CodeArea area) {

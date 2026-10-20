@@ -1733,7 +1733,7 @@ public class Settings {
     }
 
     /** Markdown and plain text: the languages whose lines are paragraphs, governed by {@link #wordWrapProse}. */
-    public static boolean isProseLanguage(String language) {
+    public static boolean isProseLanguage(@Nullable String language) {
         return language == null || language.equals("plaintext") || language.equals("markdown");
     }
 

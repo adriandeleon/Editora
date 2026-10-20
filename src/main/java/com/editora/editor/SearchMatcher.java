@@ -6,6 +6,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, allocation-light search core shared by the in-editor find bar and multi-file search. Finds all
  * non-overlapping matches of a query in a text with literal or regex matching, optional case sensitivity
@@ -245,7 +247,7 @@ public final class SearchMatcher {
     }
 
     /** The regex compile error description, or {@code null} if {@code query} is a valid pattern. */
-    public static String regexError(String query) {
+    public static @Nullable String regexError(String query) {
         try {
             Pattern.compile(query == null ? "" : query);
             return null;
@@ -380,7 +382,7 @@ public final class SearchMatcher {
      * takes something away — a MULTILINE {@code ^} refuses to match at the end of the input, so {@code ^},
      * {@code ^$} and {@code ^\s*$} would all miss an empty line.
      */
-    public static Pattern compileRegex(String query, boolean caseSensitive, boolean wholeWord) {
+    public static @Nullable Pattern compileRegex(String query, boolean caseSensitive, boolean wholeWord) {
         return compile(query, caseSensitive, wholeWord, false);
     }
 
@@ -389,11 +391,12 @@ public final class SearchMatcher {
      * or {@code null} on a bad pattern: {@code ^} and {@code $} anchor at every line rather than only at the
      * document's two ends.
      */
-    public static Pattern compileDocumentRegex(String query, boolean caseSensitive, boolean wholeWord) {
+    public static @Nullable Pattern compileDocumentRegex(String query, boolean caseSensitive, boolean wholeWord) {
         return compile(query, caseSensitive, wholeWord, true);
     }
 
-    private static Pattern compile(String query, boolean caseSensitive, boolean wholeWord, boolean multiline) {
+    private static @Nullable Pattern compile(
+            String query, boolean caseSensitive, boolean wholeWord, boolean multiline) {
         String q = query == null ? "" : query;
         // Whole-word means "no word character immediately before or after the match" — the same test the
         // literal path makes (isWordBounded) and the half boundaries ripgrep -w uses. The query sits in a

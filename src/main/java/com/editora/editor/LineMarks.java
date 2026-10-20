@@ -7,6 +7,8 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.function.IntFunction;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure line arithmetic shared by the gutter marks that pin themselves to a line — bookmarks
  * ({@link BookmarkManager}) and breakpoints ({@link BreakpointManager}). Both used to carry their own copy
@@ -171,7 +173,7 @@ final class LineMarks {
             int removedNL,
             int insertedNL,
             int paragraphCount,
-            IntFunction<String> lineTextAt) {
+            @Nullable IntFunction<String> lineTextAt) {
         return shift(
                 current,
                 kind,
@@ -186,7 +188,7 @@ final class LineMarks {
             Kind<T> kind,
             Edit edit,
             int paragraphCount,
-            IntFunction<String> lineTextAt) {
+            @Nullable IntFunction<String> lineTextAt) {
         int startLine = edit.startLine();
         boolean atLineStart = edit.atLineStart();
         int removedNL = edit.removedNL();
@@ -251,7 +253,7 @@ final class LineMarks {
             List<T> displaced,
             int first,
             int last,
-            IntFunction<String> lineTextAt,
+            @Nullable IntFunction<String> lineTextAt,
             boolean sameLineCount) {
         List<T> unmatched = new ArrayList<>();
         if (sameLineCount) {

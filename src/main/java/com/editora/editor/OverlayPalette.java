@@ -7,6 +7,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Colours for the Canvas-drawn editor overlays (whitespace markers, diagnostic squiggles, search washes,
  * inline debug values). A Canvas cannot be styled from CSS, and the overlays used one fixed colour each —
@@ -43,8 +45,8 @@ final class OverlayPalette {
             Color indentGuide,
             Color ground) {}
 
-    private static Color cachedFor;
-    private static Colors cached;
+    private static @Nullable Color cachedFor;
+    private static @Nullable Colors cached;
 
     private OverlayPalette() {}
 

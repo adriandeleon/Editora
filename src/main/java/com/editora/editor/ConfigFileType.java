@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Resolves a file name or full path to a language id when the type is determined by the file's
  * <em>name or location</em> rather than a plain extension (e.g. {@code Dockerfile}, {@code ~/.ssh/config},
@@ -22,7 +24,7 @@ public final class ConfigFileType {
     private ConfigFileType() {}
 
     /** The language id for a name/location-determined config file, or {@code null} if not special. */
-    public static String resolve(String fileNameOrPath) {
+    public static @Nullable String resolve(String fileNameOrPath) {
         if (fileNameOrPath == null || fileNameOrPath.isEmpty()) {
             return null;
         }

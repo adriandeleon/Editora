@@ -15,6 +15,7 @@ import javafx.scene.text.TextFlow;
 
 import com.editora.i18n.Messages;
 import com.editora.maven.PomSummary;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders a {@link PomSummary} as the pom.xml preview: a header (artifact name, coordinates, packaging,
@@ -233,7 +234,7 @@ public final class PomPreview {
     }
 
     /** Where an indirect version came from — the property reference as written, or {@code managed}. */
-    private static Node versionTag(String written, String effective, boolean managed) {
+    private static @Nullable Node versionTag(String written, String effective, boolean managed) {
         String tag = versionSource(written, effective, managed);
         return tag.isEmpty() ? null : styledLabel(tag, "pom-tag");
     }
@@ -245,7 +246,7 @@ public final class PomPreview {
         return !written.isEmpty() && !written.equals(effective) ? written : "";
     }
 
-    private static Node dependencyTags(PomSummary.Dependency d) {
+    private static @Nullable Node dependencyTags(PomSummary.Dependency d) {
         StringBuilder sb = new StringBuilder(versionSource(d.version(), d.effectiveVersion(), d.managed()));
         // Scope is only worth the ink when it is not the default; type/classifier/optional always are.
         appendTag(sb, !d.scope().isEmpty() && !"compile".equals(d.scope()) ? d.scope() : "");
@@ -283,7 +284,7 @@ public final class PomPreview {
         return g;
     }
 
-    private static void addRow(GridPane g, Node name, Node version, Node tags, boolean indented) {
+    private static void addRow(GridPane g, Node name, @Nullable Node version, @Nullable Node tags, boolean indented) {
         int row = g.getRowCount();
         g.add(indent(name, indented), 0, row);
         if (version != null) {

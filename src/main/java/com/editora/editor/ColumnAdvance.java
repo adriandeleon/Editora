@@ -3,6 +3,8 @@ package com.editora.editor;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The width of one text column in the editor font, from the font's own metrics.
  *
@@ -18,12 +20,12 @@ final class ColumnAdvance {
     /** Enough digits that sub-pixel rounding of the run's width does not show in one column. */
     private static final int SAMPLE = 64;
 
-    private String family;
+    private @Nullable String family;
     private double size = -1;
     private double advance;
 
     /** The advance of one column of {@code family} at {@code size} px; cached until either changes. */
-    double of(String family, double size) {
+    double of(@Nullable String family, double size) {
         if (size != this.size || !java.util.Objects.equals(family, this.family)) {
             this.family = family;
             this.size = size;

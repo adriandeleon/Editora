@@ -43,7 +43,7 @@ public final class EncryptedFiles {
     }
 
     /** The encryption extension of {@code fileName} ({@code "gpg"}, …), lower case, or null. */
-    public static String extensionOf(String fileName) {
+    public static @Nullable String extensionOf(String fileName) {
         return EncryptedNames.extensionOf(fileName);
     }
 

@@ -9,6 +9,7 @@ import com.editora.snippet.Snippet;
 import com.editora.snippet.TabExpansion;
 import com.editora.snippet.VariableResolver;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What {@link EditorBuffer} reads off a view to expand a snippet there: the trigger before the caret, and
@@ -23,7 +24,7 @@ final class SnippetTyping {
      * offset — or null when there is none or Tab may not expand here (see {@link TabExpansion#allowed}).
      * Looks at the caret's line only, and at no more of it than the completion prefix does.
      */
-    static TabExpansion.Match triggerAtCaret(
+    static TabExpansion.@Nullable Match triggerAtCaret(
             CodeArea a, String language, boolean prose, BiFunction<String, String, Snippet> provider) {
         return triggerAtCaret(a, language, prose, provider, false);
     }
@@ -33,7 +34,7 @@ final class SnippetTyping {
      * they would expand — there an inline word trigger is offered in the middle of a sentence too; a bare Tab
      * expands it only when the word is alone on its line.
      */
-    static TabExpansion.Match triggerAtCaret(
+    static TabExpansion.@Nullable Match triggerAtCaret(
             CodeArea a, String language, boolean prose, BiFunction<String, String, Snippet> provider, boolean offered) {
         int caret = a.getCaretPosition();
         int base =
@@ -69,7 +70,8 @@ final class SnippetTyping {
     }
 
     /** The variables for a snippet replacing {@code [from, to)} of {@code a}, in file {@code path} (null = untitled). */
-    static VariableResolver variables(CodeArea a, int from, int to, Path path, String language, Path workspace) {
+    static VariableResolver variables(
+            CodeArea a, int from, int to, @Nullable Path path, String language, @Nullable Path workspace) {
         Path abs = path == null ? null : path.toAbsolutePath();
         String clip = javafx.scene.input.Clipboard.getSystemClipboard().hasString()
                 ? LineEndings.toLf(
@@ -95,7 +97,13 @@ final class SnippetTyping {
 
     /** Parses {@code snippet} for expansion over {@code [from, to)}: its {@link #body} with {@link #variables}. */
     static com.editora.snippet.ParsedSnippet parse(
-            com.editora.snippet.Snippet snippet, CodeArea a, int from, int to, Path path, String language, Path root) {
+            com.editora.snippet.Snippet snippet,
+            CodeArea a,
+            int from,
+            int to,
+            @Nullable Path path,
+            String language,
+            @Nullable Path root) {
         return com.editora.snippet.SnippetParser.parse(
                 body(snippet, a, language), variables(a, from, to, path, language, root));
     }

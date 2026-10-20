@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A resolved highlight span from an LSP server's semantic tokens: 0-based {@code line} and
  * {@code startChar}, a character {@code length}, and a space-separated CSS class string
@@ -31,7 +33,7 @@ public record SemanticToken(int line, int startChar, int length, String cssClass
      * @param erasedLast last line of that range
      * @param delta lines the text has gained since {@code current} was anchored (0 when intact)
      */
-    public static int[] changedLines(
+    public static int @Nullable [] changedLines(
             java.util.List<SemanticToken> current,
             java.util.List<SemanticToken> next,
             int erasedFirst,

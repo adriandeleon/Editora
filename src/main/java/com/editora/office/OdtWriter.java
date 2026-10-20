@@ -62,7 +62,7 @@ public final class OdtWriter {
     private record Pictures(List<Embedded> list, Path baseDir, Map<Heading, String> anchors, Set<String> bookmarks) {}
 
     /** {@code meta.xml}: the document's title and the application that wrote it. */
-    static String metaXml(String title) {
+    static String metaXml(@Nullable String title) {
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                 + "<office:document-meta xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\""
                 + " xmlns:dc=\"http://purl.org/dc/elements/1.1/\""

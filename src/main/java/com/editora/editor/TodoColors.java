@@ -5,6 +5,8 @@ import java.util.Map;
 
 import javafx.scene.paint.Color;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The colours of TODO-pattern marks, parsed once per distinct configured value.
  *
@@ -26,16 +28,16 @@ final class TodoColors {
     private TodoColors() {}
 
     /** {@code web} as an opaque colour. */
-    static Color solid(String web) {
+    static Color solid(@Nullable String web) {
         return resolve(SOLID, web, 1.0);
     }
 
     /** {@code web} at {@code alpha} — one alpha per caller, since the cache is keyed by the string alone. */
-    static Color wash(String web, double alpha) {
+    static Color wash(@Nullable String web, double alpha) {
         return resolve(WASH, web, alpha);
     }
 
-    private static Color resolve(Map<String, Color> cache, String web, double alpha) {
+    private static Color resolve(Map<String, Color> cache, @Nullable String web, double alpha) {
         Color color = cache.get(web);
         if (color == null) {
             try {

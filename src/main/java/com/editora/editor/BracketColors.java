@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Bracket-pair colorization: tints each {@code () [] {}} by its nesting depth so "how deep am I?" is
@@ -140,7 +141,8 @@ final class BracketColors {
         }
 
         /** The next {@code length} characters carry token class {@code style} ({@code null} = none). */
-        void run(String style, int length) {
+        void run(@Nullable String style, int length) {
+
             int end = Math.min(text.length(), pos + length);
             if (!"string".equals(style) && !"comment".equals(style)) {
                 for (int i = pos; i < end; i++) {
@@ -188,7 +190,7 @@ final class BracketColors {
      * stylesheet loaded after {@code syntax.css} — so the theme's punctuation colour would quietly win and
      * colorization would appear to work only under the default theme.
      */
-    static StyleSpans<Collection<String>> buildSpans(int length, List<int[]> marks) {
+    static @Nullable StyleSpans<Collection<String>> buildSpans(int length, List<int[]> marks) {
         if (length <= 0 || marks == null || marks.isEmpty()) {
             return null;
         }

@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Translates a completion's resolved {@code additionalTextEdits} across the accept's own insertion.
  *
@@ -41,7 +43,7 @@ public final class LspEditShift {
      * is nowhere honest to put it — better a missing import than one spliced into the middle of the accepted
      * text. Null/empty input, or a change that moved nothing, is returned untouched.
      */
-    public static List<LspTextEdit> shift(List<LspTextEdit> edits, Change change) {
+    public static List<LspTextEdit> shift(List<LspTextEdit> edits, @Nullable Change change) {
         if (edits == null || edits.isEmpty() || change == null || change.identity()) {
             return edits;
         }
@@ -63,7 +65,7 @@ public final class LspEditShift {
      * above the caret); positions after it move by the change's line delta, and those sharing the replaced
      * range's last line also move by its column delta.
      */
-    static int[] shiftPosition(int line, int col, Change c) {
+    static int @Nullable [] shiftPosition(int line, int col, Change c) {
         if (atOrBefore(line, col, c.startLine(), c.startCol())) {
             return new int[] {line, col};
         }

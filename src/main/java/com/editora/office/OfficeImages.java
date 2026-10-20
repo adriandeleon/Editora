@@ -39,7 +39,7 @@ public final class OfficeImages {
     /** The image's bytes through the one guarded fetcher the preview uses — internal-address block re-checked
      *  on every redirect hop, UNC refusal, regular files only, and a byte cap — so exporting a document cannot
      *  reach what previewing it refuses. */
-    private static byte[] rawBytes(String src, Path baseDir) {
+    private static byte @Nullable [] rawBytes(String src, Path baseDir) {
         return PreviewImageLoader.fetchForExport(src, baseDir);
     }
 

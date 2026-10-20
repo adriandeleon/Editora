@@ -166,7 +166,7 @@ public final class MarkdownLinks {
      * place and its definition is pointed at the new destination. The caret ends behind the link.
      */
     public static MarkdownEdit set(
-            String text, Link link, int selStart, int selEnd, String linkText, String destination) {
+            String text, @Nullable Link link, int selStart, int selEnd, String linkText, String destination) {
         String dest = destination == null ? "" : destination.strip();
         if (link == null) {
             String made = inline(linkText, dest, false);

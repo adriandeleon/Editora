@@ -11,6 +11,7 @@ import javafx.scene.paint.Color;
 import com.editora.logviewer.LogLevel;
 import com.editora.logviewer.LogPatterns;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A transparent overlay that tints each visible log line by its severity: a solid colored bar at the
@@ -32,6 +33,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         boolean filtered();
 
         /** The level of visible paragraph {@code paragraph} in the complete log (null for none). */
+        @Nullable
         LogLevel levelAt(int paragraph);
     }
 
@@ -54,7 +56,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private LogHighlightOverlay follower;
+    private @Nullable LogHighlightOverlay follower;
 
     private final Map<String, LogLevel> levelCache = lru(8000);
 
@@ -63,7 +65,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
 
     private int inheritedFirst = -1;
     private int inheritedEdits = -1;
-    private LogLevel inherited;
+    private @Nullable LogLevel inherited;
 
     private static <K, V> Map<K, V> lru(int max) {
         return new java.util.LinkedHashMap<>(256, 0.75f, true) {
@@ -184,7 +186,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         return levelScans;
     }
 
-    private LogLevel levelOf(String line) {
+    private @Nullable LogLevel levelOf(String line) {
         // Not computeIfAbsent: it records no mapping for a null result, and "no level" is the answer for
         // every stack-trace and continuation line — exactly the lines that would then be re-scanned on
         // each repaint.
@@ -240,7 +242,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
     }
 
     /** The inherited level entering {@code first}: the nearest leveled line in the bounded window above it. */
-    private LogLevel inheritedLevelAt(int first) {
+    private @Nullable LogLevel inheritedLevelAt(int first) {
         if (first == inheritedFirst && edits == inheritedEdits) {
             return inherited; // a horizontal scroll, a resize or a caret blink repaints the same lines
         }
@@ -287,7 +289,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         };
     }
 
-    private Color washFor(LogLevel level) {
+    private @Nullable Color washFor(LogLevel level) {
         return switch (level) {
             case FATAL -> tints.fatalWash();
             case ERROR -> tints.errorWash();
@@ -296,7 +298,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         };
     }
 
-    private Bounds toLocal(Bounds screen) {
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested detector for an interpreter <strong>shebang</strong> on a file's first line
  * (e.g. {@code #!/usr/bin/env python3}), so a file with no telling extension still gets the right
@@ -28,7 +30,7 @@ public final class Shebang {
      * with, and {@code javaSource} = the {@code --source N} version for a Java compact-source
      * shebang (else {@code null}).
      */
-    public record Result(String extension, Integer javaSource) {}
+    public record Result(String extension, @Nullable Integer javaSource) {}
 
     /** Interpreter basename (version stripped) → representative extension for the languages we support. */
     private static final Map<String, String> INTERPRETERS = Map.ofEntries(
@@ -72,7 +74,7 @@ public final class Shebang {
      * Parses the file's first line as a shebang, or returns {@code null} when it is not a {@code #!}
      * line or names an interpreter we do not map to a supported language.
      */
-    public static Result parse(String firstLine) {
+    public static @Nullable Result parse(String firstLine) {
         if (firstLine == null) {
             return null;
         }
@@ -135,7 +137,7 @@ public final class Shebang {
     }
 
     /** Convenience: the representative extension for {@code firstLine}, or {@code null}. */
-    public static String extension(String firstLine) {
+    public static @Nullable String extension(String firstLine) {
         Result r = parse(firstLine);
         return r == null ? null : r.extension();
     }
@@ -229,7 +231,7 @@ public final class Shebang {
     }
 
     /** Scans the remaining tokens for {@code --source N} (or {@code --source=N}); the integer N, or {@code null}. */
-    private static Integer javaSourceVersion(String[] tokens, int from) {
+    private static @Nullable Integer javaSourceVersion(String[] tokens, int from) {
         for (int i = from; i < tokens.length; i++) {
             String t = tokens[i];
             if (t.equals("--source") && i + 1 < tokens.length) {
@@ -242,7 +244,7 @@ public final class Shebang {
         return null;
     }
 
-    private static Integer parsePositiveInt(String s) {
+    private static @Nullable Integer parsePositiveInt(String s) {
         try {
             int v = Integer.parseInt(s.strip());
             return v > 0 ? v : null;

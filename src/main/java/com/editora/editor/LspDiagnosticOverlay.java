@@ -10,6 +10,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Draws severity-colored wavy underlines beneath LSP diagnostics on top of the editor, without touching
@@ -34,7 +35,7 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private LspDiagnosticOverlay follower;
+    private @Nullable LspDiagnosticOverlay follower;
 
     LspDiagnosticOverlay(CodeArea area) {
         this.area = area;
@@ -285,7 +286,7 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
         g.stroke();
     }
 
-    private Bounds toLocal(Bounds screen) {
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

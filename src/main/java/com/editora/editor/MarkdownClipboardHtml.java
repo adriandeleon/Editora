@@ -15,6 +15,7 @@ import org.commonmark.node.Paragraph;
 import org.commonmark.node.ThematicBreak;
 import org.commonmark.renderer.html.AttributeProvider;
 import org.commonmark.renderer.html.HtmlRenderer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders a Markdown document to the HTML <em>fragment</em> put on the clipboard's {@code text/html} flavor,
@@ -68,7 +69,7 @@ public final class MarkdownClipboardHtml {
      * picture it names by a relative path travels with the fragment (as a {@code data:} URI) instead of as a
      * path that means nothing wherever the fragment is pasted.
      */
-    public static String toHtml(String markdown, boolean mathEnabled, java.nio.file.Path documentFile) {
+    public static String toHtml(String markdown, boolean mathEnabled, java.nio.file.@Nullable Path documentFile) {
         return toHtmlIn(
                 markdown,
                 mathEnabled,
@@ -76,7 +77,7 @@ public final class MarkdownClipboardHtml {
     }
 
     /** {@link #toHtml(String, boolean, java.nio.file.Path)} for Markdown of a document in {@code baseDir}. */
-    static String toHtmlIn(String markdown, boolean mathEnabled, java.nio.file.Path baseDir) {
+    static String toHtmlIn(String markdown, boolean mathEnabled, java.nio.file.@Nullable Path baseDir) {
         return "<div style=\"" + ROOT_STYLE + "\">\n" + render(markdown, mathEnabled, baseDir, true) + "</div>";
     }
 
@@ -89,7 +90,8 @@ public final class MarkdownClipboardHtml {
         return render(markdown, mathEnabled, null, false);
     }
 
-    private static String render(String markdown, boolean mathEnabled, java.nio.file.Path baseDir, boolean styled) {
+    private static String render(
+            String markdown, boolean mathEnabled, java.nio.file.@Nullable Path baseDir, boolean styled) {
         // What lands on the clipboard is pasted into mail clients, chat and word processors, which render it
         // with their own privileges — and the Markdown may be someone else's file. So the fragment carries no
         // raw HTML from the document (it shows as text, like the preview shows it) and no script-capable URL
@@ -116,7 +118,7 @@ public final class MarkdownClipboardHtml {
      * paste cannot show one), or its absolute {@code file:} URI when it is too large to inline. Null: leave
      * the source as written (nothing to resolve it against, or no such file).
      */
-    static String portableImageSrc(String src, java.nio.file.Path baseDir) {
+    static @Nullable String portableImageSrc(String src, java.nio.file.@Nullable Path baseDir) {
         if (src == null || src.isBlank() || baseDir == null || src.matches("(?i)^[a-z][a-z0-9+.-]+:.*")) {
             return null;
         }
@@ -168,9 +170,9 @@ public final class MarkdownClipboardHtml {
      */
     private static final class InlineStyles implements AttributeProvider {
 
-        private final java.nio.file.Path baseDir;
+        private final java.nio.file.@Nullable Path baseDir;
 
-        InlineStyles(java.nio.file.Path baseDir) {
+        InlineStyles(java.nio.file.@Nullable Path baseDir) {
             this.baseDir = baseDir;
         }
 
@@ -191,7 +193,7 @@ public final class MarkdownClipboardHtml {
             attributes.put("style", existing == null || existing.isBlank() ? style : existing + ";" + style);
         }
 
-        private String styleFor(Node node, String tagName) {
+        private @Nullable String styleFor(Node node, String tagName) {
             // Keyed off the emitted tag, not the node type, for two reasons: the GFM tables extension's node
             // types live in a separate package, and commonmark calls the provider TWICE for a code block —
             // once for the <pre> and once for the <code> inside it, both with the same FencedCodeBlock node.

@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.List;
 import java.util.function.IntFunction;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Which request of a {@code .http} buffer shows the running ■ after the requests moved (a line inserted
  * above, a request added): the one whose method/URL line still reads as it did when the run started, nearest
@@ -29,7 +31,11 @@ final class HttpRunMark {
      * common, and the nearest alone marked the wrong one after a request was inserted above.
      */
     static int find(
-            List<Integer> requestLines, IntFunction<String> textOf, String wanted, List<String> wantedBlock, int near) {
+            List<Integer> requestLines,
+            IntFunction<String> textOf,
+            @Nullable String wanted,
+            List<String> wantedBlock,
+            int near) {
         if (wanted == null) {
             return -1;
         }

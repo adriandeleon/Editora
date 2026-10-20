@@ -34,9 +34,12 @@ public record Completion(
     public record Protocol(
             String filterText,
             @Nullable ReplaceRange replaceRange,
-            java.util.List<String> commitCharacters,
+            java.util.@Nullable List<String> commitCharacters,
             int insertTextMode) {
-        public Protocol(String filterText, ReplaceRange replaceRange, java.util.List<String> commitCharacters) {
+        public Protocol(
+                String filterText,
+                @Nullable ReplaceRange replaceRange,
+                java.util.@Nullable List<String> commitCharacters) {
             this(filterText, replaceRange, commitCharacters, 0);
         }
 
@@ -183,7 +186,7 @@ public record Completion(
     public static Completion lsp(
             String label,
             String insert,
-            String detail,
+            @Nullable String detail,
             @Nullable Runnable onAccept,
             CompletionIconKind iconKind,
             @Nullable String sortText,

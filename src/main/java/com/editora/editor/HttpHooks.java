@@ -9,6 +9,7 @@ import java.util.function.Supplier;
 
 import com.editora.http.HttpVariableIndex;
 import com.editora.markdown.MarkdownLint;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What a {@code .http} buffer asks of the window, injected once ({@link EditorBuffer#setHttpHooks}): run the request
@@ -30,9 +31,9 @@ public record HttpHooks(
         IntConsumer run,
         Runnable runAll,
         Runnable cancel,
-        Supplier<String> runTooltip,
+        Supplier<@Nullable String> runTooltip,
         BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> variableLint,
-        Supplier<HttpVariableIndex.Context> variableContext,
+        @Nullable Supplier<HttpVariableIndex.Context> variableContext,
         Function<List<MarkdownLint.Diagnostic>, List<CodeAction>> variableFixes) {
 
     /** The check of a buffer that has none: no marks are shown (see {@link #checksVariables}). */
@@ -40,7 +41,8 @@ public record HttpHooks(
             (text, done) -> done.accept(List.of());
 
     /** No hooks: nothing runs, no tooltip, no marks, no completion context. */
-    public static final HttpHooks NONE = new HttpHooks(null, null, null, null, null, null, null);
+    public static final HttpHooks NONE =
+            new HttpHooks(line -> {}, () -> {}, () -> {}, () -> null, NO_LINT, null, marks -> List.of());
 
     public HttpHooks {
         run = run == null ? line -> {} : run;
@@ -57,10 +59,10 @@ public record HttpHooks(
             IntConsumer run,
             Runnable runAll,
             Runnable cancel,
-            Supplier<String> runTooltip,
+            Supplier<@Nullable String> runTooltip,
             BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> variableLint,
             Supplier<HttpVariableIndex.Context> variableContext) {
-        this(run, runAll, cancel, runTooltip, variableLint, variableContext, null);
+        this(run, runAll, cancel, runTooltip, variableLint, variableContext, marks -> List.of());
     }
 
     /** Whether the {@code {{variable}}} check is a real one (the marks are shown), not {@link #NO_LINT}. */

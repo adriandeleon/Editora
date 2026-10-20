@@ -11,6 +11,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.cron.CronExpression;
 import com.editora.cron.Crontab;
 import com.editora.i18n.Messages;
 
@@ -77,7 +78,7 @@ public final class CrontabPreview {
         command.setWrapText(true);
         box.getChildren().add(command);
 
-        if (!job.ok()) {
+        if (!job.ok() || !(job.expr() instanceof CronExpression expr)) {
             Label err = new Label(Messages.tr("crontab.invalid", job.error()));
             err.getStyleClass().add("crontab-error");
             err.setWrapText(true);
@@ -85,23 +86,23 @@ public final class CrontabPreview {
             return box;
         }
 
-        Label schedule = new Label(job.expr().describe());
+        Label schedule = new Label(expr.describe());
         schedule.getStyleClass().add("crontab-schedule");
         schedule.setWrapText(true);
         box.getChildren().add(schedule);
 
-        Label next = new Label(nextRunsText(job, now));
+        Label next = new Label(nextRunsText(expr, now));
         next.getStyleClass().add("crontab-nextruns");
         next.setWrapText(true);
         box.getChildren().add(next);
         return box;
     }
 
-    private static String nextRunsText(Crontab.Job job, LocalDateTime now) {
-        if (job.expr().isReboot()) {
+    private static String nextRunsText(CronExpression expr, LocalDateTime now) {
+        if (expr.isReboot()) {
             return Messages.tr("crontab.onReboot");
         }
-        List<LocalDateTime> runs = job.expr().nextRuns(now, NEXT_RUNS);
+        List<LocalDateTime> runs = expr.nextRuns(now, NEXT_RUNS);
         if (runs.isEmpty()) {
             return Messages.tr("crontab.noRuns");
         }

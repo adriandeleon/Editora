@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.Arrays;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What an encrypted buffer knows about its file's encryption: who can read it, how it is written, and whether
  * its text is here yet. A buffer with an {@code EncryptionState} is <em>sensitive</em>: every feature that would
@@ -62,10 +64,10 @@ public final class EncryptionState {
     private Mode mode;
     private List<Recipient> recipients;
     private boolean armored;
-    private char[] passphrase;
-    private String signature;
+    private char @Nullable [] passphrase;
+    private @Nullable String signature;
     private boolean recipientsPending;
-    private Lock lock;
+    private @Nullable Lock lock;
     private String lockDetail = "";
 
     public EncryptionState(Mode mode, List<Recipient> recipients, boolean armored) {
@@ -121,13 +123,13 @@ public final class EncryptionState {
     }
 
     /** The passphrase of a passphrase-only file (a copy is kept), or null to forget it. */
-    public void setPassphrase(char[] value) {
+    public void setPassphrase(char @Nullable [] value) {
         wipe();
         this.passphrase = value == null ? null : value.clone();
     }
 
     /** A copy of the kept passphrase (the caller wipes it after use), or null. */
-    public char[] passphrase() {
+    public char @Nullable [] passphrase() {
         return passphrase == null ? null : passphrase.clone();
     }
 
@@ -136,7 +138,7 @@ public final class EncryptionState {
     }
 
     /** "Signed by …" text when the decrypted file carried a signature, else null. */
-    public String signature() {
+    public @Nullable String signature() {
         return signature;
     }
 
@@ -145,7 +147,7 @@ public final class EncryptionState {
     }
 
     /** Why the buffer has no text yet, or null once it is decrypted. */
-    public Lock lock() {
+    public @Nullable Lock lock() {
         return lock;
     }
 

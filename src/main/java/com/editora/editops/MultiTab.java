@@ -32,7 +32,7 @@ public final class MultiTab {
     /** {@link Edits} for a caller whose document is not a String: it reads what it needs itself. */
     @FunctionalInterface
     public interface CaretEdits {
-        Indenter.TabEdit edit(int selStart, int selEnd, boolean shift);
+        Indenter.@Nullable TabEdit edit(int selStart, int selEnd, boolean shift);
     }
 
     /** One replacement, in the coordinates of the text before any of them. */
@@ -64,10 +64,11 @@ public final class MultiTab {
         for (int i = 0; i < n; i++) {
             int anchor = carets.get(i)[0];
             int caret = carets.get(i)[1];
-            wanted[i] = edits.edit(Math.min(anchor, caret), Math.max(anchor, caret), shift);
-            if (wanted[i] == null) {
+            Indenter.TabEdit edit = edits.edit(Math.min(anchor, caret), Math.max(anchor, caret), shift);
+            if (edit == null) {
                 return null;
             }
+            wanted[i] = edit;
             order.add(i);
         }
         order.sort(Comparator.comparingInt((Integer i) -> wanted[i].from()).thenComparingInt(i -> wanted[i].to()));

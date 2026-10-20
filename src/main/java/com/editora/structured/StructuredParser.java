@@ -61,7 +61,7 @@ public final class StructuredParser {
 
     private StructuredParser() {}
 
-    public static Parsed parse(String text, Format fmt) {
+    public static Parsed parse(String text, @Nullable Format fmt) {
         if (fmt == null) {
             return new Parsed(null, null, "unsupported format");
         }

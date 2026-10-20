@@ -16,6 +16,7 @@ import javafx.scene.layout.StackPane;
 
 import com.editora.i18n.Messages;
 import com.editora.mermaid.Mermaid;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders Mermaid diagrams to JavaFX nodes for the preview, asynchronously. Mirrors
@@ -30,8 +31,11 @@ import com.editora.mermaid.Mermaid;
 public final class MermaidImages {
 
     /** A finished render: a {@code loaded} image (success) or an {@code error} message (failure). */
-    record Cached(PreviewImageLoader.Loaded loaded, String error, long at) {
-        Cached(PreviewImageLoader.Loaded loaded, String error) {
+    record Cached(
+            PreviewImageLoader.@Nullable Loaded loaded,
+            @Nullable String error,
+            long at) {
+        Cached(PreviewImageLoader.@Nullable Loaded loaded, @Nullable String error) {
             this(loaded, error, System.currentTimeMillis());
         }
 
@@ -97,7 +101,7 @@ public final class MermaidImages {
      * Stores a finished render: it replaces the previous render of its surface, and the cache is then
      * trimmed to its byte budget (diagrams are rendered at 2×, so 48 of them is no memory bound by itself).
      */
-    static void store(String key, Cached result, String surfaceKey) {
+    static void store(String key, Cached result, @Nullable String surfaceKey) {
         String replaced = NEWEST.record(surfaceKey, key);
         synchronized (CACHE) {
             if (replaced != null) {
@@ -165,12 +169,12 @@ public final class MermaidImages {
     /** Whether generation {@code gen} for {@code surfaceKey} has been superseded by a newer submission — then
      *  the queued render should skip its expensive spawn. A null surface (Markdown blocks) is never
      *  superseded. Pure; unit-tested via {@link #superseded(String, long, Long)}. */
-    private static boolean superseded(String surfaceKey, long gen) {
+    private static boolean superseded(@Nullable String surfaceKey, long gen) {
         return surfaceKey != null && superseded(surfaceKey, gen, LATEST.get(surfaceKey));
     }
 
     /** Pure core: a render is superseded when a newer generation was recorded for its surface. */
-    static boolean superseded(String surfaceKey, long gen, Long latest) {
+    static boolean superseded(String surfaceKey, long gen, @Nullable Long latest) {
         return surfaceKey != null && latest != null && latest.longValue() != gen;
     }
 
@@ -190,7 +194,7 @@ public final class MermaidImages {
      * coalesces live-editing re-renders: only the latest render per surface actually spawns mmdc, so typing
      * in a {@code .mmd} can't pile up ~4 s Chromium renders (#458).
      */
-    public static Node node(String source, java.util.function.DoubleUnaryOperator sizer, String surfaceKey) {
+    public static Node node(String source, java.util.function.DoubleUnaryOperator sizer, @Nullable String surfaceKey) {
         return node(source, sizer, surfaceKey, null);
     }
 
@@ -200,7 +204,10 @@ public final class MermaidImages {
      * a Markdown preview toggled to the theme the app is not in, it has to be rendered for the preview.
      */
     public static Node node(
-            String source, java.util.function.DoubleUnaryOperator sizer, String surfaceKey, Boolean darkTheme) {
+            String source,
+            java.util.function.DoubleUnaryOperator sizer,
+            @Nullable String surfaceKey,
+            @Nullable Boolean darkTheme) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-mermaid");
         fill(host, source, sizer, surfaceKey, darkTheme == null ? dark : darkTheme);
@@ -219,7 +226,7 @@ public final class MermaidImages {
             StackPane host,
             String source,
             java.util.function.DoubleUnaryOperator sizer,
-            String surfaceKey,
+            @Nullable String surfaceKey,
             boolean useDark) {
         String key = key(source, useDark);
         Cached hit = CACHE.get(key);
@@ -314,7 +321,7 @@ public final class MermaidImages {
     }
 
     /** A node showing an already finished render — the synchronous counterpart of {@link #node}, for print. */
-    static Node printNode(Cached render, java.util.function.DoubleUnaryOperator sizer) {
+    static Node printNode(@Nullable Cached render, java.util.function.DoubleUnaryOperator sizer) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-mermaid");
         applyCached(host, render == null ? new Cached(null, null) : render, sizer);
@@ -339,7 +346,7 @@ public final class MermaidImages {
      * Builds the error message for a failed render: maid's line/column diagnostics when available
      * (precise + fast), else mmdc's raw message.
      */
-    private static String diagnose(List<String> maidExe, String source, String mmdcError) {
+    private static @Nullable String diagnose(List<String> maidExe, String source, @Nullable String mmdcError) {
         var diags = com.editora.mermaid.Mermaid.validate(maidExe, source);
         if (diags.isEmpty()) {
             return mmdcError;
@@ -361,7 +368,7 @@ public final class MermaidImages {
         return label;
     }
 
-    private static Label errorNode(String message) {
+    private static Label errorNode(@Nullable String message) {
         String base = message == null || message.isBlank()
                 ? Messages.tr("mermaid.renderFailed")
                 : Messages.tr("mermaid.renderFailed") + "\n" + message.strip();
@@ -376,7 +383,7 @@ public final class MermaidImages {
     }
 
     /** Whether {@code message} is mmdc's "headless Chrome / Puppeteer not installed" failure. Pure. */
-    static boolean looksLikeChromeMissing(String message) {
+    static boolean looksLikeChromeMissing(@Nullable String message) {
         if (message == null) {
             return false;
         }

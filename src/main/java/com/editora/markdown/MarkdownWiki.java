@@ -147,7 +147,7 @@ public final class MarkdownWiki {
      * is the target as written, with {@code .md} added when it names no file type. A heading becomes its
      * anchor ({@link MarkdownToc#slug}).
      */
-    public static MarkdownEdit toMarkdown(Link link, UnaryOperator<String> resolve) {
+    public static MarkdownEdit toMarkdown(Link link, @Nullable UnaryOperator<String> resolve) {
         String path = link.target().isEmpty() ? "" : resolve == null ? null : resolve.apply(link.target());
         if (path == null) {
             String t = link.target();

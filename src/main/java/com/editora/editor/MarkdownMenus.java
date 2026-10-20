@@ -9,6 +9,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 
 import com.editora.markdown.MarkdownTable;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -45,7 +46,7 @@ final class MarkdownMenus {
     }
 
     /** @param insertImage opens the image chooser (it lives in {@code ui}); null when none is wired */
-    static List<MenuItem> items(EditorBuffer b, Runnable insertImage) {
+    static List<MenuItem> items(EditorBuffer b, @Nullable Runnable insertImage) {
         MarkdownEditing md = b.markdown();
         boolean onLink = md.linkAtCaret() != null;
         return List.of(
@@ -177,12 +178,16 @@ final class MarkdownMenus {
         return menu;
     }
 
-    private static MenuItem item(String commandKey, Node icon, Runnable action) {
+    private static MenuItem item(String commandKey, @Nullable Node icon, @Nullable Runnable action) {
         MenuItem mi = new MenuItem(label(tr(commandKey)));
         if (icon != null) {
             mi.setGraphic(icon);
         }
-        mi.setOnAction(e -> action.run());
+        mi.setOnAction(e -> {
+            if (action != null) {
+                action.run();
+            }
+        });
         return mi;
     }
 

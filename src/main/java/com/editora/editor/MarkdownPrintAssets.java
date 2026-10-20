@@ -11,6 +11,7 @@ import org.commonmark.node.AbstractVisitor;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.Image;
 import org.eclipse.tm4e.core.grammar.IGrammar;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Everything a printed Markdown document needs that the live preview fills in <em>later</em>: its images,
@@ -94,16 +95,17 @@ public final class MarkdownPrintAssets {
     }
 
     /** The loaded image at {@code url} (already resolved to an absolute URL), or null when it did not load. */
-    PreviewImageLoader.Loaded image(String url) {
+    PreviewImageLoader.@Nullable Loaded image(String url) {
         return url == null ? null : images.get(url);
     }
 
     /** The finished render of the Mermaid {@code source}, or null when it was never asked for. */
-    MermaidImages.Cached diagram(String source) {
+    MermaidImages.@Nullable Cached diagram(String source) {
         return diagrams.get(source);
     }
 
     /** The tokenised runs of a fence, or null when it has no bundled grammar (it then prints plain). */
+    @Nullable
     List<MarkdownRenderer.Run> runs(String info, String source) {
         return code.get(codeKey(info, source));
     }

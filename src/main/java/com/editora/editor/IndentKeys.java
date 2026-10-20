@@ -4,6 +4,7 @@ import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What a buffer's Enter / Tab / closer keystrokes need from its document without copying it: a
@@ -19,9 +20,9 @@ final class IndentKeys {
 
     private final CodeArea area;
     private final java.util.function.Supplier<String> language;
-    private String detected;
+    private @Nullable String detected;
     private int detectedTabSize;
-    private String detectedLanguage;
+    private @Nullable String detectedLanguage;
     private int detections;
 
     /** {@code area} is the buffer's primary area; a split's second view shares its document. */
@@ -41,7 +42,7 @@ final class IndentKeys {
     }
 
     /** The indent unit: the override when there is one, else the document's own (see {@link Indenter#unitFor}). */
-    String unit(int tabSize, Boolean insertSpaces, Integer indentSize) {
+    String unit(int tabSize, @Nullable Boolean insertSpaces, @Nullable Integer indentSize) {
         if (insertSpaces != null) {
             return Indenter.unitFor("", tabSize, insertSpaces, indentSize);
         }

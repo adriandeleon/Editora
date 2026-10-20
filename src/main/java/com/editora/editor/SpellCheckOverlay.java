@@ -11,6 +11,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A transparent overlay that draws red wavy underlines beneath misspelled words, on top of the editor
@@ -34,7 +35,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
     private long codeLinesGen;
 
     private final Canvas canvas = new Canvas(1, 1);
-    private SpellChecker checker;
+    private @Nullable SpellChecker checker;
     private SpellMode mode = SpellMode.PROSE;
     /** Whether {@link #mode} is Markdown — kept as a field because the fence-skip tests read it. */
     private boolean markdown;
@@ -56,7 +57,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
 
     private double laidOutWidth = -1;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private SpellCheckOverlay follower;
+    private @Nullable SpellCheckOverlay follower;
     // Whether the last redraw actually had visible misspellings to paint. When false the canvas is shrunk
     // to 1x1 to release its (viewport-sized) RTTexture — a spell-checked buffer with no visible squiggles
     // shouldn't pin a full-viewport texture (the convention every other overlay follows). layoutChildren
@@ -132,6 +133,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
     }
 
     /** When set (by a test), every squiggle painted is appended as {@code {x0, x1, y}} in canvas pixels. */
+    @Nullable
     List<double[]> paintLog;
 
     /** Lines whose flagged spans had to be computed (a cache miss) — the test seam for the line cache. */
@@ -449,8 +451,8 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
                 return;
             }
             if (frameRects.length < count) {
-                frameRects = new double[count][];
-                frameBoxes = new Bounds[count];
+                frameRects = new double[count] @Nullable [];
+                frameBoxes = new @Nullable Bounds[count];
             }
             boolean any = false;
             boolean verified = false; // one remembered word has been checked against the layout this frame
@@ -500,7 +502,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
                 Bounds box = frameBoxes[i];
                 frameRects[i] = null;
                 frameBoxes[i] = null;
-                if (rects == null || sx <= 0 || sy <= 0) {
+                if (rects == null || box == null || sx <= 0 || sy <= 0) {
                     continue;
                 }
                 double bx = (box.getMinX() - origin.getX()) / sx;
@@ -524,9 +526,9 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
     }
 
     /** This frame's squiggles per visible paragraph, and that paragraph's box; reused between frames. */
-    private double[][] frameRects = new double[0][];
+    private double[] @Nullable [] frameRects = new double[0] @Nullable [];
 
-    private Bounds[] frameBoxes = new Bounds[0];
+    private @Nullable Bounds[] frameBoxes = new @Nullable Bounds[0];
 
     /** Folded lines and whole-line code are never checked. */
     private boolean skipped(int paragraph) {
@@ -636,12 +638,16 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
      */
     private int[][] flaggedSpans(String line) {
         linesScanned++;
+        SpellChecker spell = checker;
+        if (spell == null) {
+            return NONE; // only reached once a checker is set (see misspellingsIn and the paint)
+        }
         List<int[]> flagged = null;
         // checkableWords has already left out every word of a structured token, each token judged once.
         for (int[] span : SpellChecker.checkableWords(mode.prose(line), mode.syntax())) {
             int start = span[0];
             int end = span[1];
-            if (spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)) {
+            if (spellCache.computeIfAbsent(line.substring(start, end), spell::isMisspelled)) {
                 if (flagged == null) {
                     flagged = new java.util.ArrayList<>();
                 }

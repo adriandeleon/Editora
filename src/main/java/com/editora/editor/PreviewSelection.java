@@ -24,6 +24,8 @@ import javafx.scene.shape.Shape;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Text selection in the rendered Markdown preview: one range from an anchor to a focus, across blocks.
  *
@@ -63,9 +65,9 @@ final class PreviewSelection {
     /** Never shown: it takes the highlight's colour from the stylesheet, for shapes made after the CSS pass. */
     private final Rectangle swatch = new Rectangle();
 
-    private ScrollPane pane;
-    private Pos anchor;
-    private Pos focus;
+    private @Nullable ScrollPane pane;
+    private @Nullable Pos anchor;
+    private @Nullable Pos focus;
     private boolean all;
     private boolean dirty;
     private boolean listening;
@@ -117,10 +119,12 @@ final class PreviewSelection {
         return all && isActive();
     }
 
+    @Nullable
     Pos anchor() {
         return anchor;
     }
 
+    @Nullable
     Pos focus() {
         return focus;
     }
@@ -161,7 +165,7 @@ final class PreviewSelection {
         return isActive();
     }
 
-    private Pos edge(boolean start) {
+    private @Nullable Pos edge(boolean start) {
         ObservableList<Node> blocks = column.getChildren();
         for (int k = 0; k < blocks.size(); k++) {
             List<Region> leaves = leaves(blocks.get(start ? k : blocks.size() - 1 - k));
@@ -183,7 +187,7 @@ final class PreviewSelection {
         }
         if (all) {
             selectAll();
-        } else if (blockIndex(anchor.leaf()) < 0 || blockIndex(focus.leaf()) < 0) {
+        } else if (blockIndex(anchor.leaf()) < 0 || focus == null || blockIndex(focus.leaf()) < 0) {
             clear();
         } else {
             invalidate();
@@ -374,6 +378,7 @@ final class PreviewSelection {
     }
 
     /** The position nearest to a point of the scene, or null when the document shows no text. */
+    @Nullable
     Pos at(double sceneX, double sceneY) {
         Point2D inColumn = column.sceneToLocal(sceneX, sceneY);
         int index = blockAt(inColumn.getY());
@@ -395,7 +400,7 @@ final class PreviewSelection {
         return null;
     }
 
-    private static Pos nearest(List<Region> leaves, double sceneX, double sceneY) {
+    private static @Nullable Pos nearest(List<Region> leaves, double sceneX, double sceneY) {
         Region best = null;
         double bestDistance = Double.MAX_VALUE;
         for (Region leaf : leaves) {
@@ -481,7 +486,8 @@ final class PreviewSelection {
             }
         }
         Pos hit = at(e.getSceneX(), e.getSceneY());
-        if (hit != null && (hit.leaf() != focus.leaf() || hit.offset() != focus.offset())) {
+        Pos was = focus;
+        if (hit != null && (was == null || hit.leaf() != was.leaf() || hit.offset() != was.offset())) {
             focus = hit;
             all = false;
             changed();
@@ -540,7 +546,8 @@ final class PreviewSelection {
             }
             return;
         }
-        if (!isActive()) {
+        Pos from = focus;
+        if (from == null || !isActive()) {
             return;
         }
         if (e.getCode() == KeyCode.C && e.isShortcutDown() && !e.isAltDown()) {
@@ -552,10 +559,10 @@ final class PreviewSelection {
             e.consume();
         } else if (e.isShiftDown() && !e.isShortcutDown() && !e.isAltDown()) {
             Pos to = switch (e.getCode()) {
-                case LEFT, KP_LEFT -> step(focus, false);
-                case RIGHT, KP_RIGHT -> step(focus, true);
-                case UP, KP_UP -> line(focus, false);
-                case DOWN, KP_DOWN -> line(focus, true);
+                case LEFT, KP_LEFT -> step(from, false);
+                case RIGHT, KP_RIGHT -> step(from, true);
+                case UP, KP_UP -> line(from, false);
+                case DOWN, KP_DOWN -> line(from, true);
                 default -> null;
             };
             if (to != null) {
@@ -581,7 +588,7 @@ final class PreviewSelection {
         return next == null ? p : new Pos(next, forward ? 0 : length(next));
     }
 
-    private Region neighbour(Region leaf, boolean forward) {
+    private @Nullable Region neighbour(Region leaf, boolean forward) {
         Node block = blockOf(leaf);
         if (block == null) {
             return null;
@@ -616,6 +623,7 @@ final class PreviewSelection {
     }
 
     /** The position one line above or below {@code p}, at the same place across the line. */
+    @Nullable
     Pos line(Pos p, boolean down) {
         Bounds caret = caretBox(p);
         double x = caret.getMinX();
@@ -661,12 +669,14 @@ final class PreviewSelection {
      */
     List<Part> parts(int firstBlock, int lastBlock) {
         List<Part> out = new ArrayList<>();
-        if (!isActive()) {
+        Pos anchorAt = anchor;
+        Pos focusAt = focus;
+        if (anchorAt == null || focusAt == null || !isActive()) {
             return out;
         }
-        boolean forward = compare(anchor, focus) <= 0;
-        Pos start = forward ? anchor : focus;
-        Pos end = forward ? focus : anchor;
+        boolean forward = compare(anchorAt, focusAt) <= 0;
+        Pos start = forward ? anchorAt : focusAt;
+        Pos end = forward ? focusAt : anchorAt;
         int sb = blockIndex(start.leaf());
         int eb = blockIndex(end.leaf());
         if (sb < 0 || eb < 0) {
@@ -696,7 +706,7 @@ final class PreviewSelection {
 
     /** The first and last block of the selection (indices in the column) when it is exactly whole blocks,
      *  else null. */
-    int[] wholeBlocks() {
+    int @Nullable [] wholeBlocks() {
         List<Part> parts = parts();
         if (parts.isEmpty()) {
             return null;
@@ -757,7 +767,7 @@ final class PreviewSelection {
         }
     }
 
-    private static Shape shapeOf(Part part) {
+    private static @Nullable Shape shapeOf(Part part) {
         if (part.leaf() instanceof TextFlow flow) {
             javafx.scene.shape.PathElement[] range =
                     flow.rangeShape(toLayout(flow, part.from()), toLayout(flow, part.to()));

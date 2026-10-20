@@ -22,6 +22,7 @@ import javafx.scene.control.SeparatorMenuItem;
 
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -71,7 +72,7 @@ public final class BufferSpell {
 
     private String langId = SpellDictionaries.DEFAULT;
     /** A dictionary chosen for this buffer alone and kept only in memory (a buffer with no file yet). */
-    private String languageOverride;
+    private @Nullable String languageOverride;
 
     private Set<String> userWords = new HashSet<>();
     private boolean userWordsEnabled = true;
@@ -193,7 +194,7 @@ public final class BufferSpell {
     }
 
     /** The dictionary chosen for this buffer alone, or null when it follows the default. */
-    public String getLanguageOverride() {
+    public @Nullable String getLanguageOverride() {
         return languageOverride;
     }
 
@@ -255,7 +256,7 @@ public final class BufferSpell {
      * word the overlay underlines there and nothing else: the menu used to offer corrections for a word
      * inside a Markdown code fence, which is not squiggled.
      */
-    public Hit hitAt(int offset) {
+    public @Nullable Hit hitAt(int offset) {
         if (!overlay.isActive() || offset < 0 || offset > area.getLength()) {
             return null;
         }
@@ -270,7 +271,7 @@ public final class BufferSpell {
     }
 
     /** The misspelled word the caret is in or next to (in the view that has focus), or null. */
-    public Hit hitAtCaret() {
+    public @Nullable Hit hitAtCaret() {
         return hitAt(focusedView.get().getCaretPosition());
     }
 

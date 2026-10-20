@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Which preview <em>surface</em> a rendered Mermaid diagram or Typst document belongs to, so the static
  * render caches can keep one render per surface instead of one per edit.
@@ -19,12 +21,12 @@ final class PreviewSurfaces {
     private PreviewSurfaces() {}
 
     /** The Mermaid preview of a buffer: per file, so a retained render survives the tab being reopened. */
-    static String mermaid(Path path, Object buffer) {
+    static String mermaid(@Nullable Path path, Object buffer) {
         return path != null ? path.toString() : ("mmd@" + System.identityHashCode(buffer));
     }
 
     /** The key a Typst preview's last good pages are retained under while a newer render is pending. */
-    static String typstRetain(Path path, Object buffer) {
+    static String typstRetain(@Nullable Path path, Object buffer) {
         return path != null ? path.toString() : ("untitled@" + System.identityHashCode(buffer));
     }
 
@@ -34,7 +36,7 @@ final class PreviewSurfaces {
     }
 
     /** Drops everything the render caches hold for a buffer that is being disposed. */
-    static void release(Path path, Object buffer) {
+    static void release(@Nullable Path path, Object buffer) {
         MermaidImages.release(mermaid(path, buffer));
         TypstImages.release(typstRetain(path, buffer), typst(buffer));
     }
@@ -48,7 +50,8 @@ final class PreviewSurfaces {
          * the cache entry to drop — or null when there was none, it is the same render, or the render belongs
          * to no surface (a diagram block inside a Markdown preview, bounded by the cache's own LRU).
          */
-        String record(String surface, String cacheKey) {
+        @Nullable
+        String record(@Nullable String surface, String cacheKey) {
             if (surface == null) {
                 return null;
             }
@@ -57,6 +60,7 @@ final class PreviewSurfaces {
         }
 
         /** Forgets {@code surface}, returning the cache key of its newest render (null when it had none). */
+        @Nullable
         String release(String surface) {
             return surface == null ? null : bySurface.remove(surface);
         }

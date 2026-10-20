@@ -183,7 +183,7 @@ and not checked.
   `mvn -q -DskipTests compile` and fix what NullAway reports. javac stops at 100 errors, so run it again
   until it is clean (`-Xmaxerrs` raises the cap while you work, never in a commit). Behaviour must not change.
   A real bug found on the way gets its own fix and test. Since 2026-10-19 every package is marked except
-  `ui` and `editor`, the two largest; mark each in a change of its own.
+  `ui`, the largest, which gets a change of its own.
 - **Watch for over-wide annotations.** One `null` passed to a method that hands its argument back unchanged
   makes the result `@Nullable`, and then every reader of it. When many dereferences of one value are
   flagged, look at where the null comes from before guarding each one (`ProcessRunner.Result.err` was
@@ -198,7 +198,7 @@ and not checked.
 - **Plumbing.** Only NullAway runs (`-XepDisableAllChecks -Xep:NullAway:ERROR`), and only in the main compile,
   not on tests. `.mvn/jvm.config` exports the javac internals that Error Prone needs. JSpecify is a `provided`
   dependency read through `requires static org.jspecify`, so nothing ships. It runs on JDK 25 and JDK 27.
-  Cost on 2026-10-19, with every package but `ui` and `editor` marked: a clean `mvn -DskipTests compile`
+  Cost on 2026-10-19, with every package but `ui` and `editor` marked (before `editor` was): a clean `mvn -DskipTests compile`
   took about 11.5 s, against 9.5 s with nine packages marked and about 9.5 s with none (two runs each).
 
 ## Worktrees: one per task

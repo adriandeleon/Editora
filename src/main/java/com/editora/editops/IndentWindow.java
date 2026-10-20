@@ -48,7 +48,11 @@ public final class IndentWindow {
 
     /** As {@link #unit(Doc, int, Boolean, Integer)}, detecting the unit as {@code language} reads indentation. */
     public static String unit(
-            Doc doc, int tabSize, Boolean insertSpaces, Integer indentSize, @Nullable String language) {
+            Doc doc,
+            int tabSize,
+            @Nullable Boolean insertSpaces,
+            @Nullable Integer indentSize,
+            @Nullable String language) {
         String head = insertSpaces != null ? "" : doc.text(0, Math.min(doc.length(), HEAD_CHARS));
         return Indenter.unitFor(head, tabSize, insertSpaces, indentSize, language);
     }

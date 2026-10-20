@@ -1,6 +1,7 @@
 package com.editora.editor;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A viewport position that survives the document being re-laid-out: the first visible line, with the pixel
@@ -12,7 +13,10 @@ final class ScrollAnchor {
     private ScrollAnchor() {}
 
     /** The first visible paragraph of {@code area}, or -1 when it has no laid-out viewport. */
-    static int firstVisibleLine(CodeArea area) {
+    static int firstVisibleLine(@Nullable CodeArea area) {
+        if (area == null) {
+            return -1;
+        }
         try {
             return area.firstVisibleParToAllParIndex();
         } catch (RuntimeException notLaidOut) {

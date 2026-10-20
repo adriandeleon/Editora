@@ -9,6 +9,7 @@ import com.editora.http.HttpFile;
 import com.editora.run.MainMethodScanner;
 import com.editora.run.MakefileTargets;
 import com.editora.test.JavaTestScanner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What a buffer's text says about running it: whether the file is runnable and on which gutter lines the Run
@@ -39,7 +40,7 @@ final class RunScan {
             boolean testEligible,
             boolean mainEligible,
             String language,
-            String name,
+            @Nullable String name,
             boolean javaShebang) {
 
         /** Whether any scan reads the text — otherwise the document need not be materialized at all. */
@@ -158,7 +159,7 @@ final class RunScan {
      * runs from the top) — or -1 for a file Groovy reads but nobody runs as a program: a Gradle build script and
      * a Jenkins pipeline.
      */
-    static int groovyRunLine(String name, String text) {
+    static int groovyRunLine(@Nullable String name, String text) {
         if (name == null) {
             return 0;
         }
@@ -180,7 +181,7 @@ final class RunScan {
      * from the top) — or -1 for a file nobody runs: EDN data ({@code deps.edn}, {@code bb.edn}), a Leiningen
      * {@code project.clj}, and ClojureScript, which no JVM runs.
      */
-    static int clojureRunLine(String name, String text) {
+    static int clojureRunLine(@Nullable String name, String text) {
         if (name != null && !com.editora.run.ClojureRun.runnable(name)) {
             return -1;
         }
@@ -195,7 +196,7 @@ final class RunScan {
             "^\\s*if\\s*\\(?\\s*(?:__name__\\s*==\\s*(['\"])__main__\\1|(['\"])__main__\\2\\s*==\\s*__name__)");
 
     /** Files that are imported, never run: a stub, and (unless they have a guard) a package or pytest's conftest. */
-    private static boolean pythonLibraryFile(String name) {
+    private static boolean pythonLibraryFile(@Nullable String name) {
         return name != null && (name.equals("__init__.py") || name.equals("conftest.py"));
     }
 
@@ -204,7 +205,7 @@ final class RunScan {
      * does not count), else line 0 — or -1, no ▶ at all, for a {@code .pyi} stub, and for {@code __init__.py}
      * and {@code conftest.py} without a guard (imported, never run).
      */
-    static int pythonRunLine(String name, String text) {
+    static int pythonRunLine(@Nullable String name, String text) {
         if (name != null && name.endsWith(".pyi")) {
             return -1;
         }
@@ -232,7 +233,7 @@ final class RunScan {
      * module level; {@code methodName} is the function, or null for a class (or, with {@code ""}, the file).
      * Empty for any other file, and for a test file with no tests (it runs as a script).
      */
-    static Map<Integer, JavaTestScanner.TestTarget> pythonTestLines(String name, String text) {
+    static Map<Integer, JavaTestScanner.TestTarget> pythonTestLines(@Nullable String name, String text) {
         if (!com.editora.test.PytestScanner.isTestFile(name)) {
             return Map.of();
         }

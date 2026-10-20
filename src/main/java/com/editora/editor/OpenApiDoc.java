@@ -11,6 +11,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.i18n.Messages;
 import com.editora.structured.OpenApiModel;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders an {@link OpenApiModel} into browsable, Redoc-style API docs for the 3-mode preview: a title
@@ -22,7 +23,7 @@ public final class OpenApiDoc {
 
     private OpenApiDoc() {}
 
-    public static Node build(OpenApiModel m) {
+    public static Node build(@Nullable OpenApiModel m) {
         ScrollPane sp = new ScrollPane(content(m));
         sp.setFitToWidth(true);
         sp.getStyleClass().add("openapi-scroll");
@@ -33,9 +34,12 @@ public final class OpenApiDoc {
      * The docs themselves, without the scroll pane {@link #build} wraps them in — what Print and Export to
      * PDF snapshot (at a width they set), since a scroll pane would give them only its viewport.
      */
-    public static VBox content(OpenApiModel m) {
+    public static VBox content(@Nullable OpenApiModel m) {
         VBox root = new VBox();
         root.getStyleClass().add("openapi-doc");
+        if (m == null) {
+            return root;
+        }
 
         String title = m.title() == null || m.title().isBlank() ? Messages.tr("openapi.untitled") : m.title();
         Label h = new Label(m.version() == null || m.version().isBlank() ? title : title + "  " + m.version());

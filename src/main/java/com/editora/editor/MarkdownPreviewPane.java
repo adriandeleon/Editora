@@ -20,6 +20,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.util.Duration;
 
+import org.jspecify.annotations.Nullable;
 import org.reactfx.Subscription;
 
 import static com.editora.i18n.Messages.tr;
@@ -57,8 +58,8 @@ public final class MarkdownPreviewPane implements TabContent {
     private final PauseTransition debounce = new PauseTransition(DEBOUNCE);
     private final ObjIntConsumer<EditorBuffer> reveal;
 
-    private EditorBuffer source;
-    private Subscription edits;
+    private @Nullable EditorBuffer source;
+    private @Nullable Subscription edits;
     private final ChangeListener<Object> scrolled = (o, was, now) -> followScroll();
     private final ChangeListener<Object> caretLine = (o, was, now) -> markCaret();
     private String themeMode = "";
@@ -75,8 +76,9 @@ public final class MarkdownPreviewPane implements TabContent {
         scroll.setFocusTraversable(true);
         preview.attach(scroll);
         scroll.setContent(preview.root());
-        preview.onTaskToggle(
-                line -> live() && source.isEditable() && MarkdownPreview.toggleTask(source.getArea(), line));
+        preview.onTaskToggle(line -> liveSource() instanceof EditorBuffer s
+                && s.isEditable()
+                && MarkdownPreview.toggleTask(s.getArea(), line));
         preview.onRerender(this::render);
         preview.onJumpToSource(line -> {
             if (live()) {
@@ -112,7 +114,7 @@ public final class MarkdownPreviewPane implements TabContent {
     }
 
     /** The buffer whose rendering this shows, or null when it has none (yet, or its tab was closed). */
-    public EditorBuffer source() {
+    public @Nullable EditorBuffer source() {
         return live() ? source : null;
     }
 
@@ -144,7 +146,7 @@ public final class MarkdownPreviewPane implements TabContent {
     }
 
     /** Shows {@code buffer}'s rendering, whatever the lock says (the command that opened this preview). */
-    public void setSource(EditorBuffer buffer) {
+    public void setSource(@Nullable EditorBuffer buffer) {
         detach();
         source = buffer;
         if (buffer != null) {
@@ -179,11 +181,18 @@ public final class MarkdownPreviewPane implements TabContent {
     }
 
     private boolean live() {
-        return source != null && !source.isDisposed();
+        return liveSource() != null;
+    }
+
+    /** The source unless there is none or it was disposed. */
+    private @Nullable EditorBuffer liveSource() {
+        EditorBuffer s = source;
+        return s != null && !s.isDisposed() ? s : null;
     }
 
     private void showName() {
-        name.setText(live() ? source.getTitle() : tr("markdown.sidePreview.noSource"));
+        EditorBuffer from = liveSource();
+        name.setText(from != null ? from.getTitle() : tr("markdown.sidePreview.noSource"));
     }
 
     /** The preview's colour theme: "" follows the app, else "light" or "dark" (as the in-tab preview's). */
@@ -203,12 +212,12 @@ public final class MarkdownPreviewPane implements TabContent {
     /** Renders the source's current text (parse off the FX thread, changed blocks rebuilt on it). */
     public void render() {
         long gen = ++generation;
-        if (!live()) {
+        EditorBuffer from = liveSource();
+        if (from == null) {
             preview.clear();
             return;
         }
         preview.root().setStyle(PreviewPrefs.fontStyle(1));
-        EditorBuffer from = source;
         String text = from.getContent();
         Path file = from.getPath();
         Path baseDir = file == null ? null : file.getParent();
@@ -238,10 +247,11 @@ public final class MarkdownPreviewPane implements TabContent {
         followQueued = true;
         Platform.runLater(() -> {
             followQueued = false;
-            if (!live() || source.getArea().getScene() == null || !preview.isShowing()) {
+            EditorBuffer from = liveSource();
+            if (from == null || from.getArea().getScene() == null || !preview.isShowing()) {
                 return; // the source's tab is not on screen: nothing to keep in step with
             }
-            int top = ScrollAnchor.firstVisibleLine(source.getArea());
+            int top = ScrollAnchor.firstVisibleLine(from.getArea());
             if (top >= 0) {
                 preview.releaseAnchor();
                 preview.setScrollY(top == 0 ? 0 : preview.yOfLine(top));
@@ -250,8 +260,11 @@ public final class MarkdownPreviewPane implements TabContent {
     }
 
     private void markCaret() {
+        EditorBuffer from = liveSource();
         preview.markLine(
-                live() && source.getArea().getScene() != null ? source.getArea().getCurrentParagraph() : -1);
+                from != null && from.getArea().getScene() != null
+                        ? from.getArea().getCurrentParagraph()
+                        : -1);
     }
 
     /** The rendered document (tests). */

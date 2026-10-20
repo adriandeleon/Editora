@@ -42,7 +42,7 @@ public final class KotlinRun {
     }
 
     /** The shape of the file called {@code fileName}. */
-    public static Shape shape(String fileName) {
+    public static Shape shape(@Nullable String fileName) {
         if (fileName == null) {
             return Shape.NONE;
         }
@@ -70,7 +70,7 @@ public final class KotlinRun {
      * The gutter Run line of a Kotlin file, or -1 for none: a script runs from line 0, a program from its
      * top-level {@code fun main}; a build script, and a {@code .kt} without a top-level main, have none.
      */
-    public static int runLine(String fileName, String text) {
+    public static int runLine(@Nullable String fileName, String text) {
         return switch (shape(fileName)) {
             case SCRIPT -> 0;
             case PROGRAM -> mainLine(text);

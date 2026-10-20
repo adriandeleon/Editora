@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import com.editora.editorconfig.EditorConfigCharset;
 import com.editora.editorconfig.EditorConfigProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Shell scripts and the bytes the shell cannot read: a CRLF line ending ({@code $'\r': command not found},
@@ -38,14 +39,14 @@ public final class ShellScripts {
      * The EditorConfig {@code end_of_line} label a buffer honours: a shell script keeps LF whatever a broad
      * {@code [*] end_of_line = crlf} says, or every save would make it unrunnable.
      */
-    public static String endOfLine(String language, String label) {
+    public static @Nullable String endOfLine(String language, @Nullable String label) {
         return "shell".equals(language) && (LineEndings.CRLF.equals(label) || LineEndings.CR.equals(label))
                 ? null
                 : label;
     }
 
     /** The EditorConfig {@code charset} a buffer honours: never {@code utf-8-bom} for a shell script. */
-    public static String charset(String language, String charset) {
+    public static @Nullable String charset(String language, @Nullable String charset) {
         return "shell".equals(language) && EditorConfigCharset.UTF_8_BOM.equals(charset) ? null : charset;
     }
 

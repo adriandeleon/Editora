@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure identifier extraction for the debugger's editor surfaces: {@link #wordAt} feeds the hover
  * value tooltip (which identifier is under the mouse) and {@link #matchesIn} feeds the inline-values
@@ -25,7 +27,7 @@ final class DebugIdentifiers {
 
     /** The identifier covering 0-based {@code col} of {@code line}, or null (not on an identifier,
      *  or the covering token starts with a digit — a number literal, not a name). */
-    static String wordAt(String line, int col) {
+    static @Nullable String wordAt(String line, int col) {
         if (line == null || col < 0 || col >= line.length() || !isIdentChar(line.charAt(col))) {
             return null;
         }
@@ -47,7 +49,7 @@ final class DebugIdentifiers {
      * a different value or none. A chain stops at a call or an index ({@code f().x} is just {@code x}: hovering
      * must not run code). Null when {@code col} is not on an identifier.
      */
-    static String expressionAt(String line, int col) {
+    static @Nullable String expressionAt(String line, int col) {
         String word = wordAt(line, col);
         if (word == null) {
             return null;

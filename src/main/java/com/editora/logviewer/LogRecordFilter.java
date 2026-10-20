@@ -32,8 +32,8 @@ public final class LogRecordFilter {
     /** Most unmatched lines of one record kept waiting for a later line to match — bounds a runaway record. */
     static final int MAX_HELD = 2000;
 
-    private final LogLevel minLevel;
-    private final Pattern pattern;
+    private final @Nullable LogLevel minLevel;
+    private final @Nullable Pattern pattern;
 
     private @Nullable LogLevel carry;
     /** A record has started: lines without a level belong to it rather than standing alone. */
@@ -44,7 +44,7 @@ public final class LogRecordFilter {
     private final List<String> heldLines = new ArrayList<>();
     private int heldFirst;
 
-    public LogRecordFilter(LogLevel minLevel, Pattern pattern) {
+    public LogRecordFilter(@Nullable LogLevel minLevel, @Nullable Pattern pattern) {
         this.minLevel = minLevel;
         this.pattern = pattern;
     }

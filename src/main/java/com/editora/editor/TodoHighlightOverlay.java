@@ -11,6 +11,7 @@ import javafx.scene.paint.Color;
 
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Highlights configured TODO/FIXME-style pattern matches behind the editor text, without touching the
@@ -45,7 +46,7 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
     /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
     private final AfterLayoutPaint afterLayout;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private TodoHighlightOverlay follower;
+    private @Nullable TodoHighlightOverlay follower;
 
     TodoHighlightOverlay(CodeArea area) {
         this.area = area;
@@ -106,11 +107,11 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
         }
     }
 
-    private static Color washColor(String web) {
+    private static Color washColor(@Nullable String web) {
         return TodoColors.wash(web, WASH_ALPHA);
     }
 
-    private static Color solidColor(String web) {
+    private static Color solidColor(@Nullable String web) {
         return TodoColors.solid(web);
     }
 
@@ -223,7 +224,7 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
             int start,
             int end,
             Color color,
-            Color underline,
+            @Nullable Color underline,
             int first,
             int last,
             double w,
@@ -265,7 +266,7 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
         }
     }
 
-    private Bounds toLocal(Bounds screen) {
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

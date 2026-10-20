@@ -21,6 +21,7 @@ import org.commonmark.node.HtmlInline;
 import org.commonmark.node.Image;
 import org.commonmark.node.LinkReferenceDefinition;
 import org.commonmark.node.SourceSpan;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The rendered Markdown document of one buffer's live preview: its nodes, which source lines each top-level
@@ -45,25 +46,36 @@ final class MarkdownPreview {
     record Unit(
             org.commonmark.node.Node first,
             org.commonmark.node.Node last,
-            String key,
+            @Nullable String key,
             int startLine,
             int endLine,
-            String slug,
+            @Nullable String slug,
             List<String> refs) {}
 
     /** A document cut into units, ready to {@link #show}. Built off the FX thread. {@code footnotes} is the
      *  number of each footnote label ({@link MarkdownRenderer#footnoteNumbers}). */
-    record Plan(List<Unit> units, Path baseDir, Map<String, Integer> footnotes, String source, boolean remoteImages) {}
+    record Plan(
+            List<Unit> units,
+            @Nullable Path baseDir,
+            Map<String, Integer> footnotes,
+            String source,
+            boolean remoteImages) {}
 
     /** A rendered unit: {@code node} is null for one that shows nothing (a comment, a link definition). */
-    private record Entry(String key, Node node, int startLine, int endLine, String slug, List<String> refs) {}
+    private record Entry(
+            @Nullable String key,
+            @Nullable Node node,
+            int startLine,
+            int endLine,
+            @Nullable String slug,
+            List<String> refs) {}
 
     private final BlockColumn column = MarkdownRenderer.styleColumn(new BlockColumn());
     private final StackPane root = MarkdownRenderer.wrapColumn(column);
     private List<Entry> entries = List.of();
     private String contextSignature = "";
     private Consumer<String> linkOpener = u -> {};
-    private ScrollPane pane;
+    private @Nullable ScrollPane pane;
     private int lastBuilt;
     private int lastReused;
     /** While positive (a {@code System.nanoTime} deadline), late layout — images arriving — re-anchors here. */
@@ -84,7 +96,7 @@ final class MarkdownPreview {
      *  nothing. */
     private final javafx.scene.layout.Region caretMarker = new javafx.scene.layout.Region();
 
-    private Node markedBlock;
+    private @Nullable Node markedBlock;
     private int markedLine = -1;
     private java.util.function.IntConsumer jumpToSource = line -> {};
 
@@ -114,10 +126,11 @@ final class MarkdownPreview {
     }
 
     private void placeMarker() {
-        boolean show = markedBlock != null && markedBlock.getParent() == column;
+        Node block = markedBlock;
+        boolean show = block != null && block.getParent() == column;
         caretMarker.setVisible(show);
-        if (show) {
-            javafx.geometry.Bounds b = markedBlock.getBoundsInParent();
+        if (block != null && show) {
+            javafx.geometry.Bounds b = block.getBoundsInParent();
             javafx.geometry.Bounds c = column.getBoundsInParent();
             caretMarker.resizeRelocate(
                     c.getMinX() + column.getInsets().getLeft() - 12, c.getMinY() + b.getMinY(), 3, b.getHeight());
@@ -224,10 +237,10 @@ final class MarkdownPreview {
         }
     }
 
-    private PreviewLightbox lightbox;
+    private @Nullable PreviewLightbox lightbox;
 
     /** A picture or a diagram was clicked: shows it enlarged over the window, until Esc or a click. */
-    void enlarge(Node picture) {
+    void enlarge(@Nullable Node picture) {
         javafx.scene.image.Image image = PreviewLightbox.imageOf(picture);
         if (image == null || pane == null || pane.getScene() == null) {
             return; // not loaded (a placeholder, an error): nothing to enlarge
@@ -237,7 +250,7 @@ final class MarkdownPreview {
     }
 
     /** The picture or diagram {@code node} is (in), when a click on it would open it enlarged; else null. */
-    static Node enlargeableAt(Node node) {
+    static @Nullable Node enlargeableAt(@Nullable Node node) {
         for (Node n = node; n != null; n = n.getParent()) {
             if (n.hasProperties() && n.getProperties().containsKey(MarkdownRenderer.ENLARGE_KEY)) {
                 return n;
@@ -247,6 +260,7 @@ final class MarkdownPreview {
     }
 
     /** The enlarged picture now showing, or null. */
+    @Nullable
     PreviewLightbox lightbox() {
         return lightbox != null && lightbox.isShowing() ? lightbox : null;
     }
@@ -262,7 +276,7 @@ final class MarkdownPreview {
 
     private boolean remoteGranted;
     private Runnable rerender = () -> {};
-    private javafx.scene.layout.HBox remoteBar;
+    private javafx.scene.layout.@Nullable HBox remoteBar;
 
     /** Who renders this document again when the reader allows its remote images. */
     void onRerender(Runnable render) {
@@ -286,7 +300,7 @@ final class MarkdownPreview {
     }
 
     /** The bar that says the document has remote images and offers to load them; null until first needed. */
-    javafx.scene.layout.HBox remoteBar() {
+    javafx.scene.layout.@Nullable HBox remoteBar() {
         return remoteBar != null && remoteBar.isVisible() ? remoteBar : null;
     }
 
@@ -322,13 +336,16 @@ final class MarkdownPreview {
     }
 
     private void padForRemoteBar() {
-        boolean shown = remoteBar != null && remoteBar.isVisible();
-        StackPane.setMargin(column, shown ? new javafx.geometry.Insets(remoteBar.getHeight() + 6, 0, 0, 0) : null);
+        StackPane.setMargin(
+                column,
+                remoteBar != null && remoteBar.isVisible()
+                        ? new javafx.geometry.Insets(remoteBar.getHeight() + 6, 0, 0, 0)
+                        : null);
     }
 
     private final PreviewSelection selection = new PreviewSelection(this, column, root);
-    private String shownSource;
-    private Path shownBaseDir;
+    private @Nullable String shownSource;
+    private @Nullable Path shownBaseDir;
 
     /** The text selection of this document. */
     PreviewSelection selection() {
@@ -336,12 +353,12 @@ final class MarkdownPreview {
     }
 
     /** The source line {@code sceneY} of the block {@code target} is in came from; -1 off the document. */
-    int sourceLineAt(Node target, double sceneY) {
+    int sourceLineAt(@Nullable Node target, double sceneY) {
         return target == null ? -1 : lineAt(target, sceneY);
     }
 
     /** Goes to the source line of the block at a point (the context menu's "Go to Source Line"). */
-    boolean jumpToSourceAt(Node target, double sceneY) {
+    boolean jumpToSourceAt(@Nullable Node target, double sceneY) {
         int line = sourceLineAt(target, sceneY);
         if (line >= 0) {
             jumpToSource.accept(line);
@@ -351,7 +368,7 @@ final class MarkdownPreview {
 
     /** The Markdown of the blocks {@code first}…{@code last} of the column, or null when one of them did not
      *  come from source lines. */
-    private String sourceOf(int first, int last) {
+    private @Nullable String sourceOf(int first, int last) {
         if (shownSource == null) {
             return null;
         }
@@ -515,7 +532,7 @@ final class MarkdownPreview {
         return found[0];
     }
 
-    static Plan plan(String markdown, Path baseDir) {
+    static Plan plan(String markdown, @Nullable Path baseDir) {
         String md = markdown == null ? "" : markdown;
         org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
         String definitions = definitions(ast);
@@ -551,12 +568,12 @@ final class MarkdownPreview {
         return new Plan(units, baseDir, footnotes, md, namesRemoteImage(ast));
     }
 
-    private static SourceSpan firstSpan(org.commonmark.node.Node n) {
+    private static @Nullable SourceSpan firstSpan(org.commonmark.node.Node n) {
         List<SourceSpan> spans = n.getSourceSpans();
         return spans.isEmpty() ? null : spans.get(0);
     }
 
-    private static SourceSpan lastSpan(org.commonmark.node.Node n) {
+    private static @Nullable SourceSpan lastSpan(org.commonmark.node.Node n) {
         List<SourceSpan> spans = n.getSourceSpans();
         return spans.isEmpty() ? null : spans.get(spans.size() - 1);
     }
@@ -571,7 +588,7 @@ final class MarkdownPreview {
             org.commonmark.node.Node last,
             String text,
             String definitions,
-            Path baseDir) {
+            @Nullable Path baseDir) {
         StringBuilder sb = new StringBuilder();
         if (text.indexOf('[') >= 0) {
             sb.append('\u0000').append(definitions);
@@ -702,7 +719,7 @@ final class MarkdownPreview {
      * {@code dark} is the preview's own theme, or null to follow the app. {@code line} is the source line to
      * bring to the top afterwards (fractional), or {@link #KEEP_VIEW}.
      */
-    void show(Plan plan, Consumer<String> onLinkClick, Boolean dark, double line) {
+    void show(Plan plan, Consumer<String> onLinkClick, @Nullable Boolean dark, double line) {
         this.linkOpener = onLinkClick == null ? u -> {} : onLinkClick;
         this.shownSource = plan.source();
         this.shownBaseDir = plan.baseDir();
@@ -829,7 +846,8 @@ final class MarkdownPreview {
             double v = pane.getVvalue();
             pane.setContent(root);
             if (line < 0) {
-                javafx.application.Platform.runLater(() -> pane.setVvalue(v)); // new content: same place
+                ScrollPane scrolled = pane;
+                javafx.application.Platform.runLater(() -> scrolled.setVvalue(v)); // new content: same place
             }
         }
         boolean keep = topNode != null && topNode.getParent() == column;
@@ -846,7 +864,7 @@ final class MarkdownPreview {
             javafx.scene.Parent top =
                     pane.getScene() == null ? pane : pane.getScene().getRoot();
             top.layout();
-            anchorLine = line >= 0 ? line : lineAtY(top(topNode) + topOffset);
+            anchorLine = line >= 0 || topNode == null ? line : lineAtY(top(topNode) + topOffset);
             anchorUntil = System.nanoTime() + ANCHOR_HOLD_NANOS;
             setScrollY(yOfLine(anchorLine));
         }
@@ -913,7 +931,7 @@ final class MarkdownPreview {
     }
 
     /** A block just built, with its images sized for the current zoom. */
-    private Node zoomed(Node node) {
+    private @Nullable Node zoomed(@Nullable Node node) {
         if (node != null && zoom != 1.0) {
             PreviewImageLoader.zoomAll(node, zoom);
         }
@@ -1115,8 +1133,12 @@ final class MarkdownPreview {
 
     /** How far the document is scrolled, in px from its top. */
     double scrollY() {
-        double range = pane == null ? 0 : pane.getVmax() - pane.getVmin();
-        return range <= 0 ? 0 : Math.max(0, scrollable()) * (pane.getVvalue() - pane.getVmin()) / range;
+        ScrollPane p = pane;
+        if (p == null) {
+            return 0;
+        }
+        double range = p.getVmax() - p.getVmin();
+        return range <= 0 ? 0 : Math.max(0, scrollable()) * (p.getVvalue() - p.getVmin()) / range;
     }
 
     /** Scrolls so that offset {@code y} of the document is at the top of the pane (as far as it goes). */

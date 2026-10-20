@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * JavaScript/TypeScript regular-expression literals, for the light scanners that are not the tokenizer (the
  * fold walker, the declaration index). A {@code /} starts one where an operand is expected — at the start, after
@@ -32,7 +34,7 @@ public final class RegexLiterals {
             "await");
 
     /** Whether {@code language} has regex literals ({@code javascript*}, {@code typescript*}). */
-    public static boolean in(String language) {
+    public static boolean in(@Nullable String language) {
         return language != null && (language.startsWith("javascript") || language.startsWith("typescript"));
     }
 

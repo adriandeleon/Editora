@@ -156,7 +156,7 @@ public final class ScalaRun {
      * from the top), else -1 — a library file is not a program. Build definitions ({@code .sbt}, {@code .mill},
      * {@code build.sc}) never run.
      */
-    public static int runLine(String name, String text) {
+    public static int runLine(@Nullable String name, String text) {
         String lower = name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
         if (lower.endsWith(".sbt") || lower.endsWith(".mill") || lower.equals("build.sc")) {
             return -1;

@@ -110,7 +110,7 @@ public final class LineCommands {
     /** The buffer's Tab for a selection: {@code (selStart, selEnd, shift)}. */
     @FunctionalInterface
     public interface TabFunction {
-        Indenter.TabEdit edit(int selStart, int selEnd, boolean shift);
+        Indenter.@Nullable TabEdit edit(int selStart, int selEnd, boolean shift);
     }
 
     /** An offset on the selection's last line: its end, or just before it when it stops at a line start. */

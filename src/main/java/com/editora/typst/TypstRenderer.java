@@ -127,7 +127,11 @@ public final class TypstRenderer {
      * name — otherwise every Typst typo shows the internal UUID temp filename, not the user's file (#462).
      */
     public static Pages renderPages(
-            List<String> cmd, String source, Path fileDir, Path root, @Nullable String displayName) {
+            List<String> cmd,
+            String source,
+            @Nullable Path fileDir,
+            @Nullable Path root,
+            @Nullable String displayName) {
         Prep p = null;
         Path input = null;
         Path outDir = null;
@@ -374,7 +378,7 @@ public final class TypstRenderer {
         }
     }
 
-    private static Prep prepare(Path fileDir, Path root) throws IOException {
+    private static Prep prepare(@Nullable Path fileDir, @Nullable Path root) throws IOException {
         if (fileDir != null && Files.isDirectory(fileDir)) {
             Path validRoot = (root != null && Files.isDirectory(root)) ? root : null;
             return new Prep(fileDir, effectiveRoot(fileDir, validRoot), false);

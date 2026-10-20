@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /** Bounded transform history for delayed import edits; conflicting edits invalidate the whole batch. */
 final class CompletionEditTracker {
     private final List<LspEditShift.Change> changes = new ArrayList<>();
@@ -10,7 +12,7 @@ final class CompletionEditTracker {
     private int nameEnd;
     private boolean valid = true;
 
-    CompletionEditTracker(LspEditShift.Change acceptance, int nameStart, int nameEnd) {
+    CompletionEditTracker(LspEditShift.@Nullable Change acceptance, int nameStart, int nameEnd) {
         if (acceptance != null) changes.add(acceptance);
         this.nameStart = nameStart;
         this.nameEnd = nameEnd;

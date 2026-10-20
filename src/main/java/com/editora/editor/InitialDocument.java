@@ -9,6 +9,7 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.ReadOnlyStyledDocument;
 import org.fxmisc.richtext.model.ReadOnlyStyledDocumentBuilder;
 import org.fxmisc.richtext.model.StyledSegment;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A loaded file's text made ready for the one RichTextFX insertion a load needs: the LF-normalised text, the
@@ -30,8 +31,8 @@ public record InitialDocument(
         String text,
         String lineEnding,
         boolean mixedLineEndings,
-        ReadOnlyStyledDocument<Collection<String>, String, Collection<String>> document,
-        String textFingerprint) {
+        @Nullable ReadOnlyStyledDocument<Collection<String>, String, Collection<String>> document,
+        @Nullable String textFingerprint) {
 
     /** A paragraph wider than this is installed as several style segments (see {@link #segmented}). */
     private static final int LONG_LINE_SEGMENT_CHARS = 4 * 1024;
@@ -44,7 +45,7 @@ public record InitialDocument(
             String text,
             String lineEnding,
             boolean mixedLineEndings,
-            ReadOnlyStyledDocument<Collection<String>, String, Collection<String>> document) {
+            @Nullable ReadOnlyStyledDocument<Collection<String>, String, Collection<String>> document) {
         this(text, lineEnding, mixedLineEndings, document, null);
     }
 

@@ -6,6 +6,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.markwhen.MwNode;
 import com.editora.markwhen.Timeline;
+import org.jspecify.annotations.Nullable;
 
 /** Shared color resolution for the Markwhen timeline + calendar renderers: an event's fill from its first
  *  tag's {@code #Tag: color} declaration, else a stable fallback palette; {@code null} means "no tag →
@@ -21,7 +22,7 @@ final class MarkwhenPaint {
     };
 
     /** The event's fill color, or {@code null} when it has no tag (caller uses the default style class). */
-    static Color colorFor(MwNode.Event e, Timeline model) {
+    static @Nullable Color colorFor(MwNode.Event e, Timeline model) {
         if (e.tags().isEmpty()) {
             return null;
         }
@@ -37,7 +38,7 @@ final class MarkwhenPaint {
         return PALETTE[Math.floorMod(tag.toLowerCase(Locale.ROOT).hashCode(), PALETTE.length)];
     }
 
-    static Color webColor(String s) {
+    static @Nullable Color webColor(String s) {
         try {
             return Color.web(s.strip());
         } catch (IllegalArgumentException | NullPointerException ex) {

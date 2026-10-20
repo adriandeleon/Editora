@@ -8,6 +8,8 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 import javafx.util.Duration;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A tooltip that is not built until the pointer first reaches its node.
  *
@@ -32,7 +34,7 @@ final class LazyTooltip {
      * As {@link #install(Node, Supplier)}, with a style class for the tooltip (may be {@code null}) and its
      * show delay in milliseconds (negative keeps the platform default).
      */
-    static void install(Node node, Supplier<String> text, String styleClass, double showDelayMillis) {
+    static void install(Node node, Supplier<String> text, @Nullable String styleClass, double showDelayMillis) {
         node.addEventHandler(MouseEvent.MOUSE_ENTERED, new EventHandler<>() {
             @Override
             public void handle(MouseEvent e) {

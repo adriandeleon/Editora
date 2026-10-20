@@ -8,6 +8,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.structured.XmlNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders a parsed {@link XmlNode} DOM tree into a self-scrolling JavaFX {@code TreeView} for the 3-mode
@@ -22,8 +23,8 @@ public final class XmlTree {
 
     private XmlTree() {}
 
-    public static Node build(XmlNode root) {
-        TreeItem<XmlNode> item = toItem(root);
+    public static Node build(@Nullable XmlNode root) {
+        TreeItem<XmlNode> item = root == null ? new TreeItem<>() : toItem(root);
         expand(item, AUTO_EXPAND_DEPTH);
         TreeView<XmlNode> tree = new TreeView<>(item);
         tree.getStyleClass().add("xml-tree");
@@ -124,14 +125,14 @@ public final class XmlTree {
         return flow;
     }
 
-    private static Text styled(String text, String styleClass) {
+    private static Text styled(@Nullable String text, String styleClass) {
         Text t = new Text(text);
         t.getStyleClass().add(styleClass);
         return t;
     }
 
     /** Collapses newlines/tabs so a multi-line value stays on one tree row. */
-    private static String oneLine(String s) {
+    private static String oneLine(@Nullable String s) {
         return s == null ? "" : s.replace("\n", "\\n").replace("\r", "").replace("\t", "\\t");
     }
 }

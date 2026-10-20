@@ -15,6 +15,7 @@ import com.editora.config.TextAnchor;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Tracks the {@link PersonalNote}s of a single {@link CodeArea}: their live character-offset ranges follow
@@ -41,7 +42,7 @@ public final class NoteManager implements LineMarks.Carrier {
     /** True while a narrow/widen text swap runs: the swap is not an edit, so nothing is shifted through it. */
     private boolean swapping;
     /** While narrowed, the whole-document ranges of the notes outside the region; {@code null} otherwise. */
-    private Map<UUID, int[]> held;
+    private @Nullable Map<UUID, int[]> held;
     /** The narrowed region's whole-document {@code [start, end)} at the moment it was cut out. */
     private int heldStart;
 
@@ -95,7 +96,7 @@ public final class NoteManager implements LineMarks.Carrier {
     }
 
     /** The note whose span contains {@code offset} (or whose line it is, for LINE scope); null if none. */
-    public PersonalNote noteAt(int offset) {
+    public @Nullable PersonalNote noteAt(int offset) {
         PersonalNote best = null;
         int bestLen = Integer.MAX_VALUE;
         for (Tracked t : tracked.values()) {
@@ -126,7 +127,7 @@ public final class NoteManager implements LineMarks.Carrier {
         return lines;
     }
 
-    public Integer next(int fromLine) {
+    public @Nullable Integer next(int fromLine) {
         NavigableSet<Integer> lines = activeLines();
         if (lines.isEmpty()) {
             return null;
@@ -135,7 +136,7 @@ public final class NoteManager implements LineMarks.Carrier {
         return k != null ? k : lines.first();
     }
 
-    public Integer previous(int fromLine) {
+    public @Nullable Integer previous(int fromLine) {
         NavigableSet<Integer> lines = activeLines();
         if (lines.isEmpty()) {
             return null;

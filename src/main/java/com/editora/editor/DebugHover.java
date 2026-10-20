@@ -11,6 +11,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.util.Duration;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * IntelliJ's value popup while the debugger is paused: hovering an identifier (with the attribute chain before it,
@@ -27,17 +28,17 @@ public final class DebugHover {
     private static volatile Duration debounce = Duration.millis(250);
 
     /** Async evaluator (DAP {@code evaluate}, context "hover"): the expression → its value (null/blank: none). */
-    private BiConsumer<String, Consumer<String>> evaluator;
+    private @Nullable BiConsumer<String, Consumer<String>> evaluator;
 
     private boolean active;
-    private Tooltip tooltip;
+    private @Nullable Tooltip tooltip;
     /** The expression shown or being evaluated, so one word is evaluated once while the mouse stays on it. */
-    private String word;
+    private @Nullable String word;
 
-    private PauseTransition pending;
+    private @Nullable PauseTransition pending;
 
     /** Shows the value as an expandable popup (follow-up 6); null: the one-line tooltip. */
-    private DebugValuePresenter presenter;
+    private @Nullable DebugValuePresenter presenter;
 
     void setPresenter(DebugValuePresenter presenter) {
         this.presenter = presenter;
@@ -93,12 +94,12 @@ public final class DebugHover {
      * Show Value at Caret: evaluates the expression at the caret of {@code a} and shows its value under it. False
      * (nothing done) when not paused or the caret is not on a name in code.
      */
-    boolean showAtCaret(CodeArea a) {
+    boolean showAtCaret(@Nullable CodeArea a) {
         if (!active || evaluator == null) {
             return false;
         }
         String expression = DebugExpressions.atCaret(a); // on a name, or just after one
-        if (expression == null) {
+        if (expression == null || a == null) {
             return false;
         }
         Bounds b = a.getCaretBounds().orElse(null);
@@ -115,7 +116,7 @@ public final class DebugHover {
     }
 
     /** The expression a position stands for, or null: not on a name, or the name is in a comment or string. */
-    static String expressionAt(CodeArea a, int paragraph, int column) {
+    static @Nullable String expressionAt(CodeArea a, int paragraph, int column) {
         String line = a.getParagraph(paragraph).getText();
         String expression = DebugIdentifiers.expressionAt(line, column);
         if (expression == null || !isCode(a.getStyleAtPosition(paragraph, Math.min(line.length(), column + 1)))) {
@@ -139,7 +140,11 @@ public final class DebugHover {
             }
             return;
         }
-        evaluator.accept(expression, value -> {
+        BiConsumer<String, Consumer<String>> ev = evaluator;
+        if (ev == null) {
+            return;
+        }
+        ev.accept(expression, value -> {
             if (!active || value == null || value.isBlank() || !expression.equals(word)) {
                 return; // evaluation failed / mouse moved on — show nothing
             }
@@ -201,6 +206,7 @@ public final class DebugHover {
     }
 
     /** The popup (null until first shown) — for tests. */
+    @Nullable
     Tooltip tooltip() {
         return tooltip;
     }

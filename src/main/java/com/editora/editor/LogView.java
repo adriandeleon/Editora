@@ -10,6 +10,7 @@ import com.editora.logviewer.LogRecordFilter;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.ReadOnlyStyledDocument;
 import org.fxmisc.richtext.model.TwoDimensional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The log-viewer state of one {@link EditorBuffer}: the level/pattern filter, tail-follow, and the complete text
@@ -61,17 +62,17 @@ final class LogView {
     private int heldAtFollowStart;
 
     /** While a filter is active, the complete unfiltered text (the area shows only matching lines). */
-    private StringBuilder full;
+    private @Nullable StringBuilder full;
     /** {@link #full} as a String, built on demand and shared until the next append. */
-    private String fullSnapshot;
+    private @Nullable String fullSnapshot;
 
-    private LogLevel minLevel;
+    private @Nullable LogLevel minLevel;
     /** The pattern as the user typed it, and compiled. */
-    private String query;
+    private @Nullable String query;
 
-    private Pattern regex;
+    private @Nullable Pattern regex;
     /** The filter, positioned after the last complete line of {@link #full}. */
-    private LogRecordFilter filter;
+    private @Nullable LogRecordFilter filter;
     /** Length of the prefix of {@link #full} made of complete lines the filter has judged. */
     private int consumed;
     /** Line index (in the text as it was when the filter was applied) of the next line the filter will judge. */
@@ -120,15 +121,35 @@ final class LogView {
 
     /** The complete text behind an active filter. Only valid while {@link #filtered()}. */
     String fullText() {
-        if (fullSnapshot == null) {
-            fullSnapshot = full.toString();
+        String snapshot = fullSnapshot;
+        if (snapshot == null) {
+            snapshot = activeFull().toString();
+            fullSnapshot = snapshot;
         }
-        return fullSnapshot;
+        return snapshot;
     }
 
     /** Length of {@link #fullText()} without building it. */
     int fullLength() {
-        return full.length();
+        return activeFull().length();
+    }
+
+    /** {@link #full}, which is only read while a filter is active. */
+    private StringBuilder activeFull() {
+        StringBuilder f = full;
+        if (f == null) {
+            throw new IllegalStateException("no log filter is active");
+        }
+        return f;
+    }
+
+    /** {@link #filter}, set together with {@link #full}. */
+    private LogRecordFilter activeFilter() {
+        LogRecordFilter f = filter;
+        if (f == null) {
+            throw new IllegalStateException("no log filter is active");
+        }
+        return f;
     }
 
     boolean following() {
@@ -148,11 +169,13 @@ final class LogView {
     }
 
     /** The level floor of the active filter (null when unfiltered or no floor). */
+    @Nullable
     LogLevel minLevel() {
         return minLevel;
     }
 
     /** The pattern of the active filter as it was typed (null when unfiltered or no pattern). */
+    @Nullable
     String query() {
         return query;
     }
@@ -174,7 +197,7 @@ final class LogView {
 
     /** Lines in the complete text (an unfinished last line included). Only meaningful while {@link #filtered()}. */
     int totalLines() {
-        return nextLine - droppedLines + (consumed < full.length() ? 1 : 0);
+        return nextLine - droppedLines + (consumed < activeFull().length() ? 1 : 0);
     }
 
     /**
@@ -197,6 +220,7 @@ final class LogView {
      * The inherited level of visible paragraph {@code paragraph} as the complete text has it. Only valid while
      * {@link #filtered()}; null for a line with no level, or past the last line.
      */
+    @Nullable
     LogLevel levelAt(int paragraph) {
         if (full == null || paragraph < 0 || paragraph >= visibleCount || visibleLevel[paragraph] < 0) {
             return null;
@@ -223,7 +247,7 @@ final class LogView {
     }
 
     /** Whether {@code min}/{@code pattern} is the filter already showing (so applying it again is no work). */
-    boolean showsFilter(LogLevel min, String pattern) {
+    boolean showsFilter(@Nullable LogLevel min, @Nullable String pattern) {
         String wanted = pattern == null || pattern.isEmpty() ? null : pattern;
         return min == minLevel && Objects.equals(wanted, query) && (full != null || (min == null && wanted == null));
     }
@@ -233,7 +257,7 @@ final class LogView {
      * {@code pattern}; {@code null}/{@code null} clears the filter and restores the full text. The caret stays
      * on the line it was on, or the nearest one still visible.
      */
-    void applyFilter(LogLevel min, String pattern) {
+    void applyFilter(@Nullable LogLevel min, @Nullable String pattern) {
         if (showsFilter(min, pattern)) {
             return;
         }
@@ -259,7 +283,7 @@ final class LogView {
         return true;
     }
 
-    private void install(LogFilter.Run run, String current, LogLevel min, String pattern) {
+    private void install(LogFilter.Run run, String current, @Nullable LogLevel min, @Nullable String pattern) {
         boolean atEnd = following && showsEnd();
         int caretLine = caretSourceLine();
         full = new StringBuilder(current);
@@ -426,6 +450,8 @@ final class LogView {
      * unfinished last line if it would be kept as it stands. Expects no provisional line to be showing.
      */
     private void showPending() {
+        StringBuilder full = activeFull();
+        LogRecordFilter filter = activeFilter();
         LogFilter.Collector kept = new LogFilter.Collector(256);
         int pos = consumed;
         for (int nl = full.indexOf("\n", pos); nl >= 0; nl = full.indexOf("\n", pos)) {
@@ -543,6 +569,7 @@ final class LogView {
      * appended matched the filter — and with them the visible lines that were among those.
      */
     private void trimFull() {
+        StringBuilder full = activeFull();
         int len = full.length();
         if (len <= limit() + slack) {
             return;

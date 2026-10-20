@@ -49,7 +49,7 @@ public final class PytestScanner {
     private static final Pattern CLASS = Pattern.compile("^([ \\t]*)class[ \\t]+(\\w+)[ \\t]*(\\(([^)]*)\\))?");
 
     /** Whether pytest's default {@code python_files} pattern matches: {@code test_*.py} or {@code *_test.py}. */
-    public static boolean isTestFile(String fileName) {
+    public static boolean isTestFile(@Nullable String fileName) {
         if (fileName == null || !fileName.endsWith(".py")) {
             return false;
         }

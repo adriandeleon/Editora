@@ -10,6 +10,7 @@ import com.editora.snippet.SnippetSession;
 import com.editora.snippet.SnippetSessions;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Shows a running snippet session: the active field washed and outlined, the fields still to visit
@@ -27,14 +28,14 @@ final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed
     private final CodeArea area;
     private final SnippetSessions sessions;
     private final Canvas canvas = new Canvas(1, 1);
-    private OverlayPalette.Colors colors;
+    private OverlayPalette.@Nullable Colors colors;
     private boolean active;
     private boolean rendering = true;
     private boolean redrawPending;
     /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
     private final AfterLayoutPaint afterLayout;
 
-    private SnippetFieldOverlay follower;
+    private @Nullable SnippetFieldOverlay follower;
 
     SnippetFieldOverlay(CodeArea area, SnippetSessions sessions) {
         this.area = area;
@@ -120,7 +121,8 @@ final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed
     private void redraw() {
         GraphicsContext g = canvas.getGraphicsContext2D();
         g.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-        if (!active || colors == null || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        OverlayPalette.Colors palette = colors;
+        if (!active || palette == null || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         try {
@@ -135,7 +137,7 @@ final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed
                     last, area.getParagraph(last).getText().length());
             sessions.marks((start, end, kind) -> {
                 if (end >= firstOffset && start <= lastOffset && end <= area.getLength()) {
-                    paint(g, start, end, kind);
+                    paint(g, palette, start, end, kind);
                 }
             });
         } catch (RuntimeException ignored) {
@@ -143,10 +145,10 @@ final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed
         }
     }
 
-    private void paint(GraphicsContext g, int start, int end, int kind) {
-        Color accent = colors.info();
+    private void paint(GraphicsContext g, OverlayPalette.Colors palette, int start, int end, int kind) {
+        Color accent = palette.info();
         if (end <= start) {
-            paintEmpty(g, start, kind == SnippetSession.MARK_FINAL ? colors.whitespace() : accent, kind);
+            paintEmpty(g, start, kind == SnippetSession.MARK_FINAL ? palette.whitespace() : accent, kind);
             return;
         }
         var from = area.offsetToPosition(start, Bias.Forward);
@@ -227,7 +229,7 @@ final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed
         }
     }
 
-    private Bounds local(Bounds screen) {
+    private @Nullable Bounds local(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

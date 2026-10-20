@@ -14,6 +14,7 @@ import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.grammar.IStateStack;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One incremental syntax-highlight pass: everything {@link EditorBuffer} computes off the FX thread
@@ -43,7 +44,7 @@ final class HighlightPass {
      * are on, the nesting depth at the end of every line ({@code null} otherwise). Never modified once
      * built — a pass reads the previous table from the pool thread while the FX thread still owns it.
      */
-    record Lines(IStateStack[] states, int[] depths) {
+    record Lines(IStateStack[] states, int @Nullable [] depths) {
         int count() {
             return states.length;
         }
@@ -60,12 +61,12 @@ final class HighlightPass {
     record Request(
             String text,
             IGrammar grammar,
-            Lines lines,
+            @Nullable Lines lines,
             List<TextMateHighlighter.Symbol> symbols,
             int dirtyStart,
             int dirtyEnd,
             boolean brackets,
-            List<SemanticToken> semantic) {}
+            @Nullable List<SemanticToken> semantic) {}
 
     /**
      * @param fromOffset where {@code spans} start
@@ -77,7 +78,7 @@ final class HighlightPass {
      */
     record Result(
             int fromOffset,
-            StyleSpans<Collection<String>> spans,
+            @Nullable StyleSpans<Collection<String>> spans,
             Lines lines,
             List<TextMateHighlighter.Symbol> symbols,
             boolean symbolsChanged,
@@ -91,7 +92,7 @@ final class HighlightPass {
     }
 
     /** Runs the pass. Returns {@code null} when {@code cancelled} reported true before it finished. */
-    static Result run(Request r, BooleanSupplier cancelled) {
+    static @Nullable Result run(Request r, BooleanSupplier cancelled) {
         String text = r.text();
         if (text == null || r.grammar() == null || cancelled.getAsBoolean()) {
             return null;
@@ -125,7 +126,7 @@ final class HighlightPass {
             }
         }
         // Resuming at a line needs the state the line before it ended in; without one, start over.
-        if (resume && first > 0 && (first > old.count() || old.states()[first - 1] == null)) {
+        if (resume && first > 0 && old != null && (first > old.count() || old.states()[first - 1] == null)) {
             resume = false;
         }
         if (!resume) {
@@ -139,7 +140,7 @@ final class HighlightPass {
         int delta = old == null ? 0 : lineCount - old.count();
         BracketColors.Scanner scanner = brackets
                 ? new BracketColors.Scanner(
-                        text, from, firstLine == 0 ? 0 : old.depths()[firstLine - 1], BracketColors.COLORS)
+                        text, from, firstLine == 0 ? 0 : resumedDepths(old)[firstLine - 1], BracketColors.COLORS)
                 : null;
         IntList depths = new IntList();
         IntList bounds = new IntList(); // start, end of each tokenized line
@@ -147,25 +148,25 @@ final class HighlightPass {
                 text,
                 r.grammar(),
                 firstLine,
-                firstLine == 0 ? null : old.states()[firstLine - 1],
+                firstLine == 0 ? null : resumedFrom(old).states()[firstLine - 1],
                 cancelled,
                 new TextMateHighlighter.LineHook() {
                     @Override
-                    public void run(String style, int length) {
+                    public void run(@Nullable String style, int length) {
                         if (scanner != null) {
                             scanner.run(style, length);
                         }
                     }
 
                     @Override
-                    public void runNotBrackets(String style, int length) {
+                    public void runNotBrackets(@Nullable String style, int length) {
                         if (scanner != null) {
                             scanner.skip(length);
                         }
                     }
 
                     @Override
-                    public boolean lineDone(int line, int lineStart, int lineEnd, IStateStack endState) {
+                    public boolean lineDone(int line, int lineStart, int lineEnd, @Nullable IStateStack endState) {
                         int depth = scanner == null ? 0 : scanner.depth();
                         depths.add(depth);
                         bounds.add(lineStart);
@@ -174,10 +175,11 @@ final class HighlightPass {
                             return false;
                         }
                         int oldLine = line - delta;
+                        Lines prev = resumedFrom(old);
                         return oldLine >= 0
-                                && oldLine < old.count()
-                                && Objects.equals(endState, old.states()[oldLine])
-                                && (scanner == null || depth == old.depths()[oldLine]);
+                                && oldLine < prev.count()
+                                && Objects.equals(endState, prev.states()[oldLine])
+                                && (scanner == null || depth == resumedDepths(prev)[oldLine]);
                     }
                 });
         if (a == null) {
@@ -189,21 +191,21 @@ final class HighlightPass {
         IStateStack[] states = new IStateStack[lineCount];
         int[] lineDepths = brackets ? new int[lineCount] : null;
         if (firstLine > 0) {
-            System.arraycopy(old.states(), 0, states, 0, firstLine);
+            System.arraycopy(resumedFrom(old).states(), 0, states, 0, firstLine);
         }
         for (int i = 0; i < tokenized; i++) {
             states[firstLine + i] = a.endStates().get(i);
         }
         if (tail > 0) {
-            System.arraycopy(old.states(), lastLine + 1 - delta, states, lastLine + 1, tail);
+            System.arraycopy(resumedFrom(old).states(), lastLine + 1 - delta, states, lastLine + 1, tail);
         }
         if (brackets) {
             if (firstLine > 0) {
-                System.arraycopy(old.depths(), 0, lineDepths, 0, firstLine);
+                System.arraycopy(resumedDepths(old), 0, lineDepths, 0, firstLine);
             }
             System.arraycopy(depths.values, 0, lineDepths, firstLine, tokenized);
             if (tail > 0) {
-                System.arraycopy(old.depths(), lastLine + 1 - delta, lineDepths, lastLine + 1, tail);
+                System.arraycopy(resumedDepths(old), lastLine + 1 - delta, lineDepths, lastLine + 1, tail);
             }
         }
         List<TextMateHighlighter.Symbol> previous = r.symbols() == null ? List.of() : r.symbols();
@@ -243,6 +245,23 @@ final class HighlightPass {
                 symbolsChanged,
                 firstLine,
                 lastLine);
+    }
+
+    /** The previous pass's table, which every pass that resumes (or keeps a tail) has. */
+    private static Lines resumedFrom(@Nullable Lines old) {
+        if (old == null) {
+            throw new IllegalStateException("incremental pass without a previous line table");
+        }
+        return old;
+    }
+
+    /** The previous pass's bracket depths, which a resumed bracket-colouring pass has. */
+    private static int[] resumedDepths(@Nullable Lines old) {
+        int[] depths = resumedFrom(old).depths();
+        if (depths == null) {
+            throw new IllegalStateException("incremental bracket pass without previous depths");
+        }
+        return depths;
     }
 
     static final String MARKDOWN_SCOPE = "text.html.markdown";
@@ -294,7 +313,7 @@ final class HighlightPass {
     }
 
     /** {@link com.editora.markdown.MarkdownSourceStyles} for the restyled lines, as sparse spans; null for none. */
-    private static StyleSpans<Collection<String>> markdownSpans(
+    private static @Nullable StyleSpans<Collection<String>> markdownSpans(
             String text, int firstLine, int lastLine, int fromOffset, int length) {
         List<com.editora.markdown.MarkdownSourceStyles.Range> ranges =
                 com.editora.markdown.MarkdownSourceStyles.ranges(text, firstLine, lastLine);
@@ -356,7 +375,7 @@ final class HighlightPass {
      *
      * @param bounds start and end offset of each tokenized line, from {@code firstLine} on
      */
-    private static StyleSpans<Collection<String>> semanticSpans(
+    private static @Nullable StyleSpans<Collection<String>> semanticSpans(
             List<SemanticToken> tokens, int firstLine, IntList bounds, int fromOffset, int length) {
         StyleSpansBuilder<Collection<String>> b = new StyleSpansBuilder<>();
         int cursor = 0; // offset within the range of the next unstyled char
@@ -395,7 +414,7 @@ final class HighlightPass {
      * Whether any character of {@code spans} (which start at offset {@code from}) carries a style class,
      * other than a lone styled character at one of the {@code except} offsets.
      */
-    static boolean anyStyled(StyleSpans<Collection<String>> spans, int from, int[] except) {
+    static boolean anyStyled(StyleSpans<Collection<String>> spans, int from, int @Nullable [] except) {
         int at = from;
         for (var span : spans) {
             boolean excepted = span.getLength() == 1 && except != null && (at == except[0] || at == except[1]);
