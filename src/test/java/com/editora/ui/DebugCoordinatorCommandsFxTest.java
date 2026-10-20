@@ -1805,6 +1805,23 @@ class DebugCoordinatorCommandsFxTest {
     }
 
     @Test
+    void stopWhileATestRunWaitsForItsJvmEndsThatRunInstead() throws Exception {
+        // Debug Test on Maven: the build runs, the fork is not listening yet, there is no session (review D1).
+        List<String> ended = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> debug.setPendingAttach(() -> ended.add("build stopped")));
+        assertTrue(FxTestSupport.callOnFx(debug::sessionLive), "the wait counts as live: the window stays");
+        assertTrue(FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(debug.panel(), "preparing")));
+
+        FxTestSupport.runOnFx(() -> debug.stop());
+        assertEquals(List.of("build stopped"), ended);
+        assertFalse(FxTestSupport.callOnFx(debug::sessionLive));
+        assertFalse(FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(debug.panel(), "preparing")));
+
+        FxTestSupport.runOnFx(() -> debug.stop()); // nothing waits any more: inert
+        assertEquals(List.of("build stopped"), ended);
+    }
+
+    @Test
     void closedFilesBreakpointsAreArmedAtLaunchUnlessTheStoreEntryIsUnusable() {
         Path closed = project.resolve("Closed.java");
         Map<String, List<Breakpoint>> map = new LinkedHashMap<>();

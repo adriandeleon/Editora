@@ -6483,6 +6483,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             testNavigation.resolveTestClassAnchor(
                     className, a -> debugCoordinator.attachToPort(a, host, port, testRunCoordinator::stop));
         }
+
+        @Override
+        public void setPendingDebugAttach(Runnable cancel) {
+            debugCoordinator.setPendingAttach(cancel);
+        }
+
+        @Override
+        public boolean debugSessionActive() {
+            return dapManager.isActive();
+        }
     });
 
     /** LSP UI/lifecycle integration; the shared manager remains here because DAP and MCP also use it. */
