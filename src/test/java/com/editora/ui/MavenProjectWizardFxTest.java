@@ -362,27 +362,24 @@ class MavenProjectWizardFxTest {
     }
 
     /**
-     * With the update box ticked, the dependency half runs as a SECOND maven invocation in the project
-     * directory — not as extra flags on archetype:generate, which would not accept them.
+     * With the update box ticked there is still only ONE Maven run: both dependencies and plugins are
+     * resolved from Maven Central's metadata in-process (the {@code versions:use-latest-releases} run that
+     * used to follow wrote milestones and betas). This pom pins nothing, so no lookup is made either.
      */
     @Test
-    void updatingVersionsRunsTheVersionsPluginInTheProject() throws Exception {
+    void updatingVersionsDoesNotRunMavenASecondTime() throws Exception {
         Path parent = Files.createTempDirectory("editora-maven-versions");
         try {
             MavenProjectCoordinator c = coordinator();
             Path projectDir = parent.resolve("demo");
             List<List<String>> runs = new java.util.ArrayList<>();
-            List<Path> dirs = new java.util.ArrayList<>();
             FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
                 runs.add(command);
-                dirs.add(dir);
-                if (runs.size() == 1) {
-                    try {
-                        Files.createDirectories(projectDir);
-                        Files.writeString(projectDir.resolve("pom.xml"), POM);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
+                try {
+                    Files.createDirectories(projectDir);
+                    Files.writeString(projectDir.resolve("pom.xml"), POM);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
                 }
                 listener.onExit(0);
             }));
@@ -390,13 +387,10 @@ class MavenProjectWizardFxTest {
             MavenProjectSpec spec = new MavenProjectSpec(
                     quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
             FxTestSupport.runOnFx(() -> c.generate(spec, new MavenProjectExtras("", "", true)));
+            FxTestSupport.drainFx();
 
-            assertEquals(2, runs.size(), "the dependency update is a second maven run");
-            assertTrue(
-                    runs.get(1).contains("versions:use-latest-releases"),
-                    runs.get(1).toString());
-            assertTrue(runs.get(1).contains("-DgenerateBackupPoms=false"), "a versionsBackup pom is litter");
-            assertEquals(projectDir, dirs.get(1), "it must run IN the generated project, not its parent");
+            assertEquals(1, runs.size(), "archetype:generate only; versions are resolved in-process");
+            assertTrue(runs.get(0).contains("archetype:generate"), runs.get(0).toString());
         } finally {
             deleteRecursively(parent);
         }

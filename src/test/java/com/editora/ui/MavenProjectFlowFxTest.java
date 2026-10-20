@@ -39,6 +39,7 @@ import com.editora.command.KeymapManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.io.LoopbackDownloads;
+import com.editora.maven.ArchetypeCatalogCache;
 import com.editora.maven.GeneratedProject;
 import com.editora.maven.MavenArchetype;
 import com.editora.maven.MavenProjectExtras;
@@ -503,8 +504,13 @@ class MavenProjectFlowFxTest {
                     shown.stream().anyMatch(s -> s.contains("A service skeleton from the full catalog")),
                     shown.toString());
             assertTrue(
-                    shown.stream().anyMatch(s -> s.startsWith("fetched-plain") && s.contains("org.example.archetypes")),
-                    "without a description the group is shown: " + shown);
+                    shown.stream()
+                            .anyMatch(s -> s.startsWith("fetched-plain")
+                                    && s.contains("org.example.archetypes:fetched-plain:1.0")),
+                    "the coordinates are always shown: " + shown);
+            assertTrue(
+                    shown.stream().anyMatch(s -> s.contains("org.example.archetypes:fetched-service:2.1")),
+                    "with a description the coordinates still show: " + shown);
 
             // The fetched list is kept for the session: opening the wizard again does not download it again.
             FxTestSupport.runOnFx(() -> rig.coordinator.newProject(dir));
@@ -536,6 +542,105 @@ class MavenProjectFlowFxTest {
             FxTestSupport.drainFx();
             assertEquals(curated + 2, rig.pickerItems().size(), "the picker is back, with the Load row still offered");
             assertEquals(1, rig.host.tasksClosed.get(), "the background-task indicator is closed on failure too");
+        }
+    }
+
+    /**
+     * The parsed catalog is cached on disk under the config folder: a second window (a second coordinator
+     * over the same config) loads it with no request at all while it is fresh, and once it is a day old the
+     * refresh is a conditional GET that an unchanged file answers with 304 — the rows are kept, the clock reset.
+     */
+    @Test
+    void theCatalogIsCachedOnDiskAndRevalidatedConditionallyAfterADay(@TempDir Path dir) throws Exception {
+        Path configDir = Files.createDirectories(dir.resolve("config"));
+        Path cacheFile = ArchetypeCatalogCache.file(configDir);
+        try (LoopbackDownloads remote = new LoopbackDownloads()) {
+            remote.serveWithValidators(CATALOG_URL, CATALOG, "\"etag-1\"", "Wed, 14 Oct 2026 10:00:00 GMT");
+
+            try (Rig rig = new Rig(dir, configDir)) {
+                rig.coordinator.setHttpClientsForTest(() -> remote.client().get());
+                rig.host.settings.setMavenArchetypeCatalogUrl(CATALOG_URL);
+                FxTestSupport.runOnFx(() -> rig.coordinator.newProject(dir));
+                rig.choose(rig.pickerItems().size() - 1);
+                assertEquals(
+                        tr("status.mavenProject.catalogLoaded", 2),
+                        rig.host.awaitStatus(s -> !s.equals(tr("status.mavenProject.loadingCatalog"))));
+                FxTestSupport.drainFx();
+            }
+            assertEquals(1, remote.requests().size());
+            ArchetypeCatalogCache.Entry cached = ArchetypeCatalogCache.read(cacheFile);
+            assertNotNull(cached, "the parsed catalog is written to " + cacheFile);
+            assertEquals(2, cached.archetypes().size());
+            assertEquals("\"etag-1\"", cached.etag());
+            assertEquals("Wed, 14 Oct 2026 10:00:00 GMT", cached.lastModified());
+
+            // A fresh cache: another window loads it without a request.
+            try (Rig rig = new Rig(dir, configDir)) {
+                rig.coordinator.setHttpClientsForTest(() -> {
+                    throw new AssertionError("a fresh cache must not be refetched");
+                });
+                rig.host.settings.setMavenArchetypeCatalogUrl(CATALOG_URL);
+                FxTestSupport.runOnFx(() -> rig.coordinator.newProject(dir));
+                rig.choose(rig.pickerItems().size() - 1);
+                assertEquals(
+                        tr("status.mavenProject.catalogLoaded", 2),
+                        rig.host.awaitStatus(s -> !s.equals(tr("status.mavenProject.loadingCatalog"))));
+                FxTestSupport.drainFx();
+                assertTrue(
+                        rig.pickerItems().stream().anyMatch(a -> a.artifactId().equals("fetched-service")),
+                        "the cached rows are offered");
+            }
+            assertEquals(1, remote.requests().size(), "no request while the cache is fresh");
+
+            // A day later: revalidated with the cached validators; 304 keeps the rows and resets the clock.
+            long twoDaysAgo = System.currentTimeMillis() - 2 * ArchetypeCatalogCache.MAX_AGE.toMillis();
+            ArchetypeCatalogCache.write(
+                    cacheFile,
+                    new ArchetypeCatalogCache.Entry(
+                            cached.archetypes(), cached.etag(), cached.lastModified(), twoDaysAgo));
+            try (Rig rig = new Rig(dir, configDir)) {
+                rig.coordinator.setHttpClientsForTest(() -> remote.client().get());
+                rig.host.settings.setMavenArchetypeCatalogUrl(CATALOG_URL);
+                FxTestSupport.runOnFx(() -> rig.coordinator.newProject(dir));
+                rig.choose(rig.pickerItems().size() - 1);
+                assertEquals(
+                        tr("status.mavenProject.catalogLoaded", 2),
+                        rig.host.awaitStatus(s -> !s.equals(tr("status.mavenProject.loadingCatalog"))));
+                FxTestSupport.drainFx();
+            }
+            assertEquals(2, remote.requests().size());
+            assertEquals(1, remote.notModifiedAnswers(), "the stale cache was revalidated, not re-downloaded");
+            ArchetypeCatalogCache.Entry revalidated = ArchetypeCatalogCache.read(cacheFile);
+            assertTrue(revalidated.isFresh(System.currentTimeMillis()), "a 304 resets the cache's age");
+            assertEquals(2, revalidated.archetypes().size());
+        }
+    }
+
+    /** A stale cache is still better than nothing when Central cannot be reached — but the error is shown. */
+    @Test
+    void aStaleCacheIsUsedWhenTheRefreshFailsAndTheFailureIsStillReported(@TempDir Path dir) throws Exception {
+        Path configDir = Files.createDirectories(dir.resolve("config"));
+        long twoDaysAgo = System.currentTimeMillis() - 2 * ArchetypeCatalogCache.MAX_AGE.toMillis();
+        ArchetypeCatalogCache.write(
+                ArchetypeCatalogCache.file(configDir),
+                new ArchetypeCatalogCache.Entry(
+                        List.of(new MavenArchetype("org.example.archetypes", "stale-one", "1.0", "", "", false)),
+                        "",
+                        "",
+                        twoDaysAgo));
+        try (Rig rig = new Rig(dir, configDir);
+                LoopbackDownloads remote = new LoopbackDownloads()) {
+            remote.status(CATALOG_URL, 503);
+            rig.coordinator.setHttpClientsForTest(() -> remote.client().get());
+            rig.host.settings.setMavenArchetypeCatalogUrl(CATALOG_URL);
+            FxTestSupport.runOnFx(() -> rig.coordinator.newProject(dir));
+            rig.choose(rig.pickerItems().size() - 1);
+            assertEquals(tr("status.mavenProject.catalogFailed", "HTTP 503"), rig.host.awaitError());
+            FxTestSupport.drainFx();
+            assertTrue(
+                    rig.pickerItems().stream().anyMatch(a -> a.artifactId().equals("stale-one")),
+                    "the stale rows are offered: " + rig.pickerItems());
+            assertEquals(1, rig.host.tasksClosed.get());
         }
     }
 
@@ -615,12 +720,21 @@ class MavenProjectFlowFxTest {
         }
     }
 
+    /**
+     * Both halves of "update to the latest versions" go through Maven Central's metadata with the stable
+     * filter — dependencies included. They used to go through {@code versions:use-latest-releases}, whose
+     * "release" means "not a SNAPSHOT", so a brand-new project came out on {@code 7.1.0-M2} / {@code 8.0.0.Beta3}
+     * lines while the plugin half of the same checkbox filtered those out.
+     */
     @Test
-    void updatingVersionsAfterGenerationRewritesThePluginsAndCarriesOnWhenAStepFails(@TempDir Path dir)
+    void updatingVersionsAfterGenerationResolvesDependenciesAndPluginsAlikeAndCarriesOnPastAMiss(@TempDir Path dir)
             throws Exception {
         try (Rig rig = new Rig(dir);
                 LoopbackDownloads central = new LoopbackDownloads()) {
             central.serve(
+                            CENTRAL + "org/junit/jupiter/junit-jupiter-api/maven-metadata.xml",
+                            metadata("5.10.0", "5.13.0", "6.0.0-M1"))
+                    .serve(
                             CENTRAL + "org/apache/maven/plugins/maven-compiler-plugin/maven-metadata.xml",
                             metadata("3.11.0", "3.14.0"))
                     .status(CENTRAL + "org/apache/maven/plugins/maven-surefire-plugin/maven-metadata.xml", 500);
@@ -629,36 +743,36 @@ class MavenProjectFlowFxTest {
             List<List<String>> runs = new CopyOnWriteArrayList<>();
             FxTestSupport.runOnFx(() -> rig.coordinator.setRunnerForTest((w, argv, listener) -> {
                 runs.add(argv);
-                if (runs.size() == 1) {
-                    write(projectDir.resolve("pom.xml"), PINNED_POM);
-                    listener.onExit(0);
-                } else {
-                    // The dependency half cannot be started; the plugin half still runs.
-                    listener.onStart("versions");
-                    listener.onOutput("[INFO] checking", false);
-                    listener.onError("versions plugin missing");
-                }
+                write(projectDir.resolve("pom.xml"), PINNED_POM);
+                listener.onExit(0);
             }));
             MavenProjectSpec spec =
                     new MavenProjectSpec(rig.quickstart(), "com.example", "demo", "1.0", "com.example.demo", dir);
             FxTestSupport.runOnFx(() -> rig.coordinator.generate(spec, new MavenProjectExtras("", "", true)));
 
-            String updated = tr("status.mavenProject.versionsUpdated", 1);
+            String updated = tr("status.mavenProject.versionsUpdatedCounts", 1, 1);
             assertEquals(updated, rig.host.awaitStatus(updated::equals));
             FxTestSupport.drainFx();
+            assertEquals(1, runs.size(), "no second Maven run: the versions plugin is no longer used");
             String pom = Files.readString(projectDir.resolve("pom.xml"));
+            assertTrue(pom.contains("<version>5.13.0</version>"), "the dependency is updated: " + pom);
+            assertFalse(pom.contains("6.0.0-M1"), "a milestone is not a release, for dependencies too");
             assertTrue(pom.contains("<version>3.14.0</version>"), pom);
             assertTrue(pom.contains("<version>3.2.5</version>"), "no answer for surefire: left as generated");
-            assertTrue(pom.contains("<version>5.10.0</version>"), "dependencies are the versions plugin's job");
             String console = rig.console();
-            assertTrue(console.contains("versions:use-latest-releases"), console);
-            assertTrue(console.contains("versions plugin missing"), console);
+            assertFalse(console.contains("versions:use-latest-releases"), console);
+            assertTrue(console.contains(tr("status.mavenVersions.checking", 3)), console);
+            assertTrue(
+                    console.contains(
+                            tr("status.mavenProject.pluginUpdated", "org.junit.jupiter:junit-jupiter-api", "5.13.0")),
+                    console);
             assertTrue(
                     console.contains(tr(
                             "status.mavenProject.pluginUpdated",
                             "org.apache.maven.plugins:maven-compiler-plugin",
                             "3.14.0")),
                     console);
+            assertEquals(3, central.requests().size(), "one metadata request per pinned artifact");
             assertEquals(1, rig.ops.projects.size(), "the project opens once every step is done");
             assertEquals(tr("status.mavenProject.created", "demo"), rig.host.lastStatus());
         }
@@ -676,7 +790,7 @@ class MavenProjectFlowFxTest {
                     new MavenProjectSpec(rig.quickstart(), "com.example", "demo", "1.0", "com.example.demo", dir);
             FxTestSupport.runOnFx(() -> rig.coordinator.generate(spec, new MavenProjectExtras("", "", true)));
             assertTrue(
-                    rig.host.statusLog.contains(tr("status.mavenProject.versionsUpdated", 0)),
+                    rig.host.statusLog.contains(tr("status.mavenProject.versionsUpdatedCounts", 0, 0)),
                     rig.host.statusLog.toString());
             assertEquals(1, rig.ops.projects.size());
             assertNull(rig.ops.projects.get(0).main(), "no main class in what was generated");
@@ -755,10 +869,16 @@ class MavenProjectFlowFxTest {
         final AtomicInteger tasksClosed = new AtomicInteger();
         private volatile String lastStatus;
         private volatile String lastError;
+        volatile Path configDir;
 
         @Override
         public Settings settings() {
             return settings;
+        }
+
+        @Override
+        public Path configDir() {
+            return configDir;
         }
 
         @Override
@@ -894,6 +1014,12 @@ class MavenProjectFlowFxTest {
         private final Stage stage;
 
         Rig(Path dir) throws Exception {
+            this(dir, null);
+        }
+
+        /** With {@code configDir} (nullable) as the host's config folder, where the catalog cache lives. */
+        Rig(Path dir, Path configDir) throws Exception {
+            host.configDir = configDir;
             Path fakeMvn = Files.writeString(dir.resolve("mvn-stand-in"), "#!/bin/sh\nexit 99\n");
             assertTrue(fakeMvn.toFile().setExecutable(true));
             mvn = fakeMvn.toString();

@@ -54,6 +54,8 @@ public final class LoopbackDownloads implements AutoCloseable {
     });
     private final Map<String, Route> routes = new ConcurrentHashMap<>();
     private final List<String> requests = new CopyOnWriteArrayList<>();
+    private final java.util.concurrent.atomic.AtomicInteger notModified =
+            new java.util.concurrent.atomic.AtomicInteger();
 
     public LoopbackDownloads() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -71,6 +73,39 @@ public final class LoopbackDownloads implements AutoCloseable {
     /** Answers {@code url} with 200 and {@code text} as UTF-8. */
     public LoopbackDownloads serve(String url, String text) {
         return serve(url, text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Answers {@code url} with 200, {@code text} and the given validators — or with {@code 304 Not Modified}
+     * and no body when the request carries an {@code If-None-Match} equal to {@code etag} or an
+     * {@code If-Modified-Since} equal to {@code lastModified}. {@link #notModifiedAnswers()} counts the 304s.
+     */
+    public LoopbackDownloads serveWithValidators(String url, String text, String etag, String lastModified) {
+        routes.put(url, exchange -> {
+            String ifNoneMatch = exchange.getRequestHeaders().getFirst("If-None-Match");
+            String ifModifiedSince = exchange.getRequestHeaders().getFirst("If-Modified-Since");
+            boolean unchanged = (etag != null && etag.equals(ifNoneMatch))
+                    || (lastModified != null && lastModified.equals(ifModifiedSince));
+            if (unchanged) {
+                notModified.incrementAndGet();
+                exchange.sendResponseHeaders(304, -1);
+                exchange.close();
+                return;
+            }
+            if (etag != null) {
+                exchange.getResponseHeaders().add("ETag", etag);
+            }
+            if (lastModified != null) {
+                exchange.getResponseHeaders().add("Last-Modified", lastModified);
+            }
+            respond(exchange, 200, text.getBytes(StandardCharsets.UTF_8));
+        });
+        return this;
+    }
+
+    /** How many requests were answered {@code 304 Not Modified} by {@link #serveWithValidators}. */
+    public int notModifiedAnswers() {
+        return notModified.get();
     }
 
     /** Answers {@code url} with {@code status} and a short body. */
