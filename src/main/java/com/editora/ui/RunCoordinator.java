@@ -2466,18 +2466,20 @@ final class RunCoordinator {
     /**
      * Brings the Run console forward for every valid Run request. A second request while a process is alive
      * is therefore useful rather than a silent no-op: it returns the user to the process that already owns
-     * the console, then reports that another launch cannot start yet.
+     * the console, then reports that another launch cannot start yet. A refused request leaves the launch under
+     * way as it is: clearing its deployment while its before-launch step ran sent a deployed program to the local
+     * project instead of the host's copy.
      */
     private boolean beginRunRequest() {
+        ops.openToolWindow();
+        if (consoleRunning()) { // a before-launch build counts: a second Run must not start a second build
+            host.setStatus(tr("status.run.busy"));
+            return false;
+        }
         terminalRun = false; // only a configuration that asks for it, and only its own launch
         launchRoot = null; // and only a deployed configuration's launch resolves on its host
         deployed = null;
-        ops.openToolWindow();
-        if (!consoleRunning()) { // a before-launch build counts: a second Run must not start a second build
-            return true;
-        }
-        host.setStatus(tr("status.run.busy"));
-        return false;
+        return true;
     }
 
     /** Runs {@code command} in {@code workingDir} (the project root for a main class, else a file's folder),

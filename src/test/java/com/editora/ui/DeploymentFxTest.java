@@ -451,6 +451,41 @@ class DeploymentFxTest {
     }
 
     @Test
+    void aRunRefusedDuringTheBeforeLaunchStepLeavesTheLaunchOnTheHost() throws Exception {
+        RunCoordinator run = new RunCoordinator(new RunHost(), new RunOps());
+        // The step says it started, then holds the launch long enough for a second Run to arrive.
+        RunConfiguration cfg = new RunConfiguration(
+                        "remote run",
+                        "shell",
+                        "run.sh",
+                        "",
+                        "",
+                        "hello",
+                        "",
+                        "",
+                        "",
+                        "sh -c 'touch started; sleep 2'",
+                        "")
+                .withDeployment("dev");
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        await("the before-launch step is running on the host", () -> Files.exists(served.resolve("started")));
+
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        assertTrue(status.contains(Messages.tr("status.run.busy")), "the second Run is refused: " + status);
+
+        await("the first launch ran: " + status, () -> {
+            try {
+                return console(run).contains(" with hello");
+            } catch (Exception e) {
+                return false;
+            }
+        });
+        assertTrue(
+                console(run).contains("ran in " + served.toRealPath() + " with hello"),
+                "the refused Run left the launch on the host's copy, not the local project: " + console(run));
+    }
+
+    @Test
     void stopDuringTheDeployEndsItAndNothingRuns() throws Exception {
         // Many small files, so the deploy is still sending when Stop arrives.
         for (int i = 0; i < 400; i++) {

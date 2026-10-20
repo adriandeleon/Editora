@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Run: a second Run during a deployed configuration's before-launch step no longer moves the program to
+  this machine.** The second Run was refused ("A program is already running"), but it cleared the launch's
+  deployment on the way, so when the step finished the program ran in the local project instead of the
+  host's copy. A deployed Java configuration lost its launch altogether. A refused Run now leaves the launch
+  under way as it is.
 - **Null pointer exceptions found by the new null checking.** Each would have failed the action, or a
   background thread, with a `NullPointerException`:
   - **Terminal Find** after a newer search or the terminal's closing had already replaced the scan.
