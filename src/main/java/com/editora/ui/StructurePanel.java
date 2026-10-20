@@ -23,6 +23,8 @@ import javafx.scene.control.IndexedCell;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -73,6 +75,29 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         KIND
     }
 
+    /**
+     * What picking a symbol does to the editor besides scrolling there: nothing (the file stays whole), or it
+     * narrows the editor to the symbol's function ({@code narrow-to-defun}) or to its foldable block. A mode
+     * belongs to the buffer it was turned on for and ends when that buffer is widened by any means.
+     */
+    enum NarrowMode {
+        OFF,
+        DEFUN,
+        FOLD
+    }
+
+    /** Narrowing, as the editing coordinator does it (status messages included); wired by MainController. */
+    interface NarrowActions {
+        /** Narrows to the top-level definition around area line {@code line}; false when there is none. */
+        boolean narrowToDefun(EditorBuffer buffer, int line);
+
+        /** Narrows to the innermost foldable region holding area line {@code line}; false when there is none. */
+        boolean narrowToFoldRegion(EditorBuffer buffer, int line);
+
+        /** Shows the whole file again; a no-op for a buffer that is not narrowed. */
+        void widen(EditorBuffer buffer);
+    }
+
     private final TextField filterField = new TextField();
     private final TreeView<StructureNode> tree = new TreeView<>();
     private final ComboBox<SortMode> sortCombo = new ComboBox<>();
@@ -80,6 +105,18 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     private @Nullable EditorBuffer buffer;
     private @Nullable MarkerActions markerActions;
+    private @Nullable NarrowActions narrowActions;
+    /** The attached buffer's narrowing mode; {@link #narrowModes} remembers the others' across tab switches. */
+    private NarrowMode narrowMode = NarrowMode.OFF;
+
+    private final Map<EditorBuffer, NarrowMode> narrowModes = new java.util.WeakHashMap<>();
+    private final ToggleGroup narrowGroup = new ToggleGroup();
+    private final ToggleButton narrowWiden = narrowSegment(Icons.widen(), "structure.narrow.widen");
+    private final ToggleButton narrowDefun = narrowSegment(Icons.defun(), "structure.narrow.defun");
+    private final ToggleButton narrowFold = narrowSegment(Icons.foldRegion(), "structure.narrow.fold");
+    /** Suppresses the segments' actions while {@link #syncNarrowToggle} selects one programmatically. */
+    private boolean syncingNarrow;
+
     private List<StructureNode> roots = List.of();
     /**
      * The LSP document-symbol outline for the active buffer, or {@code null} to use the TextMate/fold
@@ -191,8 +228,23 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         });
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
+        // Narrowing segments at the end of the search row (the sort/kind row has no room to spare): Widen (the
+        // file is whole) | Defun | Fold. One of the latter is lit while this panel narrowed the buffer; none
+        // while it was narrowed some other way (C-x n n).
+        for (ToggleButton segment : List.of(narrowWiden, narrowDefun, narrowFold)) {
+            segment.setToggleGroup(narrowGroup);
+        }
+        narrowWiden.setOnAction(e -> chooseNarrowMode(NarrowMode.OFF));
+        narrowDefun.setOnAction(e -> chooseNarrowMode(NarrowMode.DEFUN));
+        narrowFold.setOnAction(e -> chooseNarrowMode(NarrowMode.FOLD));
+        narrowDefun.getStyleClass().add("structure-narrow-on"); // selected = narrowed: amber, like the banner
+        narrowFold.getStyleClass().add("structure-narrow-on");
+        HBox narrowToggle = new HBox(narrowWiden, narrowDefun, narrowFold);
+        narrowToggle.getStyleClass().add("structure-narrow-toggle");
+        narrowToggle.setAlignment(Pos.CENTER);
+        syncNarrowToggle();
         HBox.setHgrow(filterField, Priority.ALWAYS);
-        HBox filterBar = new HBox(6, filterField, clearFilter);
+        HBox filterBar = new HBox(6, filterField, clearFilter, narrowToggle);
         filterBar.getStyleClass().add("project-filter-bar");
         filterBar.setAlignment(Pos.CENTER_LEFT);
 
@@ -238,7 +290,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // Navigate as soon as the selection changes (keyboard, search, or single click), but only
         // for user-driven changes — not while the tree is rebuilt — and without stealing focus.
         tree.getSelectionModel().selectedItemProperty().addListener((obs, old, now) -> {
-            if (!suppressNavigation) {
+            if (!suppressNavigation && !narrowOnSelect(now)) {
                 navigateTo(now, false);
             }
         });
@@ -295,6 +347,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         this.buffer = buffer;
         this.lspSymbols = null; // start with the heuristic; MainController pushes LSP symbols if available
         this.lspSymbolsStale = false;
+        narrowMode = buffer != null && buffer.isNarrowed()
+                ? narrowModes.getOrDefault(buffer, NarrowMode.OFF)
+                : NarrowMode.OFF;
+        syncNarrowToggle();
         if (buffer == null) {
             rebuild();
             return;
@@ -520,7 +576,133 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     /** Activates the current selection: navigates and moves focus into the editor. */
     private void navigateSelected() {
-        navigateTo(tree.getSelectionModel().getSelectedItem(), true);
+        TreeItem<StructureNode> item = tree.getSelectionModel().getSelectedItem();
+        if (narrowMode != NarrowMode.OFF && narrowActions != null && buffer != null && item != null) {
+            // Selecting the row already narrowed the editor to it (and its line is stale until the outline is
+            // rebuilt from the region), so activating it only hands over focus.
+            buffer.getArea().requestFocus();
+            return;
+        }
+        navigateTo(item, true);
+    }
+
+    // --- Narrowing ---
+
+    private static ToggleButton narrowSegment(Node icon, String key) {
+        ToggleButton b = new ToggleButton();
+        b.setGraphic(icon);
+        b.getStyleClass().addAll("structure-narrow-segment", "flat");
+        b.setAccessibleText(tr(key));
+        b.setTooltip(new Tooltip(tr(key + ".tip")));
+        b.setFocusTraversable(false);
+        return b;
+    }
+
+    /** Installs the narrowing actions; without them the segments are disabled. */
+    void setNarrowActions(NarrowActions actions) {
+        narrowActions = actions;
+        syncNarrowToggle();
+    }
+
+    /** The attached buffer's narrowing mode (tests). */
+    NarrowMode narrowMode() {
+        return narrowMode;
+    }
+
+    /** A segment was clicked: widen, or narrow to the selected symbol (the caret's line when none is). */
+    private void chooseNarrowMode(NarrowMode mode) {
+        if (syncingNarrow) {
+            return;
+        }
+        if (buffer != null && narrowActions != null) {
+            narrowMode = mode;
+            narrowModes.put(buffer, mode);
+            if (mode == NarrowMode.OFF) {
+                narrowActions.widen(buffer);
+            } else {
+                TreeItem<StructureNode> selected = tree.getSelectionModel().getSelectedItem();
+                int line = selected != null
+                                && selected.getValue() != null
+                                && selected.getValue().line() >= 0
+                        ? selected.getValue().line()
+                        : buffer.getArea().getCurrentParagraph();
+                if (!narrowWith(
+                        buffer,
+                        narrowActions,
+                        mode,
+                        line)) { // nothing to narrow to (the status bar said why): no mode either
+                    narrowMode = NarrowMode.OFF;
+                    narrowModes.remove(buffer);
+                }
+            }
+        }
+        syncNarrowToggle(); // a re-click deselects a ToggleGroup's button: put the state back
+    }
+
+    private static boolean narrowWith(EditorBuffer buffer, NarrowActions actions, NarrowMode mode, int line) {
+        CodeArea area = buffer.getArea();
+        if (line < 0 || line >= area.getParagraphs().size()) {
+            return false;
+        }
+        return switch (mode) {
+            case DEFUN -> actions.narrowToDefun(buffer, line);
+            case FOLD -> actions.narrowToFoldRegion(buffer, line);
+            default -> false;
+        };
+    }
+
+    /** In a narrowing mode a picked symbol re-narrows the editor to itself instead of only scrolling there. */
+    private boolean narrowOnSelect(TreeItem<StructureNode> item) {
+        if (narrowMode == NarrowMode.OFF || narrowActions == null || buffer == null || item == null) {
+            return false;
+        }
+        StructureNode node = item.getValue();
+        if (node == null
+                || node.line() < 0
+                || node.line() >= buffer.getArea().getParagraphs().size()) {
+            return false;
+        }
+        buffer.getArea().moveTo(node.line(), 0); // narrowing keeps the caret: it lands on the symbol
+        return narrowWith(buffer, narrowActions, narrowMode, node.line());
+    }
+
+    /** The buffer narrowed or widened, by this panel or by anything else: the segments follow the buffer. */
+    void narrowChanged(EditorBuffer changed) {
+        if (changed != buffer) {
+            return;
+        }
+        if (buffer != null && !buffer.isNarrowed()) {
+            narrowMode = NarrowMode.OFF;
+            narrowModes.remove(buffer);
+        }
+        syncNarrowToggle();
+    }
+
+    private void syncNarrowToggle() {
+        syncingNarrow = true;
+        try {
+            boolean usable = buffer != null && narrowActions != null;
+            for (ToggleButton segment : List.of(narrowWiden, narrowDefun, narrowFold)) {
+                segment.setDisable(!usable);
+            }
+            if (buffer == null || !buffer.isNarrowed()) {
+                narrowGroup.selectToggle(narrowWiden);
+            } else {
+                narrowGroup.selectToggle(
+                        switch (narrowMode) {
+                            case DEFUN -> narrowDefun;
+                            case FOLD -> narrowFold;
+                            default -> null; // narrowed by a command, not by a mode of this panel
+                        });
+            }
+        } finally {
+            syncingNarrow = false;
+        }
+    }
+
+    /** What the attached buffer's area line 0 is in the file: 0 unless narrowed. Rows show file lines. */
+    private int lineBase() {
+        return buffer == null ? 0 : buffer.narrowFirstLine();
     }
 
     /** Moves the editor caret to {@code item}'s region, optionally focusing the editor. */
@@ -699,7 +881,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (buffer == null || nodes.isEmpty()) {
             return;
         }
-        List<String> lines = List.of(buffer.getContent().split("\n", -1));
+        // Rows carry area lines, so read the area's text: while narrowed getContent() is the whole file.
+        String text = buffer.isNarrowed() ? buffer.getArea().getText() : buffer.getContent();
+        List<String> lines = List.of(text.split("\n", -1));
         attachDocs(nodes, lines);
     }
 
@@ -1716,7 +1900,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                     box.getChildren().add(styledText(run, "structure-return-type"));
                 }
             }
-            javafx.scene.text.Text line = new javafx.scene.text.Text("  " + tr("structure.line", item.line() + 1));
+            javafx.scene.text.Text line =
+                    new javafx.scene.text.Text("  " + tr("structure.line", item.line() + 1 + lineBase()));
             line.getStyleClass().add("structure-line-number");
             box.getChildren().add(line);
             setGraphic(box);

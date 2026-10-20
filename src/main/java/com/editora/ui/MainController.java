@@ -1354,6 +1354,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private StructurePanel structurePanel() {
         if (structurePanel == null) {
             structurePanel = new StructurePanel(bookmarkCoordinator, notesCoordinator);
+            structurePanel.setNarrowActions(editing.structureNarrowActions());
             EditorBuffer active = activeBuffer();
             structurePanel.attach(active);
             lspCoordinator.requestStructureSymbols(active); // the LSP outline, when the server offers one
@@ -8064,7 +8065,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
         buffer.setBookmarkToggleRequest(bookmarkCoordinator::onBookmarkToggleRequest);
         buffer.setOnNotesChanged(() -> notesCoordinator.schedulePersistNotes(buffer));
-        buffer.setOnNarrowChanged(() -> editing.afterNarrowChanged(buffer));
+        buffer.setOnNarrowChanged(() -> {
+            editing.afterNarrowChanged(buffer);
+            if (structurePanel != null) {
+                structurePanel.narrowChanged(buffer); // its Widen / Defun / Fold segments mirror the buffer
+            }
+        });
         NoUndoGuard.install(buffer, noUndoGuard);
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
