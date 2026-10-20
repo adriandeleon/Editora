@@ -7672,6 +7672,12 @@ public class SettingsWindow {
             if (found && c.detectedManager() != null) {
                 label.setText(label.getText() + " · " + c.detectedManager().describe()); // "pnpm (pnpm-lock.yaml)"
             }
+            // What a build from the detected root actually runs as — the project's wrapper and its trust, the
+            // override, or the PATH command — not just whether `mvn` is installed (review B32).
+            String executable = found ? c.executableSummary() : null;
+            if (executable != null && !executable.isBlank()) {
+                label.setText(label.getText() + " · " + executable);
+            }
             refreshBuildCommandStatus(c.tool());
         }
     }

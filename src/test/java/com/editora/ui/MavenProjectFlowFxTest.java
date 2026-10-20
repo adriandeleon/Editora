@@ -1194,9 +1194,9 @@ class MavenProjectFlowFxTest {
             });
             assertEquals(
                     List.of(
-                            tr("command.maven.updateVersions"),
-                            tr("command.maven.showActions"),
-                            tr("command.maven.runCustom")),
+                            MavenProjectCoordinator.submenuLabel(tr("command.maven.updateVersions")),
+                            MavenProjectCoordinator.submenuLabel(tr("command.maven.showActions")),
+                            MavenProjectCoordinator.submenuLabel(tr("command.maven.runCustom"))),
                     menu.getItems().stream().map(MenuItem::getText).toList(),
                     "Rerun Last and Stop are window-wide, so a menu that names a pom does not offer them");
             FxTestSupport.runOnFx(() -> menu.getItems().forEach(MenuItem::fire));

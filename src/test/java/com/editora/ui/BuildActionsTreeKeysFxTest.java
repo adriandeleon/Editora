@@ -164,7 +164,7 @@ class BuildActionsTreeKeysFxTest {
                         "[Lifecycle]",
                         "clean (Remove the build output)",
                         "package",
-                        "☐ ci  (active by default)",
+                        "☐ ci (active by default)",
                         "☐ release",
                         "[Plugins]"),
                 rows());
@@ -182,7 +182,7 @@ class BuildActionsTreeKeysFxTest {
         CheckBox again = checkBox("ci");
         FxTestSupport.runOnFx(again::fire);
         List<String> withCi = rows();
-        assertTrue(withCi.contains("☑ ci  (active by default)"), withCi.toString());
+        assertTrue(withCi.contains("☑ ci (active by default)"), withCi.toString());
         assertTrue(withCi.contains("[ci goals]"), withCi.toString());
         assertTrue(withCi.contains("ci:verify"), withCi.toString());
 

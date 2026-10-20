@@ -545,18 +545,21 @@ class WindowOpsFxTest {
             assertFalse(build.isTrusted(root));
 
             boolean[] answer = new boolean[1];
+            com.editora.build.BuildTrust.Summary summary =
+                    com.editora.build.BuildTrust.describe(com.editora.build.BuildTool.MAVEN, root, wrapper, "");
             List<SettingsRig.Shown> asked = SettingsRig.answering(
-                    ButtonBar.ButtonData.CANCEL_CLOSE, () -> answer[0] = build.confirmTrust(root, wrapper));
+                    ButtonBar.ButtonData.CANCEL_CLOSE, () -> answer[0] = build.confirmTrust(root, summary));
             assertEquals(1, asked.size());
             assertEquals(tr("dialog.trust.title"), asked.get(0).title());
-            assertEquals(tr("dialog.trust.header", "untrusted"), asked.get(0).header());
             assertEquals(
-                    tr("dialog.trust.body", "mvnw", root.toString()),
+                    tr("dialog.trust.projectHeader", "untrusted"), asked.get(0).header());
+            assertEquals(
+                    tr("dialog.trust.projectBody", "• " + tr("trust.item.wrapper", "mvnw"), root.toString()),
                     asked.get(0).content());
             assertFalse(answer[0]);
             assertFalse(build.isTrusted(root), "asking is not trusting");
 
-            SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> answer[0] = build.confirmTrust(root, wrapper));
+            SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> answer[0] = build.confirmTrust(root, summary));
             assertTrue(answer[0]);
             build.trust(root);
             assertTrue(build.isTrusted(root));

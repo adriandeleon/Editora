@@ -1,15 +1,16 @@
 package com.editora.ui;
 
-import java.util.ArrayList;
+import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
@@ -47,13 +48,24 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         void run(List<String> taskArgs, List<String> toggleArgs);
     }
 
-    private sealed interface Item permits SectionItem, TaskItem, ToggleItem {}
+    private sealed interface Item permits SectionItem, TaskItem, ToggleItem, ProjectItem {}
 
-    private record SectionItem(String title) implements Item {}
+    private record SectionItem(String title, String tooltip) implements Item {}
 
     private record TaskItem(BuildAction.Task task) implements Item {}
 
     private record ToggleItem(BuildAction.Toggle toggle) implements Item {}
+
+    /** A detected build root of the open project (the "Projects" section); selecting it switches the tree. */
+    private record ProjectItem(Path root, String label, boolean current) implements Item {}
+
+    /** The workspace-trust state the header shows for the detected root. */
+    public enum TrustState {
+        /** The tool's builds are not gated (npm, Cargo, …). */
+        NOT_GATED,
+        TRUSTED,
+        UNTRUSTED
+    }
 
     private final TreeView<Item> tree = new TreeView<>();
     private final Label placeholder = new Label();
@@ -64,9 +76,25 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     private final Button stopButton;
     private Button secondaryButton;
 
-    private final Set<String> activeToggles = new LinkedHashSet<>();
+    /** The active toggle ids — the coordinator's set for the detected root (shared with the popup, so a
+     *  profile checked here is the one the popup runs with), or this view's own until one is handed in. */
+    private Set<String> activeToggles = new LinkedHashSet<>();
 
     private BuildActionsProvider provider;
+
+    // --- header: the detected root + its trust state; the "Projects" section; a parse-error notice ---
+    private final Label rootLabel = new Label();
+    private final Label trustPill = new Label();
+    private final Hyperlink revokeLink = new Hyperlink(tr("buildtree.revokeTrust"));
+    private final HBox header = new HBox(6, rootLabel, trustPill, revokeLink);
+    private final Label noticeLabel = new Label();
+    private final Hyperlink noticeLink = new Hyperlink();
+    private final VBox notice = new VBox(2, noticeLabel, noticeLink);
+    private List<Path> projects = List.of();
+    private Path currentRoot;
+    private Path projectRoot;
+    private Consumer<Path> onSelectProject = p -> {};
+    private Runnable onRevokeTrust = () -> {};
     /** Placeholder text for a null provider (null ⇒ the generic "nothing detected"). */
     private String emptyMessage;
 
@@ -131,10 +159,144 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         placeholder.setWrapText(true);
         body.getChildren().addAll(tree, placeholder);
         VBox.setVgrow(body, Priority.ALWAYS);
-        getChildren().addAll(toolbar, filterBar, body);
+
+        // The header names the folder a build runs in (the detected root, which may differ from the active
+        // file's module after a Projects selection) and whether it is trusted; Revoke undoes the trust.
+        header.getStyleClass().add("build-tasks-header");
+        header.setAlignment(Pos.CENTER_LEFT);
+        rootLabel.getStyleClass().add("build-tasks-root");
+        trustPill.getStyleClass().add("build-tasks-trust");
+        revokeLink.getStyleClass().add("build-tasks-revoke");
+        revokeLink.setFocusTraversable(false);
+        revokeLink.setOnAction(e -> onRevokeTrust.run());
+        header.setVisible(false);
+        header.managedProperty().bind(header.visibleProperty());
+
+        // The parse-error notice: the reason the build file is broken, with a link to open it.
+        notice.getStyleClass().add("build-tasks-notice");
+        noticeLabel.getStyleClass().add("build-tasks-notice-text");
+        noticeLabel.setWrapText(true);
+        noticeLink.setFocusTraversable(false);
+        notice.setVisible(false);
+        notice.managedProperty().bind(notice.visibleProperty());
+
+        getChildren().addAll(toolbar, header, notice, filterBar, body);
+
+        // Run does nothing on a section, a profile or a project row: say so by greying it (review B30).
+        runButton
+                .disableProperty()
+                .bind(javafx.beans.binding.Bindings.createBooleanBinding(
+                        () -> {
+                            TreeItem<Item> selected = tree.getSelectionModel().getSelectedItem();
+                            return selected == null || !(selected.getValue() instanceof TaskItem);
+                        },
+                        tree.getSelectionModel().selectedItemProperty()));
 
         setRunning(false); // nothing is running yet — Stop must not look live on a fresh window
         setProvider(null);
+    }
+
+    /** Selecting a row of the "Projects" section asks the coordinator to switch to that build root. */
+    public void setOnSelectProject(Consumer<Path> onSelectProject) {
+        this.onSelectProject = onSelectProject;
+    }
+
+    public void setOnRevokeTrust(Runnable onRevokeTrust) {
+        this.onRevokeTrust = onRevokeTrust;
+    }
+
+    /**
+     * Hands this view the toggle set it reads and writes — the coordinator's, per detected root, shared with
+     * the popup. Toggle state used to live in each view, so a profile ticked here was not the one the popup
+     * ran with (review B8).
+     */
+    public void setActiveToggles(Set<String> toggles) {
+        this.activeToggles = toggles == null ? new LinkedHashSet<>() : toggles;
+    }
+
+    /** The toggle set this view currently reads (for a test, or a view that owns its own). */
+    public Set<String> activeToggles() {
+        return activeToggles;
+    }
+
+    /**
+     * Shows the detected root and its trust state above the tree; a {@code null} root hides the header. The
+     * name shown is the root relative to {@code project} when it is inside it ("." for the project itself),
+     * with the full path in the tooltip.
+     */
+    public void setHeader(Path root, Path project, TrustState trust) {
+        currentRoot = root;
+        projectRoot = project;
+        if (root == null) {
+            header.setVisible(false);
+            rebuildProjects();
+            return;
+        }
+        rootLabel.setText(tr("buildtree.root", displayName(root, project)));
+        rootLabel.setTooltip(new Tooltip(root.toAbsolutePath().normalize().toString()));
+        trustPill.setVisible(trust != TrustState.NOT_GATED);
+        trustPill.setManaged(trust != TrustState.NOT_GATED);
+        trustPill.getStyleClass().removeAll("build-tasks-trusted", "build-tasks-untrusted");
+        if (trust == TrustState.TRUSTED) {
+            trustPill.setText(tr("buildtree.trusted"));
+            trustPill.getStyleClass().add("build-tasks-trusted");
+        } else if (trust == TrustState.UNTRUSTED) {
+            trustPill.setText(tr("buildtree.untrusted"));
+            trustPill.getStyleClass().add("build-tasks-untrusted");
+        }
+        revokeLink.setVisible(trust == TrustState.TRUSTED);
+        revokeLink.setManaged(trust == TrustState.TRUSTED);
+        header.setVisible(true);
+        rebuildProjects();
+    }
+
+    /** The build roots found below the open project (the "Projects" section); empty hides the section. */
+    public void setProjects(List<Path> roots) {
+        this.projects = roots == null ? List.of() : List.copyOf(roots);
+        rebuildProjects();
+    }
+
+    /** Re-renders when the Projects section's content changed; a no-op while the tree holds nothing. */
+    private void rebuildProjects() {
+        if (provider != null || !projects.isEmpty()) {
+            rendered = null; // the section list changed in a way the provider's sections do not show
+            rebuild();
+        }
+    }
+
+    /** The reason the build file could not be parsed, with a link that opens it; {@code null} clears it. */
+    public void setNotice(String message, String linkText, Runnable onLink) {
+        if (message == null || message.isBlank()) {
+            notice.setVisible(false);
+            return;
+        }
+        noticeLabel.setText(message);
+        noticeLink.setText(linkText == null ? "" : linkText);
+        noticeLink.setVisible(onLink != null && linkText != null);
+        noticeLink.setManaged(noticeLink.isVisible());
+        noticeLink.setOnAction(e -> {
+            if (onLink != null) {
+                onLink.run();
+            }
+        });
+        notice.setVisible(true);
+    }
+
+    /** A root's name for the header and the Projects rows: relative to the project when inside it. */
+    static String displayName(Path root, Path project) {
+        Path r = root.toAbsolutePath().normalize();
+        if (project != null) {
+            Path p = project.toAbsolutePath().normalize();
+            if (r.equals(p)) {
+                Path name = p.getFileName();
+                return name == null ? p.toString() : name.toString();
+            }
+            if (r.startsWith(p)) {
+                return p.relativize(r).toString().replace(java.io.File.separatorChar, '/');
+            }
+        }
+        Path name = r.getFileName();
+        return name == null ? r.toString() : name.toString();
     }
 
     /** Adds a tool-specific toolbar action (Gradle's "Load all tasks…"), appended to the toolbar. */
@@ -205,6 +367,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         if (provider == null) {
             activeToggles.clear();
             rendered = null;
+            setNotice(null, null, null);
             rebuild();
             return;
         }
@@ -235,6 +398,9 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             for (BuildAction.Row row : section.rows()) {
                 if (row instanceof BuildAction.Toggle t) {
                     ids.add(t.id());
+                    if (t.triState()) {
+                        ids.add(t.offId());
+                    }
                 }
             }
         }
@@ -249,7 +415,8 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         String query = filterQuery();
         boolean detected = provider != null && sections != null;
         List<BuildAction.Section> visible = !detected || query.isEmpty() ? sections : filtered(sections, query);
-        boolean has = detected && !visible.isEmpty();
+        boolean hasProjects = !projects.isEmpty() && query.isEmpty();
+        boolean has = (detected && !visible.isEmpty()) || hasProjects;
         // "No matching tasks" only when a filter is what emptied the tree — otherwise the marker-absent /
         // build-file-broken message the caller gave us.
         placeholder.setText(
@@ -265,8 +432,24 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             return;
         }
         TreeItem<Item> root = new TreeItem<>(null);
-        for (BuildAction.Section section : visible) {
-            TreeItem<Item> sectionItem = new TreeItem<>(new SectionItem(section.title()));
+        if (hasProjects) {
+            // The build roots found below the open project — a workspace whose poms sit one folder down
+            // showed no build tool at all until a file inside a module was opened (review B11).
+            TreeItem<Item> projectsItem = new TreeItem<>(new SectionItem(tr("buildtree.projects"), ""));
+            projectsItem.setExpanded(true);
+            for (Path p : projects) {
+                boolean current = currentRoot != null
+                        && p.toAbsolutePath()
+                                .normalize()
+                                .equals(currentRoot.toAbsolutePath().normalize());
+                projectsItem
+                        .getChildren()
+                        .add(new TreeItem<>(new ProjectItem(p, displayName(p, projectRoot), current)));
+            }
+            root.getChildren().add(projectsItem);
+        }
+        for (BuildAction.Section section : detected ? visible : List.<BuildAction.Section>of()) {
+            TreeItem<Item> sectionItem = new TreeItem<>(new SectionItem(section.title(), section.tooltip()));
             // A collapsed-by-default group (Maven's per-plugin goal lists) still expands while a filter is
             // active — a match the user just typed for must not stay hidden inside a folded node.
             sectionItem.setExpanded(!section.collapsed() || !query.isEmpty());
@@ -283,51 +466,23 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
 
     /** The filter text, normalized (lower-cased + stripped); empty when nothing is being filtered. */
     private String filterQuery() {
-        String text = filterField.getText();
-        return text == null ? "" : text.strip().toLowerCase(Locale.ROOT);
+        return BuildActionsFilter.normalize(filterField.getText());
     }
 
-    /**
-     * {@code sections} narrowed to what matches {@code query} (a case-insensitive substring of the row's
-     * label — or of the section title, which keeps that whole section, so "lifecycle" lists its phases).
-     * Empty sections are dropped. Purely a view: the active toggles are unaffected, so a profile checked
-     * before filtering keeps contributing its argv even while its row is hidden.
-     */
+    /** {@code sections} narrowed to what matches {@code query}; see {@link BuildActionsFilter#filtered}. */
     static List<BuildAction.Section> filtered(List<BuildAction.Section> sections, String query) {
-        List<BuildAction.Section> out = new ArrayList<>();
-        for (BuildAction.Section section : sections) {
-            if (matches(section.title(), query)) {
-                out.add(section);
-                continue;
-            }
-            List<BuildAction.Row> rows = new ArrayList<>();
-            for (BuildAction.Row row : section.rows()) {
-                if (matches(label(row), query)) {
-                    rows.add(row);
-                }
-            }
-            if (!rows.isEmpty()) {
-                // Carry `collapsed` across: dropping it here would leave the expand decision to a side effect
-                // of which filter branch ran (a title match passes the section through untouched, a row match
-                // rebuilt it), so a group found by name stayed folded while one found by goal opened.
-                out.add(new BuildAction.Section(section.title(), List.copyOf(rows), section.collapsed()));
-            }
-        }
-        return out;
-    }
-
-    private static String label(BuildAction.Row row) {
-        return row instanceof BuildAction.Task t ? t.label() : ((BuildAction.Toggle) row).label();
-    }
-
-    private static boolean matches(String text, String query) {
-        return text != null && text.toLowerCase(Locale.ROOT).contains(query);
+        return BuildActionsFilter.filtered(sections, query);
     }
 
     private void runSelected() {
         TreeItem<Item> selected = tree.getSelectionModel().getSelectedItem();
-        if (selected != null && selected.getValue() instanceof TaskItem taskItem) {
+        if (selected == null) {
+            return;
+        }
+        if (selected.getValue() instanceof TaskItem taskItem) {
             onRun.run(taskItem.task().args(), provider == null ? List.of() : provider.toggleArgs(activeToggles));
+        } else if (selected.getValue() instanceof ProjectItem p) {
+            onSelectProject.accept(p.root());
         }
     }
 
@@ -337,7 +492,44 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         } else {
             activeToggles.remove(toggle.id());
         }
+        if (toggle.triState()) {
+            activeToggles.remove(toggle.offId());
+        }
         rebuild(); // sections() is re-queried so a checked toggle can reveal extra rows
+    }
+
+    /**
+     * A tri-state toggle's states, in click order: off → on ({@code -Pid}) → explicitly off ({@code -P!id})
+     * → off. The explicit state is what deactivates a profile the pom or the environment would activate.
+     */
+    enum ToggleState {
+        OFF,
+        ON,
+        EXPLICIT_OFF
+    }
+
+    static ToggleState stateOf(Set<String> active, BuildAction.Toggle toggle) {
+        if (active.contains(toggle.id())) {
+            return ToggleState.ON;
+        }
+        return toggle.triState() && active.contains(toggle.offId()) ? ToggleState.EXPLICIT_OFF : ToggleState.OFF;
+    }
+
+    /** Advances {@code toggle} to its next state and re-queries the provider. */
+    private void cycle(BuildAction.Toggle toggle) {
+        ToggleState next = switch (stateOf(activeToggles, toggle)) {
+            case OFF -> ToggleState.ON;
+            case ON -> toggle.triState() ? ToggleState.EXPLICIT_OFF : ToggleState.OFF;
+            case EXPLICIT_OFF -> ToggleState.OFF;
+        };
+        activeToggles.remove(toggle.id());
+        activeToggles.remove(toggle.offId());
+        if (next == ToggleState.ON) {
+            activeToggles.add(toggle.id());
+        } else if (next == ToggleState.EXPLICIT_OFF) {
+            activeToggles.add(toggle.offId());
+        }
+        rebuild();
     }
 
     private Button iconButton(javafx.scene.Node icon, String tooltip, Runnable action) {
@@ -438,14 +630,19 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Tree cell: a bold section header, a runnable task (label + tooltip), or a checkbox toggle. */
+    /** Tree cell: a bold section header, a runnable task (label + tooltip), a checkbox toggle, or a project. */
     private final class ItemCell extends TreeCell<Item> {
         private final CheckBox check = new CheckBox();
 
         ItemCell() {
             check.setOnAction(e -> {
                 if (getItem() instanceof ToggleItem t) {
-                    toggle(t.toggle(), check.isSelected());
+                    // A plain toggle follows the box (on = checked); a tri-state one cycles its three states.
+                    if (t.toggle().triState()) {
+                        cycle(t.toggle());
+                    } else {
+                        toggle(t.toggle(), check.isSelected());
+                    }
                 }
             });
         }
@@ -453,7 +650,8 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         @Override
         protected void updateItem(Item item, boolean empty) {
             super.updateItem(item, empty);
-            getStyleClass().removeAll("build-tasks-section", "build-tasks-task", "build-tasks-toggle");
+            getStyleClass()
+                    .removeAll("build-tasks-section", "build-tasks-task", "build-tasks-toggle", "build-tasks-project");
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
@@ -465,7 +663,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
                     getStyleClass().add("build-tasks-section");
                     setGraphic(null);
                     setText(s.title());
-                    setTooltip(null);
+                    setTooltip(s.tooltip() == null || s.tooltip().isEmpty() ? null : new Tooltip(s.tooltip()));
                 }
                 case TaskItem t -> {
                     getStyleClass().add("build-tasks-task");
@@ -478,13 +676,24 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
                     getStyleClass().add("build-tasks-toggle");
                     setText(null);
                     setTooltip(null);
-                    String note = tg.toggle().note();
-                    check.setText(
-                            note == null || note.isEmpty()
-                                    ? tg.toggle().label()
-                                    : tg.toggle().label() + "  " + note);
-                    check.setSelected(activeToggles.contains(tg.toggle().id()));
+                    BuildAction.Toggle toggle = tg.toggle();
+                    String note = toggle.note();
+                    check.setText(note == null || note.isEmpty() ? toggle.label() : toggle.label() + " " + note);
+                    // A locked toggle (a settings.xml profile) is on whatever the argv says: checked, greyed.
+                    check.setDisable(toggle.locked());
+                    ToggleState state = toggle.locked() ? ToggleState.ON : stateOf(activeToggles, toggle);
+                    check.setAllowIndeterminate(false);
+                    check.setIndeterminate(state == ToggleState.EXPLICIT_OFF);
+                    check.setSelected(state == ToggleState.ON);
+                    check.setTooltip(
+                            toggle.triState() && !toggle.locked() ? new Tooltip(tr("buildtree.triStateTip")) : null);
                     setGraphic(check);
+                }
+                case ProjectItem p -> {
+                    getStyleClass().add("build-tasks-project");
+                    setGraphic(null);
+                    setText(p.current() ? tr("buildtree.projectCurrent", p.label()) : p.label());
+                    setTooltip(new Tooltip(p.root().toAbsolutePath().normalize().toString()));
                 }
             }
         }

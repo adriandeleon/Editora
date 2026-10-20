@@ -241,4 +241,69 @@ class MavenPluginGoalsTest {
                         .map(MavenPluginGoals.Descriptor::goalPrefix)
                         .toList());
     }
+
+    // --- Maven pass 2 (B16 tooltips, B26/E6 versions, B28 managed groups, B7 settings.xml profiles) ---
+
+    @Test
+    void tooltipsUnescapeEntitiesAndUnwrapJavadocTags() {
+        assertEquals(
+                "Run with -Dgoal=<goal-name> after package ran, see MavenProject & \"friends\"",
+                MavenPluginGoals.shortDescription(
+                        "Run with -Dgoal=&lt;goal-name&gt; after {@code package} ran,\n see {@link MavenProject} &amp; &quot;friends&quot;"));
+    }
+
+    @Test
+    void aDescriptorSaysWhichVersionItCameFromAndWhetherThatWasGuessed(@TempDir Path repo) throws IOException {
+        writePluginJar(repo, "org.openjfx", "javafx-maven-plugin", "0.0.8", DESCRIPTOR);
+        writePluginJar(repo, "org.openjfx", "javafx-maven-plugin", "0.0.10", DESCRIPTOR);
+        MavenPluginGoals.Descriptor pinned = MavenPluginGoals.read(
+                new PomModel.Plugin("org.openjfx", "javafx-maven-plugin", "0.0.8", List.of()), repo);
+        assertEquals("0.0.8", pinned.version());
+        assertFalse(pinned.newestLocal(), "the pom pins it: read as written");
+        MavenPluginGoals.Descriptor guessed = MavenPluginGoals.read(
+                new PomModel.Plugin("org.openjfx", "javafx-maven-plugin", "${unresolved}", List.of()), repo);
+        assertEquals("0.0.10", guessed.version());
+        assertTrue(guessed.newestLocal(), "left to a parent or an unknown property: the newest installed, and said so");
+    }
+
+    @Test
+    void managedOnlyPluginsGetTheirOwnDescriptors(@TempDir Path repo) throws IOException {
+        writePluginJar(repo, "org.openjfx", "javafx-maven-plugin", "1.0", DESCRIPTOR);
+        writePluginJar(
+                repo,
+                "org.apache.maven.plugins",
+                "maven-enforcer-plugin",
+                "3.5.0",
+                DESCRIPTOR.replace("<goalPrefix>javafx</goalPrefix>", "<goalPrefix>enforcer</goalPrefix>"));
+        PomModel.Plugin javafx = new PomModel.Plugin("org.openjfx", "javafx-maven-plugin", "1.0", List.of());
+        PomModel.Plugin enforcer =
+                new PomModel.Plugin("org.apache.maven.plugins", "maven-enforcer-plugin", "3.5.0", List.of());
+        PomModel model = new PomModel(
+                "g",
+                "a",
+                "1",
+                "jar",
+                List.of(javafx),
+                List.of(),
+                null,
+                java.util.Map.of(),
+                List.of(javafx, enforcer),
+                List.of());
+        List<MavenPluginGoals.Descriptor> managed = MavenPluginGoals.readManaged(model, repo);
+        assertEquals(
+                List.of("enforcer"),
+                managed.stream().map(MavenPluginGoals.Descriptor::goalPrefix).toList(),
+                "a plugin both declared and managed is a declared group, not a managed one");
+    }
+
+    @Test
+    void settingsXmlActiveProfilesAreRead() {
+        assertEquals(List.of("corp", "fast"), MavenPluginGoals.activeProfilesFromSettings("""
+                        <settings><activeProfiles><activeProfile>corp</activeProfile><activeProfile> fast </activeProfile>
+                        <activeProfile>corp</activeProfile><activeProfile/></activeProfiles></settings>
+                        """));
+        assertEquals(List.of(), MavenPluginGoals.activeProfilesFromSettings("<settings/>"));
+        assertEquals(List.of(), MavenPluginGoals.activeProfilesFromSettings("<settings>"));
+        assertEquals(List.of(), MavenPluginGoals.activeProfilesFromSettings(null));
+    }
 }

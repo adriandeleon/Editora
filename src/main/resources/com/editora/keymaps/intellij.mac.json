@@ -76,5 +76,7 @@
   "S-f7": "debug.smartStepInto",
   "Cmd-f9": "debug.applyCodeChanges",
   "M-f12": "tool.terminal",
-  "S-escape": "terminal.focusEditor"
+  "S-escape": "terminal.focusEditor",
+  "C-S-r": "maven.rerunLast",
+  "M-S-b": "tool.buildOutput"
 }

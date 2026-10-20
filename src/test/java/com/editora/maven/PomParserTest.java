@@ -303,4 +303,57 @@ class PomParserTest {
         Path pom = java.nio.file.Files.writeString(dir.resolve("pom.xml"), xxe);
         assertThrows(PomParseException.class, () -> PomParser.parseFile(pom));
     }
+
+    // --- Maven pass 2 (B7 activation conditions, B6/B28 parent + pluginManagement + properties, B31) ---
+
+    @Test
+    void parsesActivationConditionsPropertiesManagedPluginsAndTheParent() throws Exception {
+        PomModel m = PomParser.parse("""
+                <project>
+                  <parent><groupId>com.example</groupId><artifactId>multi</artifactId><version>1</version>
+                    <relativePath>../parent/pom.xml</relativePath></parent>
+                  <artifactId>app</artifactId>
+                  <properties><a>1</a><b>${a}.2</b></properties>
+                  <build>
+                    <pluginManagement><plugins><plugin><artifactId>maven-enforcer-plugin</artifactId>
+                      <version>3.5.0</version></plugin></plugins></pluginManagement>
+                  </build>
+                  <profiles>
+                    <profile><id>jdk25</id><activation><jdk>[25,)</jdk></activation></profile>
+                    <profile><id>ci</id><activation><property><name>env.CI</name><value>true</value></property>
+                      <file><exists>ci.marker</exists><missing>no.ci</missing></file>
+                      <os><family>unix</family><arch>amd64</arch></os></activation></profile>
+                    <profile><id>plain</id></profile>
+                  </profiles>
+                </project>
+                """);
+        assertEquals("multi", m.parent().artifactId());
+        assertEquals("../parent/pom.xml", m.parent().relativePath());
+        assertEquals(java.util.Map.of("a", "1", "b", "${a}.2"), m.properties());
+        assertEquals(1, m.managedPlugins().size());
+        assertEquals("maven-enforcer-plugin", m.managedPlugins().get(0).artifactId());
+        assertEquals(List.of(), m.plugins(), "a managed plugin is not a declared one");
+
+        PomModel.Profile jdk = m.profiles().get(0);
+        assertEquals(List.of(new PomModel.Activation(PomModel.Activation.Kind.JDK, "[25,)")), jdk.activations());
+        PomModel.Profile ci = m.profiles().get(1);
+        assertEquals(
+                List.of(
+                        new PomModel.Activation(PomModel.Activation.Kind.OS, "family=unix arch=amd64"),
+                        new PomModel.Activation(PomModel.Activation.Kind.PROPERTY, "env.CI=true"),
+                        new PomModel.Activation(PomModel.Activation.Kind.FILE_EXISTS, "ci.marker"),
+                        new PomModel.Activation(PomModel.Activation.Kind.FILE_MISSING, "no.ci")),
+                ci.activations());
+        assertEquals(List.of(), m.profiles().get(2).activations());
+        assertEquals(List.of(), m.inheritedFrom(), "a single-file read inherits nothing");
+    }
+
+    @Test
+    void aDoctypeIsReportedInPlainWords() {
+        PomParseException ex = assertThrows(
+                PomParseException.class,
+                () -> PomParser.parse("<!DOCTYPE project><project><artifactId>a</artifactId></project>"));
+        assertEquals(PomParser.DOCTYPE_MESSAGE, ex.getMessage());
+        assertFalse(ex.getMessage().contains("disallow-doctype-decl"), "not the parser's feature-flag wording");
+    }
 }

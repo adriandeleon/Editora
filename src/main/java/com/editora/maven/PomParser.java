@@ -6,7 +6,9 @@ import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -19,13 +21,17 @@ import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
 /**
- * Parses a pom.xml into a {@link PomModel} — no Maven model resolution, no parent inheritance beyond a
- * direct {@code <parent>} fallback for {@code groupId}/{@code version}, no default-lifecycle-binding
- * lookup. Uses the JDK's own {@code javax.xml.parsers} DOM parser (no third-party XML dependency), hardened
+ * Parses one pom.xml into a {@link PomModel} — no Maven model resolution, no parent inheritance beyond a
+ * direct {@code <parent>} fallback for {@code groupId}/{@code version} (see {@link PomInheritance} for the
+ * on-disk parent chain), no default-lifecycle-binding lookup. Uses the JDK's own {@code javax.xml.parsers} DOM parser (no third-party XML dependency), hardened
  * against XXE: DOCTYPE declarations are disallowed outright, so a pom containing one fails to parse rather
  * than silently expanding an external entity.
  */
 public final class PomParser {
+
+    /** What a pom carrying a {@code <!DOCTYPE>} is reported as (the XML parser's own message names a feature flag). */
+    public static final String DOCTYPE_MESSAGE =
+            "pom.xml declares a DOCTYPE, which Editora does not read (Maven accepts it; remove it to see this pom here)";
 
     private PomParser() {}
 
@@ -72,7 +78,9 @@ public final class PomParser {
             packaging = "jar";
         }
 
-        List<PomModel.Plugin> plugins = parsePlugins(firstChildElement(project, "build"));
+        Element build = firstChildElement(project, "build");
+        List<PomModel.Plugin> plugins = parsePlugins(build);
+        List<PomModel.Plugin> managed = parsePlugins(firstChildElement(build, "pluginManagement"));
 
         List<PomModel.Profile> profiles = new ArrayList<>();
         Element profilesEl = firstChildElement(project, "profiles");
@@ -83,17 +91,99 @@ public final class PomParser {
                     continue;
                 }
                 boolean activeByDefault = false;
+                List<PomModel.Activation> activations = List.of();
                 Element activation = firstChildElement(profileEl, "activation");
                 if (activation != null) {
                     activeByDefault = "true".equalsIgnoreCase(strip(firstChildText(activation, "activeByDefault")));
+                    activations = parseActivations(activation);
                 }
                 profiles.add(new PomModel.Profile(
-                        id.strip(), activeByDefault, parsePlugins(firstChildElement(profileEl, "build"))));
+                        id.strip(), activeByDefault, parsePlugins(firstChildElement(profileEl, "build")), activations));
             }
         }
 
+        PomModel.Parent parentRef = parent == null
+                ? null
+                : new PomModel.Parent(
+                        strip(firstChildText(parent, "groupId")),
+                        strip(firstChildText(parent, "artifactId")),
+                        strip(firstChildText(parent, "version")),
+                        strip(firstChildText(parent, "relativePath")));
+
         return new PomModel(
-                strip(groupId), artifactId.strip(), strip(version), packaging.strip(), plugins, List.copyOf(profiles));
+                strip(groupId),
+                artifactId.strip(),
+                strip(version),
+                packaging.strip(),
+                plugins,
+                List.copyOf(profiles),
+                parentRef,
+                parseProperties(firstChildElement(project, "properties")),
+                managed,
+                List.of());
+    }
+
+    /** {@code <properties>} in document order; a repeated name keeps its last value, as Maven does. */
+    private static Map<String, String> parseProperties(Element propertiesEl) {
+        if (propertiesEl == null) {
+            return Map.of();
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Node n = propertiesEl.getFirstChild(); n != null; n = n.getNextSibling()) {
+            if (n.getNodeType() == Node.ELEMENT_NODE) {
+                out.put(n.getNodeName(), strip(text((Element) n)));
+            }
+        }
+        return java.util.Collections.unmodifiableMap(out);
+    }
+
+    /**
+     * The {@code <activation>} conditions besides {@code activeByDefault}, as written: {@code <jdk>} and
+     * {@code <os>} ranges, a {@code <property>} ({@code name}, or {@code name=value}; a leading {@code !}
+     * means "absent", as in Maven), and a {@code <file>} that must exist or be missing. Rendered as the
+     * profile row's note so the tree can say <em>why</em> a profile would be active instead of showing a
+     * bare unchecked box for one that Maven activates on its own.
+     */
+    static List<PomModel.Activation> parseActivations(Element activation) {
+        List<PomModel.Activation> out = new ArrayList<>();
+        String jdk = strip(firstChildText(activation, "jdk"));
+        if (!jdk.isEmpty()) {
+            out.add(new PomModel.Activation(PomModel.Activation.Kind.JDK, jdk));
+        }
+        Element os = firstChildElement(activation, "os");
+        if (os != null) {
+            List<String> parts = new ArrayList<>();
+            for (String tag : List.of("name", "family", "arch", "version")) {
+                String value = strip(firstChildText(os, tag));
+                if (!value.isEmpty()) {
+                    parts.add(tag + "=" + value);
+                }
+            }
+            if (!parts.isEmpty()) {
+                out.add(new PomModel.Activation(PomModel.Activation.Kind.OS, String.join(" ", parts)));
+            }
+        }
+        Element property = firstChildElement(activation, "property");
+        if (property != null) {
+            String name = strip(firstChildText(property, "name"));
+            String value = strip(firstChildText(property, "value"));
+            if (!name.isEmpty()) {
+                out.add(new PomModel.Activation(
+                        PomModel.Activation.Kind.PROPERTY, value.isEmpty() ? name : name + "=" + value));
+            }
+        }
+        Element file = firstChildElement(activation, "file");
+        if (file != null) {
+            String exists = strip(firstChildText(file, "exists"));
+            String missing = strip(firstChildText(file, "missing"));
+            if (!exists.isEmpty()) {
+                out.add(new PomModel.Activation(PomModel.Activation.Kind.FILE_EXISTS, exists));
+            }
+            if (!missing.isEmpty()) {
+                out.add(new PomModel.Activation(PomModel.Activation.Kind.FILE_MISSING, missing));
+            }
+        }
+        return List.copyOf(out);
     }
 
     private static List<PomModel.Plugin> parsePlugins(Element build) {
@@ -168,7 +258,13 @@ public final class PomParser {
             DocumentBuilder builder = dbf.newDocumentBuilder();
             return builder.parse(source);
         } catch (ParserConfigurationException | SAXException | IOException e) {
-            throw new PomParseException("Malformed pom.xml: " + e.getMessage(), e);
+            String message = e.getMessage();
+            // The parser's own wording for the DOCTYPE ban names a feature flag; say what it means instead.
+            // (Maven accepts a DOCTYPE; Editora does not read one, because it could carry an external entity.)
+            if (message != null && message.contains("DOCTYPE")) {
+                throw new PomParseException(DOCTYPE_MESSAGE, e);
+            }
+            throw new PomParseException("Malformed pom.xml: " + message, e);
         }
     }
 

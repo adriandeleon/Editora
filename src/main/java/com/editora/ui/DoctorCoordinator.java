@@ -114,6 +114,16 @@ final class DoctorCoordinator {
             return null;
         }
 
+        /** Where {@code tool}'s build file was detected for the active module, or null (review B32). */
+        default java.nio.file.Path buildRoot(com.editora.build.BuildTool tool) {
+            return null;
+        }
+
+        /** What a build from the detected root runs as ("./mvnw (trusted)", "mvn on PATH"), or null. */
+        default String buildExecutableSummary(com.editora.build.BuildTool tool) {
+            return null;
+        }
+
         /** The Python interpreter picked for this window's project ("" = detect it). */
         default String pythonInterpreterChoice() {
             return "";
@@ -977,22 +987,29 @@ final class DoctorCoordinator {
         String label = "go".equals(tool.id()) ? tr("doctor.label.goToolchain") : tool.displayName();
         DoctorCheck row = DoctorCheck.checking("build." + tool.id(), "build", label, String.join(" ", configured))
                 .withSettings("buildTools");
-        Path root = ops.projectRoot();
+        Path projectRoot = ops.projectRoot();
+        // The build file the active module runs with — a module's wrapper sits at the project root above it —
+        // rather than the project root's: Doctor said "mvn on PATH" while every build ran ./mvnw (review B32).
+        Path detected = ops.buildRoot(tool);
+        Path root = detected != null ? detected : projectRoot;
+        String summary = ops.buildExecutableSummary(tool);
         boolean windows = isWindows();
         boolean wrapperKind = hasWrapper(tool);
         return probe(row, base -> {
-            boolean project = root != null && needs.rootHasAny(tool.markers());
+            boolean project = detected != null || (root != null && needs.rootHasAny(tool.markers()));
             List<String> argv = configured;
             if (project) {
                 try {
-                    argv = tool.executable(root, windows, override);
+                    argv = tool.executable(root, projectRoot != null ? projectRoot : root, windows, override);
                 } catch (RuntimeException e) {
                     argv = configured;
                 }
             }
             String path = DoctorProbes.resolvedPath(argv);
             if (!path.isEmpty()) {
-                return base.withCommand(String.join(" ", argv)).ok(path);
+                String command = String.join(" ", argv);
+                return base.withCommand(summary == null ? command : command + " — " + summary)
+                        .ok(path);
             }
             if (project) {
                 return base.warn(
