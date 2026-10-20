@@ -13,7 +13,6 @@ import java.util.function.Predicate;
 import com.editora.config.Settings;
 import com.editora.maven.MavenPluginGoals;
 import com.editora.maven.PomModel;
-import com.editora.maven.PomParser;
 import com.editora.process.ProcessRunner;
 
 /**
@@ -46,24 +45,45 @@ public enum BuildTool {
 
         @Override
         public Detected parse(Path root, Path projectRoot) throws Exception {
-            PomModel model = PomParser.parseFile(root.resolve("pom.xml"));
+            // The pom merged with its on-disk parents (profiles and plugins are declared once in the parent of
+            // a multi-module build); the walk never leaves the open project.
+            PomModel model = com.editora.maven.PomInheritance.effective(root.resolve("pom.xml"), projectRoot);
             // Local repository only, and best-effort: a plugin that isn't downloaded yet simply contributes
             // no goal group. Never let that sink the detection — the lifecycle/profile sections don't need it.
             List<MavenPluginGoals.Descriptor> goals;
+            List<MavenPluginGoals.Descriptor> managed;
             try {
-                goals = MavenPluginGoals.readAll(model, MavenPluginGoals.localRepository(userHome()));
+                Path repo = MavenPluginGoals.localRepository(userHome());
+                goals = MavenPluginGoals.readAll(model, repo);
+                managed = MavenPluginGoals.readManaged(model, repo);
             } catch (RuntimeException e) {
                 goals = List.of();
+                managed = List.of();
             }
             // A module of a multi-module build gets the "build from the reactor root" toggle. The walk stops at
             // the open project (never a folder the user did not open), and the root must list the module.
             com.editora.maven.MavenReactor.Reactor reactor = com.editora.maven.MavenReactor.describe(
                     root, projectRoot, dir -> Files.isRegularFile(dir.resolve("pom.xml")), BuildTool::readOrNull);
+            boolean local = com.editora.process.ExecTargets.runsHere(root);
             String rootPomOnTarget = reactor == null
                     ? null
                     : com.editora.process.ExecTargets.forPath(root)
                             .toTargetPath(reactor.rootPom().toAbsolutePath().normalize());
-            return new Detected(new MavenActionsProvider(model, goals, reactor, rootPomOnTarget), model.artifactId());
+            // Profiles ~/.m2/settings.xml activates are on regardless of -P; the tree shows them locked. A
+            // remote build reads its host's settings, which this machine cannot see.
+            java.util.Set<String> settingsActive = local
+                    ? new java.util.LinkedHashSet<>(MavenPluginGoals.activeProfiles(userHome()))
+                    : java.util.Set.of();
+            MavenActionsProvider.Extras extras = new MavenActionsProvider.Extras(managed, settingsActive, !local);
+            return new Detected(
+                    new MavenActionsProvider(model, goals, reactor, rootPomOnTarget, extras), model.artifactId());
+        }
+
+        @Override
+        public BuildActionsProvider brokenFileProvider() {
+            // A pom that does not parse still has a lifecycle: `mvn validate` is the quickest way to hear
+            // what is wrong with it, so the phases stay runnable under the parse error.
+            return new MavenActionsProvider(PomModel.empty());
         }
 
         @Override
@@ -451,6 +471,15 @@ public enum BuildTool {
      */
     public Detected parse(Path root, Path projectRoot) throws Exception {
         return parse(root);
+    }
+
+    /**
+     * The provider to show when the marker file exists but does not parse, or {@code null} to show only the
+     * parse error. Maven offers its lifecycle phases regardless (the build itself says what is wrong with the
+     * pom); a tool whose tasks come entirely from the file has nothing to offer.
+     */
+    public BuildActionsProvider brokenFileProvider() {
+        return null;
     }
 
     /** A file's text, or {@code null} when it cannot be read (a reactor check must never fail a detection). */
