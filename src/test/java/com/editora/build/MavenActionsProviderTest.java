@@ -102,22 +102,26 @@ class MavenActionsProviderTest {
     /** No local repository / nothing downloaded: the tree is exactly what it was before this feature. */
     @Test
     void aModuleOfAReactorGetsTheReactorToggleFirstAndItsArgsBeforeTheProfiles() {
-        var reactor = new com.editora.maven.MavenReactor.Reactor(
-                java.nio.file.Path.of("/repo"), java.nio.file.Path.of("/repo/pom.xml"), "services/api");
+        // An absolute root on every OS (C:\\repo on Windows); the label is compared through tr() on both sides,
+        // so the test does not depend on whether another test initialised the message catalog in this JVM.
+        java.nio.file.Path repo =
+                java.nio.file.Path.of("/repo").toAbsolutePath().normalize();
+        var reactor = new com.editora.maven.MavenReactor.Reactor(repo, repo.resolve("pom.xml"), "services/api");
         MavenActionsProvider p = new MavenActionsProvider(pom(), List.of(), reactor, null);
         var sections = p.sections(Set.of());
         assertEquals(tr("mavenpopup.reactor"), sections.get(0).title());
         var toggle = (BuildAction.Toggle) sections.get(0).rows().get(0);
         assertEquals(MavenActionsProvider.REACTOR_TOGGLE, toggle.id());
-        assertTrue(toggle.label().contains("repo") && toggle.label().contains("services/api"), toggle.label());
+        assertEquals(tr("mavenpopup.reactorToggle", "repo", "services/api"), toggle.label());
         assertEquals(tr("mavenpopup.lifecycle"), sections.get(1).title(), "the lifecycle follows");
 
+        String rootPom = repo.resolve("pom.xml").toString();
         assertEquals(List.of(), p.toggleArgs(Set.of()));
         assertEquals(
-                List.of("-f", "/repo/pom.xml", "-pl", "services/api", "-am"),
+                List.of("-f", rootPom, "-pl", "services/api", "-am"),
                 p.toggleArgs(Set.of(MavenActionsProvider.REACTOR_TOGGLE)));
         assertEquals(
-                List.of("-f", "/repo/pom.xml", "-pl", "services/api", "-am", "-Pdist"),
+                List.of("-f", rootPom, "-pl", "services/api", "-am", "-Pdist"),
                 p.toggleArgs(new java.util.LinkedHashSet<>(List.of(MavenActionsProvider.REACTOR_TOGGLE, "dist"))),
                 "the reactor switch never leaks into -P");
         // The root pom is named as the machine the build runs on names it (a remote host's path).

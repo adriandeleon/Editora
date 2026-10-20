@@ -40,26 +40,29 @@ class MavenReactorTest {
     private static final String ROOT_POM = "<project><artifactId>root</artifactId><packaging>pom</packaging>"
             + "<modules><module>services/api</module><module>core</module></modules></project>";
 
+    /** An absolute root on every OS: {@code describe} normalises to absolute paths, and {@code /repo} is relative on Windows. */
+    private static final Path REPO = Path.of("/repo").toAbsolutePath().normalize();
+
     @Test
     void describeNamesTheRootAndSelectorOfAListedModule() {
-        Path reactor = Path.of("/repo");
-        Path module = Path.of("/repo/services/api");
-        Predicate<Path> hasPom = Set.of(reactor, Path.of("/repo/services"), module)::contains;
+        Path module = REPO.resolve("services").resolve("api");
+        Predicate<Path> hasPom = Set.of(REPO, REPO.resolve("services"), module)::contains;
         MavenReactor.Reactor r = MavenReactor.describe(module, null, hasPom, pom -> ROOT_POM);
-        assertEquals(reactor, r.root());
-        assertEquals(Path.of("/repo/pom.xml"), r.rootPom());
+        assertEquals(REPO, r.root());
+        assertEquals(REPO.resolve("pom.xml"), r.rootPom());
         assertEquals("services/api", r.moduleSelector());
         assertEquals("repo", r.rootName());
         assertEquals(
-                List.of("-f", "/repo/pom.xml", "-pl", "services/api", "-am"),
+                List.of("-f", REPO.resolve("pom.xml").toString(), "-pl", "services/api", "-am"),
                 MavenReactor.reactorArgs(r.rootPom().toString(), r.moduleSelector()));
     }
 
     @Test
     void describeIsNullForATopLevelProjectAndForARootThatDoesNotListTheModule() {
-        Path module = Path.of("/repo/samples/demo");
-        Predicate<Path> hasPom = Set.of(Path.of("/repo"), Path.of("/repo/samples"), module)::contains;
-        assertNull(MavenReactor.describe(Path.of("/alone"), null, Set.of(Path.of("/alone"))::contains, p -> ROOT_POM));
+        Path module = REPO.resolve("samples").resolve("demo");
+        Predicate<Path> hasPom = Set.of(REPO, REPO.resolve("samples"), module)::contains;
+        Path alone = Path.of("/alone").toAbsolutePath().normalize();
+        assertNull(MavenReactor.describe(alone, null, Set.of(alone)::contains, p -> ROOT_POM));
         // /repo's pom lists core and services/api, not samples/demo: Maven would say "not in the reactor".
         assertNull(MavenReactor.describe(module, null, hasPom, p -> ROOT_POM));
         assertNull(MavenReactor.describe(module, null, hasPom, p -> null), "an unreadable root pom offers nothing");
@@ -67,13 +70,11 @@ class MavenReactorTest {
 
     @Test
     void describeStopsAtTheOpenProject() {
-        Path reactor = Path.of("/repo");
-        Path module = Path.of("/repo/core");
-        Predicate<Path> hasPom = Set.of(reactor, module)::contains;
+        Path module = REPO.resolve("core");
+        Predicate<Path> hasPom = Set.of(REPO, module)::contains;
         assertNull(MavenReactor.describe(module, module, hasPom, p -> ROOT_POM), "the project is the module itself");
         assertEquals(
-                reactor,
-                MavenReactor.describe(module, reactor, hasPom, p -> ROOT_POM).root());
+                REPO, MavenReactor.describe(module, REPO, hasPom, p -> ROOT_POM).root());
     }
 
     @Test
