@@ -749,9 +749,8 @@ public class EditorBuffer implements TabContent {
 
     private final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
 
-    {
-        folds.setLineNumbers(logView::lineNumberAt, logView::lineNumberSpan); // a filtered log keeps its numbers
-    }
+    /** The gutter numbers, {@code narrowed} style and banner of a narrowed buffer (see {@link NarrowPresentation}). */
+    private final NarrowPresentation narrowView = new NarrowPresentation(this, area, logView, folds);
 
     /** Pinned enclosing-scope headers over the top of the code pane; see {@link StickyScroll}. */
     private final StickyScrollBar stickyScroll = new StickyScrollBar();
@@ -8199,7 +8198,7 @@ public class EditorBuffer implements TabContent {
 
     /** Puts the active top bars into {@code outer.setTop}: the install banner above the view-mode banner
      *  (a {@code VBox} when both show), or {@code null} when neither does. */
-    private void refreshTopBars() {
+    void refreshTopBars() {
         java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
         if (encryption.notice() != null) {
             bars.add(encryption.notice());
@@ -8213,6 +8212,7 @@ public class EditorBuffer implements TabContent {
         if (viewModeBarVisible && viewModeBar != null) {
             bars.add(viewModeBar);
         }
+        bars.addAll(narrowView.bars()); // the narrowing banner, nearest the text: it describes the text
         if (logControl != null) {
             bars.add(logControl);
         }
@@ -9555,12 +9555,18 @@ public class EditorBuffer implements TabContent {
         area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
         area.requestFollowCaret();
         moveSplitCaret(caret2 - s);
+        narrowView.narrowed(full, s, e, area2);
         onNarrowChanged.run();
         return true;
     }
 
     public void setOnNarrowChanged(Runnable callback) {
         this.onNarrowChanged = callback == null ? () -> {} : callback;
+    }
+
+    /** The 0-based file line the region starts on (0 when widened): a narrowed buffer keeps the file's numbering. */
+    public int narrowFirstLine() {
+        return narrowView.firstLine();
     }
 
     /** Emacs {@code widen}: restores access to the whole document. No-op when not narrowed. */
@@ -9587,6 +9593,7 @@ public class EditorBuffer implements TabContent {
         area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
         area.requestFollowCaret();
         moveSplitCaret(prefix.length() + caret2);
+        narrowView.widened(area2);
     }
 
     /** Puts the split's second caret back after the document was replaced under it (narrowing, widening). */

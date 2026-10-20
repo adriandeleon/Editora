@@ -1048,7 +1048,7 @@ public final class StatusBar extends HBox {
      *  by {@link #caretListener} without recomputing the O(n) file size). */
     private void refreshPositionAndCsv(EditorBuffer buffer, org.fxmisc.richtext.CodeArea area) {
         caretRefreshes++;
-        int line = area.getCurrentParagraph() + 1;
+        int line = area.getCurrentParagraph() + 1 + buffer.narrowFirstLine(); // a narrowed view keeps the file's lines
         int col = area.getCaretColumn() + 1;
         int selected = area.getSelection().getLength();
         String text = "Ln " + line + ", Col " + col;
