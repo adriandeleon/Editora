@@ -58,6 +58,80 @@ public final class CentralVersions {
     }
 
     /**
+     * What a fetch throws when the <em>repository</em> cannot be reached — a connect failure or an unknown
+     * host — as opposed to one artifact that is simply not there. A parallel lookup stops asking after the
+     * first of these: forty coordinates each waiting out their own connect timeout is minutes of "Checking…"
+     * for an answer the first one already gave.
+     */
+    public static final class Unreachable extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public Unreachable(String message) {
+            super(message);
+        }
+    }
+
+    /** How many lookups run at once: a metadata file is a few KB, so this is bounded by politeness, not bandwidth. */
+    public static final int PARALLELISM = 6;
+
+    /**
+     * As {@link #latest(Iterable, Function)}, with the lookups fanned out over {@code pool} ({@link #PARALLELISM}
+     * at a time is plenty), stopping early when {@code cancelled} turns true or the repository proves
+     * {@link Unreachable}. The answers come back in coordinate order regardless of which finished first.
+     *
+     * <p>A coordinate not asked about (cancelled, or after the repository went away) is simply absent — the
+     * same as one that did not resolve — so a caller that was cancelled sees a partial map, never an error.
+     */
+    public static Map<String, String> latest(
+            Iterable<String> coordinates,
+            Function<String, String> fetch,
+            java.util.concurrent.ExecutorService pool,
+            java.util.function.BooleanSupplier cancelled) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (coordinates == null || fetch == null) {
+            return out;
+        }
+        if (pool == null) {
+            return latest(coordinates, fetch);
+        }
+        java.util.concurrent.atomic.AtomicBoolean unreachable = new java.util.concurrent.atomic.AtomicBoolean();
+        Map<String, java.util.concurrent.Future<String>> pending = new LinkedHashMap<>();
+        for (String ga : coordinates) {
+            String[] parts = split(ga);
+            if (parts == null || pending.containsKey(ga)) {
+                continue;
+            }
+            pending.put(ga, pool.submit(() -> {
+                if (unreachable.get() || (cancelled != null && cancelled.getAsBoolean())) {
+                    return null;
+                }
+                try {
+                    return MavenMetadata.latestStable(fetch.apply(MavenMetadata.metadataPath(parts[0], parts[1])));
+                } catch (Unreachable e) {
+                    unreachable.set(true);
+                    return null;
+                } catch (RuntimeException e) {
+                    return null; // one bad coordinate must not sink the rest
+                }
+            }));
+        }
+        for (Map.Entry<String, java.util.concurrent.Future<String>> e : pending.entrySet()) {
+            try {
+                String latest = e.getValue().get();
+                if (latest != null) {
+                    out.put(e.getKey(), latest);
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.CancellationException ex) {
+                // a lookup that died is a miss, like a fetch that threw
+            }
+        }
+        return out;
+    }
+
+    /**
      * Drops entries whose resolved version is not actually newer than what the pom already has.
      *
      * <p>Without this an "update" can silently <em>downgrade</em>: a pom pinned to a milestone the archetype

@@ -3,6 +3,7 @@ package com.editora.maven;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Builds the {@code mvn archetype:generate} command line.
@@ -57,12 +58,27 @@ public final class ArchetypeGenerate {
      * {@code pom.xml}, or the module registration described above fires against it.
      */
     public static List<String> detachedArgv(List<String> mvnExecutable, MavenProjectSpec spec, Path outputDirectory) {
-        List<String> argv = new ArrayList<>(argv(mvnExecutable, spec));
+        return detachedArgv(mvnExecutable, spec, Map.of(), outputDirectory);
+    }
+
+    /** As {@link #argv(List, MavenProjectSpec, Map)}, generating into {@code outputDirectory}. */
+    public static List<String> detachedArgv(
+            List<String> mvnExecutable, MavenProjectSpec spec, Map<String, String> properties, Path outputDirectory) {
+        List<String> argv = new ArrayList<>(argv(mvnExecutable, spec, properties));
         argv.add("-DoutputDirectory=" + outputDirectory);
         return List.copyOf(argv);
     }
 
     public static List<String> argv(List<String> mvnExecutable, MavenProjectSpec spec) {
+        return argv(mvnExecutable, spec, Map.of());
+    }
+
+    /**
+     * @param properties the archetype's own required properties ({@link ArchetypeDescriptor}), appended as
+     *     {@code -Dkey=value} after the coordinates; a key that collides with one the wizard sets itself is
+     *     dropped, so no form row can override the project's groupId or package
+     */
+    public static List<String> argv(List<String> mvnExecutable, MavenProjectSpec spec, Map<String, String> properties) {
         if (mvnExecutable == null || mvnExecutable.isEmpty() || spec == null || !spec.isValid()) {
             throw new IllegalArgumentException("archetype:generate needs a maven executable and a valid spec");
         }
@@ -83,8 +99,28 @@ public final class ArchetypeGenerate {
         argv.add("-DartifactId=" + spec.artifactId());
         argv.add("-Dversion=" + spec.version());
         argv.add("-Dpackage=" + spec.packageName());
+        if (properties != null) {
+            properties.forEach((key, value) -> {
+                if (key != null && value != null && !key.isBlank() && !value.isBlank() && !RESERVED.contains(key)) {
+                    argv.add("-D" + key.strip() + "=" + value.strip());
+                }
+            });
+        }
         return List.copyOf(argv);
     }
+
+    /** The properties the wizard passes from the spec; a required-property row of the same name is ignored. */
+    private static final java.util.Set<String> RESERVED = java.util.Set.of(
+            "groupId",
+            "artifactId",
+            "version",
+            "package",
+            "archetypeGroupId",
+            "archetypeArtifactId",
+            "archetypeVersion",
+            "archetypeRepository",
+            "interactiveMode",
+            "outputDirectory");
 
     /** The command line as shown in the Output tab header. */
     public static String displayCommand(List<String> argv) {

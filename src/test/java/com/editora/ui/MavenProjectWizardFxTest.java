@@ -49,7 +49,11 @@ class MavenProjectWizardFxTest {
     }
 
     private MavenProjectCoordinator coordinator() throws Exception {
-        return FxTestSupport.callOnFx(() -> FxTestSupport.field(fx.controller, "mavenProjectCoordinator"));
+        MavenProjectCoordinator c =
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(fx.controller, "mavenProjectCoordinator"));
+        // Whatever ~/.m2 holds on this machine must not decide what the wizard does with the Java release.
+        c.setDescriptorsForTest(a -> com.editora.maven.ArchetypeDescriptor.NONE);
+        return c;
     }
 
     private static MavenArchetype quickstart() {
@@ -204,10 +208,19 @@ class MavenProjectWizardFxTest {
             assertEquals("demo", seeded.getWorkspaceState().getSelectedRunConfig(), "pre-selected");
             // The open file is not cosmetic: a Java launch resolves its classpath through an OPEN Java
             // file, so a window that opens on pom.xml alone reports "open a Java file from the project".
+            // The pom opens beside it, in the NEW window — it used to land as a foreign tab in this one.
             var open = seeded.getWorkspaceState().getOpenFiles();
-            assertEquals(1, open.size());
+            assertEquals(2, open.size());
             assertTrue(open.get(0).getPath().endsWith("App.java"), "the class that will run is open");
+            assertTrue(open.get(1).getPath().endsWith("pom.xml"), "and so is the pom");
             assertTrue(seeded.getWorkspaceState().getActiveFile().endsWith("App.java"), "and it is the active tab");
+            Object editorArea = FxTestSupport.field(fx.controller, "editorArea");
+            @SuppressWarnings("unchecked")
+            List<javafx.scene.control.Tab> tabs = (List<javafx.scene.control.Tab>)
+                    FxTestSupport.callOnFx(() -> FxTestSupport.call(editorArea, "tabs", new Class[] {}));
+            assertTrue(
+                    tabs.stream().noneMatch(t -> String.valueOf(t.getText()).contains("pom.xml")),
+                    "the pom is not opened in the window the wizard ran from");
         } finally {
             deleteRecursively(parent);
         }

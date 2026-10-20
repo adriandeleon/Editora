@@ -84,4 +84,30 @@ class MavenCoordinatesTest {
         assertNull(MavenCoordinates.parseGav(""));
         assertNull(MavenCoordinates.parseGav(null));
     }
+
+    @Test
+    void versionRejectsInteriorWhitespace() {
+        // "1.0 beta" would be split into two command-line arguments by -Dversion=; refused up front.
+        assertFalse(MavenCoordinates.isValidVersion("1.0 beta"));
+        assertFalse(MavenCoordinates.isValidVersion("1.0\tbeta"));
+        assertTrue(MavenCoordinates.isValidVersion("1.0-beta"));
+    }
+
+    @Test
+    void defaultPackageIsLowerCase() {
+        assertEquals("com.example_org.demo_app", MavenCoordinates.defaultPackage("Com.Example-Org", "Demo-App"));
+        assertEquals("com.example.demoapp", MavenCoordinates.defaultPackage("com.example", "DemoApp"));
+    }
+
+    @Test
+    void locationIsResolvedToAnAbsoluteFolder() {
+        Path base = Path.of("/x/work").toAbsolutePath().normalize();
+        String home = Path.of("/x/home").toAbsolutePath().normalize().toString();
+        assertEquals(base.resolve("rel-dir"), MavenCoordinates.resolveLocation("rel-dir", base, home));
+        assertEquals(Path.of(home, "x"), MavenCoordinates.resolveLocation("~/x", base, home));
+        assertEquals(Path.of(home), MavenCoordinates.resolveLocation("~", base, home));
+        assertEquals(base.getParent(), MavenCoordinates.resolveLocation(base + "/..", base, home));
+        assertNull(MavenCoordinates.resolveLocation("  ", base, home));
+        assertNull(MavenCoordinates.resolveLocation(null, base, home));
+    }
 }

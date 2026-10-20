@@ -1893,7 +1893,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (b == null) {
             // A non-buffer tab: show an image viewer's file path; else just the app name (Welcome, etc.).
             Path img = tabPath(editorArea.selectedTab());
-            stage.setTitle(img != null ? homeCollapsed(img.toString()) + " — " + app : app);
+            stage.setTitle(
+                    img != null ? com.editora.config.PathDisplay.collapseHome(img.toString()) + " — " + app : app);
             return;
         }
         Path p = b.getPath();
@@ -1901,7 +1902,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // templates), and concatenating that rendered a literal "null — … — Editora" title. Fall back to
         // the buffer's tab title ("untitled"), so the title bar always agrees with the tab.
         String file = p != null
-                ? homeCollapsed(p.toString())
+                ? com.editora.config.PathDisplay.collapseHome(p.toString())
                 : b.getDisplayName() != null ? b.getDisplayName() : b.getTitle();
         // The OS title bar renders plain text only (no color/italic/weight, so the tab's amber-italic
         // dirty styling can't be mirrored here) — use a prominent leading "●" as the unsaved marker so
@@ -2864,11 +2865,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
-    /** Home-collapses an absolute folder path for a scope label (e.g. {@code ~/proj}). */
-    private static String homeCollapsed(String full) {
-        return com.editora.config.PathDisplay.collapseHome(full);
-    }
-
     /** Starts AceJump on the active buffer: type a character, then a label, to jump the caret. */
     void startAceJump() {
         EditorBuffer b = activeBuffer();
@@ -3261,7 +3257,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public String homeCollapsed(String full) {
-            return MainController.this.homeCollapsed(full);
+            return com.editora.config.PathDisplay.collapseHome(full);
         }
 
         @Override
@@ -3639,7 +3635,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public String homeCollapsed(String full) {
-                    return MainController.this.homeCollapsed(full);
+                    return com.editora.config.PathDisplay.collapseHome(full);
                 }
 
                 @Override
@@ -3826,7 +3822,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public String homeCollapsed(String full) {
-            return MainController.this.homeCollapsed(full);
+            return com.editora.config.PathDisplay.collapseHome(full);
         }
 
         @Override
@@ -4675,7 +4671,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public Path pathOf(java.io.File file) {
-            return MainController.this.pathOf(file);
+            return file == null ? null : file.toPath();
         }
 
         @Override
@@ -5615,20 +5611,31 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void openProject(
                         java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
-                    if (!projectsEnabled()) {
-                        return; // still generated on disk; just not registered as a project
+                    if (projectsEnabled()) { // else still generated on disk; just not registered as a project
+                        NewMavenProjectSession.open(projects, config, windowManager, root, name, main);
                     }
-                    Project project = projects.createOrGet(name, root);
-                    projects.save();
-                    NewMavenProjectSession.seed(projects, config, project, root, name, main);
-                    if (windowManager != null) {
-                        windowManager.openOrFocus(project);
-                    }
+                }
+
+                @Override
+                public boolean projectsEnabled() {
+                    return MainController.this.projectsEnabled() && windowManager != null;
+                }
+
+                @Override
+                public java.nio.file.Path currentProjectRoot() {
+                    return windowProjectRoot();
                 }
 
                 @Override
                 public void openPath(java.nio.file.Path file) {
                     fileWorkflows.openPath(file);
+                }
+
+                @Override
+                public void openConsole() {
+                    if (buildOutputToolWindow != null) {
+                        toolWindows.open(buildOutputToolWindow, true);
+                    }
                 }
 
                 @Override
@@ -5638,6 +5645,11 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public boolean confirmArchetype(com.editora.maven.MavenArchetype archetype) {
+                    return consentFor(archetype) != MavenProjectCoordinator.Consent.CANCEL;
+                }
+
+                @Override
+                public MavenProjectCoordinator.Consent consentFor(com.editora.maven.MavenArchetype archetype) {
                     return NewMavenProjectSession.confirmArchetype(stage, archetype);
                 }
 
@@ -6072,7 +6084,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public String homeCollapsed(String absolutePath) {
-            return MainController.this.homeCollapsed(absolutePath);
+            return com.editora.config.PathDisplay.collapseHome(absolutePath);
         }
 
         @Override
@@ -6504,7 +6516,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public String homeCollapsed(String absolutePath) {
-            return MainController.homeCollapsed(absolutePath);
+            return com.editora.config.PathDisplay.collapseHome(absolutePath);
         }
 
         @Override
@@ -8311,7 +8323,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     void onOpen() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("dialog.openFile.title"));
-        Path file = pathOf(chooser.showOpenDialog(stage));
+        java.io.File chosen = chooser.showOpenDialog(stage);
+        Path file = chosen == null ? null : chosen.toPath();
         if (file != null) {
             fileWorkflows.openPath(file);
         }
@@ -9945,10 +9958,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The selection policy for caret-movement commands: extend from the mark when it's active. */
     SelectionPolicy selPolicy() {
         return editing.markActive() ? SelectionPolicy.ADJUST : SelectionPolicy.CLEAR;
-    }
-
-    private static Path pathOf(java.io.File file) {
-        return file == null ? null : file.toPath();
     }
 
     // --- Keyboard macros (record / replay / save / run): see MacroCoordinator ---

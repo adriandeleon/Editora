@@ -29,6 +29,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
@@ -52,6 +53,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -159,6 +161,12 @@ class MavenProjectFlowFxTest {
                             "org.apache.maven.plugins:maven-compiler-plugin    3.11.0  →  3.14.0"),
                     rig.texts(card, ".maven-version-row"));
             assertTrue(rig.allText(card).contains(tr("dialog.mavenVersions.summary", 2)), rig.allText(card));
+            // Grouped by what each row is, so a plugin bump never reads like a dependency bump.
+            assertEquals(
+                    List.of(tr("dialog.mavenVersions.group.dependency"), tr("dialog.mavenVersions.group.plugin")),
+                    rig.texts(card, ".maven-version-group"));
+            assertEquals(List.of(), rig.texts(card, ".maven-version-skipped"), "everything was checked");
+            assertEquals(tr("status.mavenVersions.found", 2), rig.host.lastStatus(), "not still 'Checking…'");
             assertEquals(PINNED_POM, Files.readString(pom), "nothing is written before the preview is accepted");
 
             rig.press(card, tr("dialog.mavenVersions.apply"));
@@ -365,15 +373,42 @@ class MavenProjectFlowFxTest {
                 pkg.setText("org.acme.demo_app");
             });
 
-            // A bad version, an empty location or an existing folder each block Create.
+            // A bad version, an empty location or a populated folder each block Create — and the hint says
+            // which field is wrong, instead of "Will create …" for a name the form refuses.
             FxTestSupport.runOnFx(() -> version.setText("1/0"));
             assertTrue(FxTestSupport.callOnFx(create::isDisabled));
+            assertEquals(tr("status.mavenProject.invalid", tr("dialog.mavenProject.version")), rig.hint(card));
+            FxTestSupport.runOnFx(() -> version.setText("1.0 beta"));
+            assertTrue(FxTestSupport.callOnFx(create::isDisabled), "whitespace inside a version");
             FxTestSupport.runOnFx(() -> version.setText("0.1.0"));
+            FxTestSupport.runOnFx(() -> name.setText("my app"));
+            assertTrue(FxTestSupport.callOnFx(create::isDisabled));
+            assertEquals(tr("status.mavenProject.invalid", tr("dialog.mavenProject.name")), rig.hint(card));
+            FxTestSupport.runOnFx(() -> name.setText("demo-app"));
             FxTestSupport.runOnFx(() -> location.setText("  "));
             assertTrue(FxTestSupport.callOnFx(create::isDisabled));
-            assertEquals("", rig.hint(card));
+            assertEquals(tr("status.mavenProject.invalid", tr("dialog.mavenProject.location")), rig.hint(card));
+            // A relative location or a ~ resolves to an absolute folder, and the hint shows that folder.
+            FxTestSupport.runOnFx(() -> location.setText("under-here"));
+            assertEquals(
+                    tr(
+                            "dialog.mavenProject.willCreate",
+                            dir.resolve("under-here").resolve("demo-app")),
+                    rig.hint(card));
+            FxTestSupport.runOnFx(() -> location.setText("~/some-where"));
+            assertEquals(
+                    tr(
+                            "dialog.mavenProject.willCreate",
+                            Path.of(System.getProperty("user.home"), "some-where", "demo-app")),
+                    rig.hint(card));
+            // An empty folder is fine (made ahead of time, or left by a failed attempt); a populated one is not.
             Files.createDirectories(dir.resolve("taken").resolve("demo-app"));
             FxTestSupport.runOnFx(() -> location.setText(dir.resolve("taken").toString()));
+            assertFalse(FxTestSupport.callOnFx(create::isDisabled), "an empty folder is allowed");
+            assertEquals(
+                    tr("dialog.mavenProject.willCreate", dir.resolve("taken").resolve("demo-app")), rig.hint(card));
+            Files.writeString(dir.resolve("taken").resolve("demo-app").resolve("README"), "x");
+            FxTestSupport.runOnFx(() -> location.setText(dir.resolve("taken").toString() + "/"));
             assertTrue(FxTestSupport.callOnFx(create::isDisabled));
             assertEquals(tr("dialog.mavenProject.exists", dir.resolve("taken").resolve("demo-app")), rig.hint(card));
             FxTestSupport.runOnFx(create::fire);
@@ -404,6 +439,8 @@ class MavenProjectFlowFxTest {
             assertEquals(majors, FxTestSupport.callOnFx(() -> List.copyOf(release.getItems())));
             TextField url = (TextField)
                     FxTestSupport.callOnFx(() -> advanced.getContent().lookup(".text-field"));
+            // The "17" prompt is the combo's own, so the skin shows it (set on the editor, it was overwritten).
+            assertEquals("17", FxTestSupport.callOnFx(() -> release.getEditor().getPromptText()));
             FxTestSupport.runOnFx(() -> {
                 url.setText("https://acme.example/demo");
                 release.getEditor().setText("21");
@@ -430,7 +467,9 @@ class MavenProjectFlowFxTest {
             assertEquals(projectDir, opened.root());
             assertEquals("demo-app", opened.name());
             assertEquals("org.acme.demo_app.App", opened.main().fqn());
-            assertEquals(List.of(projectDir.resolve("pom.xml")), rig.ops.openedPaths);
+            assertEquals(
+                    List.of(projectDir.resolve("pom.xml")), rig.ops.openedPaths, "projects off: the pom opens here");
+            assertEquals(1, rig.ops.consoleOpened.get(), "the Output window shows the generation");
 
             String console = rig.console();
             assertTrue(console.contains("[INFO] Generating project in Batch mode"), console);
@@ -463,14 +502,346 @@ class MavenProjectFlowFxTest {
             TextField customName = rig.formField(0);
             FxTestSupport.runOnFx(() -> customName.setText("demo"));
 
-            // Third-party code: declined, nothing runs.
+            // Third-party code: declined, nothing runs — and the form comes back with what was typed, rather
+            // than a "Cancelled." status and five fields to fill in again.
             rig.ops.consent = false;
             rig.press(card, tr("dialog.mavenProject.create"));
-            assertEquals(tr("status.mavenProject.cancelled"), rig.host.lastStatus());
             assertEquals(List.of(), runs);
             assertEquals(
                     "org.example:sketchy-archetype:1.2", rig.ops.asked.get(0).gav());
             assertFalse(Files.exists(dir.resolve("demo")));
+            Node again = rig.card();
+            assertNotNull(again, "the form is shown again");
+            assertEquals("demo", rig.fieldText(0), "with the name kept");
+            assertNotEquals(tr("status.mavenProject.cancelled"), rig.host.lastStatus());
+
+            // "Trust and Generate" is remembered for the session: the next generation from it does not ask.
+            rig.ops.consent = true;
+            rig.ops.remember = true;
+            rig.press(again, tr("dialog.mavenProject.create"));
+            assertEquals(1, runs.size());
+            assertEquals(2, rig.ops.asked.size());
+            MavenProjectSpec spec =
+                    new MavenProjectSpec(rig.ops.asked.get(0), "com.example", "demo2", "1.0", "com.example.demo2", dir);
+            FxTestSupport.runOnFx(() -> rig.coordinator.generate(spec));
+            assertEquals(2, runs.size(), "ran without asking");
+            assertEquals(2, rig.ops.asked.size(), "not asked again");
+        }
+    }
+
+    @Test
+    void anArchetypesRequiredPropertiesBecomeRowsAndAreSentAsProperties(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir)) {
+            // javafx-archetype-simple's descriptor (defaults 13 / 0.0.6 / N) plus a property with no default,
+            // and quickstart's javaCompilerVersion, which the Java release row feeds.
+            rig.coordinator.setDescriptorsForTest(a -> new com.editora.maven.ArchetypeDescriptor(List.of(
+                    new com.editora.maven.ArchetypeDescriptor.RequiredProperty("javaCompilerVersion", "17"),
+                    new com.editora.maven.ArchetypeDescriptor.RequiredProperty("javafx-version", "13"),
+                    new com.editora.maven.ArchetypeDescriptor.RequiredProperty("companyName", null))));
+            List<List<String>> runs = new CopyOnWriteArrayList<>();
+            Path projectDir = dir.resolve("demo");
+            FxTestSupport.runOnFx(() -> rig.coordinator.setRunnerForTest((w, argv, listener) -> {
+                runs.add(argv);
+                write(
+                        projectDir.resolve("pom.xml"),
+                        "<project><artifactId>demo</artifactId><properties>"
+                                + "<maven.compiler.release>${javaCompilerVersion}</maven.compiler.release></properties></project>");
+                listener.onExit(0);
+            }));
+            FxTestSupport.runOnFx(() -> rig.coordinator.newProject(dir));
+            rig.chooseArchetype(a -> a.artifactId().equals("maven-archetype-quickstart"));
+            Node card = rig.card();
+            Button create = rig.button(card, tr("dialog.mavenProject.create"));
+            TitledPane advanced = (TitledPane) FxTestSupport.callOnFx(() -> card.lookup(".dialog-advanced"));
+            assertTrue(FxTestSupport.callOnFx(advanced::isExpanded), "a property with no default must be seen");
+            TextField name = rig.formField(0);
+            FxTestSupport.runOnFx(() -> name.setText("demo"));
+            assertTrue(FxTestSupport.callOnFx(create::isDisabled), "companyName is empty");
+            assertEquals(tr("status.mavenProject.invalid", "companyName"), rig.hint(card));
+            GridPane properties = (GridPane) FxTestSupport.callOnFx(() -> card.lookup(".maven-archetype-properties"));
+            List<TextField> rows = FxTestSupport.callOnFx(() -> properties.getChildren().stream()
+                    .filter(n -> n instanceof TextField)
+                    .map(n -> (TextField) n)
+                    .toList());
+            assertEquals(2, rows.size(), "the Java release has its own row; the two others are here");
+            assertEquals("13", FxTestSupport.callOnFx(rows.get(0)::getText));
+            assertEquals("", FxTestSupport.callOnFx(rows.get(1)::getText));
+            @SuppressWarnings("unchecked")
+            ComboBox<String> release = (ComboBox<String>)
+                    FxTestSupport.callOnFx(() -> advanced.getContent().lookup(".combo-box"));
+            FxTestSupport.runOnFx(() -> {
+                rows.get(0).setText("21");
+                rows.get(1).setText("ACME");
+                release.getEditor().setText("25");
+            });
+            assertFalse(FxTestSupport.callOnFx(create::isDisabled));
+            assertEquals(tr("dialog.mavenProject.willCreate", projectDir), rig.hint(card));
+            FxTestSupport.runOnFx(create::fire);
+
+            List<String> argv = runs.get(0);
+            assertTrue(argv.contains("-Djavafx-version=21"), argv.toString());
+            assertTrue(argv.contains("-DcompanyName=ACME"), argv.toString());
+            assertTrue(argv.contains("-DjavaCompilerVersion=25"), "the release goes through the archetype: " + argv);
+            String pom = Files.readString(projectDir.resolve("pom.xml"));
+            assertTrue(pom.contains("${javaCompilerVersion}"), "no pom edit for a release the archetype took: " + pom);
+        }
+    }
+
+    @Test
+    void aModuleOfTheOpenProjectStaysInThisWindow(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir)) {
+            // The open project is an aggregator; generating into its root adds a module to it.
+            Files.writeString(dir.resolve("pom.xml"), "<project><packaging>pom</packaging></project>");
+            rig.ops.projectRoot = dir;
+            Path moduleDir = dir.resolve("core");
+            Path main = moduleDir.resolve("src/main/java/com/example/core/App.java");
+            FxTestSupport.runOnFx(() -> rig.coordinator.setRunnerForTest((w, argv, listener) -> {
+                write(moduleDir.resolve("pom.xml"), "<project><artifactId>core</artifactId></project>");
+                write(
+                        main,
+                        "package com.example.core;\npublic class App {\n"
+                                + "    public static void main( String[] args )\n    {\n    }\n}\n");
+                listener.onExit(0);
+            }));
+            MavenProjectSpec spec =
+                    new MavenProjectSpec(rig.quickstart(), "com.example", "core", "1.0", "com.example.core", dir);
+            FxTestSupport.runOnFx(() -> rig.coordinator.generate(spec));
+            assertEquals(List.of(), rig.ops.projects, "not registered as a second project");
+            assertEquals(List.of(main), rig.ops.openedPaths, "the module's main class opens here");
+            assertEquals(tr("status.mavenProject.moduleAdded", "core"), rig.host.lastStatus());
+            assertEquals(1, rig.ops.treeRefreshes.get());
+
+            // Elsewhere — an aggregator that is not the open project — it is a project of its own, as before.
+            rig.ops.projectRoot = dir.resolve("other-project");
+            Path again = dir.resolve("core2");
+            FxTestSupport.runOnFx(() -> rig.coordinator.setRunnerForTest((w, argv, listener) -> {
+                write(again.resolve("pom.xml"), "<project><artifactId>core2</artifactId></project>");
+                listener.onExit(0);
+            }));
+            FxTestSupport.runOnFx(() -> rig.coordinator.generate(
+                    new MavenProjectSpec(rig.quickstart(), "com.example", "core2", "1.0", "com.example.core2", dir)));
+            assertEquals(1, rig.ops.projects.size());
+        }
+    }
+
+    @Test
+    void withProjectsOnThePomIsSeededIntoTheNewWindowNotOpenedHere(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir)) {
+            rig.ops.projectsEnabled = true;
+            Path projectDir = dir.resolve("demo");
+            FxTestSupport.runOnFx(() -> rig.coordinator.setRunnerForTest((w, argv, listener) -> {
+                write(projectDir.resolve("pom.xml"), "<project><artifactId>demo</artifactId></project>");
+                listener.onExit(0);
+            }));
+            MavenProjectSpec spec =
+                    new MavenProjectSpec(rig.quickstart(), "com.example", "demo", "1.0", "com.example.demo", dir);
+            FxTestSupport.runOnFx(() -> rig.coordinator.generate(spec));
+            assertEquals(1, rig.ops.projects.size());
+            assertEquals(List.of(), rig.ops.openedPaths, "the pom belongs to the new window's session");
+        }
+    }
+
+    @Test
+    void aFailedGenerationRevealsTheOutputWindow(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir)) {
+            FxTestSupport.runOnFx(() -> rig.coordinator.setRunnerForTest((w, argv, listener) -> listener.onExit(1)));
+            MavenProjectSpec spec =
+                    new MavenProjectSpec(rig.quickstart(), "com.example", "demo", "1.0", "com.example.demo", dir);
+            FxTestSupport.runOnFx(() -> rig.coordinator.generate(spec));
+            assertEquals(tr("status.mavenProject.failed", "demo"), rig.host.awaitError());
+            assertEquals(2, rig.ops.consoleOpened.get(), "opened for the run, and again where the message points");
+            assertEquals(List.of(1, 1), List.of(rig.host.tasksStarted.get(), rig.host.tasksClosed.get()));
+        }
+    }
+
+    @Test
+    void theWizardsMavenRunsOnTheMavenJdkFromSettings(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir)) {
+            assertEquals(Map.of(), rig.coordinator.mavenEnvironment(), "no JDK chosen: the user's environment");
+            Path jdk = Files.createDirectories(dir.resolve("jdk-25"));
+            rig.host.settings.setMavenJdkHome(jdk.toString());
+            Map<String, String> env = rig.coordinator.mavenEnvironment();
+            assertEquals(jdk.toString(), env.get("JAVA_HOME"));
+            assertTrue(
+                    env.values().stream()
+                            .anyMatch(v -> v.startsWith(jdk.resolve("bin").toString())),
+                    env.toString());
+        }
+    }
+
+    // ---- Update Versions: modules, properties, the parent, declining ------------------------------------
+
+    /** A module of a parent: versions through properties and inheritance, and the parent itself to bump. */
+    private static final String MODULE_POM = """
+            <project>
+              <parent>
+                <groupId>org.example</groupId>
+                <artifactId>parent</artifactId>
+                <version>1.0.0</version>
+              </parent>
+              <artifactId>core</artifactId>
+              <properties>
+                <junit.version>5.10.0</junit.version>
+              </properties>
+              <dependencies>
+                <dependency>
+                  <groupId>org.junit.jupiter</groupId>
+                  <artifactId>junit-jupiter-api</artifactId>
+                  <version>${junit.version}</version>
+                </dependency>
+                <dependency>
+                  <groupId>com.google.guava</groupId>
+                  <artifactId>guava</artifactId>
+                </dependency>
+                <dependency>
+                  <groupId>org.example</groupId>
+                  <artifactId>shared</artifactId>
+                  <version>${project.version}</version>
+                </dependency>
+              </dependencies>
+            </project>
+            """;
+
+    @Test
+    void updateVersionsOffersThePropertyAndTheParentAndSaysWhatItSkipped(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir);
+                LoopbackDownloads central = new LoopbackDownloads()) {
+            central.serve(
+                            CENTRAL + "org/junit/jupiter/junit-jupiter-api/maven-metadata.xml",
+                            metadata("5.10.0", "6.1.3"))
+                    .serve(CENTRAL + "org/example/parent/maven-metadata.xml", metadata("1.0.0", "1.2.0"));
+            rig.coordinator.setHttpClientsForTest(() -> central.client().get());
+            Path pom = Files.writeString(dir.resolve("pom.xml"), MODULE_POM);
+            rig.ops.parent = dir;
+
+            FxTestSupport.runOnFx(rig.coordinator::updateVersions);
+            assertEquals(tr("status.mavenVersions.checking", 2), rig.host.awaitStatus());
+            Node card = rig.awaitCard();
+            assertEquals(
+                    List.of("org.example:parent    1.0.0  →  1.2.0", "${junit.version}    5.10.0  →  6.1.3"),
+                    rig.texts(card, ".maven-version-row"));
+            assertEquals(
+                    List.of(tr("dialog.mavenVersions.group.parent"), tr("dialog.mavenVersions.group.property")),
+                    rig.texts(card, ".maven-version-group"));
+            assertEquals(
+                    List.of(tr("dialog.mavenVersions.major")), rig.texts(card, ".maven-version-major"), "JUnit 5 → 6");
+            assertEquals(
+                    List.of(tr("dialog.mavenVersions.skipped", 2, 1, 1)), rig.texts(card, ".maven-version-skipped"));
+
+            // Decline the major jump, keep the parent bump: only what stays checked is written.
+            List<Node> boxes = FxTestSupport.callOnFx(() -> new ArrayList<>(card.lookupAll(".maven-version-row")));
+            FxTestSupport.runOnFx(() -> ((CheckBox) boxes.get(1)).setSelected(false));
+            rig.press(card, tr("dialog.mavenVersions.apply"));
+            String updated = Files.readString(pom);
+            assertTrue(updated.contains("<artifactId>parent</artifactId>\n    <version>1.2.0</version>"), updated);
+            assertTrue(updated.contains("<junit.version>5.10.0</junit.version>"), "declined: " + updated);
+            assertEquals(tr("status.mavenVersions.updated", 1), rig.host.lastStatus());
+
+            // The property is rewritten when accepted, and the references stay references.
+            Files.writeString(pom, MODULE_POM);
+            FxTestSupport.runOnFx(rig.coordinator::updateVersions);
+            Node second = rig.awaitCard();
+            List<Node> again = FxTestSupport.callOnFx(() -> new ArrayList<>(second.lookupAll(".maven-version-row")));
+            FxTestSupport.runOnFx(() -> ((CheckBox) again.get(0)).setSelected(false));
+            rig.press(second, tr("dialog.mavenVersions.apply"));
+            String property = Files.readString(pom);
+            assertTrue(property.contains("<junit.version>6.1.3</junit.version>"), property);
+            assertTrue(property.contains("<version>${junit.version}</version>"), property);
+            assertTrue(property.contains("<version>1.0.0</version>"), "the parent was declined this time");
+        }
+    }
+
+    @Test
+    void updateVersionsDeclinedSaysSoAndWritesNothing(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir);
+                LoopbackDownloads central = new LoopbackDownloads()) {
+            central.serve(
+                    CENTRAL + "org/junit/jupiter/junit-jupiter-api/maven-metadata.xml", metadata("5.10.0", "5.13.0"));
+            rig.coordinator.setHttpClientsForTest(() -> central.client().get());
+            Path pom = Files.writeString(dir.resolve("pom.xml"), PINNED_POM);
+            rig.ops.parent = dir;
+            FxTestSupport.runOnFx(rig.coordinator::updateVersions);
+            Node card = rig.awaitCard();
+            assertEquals(tr("status.mavenVersions.found", 1), rig.host.lastStatus());
+            rig.press(card, tr("dialog.cancel"));
+            String cancelled = tr("status.mavenVersions.cancelled");
+            assertEquals(cancelled, rig.host.awaitStatus(cancelled::equals));
+            assertEquals(PINNED_POM, Files.readString(pom));
+        }
+    }
+
+    @Test
+    void aModuleThatPinsNothingSaysSoAndOffersTheParentPomOnDisk(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir);
+                LoopbackDownloads central = new LoopbackDownloads()) {
+            central.serve(
+                    CENTRAL + "org/junit/jupiter/junit-jupiter-api/maven-metadata.xml", metadata("5.10.0", "5.13.0"));
+            rig.coordinator.setHttpClientsForTest(() -> central.client().get());
+            Path parentPom = Files.writeString(dir.resolve("pom.xml"), PINNED_POM);
+            Path module = Files.createDirectories(dir.resolve("core"));
+            Files.writeString(module.resolve("pom.xml"), """
+                    <project>
+                      <parent><groupId>com.example</groupId><artifactId>demo</artifactId><version>1.0</version></parent>
+                      <artifactId>core</artifactId>
+                      <dependencies>
+                        <dependency><groupId>com.google.guava</groupId><artifactId>guava</artifactId></dependency>
+                        <dependency><groupId>g</groupId><artifactId>a</artifactId><version>${a.version}</version></dependency>
+                      </dependencies>
+                    </project>
+                    """);
+            rig.ops.parent = module;
+
+            FxTestSupport.runOnFx(rig.coordinator::updateVersions);
+            // The parent coordinate is looked up (a reactor parent is not on Central: no answer), and then
+            // what the module inherits is the real question.
+            String why = tr("status.mavenVersions.nothingPinnedSkipped", 1, 1);
+            assertEquals(tr("status.mavenVersions.checking", 1), rig.host.awaitStatus());
+            assertEquals(why, rig.host.awaitStatus(why::equals));
+            Node card = rig.awaitCard();
+            assertNotNull(card, "offers the parent pom");
+            assertTrue(rig.allText(card).contains(parentPom.toString()), rig.allText(card));
+            rig.press(card, tr("dialog.mavenVersions.checkParent"));
+            String checking = tr("status.mavenVersions.checking", 3);
+            assertEquals(checking, rig.host.awaitStatus(checking::equals));
+            Node preview = rig.awaitCard();
+            assertEquals(
+                    List.of("org.junit.jupiter:junit-jupiter-api    5.10.0  →  5.13.0"),
+                    rig.texts(preview, ".maven-version-row"));
+
+            // Without a parent on disk there is nothing to offer, just the reason.
+            Files.delete(parentPom);
+            FxTestSupport.runOnFx(() -> rig.host.overlay.hide());
+            FxTestSupport.runOnFx(rig.coordinator::updateVersions);
+            assertEquals(
+                    tr("status.mavenVersions.nothingPinnedSkipped", 1, 1),
+                    rig.host.awaitStatus(s -> s.equals(tr("status.mavenVersions.nothingPinnedSkipped", 1, 1))));
+            assertNull(rig.card());
+        }
+    }
+
+    @Test
+    void aSecondUpdateVersionsWhileOneRunsCancelsIt(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir);
+                LoopbackDownloads central = new LoopbackDownloads()) {
+            // Central never answers in time: the lookups hang on a never-served path.
+            central.serve(
+                    CENTRAL + "org/junit/jupiter/junit-jupiter-api/maven-metadata.xml", metadata("5.10.0", "5.13.0"));
+            rig.coordinator.setHttpClientsForTest(() -> central.client().get());
+            Path pom = Files.writeString(dir.resolve("pom.xml"), PINNED_POM);
+            rig.ops.parent = dir;
+            FxTestSupport.runOnFx(() -> {
+                rig.coordinator.updateVersions();
+                rig.coordinator.updateVersions(); // the same pulse: the first is still in flight
+            });
+            assertEquals(tr("status.mavenVersions.checking", 3), rig.host.awaitStatus());
+            assertEquals(tr("status.mavenVersions.cancelled"), rig.host.awaitStatus());
+            FxTestSupport.drainFx();
+            assertEquals(List.of(1, 1), List.of(rig.host.tasksStarted.get(), rig.host.tasksClosed.get()));
+            assertEquals(PINNED_POM, Files.readString(pom));
+            // A third call starts afresh rather than being swallowed as another cancel.
+            FxTestSupport.runOnFx(rig.coordinator::updateVersions);
+            assertEquals(tr("status.mavenVersions.checking", 3), rig.host.awaitStatus());
+            rig.awaitCard();
         }
     }
 
@@ -651,7 +1022,8 @@ class MavenProjectFlowFxTest {
         try (Rig rig = new Rig(dir)) {
             MavenProjectSpec spec = new MavenProjectSpec(rig.quickstart(), "com.example", "", "1.0", "p", dir);
             FxTestSupport.runOnFx(() -> rig.coordinator.generate(spec));
-            assertEquals(tr("status.mavenProject.invalid", "artifactId"), rig.host.lastError());
+            // The field's label, translated — not the raw key suffix "artifactId".
+            assertEquals(tr("status.mavenProject.invalid", tr("dialog.mavenProject.name")), rig.host.lastError());
         }
     }
 
@@ -944,14 +1316,41 @@ class MavenProjectFlowFxTest {
     private static final class Ops implements MavenProjectCoordinator.Ops {
         volatile Path parent;
         volatile boolean consent = true;
+        volatile boolean remember;
+        volatile boolean projectsEnabled;
+        volatile Path projectRoot;
         final List<MavenArchetype> asked = new CopyOnWriteArrayList<>();
         final List<Opened> projects = new CopyOnWriteArrayList<>();
         final List<Path> openedPaths = new CopyOnWriteArrayList<>();
         final AtomicInteger treeRefreshes = new AtomicInteger();
+        final AtomicInteger consoleOpened = new AtomicInteger();
 
         @Override
         public Path defaultParentDir() {
             return parent;
+        }
+
+        @Override
+        public boolean projectsEnabled() {
+            return projectsEnabled;
+        }
+
+        @Override
+        public Path currentProjectRoot() {
+            return projectRoot;
+        }
+
+        @Override
+        public void openConsole() {
+            consoleOpened.incrementAndGet();
+        }
+
+        @Override
+        public MavenProjectCoordinator.Consent consentFor(MavenArchetype archetype) {
+            asked.add(archetype);
+            return !consent
+                    ? MavenProjectCoordinator.Consent.CANCEL
+                    : remember ? MavenProjectCoordinator.Consent.ALWAYS : MavenProjectCoordinator.Consent.ONCE;
         }
 
         @Override
@@ -976,8 +1375,7 @@ class MavenProjectFlowFxTest {
 
         @Override
         public boolean confirmArchetype(MavenArchetype archetype) {
-            asked.add(archetype);
-            return consent;
+            return consentFor(archetype) != MavenProjectCoordinator.Consent.CANCEL;
         }
 
         @Override
@@ -1029,6 +1427,8 @@ class MavenProjectFlowFxTest {
             FxTestSupport.runOnFx(() -> coordinator.setRunnerForTest((workingDir, argv, listener) -> {
                 throw new AssertionError("this test must not launch Maven: " + argv);
             }));
+            // Whatever ~/.m2 holds on this machine must not decide what the form shows.
+            coordinator.setDescriptorsForTest(a -> com.editora.maven.ArchetypeDescriptor.NONE);
             stage = FxTestSupport.callOnFx(() -> {
                 host.overlay.install(overlayRoot);
                 Stage s = new Stage();
