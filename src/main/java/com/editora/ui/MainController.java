@@ -5642,6 +5642,22 @@ public class MainController implements com.editora.mcp.McpBridge {
                         projectPanel.refreshTree();
                     }
                 }
+
+                @Override
+                public void showActionsAt(java.nio.file.Path root) {
+                    BuildCoordinator maven = buildCoordinator(BuildTool.MAVEN);
+                    if (maven != null) {
+                        maven.showActionsAt(root);
+                    }
+                }
+
+                @Override
+                public void runCustomAt(java.nio.file.Path root) {
+                    BuildCoordinator maven = buildCoordinator(BuildTool.MAVEN);
+                    if (maven != null) {
+                        maven.runCustomAt(root);
+                    }
+                }
             },
             buildOutputPanel);
 

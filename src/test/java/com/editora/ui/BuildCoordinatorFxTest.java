@@ -598,6 +598,49 @@ class BuildCoordinatorFxTest {
                         .toList());
     }
 
+    /**
+     * The Maven submenu on {@code moduleA/pom.xml} opens the actions popup <em>for module A</em> while the
+     * editor sits in module B, and a task picked there runs in A. The popup used to be the active tab's
+     * (B's), whatever row the menu was opened on.
+     */
+    @Test
+    void showActionsAtOpensThePopupForTheGivenRootAndItsTasksRunThere(@TempDir Path project) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                System.getProperty("os.name", "").toLowerCase().contains("win"), "needs a POSIX sh");
+        Path moduleA = Files.createDirectories(project.resolve("module-a"));
+        Path moduleB = Files.createDirectories(project.resolve("module-b"));
+        Files.writeString(moduleA.resolve("pom.xml"), VALID_POM);
+        Files.writeString(moduleB.resolve("pom.xml"), VALID_POM);
+        Path cwdLog = project.resolve("cwd.log");
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        host.settings.setMavenCommand(
+                script(project.resolve("fakemvn.sh"), "pwd >> '" + cwdLog + "'").toString());
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = moduleB;
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> moduleB.equals(c.markerRoot()), "module-b is the detected root");
+
+        FxTestSupport.runOnFx(() -> c.showActionsAt(moduleA));
+        waitUntil(() -> moduleA.equals(FxTestSupport.field(c, "popupRoot")), "the popup is A's");
+        BuildActionsPopup popup = FxTestSupport.field(c, "popup");
+        BuildActionsPopup.RunHandler onRun = FxTestSupport.field(popup, "onRun");
+        FxTestSupport.runOnFx(() -> onRun.run(List.of("test"), List.of()));
+        String started = host.lastStatus; // set synchronously by launch, before the fake mvn exits
+        waitUntil(() -> !c.isRunning() && Files.exists(cwdLog), "the run finished");
+        assertEquals(
+                List.of(moduleA.toRealPath().toString()),
+                Files.readAllLines(cwdLog).stream()
+                        .map(l -> uncheckedRealPath(Path.of(l)))
+                        .toList());
+        assertTrue(started.contains("module-a"), "the status names the folder it ran in: " + started);
+
+        // The active tab's popup is back to the active tab's module.
+        FxTestSupport.runOnFx(c::showActionsPopup);
+        assertNull(FxTestSupport.field(c, "popupRoot"));
+    }
+
     private static String uncheckedRealPath(Path p) {
         try {
             return p.toRealPath().toString();

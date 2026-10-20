@@ -694,7 +694,14 @@ class MavenProjectFlowFxTest {
             for (String id : List.of("maven.showActions", "maven.runCustom", "maven.rerunLast", "maven.stop")) {
                 registry.register(Command.of(id, () -> ran.add(id)));
             }
-            rig.ops.parent = dir;
+            // The menu is opened on THIS pom while the "active tab" (defaultParentDir) is another project that
+            // pins a version: every item must act on the pom it names, never on the active tab's.
+            Path other = Files.createDirectories(dir.resolve("other"));
+            write(
+                    other.resolve("pom.xml"),
+                    "<project><artifactId>other</artifactId><dependencies><dependency><groupId>g</groupId>"
+                            + "<artifactId>a</artifactId><version>1.0</version></dependency></dependencies></project>");
+            rig.ops.parent = other;
             Menu menu = FxTestSupport.callOnFx(() -> {
                 rig.coordinator.registerCommands(registry);
                 return rig.coordinator.mavenMenu(pom);
@@ -703,13 +710,17 @@ class MavenProjectFlowFxTest {
                     List.of(
                             tr("command.maven.updateVersions"),
                             tr("command.maven.showActions"),
-                            tr("command.maven.runCustom"),
-                            tr("command.maven.rerunLast"),
-                            tr("command.maven.stop")),
-                    menu.getItems().stream().map(MenuItem::getText).toList());
+                            tr("command.maven.runCustom")),
+                    menu.getItems().stream().map(MenuItem::getText).toList(),
+                    "Rerun Last and Stop are window-wide, so a menu that names a pom does not offer them");
             FxTestSupport.runOnFx(() -> menu.getItems().forEach(MenuItem::fire));
-            assertEquals(List.of("maven.showActions", "maven.runCustom", "maven.rerunLast", "maven.stop"), ran);
-            assertEquals(tr("status.mavenVersions.nothingPinned"), rig.host.lastStatus(), "Update Versions ran too");
+            assertEquals(List.of(), ran, "no item goes through the context-free palette commands");
+            assertEquals(List.of(dir), rig.ops.actionsAt, "Show Actions opens the popup for the clicked pom's folder");
+            assertEquals(List.of(dir), rig.ops.customAt, "Run custom runs in the clicked pom's folder");
+            assertEquals(
+                    tr("status.mavenVersions.nothingPinned"),
+                    rig.host.lastStatus(),
+                    "Update Versions read the clicked pom (nothing pinned), not the active tab's (one pin)");
 
             assertNull(FxTestSupport.callOnFx(() -> rig.coordinator.mavenMenu(null)));
             assertNull(FxTestSupport.callOnFx(() -> rig.coordinator.mavenMenu(dir.resolve("effective-pom.xml"))));
@@ -852,6 +863,19 @@ class MavenProjectFlowFxTest {
         @Override
         public void refreshProjectTree() {
             treeRefreshes.incrementAndGet();
+        }
+
+        final List<Path> actionsAt = new CopyOnWriteArrayList<>();
+        final List<Path> customAt = new CopyOnWriteArrayList<>();
+
+        @Override
+        public void showActionsAt(Path root) {
+            actionsAt.add(root);
+        }
+
+        @Override
+        public void runCustomAt(Path root) {
+            customAt.add(root);
         }
     }
 

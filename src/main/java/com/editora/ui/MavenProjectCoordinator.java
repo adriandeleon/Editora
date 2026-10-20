@@ -109,6 +109,12 @@ final class MavenProjectCoordinator {
 
         /** Re-lists the project tree after files land on disk. */
         void refreshProjectTree();
+
+        /** Opens the Maven actions popup for the project whose {@code pom.xml} folder is {@code root}. */
+        default void showActionsAt(Path root) {}
+
+        /** Prompts for a custom Maven task and runs it in {@code root}. */
+        default void runCustomAt(Path root) {}
     }
 
     /**
@@ -156,11 +162,19 @@ final class MavenProjectCoordinator {
      * because a brand-new project has nothing to lose; an existing pom does.
      */
     void updateVersions() {
+        updateVersions(nearestPom(ops.defaultParentDir()));
+    }
+
+    /**
+     * As {@link #updateVersions()}, for {@code pomFile} — the pom a context menu was opened on. The menu used
+     * to call the no-argument form, which checks the <em>active tab's</em> pom: a right-click on
+     * {@code moduleB/pom.xml} while editing a file of module A offered to rewrite module A's pom.
+     */
+    void updateVersions(Path pomFile) {
         if (!host.settings().isMavenSupport()) {
             host.setError(tr("status.mavenProject.disabled"));
             return;
         }
-        Path pomFile = nearestPom(ops.defaultParentDir());
         if (pomFile == null) {
             host.setError(tr("status.mavenVersions.noPom"));
             return;
@@ -307,14 +321,16 @@ final class MavenProjectCoordinator {
         if (pom == null) {
             return null; // no Maven project here — the New Maven Project entry lives elsewhere
         }
+        // Every item acts on THIS pom's folder. Rerun Last and Stop are window-wide (they belong to whatever
+        // ran last, wherever that was), so a menu that names a pom does not offer them; the palette and the
+        // tool window do.
+        Path root = pom.getParent();
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("menu.maven"), Icons.maven());
         menu.getItems()
                 .addAll(
-                        item("command.maven.updateVersions", Icons.refresh(), this::updateVersions),
-                        item("command.maven.showActions", Icons.run(), () -> registry.run("maven.showActions")),
-                        item("command.maven.runCustom", Icons.terminal(), () -> registry.run("maven.runCustom")),
-                        item("command.maven.rerunLast", Icons.refresh(), () -> registry.run("maven.rerunLast")),
-                        item("command.maven.stop", Icons.stopSquare(), () -> registry.run("maven.stop")));
+                        item("command.maven.updateVersions", Icons.refresh(), () -> updateVersions(pom)),
+                        item("command.maven.showActions", Icons.run(), () -> ops.showActionsAt(root)),
+                        item("command.maven.runCustom", Icons.terminal(), () -> ops.runCustomAt(root)));
         return menu;
     }
 

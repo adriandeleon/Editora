@@ -7,6 +7,7 @@ import com.editora.maven.MavenPluginGoals;
 import com.editora.maven.PomModel;
 import org.junit.jupiter.api.Test;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -99,6 +100,43 @@ class MavenActionsProviderTest {
     }
 
     /** No local repository / nothing downloaded: the tree is exactly what it was before this feature. */
+    @Test
+    void aModuleOfAReactorGetsTheReactorToggleFirstAndItsArgsBeforeTheProfiles() {
+        var reactor = new com.editora.maven.MavenReactor.Reactor(
+                java.nio.file.Path.of("/repo"), java.nio.file.Path.of("/repo/pom.xml"), "services/api");
+        MavenActionsProvider p = new MavenActionsProvider(pom(), List.of(), reactor, null);
+        var sections = p.sections(Set.of());
+        assertEquals(tr("mavenpopup.reactor"), sections.get(0).title());
+        var toggle = (BuildAction.Toggle) sections.get(0).rows().get(0);
+        assertEquals(MavenActionsProvider.REACTOR_TOGGLE, toggle.id());
+        assertTrue(toggle.label().contains("repo") && toggle.label().contains("services/api"), toggle.label());
+        assertEquals(tr("mavenpopup.lifecycle"), sections.get(1).title(), "the lifecycle follows");
+
+        assertEquals(List.of(), p.toggleArgs(Set.of()));
+        assertEquals(
+                List.of("-f", "/repo/pom.xml", "-pl", "services/api", "-am"),
+                p.toggleArgs(Set.of(MavenActionsProvider.REACTOR_TOGGLE)));
+        assertEquals(
+                List.of("-f", "/repo/pom.xml", "-pl", "services/api", "-am", "-Pdist"),
+                p.toggleArgs(new java.util.LinkedHashSet<>(List.of(MavenActionsProvider.REACTOR_TOGGLE, "dist"))),
+                "the reactor switch never leaks into -P");
+        // The root pom is named as the machine the build runs on names it (a remote host's path).
+        assertEquals(
+                List.of("-f", "/srv/repo/pom.xml", "-pl", "services/api", "-am"),
+                new MavenActionsProvider(pom(), List.of(), reactor, "/srv/repo/pom.xml")
+                        .toggleArgs(Set.of(MavenActionsProvider.REACTOR_TOGGLE)));
+    }
+
+    @Test
+    void aTopLevelProjectHasNoReactorSection() {
+        MavenActionsProvider p = new MavenActionsProvider(pom(), List.of(), null, null);
+        assertEquals(tr("mavenpopup.lifecycle"), p.sections(Set.of()).get(0).title());
+        assertEquals(
+                List.of("-Pdist"),
+                p.toggleArgs(Set.of(MavenActionsProvider.REACTOR_TOGGLE, "dist")),
+                "an id no provider offered is ignored, not turned into -f/-pl");
+    }
+
     @Test
     void noResolvedDescriptorsLeavesTheSectionsUnchanged() {
         assertEquals(
