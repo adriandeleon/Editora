@@ -2,6 +2,8 @@ package com.editora.mcp;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The seam between the off-FX MCP server thread and the FX-thread editor state. Implemented by
  * {@code MainController}, so the {@code mcp} package never imports {@code ui} internals. Each method
@@ -72,10 +74,11 @@ public interface McpBridge {
 
     /** The live text of the open buffer for {@code path}, or the active buffer when {@code path} is null;
      *  null when there is no such buffer. */
-    BufferContent readBuffer(String path);
+    @Nullable
+    BufferContent readBuffer(@Nullable String path);
 
     /** LSP diagnostics for {@code path} (or the active buffer's file when null); empty when none. */
-    List<Diagnostic> getDiagnostics(String path);
+    List<Diagnostic> getDiagnostics(@Nullable String path);
 
     /** Runs a multi-file search over the active project root + open buffers (unsaved text respected). */
     List<SearchMatch> findInFiles(String query, boolean caseSensitive, boolean regex, boolean wholeWord);
@@ -90,7 +93,8 @@ public interface McpBridge {
      * Why a client may not run command {@code id} (and does not see it in {@link #listCommands}), or null. Default:
      * none refused.
      */
-    default String commandRefusal(String id) {
+    default @Nullable String commandRefusal(String id) {
+
         return null;
     }
 
@@ -99,6 +103,7 @@ public interface McpBridge {
      * {@code line}/{@code col}. Returns null when the file is open, else a human-readable error: the file
      * does not exist, or it is one this client may not bring into the editor (outside the window's project).
      */
+    @Nullable
     String openFile(String path, int line, int col);
 
     /**
@@ -107,28 +112,32 @@ public interface McpBridge {
      * document</em> (also when the buffer is narrowed) unless {@code replaceAll}. Returns null on success,
      * else a human-readable error.
      */
-    String editBuffer(String path, String oldText, String newText, boolean replaceAll);
+    @Nullable
+    String editBuffer(@Nullable String path, String oldText, String newText, boolean replaceAll);
 
     /**
      * Replaces the entire text of the open buffer for {@code path} (or the active buffer when null) with
      * {@code newText}. Only ever called for an explicit {@code replace_whole_buffer} request; refused when
      * the buffer changed since the caller last read it. Returns null on success, else a human-readable error.
      */
-    String replaceBuffer(String path, String newText);
+    @Nullable
+    String replaceBuffer(@Nullable String path, String newText);
 
     /**
      * Saves the open buffer for {@code path} (or the active buffer when null) to its file and waits for the
      * write. Returns null only when the bytes are on disk; else a human-readable error (untitled buffers
      * can't be saved over MCP).
      */
-    String saveBuffer(String path);
+    @Nullable
+    String saveBuffer(@Nullable String path);
 
     /** The active buffer's caret + selection, or null when there is no active buffer. */
+    @Nullable
     Selection getSelection();
 
     /** The LSP symbol outline for {@code path} (or the active buffer's file when null); empty when the
      *  file isn't served by a ready language server. */
-    List<Symbol> documentSymbols(String path);
+    List<Symbol> documentSymbols(@Nullable String path);
 
     /** The Git status for this window's context (branch, ahead/behind, changed files). */
     GitState gitStatus();

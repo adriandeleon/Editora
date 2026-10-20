@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import com.editora.editor.EncryptedNames;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Names and bytes of OpenPGP-encrypted files: which file names mean "encrypted" ({@code .gpg}, {@code .pgp},
@@ -120,7 +121,8 @@ public final class EncryptedFiles {
      * The armored message that contains {@code offset} (or whose BEGIN line it is on), or null. For the
      * "Decrypt Block" action in an ordinary document: a message pasted into a note or an email draft.
      */
-    public static Block blockAt(String text, int offset) {
+    public static @Nullable Block blockAt(String text, int offset) {
+
         if (text == null || text.isEmpty()) {
             return null;
         }

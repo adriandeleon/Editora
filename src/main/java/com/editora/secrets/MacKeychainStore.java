@@ -8,6 +8,8 @@ import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.PointerByReference;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The macOS login keychain through the Security framework's generic-password calls, via JNA. Each secret is a
@@ -19,6 +21,8 @@ public final class MacKeychainStore implements SecretStore {
     /** {@code errSecItemNotFound}. */
     static final int ITEM_NOT_FOUND = -25300;
 
+    // Native bindings: nullness is the C API's, so NullAway does not check them.
+    @NullUnmarked
     interface Security extends Library {
         int SecKeychainFindGenericPassword(
                 Pointer keychainOrArray,
@@ -47,27 +51,28 @@ public final class MacKeychainStore implements SecretStore {
         int SecKeychainItemFreeContent(Pointer attrList, Pointer data);
     }
 
+    @NullUnmarked
     interface CoreFoundation extends Library {
         void CFRelease(Pointer cf);
     }
 
     private final byte[] service;
-    private final Security security;
-    private final CoreFoundation cf;
+    /** Both frameworks a Keychain call needs, loaded together: one without the other is no store. */
+    private record Frameworks(Security security, CoreFoundation cf) {}
+
+    private final @Nullable Frameworks frameworks;
 
     /** A store filing secrets under {@code service}; unavailable when the Security framework cannot be loaded. */
     public MacKeychainStore(String service) {
         this.service = service.getBytes(StandardCharsets.UTF_8);
-        Security s = null;
-        CoreFoundation c = null;
+        Frameworks loaded;
         try {
-            s = Native.load("Security", Security.class);
-            c = Native.load("CoreFoundation", CoreFoundation.class);
+            loaded = new Frameworks(
+                    Native.load("Security", Security.class), Native.load("CoreFoundation", CoreFoundation.class));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
-            s = null;
+            loaded = null;
         }
-        this.security = s;
-        this.cf = c;
+        this.frameworks = loaded;
     }
 
     @Override
@@ -77,12 +82,12 @@ public final class MacKeychainStore implements SecretStore {
 
     @Override
     public boolean available() {
-        return security != null;
+        return frameworks != null;
     }
 
     @Override
     public Optional<String> read(String account) throws SecretStoreException {
-        requireLoaded();
+        Security security = loaded().security();
         byte[] acct = account.getBytes(StandardCharsets.UTF_8);
         IntByReference length = new IntByReference();
         PointerByReference data = new PointerByReference();
@@ -101,7 +106,9 @@ public final class MacKeychainStore implements SecretStore {
 
     @Override
     public void write(String account, String secret) throws SecretStoreException {
-        requireLoaded();
+        Frameworks loaded = loaded();
+        Security security = loaded.security();
+        CoreFoundation cf = loaded.cf();
         byte[] acct = account.getBytes(StandardCharsets.UTF_8);
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         PointerByReference item = new PointerByReference();
@@ -126,7 +133,9 @@ public final class MacKeychainStore implements SecretStore {
 
     @Override
     public void delete(String account) throws SecretStoreException {
-        requireLoaded();
+        Frameworks loaded = loaded();
+        Security security = loaded.security();
+        CoreFoundation cf = loaded.cf();
         byte[] acct = account.getBytes(StandardCharsets.UTF_8);
         PointerByReference item = new PointerByReference();
         int status = security.SecKeychainFindGenericPassword(
@@ -142,10 +151,12 @@ public final class MacKeychainStore implements SecretStore {
         }
     }
 
-    private void requireLoaded() throws SecretStoreException {
-        if (security == null) {
+    private Frameworks loaded() throws SecretStoreException {
+        Frameworks loaded = frameworks;
+        if (loaded == null) {
             throw new SecretStoreException("the Security framework could not be loaded");
         }
+        return loaded;
     }
 
     private static void check(int status, String what) throws SecretStoreException {

@@ -22,6 +22,7 @@ import com.editora.process.ProcessRunner;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One <a href="https://agentclientprotocol.com">ACP</a> agent process (e.g. Claude Code via its ACP
@@ -59,20 +60,20 @@ public final class AcpClient {
          * Serve {@code fs/read_text_file}: the file's live text (open-buffer text wins). May block.
          * {@code path} is always the absolute path {@link AcpFsGuard} resolved inside the session folder.
          */
-        String readTextFile(String path, Integer line, Integer limit) throws Exception;
+        String readTextFile(String path, @Nullable Integer line, @Nullable Integer limit) throws Exception;
 
         /**
          * Serve {@code fs/write_text_file}: apply {@code content} to the buffer/file. May block.
          * {@code path} is always the absolute path {@link AcpFsGuard} resolved inside the session folder.
          */
-        void writeTextFile(String path, String content) throws Exception;
+        void writeTextFile(String path, @Nullable String content) throws Exception;
 
         /** Serve {@code session/request_permission}: resolve to the chosen optionId, or null = cancelled. */
         CompletableFuture<String> requestPermission(String title, List<AcpJson.PermissionOption> options);
 
         /** A directory the agent must never write into even when it lies inside the session folder — the
          *  editor's own configuration directory. {@code null} = none. */
-        default Path writeProtectedDirectory() {
+        default @Nullable Path writeProtectedDirectory() {
             return null;
         }
     }
@@ -91,11 +92,11 @@ public final class AcpClient {
         return t;
     });
 
-    private volatile JsonNode sessionConfig;
+    private volatile @Nullable JsonNode sessionConfig;
     /** The folder {@code fs/*} requests are confined to: the latest session's cwd, else the process cwd. */
     private volatile Path fsRoot;
 
-    private volatile Process process;
+    private volatile @Nullable Process process;
     /**
      * Set by {@link #dispose()}. The process the editor stopped still ends its output stream, some time
      * later and on another thread; reported as an exit then, it reached a host that had already moved on —
@@ -108,7 +109,7 @@ public final class AcpClient {
      * model switch), and a direct pipe write blocks for as long as the agent is not reading — an agent busy
      * with a turn, with a prompt larger than the pipe buffer on its way, froze the editor and Stop with it.
      */
-    private volatile com.editora.lsp.AsyncPipeWriter writer;
+    private volatile com.editora.lsp.@Nullable AsyncPipeWriter writer;
 
     public AcpClient(List<String> command, Path cwd, Host host) {
         this(command, cwd, host, Map.of());
@@ -443,11 +444,12 @@ public final class AcpClient {
         t.start();
     }
 
-    private static String textOf(JsonNode node, String field) {
+    private static @Nullable String textOf(@Nullable JsonNode node, String field) {
         return node != null && node.hasNonNull(field) ? node.get(field).asText() : null;
     }
 
-    private static Integer intOf(JsonNode node, String field) {
+    private static @Nullable Integer intOf(@Nullable JsonNode node, String field) {
+
         return node != null && node.hasNonNull(field) ? node.get(field).asInt() : null;
     }
 }

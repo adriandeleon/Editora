@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How Editora's JVM debugger ties a source file to the classes compiled from it, for any JVM language.
  *
@@ -83,7 +85,7 @@ public final class JvmSourceMap {
      * {@code declaredPackage} ({@code ""} or null when unknown): as {@link #compiledFrom(String, Path)}, or the
      * package's folder and the file's name — a Kotlin file need not sit in its package's folder.
      */
-    public static boolean compiledFrom(String classSourcePath, Path file, String declaredPackage) {
+    public static boolean compiledFrom(String classSourcePath, Path file, @Nullable String declaredPackage) {
         if (compiledFrom(classSourcePath, file)) {
             return true;
         }
@@ -148,8 +150,8 @@ public final class JvmSourceMap {
      * As {@link #resolve(String, List, List, java.util.function.Predicate)}, matching the known files by their
      * declared packages too ({@link #compiledFrom(String, Path, String)}).
      */
-    public static Path resolve(
-            String classSourcePath,
+    public static @Nullable Path resolve(
+            @Nullable String classSourcePath,
             List<Path> knownFiles,
             java.util.function.Function<Path, String> packageOf,
             List<Path> roots,
@@ -161,8 +163,8 @@ public final class JvmSourceMap {
      * As {@link #resolve(String, List, java.util.function.Function, List, java.util.function.Predicate)}, for
      * {@code language} ({@link #resolve(String, List, List, java.util.function.Predicate, String)}).
      */
-    public static Path resolve(
-            String classSourcePath,
+    public static @Nullable Path resolve(
+            @Nullable String classSourcePath,
             List<Path> knownFiles,
             java.util.function.Function<Path, String> packageOf,
             List<Path> roots,
@@ -192,7 +194,8 @@ public final class JvmSourceMap {
      * As {@link #compiledFrom(String, Path, String)}, for {@code language}: by file name alone where its packages
      * need not follow folders ({@link #packagesFollowFolders}).
      */
-    public static boolean compiledFrom(String classSourcePath, Path file, String declaredPackage, String language) {
+    public static boolean compiledFrom(
+            String classSourcePath, Path file, @Nullable String declaredPackage, String language) {
         if (compiledFrom(classSourcePath, file, declaredPackage)) {
             return true;
         }
@@ -209,8 +212,8 @@ public final class JvmSourceMap {
      * {@code knownFiles} (the files that have breakpoints) it was compiled from, else that path under the first
      * of {@code roots} where {@code exists} finds it; null when it is nowhere — the frame then shows no source.
      */
-    public static Path resolve(
-            String classSourcePath,
+    public static @Nullable Path resolve(
+            @Nullable String classSourcePath,
             List<Path> knownFiles,
             List<Path> roots,
             java.util.function.Predicate<Path> exists) {
@@ -222,8 +225,8 @@ public final class JvmSourceMap {
      * packages need not follow folders, a known file matches by name, and a root is also searched for the bare
      * file name ({@code demo/Main.scala} found as {@code <root>/Main.scala}).
      */
-    public static Path resolve(
-            String classSourcePath,
+    public static @Nullable Path resolve(
+            @Nullable String classSourcePath,
             List<Path> knownFiles,
             List<Path> roots,
             java.util.function.Predicate<Path> exists,
@@ -322,7 +325,7 @@ public final class JvmSourceMap {
      * {@code Main$package$} as {@code Main}, a lambda as its enclosing method), else
      * {@link #frameName(String, String, String)}.
      */
-    public static String frameName(String className, String methodName, String sourceName, String language) {
+    public static String frameName(String className, String methodName, @Nullable String sourceName, String language) {
         if (!"scala".equals(language == null ? "" : language.toLowerCase(Locale.ROOT))) {
             return frameName(className, methodName, sourceName);
         }
@@ -396,9 +399,8 @@ public final class JvmSourceMap {
      * reads as the function, demunged ({@code my_app.core$greet.invokeStatic} → {@code my-app.core/greet},
      * {@code my_app.core$valid_QMARK_.invoke} → {@code my-app.core/valid?}).
      */
-    public static String frameName(String className, String methodName, String sourceName) {
-        boolean kotlin = sourceName != null && (sourceName.endsWith(".kt") || sourceName.endsWith(".kts"));
-        if (kotlin) {
+    public static String frameName(String className, String methodName, @Nullable String sourceName) {
+        if (sourceName != null && (sourceName.endsWith(".kt") || sourceName.endsWith(".kts"))) {
             return kotlinFrameName(className, methodName, sourceName);
         }
         boolean clojure = sourceName != null && (sourceName.endsWith(".clj") || sourceName.endsWith(".cljc"));

@@ -11,6 +11,8 @@ import com.sun.jna.Structure;
 import com.sun.jna.WString;
 import com.sun.jna.ptr.PointerByReference;
 import com.sun.jna.win32.StdCallLibrary;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The Windows Credential Manager through {@code CredReadW}/{@code CredWriteW}/{@code CredDeleteW}, via JNA. Each
@@ -23,6 +25,8 @@ public final class WindowsCredentialStore implements SecretStore {
     static final int ERROR_NOT_FOUND = 1168;
 
     /** {@code FILETIME}. */
+    // Native bindings: nullness is the C API's, so NullAway does not check them.
+    @NullUnmarked
     @Structure.FieldOrder({"dwLowDateTime", "dwHighDateTime"})
     public static class FileTime extends Structure {
         public int dwLowDateTime;
@@ -30,6 +34,7 @@ public final class WindowsCredentialStore implements SecretStore {
     }
 
     /** {@code CREDENTIALW}. */
+    @NullUnmarked
     @Structure.FieldOrder({
         "Flags",
         "Type",
@@ -66,6 +71,7 @@ public final class WindowsCredentialStore implements SecretStore {
         }
     }
 
+    @NullUnmarked
     interface Advapi32 extends StdCallLibrary {
         boolean CredReadW(WString target, int type, int flags, PointerByReference credential) throws LastErrorException;
 
@@ -77,7 +83,7 @@ public final class WindowsCredentialStore implements SecretStore {
     }
 
     private final String service;
-    private final Advapi32 advapi;
+    private final @Nullable Advapi32 advapi;
 
     /** A store filing secrets under {@code service}; unavailable when advapi32 cannot be loaded. */
     public WindowsCredentialStore(String service) {
@@ -107,7 +113,7 @@ public final class WindowsCredentialStore implements SecretStore {
 
     @Override
     public Optional<String> read(String account) throws SecretStoreException {
-        requireLoaded();
+        Advapi32 advapi = loaded();
         PointerByReference out = new PointerByReference();
         try {
             advapi.CredReadW(target(account), CRED_TYPE_GENERIC, 0, out);
@@ -129,7 +135,7 @@ public final class WindowsCredentialStore implements SecretStore {
 
     @Override
     public void write(String account, String secret) throws SecretStoreException {
-        requireLoaded();
+        Advapi32 advapi = loaded();
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         Memory blob = new Memory(Math.max(1, bytes.length));
         blob.write(0, bytes, 0, bytes.length);
@@ -151,7 +157,7 @@ public final class WindowsCredentialStore implements SecretStore {
 
     @Override
     public void delete(String account) throws SecretStoreException {
-        requireLoaded();
+        Advapi32 advapi = loaded();
         try {
             advapi.CredDeleteW(target(account), CRED_TYPE_GENERIC, 0);
         } catch (LastErrorException e) {
@@ -161,9 +167,11 @@ public final class WindowsCredentialStore implements SecretStore {
         }
     }
 
-    private void requireLoaded() throws SecretStoreException {
-        if (advapi == null) {
+    private Advapi32 loaded() throws SecretStoreException {
+        Advapi32 loaded = advapi;
+        if (loaded == null) {
             throw new SecretStoreException("advapi32 could not be loaded");
         }
+        return loaded;
     }
 }

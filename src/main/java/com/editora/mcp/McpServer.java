@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A tiny embedded <a href="https://modelcontextprotocol.io">Model Context Protocol</a> server,
@@ -47,8 +48,8 @@ public final class McpServer {
     /** Replaced by {@link #newToken()}; read on every request's worker thread. */
     private volatile String token;
 
-    private HttpServer server;
-    private ExecutorService pool;
+    private @Nullable HttpServer server;
+    private @Nullable ExecutorService pool;
 
     public McpServer(McpBridge bridge, Path configDir) {
         this.configDir = configDir;
@@ -300,7 +301,10 @@ public final class McpServer {
      * possibly-live endpoint).
      */
     static boolean isStaleEndpoint(
-            Long pid, Long startMillis, java.util.function.LongFunction<java.util.Optional<Long>> liveStart) {
+            @Nullable Long pid,
+            @Nullable Long startMillis,
+            java.util.function.LongFunction<java.util.Optional<Long>> liveStart) {
+
         if (pid == null) {
             return true;
         }

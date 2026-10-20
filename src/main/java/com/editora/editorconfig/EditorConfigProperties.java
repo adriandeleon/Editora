@@ -1,5 +1,7 @@
 package com.editora.editorconfig;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The resolved EditorConfig properties that apply to a file, as a set of nullable fields ({@code null} =
  * unset, so "no override" is well-defined). Pure data; produced by {@link EditorConfigParser#toProperties}
@@ -11,14 +13,14 @@ package com.editora.editorconfig;
  * {@code latin1}/{@code utf-16le}/{@code utf-16be}; {@code insertSpaces} is derived from {@code indent_style}.
  */
 public record EditorConfigProperties(
-        Boolean insertSpaces,
-        Integer indentSize,
-        Integer tabWidth,
-        String endOfLine,
-        String charset,
-        Boolean trimTrailingWhitespace,
-        Boolean insertFinalNewline,
-        Integer maxLineLength) {
+        @Nullable Boolean insertSpaces,
+        @Nullable Integer indentSize,
+        @Nullable Integer tabWidth,
+        @Nullable String endOfLine,
+        @Nullable String charset,
+        @Nullable Boolean trimTrailingWhitespace,
+        @Nullable Boolean insertFinalNewline,
+        @Nullable Integer maxLineLength) {
 
     /** Sentinel {@code maxLineLength} value for {@code max_line_length = off}. */
     public static final int OFF = -1;

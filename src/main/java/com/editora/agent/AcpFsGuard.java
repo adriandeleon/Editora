@@ -6,6 +6,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 
 import com.editora.io.PathContainment;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Confines the agent's {@code fs/read_text_file} / {@code fs/write_text_file} requests to the session folder.
@@ -47,7 +48,7 @@ public final class AcpFsGuard {
     private AcpFsGuard() {}
 
     /** The absolute path a read request names, or an {@link IOException} explaining why it is refused. */
-    public static Path checkRead(Path root, String path) throws IOException {
+    public static Path checkRead(@Nullable Path root, @Nullable String path) throws IOException {
         Path target = resolveInside(root, path);
         if (Files.exists(target)) {
             if (!Files.isRegularFile(target)) {
@@ -62,7 +63,8 @@ public final class AcpFsGuard {
     }
 
     /** The absolute path a write request names, or an {@link IOException} explaining why it is refused. */
-    public static Path checkWrite(Path root, Path protectedDir, String path) throws IOException {
+    public static Path checkWrite(@Nullable Path root, @Nullable Path protectedDir, @Nullable String path)
+            throws IOException {
         Path target = resolveInside(root, path);
         if (Files.isSymbolicLink(target)) {
             throw new IOException("Refused: " + path + " is a symbolic link");
@@ -73,7 +75,8 @@ public final class AcpFsGuard {
         if (protectedDir != null && PathContainment.isWithin(protectedDir, target)) {
             throw new IOException("Refused: " + path + " is inside the editor's configuration directory");
         }
-        if (insideVcsMetadata(root, target)) {
+        if (root != null && insideVcsMetadata(root, target)) { // always set here: resolveInside refused a null one
+
             throw new IOException("Refused: " + path + " is version-control metadata, which the editor does not"
                     + " write on an agent's behalf");
         }
@@ -140,7 +143,8 @@ public final class AcpFsGuard {
         return false;
     }
 
-    private static Path resolveInside(Path root, String path) throws IOException {
+    private static Path resolveInside(@Nullable Path root, @Nullable String path) throws IOException {
+
         if (path == null || path.isBlank()) {
             throw new IOException("Refused: no path given");
         }

@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The GnuPG command line, run on <b>this</b> machine (never a remote host: the keys and gpg-agent are here),
@@ -94,7 +95,8 @@ public final class Gpg {
     }
 
     /** One finished run: gpg's stdout, its parsed status, and why it failed (null when it succeeded). */
-    public record Outcome(byte[] out, GpgStatus status, GpgFailure failure) {
+    public record Outcome(
+            byte[] out, GpgStatus status, @Nullable GpgFailure failure) {
         public boolean ok() {
             return failure == null;
         }
@@ -105,7 +107,7 @@ public final class Gpg {
     }
 
     /** The first line of {@code gpg --version} ("gpg (GnuPG) 2.4.7"), or null when gpg does not run. */
-    public String version() {
+    public @Nullable String version() {
         Outcome o = run(List.of("--version"), null, false, null);
         if (!o.ok()) {
             return null;
@@ -292,7 +294,12 @@ public final class Gpg {
         return true;
     }
 
-    private Outcome run(List<String> args, byte[] stdin, boolean interactive, ProcessRunner.Cancellation cancel) {
+    private Outcome run(
+            List<String> args,
+            byte @Nullable [] stdin,
+            boolean interactive,
+            ProcessRunner.@Nullable Cancellation cancel) {
+
         List<String> cmd = new ArrayList<>();
         cmd.add(executable);
         cmd.addAll(List.of("--batch", "--no-tty", "--status-fd", "2"));

@@ -96,6 +96,7 @@ import org.eclipse.lsp4j.debug.VariablesArguments;
 import org.eclipse.lsp4j.debug.VariablesResponse;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A Debug Adapter Protocol server for programs in any JVM language — Editora's own, built on JDI, for the
@@ -152,10 +153,10 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         return t;
     });
 
-    private volatile IDebugProtocolClient client;
+    private volatile @Nullable IDebugProtocolClient client;
     private volatile boolean clientRunsTerminal;
-    private volatile VirtualMachine vm;
-    private volatile Process process; // only when the adapter started the program itself
+    private volatile @Nullable VirtualMachine vm;
+    private volatile @Nullable Process process; // only when the adapter started the program itself
     private volatile boolean disposed;
     private volatile boolean terminatedSent;
     private volatile String language = "";
@@ -181,7 +182,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private final Map<String, ClassPrepareRequest> prepareWatches = new HashMap<>();
 
     private final AtomicInteger nextBreakpointId = new AtomicInteger(1);
-    private ExceptionRequest exceptionRequest;
+    private @Nullable ExceptionRequest exceptionRequest;
     private volatile boolean stopOnUncaught;
     private volatile boolean stopOnCaught;
 
@@ -197,7 +198,12 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private final AtomicInteger nextHandle = new AtomicInteger(1);
 
     /** A breakpoint; {@code refused} says why one with a condition or a log message is not set. */
-    private record Bp(int id, int line, List<BreakpointRequest> requests, boolean[] verified, String refused) {}
+    private record Bp(
+            int id,
+            int line,
+            List<BreakpointRequest> requests,
+            boolean[] verified,
+            @Nullable String refused) {}
 
     /** Said on a breakpoint with a condition, hit count or log message: those need code run in the program. */
     static final String CONDITIONS_UNSUPPORTED =
@@ -570,7 +576,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     // --- events ------------------------------------------------------------------------------------
 
     private void eventLoop() {
-        VirtualMachine machine = vm;
+        VirtualMachine machine = vm();
         try {
             while (!disposed) {
                 EventSet set = machine.eventQueue().remove();
@@ -610,7 +616,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             return false;
         }
         if (event instanceof StepEvent step) {
-            onJdi(() -> vm.eventRequestManager().deleteEventRequest(step.request()));
+            onJdi(() -> vm().eventRequestManager().deleteEventRequest(step.request()));
             stopped(step.thread(), StoppedEventArgumentsReason.STEP, null);
             return false;
         }
@@ -638,7 +644,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         }
     }
 
-    private void stopped(ThreadReference thread, String reason, String text) {
+    private void stopped(ThreadReference thread, String reason, @Nullable String text) {
         handles.clear();
         IDebugProtocolClient c = client;
         if (c == null) {
@@ -862,7 +868,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     }
 
     private void bind(ReferenceType type, List<Bp> bps) {
-        EventRequestManager erm = vm.eventRequestManager();
+        EventRequestManager erm = vm().eventRequestManager();
         for (Bp bp : bps) {
             if (bp.refused() != null) {
                 continue;
@@ -953,14 +959,15 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
 
     @Override
     public CompletableFuture<SetExceptionBreakpointsResponse> setExceptionBreakpoints(
-            SetExceptionBreakpointsArguments args) {
+            @Nullable SetExceptionBreakpointsArguments args) {
+
         return CompletableFuture.supplyAsync(
                 () -> {
                     List<String> filters =
                             args == null || args.getFilters() == null ? List.of() : List.of(args.getFilters());
                     stopOnUncaught = filters.contains(FILTER_UNCAUGHT);
                     stopOnCaught = filters.contains(FILTER_CAUGHT);
-                    EventRequestManager erm = vm.eventRequestManager();
+                    EventRequestManager erm = vm().eventRequestManager();
                     if (exceptionRequest != null) {
                         erm.deleteEventRequest(exceptionRequest);
                         exceptionRequest = null;
@@ -1009,16 +1016,16 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     public CompletableFuture<Void> pause(PauseArguments args) {
         return CompletableFuture.runAsync(
                 () -> {
-                    vm.suspend();
+                    vm().suspend();
                     ThreadReference thread = threadsById.get(args.getThreadId());
                     if (thread == null) {
-                        thread = vm.allThreads().stream()
+                        thread = vm().allThreads().stream()
                                 .filter(t -> "main".equals(t.name()))
                                 .findFirst()
                                 .orElse(
-                                        vm.allThreads().isEmpty()
+                                        vm().allThreads().isEmpty()
                                                 ? null
-                                                : vm.allThreads().get(0));
+                                                : vm().allThreads().get(0));
                     }
                     if (thread != null) {
                         stopped(thread, StoppedEventArgumentsReason.PAUSE, null);
@@ -1032,7 +1039,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         if (thread == null) {
             throw failure("No such thread");
         }
-        EventRequestManager erm = vm.eventRequestManager();
+        EventRequestManager erm = vm().eventRequestManager();
         for (StepRequest old : new ArrayList<>(erm.stepRequests())) {
             if (old.thread().equals(thread)) {
                 erm.deleteEventRequest(old);
@@ -1050,7 +1057,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
 
     private void resume() {
         handles.clear();
-        vm.resume();
+        vm().resume();
     }
 
     // --- inspection --------------------------------------------------------------------------------
@@ -1129,7 +1136,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         }
     }
 
-    private Path sourceOf(Location at, List<Path> known) {
+    private @Nullable Path sourceOf(Location at, List<Path> known) {
         try {
             return JvmSourceMap.resolve(
                     at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile, language);
@@ -1138,7 +1145,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         }
     }
 
-    private static String sourceNameOf(Location at) {
+    private static @Nullable String sourceNameOf(Location at) {
         try {
             return at.sourceName(null);
         } catch (AbsentInformationException | InternalError e) {
@@ -1227,27 +1234,28 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         return r;
     }
 
-    private Variable variable(String name, Value value) {
+    private Variable variable(String name, @Nullable Value value) {
         Variable v = new Variable();
         v.setName(name);
         v.setValue(display(value));
         v.setType(value == null ? null : value.type().name());
-        v.setVariablesReference(expandable(value) ? handle(new ObjectHandle((ObjectReference) value)) : 0);
+        v.setVariablesReference(
+                value instanceof ObjectReference object && expandable(object) ? handle(new ObjectHandle(object)) : 0);
         if (value instanceof ArrayReference array) {
             v.setIndexedVariables(array.length());
         }
         return v;
     }
 
-    private static boolean expandable(Value value) {
+    private static boolean expandable(ObjectReference value) {
         if (value instanceof ArrayReference array) {
             return array.length() > 0;
         }
-        return value instanceof ObjectReference && !(value instanceof StringReference) && boxed(value) == null;
+        return !(value instanceof StringReference) && boxed(value) == null;
     }
 
     /** What a value shows: a string quoted, a boxed number as its number, an object as its type and id. */
-    static String display(Value value) {
+    static String display(@Nullable Value value) {
         if (value == null) {
             return "null";
         }
@@ -1277,7 +1285,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     }
 
     /** A boxed primitive's value ({@code Integer 5} → {@code 5}), read from its field; null otherwise. */
-    private static String boxed(Value value) {
+    private static @Nullable String boxed(Value value) {
         if (!(value instanceof ObjectReference o)) {
             return null;
         }
@@ -1369,7 +1377,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         }
     }
 
-    private static Value field(ObjectReference o, String name) {
+    private static @Nullable Value field(ObjectReference o, String name) {
         Field f = o.referenceType().fieldByName(name);
         return f == null ? null : o.getValue(f);
     }
@@ -1382,13 +1390,22 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         return id;
     }
 
+    /** The connected JVM. Every request but launch and attach comes after one of them has set it. */
+    private VirtualMachine vm() {
+        VirtualMachine machine = vm;
+        if (machine == null) {
+            throw failure("No program is being debugged");
+        }
+        return machine;
+    }
+
     private static RuntimeException failure(String message) {
         return new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
                 new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
                         org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.RequestFailed, message, null));
     }
 
-    private static String string(Object o) {
+    private static String string(@Nullable Object o) {
         if (o instanceof com.google.gson.JsonPrimitive p) {
             return p.getAsString();
         }
@@ -1396,7 +1413,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     }
 
     @SuppressWarnings("unchecked")
-    private static List<String> strings(Object o) {
+    private static List<String> strings(@Nullable Object o) {
         List<String> out = new ArrayList<>();
         if (o instanceof List<?> list) {
             for (Object item : list) {
@@ -1411,7 +1428,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
         return out;
     }
 
-    private static Map<String, String> stringMap(Object o) {
+    private static Map<String, String> stringMap(@Nullable Object o) {
         Map<String, String> out = new LinkedHashMap<>();
         if (o instanceof Map<?, ?> map) {
             map.forEach((k, v) -> out.put(
