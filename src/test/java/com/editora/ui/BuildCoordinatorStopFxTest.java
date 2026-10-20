@@ -82,7 +82,7 @@ class BuildCoordinatorStopFxTest {
         }
 
         @Override
-        public boolean confirmTrust(Path root, Path wrapper) {
+        public boolean confirmTrust(Path root, com.editora.build.BuildTrust.Summary summary) {
             return true;
         }
 
