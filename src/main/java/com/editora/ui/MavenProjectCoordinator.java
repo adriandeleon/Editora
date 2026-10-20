@@ -42,6 +42,7 @@ import com.editora.command.TextInputKeymap;
 import com.editora.doctor.DoctorProbes;
 import com.editora.lsp.JavaRuntimes;
 import com.editora.maven.ArchetypeCatalog;
+import com.editora.maven.ArchetypeCatalogCache;
 import com.editora.maven.ArchetypeCatalogParser;
 import com.editora.maven.ArchetypeGenerate;
 import com.editora.maven.CentralVersions;
@@ -68,8 +69,12 @@ import static com.editora.i18n.Messages.tr;
  */
 final class MavenProjectCoordinator {
 
-    /** Cap for the fetched catalog. Maven Central's real one is ~10 MB. */
-    private static final long MAX_CATALOG_BYTES = 16L * 1024 * 1024;
+    /**
+     * How long the catalog body may take to stream. Maven Central's is 18 MB (October 2026) and grows about
+     * 1 MB a year; the byte cap is {@link ArchetypeCatalogParser#MAX_CATALOG_BYTES}, the request timeout only
+     * covers the headers, and this is what stops a trickling server holding "Loading…" forever.
+     */
+    private static final Duration CATALOG_DEADLINE = Duration.ofMinutes(3);
 
     private static final String DEFAULT_VERSION = "1.0-SNAPSHOT";
 
@@ -109,6 +114,12 @@ final class MavenProjectCoordinator {
 
         /** Re-lists the project tree after files land on disk. */
         void refreshProjectTree();
+
+        /** Opens the Maven actions popup for the project whose {@code pom.xml} folder is {@code root}. */
+        default void showActionsAt(Path root) {}
+
+        /** Prompts for a custom Maven task and runs it in {@code root}. */
+        default void runCustomAt(Path root) {}
     }
 
     /**
@@ -126,7 +137,11 @@ final class MavenProjectCoordinator {
     private final BuildService service = new BuildService();
     private Runner runner = service::run;
 
-    /** Fetched catalog entries, cached for the session (the fetch is ~10 MB). */
+    /**
+     * The full catalog for this window, once loaded: the parsed rows (a few thousand), not the 18 MB
+     * download, which {@link ArchetypeCatalogCache} keeps on disk so other windows and later sessions start
+     * from it and re-fetch at most once a day — conditionally, so an unchanged file costs one round trip.
+     */
     private List<MavenArchetype> fetched;
 
     private ExecutorService fetchExec;
@@ -156,11 +171,19 @@ final class MavenProjectCoordinator {
      * because a brand-new project has nothing to lose; an existing pom does.
      */
     void updateVersions() {
+        updateVersions(nearestPom(ops.defaultParentDir()));
+    }
+
+    /**
+     * As {@link #updateVersions()}, for {@code pomFile} — the pom a context menu was opened on. The menu used
+     * to call the no-argument form, which checks the <em>active tab's</em> pom: a right-click on
+     * {@code moduleB/pom.xml} while editing a file of module A offered to rewrite module A's pom.
+     */
+    void updateVersions(Path pomFile) {
         if (!host.settings().isMavenSupport()) {
             host.setError(tr("status.mavenProject.disabled"));
             return;
         }
-        Path pomFile = nearestPom(ops.defaultParentDir());
         if (pomFile == null) {
             host.setError(tr("status.mavenVersions.noPom"));
             return;
@@ -307,14 +330,16 @@ final class MavenProjectCoordinator {
         if (pom == null) {
             return null; // no Maven project here — the New Maven Project entry lives elsewhere
         }
+        // Every item acts on THIS pom's folder. Rerun Last and Stop are window-wide (they belong to whatever
+        // ran last, wherever that was), so a menu that names a pom does not offer them; the palette and the
+        // tool window do.
+        Path root = pom.getParent();
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("menu.maven"), Icons.maven());
         menu.getItems()
                 .addAll(
-                        item("command.maven.updateVersions", Icons.refresh(), this::updateVersions),
-                        item("command.maven.showActions", Icons.run(), () -> registry.run("maven.showActions")),
-                        item("command.maven.runCustom", Icons.terminal(), () -> registry.run("maven.runCustom")),
-                        item("command.maven.rerunLast", Icons.refresh(), () -> registry.run("maven.rerunLast")),
-                        item("command.maven.stop", Icons.stopSquare(), () -> registry.run("maven.stop")));
+                        item("command.maven.updateVersions", Icons.refresh(), () -> updateVersions(pom)),
+                        item("command.maven.showActions", Icons.run(), () -> ops.showActionsAt(root)),
+                        item("command.maven.runCustom", Icons.terminal(), () -> ops.runCustomAt(root)));
         return menu;
     }
 
@@ -413,7 +438,7 @@ final class MavenProjectCoordinator {
                 },
                 this::rowLabel,
                 this::rowDetail,
-                a -> a.gav(),
+                this::rowSearchKey,
                 a -> onArchetypeChosen(a, parentDir));
         picker.setPreferredSize(820, 10);
         picker.setOverlayHost(host.overlayHost());
@@ -430,11 +455,24 @@ final class MavenProjectCoordinator {
         return a.artifactId();
     }
 
+    /**
+     * {@code groupId:artifactId:version}, then the description. The coordinates always show: Central's
+     * catalog has 56 artifactIds published under more than one groupId (two "spring-boot-blank-archetype"
+     * rows, say), and the title alone cannot tell them apart — nor does it say which version a curated pin is.
+     */
     private String rowDetail(MavenArchetype a) {
         if (a == CUSTOM_ROW || a == LOAD_CATALOG_ROW) {
             return "";
         }
-        return a.description().isEmpty() ? a.groupId() : a.description();
+        return a.description().isEmpty() ? a.gav() : a.gav() + "  —  " + a.description();
+    }
+
+    /** Typing matches the coordinates and the description, so "spring boot blank" and "org.openjfx" both find rows. */
+    private String rowSearchKey(MavenArchetype a) {
+        if (a == CUSTOM_ROW || a == LOAD_CATALOG_ROW) {
+            return rowLabel(a);
+        }
+        return a.description().isEmpty() ? a.gav() : a.gav() + " " + a.description();
     }
 
     private void onArchetypeChosen(MavenArchetype a, Path parentDir) {
@@ -458,6 +496,12 @@ final class MavenProjectCoordinator {
 
     // --- The optional full-catalog fetch ----------------------------------------------------------
 
+    /**
+     * Loads the full catalog: from the disk cache when it is younger than a day, else from the URL — with
+     * the cached validators, so an unchanged file answers {@code 304} and the cached rows are kept. A fetch
+     * that fails falls back to a stale cache when there is one (with the error still shown), and to the
+     * curated list when there is none, so the picker never dead-ends.
+     */
     private void loadCatalog(Path parentDir) {
         String url = host.settings().getMavenArchetypeCatalogUrl();
         if (!PluginRegistry.isHttps(url)) {
@@ -466,48 +510,99 @@ final class MavenProjectCoordinator {
         }
         host.setStatus(tr("status.mavenProject.loadingCatalog"));
         AutoCloseable task = host.startBackgroundTask(tr("status.mavenProject.loadingCatalog"));
+        Path cacheFile = ArchetypeCatalogCache.file(host.configDir());
         fetchExecutor().execute(() -> {
+            ArchetypeCatalogCache.Entry cached = ArchetypeCatalogCache.read(cacheFile);
+            long now = System.currentTimeMillis();
             String error = null;
-            List<MavenArchetype> parsed = List.of();
-            try {
-                parsed = ArchetypeCatalogParser.parse(fetchCatalog(url));
-            } catch (Exception e) {
-                error = e.getMessage();
+            List<MavenArchetype> parsed = null;
+            if (cached != null && cached.isFresh(now)) {
+                parsed = cached.archetypes();
+            } else {
+                try {
+                    ArchetypeCatalogCache.Entry entry = fetchCatalog(url, cached, now);
+                    parsed = entry.archetypes();
+                    storeCatalog(cacheFile, entry);
+                } catch (Exception e) {
+                    error = String.valueOf(e.getMessage());
+                    if (cached != null) {
+                        parsed = cached.archetypes(); // stale beats nothing; the error is still reported
+                    }
+                }
             }
             List<MavenArchetype> result = parsed;
             String err = error;
             Platform.runLater(() -> {
                 closeQuietly(task);
+                if (result != null) {
+                    fetched = result;
+                }
                 if (err != null) {
                     host.setError(tr("status.mavenProject.catalogFailed", err));
-                    // Still let the user proceed with the curated list rather than dead-ending.
-                    chooseArchetype(parentDir, ArchetypeCatalog.merge(fetched));
-                    return;
+                } else {
+                    host.setStatus(tr("status.mavenProject.catalogLoaded", result.size()));
                 }
-                fetched = result;
-                host.setStatus(tr("status.mavenProject.catalogLoaded", result.size()));
+                // Still let the user proceed with what there is rather than dead-ending.
                 chooseArchetype(parentDir, ArchetypeCatalog.merge(fetched));
             });
         });
     }
 
-    private String fetchCatalog(String url) throws Exception {
+    /**
+     * One GET, conditional when {@code cached} carries validators; streamed straight into the parser, so the
+     * document is never held whole — neither as bytes nor as a DOM.
+     *
+     * @return the parsed rows with the response's validators, or {@code cached} revalidated on a {@code 304}
+     */
+    private ArchetypeCatalogCache.Entry fetchCatalog(String url, ArchetypeCatalogCache.Entry cached, long now)
+            throws Exception {
         HttpClient client = httpClients.apply(Duration.ofSeconds(15));
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofMinutes(2))
                 .header("User-Agent", "Editora")
-                .GET()
-                .build();
+                .GET();
+        if (cached != null && !cached.etag().isEmpty()) {
+            request.header("If-None-Match", cached.etag());
+        }
+        if (cached != null && !cached.lastModified().isEmpty()) {
+            request.header("If-Modified-Since", cached.lastModified());
+        }
         try {
-            HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<InputStream> response =
+                    client.send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() == 304 && cached != null) {
+                try (InputStream in = response.body()) {
+                    in.readAllBytes(); // a 304 has no body; drain whatever came
+                }
+                return cached.revalidated(now);
+            }
             if (response.statusCode() / 100 != 2) {
                 throw new IllegalStateException("HTTP " + response.statusCode());
             }
             try (InputStream in = response.body()) {
-                return new String(PluginRegistry.readCapped(in, MAX_CATALOG_BYTES), StandardCharsets.UTF_8);
+                List<MavenArchetype> rows =
+                        ArchetypeCatalogParser.parse(in, ArchetypeCatalogParser.MAX_CATALOG_BYTES, CATALOG_DEADLINE);
+                return new ArchetypeCatalogCache.Entry(
+                        rows,
+                        response.headers().firstValue("ETag").orElse(""),
+                        response.headers().firstValue("Last-Modified").orElse(""),
+                        now);
             }
         } finally {
             client.shutdownNow(); // one client per fetch: give its selector thread back with the answer
+        }
+    }
+
+    /** Best effort: a cache that cannot be written only means the next load downloads again. */
+    private static void storeCatalog(Path cacheFile, ArchetypeCatalogCache.Entry entry) {
+        if (cacheFile == null) {
+            return;
+        }
+        try {
+            ArchetypeCatalogCache.write(cacheFile, entry);
+        } catch (Exception e) {
+            java.util.logging.Logger.getLogger(MavenProjectCoordinator.class.getName())
+                    .log(java.util.logging.Level.FINE, "Could not write " + cacheFile, e);
         }
     }
 
@@ -884,71 +979,56 @@ final class MavenProjectCoordinator {
             onGenerated(projectDir, spec.artifactId());
             return;
         }
-        // Dependencies first, through versions-maven-plugin, streamed into the console the generation is
-        // already showing. Plugins are NOT covered by it — its in-place goals expose processDependencies,
-        // processDependencyManagement and processParent, and for plugins it offers only
-        // display-plugin-updates (checked against 2.21.0) — so those are resolved and rewritten below.
-        List<String> argv = new ArrayList<>(mavenExecutable());
-        argv.add("versions:use-latest-releases");
-        argv.add("-B");
-        argv.add("-DgenerateBackupPoms=false"); // the pom is seconds old; a pom.xml.versionsBackup is litter
-        host.setStatus(tr("status.mavenProject.updatingVersions"));
-        output.appendOutput(this, ArchetypeGenerate.displayCommand(argv), false);
-        runner.run(projectDir, argv, new BuildService.Listener() {
-            @Override
-            public void onStart(String commandLine) {}
-
-            @Override
-            public void onOutput(String line, boolean stderr) {
-                output.appendOutput(MavenProjectCoordinator.this, line, stderr);
-            }
-
-            @Override
-            public void onExit(int code) {
-                // Carries on regardless of the exit code: a failed dependency update should not also cost
-                // the plugin half, and the project itself is already generated.
-                updatePluginVersions(projectDir, spec.artifactId());
-            }
-
-            @Override
-            public void onError(String message) {
-                output.appendOutput(MavenProjectCoordinator.this, message, true);
-                updatePluginVersions(projectDir, spec.artifactId());
-            }
-        });
+        updateGeneratedVersions(projectDir, spec.artifactId());
     }
 
     /**
-     * Resolves each pinned plugin's latest stable version from Maven Central and rewrites the pom.
+     * Resolves each pinned dependency's and plugin's latest <em>stable</em> version from Maven Central and
+     * rewrites the pom — the same path, policy and filter as the Update Versions command.
      *
-     * <p>Off the FX thread: it is one HTTPS GET per plugin (seven for a quickstart pom). Failures are
-     * silent per artifact — see {@link CentralVersions#latest} — and the whole step degrades to leaving the
-     * versions the archetype chose.
+     * <p>Dependencies used to go through {@code versions:use-latest-releases}, whose idea of a release is
+     * "not a SNAPSHOT": it wrote {@code spring-core 7.1.0-M2}, {@code hibernate-core 8.0.0.Beta3} and
+     * {@code netty-all 5.0.0.Alpha2} into brand-new projects while the plugin half of the same checkbox
+     * filtered pre-releases out. One code path now, so both halves mean the same thing by "latest", and
+     * nothing is forked for it.
+     *
+     * <p>Off the FX thread: one HTTPS GET per artifact. Failures are silent per artifact — see
+     * {@link CentralVersions#latest} — and the whole step degrades to leaving the versions the archetype chose.
      */
-    private void updatePluginVersions(Path projectDir, String artifactId) {
+    private void updateGeneratedVersions(Path projectDir, String artifactId) {
         Path pomFile = projectDir.resolve("pom.xml");
         String pom = read(pomFile);
-        Map<String, String> current = pom == null ? Map.of() : PomEdits.pluginVersions(pom);
-        if (current.isEmpty()) {
-            finishUpdate(projectDir, artifactId, 0);
+        Map<String, String> dependencies = pom == null ? Map.of() : PomEdits.dependencyVersions(pom);
+        Map<String, String> plugins = pom == null ? Map.of() : PomEdits.pluginVersions(pom);
+        if (dependencies.isEmpty() && plugins.isEmpty()) {
+            finishUpdate(projectDir, artifactId, 0, 0);
             return;
         }
+        host.setStatus(tr("status.mavenProject.updatingVersions"));
+        output.appendOutput(this, tr("status.mavenVersions.checking", dependencies.size() + plugins.size()), false);
         fetchExecutor().execute(() -> {
-            Map<String, String> latest = CentralVersions.latest(current.keySet(), this::fetchMetadata);
-            Map<String, String> upgrades = CentralVersions.upgradesOnly(current, latest);
+            Map<String, String> dependencyUpgrades = CentralVersions.upgradesOnly(
+                    dependencies, CentralVersions.latest(dependencies.keySet(), this::fetchMetadata));
+            Map<String, String> pluginUpgrades = CentralVersions.upgradesOnly(
+                    plugins, CentralVersions.latest(plugins.keySet(), this::fetchMetadata));
             Platform.runLater(() -> {
-                if (!upgrades.isEmpty()) {
-                    editPom(projectDir, text -> PomEdits.setPluginVersions(text, upgrades));
-                    upgrades.forEach((ga, v) ->
+                if (!dependencyUpgrades.isEmpty() || !pluginUpgrades.isEmpty()) {
+                    editPom(
+                            projectDir,
+                            text -> PomEdits.setPluginVersions(
+                                    PomEdits.setDependencyVersions(text, dependencyUpgrades), pluginUpgrades));
+                    dependencyUpgrades.forEach((ga, v) ->
+                            output.appendOutput(this, tr("status.mavenProject.pluginUpdated", ga, v), false));
+                    pluginUpgrades.forEach((ga, v) ->
                             output.appendOutput(this, tr("status.mavenProject.pluginUpdated", ga, v), false));
                 }
-                finishUpdate(projectDir, artifactId, upgrades.size());
+                finishUpdate(projectDir, artifactId, dependencyUpgrades.size(), pluginUpgrades.size());
             });
         });
     }
 
-    private void finishUpdate(Path projectDir, String artifactId, int pluginUpdates) {
-        host.setStatus(tr("status.mavenProject.versionsUpdated", pluginUpdates));
+    private void finishUpdate(Path projectDir, String artifactId, int dependencyUpdates, int pluginUpdates) {
+        host.setStatus(tr("status.mavenProject.versionsUpdatedCounts", dependencyUpdates, pluginUpdates));
         onGenerated(projectDir, artifactId);
     }
 

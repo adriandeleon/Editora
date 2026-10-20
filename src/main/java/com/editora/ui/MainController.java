@@ -2545,6 +2545,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public List<String> buildExecutable(BuildTool tool, Path root) {
+                        return buildExecutableFor(tool, root);
+                    }
+
+                    @Override
                     public void toggleToolWindow() {
                         toolWindows.toggle(debugToolWindow);
                     }
@@ -5615,7 +5620,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                     Project project = projects.createOrGet(name, root);
                     projects.save();
-                    seedNewProjectSession(project, root, name, main);
+                    NewMavenProjectSession.seed(projects, config, project, root, name, main);
                     if (windowManager != null) {
                         windowManager.openOrFocus(project);
                     }
@@ -5633,13 +5638,29 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public boolean confirmArchetype(com.editora.maven.MavenArchetype archetype) {
-                    return confirmArchetypeGenerate(archetype);
+                    return NewMavenProjectSession.confirmArchetype(stage, archetype);
                 }
 
                 @Override
                 public void refreshProjectTree() {
                     if (projectPanel != null) {
                         projectPanel.refreshTree();
+                    }
+                }
+
+                @Override
+                public void showActionsAt(java.nio.file.Path root) {
+                    BuildCoordinator maven = buildCoordinator(BuildTool.MAVEN);
+                    if (maven != null) {
+                        maven.showActionsAt(root);
+                    }
+                }
+
+                @Override
+                public void runCustomAt(java.nio.file.Path root) {
+                    BuildCoordinator maven = buildCoordinator(BuildTool.MAVEN);
+                    if (maven != null) {
+                        maven.runCustomAt(root);
                     }
                 }
             },
@@ -5673,6 +5694,24 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Build tools (Maven/npm/…): one coordinator per tool — a toolbar icon + actions popup parsed from the
      *  active project's marker file, streaming tasks to a per-tool console (see {@link BuildCoordinator}). */
     final List<BuildCoordinator> buildCoordinators = createBuildCoordinators();
+
+    /**
+     * The argv prefix Run and Debug start {@code tool} with from {@code root}: the tool's tasks tree decides
+     * (its wrapper, the override, the PATH command) and asks for trust as it would for its own run; null when
+     * trust was declined. With the tool's support turned off there is no tree — then the user's own command
+     * (the override, else the PATH command), never a repository's wrapper, which nothing has gated.
+     */
+    List<String> buildExecutableFor(BuildTool tool, java.nio.file.Path root) {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.tool() == tool) {
+                return c.trustedExecutable(root);
+            }
+        }
+        return com.editora.build.BuildExecutable.resolve(
+                List.of(),
+                coordinatorHost.projectScope().buildCommand(tool, config.getSettings()),
+                tool.commandExample());
+    }
 
     private List<BuildCoordinator> createBuildCoordinators() {
         List<BuildCoordinator> list = new ArrayList<>();
@@ -6333,14 +6372,30 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void resolveMavenClasspath(
                 java.nio.file.Path root, String jdkHome, java.util.function.Consumer<List<String>> cb) {
+            resolveMavenClasspath(root, jdkHome, List.of("mvn"), com.editora.maven.MavenClasspath.Scope.RUNTIME, cb);
+        }
+
+        @Override
+        public void resolveMavenClasspath(
+                java.nio.file.Path root,
+                String jdkHome,
+                List<String> executable,
+                com.editora.maven.MavenClasspath.Scope scope,
+                java.util.function.Consumer<List<String>> cb) {
             Thread t = new Thread(
                     () -> {
-                        List<String> result = com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome);
+                        List<String> result =
+                                com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome, executable, scope);
                         Platform.runLater(() -> cb.accept(result));
                     },
                     "editora-maven-cp");
             t.setDaemon(true);
             t.start();
+        }
+
+        @Override
+        public List<String> buildExecutable(BuildTool tool, java.nio.file.Path root) {
+            return buildExecutableFor(tool, root);
         }
 
         @Override
@@ -6427,6 +6482,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.testrunner.debugAttaching", port));
             testNavigation.resolveTestClassAnchor(
                     className, a -> debugCoordinator.attachToPort(a, host, port, testRunCoordinator::stop));
+        }
+
+        @Override
+        public void setPendingDebugAttach(Runnable cancel) {
+            debugCoordinator.setPendingAttach(cancel);
+        }
+
+        @Override
+        public boolean debugSessionActive() {
+            return dapManager.isActive();
         }
     });
 
@@ -6926,6 +6991,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public String lspServerFailure(String serverId) {
+                    return lspCoordinator.serverFailure(serverId);
+                }
+
+                @Override
                 public void installServer(String serverId, java.util.function.Consumer<Boolean> onDone) {
                     installCoordinator.installServer(serverId, onDone);
                 }
@@ -7107,76 +7177,6 @@ public class MainController implements com.editora.mcp.McpBridge {
      * the workspace-trust gate cannot cover it: that only fires when a repo ships an {@code mvnw}, and a
      * brand-new empty directory has none. Default button is Cancel, so dismissing never grants consent.
      */
-    /**
-     * Gives a freshly generated Maven project a run configuration named after it, so Run works on the first
-     * click instead of sending the user to Edit Configurations.
-     *
-     * <p>Written into the <b>new project's</b> session file before {@code openOrFocus} builds its window —
-     * that window loads {@code projects/<id>.json} on construction, so seeding afterwards would be a race,
-     * and writing it into <em>this</em> window's state would put the configuration in the wrong project.
-     * <p><b>Deliberately does not call {@code ConfigManager.load()}.</b> That runs
-     * {@code SharedConfig.load()}, which replaces the shared {@code Settings} instance every open window
-     * holds <em>by reference</em> and re-reads every shared store from disk — corrupting live windows in
-     * order to write one file. A brand-new project needs no load: {@code ConfigManager} starts with a fresh
-     * {@code WorkspaceState}, which is exactly the right starting point, and an existing session file is
-     * left strictly alone.
-     *
-     * <p>The open file matters as much as the configuration: a Java launch resolves its classpath through
-     * jdtls routed via an <b>open Java file</b>, so a window that opens on {@code pom.xml} alone has nothing
-     * to route through and Run reports "open a Java file from the project".
-     *
-     * <p>No main class means no configuration: a webapp or plugin archetype has nothing to launch, and a
-     * configuration that fails at the click is worse than none at all.
-     */
-    private void seedNewProjectSession(
-            Project project, java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
-        if (main == null || main.fqn() == null || main.fqn().isBlank()) {
-            return;
-        }
-        try {
-            java.nio.file.Path stateFile = projects.stateFile(project);
-            if (java.nio.file.Files.exists(stateFile)) {
-                return; // an existing project reused by name keeps its own session
-            }
-            ConfigManager seeded = new ConfigManager(config.shared(), stateFile);
-            WorkspaceState state = seeded.getWorkspaceState(); // fresh defaults; see the note above
-            // workingDir = the project root, so the launch resolves against this project even with several
-            // open, and a relative path in the program behaves as it would from a terminal there.
-            // projectName = the artifactId, which is what jdtls names an imported Maven project. Blank works
-            // too (Run falls back to jdtls's own enumeration), but naming it lets the very first launch
-            // resolve directly instead of round-tripping an enumeration first.
-            // beforeLaunch = compile. archetype:generate writes SOURCES only, and Editora runs jdtls with
-            // autobuild disabled, so nothing has produced target/classes yet: the resolved classpath is
-            // correct and the JVM still dies with ClassNotFoundException on the very first Run. A
-            // before-launch step is the mechanism for exactly this — a non-zero exit aborts the launch, so a
-            // failed compile never runs a stale binary. Bare `mvn` rather than a resolved absolute path:
-            // this is persisted, and a path would rot the moment the user changed their Maven install.
-            state.setRunConfigurations(List.of(new com.editora.config.RunConfiguration(
-                    name, "java", "", main.fqn(), name, "", "", root.toString(), "", "mvn -q compile")));
-            state.setSelectedRunConfig(name);
-            state.setOpenFiles(List.of(new WorkspaceState.OpenFile(main.file().toString(), 0, false)));
-            state.setActiveFile(main.file().toString());
-            seeded.save();
-        } catch (RuntimeException e) {
-            // The project is generated and open either way; a missing configuration is a papercut, not a
-            // reason to fail the whole flow.
-            LOG.log(java.util.logging.Level.WARNING, "could not seed the new project's session", e);
-        }
-    }
-
-    private boolean confirmArchetypeGenerate(com.editora.maven.MavenArchetype archetype) {
-        ButtonType proceed = new ButtonType(tr("dialog.mavenProject.trustAccept"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = new Alert(
-                Alert.AlertType.WARNING,
-                tr("dialog.mavenProject.trustBody", archetype.gav()),
-                ButtonType.CANCEL,
-                proceed);
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("dialog.mavenProject.trustTitle"));
-        confirm.setHeaderText(tr("dialog.mavenProject.trustHeader", archetype.artifactId()));
-        confirm.getDialogPane().setMinWidth(520);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == proceed;
-    }
 
     /**
      * The HTTP Client's secrets gate: a {@code .http} request in {@code file} that reads {@code reads} (the secret

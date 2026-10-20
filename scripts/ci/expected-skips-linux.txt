@@ -30,6 +30,13 @@ com.editora.ui.JavaTypingSoakProbeTest
 com.editora.ui.JsDebugProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
+com.editora.lsp.LemminxMavenProbeTest
+com.editora.ui.MavenDebugTestProbeFxTest
+
+# Need a local Maven repository or a copy of Maven Central's catalog (-Darchetype.catalog=<file>); the runner
+# has neither.
+com.editora.maven.ArchetypeCatalogParserTest#everyCuratedEntryExistsAtItsPinnedVersionWhereTheLocalRepositoryHasIt
+com.editora.maven.ArchetypeCatalogParserTest#parsesTheRealCentralCatalogWhenACopyIsAvailable
 
 # Measurement harnesses, @Disabled by design.
 com.editora.index.SearchEverywhereBenchmarkTest

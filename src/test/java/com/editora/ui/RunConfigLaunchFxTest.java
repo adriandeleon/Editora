@@ -154,7 +154,9 @@ class RunConfigLaunchFxTest {
     private void launch(RecordingOps ops, RunConfiguration cfg) throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, appFile));
-        RunCoordinator coordinator = new RunCoordinator(FxTestSupport.field(fx.controller, "coordinatorHost"), ops);
+        CoordinatorHost host = FxTestSupport.field(fx.controller, "coordinatorHost");
+        host.settings().setBuildBeforeRun(false); // the resolution is what is under test, not the build before it
+        RunCoordinator coordinator = new RunCoordinator(host, ops);
         FxTestSupport.runOnFx(
                 () -> FxTestSupport.call(coordinator, "runJavaConfig", new Class[] {RunConfiguration.class}, cfg));
     }

@@ -8,37 +8,90 @@ import java.util.List;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Builds the {@code mvn} command that dumps a project's runtime classpath, and assembles the full classpath
- * for launching a main class without the Java language server. Used by the Run feature's build-tool fallback
+ * Builds the Maven command that dumps a project's runtime classpath, and assembles the full classpath for
+ * launching a main class without the Java language server. Used by the Run feature's build-tool fallback
  * (jdtls unavailable): {@code mvn dependency:build-classpath} writes the <em>dependency</em> classpath to a
  * file; the module's own compiled output ({@code target/classes}) is prepended. Pure and unit-tested; the
  * subprocess itself runs elsewhere (off the FX thread).
  *
- * <p>Uses the PATH {@code mvn} (not the project's {@code ./mvnw} wrapper) — consistent with how Run/Debug
- * always launch a user-controlled interpreter rather than a repo-supplied script.
+ * <p>The command's executable is the caller's: the same argv prefix the Maven tasks tree launches
+ * ({@code BuildTool.MAVEN.executable} — the project's {@code ./mvnw} once the folder is trusted, else the
+ * Settings command override, else {@code mvn} on PATH), so Run resolves with the Maven version the project
+ * pins and with the command the user configured (review D3).
  */
 public final class MavenClasspath {
 
     private MavenClasspath() {}
 
-    /**
-     * The {@code mvn} argv that compiles the module and writes its dependency classpath
-     * (pathSeparator-joined) to {@code outputFile}. {@code compile} runs first so {@code target/classes} is
-     * fresh before the run.
-     */
-    public static List<String> argv(Path outputFile) {
-        return argv(outputFile.toString(), File.pathSeparator);
+    /** Which classpath a launch needs: a class under {@code src/main} runs on the runtime one, a test class on the test one. */
+    public enum Scope {
+        /** {@code compile} + the runtime dependencies (no test scope on a program's classpath, review D6). */
+        RUNTIME("compile", "runtime"),
+        /** {@code test-compile} + every dependency, for a main class under {@code src/test}. */
+        TEST("test-compile", "test");
+
+        private final String phase;
+        private final String includeScope;
+
+        Scope(String phase, String includeScope) {
+            this.phase = phase;
+            this.includeScope = includeScope;
+        }
+
+        /** The lifecycle phase that compiles what the launch runs. */
+        public String phase() {
+            return phase;
+        }
+
+        /** {@code dependency:build-classpath}'s {@code includeScope}. */
+        public String includeScope() {
+            return includeScope;
+        }
+
+        /**
+         * The scope of a launch of a class declared in {@code source} of the module {@code root}: {@link #TEST}
+         * when the file sits under the module's {@code src/test} tree, else {@link #RUNTIME}. Pure.
+         */
+        public static Scope forSource(Path source, Path root) {
+            if (source == null || root == null) {
+                return RUNTIME;
+            }
+            Path relative;
+            try {
+                relative = root.toAbsolutePath()
+                        .normalize()
+                        .relativize(source.toAbsolutePath().normalize());
+            } catch (IllegalArgumentException differentRoots) {
+                return RUNTIME;
+            }
+            return relative.getNameCount() > 2
+                            && "src".equals(relative.getName(0).toString())
+                            && "test".equals(relative.getName(1).toString())
+                    ? TEST
+                    : RUNTIME;
+        }
     }
 
-    /** As {@link #argv(Path)}, naming the file and the separator as the machine Maven runs on does. */
-    public static List<String> argv(String outputFile, String pathSeparator) {
-        return List.of(
-                "mvn",
-                "-q",
-                "compile",
-                "dependency:build-classpath",
-                "-Dmdep.outputFile=" + outputFile,
-                "-Dmdep.pathSeparator=" + pathSeparator);
+    /**
+     * The Maven argv that compiles the module and writes its dependency classpath (pathSeparator-joined) to
+     * {@code outputFile}. The compile phase runs first so {@code target/classes} is fresh before the run.
+     *
+     * @param executable the argv prefix that starts Maven ({@code ./mvnw}, the override, or {@code mvn})
+     */
+    public static List<String> argv(List<String> executable, Path outputFile, Scope scope) {
+        return argv(executable, outputFile.toString(), File.pathSeparator, scope);
+    }
+
+    /** As {@link #argv(List, Path, Scope)}, naming the file and the separator as the machine Maven runs on does. */
+    public static List<String> argv(List<String> executable, String outputFile, String pathSeparator, Scope scope) {
+        List<String> argv = new ArrayList<>(executable);
+        argv.add("-q");
+        argv.add(scope.phase());
+        argv.add("dependency:build-classpath");
+        argv.add("-Dmdep.includeScope=" + scope.includeScope());
+        argv.add("-Dmdep.outputFile=" + outputFile);
+        argv.add("-Dmdep.pathSeparator=" + pathSeparator);
+        return List.copyOf(argv);
     }
 
     /**
@@ -47,34 +100,52 @@ public final class MavenClasspath {
      * their compiled output lands in {@code outputFile}'s classpath. {@code outputFile} must be an absolute
      * path (the working directory is the reactor root, not the module).
      */
-    public static List<String> reactorArgv(Path outputFile, String moduleSelector) {
-        return reactorArgv(outputFile.toString(), moduleSelector, File.pathSeparator);
+    public static List<String> reactorArgv(
+            List<String> executable, Path outputFile, String moduleSelector, Scope scope) {
+        return reactorArgv(executable, outputFile.toString(), moduleSelector, File.pathSeparator, scope);
     }
 
-    /** As {@link #reactorArgv(Path, String)}, naming the file and the separator as Maven's machine does. */
-    public static List<String> reactorArgv(String outputFile, String moduleSelector, String pathSeparator) {
-        return List.of(
-                "mvn",
-                "-q",
-                "-pl",
-                moduleSelector,
-                "-am",
-                "compile",
-                "dependency:build-classpath",
-                "-Dmdep.outputFile=" + outputFile,
-                "-Dmdep.pathSeparator=" + pathSeparator);
+    /** As {@link #reactorArgv(List, Path, String, Scope)}, naming the file and the separator as Maven's machine does. */
+    public static List<String> reactorArgv(
+            List<String> executable, String outputFile, String moduleSelector, String pathSeparator, Scope scope) {
+        List<String> argv = new ArrayList<>(executable);
+        argv.add("-q");
+        argv.add("-pl");
+        argv.add(moduleSelector);
+        argv.add("-am");
+        argv.add(scope.phase());
+        argv.add("dependency:build-classpath");
+        argv.add("-Dmdep.includeScope=" + scope.includeScope());
+        argv.add("-Dmdep.outputFile=" + outputFile);
+        argv.add("-Dmdep.pathSeparator=" + pathSeparator);
+        return List.copyOf(argv);
     }
 
     /**
      * Full launch classpath = the module's compiled output (when present) followed by the dependency
      * classpath from {@code dependencyClasspath} (a {@code File.pathSeparator}-joined string). Blank/empty
-     * entries are dropped. {@code root} is the Maven module root ({@code root/target/classes}).
+     * entries are dropped. {@code root} is the Maven module root ({@code root/target/classes}; a
+     * {@link Scope#TEST} launch adds {@code target/test-classes} first).
      */
     public static List<String> assemble(String dependencyClasspath, Path root) {
-        return assemble(
-                dependencyClasspath,
-                root == null ? null : root.resolve("target").resolve("classes").toString(),
-                File.pathSeparator);
+        return assemble(dependencyClasspath, root, Scope.RUNTIME);
+    }
+
+    /** As {@link #assemble(String, Path)} for {@code scope}'s output folders. */
+    public static List<String> assemble(String dependencyClasspath, Path root, Scope scope) {
+        if (root == null) {
+            return assemble(dependencyClasspath, (String) null, File.pathSeparator);
+        }
+        Path target = root.resolve("target");
+        String classes = target.resolve("classes").toString();
+        List<String> cp = assemble(dependencyClasspath, classes, File.pathSeparator);
+        if (scope == Scope.TEST) {
+            List<String> withTests = new ArrayList<>(cp.size() + 1);
+            withTests.add(target.resolve("test-classes").toString());
+            withTests.addAll(cp);
+            return withTests;
+        }
+        return cp;
     }
 
     /**

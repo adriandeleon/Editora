@@ -115,6 +115,23 @@ final class ToolStatusRow {
         }
     }
 
+    /**
+     * Shows a tool that is there but unusable, in the pill's own words ("lemminx-maven: installed but incomplete —
+     * click Install… to repair"): red while {@code featureOn}, with Install… offered as for a missing tool.
+     */
+    void showProblem(String text, boolean featureOn) {
+        pill.getStyleClass().setAll("settings-git-status", SettingsWindow.pillClass(false, featureOn));
+        pill.setText(text);
+        tooltip.setText(text);
+        if (missingOnly != null) {
+            missingOnly.setVisible(true);
+        }
+        if (install != null) {
+            install.setDisable(false);
+            install.setText(tr("settings.install.button"));
+        }
+    }
+
     /** The pill's text. Pure. */
     static String text(String tool, boolean found, String detail) {
         if (!found) {

@@ -42,6 +42,11 @@ public enum BuildTool {
             OutputStyle.maven()) {
         @Override
         public Detected parse(Path root) throws Exception {
+            return parse(root, null);
+        }
+
+        @Override
+        public Detected parse(Path root, @Nullable Path projectRoot) throws Exception {
             PomModel model = PomParser.parseFile(root.resolve("pom.xml"));
             // Local repository only, and best-effort: a plugin that isn't downloaded yet simply contributes
             // no goal group. Never let that sink the detection — the lifecycle/profile sections don't need it.
@@ -51,7 +56,15 @@ public enum BuildTool {
             } catch (RuntimeException e) {
                 goals = List.of();
             }
-            return new Detected(new MavenActionsProvider(model, goals), model.artifactId());
+            // A module of a multi-module build gets the "build from the reactor root" toggle. The walk stops at
+            // the open project (never a folder the user did not open), and the root must list the module.
+            com.editora.maven.MavenReactor.Reactor reactor = com.editora.maven.MavenReactor.describe(
+                    root, projectRoot, dir -> Files.isRegularFile(dir.resolve("pom.xml")), BuildTool::readOrNull);
+            String rootPomOnTarget = reactor == null
+                    ? null
+                    : com.editora.process.ExecTargets.forPath(root)
+                            .toTargetPath(reactor.rootPom().toAbsolutePath().normalize());
+            return new Detected(new MavenActionsProvider(model, goals, reactor, rootPomOnTarget), model.artifactId());
         }
 
         @Override
@@ -432,6 +445,24 @@ public enum BuildTool {
 
     /** Parses the tool's marker file under {@code root} into a provider + label; throws if it's malformed. */
     public abstract Detected parse(Path root) throws Exception;
+
+    /**
+     * As {@link #parse(Path)}, told the open project's root ({@code null} when there is none) — the bound for
+     * anything a tool looks for <em>above</em> the marker directory (Maven's reactor root). The default
+     * ignores it.
+     */
+    public Detected parse(Path root, @Nullable Path projectRoot) throws Exception {
+        return parse(root);
+    }
+
+    /** A file's text, or {@code null} when it cannot be read (a reactor check must never fail a detection). */
+    private static @Nullable String readOrNull(Path file) {
+        try {
+            return Files.isRegularFile(file) ? Files.readString(file) : null;
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+    }
 
     /** The argv prefix to launch the tool from {@code root} (project wrapper, else the Settings override, else
      *  the tool's default command). {@code override} is the Settings command override (blank = none). Looks

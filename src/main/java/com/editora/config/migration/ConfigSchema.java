@@ -304,7 +304,10 @@ public enum ConfigSchema {
                     // v139→140: + scalaLspCommand ("" = not installed), scalaLspEnabled (on), and the sbt, Mill and
                     // Scala CLI build tools' sbtSupport/millSupport/scalaCliSupport (on) with their command overrides
                     // (""); additive, absent is the default.
-                    Map.entry(139, (Migration) ConfigMigrations::identity)),
+                    Map.entry(139, (Migration) ConfigMigrations::identity),
+                    // v140→141: + buildBeforeRun (on): a Maven/Gradle project is compiled by its build tool before
+                    // a main class runs or is debugged. Additive: absent is the default, a stored choice is kept.
+                    Map.entry(140, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

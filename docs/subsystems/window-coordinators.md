@@ -75,6 +75,22 @@ before-launch step, or any earlier one), independent of the active buffer's runn
 refreshes that gate with the process already gone, so a gate that only counted live processes closed the
 console on the output it had just streamed; like Test Results, the window stays available once used.
 
+A Java launch in a Maven or Gradle project builds first. jdtls runs with autobuild off, so the classpath it
+resolves is right while the class files in it are whatever the last build left: `RunCoordinator.buildBeforeLaunch`
+and `DebugCoordinator.buildToolThenLaunch` run the build tool's compile (`compile`/`test-compile` for a class under
+`src/test`; Gradle `compileJava`/`compileTestJava`) as a `BeforeLaunchStep.Command` in the Run or Debug console
+before the jdtls launch, on the project's JDK, aborting on a non-zero exit — behind `Settings.buildBeforeRun`
+("Build before Run and Debug", on). A configuration with its own before-launch step keeps that step instead; with
+the setting off, Debug keeps jdtls's workspace build and Run prints a hint to build when the JVM's first lines say
+it could not find the main class. The command's executable is the tasks tree's (`BuildCoordinator.trustedExecutable`:
+the project's wrapper after the trust gate, the project-scoped command override, else the PATH command), which the
+no-jdtls Maven fallback uses too: `MavenClasspathResolver.plan` builds the `dependency:build-classpath` command with
+that prefix and the launch's scope (`-Dmdep.includeScope=runtime`, `test` for a test class), and the coordinator runs
+it as a before-launch step — its output streams, Stop kills it, a second Run is refused, and a failure's status
+quotes Maven's first `[ERROR]` line (`BeforeLaunchStep.failureDetail`). A configuration's before-launch text may be
+symbolic — `maven:compile`, `gradle:compileJava` (`run.BuildBeforeLaunch.symbolic`) — resolved through the same
+executable at run time; the configuration seeded for a generated Maven project stores that.
+
 The Run and Debug windows' runtime chip comes from `run.RuntimeProbe`, which asks the launched argv's first
 word (`RuntimeVersion.probeFor`: `java`, a Python, `node`/npm, `bash`, `zsh`, `fish`, GNU `make`) for its version
 in the launch's folder and environment, off the FX thread and uncached, beside the launch rather than before it.

@@ -7,6 +7,7 @@ import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CentralVersionsTest {
@@ -70,6 +71,54 @@ class CentralVersionsTest {
         Map<String, String> current = Map.of(COMPILER, "4.0.0");
         Map<String, String> latest = Map.of(COMPILER, "3.14.0");
         assertTrue(CentralVersions.upgradesOnly(current, latest).isEmpty());
+    }
+
+    /**
+     * The downgrade Update Versions used to propose: Guava {@code 33.0.0-jre → r09}. Caught twice over —
+     * by Maven's ordering (a number beats a qualifier) and by the leading-number guard.
+     */
+    @Test
+    void neverOffersAnAlphabeticVersionAgainstANumberedOne() {
+        String guava = "com.google.guava:guava";
+        assertTrue(CentralVersions.upgradesOnly(Map.of(guava, "33.0.0-jre"), Map.of(guava, "r09"))
+                .isEmpty());
+        assertEquals(
+                Map.of(guava, "33.7.2-jre"),
+                CentralVersions.upgradesOnly(Map.of(guava, "33.0.0-jre"), Map.of(guava, "33.7.2-jre")));
+    }
+
+    @Test
+    void isUpgradeRequiresNewerByMavensRulesAndNoSmallerLeadingNumber() {
+        assertTrue(CentralVersions.isUpgrade("3.0.0-M9", "3.0.0"));
+        assertFalse(CentralVersions.isUpgrade("3.0.0", "3.0.0-M9"));
+        assertTrue(CentralVersions.isUpgrade("5.13.4", "6.0.0"));
+        assertTrue(CentralVersions.isUpgrade("1.78", "1.78.1"));
+        assertFalse(CentralVersions.isUpgrade("1.78.1", "1.78"));
+        assertFalse(CentralVersions.isUpgrade("2.0.0.Final", "2.0.0"), "the same version is not an upgrade");
+        assertFalse(CentralVersions.isUpgrade("33.0.0-jre", "r09"));
+        assertTrue(CentralVersions.isUpgrade("r09", "10.0"), "from an alphabetic version, any numbered one is up");
+        // A qualifier-only candidate can be "newer" by text (unknown qualifiers sort high) — the guard says no.
+        assertFalse(CentralVersions.isUpgrade("1.0", "zzz"));
+    }
+
+    /**
+     * Seen in the fix pass's own probe: with the semver comparator gone, {@code ${surefire.version}} ranked
+     * below {@code 3.6.0} and the preview offered to overwrite the property reference with a literal.
+     */
+    @Test
+    void aPropertyRangeOrKeywordVersionIsNeverUpgraded() {
+        for (String now : List.of("${surefire.version}", "[2.0,3.0)", "(,1.0]", "LATEST", "RELEASE", "", " ")) {
+            assertFalse(CentralVersions.isUpgrade(now, "3.6.0"), now + " must be left alone");
+            assertTrue(
+                    CentralVersions.upgradesOnly(Map.of(SUREFIRE, now), Map.of(SUREFIRE, "3.6.0"))
+                            .isEmpty(),
+                    now);
+        }
+        assertFalse(CentralVersions.isUpgrade("3.5.0", "${latest}"), "nor is one written");
+        assertTrue(CentralVersions.isPlainVersion("3.6.0"));
+        assertTrue(CentralVersions.isPlainVersion("33.7.2-jre"));
+        assertTrue(CentralVersions.isPlainVersion("2.0.0.Final"));
+        assertTrue(CentralVersions.isPlainVersion("r09"), "a literal, if an odd one: the guards decide, not this");
     }
 
     /** A plugin with no version in the pom is not ours to pin — see PomEdits.setPluginVersions. */
