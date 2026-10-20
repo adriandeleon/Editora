@@ -13,6 +13,7 @@ import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Element;
 
 /**
@@ -46,7 +47,7 @@ public record ArchetypeDescriptor(List<RequiredProperty> requiredProperties) {
     public static final ArchetypeDescriptor NONE = new ArchetypeDescriptor(List.of());
 
     /** One {@code <requiredProperty>}: its key and its {@code <defaultValue>} ({@code null} when it has none). */
-    public record RequiredProperty(String key, String defaultValue) {
+    public record RequiredProperty(String key, @Nullable String defaultValue) {
         public boolean hasDefault() {
             return defaultValue != null;
         }

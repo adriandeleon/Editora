@@ -9,6 +9,7 @@ import org.apache.sshd.common.NamedResource;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.session.Session;
 import org.apache.sshd.common.session.SessionContext;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A key's passphrase, asked for when the key turns out to be encrypted, as {@code ssh} does: the one given
@@ -34,7 +35,7 @@ final class Passphrases implements FilePasswordProvider {
     private Passphrases() {}
 
     @Override
-    public String getPassword(SessionContext context, NamedResource resource, int retryIndex) {
+    public @Nullable String getPassword(SessionContext context, NamedResource resource, int retryIndex) {
         if (!(context instanceof Session session)) {
             return null; // loaded outside any login: nobody to ask
         }

@@ -18,6 +18,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.editora.io.AtomicFileWrite;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Performs config-file writes off the JavaFX thread. Callers hand it immutable bytes or an immutable
@@ -39,7 +40,7 @@ public final class ConfigWriter {
      */
     @FunctionalInterface
     interface BytesSupplier {
-        byte[] get() throws IOException;
+        byte @Nullable [] get() throws IOException;
     }
 
     /** Where a store hands the snapshot it wants persisted: the shared queue, or {@link #DIRECT}. */
@@ -190,7 +191,7 @@ public final class ConfigWriter {
      * marshal to the FX thread itself. {@code null} until one is installed: failures are then kept in
      * {@link #unreported} and replayed to the first handler.
      */
-    private volatile java.util.function.BiConsumer<Path, IOException> onWriteError;
+    private volatile java.util.function.@Nullable BiConsumer<Path, IOException> onWriteError;
 
     /** How many distinct files' failures are kept while no handler is installed. */
     private static final int MAX_UNREPORTED = 16;
@@ -203,7 +204,7 @@ public final class ConfigWriter {
 
     /** Test seam: run right after {@link #drain} claims a batch (pending cleared), before it writes — lets a
      *  test slip a {@link #cancel} in between to exercise the "claimed but not yet written" race (#491). */
-    volatile Runnable afterBatchClaimedForTest;
+    volatile @Nullable Runnable afterBatchClaimedForTest;
 
     /**
      * Drops any queued bytes for {@code file} and suppresses a write a drain has <b>already claimed</b> but
@@ -403,7 +404,7 @@ public final class ConfigWriter {
         surfaceWriteError(file, failure);
     }
 
-    private static void complete(PendingWrite write, WriteOutcome outcome) {
+    private static void complete(@Nullable PendingWrite write, WriteOutcome outcome) {
         if (write == null) {
             return;
         }

@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The launch argv for a run configuration that is <b>not</b> a Java main class.
  *
@@ -125,7 +127,8 @@ public final class ScriptRunCommand {
      * {@link ShellCommand#launch} (its shebang, or the configuration's Interpreter). {@code null} — or any
      * non-shell type — uses the default: {@code bash}, or {@code zsh} for a {@code .zsh} file.
      */
-    public static List<String> build(String type, String target, List<String> args, ShellCommand.Launch shell) {
+    public static List<String> build(
+            String type, String target, List<String> args, ShellCommand.@Nullable Launch shell) {
         String t = target == null ? "" : target.strip();
         List<String> argv = new ArrayList<>();
         switch (type == null ? "" : type) {

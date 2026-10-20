@@ -4,6 +4,8 @@ import java.net.IDN;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Default URL auto-encoding (mirroring IntelliJ): after variable substitution, percent-encode the characters
  * that are illegal in a URI (space, {@code " < > { } | \ ^ `}, a {@code %} that does not start an escape, and
@@ -58,7 +60,7 @@ public final class UrlEncoding {
      * request's {@code Host} header when there is one; anything else ({@code example.com/api},
      * {@code localhost:8080/x}) gets {@code http://}, the JetBrains default.
      */
-    public static String withScheme(String url, String hostHeader) {
+    public static String withScheme(String url, @Nullable String hostHeader) {
         if (url == null || url.isBlank() || HAS_SCHEME.matcher(url).matches() || url.equals("*")) {
             return url;
         }

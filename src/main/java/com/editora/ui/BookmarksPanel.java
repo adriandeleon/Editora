@@ -35,6 +35,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Text;
 
 import com.editora.config.Bookmark;
+import com.editora.config.PathDisplay;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -217,7 +218,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                     continue;
                 }
                 Path file = Path.of(e.getKey());
-                boolean fileMatches = fileName(file).toLowerCase().contains(query);
+                boolean fileMatches = PathDisplay.fileName(file).toLowerCase().contains(query);
                 boolean folder = e.getValue().stream().anyMatch(Bookmark::isFolder);
                 TreeItem<Row> fileNode = new TreeItem<>(new FileRow(key, file, folder));
                 fileNode.setExpanded(true);
@@ -555,7 +556,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private void deleteFile(FileRow f) {
         Alert confirm = new Alert(
                 Alert.AlertType.CONFIRMATION,
-                tr("bookmarks.deleteFileBody", fileName(f.file())),
+                tr("bookmarks.deleteFileBody", PathDisplay.fileName(f.file())),
                 ButtonType.OK,
                 ButtonType.CANCEL);
         confirm.initOwner(getScene() == null ? null : getScene().getWindow());
@@ -564,11 +565,6 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
             actions.deleteAll(f.projectKey(), f.file());
         }
-    }
-
-    private static String fileName(Path file) {
-        Path name = file.getFileName();
-        return name == null ? file.toString() : name.toString();
     }
 
     /**
@@ -686,9 +682,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 setTooltip(null);
                 setContextMenu(null);
             } else if (item instanceof FileRow f) {
-                setText(fileName(f.file()));
+                setText(PathDisplay.fileName(f.file()));
                 getStyleClass().add("bookmark-file-row");
-                setGraphic(FileIcons.forProjectItem(fileName(f.file()), f.folder()));
+                setGraphic(FileIcons.forProjectItem(PathDisplay.fileName(f.file()), f.folder()));
                 setTooltip(new Tooltip(f.file().toString()));
                 MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());

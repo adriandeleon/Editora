@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The Emacs kill ring: a bounded, newest-first list of killed text plus a yank pointer.
  *
@@ -103,7 +105,7 @@ public final class KillRing {
     }
 
     /** The entry the next yank would insert, or {@code null} when the ring is empty. */
-    public String current() {
+    public @Nullable String current() {
         return entries.isEmpty() ? null : entries.get(yankIndex);
     }
 
@@ -111,7 +113,7 @@ public final class KillRing {
      * Emacs {@code yank-pop}: steps the yank pointer one entry towards older kills, wrapping around to
      * the newest, and returns the entry now under it ({@code null} when the ring is empty).
      */
-    public String rotate() {
+    public @Nullable String rotate() {
         if (entries.isEmpty()) {
             return null;
         }

@@ -2,6 +2,8 @@ package com.editora.deploy;
 
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Whether a folder on a host may be a deployment's: a deploy writes into it and may remove files it put there,
  * so a slip of the keyboard must not aim it at the whole machine or the account. Pure.
@@ -73,7 +75,7 @@ public final class DeployRoot {
      * What is wrong with {@code root} as a deployment folder on a host whose account's home is {@code home}
      * ({@code null} when unknown), or null when nothing is.
      */
-    public static Problem problem(String root, String home) {
+    public static @Nullable Problem problem(String root, String home) {
         String s = normalize(root);
         if (s.isEmpty()) {
             return Problem.EMPTY;

@@ -23,6 +23,7 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.jspecify.annotations.Nullable;
 
 /**
  * UI-facing facade over the LSP layer (mirrors {@code MermaidService}): owns one
@@ -42,7 +43,11 @@ public final class LspManager {
      * {@code file:} one — {@code file} is null and {@code classFileUri} carries the URI; the coordinator
      * fetches its source via {@link #classFileContents} instead of opening a path (#665).
      */
-    public record Target(Path file, int line, int character, String classFileUri) {
+    public record Target(
+            @Nullable Path file,
+            int line,
+            int character,
+            @Nullable String classFileUri) {
         public Target(Path file, int line, int character) {
             this(file, line, character, null);
         }
@@ -96,7 +101,7 @@ public final class LspManager {
     /** Mirrors {@code Settings.lspOnTypeFormatting} into jdtls's {@code java.format.onType.enabled}. */
     private volatile boolean javaOnTypeFormatting;
     /** bash-language-server's {@code bashIde} settings (null = its defaults until the coordinator sets them). */
-    private volatile BashIdeConfig bashIde;
+    private volatile @Nullable BashIdeConfig bashIde;
 
     /** Whether the TypeScript server may fetch type definitions from npm (Settings; off by default). */
     private volatile boolean typeScriptTypeAcquisition;
@@ -116,7 +121,7 @@ public final class LspManager {
      * of Editora's own that holds none of them: the server then gives each file an inferred project of its own.
      * Null until the coordinator sets it.
      */
-    private volatile Path looseRoot;
+    private volatile @Nullable Path looseRoot;
 
     /** Sets what the TypeScript server is started with; a change restarts the running ones. */
     public void setTypeScriptStart(boolean typeAcquisition, String nodePath) {
@@ -165,7 +170,7 @@ public final class LspManager {
     }
 
     /** The shared root of loose JavaScript/TypeScript files, or null. */
-    public Path looseRoot() {
+    public @Nullable Path looseRoot() {
         return looseRoot;
     }
     /** jdtls {@code initializationOptions.bundles} — the java-debug plugin jar(s) that enable debugging.
@@ -176,7 +181,7 @@ public final class LspManager {
     /** serverId → last availability probe (invalidated when that server's command changes). */
     private final Map<String, Boolean> availableCache = new ConcurrentHashMap<>();
     /** Base dir for jdtls's per-project {@code -data} workspaces (see {@link #setJdtlsWorkspaceBase}). */
-    private volatile Path jdtlsWorkspaceBase;
+    private volatile @Nullable Path jdtlsWorkspaceBase;
 
     public LspManager(BiConsumer<Path, List<LspDiagnostic>> onDiagnostics, BiConsumer<String, String> onStatus) {
         this.onDiagnostics = onDiagnostics == null ? (p, d) -> {} : onDiagnostics;
@@ -299,14 +304,14 @@ public final class LspManager {
      * Root → the Python interpreter a Pyright session there should analyse with (an absolute executable, or
      * null to leave it to the server). Called off the FX thread (it looks at the file system and PATH).
      */
-    private volatile java.util.function.Function<Path, String> pythonInterpreterResolver = root -> null;
+    private volatile java.util.function.Function<Path, @Nullable String> pythonInterpreterResolver = root -> null;
 
     /** Installs how a Python session's interpreter is found (review B1); {@code null} = the server's own. */
-    public void setPythonInterpreterResolver(java.util.function.Function<Path, String> resolver) {
+    public void setPythonInterpreterResolver(java.util.function.Function<Path, @Nullable String> resolver) {
         pythonInterpreterResolver = resolver == null ? root -> null : resolver;
     }
 
-    private String resolvePythonPath(Path root) {
+    private @Nullable String resolvePythonPath(Path root) {
         try {
             return pythonInterpreterResolver.apply(root);
         } catch (RuntimeException e) {
@@ -386,19 +391,19 @@ public final class LspManager {
     }
 
     /** The workspace root of the session serving {@code file}, or null when none does. */
-    public Path sessionRoot(Path file) {
+    public @Nullable Path sessionRoot(Path file) {
         LanguageServerSession s = sessionFor(file);
         return s == null ? null : s.root();
     }
 
     /** The interpreter a local Python session was given ({@code null} = none, or no such session). */
-    public String pythonPathFor(Path file) {
+    public @Nullable String pythonPathFor(Path file) {
         LanguageServerSession s = sessionFor(file);
         return s == null ? null : s.pythonPath();
     }
 
     /** The {@code bashIde} configuration last set (null = never). */
-    public BashIdeConfig bashIde() {
+    public @Nullable BashIdeConfig bashIde() {
         return bashIde;
     }
 
@@ -489,7 +494,7 @@ public final class LspManager {
     }
 
     /** Where servers' questions are asked (FX thread); null: unanswered, as before a window installs one. */
-    private volatile LspClientUi clientUi;
+    private volatile @Nullable LspClientUi clientUi;
 
     /**
      * Installs the window's answers to server questions ({@code window/showMessageRequest}, Metals' input box,
@@ -509,13 +514,13 @@ public final class LspManager {
 
         @Override
         public java.util.concurrent.CompletableFuture<String> inputBox(
-                String serverId, String prompt, String value, String placeHolder) {
+                String serverId, @Nullable String prompt, @Nullable String value, @Nullable String placeHolder) {
             return onFx(ui -> ui.inputBox(serverId, prompt, value, placeHolder));
         }
 
         @Override
         public java.util.concurrent.CompletableFuture<String> quickPick(
-                String serverId, String placeHolder, List<PickItem> items) {
+                String serverId, @Nullable String placeHolder, List<PickItem> items) {
             return onFx(ui -> ui.quickPick(serverId, placeHolder, items));
         }
 
@@ -628,7 +633,7 @@ public final class LspManager {
     }
 
     /** What {@link #detectRemote} last found for {@code serverId} on {@code anchor}'s host, or null. */
-    public Boolean remoteAvailability(Path anchor, String serverId) {
+    public @Nullable Boolean remoteAvailability(Path anchor, String serverId) {
         return remoteAvailable.get(
                 com.editora.process.ExecTargets.forPath(anchor).id() + SESSION_KEY_SEP + serverId);
     }
@@ -734,7 +739,7 @@ public final class LspManager {
     }
 
     /** Where the stand-in {@code .java} files for Java scripts live (see {@link JavaScriptShadow}); lazily made. */
-    private Path javaScriptShadowRoot;
+    private @Nullable Path javaScriptShadowRoot;
 
     /** Each open Java script's stand-in file, by document key. */
     private final Map<String, Path> javaScriptShadows = new ConcurrentHashMap<>();
@@ -744,7 +749,7 @@ public final class LspManager {
      * appears beside the script — or null when it can't be written, and the script is then shown as itself.
      * jdtls reads the text from the open document; the file only has to exist and be named {@code .java}.
      */
-    private Path javaScriptShadow(String uri, Path file, String text) {
+    private @Nullable Path javaScriptShadow(String uri, Path file, String text) {
         try {
             Path shadow = javaScriptShadows.get(uri);
             if (shadow == null) {
@@ -772,7 +777,7 @@ public final class LspManager {
      * The Java script whose stand-in {@code file} is ({@link JavaScriptShadow}), or null when it is none. A
      * debugger's stack frame names the stand-in: java-debug finds the source of a class through jdtls.
      */
-    public Path scriptForStandIn(Path file) {
+    public @Nullable Path scriptForStandIn(@Nullable Path file) {
         if (file == null || javaScriptShadows.isEmpty()) {
             return null;
         }
@@ -785,7 +790,7 @@ public final class LspManager {
     }
 
     /** Deletes a stand-in made by {@link #javaScriptShadow} (best effort). */
-    private static void deleteJavaScriptShadow(Path shadow) {
+    private static void deleteJavaScriptShadow(@Nullable Path shadow) {
         if (shadow == null) {
             return;
         }
@@ -808,7 +813,7 @@ public final class LspManager {
         return s == null || s.didChange(uri(file), text);
     }
 
-    public void saveDocument(Path file, String savedText) {
+    public void saveDocument(Path file, @Nullable String savedText) {
         LanguageServerSession s = sessionFor(file);
         if (s != null) {
             String uri = uri(file);
@@ -876,7 +881,7 @@ public final class LspManager {
     private final Map<String, java.util.concurrent.ScheduledFuture<?>> pendingEvictions = new ConcurrentHashMap<>();
 
     /** The {@code sessionsByRoot} key currently holding {@code session}, or null (it was dropped). */
-    private String keyOf(LanguageServerSession session) {
+    private @Nullable String keyOf(LanguageServerSession session) {
         for (var e : sessionsByRoot.entrySet()) {
             if (e.getValue() == session) {
                 return e.getKey();
@@ -1006,11 +1011,13 @@ public final class LspManager {
     }
 
     /** TEST SEAM — the session serving {@code file}, so a test can play the server's side of it. */
+    @Nullable
     LanguageServerSession sessionForTest(Path file) {
         return sessionFor(file);
     }
 
     /** TEST SEAM — the command currently configured for {@code serverId} (what the next launch runs). */
+    @Nullable
     String configuredCommandForTest(String serverId) {
         return commands.get(serverId);
     }
@@ -1027,7 +1034,7 @@ public final class LspManager {
     }
 
     /** Current protocol version for an open document, or null when it is not managed. */
-    public Integer documentVersion(Path file) {
+    public @Nullable Integer documentVersion(Path file) {
         if (file == null) {
             return null;
         }
@@ -1066,7 +1073,7 @@ public final class LspManager {
     }
 
     /** A workspace edit ready to apply, or the files that prevented it ({@code mapped} null). */
-    public record EditPlan(WorkspaceEditMapper.Mapped mapped, List<Path> blocked) {
+    public record EditPlan(WorkspaceEditMapper.@Nullable Mapped mapped, List<Path> blocked) {
         static final EditPlan REFUSED = new EditPlan(null, List.of());
     }
 
@@ -1092,7 +1099,7 @@ public final class LspManager {
      *  attached, plus the targets the server did not have open (still to be checked against the disk). */
     private record EditDraft(WorkspaceEditMapper.Mapped mapped, List<Path> closedTargets) {}
 
-    private static EditDraft draftWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
+    private static @Nullable EditDraft draftWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
         WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(edit, basis.uris()::toPath);
         if (mapped == null) {
             return null;
@@ -1198,7 +1205,7 @@ public final class LspManager {
 
     /** The server id currently managing {@code file}, or null if it is not open on any server. Lets the
      *  coordinator detect a server change (e.g. a pom.xml moving to lemminx-maven) and close+reopen. */
-    public String managedServerId(Path file) {
+    public @Nullable String managedServerId(Path file) {
         if (file == null || !servable(file)) {
             return null;
         }
@@ -1231,7 +1238,7 @@ public final class LspManager {
         return serverId + SESSION_KEY_SEP;
     }
 
-    private LanguageServerSession sessionForRoot(Path root, String languageId) {
+    private @Nullable LanguageServerSession sessionForRoot(Path root, String languageId) {
         String serverId = LspServerRegistry.serverIdFor(languageId);
         if (serverId == null) {
             return null;
@@ -1250,11 +1257,11 @@ public final class LspManager {
         // default workspace's .lock. Created on demand; jdtls reuses it across sessions (its index persists).
         // The claim registry (static, spanning windows) suffixes the dir when another window's live session
         // already holds it — see claimJdtlsWorkspaceName (#668).
-        boolean needsJdtlsWorkspace = LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && jdtlsWorkspaceBase != null;
+        Path claimBase = jdtlsWorkspaceBase;
+        boolean needsJdtlsWorkspace = LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && claimBase != null;
         String claimedWorkspace = null;
-        if (needsJdtlsWorkspace && sessionStarterForTest != null) {
-            claimedWorkspace =
-                    claimUsableJdtlsWorkspaceName(jdtlsWorkspaceBase, LspServerRegistry.workspaceDirName(root));
+        if (needsJdtlsWorkspace && sessionStarterForTest != null && claimBase != null) {
+            claimedWorkspace = claimUsableJdtlsWorkspaceName(claimBase, LspServerRegistry.workspaceDirName(root));
         }
         LanguageServerSession[] diagnosticSource = new LanguageServerSession[1];
         LanguageServerSession session = new LanguageServerSession(
@@ -1514,7 +1521,7 @@ public final class LspManager {
      * (evict an idle session), #666 (a crashed session must be dropped, a disposed one must not re-fork),
      * #670 (retain raw diagnostics for open documents only). All of that was verifiable only by hand.
      */
-    private volatile Consumer<LanguageServerSession> sessionStarterForTest;
+    private volatile @Nullable Consumer<LanguageServerSession> sessionStarterForTest;
 
     void setSessionStarterForTest(Consumer<LanguageServerSession> starter) {
         this.sessionStarterForTest = starter;
@@ -1528,7 +1535,7 @@ public final class LspManager {
     }
 
     /** When set, receives every server status instead of the constructor's callback, naming the server. */
-    private volatile ServerStatusListener onServerStatus;
+    private volatile @Nullable ServerStatusListener onServerStatus;
 
     /**
      * Routes server statuses to {@code listener} with the server's id, so a message can say which server it
@@ -1604,7 +1611,7 @@ public final class LspManager {
         return unique;
     }
 
-    private static Path failedWorkspaceMarker(Path base, String name) {
+    private static Path failedWorkspaceMarker(Path base, @Nullable String name) {
         return base.resolve("." + name + ".initialize-failed");
     }
 
@@ -1614,7 +1621,7 @@ public final class LspManager {
     }
 
     /** Releases a claim taken by {@link #claimJdtlsWorkspaceName}. Package-visible for tests. */
-    static void releaseJdtlsWorkspaceName(String name) {
+    static void releaseJdtlsWorkspaceName(@Nullable String name) {
         if (name != null) {
             claimedJdtlsWorkspaces.remove(name);
         }
@@ -1676,7 +1683,7 @@ public final class LspManager {
      * remembered under the session key so the auto-restart waits for it ({@link #awaitPriorExit}) and gets the
      * canonical name back instead of a fresh suffix.
      */
-    void repairAfterExit(String key, CompletableFuture<Void> exited, String workspaceName) {
+    void repairAfterExit(String key, CompletableFuture<Void> exited, @Nullable String workspaceName) {
         Runnable repair = () -> {
             repairFailedJdtlsWorkspace(workspaceName);
             releaseJdtlsWorkspaceName(workspaceName);
@@ -1697,7 +1704,7 @@ public final class LspManager {
 
     /** A jdtls data directory contains only rebuildable Eclipse indexes. After a failed handshake, remove it
      *  if its OS lock is free; otherwise mark it so this and future Editora processes choose a fresh suffix. */
-    private void repairFailedJdtlsWorkspace(String workspaceName) {
+    private void repairFailedJdtlsWorkspace(@Nullable String workspaceName) {
         Path base = jdtlsWorkspaceBase;
         if (base == null) {
             return;
@@ -1838,7 +1845,7 @@ public final class LspManager {
         }
     }
 
-    private LanguageServerSession sessionFor(Path file) {
+    private @Nullable LanguageServerSession sessionFor(Path file) {
         return file == null ? null : sessionByDocUri.get(uri(file));
     }
 
@@ -2022,7 +2029,7 @@ public final class LspManager {
     }
 
     /** The item's documentation as a string (markdown or plain text), or null/blank → null. */
-    private static String documentationOf(CompletionItem item) {
+    private static @Nullable String documentationOf(CompletionItem item) {
         var doc = item.getDocumentation();
         if (doc == null) {
             return null;
@@ -2046,7 +2053,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code signatureHelpProvider} (null-safe). */
-    static boolean signatureHelpProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean signatureHelpProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         return caps != null && caps.getSignatureHelpProvider() != null;
     }
 
@@ -2069,7 +2076,7 @@ public final class LspManager {
     public static final String JAVA_DEBUG_COMMAND = "vscode.java.startDebugSession";
 
     /** Pure: whether {@code caps} advertises the java-debug {@code startDebugSession} command (null-safe). */
-    static boolean providesJavaDebug(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean providesJavaDebug(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null || caps.getExecuteCommandProvider() == null) {
             return false;
         }
@@ -2085,7 +2092,7 @@ public final class LspManager {
     }
 
     /** Pure extraction of signature-help trigger + retrigger characters (null-safe). */
-    static java.util.Set<Character> signatureTriggerCharsOf(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static java.util.Set<Character> signatureTriggerCharsOf(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null || caps.getSignatureHelpProvider() == null) {
             return java.util.Set.of();
         }
@@ -2126,7 +2133,7 @@ public final class LspManager {
             int character,
             String triggerChar,
             boolean retrigger,
-            org.eclipse.lsp4j.SignatureHelp activeHelp,
+            org.eclipse.lsp4j.@Nullable SignatureHelp activeHelp,
             Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
@@ -2152,7 +2159,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code documentHighlightProvider} (null-safe). */
-    static boolean documentHighlightProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean documentHighlightProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return false;
         }
@@ -2214,7 +2221,7 @@ public final class LspManager {
      * nothing at all. Pure. A file written fresh is created then modified: still {@code CREATED}. Created then
      * deleted never existed for the server. Deleted then created (an atomic save) is a change.
      */
-    public static WatchedKind mergeWatched(WatchedKind earlier, WatchedKind later) {
+    public static @Nullable WatchedKind mergeWatched(@Nullable WatchedKind earlier, WatchedKind later) {
         if (earlier == null || later == null) {
             return later == null ? earlier : later;
         }
@@ -2308,7 +2315,7 @@ public final class LspManager {
      * does something else (a "Run | Debug" lens), which is not shown: its command is the server's own
      * editor integration and nothing here could carry it out.
      */
-    static CodeLensKind codeLensKind(org.eclipse.lsp4j.Command command) {
+    static @Nullable CodeLensKind codeLensKind(org.eclipse.lsp4j.Command command) {
         String id = command == null || command.getCommand() == null
                 ? ""
                 : command.getCommand().toLowerCase(java.util.Locale.ROOT);
@@ -2374,7 +2381,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code inlayHintProvider} (null-safe, either form). */
-    static boolean inlayHintProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean inlayHintProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return false;
         }
@@ -2491,7 +2498,13 @@ public final class LspManager {
     /** One hierarchy row: display fields + a navigable position ({@code file} null for a non-file URI,
      *  e.g. a JDK class) + the opaque lsp4j item ({@code raw}) used to expand its children. */
     public record HierarchyNode(
-            String name, String detail, String kindName, Path file, int line, int col, Object raw) {}
+            String name,
+            String detail,
+            String kindName,
+            @Nullable Path file,
+            int line,
+            int col,
+            Object raw) {}
 
     /** True if {@code file}'s server is ready and advertises call hierarchy (#682). */
     public boolean supportsCallHierarchy(Path file) {
@@ -2506,7 +2519,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code callHierarchyProvider} (null-safe). */
-    static boolean callHierarchyProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean callHierarchyProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return false;
         }
@@ -2515,7 +2528,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code typeHierarchyProvider} (null-safe). */
-    static boolean typeHierarchyProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean typeHierarchyProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return false;
         }
@@ -2666,7 +2679,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code renameProvider} (null-safe, either form). */
-    static boolean renameProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean renameProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return false;
         }
@@ -2780,7 +2793,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code codeActionProvider} (null-safe). */
-    static boolean codeActionProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean codeActionProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return false;
         }
@@ -2789,7 +2802,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code documentFormattingProvider} (null-safe). */
-    static boolean formattingProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean formattingProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return false;
         }
@@ -2804,7 +2817,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code documentRangeFormattingProvider} (null-safe). */
-    static boolean rangeFormattingProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean rangeFormattingProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return false;
         }
@@ -2818,7 +2831,7 @@ public final class LspManager {
      * {@code moreTriggerCharacter} list, a distinction that matters to the server and not to us (#740).
      * Empty when the server has no provider, which is also how the feature stays inert for those servers.
      */
-    static java.util.Set<Character> onTypeTriggersOf(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static java.util.Set<Character> onTypeTriggersOf(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null || caps.getDocumentOnTypeFormattingProvider() == null) {
             return java.util.Set.of();
         }
@@ -2963,7 +2976,7 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code documentSymbolProvider} (null-safe). */
-    static boolean documentSymbolProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean documentSymbolProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return false;
         }
@@ -3008,21 +3021,24 @@ public final class LspManager {
     }
 
     /** What a deduplicated request's answer depends on: equal stamps mean the server is asked the same thing. */
-    private record RequestStamp(LanguageServerSession session, Integer version, Object arguments) {}
+    private record RequestStamp(
+            @Nullable LanguageServerSession session,
+            @Nullable Integer version,
+            @Nullable Object arguments) {}
 
-    private static RequestStamp stamp(LanguageServerSession session, String uri, Object arguments) {
+    private static RequestStamp stamp(LanguageServerSession session, String uri, @Nullable Object arguments) {
         return new RequestStamp(session, session.documentVersion(uri), arguments);
     }
 
     // --- folding ranges (#738) / selection ranges (#739) ---------------------------------------------
 
     /** Pure: whether a server's capabilities include {@code foldingRangeProvider} (null-safe). */
-    static boolean foldingRangeProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean foldingRangeProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         return caps != null && eitherTrue(caps.getFoldingRangeProvider());
     }
 
     /** Pure: whether a server's capabilities include {@code selectionRangeProvider} (null-safe). */
-    static boolean selectionRangeProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean selectionRangeProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         return caps != null && eitherTrue(caps.getSelectionRangeProvider());
     }
 
@@ -3090,7 +3106,7 @@ public final class LspManager {
     }
 
     /** Pure: whether the server advertises {@code workspace/symbol} (Boolean or options form). Null-safe. */
-    static boolean workspaceSymbolProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean workspaceSymbolProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         return caps != null && eitherTrue(caps.getWorkspaceSymbolProvider());
     }
 
@@ -3178,8 +3194,8 @@ public final class LspManager {
      * requests (and carries a legend), else {@code null}. Null-safe — gates {@link #requestSemanticTokens},
      * which prefers range (viewport) and falls back to full for range-less servers.
      */
-    static org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions semanticTokensProvider(
-            org.eclipse.lsp4j.ServerCapabilities caps) {
+    static org.eclipse.lsp4j.@Nullable SemanticTokensWithRegistrationOptions semanticTokensProvider(
+            org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null) {
             return null;
         }
@@ -3220,7 +3236,8 @@ public final class LspManager {
     }
 
     /** The document version a whole-document token set was last delivered for, per URI. */
-    private record TokenMark(LanguageServerSession session, Integer version) {}
+    private record TokenMark(
+            LanguageServerSession session, @Nullable Integer version) {}
 
     private final Map<String, TokenMark> wholeDocumentTokens = new ConcurrentHashMap<>();
 
@@ -3262,7 +3279,7 @@ public final class LspManager {
             Consumer<List<com.editora.editor.SemanticToken>> cb) {
         LanguageServerSession s = sessionFor(file);
         var prov = s == null ? null : semanticTokensProvider(s.capabilities());
-        if (prov == null) {
+        if (s == null || prov == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
@@ -3371,12 +3388,13 @@ public final class LspManager {
     private static final String SEMANTIC = "semanticTokens";
 
     private boolean currentSemanticRequest(
-            Path file, LanguageServerSession session, String uri, long requestGeneration) {
+            Path file, @Nullable LanguageServerSession session, String uri, long requestGeneration) {
         return sessionFor(file) == session
                 && java.util.Objects.equals(semanticRequestGeneration.get(uri), requestGeneration);
     }
 
-    private void rememberTokenState(LanguageServerSession session, String uri, String resultId, List<Integer> data) {
+    private void rememberTokenState(
+            LanguageServerSession session, String uri, @Nullable String resultId, List<Integer> data) {
         if (resultId != null && data != null) {
             semanticTokenState.put(uri, new TokenState(session, resultId, List.copyOf(data)));
         } else {
@@ -3489,17 +3507,17 @@ public final class LspManager {
     }
 
     /** Pure: whether a server's capabilities include {@code implementationProvider} (null-safe). */
-    static boolean implementationProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean implementationProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         return caps != null && eitherTrue(caps.getImplementationProvider());
     }
 
     /** Pure: whether a server's capabilities include {@code typeDefinitionProvider} (null-safe). */
-    static boolean typeDefinitionProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean typeDefinitionProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         return caps != null && eitherTrue(caps.getTypeDefinitionProvider());
     }
 
     /** Pure: whether a server's capabilities include {@code declarationProvider} (null-safe). */
-    static boolean declarationProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static boolean declarationProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         return caps != null && eitherTrue(caps.getDeclarationProvider());
     }
 
@@ -3516,13 +3534,17 @@ public final class LspManager {
     }
 
     private void requestDefinition(
-            LanguageServerSession s, String documentUri, int line, int character, Consumer<List<Target>> cb) {
+            @Nullable LanguageServerSession s,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb) {
         requestLocations(s, documentUri, line, character, LanguageServerSession::definition, cb);
     }
 
     private void requestLocations(
-            LanguageServerSession s,
-            String documentUri,
+            @Nullable LanguageServerSession s,
+            @Nullable String documentUri,
             int line,
             int character,
             LocationRequest request,
@@ -3579,14 +3601,14 @@ public final class LspManager {
     }
 
     /** The command id an opaque code-action payload carries, or null (#741). */
-    public static String commandIdOf(Object raw) {
+    public static @Nullable String commandIdOf(Object raw) {
         org.eclipse.lsp4j.Command cmd = commandOf(raw);
         return cmd == null ? null : cmd.getCommand();
     }
 
     /** The single argument a {@code java.action.*Prompt} command carries — the original
      *  {@code CodeActionParams}, which the follow-up {@code java/…} requests are addressed with (#741). */
-    public static Object commandArgument(Object raw) {
+    public static @Nullable Object commandArgument(Object raw) {
         org.eclipse.lsp4j.Command cmd = commandOf(raw);
         List<Object> args = cmd == null ? null : cmd.getArguments();
         return args == null || args.isEmpty() ? null : args.get(0);
@@ -3606,7 +3628,7 @@ public final class LspManager {
         return out;
     }
 
-    private static org.eclipse.lsp4j.Command commandOf(Object raw) {
+    private static org.eclipse.lsp4j.@Nullable Command commandOf(Object raw) {
         if (raw instanceof org.eclipse.lsp4j.Command cmd) {
             return cmd;
         }
@@ -3960,7 +3982,7 @@ public final class LspManager {
     }
 
     /** Pure extraction of completion trigger characters from a server's capabilities (null-safe). */
-    static java.util.Set<Character> triggerCharsOf(org.eclipse.lsp4j.ServerCapabilities caps) {
+    static java.util.Set<Character> triggerCharsOf(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         if (caps == null || caps.getCompletionProvider() == null) {
             return java.util.Set.of();
         }
@@ -3999,7 +4021,7 @@ public final class LspManager {
     }
 
     static Map<String, Object> javaInitOptions(
-            List<String> debugBundles, boolean onTypeFormatting, List<JavaRuntimes.Jdk> jdks) {
+            List<String> debugBundles, boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks) {
         Map<String, Object> options = new java.util.HashMap<>();
         options.put("settings", Map.of("java", javaSettings(onTypeFormatting, jdks)));
         return finishJavaInitOptions(options, debugBundles);
@@ -4018,7 +4040,7 @@ public final class LspManager {
      * importing" for a project that had imported perfectly. Declaring the real runtimes also gives jdtls a
      * sane default to fall back to when a project's exact release isn't installed at all.
      */
-    private static Map<String, Object> javaSettings(boolean onTypeFormatting, List<JavaRuntimes.Jdk> jdks) {
+    private static Map<String, Object> javaSettings(boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks) {
         Map<String, Object> java = new java.util.HashMap<>();
         java.put("autobuild", Map.of("enabled", false));
         // jdtls registers textDocument/onTypeFormatting dynamically, and only while this preference is on.
@@ -4112,33 +4134,33 @@ public final class LspManager {
      *       first place.</li>
      * </ul>
      */
-    static Object initOptionsFor(String serverId, List<String> debugBundles) {
+    static @Nullable Object initOptionsFor(String serverId, List<String> debugBundles) {
         return initOptionsFor(serverId, debugBundles, null, false);
     }
 
     /** {@code astroTsdk} is the SDK {@link #astroTypeScriptSdk} chose; it is only read for the Astro server. */
-    static Object initOptionsFor(
-            String serverId, List<String> debugBundles, Path astroTsdk, boolean javaOnTypeFormatting) {
+    static @Nullable Object initOptionsFor(
+            String serverId, List<String> debugBundles, @Nullable Path astroTsdk, boolean javaOnTypeFormatting) {
         return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, null);
     }
 
     /** As above; {@code jdks} are the JDKs jdtls is told about (null: this machine's, discovered now). */
-    static Object initOptionsFor(
+    static @Nullable Object initOptionsFor(
             String serverId,
             List<String> debugBundles,
-            Path astroTsdk,
+            @Nullable Path astroTsdk,
             boolean javaOnTypeFormatting,
-            List<JavaRuntimes.Jdk> jdks) {
+            @Nullable List<JavaRuntimes.Jdk> jdks) {
         return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, jdks, false);
     }
 
     /** As above; {@code mavenCentralIndex} lets lemminx-maven download and use the Maven Central index. */
-    static Object initOptionsFor(
+    static @Nullable Object initOptionsFor(
             String serverId,
             List<String> debugBundles,
-            Path astroTsdk,
+            @Nullable Path astroTsdk,
             boolean javaOnTypeFormatting,
-            List<JavaRuntimes.Jdk> jdks,
+            @Nullable List<JavaRuntimes.Jdk> jdks,
             boolean mavenCentralIndex) {
         return switch (serverId == null ? "" : serverId) {
             case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting, jdks);
@@ -4225,7 +4247,7 @@ public final class LspManager {
      * (PATH and disk).
      */
     static TypeScriptServer.Choice typeScriptChoice(
-            Path root, Path trustedCeiling, List<String> command, boolean loose) {
+            Path root, @Nullable Path trustedCeiling, List<String> command, boolean loose) {
         Path trusted = trustedCeiling == null || loose ? null : TypeScriptServer.findTsserver(root, trustedCeiling);
         Path any = loose ? null : TypeScriptServer.findTsserver(root, null);
         Path executable = typeScriptServerExecutable(command);
@@ -4241,7 +4263,7 @@ public final class LspManager {
      * Where typescript-language-server itself is, links followed: the command's word naming it (a custom command
      * may run it through {@code node} or a wrapper), else the command's program. Null when it cannot be found.
      */
-    public static Path typeScriptServerExecutable(List<String> command) {
+    public static @Nullable Path typeScriptServerExecutable(List<String> command) {
         if (command == null || command.isEmpty()) {
             return null;
         }
@@ -4265,7 +4287,7 @@ public final class LspManager {
     }
 
     /** The bin folder of the Node.js a root's Node tools run with (Settings, .nvmrc, PATH), or null. */
-    private static Path nodeBinDir(Path root, String nodeSetting) {
+    private static @Nullable Path nodeBinDir(Path root, String nodeSetting) {
         try {
             return com.editora.run.NodeRuntimes.resolveLocal(root.resolve("package.json"), null, "", nodeSetting)
                     .binDir()
@@ -4279,7 +4301,7 @@ public final class LspManager {
      * The topmost ancestor of {@code root} (or {@code root} itself) that is still trusted — how far up a
      * search for project-supplied code may go — or {@code null} when {@code root} is not trusted at all.
      */
-    static Path trustedCeiling(Path root, java.util.function.Predicate<Path> trusted) {
+    static @Nullable Path trustedCeiling(Path root, java.util.function.Predicate<Path> trusted) {
         if (root == null || trusted == null) {
             return null;
         }
@@ -4302,7 +4324,7 @@ public final class LspManager {
      * folder with neither gets its deterministic project-local path, which produces Astro's own clear
      * "can't find TypeScript" error; an untrusted one gets {@code null} — the server is not started.
      */
-    static Path astroTypeScriptSdk(Path root, Path trustedCeiling, List<String> command) {
+    static @Nullable Path astroTypeScriptSdk(Path root, @Nullable Path trustedCeiling, List<String> command) {
         if (trustedCeiling != null) {
             Path projectSdk = findTypeScriptSdk(root, trustedCeiling);
             if (projectSdk != null) {
@@ -4337,7 +4359,7 @@ public final class LspManager {
      * The first {@code node_modules/typescript/lib} walking up from {@code start}; {@code ceiling}, when
      * given, is the last directory looked at. Public for the trust prompt, which lists what trusting adds.
      */
-    public static Path findTypeScriptSdk(Path start, Path ceiling) {
+    public static @Nullable Path findTypeScriptSdk(@Nullable Path start, @Nullable Path ceiling) {
         Path stop = ceiling == null ? null : ceiling.toAbsolutePath().normalize();
         for (Path dir = start == null ? null : start.toAbsolutePath().normalize(); dir != null; dir = dir.getParent()) {
             if (stop != null && !dir.startsWith(stop)) {
@@ -4580,7 +4602,7 @@ public final class LspManager {
         return name != null ? name : serverId;
     }
 
-    private String managedDocumentUri(LanguageServerSession source, Path file, String reportedUri) {
+    private @Nullable String managedDocumentUri(LanguageServerSession source, Path file, String reportedUri) {
         if (sessionByDocUri.get(reportedUri) == source) {
             return reportedUri;
         }
@@ -4684,7 +4706,7 @@ public final class LspManager {
             JsonElement checkResponse,
             Map<Path, String> expectedAtAction,
             List<JdtlsGenerate.Candidate> chosen,
-            List<JdtlsGenerate.Candidate> chosenConstructors,
+            @Nullable List<JdtlsGenerate.Candidate> chosenConstructors,
             Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || kind == null) {
@@ -4762,7 +4784,7 @@ public final class LspManager {
     }
 
     /** The raw result as gson, or null — the custom {@code java/…} requests answer as untyped JSON. */
-    public static com.google.gson.JsonElement asJson(Object raw) {
+    public static com.google.gson.@Nullable JsonElement asJson(@Nullable Object raw) {
         if (raw instanceof com.google.gson.JsonElement json) {
             return json;
         }
@@ -4847,7 +4869,7 @@ public final class LspManager {
      * LSP4J's own gson, whose adapters are what read the {@code Either}s inside {@code documentChanges}. A
      * plain gson cannot, so an answer in that shape was dropped as "nothing generated".
      */
-    private static org.eclipse.lsp4j.WorkspaceEdit asWorkspaceEdit(Object raw) {
+    private static org.eclipse.lsp4j.@Nullable WorkspaceEdit asWorkspaceEdit(@Nullable Object raw) {
         try {
             com.google.gson.JsonElement json = asJson(raw);
             return json == null || !json.isJsonObject()
@@ -4918,7 +4940,7 @@ public final class LspManager {
     }
 
     /** A command result that is (or wraps) a boolean, else null. */
-    private static Boolean asBoolean(Object raw) {
+    private static @Nullable Boolean asBoolean(Object raw) {
         if (raw instanceof Boolean b) {
             return b;
         }
@@ -5257,7 +5279,7 @@ public final class LspManager {
 
     /** The string payload of a raw (untyped) JSON-RPC response — lsp4j decodes an unknown method's result
      *  as a gson element, so accept both. Null for anything else. */
-    static String rawStringResult(Object r) {
+    static @Nullable String rawStringResult(Object r) {
         if (r instanceof String s) {
             return s;
         }
@@ -5307,7 +5329,7 @@ public final class LspManager {
      * The file a URI answered by {@code anchorFile}'s server names, or {@code null} when it is not a file
      * (a {@code jdt:} class file, say).
      */
-    public Path pathForServerUri(Path anchorFile, String uri) {
+    public @Nullable Path pathForServerUri(Path anchorFile, String uri) {
         LanguageServerSession s = sessionFor(anchorFile);
         return (s == null ? WireUris.LOCAL : s.uris()).toPath(uri);
     }

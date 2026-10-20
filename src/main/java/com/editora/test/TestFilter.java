@@ -4,6 +4,8 @@ import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What the Test Results tree shows: which status buckets are visible, plus a case-insensitive substring
  * query over a test's own name. Pure and toolkit-free — {@code TestRunnerPanel} only wires it to the tree
@@ -45,7 +47,7 @@ public record TestFilter(Set<Bucket> buckets, String query) {
     }
 
     /** The bucket a status belongs to, or {@code null} for {@link TestStatus#RUNNING} (never filtered). */
-    public static Bucket bucketOf(TestStatus status) {
+    public static @Nullable Bucket bucketOf(TestStatus status) {
         return switch (status) {
             case PASSED -> Bucket.PASSED;
             case FAILED, ERROR -> Bucket.FAILED;
@@ -125,7 +127,7 @@ public record TestFilter(Set<Bucket> buckets, String query) {
                 || (test.parent() != null && contains(test.parent().displayName(), q));
     }
 
-    private static boolean contains(String haystack, String lowerNeedle) {
+    private static boolean contains(@Nullable String haystack, String lowerNeedle) {
         return haystack != null && haystack.toLowerCase(Locale.ROOT).contains(lowerNeedle);
     }
 }

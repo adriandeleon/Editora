@@ -8,6 +8,7 @@ import java.util.Set;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What to tell the user about a request a language server answered with an <em>error</em> — the decision behind
@@ -44,7 +45,7 @@ final class RequestErrorTracker {
     }
 
     /** The {@link ResponseError} behind a failed request's throwable (unwrapping completion wrappers), or null. */
-    static ResponseError responseError(Throwable error) {
+    static @Nullable ResponseError responseError(Throwable error) {
         Throwable t = error;
         for (int i = 0; t != null && i < 8; i++) {
             if (t instanceof ResponseErrorException re) {

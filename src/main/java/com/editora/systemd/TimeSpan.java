@@ -5,6 +5,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses and describes systemd time spans (used by monotonic timers + {@code RestartSec=} etc.): a sequence
  * of {@code <number><unit>} tokens such as {@code 15min}, {@code 1h 30min}, {@code 2d}, or a bare number of
@@ -117,7 +119,7 @@ public final class TimeSpan {
         return bySize.values();
     }
 
-    private static String plural(String unit, long n) {
+    private static @Nullable String plural(@Nullable String unit, long n) {
         return n == 1 ? unit : unit + "s";
     }
 }

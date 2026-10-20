@@ -20,6 +20,7 @@ import javafx.scene.text.TextFlow;
 
 import com.editora.pdf.PdfText;
 import com.editora.pdf.PdfTheme;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds printable JavaFX page nodes for source code — the {@code javafx.print} analog of
@@ -121,7 +122,7 @@ public final class CodePrintLayout {
             double ph,
             boolean lineNumbers,
             Font mono,
-            PageFooter footer,
+            @Nullable PageFooter footer,
             int firstLineNumber) {
         double charW = charWidth(mono);
         double lineH = Math.ceil(mono.getSize() * LINE_SPACING);

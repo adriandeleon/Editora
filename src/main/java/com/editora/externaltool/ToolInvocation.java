@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.run.ProgramArgs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A resolved, ready-to-run external-tool invocation, built purely from an {@link ExternalTool} + a
@@ -24,7 +25,8 @@ import com.editora.run.ProgramArgs;
  * @param stdin text to pipe to stdin, or {@code null} for none
  * @param displayCommand the argv joined with spaces, for console/status display
  */
-public record ToolInvocation(List<String> argv, Path workingDir, String stdin, String displayCommand) {
+public record ToolInvocation(
+        List<String> argv, Path workingDir, @Nullable String stdin, String displayCommand) {
 
     public static ToolInvocation of(ExternalTool tool, ToolContext ctx, Path defaultDir) {
         List<String> argv = new ArrayList<>();

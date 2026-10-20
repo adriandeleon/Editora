@@ -10,6 +10,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Maps key-chord sequences (e.g. {@code "C-x C-s"}) to command ids. A named keymap is loaded from a
@@ -65,11 +66,11 @@ public class KeymapManager {
     /** The platform the keymap was loaded for; decides chord notation and which chords are typable. */
     private boolean mac = isMac();
     /** A configured name that was not a bundled keymap and has not been reported yet (see {@link #takeUnknownName}). */
-    private String unknownName;
+    private @Nullable String unknownName;
     /** The unknown name already handed out, so reloading the same bad setting does not report it again. */
-    private String reportedUnknown;
+    private @Nullable String reportedUnknown;
     /** command id -> the chord to show for it, formatted; rebuilt lazily after the bindings change. */
-    private Map<String, String> displayChords;
+    private @Nullable Map<String, String> displayChords;
 
     /**
      * Loads the named bundled keymap as the base, replacing current bindings. On macOS a
@@ -157,7 +158,7 @@ public class KeymapManager {
     }
 
     /** The command id bound exactly to the given chord sequence, or null. */
-    public String commandFor(String sequence) {
+    public @Nullable String commandFor(String sequence) {
         return bindings.get(sequence);
     }
 
@@ -190,7 +191,7 @@ public class KeymapManager {
      * The configured keymap name that could not be loaded, exactly once per bad name: the caller reports it
      * (status bar + message log) and later calls return null until a different unknown name is configured.
      */
-    public String takeUnknownName() {
+    public @Nullable String takeUnknownName() {
         String name = unknownName;
         unknownName = null;
         if (name == null || name.equals(reportedUnknown)) {
@@ -205,7 +206,7 @@ public class KeymapManager {
      * binding in keymap order that can be typed on this platform (so never {@code Cmd-…} on Windows/Linux),
      * falling back to the first binding of any kind.
      */
-    public String chordFor(String commandId) {
+    public @Nullable String chordFor(String commandId) {
         String fallback = null;
         for (Map.Entry<String, String> e : bindings.entrySet()) {
             if (e.getValue().equals(commandId)) {
@@ -226,7 +227,7 @@ public class KeymapManager {
     }
 
     /** The formatted chord to show for {@code commandId}, or null when it is unbound. */
-    public String displayChord(String commandId) {
+    public @Nullable String displayChord(String commandId) {
         return displayChords().get(commandId);
     }
 

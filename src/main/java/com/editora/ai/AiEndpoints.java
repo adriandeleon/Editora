@@ -2,6 +2,8 @@ package com.editora.ai;
 
 import java.net.URI;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Endpoint-safety checks for the AI credential: would attaching the API key to a given endpoint put it on
  * the wire in cleartext? Plain-http <em>loopback</em> is the intended local-inference path
@@ -78,7 +80,7 @@ public final class AiEndpoints {
         return h.matches("127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}"); // 127.0.0.0/8
     }
 
-    private static URI parse(String endpoint) {
+    private static @Nullable URI parse(String endpoint) {
         if (endpoint == null || endpoint.isBlank()) {
             return null;
         }

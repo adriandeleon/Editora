@@ -8,6 +8,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A planned Node.js launch — Run File on a {@code .js/.mjs/.cjs/.ts/.mts/.cts} file or a {@code node}-shebang
  * script, a {@code node} run configuration, or a test file's ▶ ({@code node --test}). Pure: the caller resolves
@@ -32,7 +34,11 @@ import java.util.function.Predicate;
  * @param chdir an {@code env -C DIR} folder from the shebang, else null
  * @param error an i18n key when the file cannot run as planned, else null
  */
-public record NodeRunPlan(List<String> argv, Map<String, String> env, String chdir, String error) {
+public record NodeRunPlan(
+        List<String> argv,
+        Map<String, String> env,
+        @Nullable String chdir,
+        @Nullable String error) {
 
     /** i18n key: a TypeScript file on a Node too old to strip types. */
     public static final String NEEDS_STRIP = "status.run.nodeNeedsTypeStripping";

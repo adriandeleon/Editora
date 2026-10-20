@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested auto-close-tag core (the VS Code "auto closing tags" behavior): when the user
  * types the {@code >} that completes an HTML/XML open tag, {@link #closer} returns the matching
@@ -28,7 +30,7 @@ public final class TagAutoClose {
      * quote state only applies <i>within</i> a tag, so an apostrophe in text content (or a
      * {@code >}/{@code <} inside a closed attribute string earlier on) can't derail it.
      */
-    public static String closer(String beforeCaret, boolean html) {
+    public static @Nullable String closer(String beforeCaret, boolean html) {
         int n = beforeCaret.length();
         int tagStart = -1; // position of the '<' the caret is inside, -1 = in text content
         char quote = 0;
@@ -124,7 +126,7 @@ public final class TagAutoClose {
     }
 
     /** {@code "script"}/{@code "style"} when the tag starting at {@code lt} opens that raw-text element, else null. */
-    private static String rawTextElement(String s, int lt) {
+    private static @Nullable String rawTextElement(String s, int lt) {
         for (String name : TagRename.RAW_TEXT_ELEMENTS) {
             int end = lt + 1 + name.length();
             if (s.regionMatches(true, lt + 1, name, 0, name.length())

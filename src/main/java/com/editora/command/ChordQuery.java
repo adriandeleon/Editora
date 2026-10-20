@@ -6,6 +6,8 @@ import java.util.Map;
 
 import javafx.scene.input.KeyCode;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Reads a chord the user typed into a search field, in any of the notations Editora shows — {@code Ctrl+Shift+S},
  * {@code C-S-s}, {@code ⇧⌘S}, {@code Cmd+S}, a sequence such as {@code Ctrl+K Ctrl+W} or {@code C-x C-s} — and
@@ -39,7 +41,7 @@ public final class ChordQuery {
     private ChordQuery() {}
 
     /** The chord sequence {@code text} names, in keymap tokens, or null when it is not one. */
-    public static String parse(String text) {
+    public static @Nullable String parse(String text) {
         if (text == null || text.isBlank()) {
             return null;
         }
@@ -58,7 +60,7 @@ public final class ChordQuery {
     }
 
     /** One chord: modifiers as {@code Ctrl+}, {@code C-} or ⌃⌥⇧⌘ glyphs, then a key. */
-    private static String token(String part) {
+    private static @Nullable String token(String part) {
         boolean ctrl = false;
         boolean alt = false;
         boolean cmd = false;

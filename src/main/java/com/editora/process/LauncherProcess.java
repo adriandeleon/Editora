@@ -10,6 +10,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A command started elsewhere through a local launcher ({@code docker exec}, {@code wsl.exe}): the
  * launcher's streams are the program's, its exit is the program's exit. The command is a
@@ -36,9 +38,10 @@ public final class LauncherProcess extends RemoteProcess {
     private final Process client;
     private final long pid;
     private final Signaller signaller;
-    private final Recorder recorder;
+    private final @Nullable Recorder recorder;
 
-    private LauncherProcess(String targetId, Process client, long pid, Signaller signaller, Recorder recorder) {
+    private LauncherProcess(
+            String targetId, Process client, long pid, Signaller signaller, @Nullable Recorder recorder) {
         this.targetId = targetId;
         this.client = client;
         this.pid = pid;
@@ -58,7 +61,7 @@ public final class LauncherProcess extends RemoteProcess {
      * @param recorder how the next Editora finds the program after a crash ({@link #orphanRecord}), or null
      */
     public static LauncherProcess start(
-            String targetId, Process client, Duration timeout, Signaller signaller, Recorder recorder)
+            String targetId, Process client, Duration timeout, Signaller signaller, @Nullable Recorder recorder)
             throws IOException {
         AtomicBoolean started = new AtomicBoolean();
         Thread.ofVirtual().name("launcher-start-timeout").start(() -> {
@@ -139,7 +142,7 @@ public final class LauncherProcess extends RemoteProcess {
      * the recorder says how the next one finds it ({@link ProcessRegistry#reapOrphans}).
      */
     @Override
-    public java.util.List<String> orphanRecord() {
+    public java.util.@Nullable List<String> orphanRecord() {
         if (recorder == null || !client.isAlive()) {
             return null;
         }

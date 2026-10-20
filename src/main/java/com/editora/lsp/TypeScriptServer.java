@@ -10,6 +10,8 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What Editora tells typescript-language-server: which {@code tsserver} it runs, its
  * {@code initializationOptions}, and its {@code javascript}/{@code typescript} settings.
@@ -49,7 +51,7 @@ public final class TypeScriptServer {
      * {@link Outcome#WORKSPACE}/{@link Outcome#INSTALLED}); {@code installedVersion} is the version of the
      * {@code typescript} package found beside the server even when it has no tsserver ("7.0.2"), or "".
      */
-    public record Choice(Outcome outcome, Path tsserver, String installedVersion) {
+    public record Choice(Outcome outcome, @Nullable Path tsserver, String installedVersion) {
         public boolean starts() {
             return tsserver != null;
         }
@@ -65,7 +67,11 @@ public final class TypeScriptServer {
      * @param loose whether this is the shared session for loose files, which never uses a folder's TypeScript
      */
     public static Choice choose(
-            Path trustedWorkspace, Path anyWorkspace, Path installed, String installedVersion, boolean loose) {
+            @Nullable Path trustedWorkspace,
+            @Nullable Path anyWorkspace,
+            @Nullable Path installed,
+            String installedVersion,
+            boolean loose) {
         String version = installedVersion == null ? "" : installedVersion;
         if (!loose && trustedWorkspace != null) {
             return new Choice(Outcome.WORKSPACE, trustedWorkspace, version);
@@ -84,11 +90,11 @@ public final class TypeScriptServer {
      * when given, is the last folder looked at. Null when there is none. A TypeScript 7 package (no tsserver)
      * does not count.
      */
-    public static Path findTsserver(Path start, Path ceiling) {
+    public static @Nullable Path findTsserver(Path start, @Nullable Path ceiling) {
         return findTsserver(start, ceiling, Files::isRegularFile);
     }
 
-    static Path findTsserver(Path start, Path ceiling, Predicate<Path> isFile) {
+    static @Nullable Path findTsserver(Path start, @Nullable Path ceiling, Predicate<Path> isFile) {
         if (start == null) {
             return null;
         }
@@ -111,12 +117,12 @@ public final class TypeScriptServer {
      * folder meets its own {@code node_modules}, then the global {@code lib/node_modules} the {@code typescript}
      * package sits in — how Node itself would resolve {@code typescript} from there.
      */
-    public static Path installedTsserver(Path executable) {
+    public static @Nullable Path installedTsserver(@Nullable Path executable) {
         return executable == null || executable.getParent() == null ? null : findTsserver(executable.getParent(), null);
     }
 
     /** The version of the {@code typescript} package beside the server (any version, tsserver or not), or "". */
-    public static String installedPackageVersion(Path executable) {
+    public static String installedPackageVersion(@Nullable Path executable) {
         if (executable == null || executable.getParent() == null) {
             return "";
         }
@@ -164,7 +170,8 @@ public final class TypeScriptServer {
      * turned it on — it runs {@code npm install} against the registry, Node review B4), and for the shared
      * loose-files session no separate syntax server (one tsserver instead of two, review B7).
      */
-    public static Map<String, Object> initializationOptions(Path tsserver, boolean typeAcquisition, boolean loose) {
+    public static Map<String, Object> initializationOptions(
+            @Nullable Path tsserver, boolean typeAcquisition, boolean loose) {
         Map<String, Object> options = new LinkedHashMap<>();
         Map<String, Object> server = new LinkedHashMap<>();
         if (tsserver != null) {
@@ -211,7 +218,7 @@ public final class TypeScriptServer {
      * indentation for {@code formattingOptions} (else tsserver formats quick fixes and refactorings with its
      * 4-space default, Node review B8); null for anything else.
      */
-    public static Object answer(String section, FormattingIndent indent) {
+    public static @Nullable Object answer(String section, @Nullable FormattingIndent indent) {
         if ("formattingOptions".equals(section) && indent != null) {
             Map<String, Object> options = new HashMap<>();
             options.put("tabSize", indent.tabSize());

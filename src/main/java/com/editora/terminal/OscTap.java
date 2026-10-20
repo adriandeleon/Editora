@@ -25,6 +25,11 @@ final class OscTap {
         void promptMark(char kind, String params);
     }
 
+    /** An event found between pieces of text, handed to the listener {@link #next} is given. */
+    private interface Event {
+        void deliver(Listener listener);
+    }
+
     /** Longest OSC kept while deciding whether it is ours; a longer one is passed on as it is. */
     static final int MAX_SEQUENCE = 4096;
 
@@ -118,9 +123,9 @@ final class OscTap {
      */
     int next(char[] into, int offset, int length, Listener listener) {
         Object head = queue.peekFirst();
-        if (head instanceof Runnable event) {
+        if (head instanceof Event event) {
             queue.pollFirst();
-            deliver(event, listener);
+            event.deliver(listener);
             return 0;
         }
         StringBuilder chunk = (StringBuilder) head;
@@ -133,17 +138,6 @@ final class OscTap {
         return n;
     }
 
-    private Listener current;
-
-    private void deliver(Runnable event, Listener listener) {
-        current = listener;
-        try {
-            event.run();
-        } finally {
-            current = null;
-        }
-    }
-
     /** An OSC ended with {@code terminator}: ours becomes an event, anything else goes on as it came. */
     private void finish(String terminator) {
         String body = sequence.toString();
@@ -153,13 +147,13 @@ final class OscTap {
         String rest = semi < 0 ? "" : body.substring(semi + 1);
         if (number.equals("7")) {
             flushText();
-            queue.addLast((Runnable) () -> current.cwd(rest));
+            queue.addLast((Event) listener -> listener.cwd(rest));
         } else if (number.equals("133") && !rest.isEmpty()) {
             flushText();
             int more = rest.indexOf(';');
             char kind = rest.charAt(0);
             String params = more < 0 ? "" : rest.substring(more + 1);
-            queue.addLast((Runnable) () -> current.promptMark(kind, params));
+            queue.addLast((Event) listener -> listener.promptMark(kind, params));
         } else {
             text.append(ESC).append(']').append(body).append(terminator);
         }

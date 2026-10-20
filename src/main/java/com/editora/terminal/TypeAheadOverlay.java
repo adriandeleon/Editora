@@ -5,6 +5,7 @@ import java.util.concurrent.TimeUnit;
 import com.jediterm.core.typeahead.TypeAheadTerminalModel;
 import com.jediterm.terminal.model.JediTerminal;
 import com.jediterm.terminal.model.TerminalTextBuffer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Type-ahead: keystrokes painted before the shell echoes them, so typing over a slow link feels local.
@@ -31,7 +32,7 @@ public final class TypeAheadOverlay implements TypeAheadTerminalModel {
     private final TerminalTextBuffer buffer;
     private final Runnable repaint;
     private volatile boolean enabled;
-    private StringBuilder predicted;
+    private @Nullable StringBuilder predicted;
     private int predictedRow;
 
     public TypeAheadOverlay(JediTerminal terminal, TerminalTextBuffer buffer, Runnable repaint) {
@@ -45,7 +46,7 @@ public final class TypeAheadOverlay implements TypeAheadTerminalModel {
     }
 
     /** What to paint, or null: predictions only count on the row the cursor is still on. Caller holds the lock. */
-    public Prediction prediction() {
+    public @Nullable Prediction prediction() {
         StringBuilder text = predicted;
         return text == null || predictedRow != cursorRow() ? null : new Prediction(predictedRow, text.toString());
     }

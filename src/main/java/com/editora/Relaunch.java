@@ -7,6 +7,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Starting Editora again after it quits ("Restart now" for a setting that applies only at startup).
  *
@@ -22,7 +24,7 @@ public final class Relaunch {
     static final String WAIT_FOR = "EDITORA_RELAUNCH_WAIT_PID";
 
     private static final Logger LOG = Logger.getLogger(Relaunch.class.getName());
-    private static volatile List<String> armed;
+    private static volatile @Nullable List<String> armed;
     private static volatile boolean hooked;
 
     private Relaunch() {}

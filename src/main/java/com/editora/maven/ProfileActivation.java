@@ -3,6 +3,7 @@ package com.editora.maven;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Element;
 
 /**
@@ -34,7 +35,7 @@ public record ProfileActivation(boolean activeByDefault, List<String> conditions
     }
 
     /** Reads a {@code <activation>} element (null ⇒ {@link #NONE}). */
-    public static ProfileActivation of(Element activation) {
+    public static ProfileActivation of(@Nullable Element activation) {
         if (activation == null) {
             return NONE;
         }

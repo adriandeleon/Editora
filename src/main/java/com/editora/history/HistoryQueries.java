@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import com.editora.config.HistoryRevision;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure, unit-tested queries over the Local File History (filtering, cross-file aggregation). Kept free of any
@@ -32,7 +33,7 @@ public final class HistoryQueries {
      * ({@code AUTOSAVE}); a user filters by the word in front of them, and in a translated UI the identifier
      * matches nothing they can see. The identifier keeps matching too. {@code reasonLabel} may be null.
      */
-    public static boolean matches(HistoryRevision r, String query, String reasonLabel) {
+    public static boolean matches(HistoryRevision r, String query, @Nullable String reasonLabel) {
         if (query == null || query.isBlank()) {
             return true;
         }
@@ -43,7 +44,7 @@ public final class HistoryQueries {
         return contains(r.label(), q) || contains(r.reason(), q) || contains(reasonLabel, q);
     }
 
-    private static boolean contains(String haystack, String lowerNeedle) {
+    private static boolean contains(@Nullable String haystack, String lowerNeedle) {
         return haystack != null && haystack.toLowerCase(Locale.ROOT).contains(lowerNeedle);
     }
 

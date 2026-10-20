@@ -8,9 +8,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import com.editora.config.PathDisplay;
 import com.editora.process.ProcessRunner;
 import com.pty4j.PtyProcess;
 import com.pty4j.PtyProcessBuilder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Chooses the shell to run and starts it attached to a pseudo-terminal.
@@ -75,7 +77,7 @@ public final class LocalShell {
     }
 
     /** The override as a command line, or null when it is blank or cannot be run. */
-    static List<String> overrideCommand(String override) {
+    static @Nullable List<String> overrideCommand(String override) {
         if (override == null || override.isBlank()) {
             return null;
         }
@@ -89,7 +91,7 @@ public final class LocalShell {
         if (words.length > 1) {
             command.addAll(List.of(words).subList(1, words.length));
         } else {
-            String name = Path.of(program).getFileName().toString().toLowerCase(Locale.ROOT);
+            String name = PathDisplay.fileName(Path.of(program)).toLowerCase(Locale.ROOT);
             boolean loginShell = !isWindows() || name.equals("bash.exe") || name.equals("zsh.exe");
             if (loginShell) command.add("-l");
         }
@@ -97,7 +99,7 @@ public final class LocalShell {
     }
 
     /** A program named by a path, or by a name found on PATH; null when it is neither. */
-    private static String resolveProgram(String word) {
+    private static @Nullable String resolveProgram(String word) {
         try {
             Path path = Path.of(word);
             if (path.isAbsolute() || word.contains("/") || word.contains(java.io.File.separator)) {
@@ -114,7 +116,7 @@ public final class LocalShell {
     }
 
     /** Why the shell setting is not used (null when it is, or is blank), for the status line. */
-    public static String overrideProblem(String override) {
+    public static @Nullable String overrideProblem(String override) {
         if (override == null || override.isBlank() || overrideCommand(override) != null) {
             return null;
         }
@@ -136,7 +138,7 @@ public final class LocalShell {
         return System.getProperty("user.home");
     }
 
-    private static String findOnPath(String exe) {
+    private static @Nullable String findOnPath(String exe) {
         String path = System.getenv("PATH");
         if (path == null) return null;
         for (String dir : path.split(java.io.File.pathSeparator)) {
@@ -240,7 +242,8 @@ public final class LocalShell {
      * {@link ShellIntegration}); any other command, or a null folder, starts as it is.
      */
     public static LocalPtyConnector start(
-            List<String> command, String directory, int columns, int rows, Path integration) throws IOException {
+            List<String> command, String directory, int columns, int rows, @Nullable Path integration)
+            throws IOException {
         List<String> login = command == null || command.isEmpty() ? shellCommand() : command;
         Map<String, String> env = environment();
         List<String> argv = integrated(login, integration, env);
@@ -304,14 +307,14 @@ public final class LocalShell {
      * {@code ZDOTDIR} kept in {@code USER_ZDOTDIR}. Anything else is returned as it is. Pure apart from reading
      * whether the scripts exist; adds to {@code env}.
      */
-    static List<String> integrated(List<String> login, Path integration, Map<String, String> env) {
+    static List<String> integrated(List<String> login, @Nullable Path integration, Map<String, String> env) {
         // Not on Windows: Git Bash given as the shell starts as a login shell, but the scripts' paths are this
         // machine's, which it does not read as its own.
         if (integration == null || isWindows() || login.size() != 2 || !"-l".equals(login.get(1))) {
             return login;
         }
         String shell = login.get(0);
-        String name = Path.of(shell).getFileName().toString();
+        String name = PathDisplay.fileName(Path.of(shell));
         if (name.equals("bash") && Files.isReadable(integration.resolve("editora.bash"))) {
             return List.of(
                     shell, "--init-file", integration.resolve("editora.bash").toString(), "-i");

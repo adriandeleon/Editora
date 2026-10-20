@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Asking a remote host about the files of a folder it holds, instead of walking the folder over SFTP one
@@ -69,7 +70,7 @@ public final class RemoteFiles {
      * {@code .gitignore} when {@code respectGitignore}. Stops at {@code max} and says so. {@code null} when
      * none of them could list (the host cannot run commands).
      */
-    public static Listing list(Path root, boolean respectGitignore, int max) {
+    public static @Nullable Listing list(Path root, boolean respectGitignore, int max) {
         if (hasRipgrep(root)) {
             List<String> argv = new ArrayList<>(ripgrepCommand(root));
             argv.add("--files");
@@ -105,7 +106,7 @@ public final class RemoteFiles {
      * costs a read per such file, not a request per folder). {@code node_modules} is not entered while
      * ignoring: it is ignored in nearly every project, and listing it first would fill the ceiling.
      */
-    private static Listing find(Path root, boolean respectGitignore, int max) {
+    private static @Nullable Listing find(Path root, boolean respectGitignore, int max) {
         // POSIX find only (no -mindepth, no -print0): `! -name .` keeps the start folder from matching ".*".
         List<String> argv = new ArrayList<>(List.of("find", ".", "-type", "d", "!", "-name", ".", "("));
         argv.addAll(List.of("-name", ".*"));
@@ -138,7 +139,7 @@ public final class RemoteFiles {
      * inside a hidden folder, and with a {@code root} to read them from, none that a {@code .gitignore} of the
      * folder or of a folder on the way down excludes. Sorted, as a walk delivers them.
      */
-    static List<String> filtered(List<String> printed, Path root) {
+    static List<String> filtered(List<String> printed, @Nullable Path root) {
         Set<String> withRules = new HashSet<>();
         for (String rel : printed) {
             if (rel.equals(".gitignore") || rel.endsWith("/.gitignore")) {
@@ -166,7 +167,7 @@ public final class RemoteFiles {
     /** Whether nothing on the way down to {@code dir} is hidden or ignored. */
     private static boolean dirKept(
             String dir,
-            Path root,
+            @Nullable Path root,
             Set<String> withRules,
             Map<String, GitignoreFilter> byDir,
             Map<String, Boolean> memo) {
@@ -188,7 +189,7 @@ public final class RemoteFiles {
 
     /** The rules in force inside {@code dir}: its parent's, plus its own {@code .gitignore} when it has one. */
     private static GitignoreFilter filterFor(
-            String dir, Path root, Set<String> withRules, Map<String, GitignoreFilter> byDir) {
+            String dir, @Nullable Path root, Set<String> withRules, Map<String, GitignoreFilter> byDir) {
         GitignoreFilter known = byDir.get(dir);
         if (known != null) {
             return known;
@@ -205,7 +206,7 @@ public final class RemoteFiles {
     /** What a host listed, and whether {@code max} cut it short. */
     public record Listing(List<String> paths, boolean truncated) {}
 
-    private static Listing run(Path root, List<String> argv, int max, char separator) {
+    private static @Nullable Listing run(Path root, List<String> argv, int max, char separator) {
         List<String> paths = new ArrayList<>();
         boolean[] truncated = {false};
         ProcessRunner.Result r;

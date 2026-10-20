@@ -2,6 +2,8 @@ package com.editora.markdown;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure (no-toolkit, unit-tested) Markdown heading level changes over the line(s) a selection covers:
  * promote/demote by a delta, or set an absolute level (0 = Normal/paragraph, 1–6 = {@code #}…{@code ######}).
@@ -24,7 +26,7 @@ public final class MarkdownHeading {
      * several lines only the lines that already are headings move — unless none is, when demote makes every
      * one a heading. Returns {@code null} when nothing changes.
      */
-    public static MarkdownEdit apply(String text, int selStart, int selEnd, int delta) {
+    public static @Nullable MarkdownEdit apply(String text, int selStart, int selEnd, int delta) {
         return rebuild(text, selStart, selEnd, (level, several) -> {
             if (level == 0) {
                 return several || delta <= 0 ? 0 : Math.min(MAX_LEVEL, delta);
@@ -34,7 +36,7 @@ public final class MarkdownHeading {
     }
 
     /** Set each non-blank line in range to an absolute heading {@code level} (0 = Normal). */
-    public static MarkdownEdit setLevel(String text, int selStart, int selEnd, int level) {
+    public static @Nullable MarkdownEdit setLevel(String text, int selStart, int selEnd, int level) {
         int target = Math.max(0, Math.min(MAX_LEVEL, level));
         return rebuild(text, selStart, selEnd, (ignored, several) -> target);
     }
@@ -74,7 +76,7 @@ public final class MarkdownHeading {
         return m.matches() ? (m.group(1).charAt(0) == '=' ? 1 : 2) : 0;
     }
 
-    private static MarkdownEdit rebuild(String text, int selStart, int selEnd, LevelFn fn) {
+    private static @Nullable MarkdownEdit rebuild(String text, int selStart, int selEnd, LevelFn fn) {
         int[] b = LineEdits.block(text, selStart, selEnd);
         int blockStart = b[0];
         int blockEnd = b[1];
@@ -116,22 +118,23 @@ public final class MarkdownHeading {
                 }
             }
             boolean several = headings > 0 && others > 0;
+            @Nullable String[] out = lines.clone();
             for (int i = 0; i < lines.length; i++) {
                 boolean underline = i > 0 && level[i - 1] < 0;
                 if (underline) {
-                    lines[i] = null; // the ATX form replaces it
+                    out[i] = null; // the ATX form replaces it
                     continue;
                 }
                 if (skip[i]) {
                     continue;
                 }
                 int next = fn.next(Math.abs(level[i]), several);
-                lines[i] = MarkdownLine.parse(lines[i]).withHeading(next).text();
+                out[i] = MarkdownLine.parse(lines[i]).withHeading(next).text();
                 if (level[i] < 0 && next == 0) {
-                    lines[i + 1] = null; // "Normal" on a Setext heading still has to drop the underline
+                    out[i + 1] = null; // "Normal" on a Setext heading still has to drop the underline
                 }
             }
-            return lines;
+            return out;
         });
     }
 }

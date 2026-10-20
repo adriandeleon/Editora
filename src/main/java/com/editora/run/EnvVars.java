@@ -4,6 +4,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses a run configuration's environment-variable string into a name→value map. The text is tokenized with
  * the same quote-aware splitter as program arguments ({@link ProgramArgs#tokenize}), so a value containing
@@ -27,14 +29,15 @@ public final class EnvVars {
      *
      * @throws ProgramArgs.UnclosedQuoteException when a quote is never closed
      */
-    public static Map<String, String> resolve(String text, java.util.function.Function<String, String> inherited) {
+    public static Map<String, String> resolve(
+            String text, java.util.function.Function<String, ? extends @Nullable String> inherited) {
         Map<String, String> out = new LinkedHashMap<>();
         if (text == null || text.isBlank()) {
             return out;
         }
         // Tokenize without expansion first (only to find the pairs), then expand each token on its own so a
         // later value sees an earlier one: FOO=a BAR=$FOO.
-        java.util.function.Function<String, String> lookup =
+        java.util.function.Function<String, @Nullable String> lookup =
                 name -> out.containsKey(name) ? out.get(name) : inherited == null ? null : inherited.apply(name);
         for (String raw : splitPairs(text)) {
             List<String> one = ProgramArgs.parse(raw, lookup);

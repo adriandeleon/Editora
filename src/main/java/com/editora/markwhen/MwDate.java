@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A parsed Markwhen date at a coarse-to-fine {@link Granularity}, modeled as a <b>half-open interval</b>
  * {@code [startEpochDay, endEpochDayExclusive)} so a bare {@code 2023} spans the whole year and
@@ -49,7 +51,7 @@ public record MwDate(LocalDate start, Granularity granularity) {
             Map.entry("dec", 12));
 
     /** Parses {@code s} into an {@link MwDate}, or {@code null} when it isn't a recognized date. */
-    public static MwDate parse(String s) {
+    public static @Nullable MwDate parse(String s) {
         if (s == null) {
             return null;
         }
@@ -85,17 +87,17 @@ public record MwDate(LocalDate start, Granularity granularity) {
         return null;
     }
 
-    private static MwDate byName(String month, String day, String year) {
+    private static @Nullable MwDate byName(String month, String day, String year) {
         Integer mo = monthOf(month);
         return mo == null ? null : at(Integer.parseInt(year), mo, Integer.parseInt(day), Granularity.DAY);
     }
 
-    private static Integer monthOf(String word) {
+    private static @Nullable Integer monthOf(String word) {
         String key = word.toLowerCase(Locale.ROOT);
         return MONTHS.get(key.length() > 3 ? key.substring(0, 3) : key);
     }
 
-    private static MwDate at(int year, int month, int day, Granularity g) {
+    private static @Nullable MwDate at(int year, int month, int day, Granularity g) {
         if (month < 1 || month > 12) {
             return null;
         }

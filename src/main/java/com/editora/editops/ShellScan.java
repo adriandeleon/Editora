@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One forward pass over shell source (sh, bash, zsh) that knows what a line-at-a-time look cannot: quotes and
  * {@code $( … )} that span lines, {@code #} comments, here-documents, and the keyword blocks of the language
@@ -55,13 +57,13 @@ public final class ShellScan {
         private final Kind kind;
         private final int headerLine;
         private int closeLine = -1;
-        private final String delimiter;
+        private final @Nullable String delimiter;
         private final boolean dash;
         private boolean array;
         private int frameDepth = -1; // a $( … ) / <( … ): the mode stack to restore when it closes
         private boolean inSeen; // CASE: past its `in`, so patterns follow
 
-        Block(Kind kind, int headerLine, String delimiter, boolean dash) {
+        Block(Kind kind, int headerLine, @Nullable String delimiter, boolean dash) {
             this.kind = kind;
             this.headerLine = headerLine;
             this.delimiter = delimiter;
@@ -83,7 +85,7 @@ public final class ShellScan {
         }
 
         /** A here-doc's delimiter, quotes removed; null for other blocks. */
-        public String delimiter() {
+        public @Nullable String delimiter() {
             return delimiter;
         }
 
@@ -171,7 +173,7 @@ public final class ShellScan {
         }
 
         /** The innermost block of {@code kind} still open at the end, or null. */
-        public Block innermostOpen(Kind kind) {
+        public @Nullable Block innermostOpen(Kind kind) {
             for (int k = open.size() - 1; k >= 0; k--) {
                 if (open.get(k).kind == kind) {
                     return open.get(k);
@@ -290,6 +292,7 @@ public final class ShellScan {
             return b;
         }
 
+        @Nullable
         Block innermost(Kind kind) {
             for (int k = stack.size() - 1; k >= 0; k--) {
                 if (stack.get(k).kind == kind) {
@@ -300,6 +303,7 @@ public final class ShellScan {
         }
 
         /** Closes the innermost open {@code kind} at {@code at}, dropping any block still open inside it. */
+        @Nullable
         Block close(Kind kind, int at) {
             for (int k = stack.size() - 1; k >= 0; k--) {
                 Block b = stack.get(k);
@@ -397,6 +401,10 @@ public final class ShellScan {
          * false when the text ended first; else leaves {@code i} on the delimiter line's break (or the end).
          */
         boolean heredoc(Block h) {
+            String delimiter = h.delimiter;
+            if (delimiter == null) {
+                throw new IllegalStateException("not a here-doc: " + h.kind);
+            }
             while (true) {
                 startState[line] = IN_HEREDOC;
                 startHeredoc[line] = h;
@@ -409,7 +417,7 @@ public final class ShellScan {
                     }
                 }
                 int to = end > from && text.charAt(end - 1) == '\r' ? end - 1 : end;
-                if (text.startsWith(h.delimiter, from) && to - from == h.delimiter.length()) {
+                if (text.startsWith(delimiter, from) && to - from == delimiter.length()) {
                     h.closeLine = line;
                     event(CLOSE, h);
                     i = end;

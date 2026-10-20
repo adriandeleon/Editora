@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Builds the {@code gh pr create} argument list from the create-PR form fields. The argv <em>decision</em> is
  * pure and unit-tested even though the invocation itself isn't: a blank body still passes {@code --body ""} so
@@ -31,7 +33,13 @@ public final class PrCreateArgs {
      * comma-separated field straight from the form ({@code null}/blank ⇒ the flag is omitted entirely).
      */
     public static List<String> build(
-            String title, String body, String base, boolean draft, String reviewers, String assignees, String labels) {
+            String title,
+            String body,
+            String base,
+            boolean draft,
+            @Nullable String reviewers,
+            @Nullable String assignees,
+            @Nullable String labels) {
         List<String> args = new ArrayList<>();
         args.add("pr");
         args.add("create");
@@ -63,7 +71,7 @@ public final class PrCreateArgs {
      * Splits a comma-separated field into trimmed, non-blank, de-duplicated (case-insensitively) values,
      * preserving the order they were typed in.
      */
-    static List<String> split(String raw) {
+    static List<String> split(@Nullable String raw) {
         List<String> out = new ArrayList<>();
         if (raw == null) {
             return out;
@@ -84,7 +92,7 @@ public final class PrCreateArgs {
      * on the {@code @} form. The one exception is the literal {@code @me}, which gh defines as the
      * authenticated user, so it must survive verbatim.
      */
-    static List<String> handles(String raw) {
+    static List<String> handles(@Nullable String raw) {
         List<String> out = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (String v : split(raw)) {

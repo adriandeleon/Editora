@@ -3,6 +3,8 @@ package com.editora.editops;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested auto-rename-tag core (the VS Code "Auto Rename Tag" behavior): after an edit
  * inside an HTML/XML tag <i>name</i>, {@link #mirror} computes the edit that renames the paired
@@ -51,7 +53,7 @@ public final class TagRename {
      * {@code <div>x</div>} gave {@code <span>x</d>}. A genuinely new tag still has no pair to find: there is
      * no nameless partner waiting for it.
      */
-    public static Mirror mirror(String text, int changePos, String removed, String inserted, boolean html) {
+    public static @Nullable Mirror mirror(String text, int changePos, String removed, String inserted, boolean html) {
         if (text.length() > MAX_DOC) {
             return null;
         }
@@ -91,7 +93,7 @@ public final class TagRename {
      * a preceding {@code <} or {@code </}, forward over name characters to the region end; the
      * change (including what it inserted) must lie entirely within the region.
      */
-    private static int[] nameRegionAt(String text, int changeStart, int changeEnd) {
+    private static int @Nullable [] nameRegionAt(String text, int changeStart, int changeEnd) {
         int n = text.length();
         if (changeStart < 0 || changeEnd > n || changeEnd < changeStart) {
             return null;
@@ -132,7 +134,7 @@ public final class TagRename {
      * forward); a closer pairs with the open tag that does so walking backward. The pair bears
      * {@code oldName} by construction — the old-name guard is inherent.
      */
-    private static Mirror findPair(
+    private static @Nullable Mirror findPair(
             String text, int targetNameStart, boolean targetIsClose, String oldName, String newName, boolean html) {
         record Ev(boolean open, int nameStart, int nameEnd) {}
         java.util.List<Ev> events = new java.util.ArrayList<>();

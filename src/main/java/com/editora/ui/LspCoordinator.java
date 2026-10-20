@@ -18,6 +18,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 
+import com.editora.config.PathDisplay;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.LspDiagnostic;
 import com.editora.editor.MarkdownRenderer;
@@ -3865,7 +3866,7 @@ final class LspCoordinator {
         if (peekPopup == null) {
             peekPopup = new PeekPopup(host.overlayHost());
         }
-        String name = t.file().getFileName().toString();
+        String name = PathDisplay.fileName(t.file());
         String language = com.editora.editor.LanguageRegistry.forFileName(name);
         String title = tr("lsp.peek.title", name, t.line() + 1);
         // The editor's own font, so the peeked lines wrap and align the way the file does.

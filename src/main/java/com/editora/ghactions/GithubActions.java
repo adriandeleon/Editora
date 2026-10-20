@@ -1,5 +1,7 @@
 package com.editora.ghactions;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Content detection for GitHub Actions workflow files. A workflow is a YAML file (so the buffer language
  * stays {@code yaml}), recognized by its top-level {@code on:} trigger key and {@code jobs:} map — a
@@ -45,7 +47,7 @@ public final class GithubActions {
     }
 
     /** The unquoted key of a {@code key:} / {@code "key":} / {@code 'key':} top-level line, or {@code null}. */
-    private static String topLevelKey(String line) {
+    private static @Nullable String topLevelKey(String line) {
         int colon = colonBeforeValue(line);
         if (colon < 0) {
             return null;

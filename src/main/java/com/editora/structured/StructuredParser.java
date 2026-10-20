@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Parses JSON / YAML / TOML text into a neutral {@link StructuredNode} tree for the 3-mode preview, and
@@ -25,7 +26,7 @@ public final class StructuredParser {
         TOML;
 
         /** The format for a buffer {@code language}, or {@code null} if it isn't a structured format. */
-        public static Format forLanguage(String language) {
+        public static @Nullable Format forLanguage(String language) {
             if (language == null) {
                 return null;
             }
@@ -45,7 +46,10 @@ public final class StructuredParser {
      * The parse outcome: a {@code root} tree (never null on success), an optional {@code openApi} model when
      * the doc is a spec, or an {@code error} message on failure / over the node cap.
      */
-    public record Parsed(StructuredNode root, OpenApiModel openApi, String error) {
+    public record Parsed(
+            @Nullable StructuredNode root,
+            @Nullable OpenApiModel openApi,
+            @Nullable String error) {
         public boolean ok() {
             return error == null && root != null;
         }
@@ -89,7 +93,7 @@ public final class StructuredParser {
     }
 
     /** Recursively converts a Jackson {@code JsonNode} to the neutral tree, counting nodes against the cap. */
-    static StructuredNode fromJson(String key, JsonNode n, int[] count) {
+    static StructuredNode fromJson(@Nullable String key, JsonNode n, int[] count) {
         if (++count[0] > MAX_NODES) {
             throw new TooLargeException();
         }
@@ -117,7 +121,7 @@ public final class StructuredParser {
         return new StructuredNode(key, StructuredNode.Kind.NULL, "null", null);
     }
 
-    private static String firstLine(String msg) {
+    private static String firstLine(@Nullable String msg) {
         if (msg == null || msg.isBlank()) {
             return "parse error";
         }

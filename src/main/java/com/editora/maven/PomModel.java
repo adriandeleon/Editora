@@ -3,6 +3,8 @@ package com.editora.maven;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A pom.xml, parsed literally (no default-lifecycle-binding resolution) — what {@link PomParser} reads directly
  * off one file, or what {@link PomInheritance} merges from a file and the {@code <parent>} chain found beside
@@ -28,7 +30,7 @@ public record PomModel(
         String packaging,
         List<Plugin> plugins,
         List<Profile> profiles,
-        Parent parent,
+        @Nullable Parent parent,
         Map<String, String> properties,
         List<Plugin> managedPlugins,
         List<String> inheritedFrom) {

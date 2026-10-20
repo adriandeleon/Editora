@@ -7,6 +7,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -71,7 +73,7 @@ public final class HttpFile {
      * {@code column} the column its inline source starts at (just after {@code {%}), so an error in the script can
      * be placed in the {@code .http} file. {@code closed} is false for an inline script without its {@code %}}.
      */
-    public record Handler(String source, String path, int line, int column, boolean closed) {
+    public record Handler(@Nullable String source, @Nullable String path, int line, int column, boolean closed) {
 
         public boolean isFile() {
             return path != null;
@@ -84,7 +86,8 @@ public final class HttpFile {
 
     /** An external request body: the {@code path} (relative to the request file), whether to substitute
      *  {@code {{vars}}} in it ({@code <@} vs {@code <}), and an optional {@code encoding}. */
-    public record BodyRef(String path, boolean substitute, String encoding) {}
+    public record BodyRef(
+            String path, boolean substitute, @Nullable String encoding) {}
 
     /** A response-redirect operator: write the response body to {@code path} (which may contain
      *  {@code {{vars}}}); {@code force} ({@code >>!}) overwrites an existing file, plain {@code >>} does not. */
@@ -109,7 +112,7 @@ public final class HttpFile {
             int endLine,
             String method,
             String url,
-            String name,
+            @Nullable String name,
             Directives directives,
             String block,
             List<String[]> variables,
@@ -142,14 +145,14 @@ public final class HttpFile {
             String url,
             List<String[]> headers,
             String body,
-            String name,
-            BodyRef bodyRef,
+            @Nullable String name,
+            @Nullable BodyRef bodyRef,
             List<Redirect> redirects,
             Directives directives,
-            String httpVersion,
+            @Nullable String httpVersion,
             List<String[]> variables,
             List<String> warnings,
-            String error,
+            @Nullable String error,
             List<Handler> handlers,
             List<Handler> preScripts) {
 
@@ -585,12 +588,12 @@ public final class HttpFile {
      * null when {@code line} is not a separator or names nothing. A request's {@link Request#name()} prefers its
      * {@code # @name}; this is the title as written, for what the response view shows.
      */
-    public static String separatorTitle(String line) {
+    public static @Nullable String separatorTitle(String line) {
         return line == null || !isSeparator(line) ? null : separatorName(line);
     }
 
     /** The label after {@code ###}, or null for a bare separator. */
-    private static String separatorName(String line) {
+    private static @Nullable String separatorName(String line) {
         String s = line.stripLeading();
         s = s.substring(3); // drop "###"
         // trim any extra leading '#' and surrounding whitespace
@@ -606,7 +609,7 @@ public final class HttpFile {
     }
 
     /** A {@code # @name foo} / {@code // @name foo} comment names the next request. */
-    private static String commentName(String stripped) {
+    private static @Nullable String commentName(String stripped) {
         String s = stripped.startsWith("//") ? stripped.substring(2) : stripped.substring(1);
         s = s.strip();
         if (s.startsWith("@name")) {
@@ -859,7 +862,11 @@ public final class HttpFile {
     }
 
     /** A request line split into its method, target and version, plus a reason it cannot be sent. */
-    record RequestLine(String method, String url, String version, String error) {}
+    record RequestLine(
+            String method,
+            String url,
+            @Nullable String version,
+            @Nullable String error) {}
 
     /**
      * Splits a request line into method, target and version. The method defaults to {@code GET}; a known

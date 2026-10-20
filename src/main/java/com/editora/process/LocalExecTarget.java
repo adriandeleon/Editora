@@ -3,6 +3,8 @@ package com.editora.process;
 import java.io.IOException;
 import java.nio.file.Path;
 
+import org.jspecify.annotations.Nullable;
+
 /** This machine: a {@link ProcessBuilder} with one of {@link ProcessRunner}'s two child environments. */
 final class LocalExecTarget implements ExecTarget {
 
@@ -59,8 +61,8 @@ final class LocalExecTarget implements ExecTarget {
     }
 
     @Override
-    public String toTargetPath(Path path) {
-        return path.toString();
+    public String toTargetPath(@Nullable Path path) {
+        return java.util.Objects.requireNonNull(path, "path").toString();
     }
 
     @Override

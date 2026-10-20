@@ -2,6 +2,8 @@ package com.editora.structured;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A neutral, toolkit-free node in a parsed XML DOM tree, for the structured-data preview — a <b>faithful</b>
  * DOM model (elements / attributes / text / comments), not a lossy XML→JSON shoehorn. The editor's
@@ -24,12 +26,17 @@ public final class XmlNode {
     public record Attr(String name, String value) {}
 
     private final Kind kind;
-    private final String name;
+    private final @Nullable String name;
     private final List<Attr> attributes;
-    private final String value;
+    private final @Nullable String value;
     private final List<XmlNode> children;
 
-    public XmlNode(Kind kind, String name, List<Attr> attributes, String value, List<XmlNode> children) {
+    public XmlNode(
+            Kind kind,
+            @Nullable String name,
+            @Nullable List<Attr> attributes,
+            @Nullable String value,
+            @Nullable List<XmlNode> children) {
         this.kind = kind;
         this.name = name;
         this.attributes = attributes == null ? List.of() : List.copyOf(attributes);
@@ -42,7 +49,7 @@ public final class XmlNode {
     }
 
     /** The tag name for an element (as written, prefix included); {@code null} for text/comment. */
-    public String name() {
+    public @Nullable String name() {
         return name;
     }
 
@@ -51,7 +58,7 @@ public final class XmlNode {
     }
 
     /** The inline text of a text-only element, or a text/comment node's content; {@code null} otherwise. */
-    public String value() {
+    public @Nullable String value() {
         return value;
     }
 

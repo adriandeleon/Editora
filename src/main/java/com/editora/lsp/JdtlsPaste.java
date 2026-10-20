@@ -2,6 +2,7 @@ package com.editora.lsp;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The wire shapes of jdtls's {@code java.edit.handlePasteEvent} (#742) — auto-import for pasted code,
@@ -32,7 +33,7 @@ public final class JdtlsPaste {
     private JdtlsPaste() {}
 
     /** Whether {@code caps} advertises the paste-event command (only jdtls does today). */
-    public static boolean supportsPasteEvent(org.eclipse.lsp4j.ServerCapabilities caps) {
+    public static boolean supportsPasteEvent(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
         return caps != null
                 && caps.getExecuteCommandProvider() != null
                 && caps.getExecuteCommandProvider().getCommands() != null
@@ -80,7 +81,7 @@ public final class JdtlsPaste {
      * — or {@code null} when the answer carries none (nothing to import) or isn't the expected shape (a
      * defensive null rather than a throw: the reply crosses a version boundary we don't control).
      */
-    public static JsonElement additionalEdit(Object rawResult) {
+    public static @Nullable JsonElement additionalEdit(@Nullable Object rawResult) {
         if (!(rawResult instanceof JsonElement json) || !json.isJsonObject()) {
             return null;
         }

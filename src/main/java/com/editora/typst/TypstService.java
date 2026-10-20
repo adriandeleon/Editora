@@ -8,6 +8,8 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * UI-facing façade for the {@code typst} CLI, mirroring {@code DiagramService}/{@code MermaidService}: work
  * runs on a single daemon executor and results are posted back on the JavaFX thread via
@@ -24,7 +26,7 @@ public final class TypstService {
     });
 
     private volatile String path = "";
-    private volatile Boolean cached;
+    private volatile @Nullable Boolean cached;
 
     /** Updates the configured executable path/command; clears the cached availability so it re-probes. */
     public void setPath(String newPath) {

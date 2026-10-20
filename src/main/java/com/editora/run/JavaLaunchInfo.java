@@ -2,15 +2,21 @@ package com.editora.run;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The resolved inputs needed to launch a Java main class: the java executable and the module/class paths, or
  * an {@code error} message when resolution failed. Build-tool-neutral — produced from jdtls today and from a
  * build-tool classpath probe later — so the Run path doesn't care where the classpath came from.
  */
 public record JavaLaunchInfo(
-        String javaExec, List<String> modulePaths, List<String> classPaths, String error, boolean enablePreview) {
+        @Nullable String javaExec,
+        List<String> modulePaths,
+        List<String> classPaths,
+        String error,
+        boolean enablePreview) {
 
-    public JavaLaunchInfo(String javaExec, List<String> modulePaths, List<String> classPaths, String error) {
+    public JavaLaunchInfo(@Nullable String javaExec, List<String> modulePaths, List<String> classPaths, String error) {
         this(javaExec, modulePaths, classPaths, error, false);
     }
 

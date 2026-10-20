@@ -13,6 +13,7 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -66,7 +67,7 @@ public final class PomParser {
             groupId = firstChildText(parent, "groupId");
         }
         String artifactId = firstChildText(project, "artifactId");
-        if (isBlank(artifactId)) {
+        if (artifactId == null || artifactId.isBlank()) {
             throw new PomParseException("Malformed pom.xml: missing <artifactId>");
         }
         String version = firstChildText(project, "version");
@@ -74,7 +75,7 @@ public final class PomParser {
             version = firstChildText(parent, "version");
         }
         String packaging = firstChildText(project, "packaging");
-        if (isBlank(packaging)) {
+        if (packaging == null || packaging.isBlank()) {
             packaging = "jar";
         }
 
@@ -87,7 +88,7 @@ public final class PomParser {
         if (profilesEl != null) {
             for (Element profileEl : childElements(profilesEl, "profile")) {
                 String id = firstChildText(profileEl, "id");
-                if (isBlank(id)) {
+                if (id == null || id.isBlank()) {
                     continue;
                 }
                 boolean activeByDefault = false;
@@ -124,7 +125,7 @@ public final class PomParser {
     }
 
     /** {@code <properties>} in document order; a repeated name keeps its last value, as Maven does. */
-    private static Map<String, String> parseProperties(Element propertiesEl) {
+    private static Map<String, String> parseProperties(@Nullable Element propertiesEl) {
         if (propertiesEl == null) {
             return Map.of();
         }
@@ -186,7 +187,7 @@ public final class PomParser {
         return List.copyOf(out);
     }
 
-    private static List<PomModel.Plugin> parsePlugins(Element build) {
+    private static List<PomModel.Plugin> parsePlugins(@Nullable Element build) {
         List<PomModel.Plugin> out = new ArrayList<>();
         Element pluginsEl = firstChildElement(build, "plugins");
         if (pluginsEl == null) {
@@ -194,13 +195,13 @@ public final class PomParser {
         }
         for (Element pluginEl : childElements(pluginsEl, "plugin")) {
             String artifactId = firstChildText(pluginEl, "artifactId");
-            if (isBlank(artifactId)) {
+            if (artifactId == null || artifactId.isBlank()) {
                 continue; // malformed <plugin> entry with no artifactId — skip rather than fail the parse
             }
             String groupId = firstChildText(pluginEl, "groupId");
             String version = firstChildText(pluginEl, "version");
             out.add(new PomModel.Plugin(
-                    isBlank(groupId) ? "org.apache.maven.plugins" : groupId.strip(),
+                    groupId == null || groupId.isBlank() ? "org.apache.maven.plugins" : groupId.strip(),
                     artifactId.strip(),
                     strip(version),
                     parseExecutions(pluginEl)));
@@ -227,7 +228,8 @@ public final class PomParser {
                     }
                 }
             }
-            out.add(new PomModel.Execution(isBlank(id) ? "default" : id.strip(), strip(phase), List.copyOf(goals)));
+            out.add(new PomModel.Execution(
+                    id == null || id.isBlank() ? "default" : id.strip(), strip(phase), List.copyOf(goals)));
         }
         return List.copyOf(out);
     }
@@ -268,7 +270,7 @@ public final class PomParser {
         }
     }
 
-    static Element firstChildElement(Element parent, String tagName) {
+    static @Nullable Element firstChildElement(@Nullable Element parent, String tagName) {
         if (parent == null) {
             return null;
         }
@@ -280,7 +282,7 @@ public final class PomParser {
         return null;
     }
 
-    static List<Element> childElements(Element parent, String tagName) {
+    static List<Element> childElements(@Nullable Element parent, String tagName) {
         List<Element> out = new ArrayList<>();
         if (parent == null) {
             return out;
@@ -293,7 +295,7 @@ public final class PomParser {
         return out;
     }
 
-    static String firstChildText(Element parent, String tagName) {
+    static @Nullable String firstChildText(@Nullable Element parent, String tagName) {
         Element el = firstChildElement(parent, tagName);
         return el == null ? null : text(el);
     }
@@ -310,11 +312,11 @@ public final class PomParser {
         return sb.toString();
     }
 
-    static boolean isBlank(String s) {
+    static boolean isBlank(@Nullable String s) {
         return s == null || s.isBlank();
     }
 
-    static String strip(String s) {
+    static String strip(@Nullable String s) {
         return s == null ? "" : s.strip();
     }
 }

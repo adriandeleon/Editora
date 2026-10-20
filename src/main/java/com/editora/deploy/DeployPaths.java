@@ -2,6 +2,8 @@ package com.editora.deploy;
 
 import java.nio.file.Path;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Maps between a local project and its deployed copy: a file under the project root is the file at the same
  * relative path under the deployment's folder on the host, and back. Pure.
@@ -12,7 +14,7 @@ import java.nio.file.Path;
 public record DeployPaths(Path localRoot, Path remoteRoot) {
 
     /** {@code local}'s copy on the host, or null when it is not inside the project. */
-    public Path toHost(Path local) {
+    public @Nullable Path toHost(Path local) {
         String relative = relative(localRoot, local);
         if (relative == null) {
             return null;
@@ -21,7 +23,7 @@ public record DeployPaths(Path localRoot, Path remoteRoot) {
     }
 
     /** The local file {@code remote} is the copy of, or null when it is not inside the deployment's folder. */
-    public Path toLocal(Path remote) {
+    public @Nullable Path toLocal(Path remote) {
         String relative = relative(remoteRoot, remote);
         if (relative == null) {
             return null;
@@ -51,7 +53,7 @@ public record DeployPaths(Path localRoot, Path remoteRoot) {
     }
 
     /** {@code path} relative to {@code root} with {@code /} separators; "" for the root, null when outside it. */
-    public static String relative(Path root, Path path) {
+    public static @Nullable String relative(Path root, Path path) {
         if (root == null || path == null || root.getFileSystem() != path.getFileSystem()) {
             return null;
         }

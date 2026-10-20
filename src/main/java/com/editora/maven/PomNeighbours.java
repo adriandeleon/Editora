@@ -14,6 +14,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a pom.xml gets from the files <em>beside</em> it, read for the summary preview: the parent chain on
  * disk ({@code <relativePath>}, default {@code ../pom.xml}, else the parent's pom in the local repository)
@@ -73,7 +75,7 @@ public final class PomNeighbours {
      * coordinates match, else the parent's pom in {@code localRepo}; then that file's parent, and so on.
      */
     public static Resolved parentChain(
-            Path pomPath, PomSummary.Coordinates parent, String relativePath, Path localRepo) {
+            Path pomPath, PomSummary.Coordinates parent, @Nullable String relativePath, @Nullable Path localRepo) {
         if (pomPath == null || parent == null || com.editora.vfs.Vfs.isRemote(pomPath)) {
             return Resolved.NONE;
         }
@@ -117,7 +119,8 @@ public final class PomNeighbours {
     }
 
     /** The parent file to read: the relative path when its coordinates agree, else the local repository's copy. */
-    private static Path locate(Path child, PomSummary.Coordinates parent, String relativePath, Path localRepo) {
+    private static @Nullable Path locate(
+            Path child, PomSummary.Coordinates parent, @Nullable String relativePath, @Nullable Path localRepo) {
         Path dir = child.getParent();
         if (dir != null) {
             String rel = relativePath == null || relativePath.isBlank() ? "../pom.xml" : relativePath.strip();
@@ -153,7 +156,7 @@ public final class PomNeighbours {
     }
 
     /** {@code <repo>/<g/r/o/u/p>/<artifact>/<version>/<artifact>-<version>.pom}, or null for unusable parts. */
-    static Path repositoryPom(Path localRepo, String groupId, String artifactId, String version) {
+    static @Nullable Path repositoryPom(@Nullable Path localRepo, String groupId, String artifactId, String version) {
         if (localRepo == null || bad(groupId) || bad(artifactId) || bad(version)) {
             return null;
         }
@@ -203,7 +206,7 @@ public final class PomNeighbours {
     }
 
     /** The one-file summary of {@code file}, cached by its modification time; null when unreadable. */
-    private static PomSummary read(Path file) {
+    private static @Nullable PomSummary read(Path file) {
         try {
             FileTime modified = Files.getLastModifiedTime(file);
             Cached cached = CACHE.get(file);

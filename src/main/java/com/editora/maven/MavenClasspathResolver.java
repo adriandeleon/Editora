@@ -11,6 +11,7 @@ import com.editora.process.ExecTarget;
 import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
 import com.editora.run.JdkToolchain;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Resolves a Maven module's runtime classpath off the JavaFX application thread.
@@ -38,7 +39,7 @@ public final class MavenClasspathResolver {
             Path outputFile,
             Path root,
             MavenClasspath.Scope scope,
-            MavenReactor.Reactor reactor,
+            MavenReactor.@Nullable Reactor reactor,
             List<String> executable,
             List<String> toggleArgs) {
         /** Whether the module is built from its reactor root with {@code -pl -am}. */
@@ -96,7 +97,11 @@ public final class MavenClasspathResolver {
      * @throws IOException when the scratch file for the classpath cannot be created
      */
     public static Plan plan(
-            Path root, Path boundary, List<String> executable, List<String> toggleArgs, MavenClasspath.Scope scope)
+            Path root,
+            @Nullable Path boundary,
+            List<String> executable,
+            List<String> toggleArgs,
+            MavenClasspath.Scope scope)
             throws IOException {
         List<String> toggles = toggleArgs == null ? List.of() : List.copyOf(toggleArgs);
         MavenReactor.Reactor reactor = MavenReactor.describeOnDisk(root, boundary);
@@ -142,7 +147,7 @@ public final class MavenClasspathResolver {
      * The launch classpath {@code plan}'s command wrote, or {@code null} when it wrote none (it failed before
      * {@code dependency:build-classpath} ran). Deletes the scratch file either way.
      */
-    public static List<String> finish(Plan plan) {
+    public static @Nullable List<String> finish(Plan plan) {
         try {
             if (!Files.exists(plan.outputFile())) {
                 return null;
@@ -179,7 +184,7 @@ public final class MavenClasspathResolver {
     }
 
     /** {@link #resolve(Path, String, List, MavenClasspath.Scope)} with PATH {@code mvn} and the runtime scope. */
-    public static List<String> resolve(Path root, String jdkHome) {
+    public static @Nullable List<String> resolve(Path root, String jdkHome) {
         return resolve(root, jdkHome, List.of("mvn"), MavenClasspath.Scope.RUNTIME);
     }
 
@@ -190,7 +195,8 @@ public final class MavenClasspathResolver {
      * goes along. Blocking, with the output captured: the Run console's streamed {@link Plan} is the better
      * path for a launch.
      */
-    public static List<String> resolve(Path root, String jdkHome, List<String> executable, MavenClasspath.Scope scope) {
+    public static @Nullable List<String> resolve(
+            Path root, String jdkHome, List<String> executable, MavenClasspath.Scope scope) {
         Plan plan;
         try {
             plan = plan(root, null, executable, List.of(), scope);

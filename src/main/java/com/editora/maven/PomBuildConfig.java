@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Element;
 
 /**
@@ -27,11 +28,11 @@ import org.w3c.dom.Element;
  * @param springBootJvmArguments the plugin's configured {@code <jvmArguments>}, or {@code null}
  */
 public record PomBuildConfig(
-        String buildDirectory,
-        String surefireReportsDirectory,
-        String failsafeReportsDirectory,
+        @Nullable String buildDirectory,
+        @Nullable String surefireReportsDirectory,
+        @Nullable String failsafeReportsDirectory,
         boolean springBoot,
-        String springBootJvmArguments) {
+        @Nullable String springBootJvmArguments) {
 
     /** Nothing configured: Maven's defaults throughout. */
     public static final PomBuildConfig DEFAULTS = new PomBuildConfig(null, null, null, false, null);
@@ -173,7 +174,7 @@ public record PomBuildConfig(
     }
 
     /** The parent pom {@code text} (read from {@code dir}) names on disk, or {@code null} for none. */
-    static Path parentOf(String text, Path dir) {
+    static @Nullable Path parentOf(String text, @Nullable Path dir) {
         if (dir == null) {
             return null;
         }
@@ -203,7 +204,7 @@ public record PomBuildConfig(
         }
     }
 
-    private static void addPluginLists(Element build, List<Element> into) {
+    private static void addPluginLists(@Nullable Element build, List<Element> into) {
         if (build == null) {
             return;
         }
@@ -218,7 +219,7 @@ public record PomBuildConfig(
         }
     }
 
-    private static String resolved(String value, Map<String, String> props) {
+    private static @Nullable String resolved(@Nullable String value, Map<String, String> props) {
         String text = PomParser.strip(value);
         return text.isEmpty() ? null : PomSummary.resolve(text, props);
     }
@@ -227,7 +228,7 @@ public record PomBuildConfig(
         return base.isEmpty() ? child : base + java.io.File.separator + child;
     }
 
-    private static String readOrNull(Path pom) {
+    private static @Nullable String readOrNull(Path pom) {
         try {
             return Files.isRegularFile(pom) ? Files.readString(pom) : null;
         } catch (IOException | RuntimeException e) {

@@ -23,6 +23,7 @@ import org.apache.sshd.client.session.forward.ExplicitPortForwardingTracker;
 import org.apache.sshd.common.channel.exception.SshChannelOpenException;
 import org.apache.sshd.common.util.net.SshdSocketAddress;
 import org.apache.sshd.sftp.client.fs.SftpFileSystem;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The host behind one SFTP connection, as a place to run commands: each one on its own exec channel of the
@@ -52,10 +53,10 @@ final class SshExecTarget implements ExecTarget {
 
     private final String id;
     private final SftpFileSystem fs;
-    private volatile RemoteEnv env;
+    private volatile @Nullable RemoteEnv env;
 
     /** The least the host's clock can be ahead of this machine's, in millis, once measured. */
-    private volatile Long clockLead;
+    private volatile @Nullable Long clockLead;
 
     SshExecTarget(String id, SftpFileSystem fs) {
         this.id = id;
@@ -178,8 +179,11 @@ final class SshExecTarget implements ExecTarget {
     }
 
     @Override
-    public String toTargetPath(Path path) {
-        return path.toAbsolutePath().normalize().toString();
+    public String toTargetPath(@Nullable Path path) {
+        return java.util.Objects.requireNonNull(path, "path")
+                .toAbsolutePath()
+                .normalize()
+                .toString();
     }
 
     @Override
@@ -245,7 +249,7 @@ final class SshExecTarget implements ExecTarget {
         return lead == null ? -1 : hostMillis - lead;
     }
 
-    private Long clockLead() {
+    private @Nullable Long clockLead() {
         Long known = clockLead;
         if (known != null) {
             return known;
@@ -270,7 +274,7 @@ final class SshExecTarget implements ExecTarget {
     }
 
     /** {@code date +%s} output and the local instant it arrived → the least lead, or null when unreadable. */
-    static Long leastLead(String dateOutput, long arrivedMillis) {
+    static @Nullable Long leastLead(String dateOutput, long arrivedMillis) {
         try {
             return Long.parseLong(dateOutput.strip()) * 1000 - arrivedMillis;
         } catch (NumberFormatException e) {

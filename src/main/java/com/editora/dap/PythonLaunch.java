@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The {@code launch} request debugpy is sent for a Python program — a script, or a module such as {@code pytest}.
  * Pure shaping, unit-tested; {@link DapManager} decides the inputs.
@@ -30,21 +32,26 @@ public final class PythonLaunch {
     private PythonLaunch() {}
 
     /** What runs: a script file ({@code program}) or a module ({@code python -m module}), its arguments and folder. */
-    public record Target(String program, String module, List<String> args, String cwd, Target fallback) {
+    public record Target(
+            @Nullable String program,
+            @Nullable String module,
+            List<String> args,
+            @Nullable String cwd,
+            @Nullable Target fallback) {
         public Target {
             args = args == null ? List.of() : List.copyOf(args);
         }
 
-        public static Target script(String program, List<String> args, String cwd) {
+        public static Target script(String program, List<String> args, @Nullable String cwd) {
             return new Target(program, null, args, cwd, null);
         }
 
-        public static Target module(String module, List<String> args, String cwd) {
+        public static Target module(String module, List<String> args, @Nullable String cwd) {
             return new Target(null, module, args, cwd, null);
         }
 
         /** This target, with {@code other} to run instead when its module is missing (pytest → unittest). */
-        public Target orElse(Target other) {
+        public Target orElse(@Nullable Target other) {
             return new Target(program, module, args, cwd, other);
         }
     }
@@ -64,7 +71,7 @@ public final class PythonLaunch {
             Target target,
             DapManager.HostPython interpreter,
             List<String> pythonPath,
-            String inheritedPythonPath,
+            @Nullable String inheritedPythonPath,
             String separator,
             boolean programConsole) {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -99,7 +106,7 @@ public final class PythonLaunch {
     static Map<String, String> environment(
             DapManager.HostPython interpreter,
             List<String> pythonPath,
-            String inheritedPythonPath,
+            @Nullable String inheritedPythonPath,
             String separator,
             boolean programConsole) {
         Map<String, String> env = new LinkedHashMap<>();
@@ -119,7 +126,7 @@ public final class PythonLaunch {
     }
 
     /** {@code entries} then {@code rest}, joined by {@code separator}, without duplicates or blanks. */
-    static String joinPath(List<String> entries, String rest, String separator) {
+    static String joinPath(List<String> entries, @Nullable String rest, String separator) {
         List<String> parts = new ArrayList<>();
         for (String e : entries == null ? List.<String>of() : entries) {
             if (e != null && !e.isBlank() && !parts.contains(e)) {

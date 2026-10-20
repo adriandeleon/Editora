@@ -13,6 +13,7 @@ import java.util.logging.Logger;
 
 import com.editora.process.ProcessRunner;
 import com.editora.run.JdkToolchain;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -38,10 +39,10 @@ final class JavaCompilation {
             Path original,
             Path source,
             Path outputDir,
-            String javaExecOverride,
+            @Nullable String javaExecOverride,
             Map<String, String> environment,
-            Integer sourceVersion,
-            Path sourceRoot) {
+            @Nullable Integer sourceVersion,
+            @Nullable Path sourceRoot) {
         List<String> command = new ArrayList<>(List.of(JdkToolchain.compilerForJavaExecutable(javaExecOverride), "-g"));
         if (sourceVersion != null) {
             command.add("--release");
@@ -62,14 +63,14 @@ final class JavaCompilation {
      * is compiled instead of the file ({@code null} otherwise), both named as Editora names the target's files
      * ({@link com.editora.process.ExecTarget#toPath}), and how the folder is removed.
      */
-    record HostCompilation(Path directory, Path source, Runnable removal) {}
+    record HostCompilation(Path directory, @Nullable Path source, Runnable removal) {}
 
     /**
      * A new folder for a remote file's compiled classes: {@code debug-classes/<id>} in its target's cache, with
      * {@code source} (when not {@code null}) written into it. Removed when the session ends, like a local one's
      * temporary folder — on the target, which for a container is the only place it is.
      */
-    static HostCompilation hostCompilation(Path file, String source) throws java.io.IOException {
+    static HostCompilation hostCompilation(Path file, @Nullable String source) throws java.io.IOException {
         com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(file);
         com.editora.process.TargetCache cache = target.cache();
         if (cache == null) {
@@ -97,8 +98,10 @@ final class JavaCompilation {
     }
 
     /** {@code javac} beside a host's {@code java} ({@link #hostJava}). Pure. */
-    static String hostJavac(String java) {
-        return java.endsWith("/bin/java") ? java.substring(0, java.length() - "java".length()) + "javac" : "javac";
+    static String hostJavac(@Nullable String java) {
+        return java != null && java.endsWith("/bin/java")
+                ? java.substring(0, java.length() - "java".length()) + "javac"
+                : "javac";
     }
 
     /** {@link #compileStandalone} on a remote file's host: its javac, its paths. */
@@ -106,10 +109,10 @@ final class JavaCompilation {
             Path original,
             Path source,
             Path outputDir,
-            String hostJava,
+            @Nullable String hostJava,
             Map<String, String> environment,
-            Integer sourceVersion,
-            Path sourceRoot) {
+            @Nullable Integer sourceVersion,
+            @Nullable Path sourceRoot) {
         DapPaths paths = DapManager.pathsFor(original);
         List<String> command = new ArrayList<>(List.of(hostJavac(hostJava), "-g"));
         if (sourceVersion != null) {
@@ -134,7 +137,7 @@ final class JavaCompilation {
     }
 
     /** {@code removal} when the folder is a target's, else this machine's folder walked and deleted. */
-    static void removeCompilation(Path directory, Runnable removal) {
+    static void removeCompilation(Path directory, @Nullable Runnable removal) {
         if (removal != null) {
             removal.run();
         } else {
@@ -182,7 +185,7 @@ final class JavaCompilation {
      * {@code enum}), falling back to the file's base name. Reads the source (not the filename) so a
      * class whose name differs from the file resolves correctly. Pure-ish (one bounded file read).
      */
-    static String mainClassFromFile(Path file) {
+    static @Nullable String mainClassFromFile(Path file) {
         if (file == null || file.getFileName() == null) {
             return null;
         }

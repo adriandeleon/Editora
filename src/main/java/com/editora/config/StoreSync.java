@@ -24,6 +24,7 @@ import com.editora.config.migration.ConfigSchema;
 import com.editora.config.migration.NewerThanSupportedException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Writes config stores so that this process never puts back data it did not itself change.
@@ -69,9 +70,9 @@ final class StoreSync {
     /** What this process knows about one file. Guarded by {@link #JVM_LOCK}. */
     private static final class State {
         /** The store as this process last read or wrote it, serialized; {@code null} = never loaded here. */
-        byte[] base;
+        byte @Nullable [] base;
         /** Hash of the file as this process last saw it; {@code null} = it did not exist. */
-        byte[] diskHash;
+        byte @Nullable [] diskHash;
         /** Whether the file, as last seen, held nothing but {@link #base} (so a plain write loses nothing). */
         boolean pure;
         /**
@@ -96,7 +97,7 @@ final class StoreSync {
      * here on a write of those same bytes is "no change", and what the file holds now is the common ancestor
      * for a later merge.
      */
-    void loaded(Path file, byte[] mine) {
+    void loaded(Path file, byte @Nullable [] mine) {
         State state = new State();
         byte[] disk;
         try {
@@ -135,7 +136,8 @@ final class StoreSync {
      * @return whether the file was written ({@code false}: this process had nothing to persist)
      * @throws IOException when the write failed, or the file on disk is now from a newer build
      */
-    boolean write(Path file, byte[] mine, ConfigSchema schema, Consumer<JsonNode> onMerged) throws IOException {
+    boolean write(Path file, byte[] mine, ConfigSchema schema, @Nullable Consumer<JsonNode> onMerged)
+            throws IOException {
         JVM_LOCK.lock();
         try (Held ignored = lockAcrossProcesses()) {
             State state = states.get(file);
@@ -195,7 +197,9 @@ final class StoreSync {
      * The tree to write in place of {@code mine}, or {@code null} when {@code mine} itself is right: the other
      * writer changed nothing this process cares about, or left something that cannot be read (kept aside).
      */
-    private JsonNode merge(Path file, byte[] base, byte[] mine, byte[] disk, ConfigSchema schema) throws IOException {
+    private @Nullable JsonNode merge(
+            Path file, byte @Nullable [] base, byte @Nullable [] mine, byte @Nullable [] disk, ConfigSchema schema)
+            throws IOException {
         JsonNode theirs;
         try {
             theirs = json.readTree(ConfigMigrations.decodeText(disk));
@@ -230,7 +234,7 @@ final class StoreSync {
     }
 
     /** The file's bytes; {@code null} when it does not exist. */
-    private static byte[] readIfPresent(Path file) throws IOException {
+    private static byte @Nullable [] readIfPresent(Path file) throws IOException {
         try {
             return Files.readAllBytes(file);
         } catch (NoSuchFileException absent) {
@@ -243,7 +247,7 @@ final class StoreSync {
         }
     }
 
-    private static byte[] hash(byte[] bytes) {
+    private static byte @Nullable [] hash(byte @Nullable [] bytes) {
         if (bytes == null) {
             return null;
         }
@@ -279,14 +283,14 @@ final class StoreSync {
         return new Held(null);
     }
 
-    private record Held(FileChannel channel) implements AutoCloseable {
+    private record Held(@Nullable FileChannel channel) implements AutoCloseable {
         @Override
         public void close() {
             closeQuietly(channel);
         }
     }
 
-    private static void closeQuietly(FileChannel channel) {
+    private static void closeQuietly(@Nullable FileChannel channel) {
         if (channel != null) {
             try {
                 channel.close();

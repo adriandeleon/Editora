@@ -11,6 +11,8 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Decides which Node.js runs a file, and from which folder — the one answer Run, run configurations, Debug, npm
  * scripts, the TypeScript language server, the HTTP Client and Doctor all use, so a script cannot run under one
@@ -48,7 +50,8 @@ public final class NodeRuntimes {
     }
 
     /** A resolved Node.js: {@code command} is the argv prefix (the executable, then any arguments given to it). */
-    public record NodeRuntime(List<String> command, Source source, String versionFile) {
+    public record NodeRuntime(
+            List<String> command, Source source, @Nullable String versionFile) {
         public NodeRuntime {
             command = List.copyOf(command);
             if (command.isEmpty()) {
@@ -97,11 +100,11 @@ public final class NodeRuntimes {
      * @param onPath the absolute path of a bare command name found on PATH, if any
      */
     public record Inputs(
-            Path file,
-            Path projectRoot,
+            @Nullable Path file,
+            @Nullable Path projectRoot,
             String configured,
             String setting,
-            Path home,
+            @Nullable Path home,
             Predicate<Path> isFile,
             Function<Path, Optional<String>> readFile,
             Function<Path, List<Path>> listDir,
@@ -112,7 +115,7 @@ public final class NodeRuntimes {
         }
 
         /** Local inputs: the real file system, the user's home and Editora's augmented PATH. */
-        public static Inputs local(Path file, Path projectRoot, String configured, String setting) {
+        public static Inputs local(@Nullable Path file, @Nullable Path projectRoot, String configured, String setting) {
             String home = System.getProperty("user.home");
             return new Inputs(
                     file,
@@ -128,7 +131,8 @@ public final class NodeRuntimes {
     }
 
     /** Resolves for a local file with the real file system and augmented PATH. Off the FX thread. */
-    public static NodeRuntime resolveLocal(Path file, Path projectRoot, String configured, String setting) {
+    public static NodeRuntime resolveLocal(
+            @Nullable Path file, @Nullable Path projectRoot, String configured, String setting) {
         return resolve(Inputs.local(file, projectRoot, configured, setting));
     }
 
@@ -146,14 +150,16 @@ public final class NodeRuntimes {
                 return new NodeRuntime(cmd, Source.SETTING, null);
             }
         }
-        if (in.file() != null && in.home() != null) {
-            Optional<Path> versionFile = versionFile(in);
+        Path file = in.file();
+        Path home = in.home();
+        if (file != null && home != null) {
+            Optional<Path> versionFile = versionFile(in, file, home);
             if (versionFile.isPresent()) {
                 String wanted = in.readFile()
                         .apply(versionFile.get())
                         .map(String::strip)
                         .orElse("");
-                Optional<Path> node = nvmNode(in, wanted);
+                Optional<Path> node = nvmNode(in, home, wanted);
                 if (node.isPresent()) {
                     return new NodeRuntime(
                             List.of(node.get().toString()),
@@ -174,7 +180,8 @@ public final class NodeRuntimes {
      * (a stray {@code ~/package.json} is not a package root). Empty when none is found — callers then use the
      * file's own folder.
      */
-    public static Optional<Path> packageRoot(Path file, Path projectRoot, Path home, Predicate<Path> isFile) {
+    public static Optional<Path> packageRoot(
+            @Nullable Path file, @Nullable Path projectRoot, @Nullable Path home, Predicate<Path> isFile) {
         if (file == null) {
             return Optional.empty();
         }
@@ -202,13 +209,13 @@ public final class NodeRuntimes {
     }
 
     /** {@link #packageRoot} on the real file system. */
-    public static Optional<Path> packageRoot(Path file, Path projectRoot) {
+    public static Optional<Path> packageRoot(Path file, @Nullable Path projectRoot) {
         String home = System.getProperty("user.home");
         return packageRoot(file, projectRoot, home == null ? null : Path.of(home), Files::isRegularFile);
     }
 
     /** The working folder for a Node file: its package root, else its own folder. */
-    public static Path workingDirectory(Path file, Path projectRoot) {
+    public static Path workingDirectory(Path file, @Nullable Path projectRoot) {
         return packageRoot(file, projectRoot)
                 .orElseGet(() -> file.toAbsolutePath().getParent());
     }
@@ -282,13 +289,13 @@ public final class NodeRuntimes {
 
     // ------------------------------------------------------------------------------------------------- internals
 
-    private static Optional<Path> versionFile(Inputs in) {
-        Path stop = packageRoot(in.file(), in.projectRoot(), in.home(), in.isFile())
+    private static Optional<Path> versionFile(Inputs in, Path file, Path home) {
+        Path stop = packageRoot(file, in.projectRoot(), home, in.isFile())
                 .orElse(
                         in.projectRoot() == null
                                 ? null
                                 : in.projectRoot().toAbsolutePath().normalize());
-        Path dir = in.file().toAbsolutePath().normalize().getParent();
+        Path dir = file.toAbsolutePath().normalize().getParent();
         int levels = 0;
         while (dir != null && levels++ < 32) {
             for (String name : VERSION_FILES) {
@@ -309,13 +316,13 @@ public final class NodeRuntimes {
      * The newest nvm-installed {@code node} matching {@code wanted} — {@code 20}, {@code 20.11}, {@code v20.11.1};
      * aliases such as {@code lts/*} or {@code node} are not resolved here (empty).
      */
-    static Optional<Path> nvmNode(Inputs in, String wanted) {
+    static Optional<Path> nvmNode(Inputs in, Path home, String wanted) {
         Optional<int[]> want = parseVersion(wanted);
         if (want.isEmpty() || !wanted.strip().matches("v?\\d+(\\.\\d+){0,2}")) {
             return Optional.empty();
         }
         int parts = wanted.strip().replaceFirst("^v", "").split("\\.").length;
-        Path versions = in.home().resolve(".nvm").resolve("versions").resolve("node");
+        Path versions = home.resolve(".nvm").resolve("versions").resolve("node");
         return in.listDir().apply(versions).stream()
                 .filter(d -> {
                     Optional<int[]> have = parseVersion(d.getFileName().toString());

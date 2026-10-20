@@ -3,6 +3,8 @@ package com.editora.editops;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A simple abbreviation expander: the text immediately before a point, looked up (case-insensitively) in a
  * user dictionary and replaced with its expansion. Pure and toolkit-free (mirroring {@link EmacsEdits}); the
@@ -66,7 +68,7 @@ public final class Abbrev {
      * Every start between the preceding whitespace and {@code point} that begins a word or a run of
      * punctuation is tried, longest first, so {@code adl-fn} wins over a separate {@code fn}.
      */
-    public static Edit expand(String text, int point, Map<String, String> table) {
+    public static @Nullable Edit expand(String text, int point, Map<String, String> table) {
         if (text == null || table == null || table.isEmpty()) {
             return null;
         }

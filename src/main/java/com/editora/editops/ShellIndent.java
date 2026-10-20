@@ -1,5 +1,7 @@
 package com.editora.editops;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Shell indentation from {@link ShellScan}'s structure rather than from the shape of one line: what Enter, a
  * typed closer ({@code fi}, {@code done}, {@code esac}, {@code ;;}, a here-doc's delimiter) and smart Tab do
@@ -57,7 +59,8 @@ final class ShellIndent {
      * a closer on it, or null to fall back to the bracket/indentation rules ({@code }}, {@code )}, or a closer
      * whose opener is out of reach). A line that closes nothing keeps {@code currentIndent}.
      */
-    static String closer(String text, int caret, char typed, String currentIndent, String unit, int tabSize) {
+    static @Nullable String closer(
+            String text, int caret, char typed, String currentIndent, @Nullable String unit, int tabSize) {
         int ls = lineStart(text, caret);
         String upTo = text.substring(ls, caret);
         String content = (upTo + (typed != 0 && typed != '\n' ? String.valueOf(typed) : "")).strip();
@@ -101,7 +104,7 @@ final class ShellIndent {
      * else what Enter at the end of the previous non-blank line would give (inside a here-doc: that line's
      * indent, never a block's). Null when nothing above is in reach.
      */
-    static String forLine(String text, int ls, String unit, int tabSize) {
+    static @Nullable String forLine(String text, int ls, String unit, int tabSize) {
         int from = scanStart(text, ls);
         int le = lineEnd(text, ls);
         String line = text.substring(ls, le);
@@ -130,7 +133,7 @@ final class ShellIndent {
 
     /** {@code fi}/{@code else}/{@code elif}/{@code done}/{@code esac}, or {@code ;;}/{@code ;&}/{@code ;;&}, that
      *  {@code content} (a line without its indent) starts with as a whole word; else null. */
-    static String closerWord(String content) {
+    static @Nullable String closerWord(String content) {
         if (content.startsWith(";;") || content.startsWith(";&")) {
             return content.startsWith(";;&") ? ";;&" : content.substring(0, 2);
         }
@@ -146,7 +149,7 @@ final class ShellIndent {
     }
 
     /** The indent of the first non-blank line after {@code header} and before {@code line} (a case item's body). */
-    private static String firstBodyIndent(ShellScan.Result r, int header, int line, int tabSize) {
+    private static @Nullable String firstBodyIndent(ShellScan.Result r, int header, int line, int tabSize) {
         for (int k = header + 1; k < line; k++) {
             if (r.startState(k) != ShellScan.CODE) {
                 continue;
@@ -161,7 +164,7 @@ final class ShellIndent {
         return null;
     }
 
-    private static String unitOrDefault(String unit, ShellScan.Result r, ShellScan.Block item, int tabSize) {
+    private static String unitOrDefault(@Nullable String unit, ShellScan.Result r, ShellScan.Block item, int tabSize) {
         if (unit != null) {
             return unit;
         }

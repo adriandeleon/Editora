@@ -7,6 +7,8 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure helpers for inserting a pasted/dropped image into a Markdown buffer: pick a unique file name
  * within the sibling {@code assets/} directory, compute the forward-slashed relative link, and build
@@ -190,9 +192,9 @@ public final class MarkdownImagePaste {
      * or an http(s) address ending in an image extension. An ordinary link is not an image — taking every
      * http(s) URL for one downloaded the page it pointed to and saved the HTML as {@code assets/page.png}.
      */
-    public static String imageUrlFromDrag(String url, String html, String string) {
+    public static @Nullable String imageUrlFromDrag(String url, String html, String string) {
         String u = firstNonBlank(url);
-        if (isImageRef(u)) {
+        if (u != null && isImageRef(u)) {
             return u.trim();
         }
         if (html != null) {
@@ -205,14 +207,14 @@ public final class MarkdownImagePaste {
             }
         }
         String s = firstNonBlank(string);
-        return isImageRef(s) ? s.trim() : null;
+        return s != null && isImageRef(s) ? s.trim() : null;
     }
 
     /**
      * The Markdown for a dragged hyperlink, or {@code null} when the drag carries no http(s)/mailto URL:
      * {@code [text](url)} with the anchor text of the dragged {@code html}, else the bare {@code <url>}.
      */
-    public static String linkFromDrag(String url, String html) {
+    public static @Nullable String linkFromDrag(String url, String html) {
         String u = firstNonBlank(url);
         if (u == null || !u.trim().matches("(?i)(https?://|mailto:)\\S+")) {
             return null;
@@ -235,7 +237,7 @@ public final class MarkdownImagePaste {
     }
 
     /** A {@code data:image} URI or an http(s) address: something an {@code <img>} may point at. */
-    private static boolean isWebRef(String s) {
+    private static boolean isWebRef(@Nullable String s) {
         if (s == null) {
             return false;
         }
@@ -257,7 +259,7 @@ public final class MarkdownImagePaste {
      * {@code webp}, {@code bmp}, {@code ico}, {@code avif}, {@code svg}), or {@code null} when they are not an
      * image — which is how a download that turned out to be a web page is told from a picture.
      */
-    public static String sniffImageType(byte[] bytes) {
+    public static @Nullable String sniffImageType(byte[] bytes) {
         if (bytes == null || bytes.length < 4) {
             return null;
         }
@@ -296,7 +298,7 @@ public final class MarkdownImagePaste {
         return true;
     }
 
-    private static String firstNonBlank(String s) {
+    private static @Nullable String firstNonBlank(String s) {
         return s == null || s.isBlank() ? null : s;
     }
 
@@ -304,7 +306,7 @@ public final class MarkdownImagePaste {
      * A file extension for a downloaded image URL: from a {@code data:image/<ext>} MIME, else the URL
      * path's extension when it is a known image type, else {@code fallback}. Query/fragment are ignored.
      */
-    public static String extensionForUrl(String url, String fallback) {
+    public static @Nullable String extensionForUrl(String url, @Nullable String fallback) {
         if (url == null) {
             return fallback;
         }

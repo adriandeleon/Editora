@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A pom.xml merged with the {@code <parent>} chain found <b>beside it on disk</b> — the one piece of
  * inheritance a module of a multi-module build needs for its tasks tree to be useful. Profiles and
@@ -54,7 +56,7 @@ public final class PomInheritance {
      * file itself must parse; an unreadable or unparsable parent simply ends the chain (the module's own pom
      * is still shown — a broken parent is Maven's complaint to make, not a reason to hide the module).
      */
-    public static PomModel effective(Path pomXml, Path boundary) throws IOException, PomParseException {
+    public static PomModel effective(Path pomXml, @Nullable Path boundary) throws IOException, PomParseException {
         PomModel child = cachedParse(pomXml);
         List<PomModel> chain = new ArrayList<>();
         chain.add(child);
@@ -90,7 +92,7 @@ public final class PomInheritance {
     /** Where {@code <parent>} points from {@code pomXml}: {@code <relativePath>} (a directory means its
      *  {@code pom.xml}), else {@code ../pom.xml}. Null when the relativePath is written empty, which is how
      *  a pom says "repository only". */
-    static Path parentPomPath(Path pomXml, PomModel.Parent parent) {
+    static @Nullable Path parentPomPath(Path pomXml, PomModel.Parent parent) {
         Path dir = pomXml.getParent();
         if (dir == null) {
             return null;

@@ -1,5 +1,7 @@
 package com.editora.editops;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Which characters a language's identifiers are made of beyond letters, digits and {@code _}. In
  * JavaScript and TypeScript {@code $} is an ordinary identifier character ({@code $el}, {@code user$},
@@ -12,7 +14,7 @@ public final class IdentifierChars {
     private IdentifierChars() {}
 
     /** Whether {@code $} is part of {@code language}'s identifiers (and {@code #} may start one). */
-    public static boolean dollarIdentifiers(String language) {
+    public static boolean dollarIdentifiers(@Nullable String language) {
         return language != null && (language.startsWith("javascript") || language.startsWith("typescript"));
     }
 

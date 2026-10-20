@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The files of a local project a deployment sends: what Git tracks or would track (when the project is a Git
@@ -51,7 +52,7 @@ public final class LocalFiles {
      * What Git tracks or would track in {@code root} ({@code ls-files --cached --others --exclude-standard});
      * null when {@code root} is not in a Git work tree or Git cannot be run, so the caller walks the folder.
      */
-    static List<String> gitFiles(Path root) {
+    static @Nullable List<String> gitFiles(Path root) {
         if (!Files.exists(root.resolve(".git"))) {
             return null; // only the repository's own root: a subfolder of a bigger repository walks
         }

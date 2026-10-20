@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.TreeMap;
 
 import com.editora.search.GitignoreFilter;
+import org.jspecify.annotations.Nullable;
 
 /** Toolkit-free recursive directory comparison used by the multi-file diff review. */
 public final class DirectoryDiff {
@@ -79,7 +80,9 @@ public final class DirectoryDiff {
                 rightFile = rightFile != null ? rightFile : probe(rightRoot, relative);
             }
             if (leftFile == null) {
-                differences.add(new Entry(relative, Kind.RIGHT_ONLY, -1, rightFile.size()));
+                if (rightFile != null) { // one side always has it: a scan of that side listed it
+                    differences.add(new Entry(relative, Kind.RIGHT_ONLY, -1, rightFile.size()));
+                }
             } else if (rightFile == null) {
                 differences.add(new Entry(relative, Kind.LEFT_ONLY, leftFile.size(), -1));
             } else {
@@ -157,7 +160,7 @@ public final class DirectoryDiff {
     }
 
     /** The regular file at {@code relative} below {@code root}, or {@code null}; symbolic links are not followed. */
-    private static FileInfo probe(Path root, String relative) {
+    private static @Nullable FileInfo probe(Path root, String relative) {
         try {
             Path file = root.resolve(relative);
             BasicFileAttributes attrs =
@@ -180,8 +183,8 @@ public final class DirectoryDiff {
     private record FileInfo(Path path, long size) {}
 
     private static final class FilePair {
-        private FileInfo left;
-        private FileInfo right;
+        private @Nullable FileInfo left;
+        private @Nullable FileInfo right;
     }
 
     private record Scan(boolean truncated, boolean incomplete) {}

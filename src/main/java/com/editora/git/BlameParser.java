@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure parser for {@code git blame --porcelain} (or {@code --line-porcelain}) output → one {@link BlameLine}
  * per source line (in file order). Each porcelain block starts with a {@code <commit id> <orig> <final> [<n>]}
@@ -29,9 +31,9 @@ public final class BlameParser {
             long epochSeconds,
             String summary,
             boolean uncommitted,
-            String path,
-            String previousPath,
-            String previousHash) {
+            @Nullable String path,
+            @Nullable String previousPath,
+            @Nullable String previousHash) {
 
         public BlameLine(String hash, String author, long epochSeconds, String summary, boolean uncommitted) {
             this(hash, author, epochSeconds, summary, uncommitted, null, null, null);
@@ -57,8 +59,14 @@ public final class BlameParser {
         String author = "";
         String summary = "";
         long time;
+
+        @Nullable
         String path;
+
+        @Nullable
         String previousPath;
+
+        @Nullable
         String previousHash;
     }
 
@@ -82,7 +90,7 @@ public final class BlameParser {
         for (String line : porcelain.split("\n", -1)) {
             if (line.startsWith("\t")) {
                 // The content line terminates the current block: emit it.
-                if (hash != null) {
+                if (hash != null && info != null) { // set together by the header
                     boolean uncommitted = hash.chars().allMatch(c -> c == '0');
                     out.add(new BlameLine(
                             hash,

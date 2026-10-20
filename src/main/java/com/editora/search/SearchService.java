@@ -24,6 +24,7 @@ import javafx.application.Platform;
 
 import com.editora.process.ProcessRunner;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs a multi-file search off the JavaFX thread (the {@code GitService} idiom: a single daemon
@@ -57,8 +58,8 @@ public final class SearchService {
      */
     public static final class Channel {
         private final AtomicLong gen = new AtomicLong();
-        private final AtomicReference<Pending> inFlight = new AtomicReference<>();
-        private volatile Future<?> current;
+        private final AtomicReference<@Nullable Pending> inFlight = new AtomicReference<>();
+        private volatile @Nullable Future<?> current;
 
         private Channel() {}
     }
@@ -141,7 +142,7 @@ public final class SearchService {
             List<String> include,
             List<String> exclude,
             Consumer<Outcome> onResult,
-            Runnable onSuperseded) {
+            @Nullable Runnable onSuperseded) {
         search(main, query, scopeRoot, openContents, include, exclude, onResult, onSuperseded);
     }
 
@@ -175,7 +176,7 @@ public final class SearchService {
             List<String> include,
             List<String> exclude,
             Consumer<Outcome> onResult,
-            Runnable onSuperseded) {
+            @Nullable Runnable onSuperseded) {
         long g = channel.gen.incrementAndGet();
         // A list, never a Path-keyed map: an immutable map's probe calls key.equals on whatever shares the
         // slot, and a remote (SFTP) path's equals throws ProviderMismatchException against a local one — so
@@ -220,10 +221,10 @@ public final class SearchService {
 
     /** The search whose result has not been delivered yet; settled exactly once, by delivery or by a drop. */
     private static final class Pending {
-        private final Runnable onSuperseded;
+        private final @Nullable Runnable onSuperseded;
         private final AtomicBoolean settled = new AtomicBoolean();
 
-        Pending(Runnable onSuperseded) {
+        Pending(@Nullable Runnable onSuperseded) {
             this.onSuperseded = onSuperseded;
         }
 
@@ -233,7 +234,7 @@ public final class SearchService {
     }
 
     /** Tells a dropped search's owner, on the FX thread like every other callback of this service. */
-    private void drop(Pending pending) {
+    private void drop(@Nullable Pending pending) {
         if (pending == null || !pending.settle()) {
             return;
         }
@@ -282,7 +283,7 @@ public final class SearchService {
     }
 
     /** On-disk search via ripgrep, paths resolved to absolute. Returns null to signal "fall back to the walker". */
-    private List<FileResult> ripgrepDisk(
+    private @Nullable List<FileResult> ripgrepDisk(
             List<String> rgCommand,
             SearchQuery query,
             Path root,
@@ -356,7 +357,7 @@ public final class SearchService {
     static boolean rematch(
             List<FileResult> files,
             SearchQuery query,
-            java.util.function.Function<Path, String> reader,
+            java.util.function.Function<Path, ? extends @Nullable String> reader,
             int limit,
             BooleanSupplier cancelled) {
         List<FileResult> rematched = new ArrayList<>();
@@ -593,7 +594,7 @@ public final class SearchService {
         return closed || Thread.currentThread().isInterrupted() || generation != channel.gen.get();
     }
 
-    private static String readText(Path file) {
+    private static @Nullable String readText(Path file) {
         try {
             if (Files.size(file) > MAX_FILE_BYTES) {
                 return null;

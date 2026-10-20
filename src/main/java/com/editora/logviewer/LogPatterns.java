@@ -3,6 +3,8 @@ package com.editora.logviewer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure heuristics for recognizing server-log lines: detecting a line's severity {@link LogLevel} and
  * sniffing whether a sample of text looks like a log file at all. java.base only, so it is unit-tested.
@@ -81,7 +83,7 @@ public final class LogPatterns {
      * a stack-trace frame, or a wrapped continuation). A textual level token near the line start wins;
      * failing that, an HTTP access-log status code maps 5xx→ERROR, 4xx→WARN, 2xx/3xx→INFO.
      */
-    public static LogLevel levelOf(String line) {
+    public static @Nullable LogLevel levelOf(String line) {
         if (line == null || line.isEmpty()) {
             return null;
         }

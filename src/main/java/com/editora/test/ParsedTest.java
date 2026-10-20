@@ -1,5 +1,7 @@
 package com.editora.test;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A parser's neutral result for one test case. {@code className} is the owning grouping (JUnit FQN class / Go
  * package / Cargo crate / TAP file) and doubles as the suite key; {@code methodName} is the case name.
@@ -9,15 +11,15 @@ package com.editora.test;
  * {@code 0} for a single run (review D16). Pure data.
  */
 public record ParsedTest(
-        String className,
-        String methodName,
+        @Nullable String className,
+        @Nullable String methodName,
         TestStatus status,
         long durationMs,
-        String failureType,
-        String failureMessage,
-        String stackTrace,
-        String stdout,
-        String sourceFileHint,
+        @Nullable String failureType,
+        @Nullable String failureMessage,
+        @Nullable String stackTrace,
+        @Nullable String stdout,
+        @Nullable String sourceFileHint,
         int sourceLineHint,
         int retries) {
 
@@ -27,11 +29,11 @@ public record ParsedTest(
             String methodName,
             TestStatus status,
             long durationMs,
-            String failureType,
-            String failureMessage,
-            String stackTrace,
-            String stdout,
-            String sourceFileHint,
+            @Nullable String failureType,
+            @Nullable String failureMessage,
+            @Nullable String stackTrace,
+            @Nullable String stdout,
+            @Nullable String sourceFileHint,
             int sourceLineHint) {
         this(
                 className,

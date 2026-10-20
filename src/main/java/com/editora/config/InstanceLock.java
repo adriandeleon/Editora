@@ -11,6 +11,8 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * An advisory, process-lifetime claim on a config directory, so that two Editora processes sharing one
  * directory can tell which of them may do the things only one process can safely do.
@@ -55,15 +57,15 @@ final class InstanceLock implements AutoCloseable {
     private static final long PRESENCE_RETRY_NANOS = 5_000_000L;
 
     /** {@code null} when the lock file could not be opened (then {@link #primary} is assumed). */
-    private final FileChannel channel;
+    private final @Nullable FileChannel channel;
     /** Held for life; never read, only kept reachable so the lock is not released by a GC'd channel. */
     @SuppressWarnings("unused")
-    private final FileLock primaryLock;
+    private final @Nullable FileLock primaryLock;
 
     private final boolean primary;
-    private FileLock presenceLock;
+    private @Nullable FileLock presenceLock;
 
-    private InstanceLock(FileChannel channel, FileLock primaryLock, boolean primary) {
+    private InstanceLock(@Nullable FileChannel channel, @Nullable FileLock primaryLock, boolean primary) {
         this.channel = channel;
         this.primaryLock = primaryLock;
         this.primary = primary;
@@ -76,7 +78,7 @@ final class InstanceLock implements AutoCloseable {
         FAILED
     }
 
-    private record Tried(Attempt outcome, FileLock lock) {}
+    private record Tried(Attempt outcome, @Nullable FileLock lock) {}
 
     /** Claims {@code configDir} for this process. Never throws and never blocks on another process. */
     static InstanceLock claim(Path configDir) {
@@ -132,11 +134,12 @@ final class InstanceLock implements AutoCloseable {
             return false;
         }
         Tried tried = tryLock(channel, PRESENCE_BYTE, false);
-        if (tried.outcome() != Attempt.ACQUIRED) {
+        FileLock probe = tried.lock(); // set exactly when the outcome is ACQUIRED
+        if (tried.outcome() != Attempt.ACQUIRED || probe == null) {
             return true;
         }
         try {
-            tried.lock().release();
+            probe.release();
         } catch (IOException e) {
             LOG.log(Level.FINE, "Could not release the instance presence probe", e);
         }
@@ -189,7 +192,7 @@ final class InstanceLock implements AutoCloseable {
         closeQuietly(channel);
     }
 
-    private static void closeQuietly(FileChannel channel) {
+    private static void closeQuietly(@Nullable FileChannel channel) {
         if (channel == null) {
             return;
         }

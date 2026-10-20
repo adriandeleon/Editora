@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Three-way merge of a config store's JSON tree: what this process last knew ({@code base}), what it holds
@@ -43,6 +44,7 @@ public final class StoreMerge {
          * list means "the entry's own value", for arrays of strings), or {@code null} when the array has no
          * entry identity and is merged as a whole.
          */
+        @Nullable
         List<String> entryKey(List<String> path);
 
         /** Every array is one opaque value. */
@@ -81,11 +83,13 @@ public final class StoreMerge {
     }
 
     /** Merges three trees; any of them may be {@code null} (absent). Returns {@code null} for "absent". */
-    public static JsonNode merge(JsonNode base, JsonNode mine, JsonNode theirs, Keys keys) {
+    public static @Nullable JsonNode merge(
+            @Nullable JsonNode base, @Nullable JsonNode mine, @Nullable JsonNode theirs, Keys keys) {
         return merge(base, mine, theirs, keys == null ? Keys.NONE : keys, new ArrayList<>());
     }
 
-    private static JsonNode merge(JsonNode base, JsonNode mine, JsonNode theirs, Keys keys, List<String> path) {
+    private static @Nullable JsonNode merge(
+            @Nullable JsonNode base, @Nullable JsonNode mine, @Nullable JsonNode theirs, Keys keys, List<String> path) {
         if (same(mine, base)) {
             return theirs; // this process did not touch it
         }
@@ -110,7 +114,8 @@ public final class StoreMerge {
         return mine; // a real conflict: the value set here wins (for a removal here, that is "absent")
     }
 
-    private static JsonNode mergeObjects(JsonNode base, JsonNode mine, JsonNode theirs, Keys keys, List<String> path) {
+    private static JsonNode mergeObjects(
+            @Nullable JsonNode base, JsonNode mine, JsonNode theirs, Keys keys, List<String> path) {
         ObjectNode out = JsonNodeFactory.instance.objectNode();
         Set<String> names = new LinkedHashSet<>();
         mine.fieldNames().forEachRemaining(names::add);
@@ -130,8 +135,13 @@ public final class StoreMerge {
      * Entry-wise merge, or {@code null} when the entries cannot be told apart (a missing key field, or two
      * entries with the same key) and the array must be treated as one value.
      */
-    private static JsonNode mergeArrays(
-            JsonNode base, JsonNode mine, JsonNode theirs, List<String> entryKey, Keys keys, List<String> path) {
+    private static @Nullable JsonNode mergeArrays(
+            @Nullable JsonNode base,
+            JsonNode mine,
+            JsonNode theirs,
+            List<String> entryKey,
+            Keys keys,
+            List<String> path) {
         Map<JsonNode, JsonNode> baseByKey = index(base, entryKey);
         Map<JsonNode, JsonNode> mineByKey = index(mine, entryKey);
         Map<JsonNode, JsonNode> theirsByKey = index(theirs, entryKey);
@@ -162,7 +172,7 @@ public final class StoreMerge {
     }
 
     /** {@code array}'s entries by identity in order, or {@code null} when identities are missing or repeat. */
-    private static Map<JsonNode, JsonNode> index(JsonNode array, List<String> entryKey) {
+    private static @Nullable Map<JsonNode, JsonNode> index(@Nullable JsonNode array, List<String> entryKey) {
         Map<JsonNode, JsonNode> byKey = new LinkedHashMap<>();
         if (array == null) {
             return byKey;
@@ -176,7 +186,7 @@ public final class StoreMerge {
         return byKey;
     }
 
-    private static JsonNode keyOf(JsonNode entry, List<String> entryKey) {
+    private static @Nullable JsonNode keyOf(JsonNode entry, List<String> entryKey) {
         if (entryKey.isEmpty()) {
             return entry.isValueNode() && !entry.isNull() ? entry : null;
         }
@@ -194,7 +204,7 @@ public final class StoreMerge {
         return key;
     }
 
-    private static boolean same(JsonNode a, JsonNode b) {
+    private static boolean same(@Nullable JsonNode a, @Nullable JsonNode b) {
         return a == null ? b == null : a.equals(b);
     }
 }

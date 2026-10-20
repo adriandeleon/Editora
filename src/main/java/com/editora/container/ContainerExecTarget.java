@@ -22,6 +22,7 @@ import com.editora.process.TargetCache;
 import com.editora.process.TerminalChannel;
 import com.editora.process.TerminalSpec;
 import com.editora.terminal.PtyChannel;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A running container whose bind-mounted folders of this machine have their tools run inside it, with
@@ -41,7 +42,7 @@ public final class ContainerExecTarget implements ExecTarget {
     private final ContainerEngine engine;
     private final ContainerInfo info;
     private volatile boolean running;
-    private volatile RemoteEnv env;
+    private volatile @Nullable RemoteEnv env;
 
     public ContainerExecTarget(ContainerEngine engine, ContainerInfo info) {
         this.engine = engine;
@@ -246,7 +247,7 @@ public final class ContainerExecTarget implements ExecTarget {
     }
 
     /** The relay the container has, asked once: {@code nc}, {@code bash} or {@code python3}; "" for none. */
-    private volatile String relayTool;
+    private volatile @Nullable String relayTool;
 
     /**
      * A loopback port here joined to {@code host:port} as the container sees it, through a relay run with
@@ -279,7 +280,8 @@ public final class ContainerExecTarget implements ExecTarget {
 
     /** The container's name for {@code path}: through its mounts, else the path as it is (not in the container). */
     @Override
-    public String toTargetPath(Path path) {
+    public String toTargetPath(@Nullable Path given) {
+        Path path = java.util.Objects.requireNonNull(given, "path");
         String inside = info.mounts().toContainer(path);
         if (inside != null) {
             return inside;

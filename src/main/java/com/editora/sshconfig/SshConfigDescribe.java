@@ -2,6 +2,8 @@ package com.editora.sshconfig;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Plain-English glosses for SSH client config blocks: a one-line connection summary per {@code Host} block
  * and per-option glosses. Pure, java.base-only, unit-tested. An unrecognized option returns {@code null}
@@ -28,7 +30,7 @@ public final class SshConfigDescribe {
         }
         boolean concrete = SshConfig.isConcreteHost(b.argument());
         String host = b.argument().strip();
-        java.util.function.Function<String, String> value =
+        java.util.function.Function<String, @Nullable String> value =
                 concrete ? key -> SshConfig.effective(blocks, host, key) : b::first;
 
         String hostName = value.apply("HostName");
@@ -61,7 +63,7 @@ public final class SshConfigDescribe {
     }
 
     /** A plain-English gloss for an option, or {@code null} if the keyword isn't recognized. */
-    public static String gloss(String key, String value) {
+    public static @Nullable String gloss(String key, String value) {
         String k = key.toLowerCase(Locale.ROOT);
         return switch (k) {
             case "hostname" -> "actual hostname: " + value;

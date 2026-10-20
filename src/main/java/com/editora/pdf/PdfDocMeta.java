@@ -1,5 +1,7 @@
 package com.editora.pdf;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a PDF says about itself, supplied by the caller: the document name, its language and how a page is
  * labelled in the footer. The writers live below the UI and the message catalogs, so the localised
@@ -10,7 +12,10 @@ package com.editora.pdf;
  * @param language a BCP 47 tag for the document catalog's {@code /Lang} (e.g. {@code "es"}); may be null
  * @param pageLabel formats the footer's page label; null for the language-neutral {@code "2 / 7"}
  */
-public record PdfDocMeta(String title, String language, PageLabel pageLabel) {
+public record PdfDocMeta(
+        @Nullable String title,
+        @Nullable String language,
+        @Nullable PageLabel pageLabel) {
 
     /** Formats a footer page label from the 1-based page number and the page count. */
     @FunctionalInterface

@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Reads what the Clojure build tools' actions popups list from their project files: a {@code deps.edn}'s aliases,
  * a {@code bb.edn}'s tasks, a {@code project.clj}'s name. A small EDN reader — enough to walk the top-level map
@@ -80,7 +82,7 @@ public final class ClojureProjects {
     private static final Pattern DEFPROJECT = Pattern.compile("\\(\\s*defproject\\s+(?:[\\w.\\-]+/)?([\\w.\\-]+)");
 
     /** The project name of a {@code project.clj} ({@code (defproject my-org/my-app "1.0"} → {@code my-app}), or null. */
-    public static String leiningenName(String projectClj) {
+    public static @Nullable String leiningenName(String projectClj) {
         if (projectClj == null) {
             return null;
         }

@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The parsed archetype catalog on disk — {@code <config>/cache/archetype-catalog.json} — so Maven Central's
@@ -69,12 +70,12 @@ public final class ArchetypeCatalogCache {
     }
 
     /** Where the cache lives for a config folder: {@code <config>/cache/archetype-catalog.json}. */
-    public static Path file(Path configDir) {
+    public static @Nullable Path file(Path configDir) {
         return configDir == null ? null : configDir.resolve("cache").resolve("archetype-catalog.json");
     }
 
     /** The cached entry, or null when there is none or it cannot be read (then it is as if there were none). */
-    public static Entry read(Path file) {
+    public static @Nullable Entry read(Path file) {
         if (file == null || !Files.isRegularFile(file)) {
             return null;
         }

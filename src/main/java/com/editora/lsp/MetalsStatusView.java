@@ -2,6 +2,8 @@ package com.editora.lsp;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How a Metals {@code metals/status} item reads in Editora's status bar. Metals writes VS Code's icon syntax
  * into the text ({@code $(sync~spin) Importing build}); a spinning icon marks work in progress, which runs the
@@ -12,13 +14,13 @@ import java.util.regex.Pattern;
  * @param type the server-status type: {@code Progress}, {@code ProgressEnd} or {@code Message}
  * @param text what the status bar says (null for {@code ProgressEnd})
  */
-record MetalsStatusView(String type, String text) {
+record MetalsStatusView(String type, @Nullable String text) {
 
     /** {@code $(name)} or {@code $(name~modifier)}: a VS Code product icon. */
     private static final Pattern ICON = Pattern.compile("\\$\\([A-Za-z0-9-]+(?:~[A-Za-z]+)?\\)");
 
     /** What {@code status} says, or null when it says nothing to show. */
-    static MetalsStatusView of(LanguageServerSession.MetalsStatus status) {
+    static @Nullable MetalsStatusView of(LanguageServerSession.MetalsStatus status) {
         if (status == null) {
             return null;
         }

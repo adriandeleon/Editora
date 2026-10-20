@@ -12,6 +12,8 @@ import javafx.scene.control.TextInputControl;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Translates key presses into chord tokens and dispatches them to commands via the keymap.
  * Supports multi-key Emacs chords (e.g. {@code C-x C-s}) using a pending-prefix buffer.
@@ -25,7 +27,7 @@ public class KeyDispatcher {
     private final KeymapManager keymap;
     private final Consumer<String> statusListener;
     /** The keyboard-macro machinery, if any: told what to record, asked when to stand aside. */
-    private MacroCapture capture;
+    private @Nullable MacroCapture capture;
 
     private String pending = "";
     /** True when the last KEY_PRESSED was consumed, so its paired KEY_TYPED is swallowed too. */
@@ -44,7 +46,7 @@ public class KeyDispatcher {
     /** Stashes the numeric argument for a count-aware command to read (null clears it). */
     private Consumer<Integer> prefixSink = n -> {};
     /** Inserts a self-inserted character N times ({@code C-u 40 -}); null disables self-insert repeat. */
-    private java.util.function.ObjIntConsumer<Character> selfInsert;
+    private java.util.function.@Nullable ObjIntConsumer<Character> selfInsert;
     /** A runaway {@code C-u 9999999} can't hang the UI: repeats and self-inserts are clamped to this. */
     static final int MAX_REPEAT = 100_000;
 
@@ -53,7 +55,7 @@ public class KeyDispatcher {
     /** Optional first-look hook: given the chord token + event target, returns true if it handled the
      *  key (then the event is consumed and dispatch stops). Used e.g. to let {@code M-g} close a
      *  focused tool window. Only consulted when no multi-key prefix is pending. */
-    private java.util.function.BiPredicate<String, EventTarget> preDispatch;
+    private java.util.function.@Nullable BiPredicate<String, EventTarget> preDispatch;
 
     public KeyDispatcher(CommandRegistry registry, KeymapManager keymap, Consumer<String> statusListener) {
         this(registry, keymap, statusListener, KeymapManager.isMac());
@@ -134,6 +136,15 @@ public class KeyDispatcher {
     private int macroMode() {
         MacroCapture cap = capture;
         return cap == null ? MacroCapture.IDLE : cap.mode();
+    }
+
+    /** The capture, for a mode other than {@link MacroCapture#IDLE}, which only a capture reports. */
+    private MacroCapture macroCapture() {
+        MacroCapture cap = capture;
+        if (cap == null) {
+            throw new IllegalStateException("a macro mode was reported without a macro capture");
+        }
+        return cap;
     }
 
     /**
@@ -228,7 +239,7 @@ public class KeyDispatcher {
                 selfInsert.accept(s.charAt(0), count);
                 if (macro == MacroCapture.RECORDING && isRecordableText(s)) {
                     // The repeat is typing like any other: without this, C-u 3 x vanished from the macro.
-                    capture.text(s.substring(0, 1).repeat(count), event.getTarget());
+                    macroCapture().text(s.substring(0, 1).repeat(count), event.getTarget());
                 }
             }
             return;
@@ -240,7 +251,7 @@ public class KeyDispatcher {
         if (macro == MacroCapture.RECORDING && !event.isMetaDown() && (!event.isControlDown() || event.isAltDown())) {
             String s = event.getCharacter();
             if (isRecordableText(s)) {
-                capture.text(s, event.getTarget());
+                macroCapture().text(s, event.getTarget());
             }
         }
     }
@@ -275,12 +286,12 @@ public class KeyDispatcher {
             consumedPress = true;
             String cancel = chord(event);
             if (event.getCode() == KeyCode.ESCAPE || (cancel != null && CANCEL.equals(keymap.commandFor(cancel)))) {
-                capture.cancelReplay();
+                macroCapture().cancelReplay();
             }
             return;
         }
         if (macro == MacroCapture.RECORDING) {
-            capture.keySeen();
+            macroCapture().keySeen();
         }
         consumedPress = false;
         claimedAltPress = false;
@@ -307,7 +318,7 @@ public class KeyDispatcher {
                 claimedAltPress = true; // the terminal consumes it; consumeClaimedAlt is the backstop
             }
             if (macro == MacroCapture.RECORDING) {
-                capture.key(event, event.getTarget());
+                macroCapture().key(event, event.getTarget());
             }
             return;
         }
@@ -365,7 +376,7 @@ public class KeyDispatcher {
                 && (leftToFocusOwner(commandId, ownsKeys(event.getTarget()), inTextInput(event.getTarget()))
                         || ownsChord(event.getTarget(), token, commandId))) {
             if (macro == MacroCapture.RECORDING) {
-                capture.key(event, event.getTarget()); // the focus owner acts on it, so only the key replays it
+                macroCapture().key(event, event.getTarget()); // the focus owner acts on it, so only the key replays it
             }
             return; // let the focused window or field handle this editor-context key
         }
@@ -373,7 +384,7 @@ public class KeyDispatcher {
         // global binding of the same key (F2 = rename symbol in the VS Code/Sublime/IntelliJ keymaps).
         if (pending.isEmpty() && (commandId != null || prefix) && claimsKey(event.getTarget(), token)) {
             if (macro == MacroCapture.RECORDING) {
-                capture.key(event, event.getTarget());
+                macroCapture().key(event, event.getTarget());
             }
             return;
         }
@@ -431,7 +442,7 @@ public class KeyDispatcher {
             if (claimsKey(event.getTarget(), token)) {
                 claimedAltPress = true;
                 if (macro == MacroCapture.RECORDING) {
-                    capture.key(event, event.getTarget());
+                    macroCapture().key(event, event.getTarget());
                 }
                 return;
             }
@@ -449,7 +460,7 @@ public class KeyDispatcher {
         // rather than types, hand it to the macro recorder first — the focused control handles these itself,
         // so this is the only place they can be captured.
         if (macro == MacroCapture.RECORDING && isActionKey(event)) {
-            capture.key(event, event.getTarget());
+            macroCapture().key(event, event.getTarget());
         }
     }
 
@@ -499,7 +510,7 @@ public class KeyDispatcher {
     }
 
     /** A bare single digit token ({@code "0"}…{@code "9"}, no modifiers), else null. */
-    static Integer plainDigit(String token) {
+    static @Nullable Integer plainDigit(String token) {
         if (token.length() == 1) {
             char c = token.charAt(0);
             if (c >= '0' && c <= '9') {
@@ -578,7 +589,7 @@ public class KeyDispatcher {
      * focused key-owning window swallows (it reuses them for its own navigation). Jump/window/view
      * commands stay global. Keyed by id prefix: {@code nav.*} (caret) and {@code edit.*} (text).
      */
-    static boolean isEditorContext(String commandId) {
+    static boolean isEditorContext(@Nullable String commandId) {
         return commandId != null && (commandId.startsWith("nav.") || commandId.startsWith("edit."));
     }
 
@@ -591,7 +602,7 @@ public class KeyDispatcher {
      * — except {@link #CANCEL}, which stays global so {@code C-g} still closes the find bar or the palette
      * from inside their fields. Pure — tested.
      */
-    static boolean leftToFocusOwner(String commandId, boolean ownsKeys, boolean textInput) {
+    static boolean leftToFocusOwner(@Nullable String commandId, boolean ownsKeys, boolean textInput) {
         if (!isEditorContext(commandId)) {
             return false;
         }
@@ -640,7 +651,7 @@ public class KeyDispatcher {
      */
     public static final String OWNED_CHORDS = "editora.ownsChords";
 
-    private static boolean ownsChord(EventTarget target, String token, String commandId) {
+    private static boolean ownsChord(EventTarget target, String token, @Nullable String commandId) {
         Node node = target instanceof Node n ? n : null;
         while (node != null) {
             if (node.hasProperties() && chordOwned(node.getProperties().get(OWNED_CHORDS), token, commandId)) {
@@ -652,7 +663,7 @@ public class KeyDispatcher {
     }
 
     /** Whether an {@link #OWNED_CHORDS} property value hands {@code token} (bound to {@code commandId}) over. Pure. */
-    static boolean chordOwned(Object property, String token, String commandId) {
+    static boolean chordOwned(@Nullable Object property, String token, @Nullable String commandId) {
         return property instanceof java.util.Map<?, ?> chords
                 && commandId != null
                 && commandId.equals(chords.get(token));
@@ -715,7 +726,7 @@ public class KeyDispatcher {
     }
 
     /** Builds a chord token like {@code C-x}, {@code M-w}, {@code C-S-p}; null for modifier-only events. */
-    public static String chord(KeyEvent event) {
+    public static @Nullable String chord(KeyEvent event) {
         KeyCode code = event.getCode();
         if (code == null || code == KeyCode.UNDEFINED || code.isModifierKey()) {
             return null;

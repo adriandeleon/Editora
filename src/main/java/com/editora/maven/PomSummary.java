@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Element;
 
 /**
@@ -35,8 +36,8 @@ import org.w3c.dom.Element;
  * "unresolved" when a {@code ${…}} has no definition.
  */
 public record PomSummary(
-        Coordinates parent,
-        String parentRelativePath,
+        @Nullable Coordinates parent,
+        @Nullable String parentRelativePath,
         Coordinates coordinates,
         String packaging,
         String name,
@@ -54,7 +55,7 @@ public record PomSummary(
         List<Repository> repositories,
         List<Profile> profiles,
         List<String> inheritedFrom,
-        String error,
+        @Nullable String error,
         int errorLine,
         int errorColumn) {
 
@@ -205,12 +206,12 @@ public record PomSummary(
      * The summary of the pom at {@code path} (null ⇒ one-file): a local file's parent chain and imported BOMs
      * are read from disk and the local repository ({@link PomNeighbours}) to fill managed versions in.
      */
-    public static PomSummary parse(String xml, Path path) {
+    public static PomSummary parse(String xml, @Nullable Path path) {
         return parse(xml, path, localRepository());
     }
 
     /** As {@link #parse(String, Path)} with the local repository supplied (tests). */
-    static PomSummary parse(String xml, Path path, Path localRepo) {
+    static PomSummary parse(String xml, @Nullable Path path, @Nullable Path localRepo) {
         if (xml == null || xml.isBlank()) {
             return failed("empty document", 0, 0);
         }
@@ -383,12 +384,13 @@ public record PomSummary(
     private record Management(Map<String, Managed> versions, List<String> bomGuesses) {
         static final Management NONE = new Management(Map.of(), List.of());
 
+        @Nullable
         Managed lookup(String key) {
             return versions.get(key);
         }
     }
 
-    private static Management management(List<Dependency> own, PomNeighbours.Resolved chain, Path localRepo) {
+    private static Management management(List<Dependency> own, PomNeighbours.Resolved chain, @Nullable Path localRepo) {
         Map<String, Managed> versions = new LinkedHashMap<>();
         List<String> guesses = new ArrayList<>();
         for (Dependency d : own) {
@@ -442,7 +444,7 @@ public record PomSummary(
         }
     }
 
-    private static List<Property> parseProperties(Element propertiesEl) {
+    private static List<Property> parseProperties(@Nullable Element propertiesEl) {
         List<Property> out = new ArrayList<>();
         if (propertiesEl == null) {
             return List.of();
@@ -460,7 +462,7 @@ public record PomSummary(
     }
 
     private static List<Dependency> parseDependencies(
-            Element dependenciesEl, Map<String, String> props, Management management, boolean hasParent) {
+            @Nullable Element dependenciesEl, Map<String, String> props, Management management, boolean hasParent) {
         List<Dependency> out = new ArrayList<>();
         for (Element el : PomParser.childElements(dependenciesEl, "dependency")) {
             String artifactId = childText(el, "artifactId");
@@ -517,7 +519,8 @@ public record PomSummary(
         return guesses.get(0);
     }
 
-    private static List<Plugin> parsePlugins(Element pluginsEl, Map<String, String> props, Management management) {
+    private static List<Plugin> parsePlugins(
+            @Nullable Element pluginsEl, Map<String, String> props, Management management) {
         List<Plugin> out = new ArrayList<>();
         for (Element el : PomParser.childElements(pluginsEl, "plugin")) {
             String artifactId = childText(el, "artifactId");
@@ -551,7 +554,7 @@ public record PomSummary(
         return List.copyOf(out);
     }
 
-    private static void parseRepositories(Element listEl, String tag, boolean plugin, List<Repository> out) {
+    private static void parseRepositories(@Nullable Element listEl, String tag, boolean plugin, List<Repository> out) {
         for (Element el : PomParser.childElements(listEl, tag)) {
             String url = childText(el, "url");
             String id = childText(el, "id");
@@ -638,7 +641,7 @@ public record PomSummary(
         return message.startsWith(MALFORMED_PREFIX) ? message.substring(MALFORMED_PREFIX.length()) : message;
     }
 
-    private static String firstLine(String message) {
+    private static String firstLine(@Nullable String message) {
         if (message == null) {
             return "could not be parsed";
         }
@@ -646,7 +649,7 @@ public record PomSummary(
         return (nl < 0 ? message : message.substring(0, nl)).strip();
     }
 
-    private static Path localRepository() {
+    private static @Nullable Path localRepository() {
         String home = System.getProperty("user.home");
         if (home == null || home.isBlank()) {
             return null;

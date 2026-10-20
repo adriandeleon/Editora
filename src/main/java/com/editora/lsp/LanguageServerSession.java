@@ -62,6 +62,7 @@ import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageServer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One external language-server process for a single workspace {@code root}, driven over stdio via LSP4J.
@@ -130,13 +131,23 @@ final class LanguageServerSession implements LanguageClient {
     // volatile: start() runs off the FX thread (#407) and must NOT hold the `this` monitor during the fork (that
     // would block whenReady()'s synchronized check on the FX thread, re-introducing the stall). volatile safely
     // publishes these to the FX reader (ready()) and the launcher's drain thread instead of the monitor.
-    private volatile Process process;
-    private volatile LanguageServer server;
+    private volatile @Nullable Process process;
+    private volatile @Nullable LanguageServer server;
+
+    /** The server proxy; set by {@link #start()} before anything is sent and never cleared. */
+    private LanguageServer server() {
+        LanguageServer s = server;
+        if (s == null) {
+            throw new IllegalStateException("language server not started");
+        }
+        return s;
+    }
+
     /** The LSP4J launcher, kept for {@link #rawRequest} (custom, non-standard requests like jdtls's
      *  {@code java/classFileContents}, which the typed {@link LanguageServer} proxy can't express). */
-    private volatile Launcher<LanguageServer> launcher;
+    private volatile @Nullable Launcher<LanguageServer> launcher;
     /** The ordered writer between LSP4J and the server's stdin; null for an in-process test server. */
-    private volatile AsyncPipeWriter writer;
+    private volatile @Nullable AsyncPipeWriter writer;
 
     private volatile boolean initialized;
     /** Set only after a complete initialize response. Distinguishes a corrupt-startup failure from a
@@ -153,7 +164,7 @@ final class LanguageServerSession implements LanguageClient {
     private volatile Consumer<String> onRefresh = kind -> {};
     // Written on the LSP4J init thread (initialize().whenComplete), read on the FX thread (capabilities()).
     // volatile gives the FX reader the happens-before edge so it can't transiently see null after init completed.
-    private volatile ServerCapabilities capabilities;
+    private volatile @Nullable ServerCapabilities capabilities;
     /** Dynamic registrations keyed by registration id. Capability reads use the same effective
      *  {@link #capabilities} object as static initialize results, so all existing feature gates update. */
     private final Map<String, org.eclipse.lsp4j.Registration> dynamicRegistrations = new ConcurrentHashMap<>();
@@ -315,7 +326,7 @@ final class LanguageServerSession implements LanguageClient {
             Path root,
             Consumer<PublishDiagnosticsParams> onDiagnostics,
             java.util.function.BiConsumer<String, String> onStatus,
-            Object initializationOptions) {
+            @Nullable Object initializationOptions) {
         this.serverId = spec.serverId();
         this.command = spec.command();
         this.root = root;
@@ -503,12 +514,13 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** LSP4J's reader, done when the server's output has been read to its end (null before the start). */
-    private volatile java.util.concurrent.Future<Void> listening;
+    private volatile java.util.concurrent.@Nullable Future<Void> listening;
 
     /** Why the server refused {@code initialize}, in its own words (null: it did not refuse). */
-    private volatile String initializeRefusal;
+    private volatile @Nullable String initializeRefusal;
 
     /** The server's own reason for refusing {@code initialize}, or null. Such a session is not a crash. */
+    @Nullable
     String initializeRefusal() {
         return initializeRefusal;
     }
@@ -534,7 +546,7 @@ final class LanguageServerSession implements LanguageClient {
      * The message of a server's error answer somewhere in {@code t}'s causes — what it said when it refused a
      * request — or null when {@code t} is not such an answer (a timeout, a lost connection). Pure.
      */
-    static String responseErrorMessage(Throwable t) {
+    static @Nullable String responseErrorMessage(Throwable t) {
         for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
             if (c instanceof org.eclipse.lsp4j.jsonrpc.ResponseErrorException ree) {
                 String message = ree.getResponseError() == null
@@ -561,7 +573,7 @@ final class LanguageServerSession implements LanguageClient {
         if (initializationOptions != null) {
             ip.setInitializationOptions(initializationOptions); // jdtls: {"bundles":[<java-debug jar>]}
         }
-        server.initialize(ip)
+        server().initialize(ip)
                 // A server that never answers leaves this future — and every queued call — hanging forever:
                 // the status bar's loading bar spins with no error, the session is cached as if it were live,
                 // and the queue grows with each edit. That is exactly the jdtls workspace-lock wedge. Time it
@@ -570,7 +582,7 @@ final class LanguageServerSession implements LanguageClient {
                 .thenAccept(result -> {
                     capabilities = result.getCapabilities();
                     rememberStaticCapabilities();
-                    server.initialized(new InitializedParams());
+                    server().initialized(new InitializedParams());
                     pushConfiguration(); // this server's own settings only (also answered via configuration())
                     List<Pending> toRun;
                     synchronized (this) {
@@ -836,14 +848,14 @@ final class LanguageServerSession implements LanguageClient {
     private volatile boolean javaOnTypeFormatting;
 
     /** bash-language-server's {@code bashIde} section for this session (null until the manager sets it). */
-    private volatile BashIdeConfig bashIde;
+    private volatile @Nullable BashIdeConfig bashIde;
 
     /**
      * Sets the {@code bashIde} section this session answers and pushes. A server on another host is told to look
      * ShellCheck and shfmt up on that host's PATH ({@link BashIdeConfig#forRemote}). A running Bash server gets
      * the change pushed; it re-reads its configuration and re-lints the open file.
      */
-    void setBashIde(BashIdeConfig config) {
+    void setBashIde(@Nullable BashIdeConfig config) {
         BashIdeConfig next = config == null ? null : com.editora.vfs.Vfs.isRemote(root) ? config.forRemote() : config;
         boolean changed = !java.util.Objects.equals(bashIde, next);
         bashIde = next;
@@ -863,13 +875,13 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** The Python interpreter this session's Pyright analyses with (null = the server's own choice). */
-    private volatile String pythonPath;
+    private volatile @Nullable String pythonPath;
 
     /**
      * Sets the interpreter a Python server is told about ({@code python.pythonPath}); a running server gets the
      * change pushed, re-reads its configuration and re-resolves every import against the new environment.
      */
-    void setPythonPath(String path) {
+    void setPythonPath(@Nullable String path) {
         String next = path == null || path.isBlank() ? null : path;
         boolean changed = !java.util.Objects.equals(pythonPath, next);
         pythonPath = next;
@@ -879,6 +891,7 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** The interpreter last given to this session (null = none). */
+    @Nullable
     String pythonPath() {
         return pythonPath;
     }
@@ -904,7 +917,7 @@ final class LanguageServerSession implements LanguageClient {
             return;
         }
         try {
-            server.getWorkspaceService()
+            server().getWorkspaceService()
                     .didChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "didChangeConfiguration failed", e);
@@ -912,7 +925,7 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** typescript-language-server's {@code javascript}/{@code typescript} settings (null: none to send). */
-    private volatile java.util.Map<String, Object> typeScriptSettings;
+    private volatile java.util.@Nullable Map<String, Object> typeScriptSettings;
 
     /** Sets the TypeScript settings ({@link TypeScriptServer#settings}); a running server gets them pushed. */
     void setTypeScriptSettings(java.util.Map<String, Object> settings) {
@@ -924,21 +937,21 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** A document's indentation by its wire URI, for the TypeScript server's {@code formattingOptions} question. */
-    private volatile java.util.function.Function<String, FormattingIndent> indentForUri = uri -> null;
+    private volatile java.util.function.Function<String, @Nullable FormattingIndent> indentForUri = uri -> null;
 
-    void setIndentForUri(java.util.function.Function<String, FormattingIndent> lookup) {
+    void setIndentForUri(java.util.function.Function<String, @Nullable FormattingIndent> lookup) {
         indentForUri = lookup == null ? uri -> null : lookup;
     }
 
     /** A folder put first on the local server's PATH (the resolved Node.js's bin folder), or null. */
-    private volatile Path pathPrepend;
+    private volatile @Nullable Path pathPrepend;
 
-    void setPathPrepend(Path dir) {
+    void setPathPrepend(@Nullable Path dir) {
         pathPrepend = dir;
     }
 
     /** {@code dir} put in front of the PATH value {@code existing} (null/blank: just {@code dir}). Pure. */
-    static String prependedPath(String existing, String dir, String separator) {
+    static @Nullable String prependedPath(@Nullable String existing, String dir, String separator) {
         if (dir == null || dir.isBlank()) {
             return existing;
         }
@@ -996,7 +1009,7 @@ final class LanguageServerSession implements LanguageClient {
 
     /** {@code text} of document {@code key} as the server is to receive it. */
     private String wireText(String key, String text) {
-        var rewrite = text == null ? null : aliasTexts.get(key);
+        var rewrite = aliasTexts.get(key);
         return rewrite == null ? text : rewrite.apply(text);
     }
 
@@ -1023,13 +1036,15 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
+    @Nullable
     ServerCapabilities capabilities() {
         return capabilities;
     }
 
     /** The id of the target the server was started on ({@code local}, a host, a container), or null before. */
-    private volatile String targetId;
+    private volatile @Nullable String targetId;
 
+    @Nullable
     String targetId() {
         return targetId;
     }
@@ -1096,11 +1111,11 @@ final class LanguageServerSession implements LanguageClient {
      * typing pause, each pinning a full copy of the file. A 1 MB file and five minutes of typing retained
      * ~1 GB, against the packaged app's {@code -Xmx2g}. Only the latest text per document is worth keeping.
      */
-    private void whenReady(String collapseKey, Runnable action) {
+    private void whenReady(@Nullable String collapseKey, Runnable action) {
         whenReady(collapseKey, action, () -> {});
     }
 
-    private void whenReady(String collapseKey, Runnable action, Runnable onUnavailable) {
+    private void whenReady(@Nullable String collapseKey, Runnable action, Runnable onUnavailable) {
         if (disposed || deadReported.get()) { // a dead session never initializes again: do not queue for it
             onUnavailable.run();
             return;
@@ -1122,7 +1137,7 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** A queued call, with an optional key identifying entries a later one supersedes. */
-    private record Pending(String key, Runnable action, Runnable onUnavailable) {}
+    private record Pending(@Nullable String key, Runnable action, Runnable onUnavailable) {}
 
     /** Completes request futures whose queued wire action can no longer run, and releases notification data. */
     private void failPending(Throwable failure) {
@@ -1142,7 +1157,7 @@ final class LanguageServerSession implements LanguageClient {
             versions.put(uri, 1);
             shadows.put(uri, text); // update in the same order as the wire notification
             sendsSinceResync.remove(uri);
-            server.getTextDocumentService()
+            server().getTextDocumentService()
                     .didOpen(new DidOpenTextDocumentParams(
                             new TextDocumentItem(named.toWire(uri), languageId, 1, wireText(uri, text))));
         });
@@ -1169,7 +1184,7 @@ final class LanguageServerSession implements LanguageClient {
                 return; // content identical to what the server already holds — nothing to sync
             }
             int version = versions.merge(uri, 1, Integer::sum);
-            server.getTextDocumentService()
+            server().getTextDocumentService()
                     .didChange(new DidChangeTextDocumentParams(
                             new VersionedTextDocumentIdentifier(named.toWire(uri), version), events));
         });
@@ -1207,7 +1222,7 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** Pure: the server's declared change-sync kind, or null when unspecified (either capability form). */
-    static TextDocumentSyncKind changeSyncKind(ServerCapabilities caps) {
+    static @Nullable TextDocumentSyncKind changeSyncKind(@Nullable ServerCapabilities caps) {
         if (caps == null || caps.getTextDocumentSync() == null) {
             return null;
         }
@@ -1230,10 +1245,10 @@ final class LanguageServerSession implements LanguageClient {
         return capabilities != null && changeSyncKind(capabilities) == TextDocumentSyncKind.None;
     }
 
-    void didSave(String uri, String savedText) {
+    void didSave(String uri, @Nullable String savedText) {
         whenReady(() -> {
-            String text = saveIncludesText() ? wireText(uri, savedText) : null;
-            server.getTextDocumentService().didSave(new DidSaveTextDocumentParams(doc(uri), text));
+            String text = saveIncludesText() && savedText != null ? wireText(uri, savedText) : null;
+            server().getTextDocumentService().didSave(new DidSaveTextDocumentParams(doc(uri), text));
         });
     }
 
@@ -1262,7 +1277,7 @@ final class LanguageServerSession implements LanguageClient {
             versions.remove(uri);
             shadows.remove(uri); // remove in wire order; queued changes before this still need their base
             sendsSinceResync.remove(uri);
-            server.getTextDocumentService().didClose(new DidCloseTextDocumentParams(doc(uri)));
+            server().getTextDocumentService().didClose(new DidCloseTextDocumentParams(doc(uri)));
             aliasUris.remove(uri); // only now: the close itself had to name the alias
             aliasTexts.remove(uri);
         });
@@ -1273,7 +1288,8 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** Current client document version, or null when the URI is not open in this session. */
-    Integer documentVersion(String uri) {
+    @Nullable
+    Integer documentVersion(@Nullable String uri) {
         return versions.get(uri);
     }
 
@@ -1299,7 +1315,7 @@ final class LanguageServerSession implements LanguageClient {
                         return;
                     }
                     try {
-                        bounded(server.getWorkspaceService()
+                        bounded(server().getWorkspaceService()
                                         .executeCommand(
                                                 new ExecuteCommandParams(command, args == null ? List.of() : args)))
                                 .whenComplete((r, e) -> {
@@ -1337,7 +1353,7 @@ final class LanguageServerSession implements LanguageClient {
         void notification(String method, Object params);
     }
 
-    private volatile RawSink rawSinkForTest;
+    private volatile @Nullable RawSink rawSinkForTest;
 
     void setRawSinkForTest(RawSink sink) {
         this.rawSinkForTest = sink;
@@ -1419,7 +1435,7 @@ final class LanguageServerSession implements LanguageClient {
             context.setOnly(TypeScriptServer.CODE_ACTION_KINDS);
         }
         var params = new org.eclipse.lsp4j.CodeActionParams(doc(uri), range, context);
-        return bounded(server.getTextDocumentService().codeAction(params))
+        return bounded(server().getTextDocumentService().codeAction(params))
                 .<List<Either<org.eclipse.lsp4j.Command, org.eclipse.lsp4j.CodeAction>>>thenApply(
                         l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
@@ -1431,7 +1447,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(action);
         }
-        return bounded(server.getTextDocumentService().resolveCodeAction(action))
+        return bounded(server().getTextDocumentService().resolveCodeAction(action))
                 .exceptionally(t -> action);
     }
 
@@ -1473,7 +1489,7 @@ final class LanguageServerSession implements LanguageClient {
     /** Pure: the echo-area text for a progress End, or null to just stop the bar. A bare percentage is
      *  dropped: jdtls formats every status as {@code "N% subtask"}, so a job that ends without a subtask
      *  (and without using up its work) would leave e.g. "50%" in the echo area with nothing to replace it. */
-    static String endText(String message) {
+    static @Nullable String endText(@Nullable String message) {
         return message == null || message.isBlank() || message.strip().matches("\\d+%") ? null : message.strip();
     }
 
@@ -1483,7 +1499,8 @@ final class LanguageServerSession implements LanguageClient {
      * bar long after the work had ended (Python review B11). The loading bar still spins either way. A 0% is
      * left out: every jdtls job begins at it, and the log then read as if each one had stalled.
      */
-    static String progressText(String title, String message, Integer percentage) {
+    static @Nullable String progressText(
+            @Nullable String title, @Nullable String message, @Nullable Integer percentage) {
         StringBuilder sb = new StringBuilder(title == null || title.isBlank() ? "" : title.strip());
         if (message != null && !message.isBlank()) {
             sb.append(sb.isEmpty() ? "" : " — ").append(message.strip());
@@ -1542,7 +1559,7 @@ final class LanguageServerSession implements LanguageClient {
             Position pos,
             String triggerChar,
             boolean retrigger,
-            org.eclipse.lsp4j.SignatureHelp activeHelp) {
+            org.eclipse.lsp4j.@Nullable SignatureHelp activeHelp) {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -1560,7 +1577,7 @@ final class LanguageServerSession implements LanguageClient {
         context.setIsRetrigger(retrigger);
         context.setActiveSignatureHelp(activeHelp);
         params.setContext(context);
-        var request = bounded(server.getTextDocumentService().signatureHelp(params));
+        var request = bounded(server().getTextDocumentService().signatureHelp(params));
         return cancelling(request, request.exceptionally(t -> null));
     }
 
@@ -1571,7 +1588,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var params = new org.eclipse.lsp4j.DocumentHighlightParams(doc(uri), pos);
-        var request = bounded(server.getTextDocumentService().documentHighlight(params));
+        var request = bounded(server().getTextDocumentService().documentHighlight(params));
         return cancelling(request, request.exceptionally(t -> List.of()));
     }
 
@@ -1587,7 +1604,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(null);
         }
         var params = new org.eclipse.lsp4j.PrepareRenameParams(doc(uri), pos);
-        return bounded(server.getTextDocumentService().prepareRename(params)).exceptionally(t -> null);
+        return bounded(server().getTextDocumentService().prepareRename(params)).exceptionally(t -> null);
     }
 
     /** Renames the symbol at a position ({@code textDocument/rename}) → the workspace edit, or null (#676). */
@@ -1596,7 +1613,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(null);
         }
         var params = new org.eclipse.lsp4j.RenameParams(doc(uri), pos, newName);
-        return bounded(server.getTextDocumentService().rename(params)).exceptionally(t -> null);
+        return bounded(server().getTextDocumentService().rename(params)).exceptionally(t -> null);
     }
 
     /** Notifies the server of external file changes ({@code workspace/didChangeWatchedFiles}) so its
@@ -1607,7 +1624,7 @@ final class LanguageServerSession implements LanguageClient {
             return;
         }
         try {
-            server.getWorkspaceService()
+            server().getWorkspaceService()
                     .didChangeWatchedFiles(new org.eclipse.lsp4j.DidChangeWatchedFilesParams(events));
         } catch (RuntimeException ignored) {
             // best effort — an advisory notification
@@ -1621,7 +1638,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var params = new org.eclipse.lsp4j.InlayHintParams(doc(uri), range);
-        var request = bounded(server.getTextDocumentService().inlayHint(params));
+        var request = bounded(server().getTextDocumentService().inlayHint(params));
         return cancelling(
                 request,
                 request.<List<org.eclipse.lsp4j.InlayHint>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
@@ -1641,7 +1658,8 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        var request = bounded(server.getTextDocumentService().codeLens(new org.eclipse.lsp4j.CodeLensParams(doc(uri))));
+        var request =
+                bounded(server().getTextDocumentService().codeLens(new org.eclipse.lsp4j.CodeLensParams(doc(uri))));
         var options = capabilities() == null ? null : capabilities().getCodeLensProvider();
         boolean resolves = options != null && Boolean.TRUE.equals(options.getResolveProvider());
         List<CompletableFuture<org.eclipse.lsp4j.CodeLens>> resolving =
@@ -1659,7 +1677,7 @@ final class LanguageServerSession implements LanguageClient {
                 if (lens.getCommand() != null || !resolves) {
                     each.add(CompletableFuture.completedFuture(lens));
                 } else {
-                    var resolve = bounded(server.getTextDocumentService().resolveCodeLens(lens));
+                    var resolve = bounded(server().getTextDocumentService().resolveCodeLens(lens));
                     resolving.add(resolve);
                     each.add(resolve.exceptionally(t -> null));
                 }
@@ -1689,7 +1707,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var params = new org.eclipse.lsp4j.CallHierarchyPrepareParams(doc(uri), pos);
-        return bounded(server.getTextDocumentService().prepareCallHierarchy(params))
+        return bounded(server().getTextDocumentService().prepareCallHierarchy(params))
                 .<List<org.eclipse.lsp4j.CallHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
     }
@@ -1700,7 +1718,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        return bounded(server.getTextDocumentService()
+        return bounded(server().getTextDocumentService()
                         .callHierarchyIncomingCalls(new org.eclipse.lsp4j.CallHierarchyIncomingCallsParams(item)))
                 .<List<org.eclipse.lsp4j.CallHierarchyIncomingCall>>thenApply(
                         l -> l == null ? List.of() : List.copyOf(l))
@@ -1713,7 +1731,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        return bounded(server.getTextDocumentService()
+        return bounded(server().getTextDocumentService()
                         .callHierarchyOutgoingCalls(new org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams(item)))
                 .<List<org.eclipse.lsp4j.CallHierarchyOutgoingCall>>thenApply(
                         l -> l == null ? List.of() : List.copyOf(l))
@@ -1726,7 +1744,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var params = new org.eclipse.lsp4j.TypeHierarchyPrepareParams(doc(uri), pos);
-        return bounded(server.getTextDocumentService().prepareTypeHierarchy(params))
+        return bounded(server().getTextDocumentService().prepareTypeHierarchy(params))
                 .<List<org.eclipse.lsp4j.TypeHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
     }
@@ -1736,7 +1754,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        return bounded(server.getTextDocumentService()
+        return bounded(server().getTextDocumentService()
                         .typeHierarchySupertypes(new org.eclipse.lsp4j.TypeHierarchySupertypesParams(item)))
                 .<List<org.eclipse.lsp4j.TypeHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
@@ -1747,7 +1765,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        return bounded(server.getTextDocumentService()
+        return bounded(server().getTextDocumentService()
                         .typeHierarchySubtypes(new org.eclipse.lsp4j.TypeHierarchySubtypesParams(item)))
                 .<List<org.eclipse.lsp4j.TypeHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
@@ -1763,7 +1781,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         var params = new CompletionParams(doc(uri), pos);
         params.setContext(context);
-        return observed("completion", server.getTextDocumentService().completion(params));
+        return observed("completion", server().getTextDocumentService().completion(params));
     }
 
     /** Whole-document formatting ({@code textDocument/formatting}) → the edits to apply, or empty. */
@@ -1772,7 +1790,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         DocumentFormattingParams params = new DocumentFormattingParams(doc(uri), options);
-        return bounded(server.getTextDocumentService().formatting(params)).exceptionally(t -> List.of());
+        return bounded(server().getTextDocumentService().formatting(params)).exceptionally(t -> List.of());
     }
 
     /** Range formatting ({@code textDocument/rangeFormatting}) over {@code range} → the edits, or empty. */
@@ -1783,7 +1801,8 @@ final class LanguageServerSession implements LanguageClient {
         }
         org.eclipse.lsp4j.DocumentRangeFormattingParams params =
                 new org.eclipse.lsp4j.DocumentRangeFormattingParams(doc(uri), options, range);
-        return bounded(server.getTextDocumentService().rangeFormatting(params)).exceptionally(t -> List.of());
+        return bounded(server().getTextDocumentService().rangeFormatting(params))
+                .exceptionally(t -> List.of());
     }
 
     /** Resolves a completion item ({@code completionItem/resolve}) to fill in its {@code additionalTextEdits}
@@ -1796,7 +1815,7 @@ final class LanguageServerSession implements LanguageClient {
                 || !Boolean.TRUE.equals(capabilities.getCompletionProvider().getResolveProvider())) {
             return CompletableFuture.completedFuture(item);
         }
-        return bounded(server.getTextDocumentService().resolveCompletionItem(item))
+        return bounded(server().getTextDocumentService().resolveCompletionItem(item))
                 .exceptionally(t -> item);
     }
 
@@ -1804,7 +1823,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        return observed("hover", server.getTextDocumentService().hover(new HoverParams(doc(uri), pos)));
+        return observed("hover", server().getTextDocumentService().hover(new HoverParams(doc(uri), pos)));
     }
 
     CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
@@ -1812,7 +1831,8 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
-        return observed("definition", server.getTextDocumentService().definition(new DefinitionParams(doc(uri), pos)));
+        return observed(
+                "definition", server().getTextDocumentService().definition(new DefinitionParams(doc(uri), pos)));
     }
 
     /**
@@ -1825,7 +1845,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var params = new org.eclipse.lsp4j.DocumentOnTypeFormattingParams(doc(uri), options, pos, ch);
-        return bounded(server.getTextDocumentService().onTypeFormatting(params))
+        return bounded(server().getTextDocumentService().onTypeFormatting(params))
                 .<List<org.eclipse.lsp4j.TextEdit>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
     }
@@ -1839,7 +1859,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         return observed(
                 "implementation",
-                server.getTextDocumentService()
+                server().getTextDocumentService()
                         .implementation(new org.eclipse.lsp4j.ImplementationParams(doc(uri), pos)));
     }
 
@@ -1852,7 +1872,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         return observed(
                 "typeDefinition",
-                server.getTextDocumentService()
+                server().getTextDocumentService()
                         .typeDefinition(new org.eclipse.lsp4j.TypeDefinitionParams(doc(uri), pos)));
     }
 
@@ -1865,7 +1885,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         return observed(
                 "declaration",
-                server.getTextDocumentService().declaration(new org.eclipse.lsp4j.DeclarationParams(doc(uri), pos)));
+                server().getTextDocumentService().declaration(new org.eclipse.lsp4j.DeclarationParams(doc(uri), pos)));
     }
 
     /** Foldable regions for the whole document ({@code textDocument/foldingRange}, #738); empty on error. */
@@ -1873,7 +1893,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        var request = bounded(server.getTextDocumentService()
+        var request = bounded(server().getTextDocumentService()
                 .foldingRange(new org.eclipse.lsp4j.FoldingRangeRequestParams(doc(uri))));
         return cancelling(
                 request,
@@ -1886,7 +1906,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        return bounded(server.getTextDocumentService()
+        return bounded(server().getTextDocumentService()
                         .selectionRange(new org.eclipse.lsp4j.SelectionRangeParams(doc(uri), positions)))
                 .<List<org.eclipse.lsp4j.SelectionRange>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
@@ -1897,7 +1917,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         ReferenceParams params = new ReferenceParams(doc(uri), pos, new ReferenceContext(true));
-        return bounded(server.getTextDocumentService().references(params));
+        return bounded(server().getTextDocumentService().references(params));
     }
 
     /** Project-wide symbol search ({@code workspace/symbol}) for {@code query}; empty when not ready/on error. */
@@ -1909,7 +1929,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(List.of()));
         }
-        return bounded(server.getWorkspaceService().symbol(new org.eclipse.lsp4j.WorkspaceSymbolParams(query)))
+        return bounded(server().getWorkspaceService().symbol(new org.eclipse.lsp4j.WorkspaceSymbolParams(query)))
                 .exceptionally(t -> org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(List.of()));
     }
 
@@ -1924,7 +1944,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         var request = observed(
                 "documentSymbol",
-                server.getTextDocumentService().documentSymbol(new org.eclipse.lsp4j.DocumentSymbolParams(doc(uri))));
+                server().getTextDocumentService().documentSymbol(new org.eclipse.lsp4j.DocumentSymbolParams(doc(uri))));
         return cancelling(request, request.exceptionally(t -> java.util.List.of()));
     }
 
@@ -1934,7 +1954,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(null);
         }
         return bounded(
-                server.getTextDocumentService().diagnostic(new org.eclipse.lsp4j.DocumentDiagnosticParams(doc(uri))));
+                server().getTextDocumentService().diagnostic(new org.eclipse.lsp4j.DocumentDiagnosticParams(doc(uri))));
     }
 
     /** Semantic tokens over {@code range} ({@code textDocument/semanticTokens/range}); null when not ready. */
@@ -1942,7 +1962,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        var request = bounded(server.getTextDocumentService()
+        var request = bounded(server().getTextDocumentService()
                 .semanticTokensRange(new org.eclipse.lsp4j.SemanticTokensRangeParams(doc(uri), range)));
         return cancelling(request, request.exceptionally(t -> null));
     }
@@ -1957,7 +1977,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(null);
         }
         var params = new org.eclipse.lsp4j.SemanticTokensDeltaParams(doc(uri), previousResultId);
-        var request = bounded(server.getTextDocumentService().semanticTokensFullDelta(params));
+        var request = bounded(server().getTextDocumentService().semanticTokensFullDelta(params));
         return cancelling(request, request.exceptionally(t -> null));
     }
 
@@ -1967,7 +1987,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        var request = bounded(server.getTextDocumentService()
+        var request = bounded(server().getTextDocumentService()
                 .semanticTokensFull(new org.eclipse.lsp4j.SemanticTokensParams(doc(uri))));
         return cancelling(request, request.exceptionally(t -> null));
     }
@@ -2013,26 +2033,27 @@ final class LanguageServerSession implements LanguageClient {
         failInFlight();
         LanguageServer live = server;
         Process p = process;
-        boolean handshook = live != null && initialized;
-        if (handshook && p != null && p.isAlive()) {
-            ProcessRegistry.expectExit(p); // a JVM shutdown racing this waits briefly instead of force-killing
-            Thread t = new Thread(() -> exitGracefully(live, p), "lsp-shutdown-" + command.get(0));
-            t.setDaemon(true);
-            t.start();
-            return;
-        }
-        if (handshook && p == null) {
-            // An in-process server (tests): no pipe to block on and no process to wait for.
-            try {
-                live.shutdown().whenComplete((r, t) -> {
-                    try {
-                        live.exit();
-                    } catch (Exception ignored) {
-                        // best effort
-                    }
-                });
-            } catch (Exception ignored) {
-                // best effort
+        if (live != null && initialized) {
+            if (p != null && p.isAlive()) {
+                ProcessRegistry.expectExit(p); // a JVM shutdown racing this waits briefly instead of force-killing
+                Thread t = new Thread(() -> exitGracefully(live, p), "lsp-shutdown-" + command.get(0));
+                t.setDaemon(true);
+                t.start();
+                return;
+            }
+            if (p == null) {
+                // An in-process server (tests): no pipe to block on and no process to wait for.
+                try {
+                    live.shutdown().whenComplete((r, t) -> {
+                        try {
+                            live.exit();
+                        } catch (Exception ignored) {
+                            // best effort
+                        }
+                    });
+                } catch (Exception ignored) {
+                    // best effort
+                }
             }
         }
         tearDown(p);
@@ -2067,7 +2088,7 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
-    private void tearDown(Process p) {
+    private void tearDown(@Nullable Process p) {
         if (p != null) {
             // The launcher is often a wrapper (Homebrew jdtls → python → java); destroying only the
             // wrapper orphans the real server JVM, which keeps running and holds its workspace `.lock`
@@ -2266,7 +2287,7 @@ final class LanguageServerSession implements LanguageClient {
      * options cannot be decoded is logged and skipped on its own: a server sends several in one request, and
      * one malformed entry must not abort the rest (nor fail the whole request back to the server).
      */
-    private boolean applyDynamicCapabilitySafely(String method, Object options, boolean enabled) {
+    private boolean applyDynamicCapabilitySafely(String method, @Nullable Object options, boolean enabled) {
         if (method == null || !DYNAMIC_METHODS.contains(method)) {
             return false;
         }
@@ -2279,7 +2300,7 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
-    private synchronized void applyDynamicCapability(String method, Object options, boolean enabled) {
+    private synchronized void applyDynamicCapability(String method, @Nullable Object options, boolean enabled) {
         ServerCapabilities c = capabilities;
         if (c == null) {
             return;
@@ -2359,7 +2380,7 @@ final class LanguageServerSession implements LanguageClient {
     static final com.google.gson.Gson LSP_GSON =
             new org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler(java.util.Map.of()).getGson();
 
-    private static <T> T dynamicOptions(Object options, Class<T> type) {
+    private static <T> T dynamicOptions(@Nullable Object options, Class<T> type) {
         T converted = options == null ? null : LSP_GSON.fromJson(LSP_GSON.toJsonTree(options), type);
         if (converted != null) {
             return converted;
@@ -2400,7 +2421,7 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** Where the user is asked a server's questions; null (a test, a headless session) answers none. */
-    private volatile LspClientUi clientUi;
+    private volatile @Nullable LspClientUi clientUi;
 
     /** Sets where this server's questions go ({@link LspManager} hands a wrapper that runs on the FX thread). */
     void setClientUi(LspClientUi ui) {
@@ -2508,7 +2529,7 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** The first argument of a client command read as {@code type} (lsp4j hands it over as raw JSON), or null. */
-    private static <T> T firstArgument(org.eclipse.lsp4j.ExecuteCommandParams params, Class<T> type) {
+    private static <T> @Nullable T firstArgument(org.eclipse.lsp4j.ExecuteCommandParams params, Class<T> type) {
         if (params.getArguments() == null || params.getArguments().isEmpty()) {
             return null;
         }
@@ -2521,26 +2542,26 @@ final class LanguageServerSession implements LanguageClient {
 
     /** Payload of {@code metals/status}. */
     public static final class MetalsStatus {
-        public String text;
-        public Boolean show;
-        public Boolean hide;
-        public String tooltip;
-        public String command;
+        public @Nullable String text;
+        public @Nullable Boolean show;
+        public @Nullable Boolean hide;
+        public @Nullable String tooltip;
+        public @Nullable String command;
     }
 
     /** Payload of {@code metals/inputBox}. */
     public static final class MetalsInputBoxParams {
-        public String prompt;
-        public String value;
-        public String placeHolder;
-        public Boolean password;
-        public Boolean ignoreFocusOut;
+        public @Nullable String prompt;
+        public @Nullable String value;
+        public @Nullable String placeHolder;
+        public @Nullable Boolean password;
+        public @Nullable Boolean ignoreFocusOut;
     }
 
     /** Reply to {@code metals/inputBox}. */
     public static final class MetalsInputBoxResult {
-        public String value;
-        public Boolean cancelled;
+        public @Nullable String value;
+        public @Nullable Boolean cancelled;
 
         static MetalsInputBoxResult of(String value) {
             MetalsInputBoxResult r = new MetalsInputBoxResult();
@@ -2557,26 +2578,26 @@ final class LanguageServerSession implements LanguageClient {
 
     /** One item of {@code metals/quickPick}. */
     public static final class MetalsQuickPickItem {
-        public String id;
-        public String label;
-        public String description;
-        public String detail;
-        public Boolean alwaysShow;
+        public @Nullable String id;
+        public @Nullable String label;
+        public @Nullable String description;
+        public @Nullable String detail;
+        public @Nullable Boolean alwaysShow;
     }
 
     /** Payload of {@code metals/quickPick}. */
     public static final class MetalsQuickPickParams {
-        public List<MetalsQuickPickItem> items;
-        public Boolean matchOnDescription;
-        public Boolean matchOnDetail;
-        public String placeHolder;
-        public Boolean ignoreFocusOut;
+        public @Nullable List<MetalsQuickPickItem> items;
+        public @Nullable Boolean matchOnDescription;
+        public @Nullable Boolean matchOnDetail;
+        public @Nullable String placeHolder;
+        public @Nullable Boolean ignoreFocusOut;
     }
 
     /** Reply to {@code metals/quickPick}. */
     public static final class MetalsQuickPickResult {
-        public String itemId;
-        public Boolean cancelled;
+        public @Nullable String itemId;
+        public @Nullable Boolean cancelled;
 
         static MetalsQuickPickResult of(String id) {
             MetalsQuickPickResult r = new MetalsQuickPickResult();
@@ -2660,16 +2681,16 @@ final class LanguageServerSession implements LanguageClient {
 
     /** Payload of JDT LS's {@code language/status} notification (deserialized by LSP4J's Gson). */
     public static final class LanguageStatus {
-        public String type;
-        public String message;
+        public @Nullable String type;
+        public @Nullable String message;
     }
 
     /** Payload of JDT LS's {@code language/progressReport} notification. */
     public static final class LanguageProgressReport {
-        public String id;
-        public String task;
-        public String subTask;
-        public String status;
+        public @Nullable String id;
+        public @Nullable String task;
+        public @Nullable String subTask;
+        public @Nullable String status;
         public int totalWork;
         public int workDone;
         public boolean complete;
@@ -2677,15 +2698,15 @@ final class LanguageServerSession implements LanguageClient {
 
     /** Payload of JDT LS's {@code language/eventNotification}; data remains intentionally opaque. */
     public static final class LanguageEventNotification {
-        public String type;
-        public Object data;
+        public @Nullable String type;
+        public @Nullable Object data;
     }
 
     /** Payload of JDT LS's {@code language/actionableNotification}. */
     public static final class LanguageActionableNotification {
-        public org.eclipse.lsp4j.MessageType severity;
-        public String message;
-        public Object data;
-        public List<org.eclipse.lsp4j.Command> commands;
+        public org.eclipse.lsp4j.@Nullable MessageType severity;
+        public @Nullable String message;
+        public @Nullable Object data;
+        public @Nullable List<org.eclipse.lsp4j.Command> commands;
     }
 }

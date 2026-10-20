@@ -3,6 +3,8 @@ package com.editora.todo;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The structured parse of a TODO-style comment, the IntelliJ "Comment Manager" format:
  *
@@ -21,8 +23,8 @@ import java.util.Locale;
  */
 public record TodoComment(
         String keyword,
-        String tag,
-        String priority,
+        @Nullable String tag,
+        @Nullable String priority,
         String description,
         int tagStart,
         int tagEnd,

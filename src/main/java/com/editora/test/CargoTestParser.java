@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Best-effort parser for {@code cargo test}'s stable libtest <em>text</em> output. Per-result lines
  * ({@code test module::name ... ok|FAILED|ignored}) drive the tree live; the trailing {@code failures:} block
@@ -36,7 +38,7 @@ public final class CargoTestParser implements TestResultParser {
 
     private final Map<Key, StringBuilder> failureText = new LinkedHashMap<>();
     private String suite = SUITE;
-    private Key capturing; // the test whose stdout section we are inside, or null
+    private @Nullable Key capturing; // the test whose stdout section we are inside, or null
 
     @Override
     public List<ParsedSuite> onLine(String line, boolean stderr) {
@@ -58,7 +60,10 @@ public final class CargoTestParser implements TestResultParser {
             if (trimmed.equals("failures:") || trimmed.startsWith("test result:")) {
                 capturing = null; // end of the stdout sections — fall through to normal handling
             } else {
-                failureText.get(capturing).append(line).append('\n');
+                failureText
+                        .computeIfAbsent(capturing, k -> new StringBuilder())
+                        .append(line)
+                        .append('\n');
                 return List.of();
             }
         }
@@ -89,7 +94,7 @@ public final class CargoTestParser implements TestResultParser {
      * The suite a {@code Running unittests src/lib.rs (target/debug/deps/alpha-0123456789abcdef)} or
      * {@code Doc-tests alpha} header starts, or {@code null} for any other line.
      */
-    static String suiteOf(String trimmed) {
+    static @Nullable String suiteOf(String trimmed) {
         Matcher doc = DOC_TESTS.matcher(trimmed);
         if (doc.matches()) {
             return doc.group(1) + " (doc-tests)";

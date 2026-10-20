@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The rendered "diagram-as-code" tools that get an IntelliJ-style 3-mode preview via an external CLI —
  * <b>Graphviz DOT</b> and <b>PlantUML</b>. This mirrors the Mermaid seam ({@code mermaid/Mermaid} +
@@ -109,7 +111,7 @@ public enum DiagramKind {
     }
 
     /** The rendered diagram kind for a buffer {@code language}, or {@code null} if it isn't one. */
-    public static DiagramKind fromLanguage(String language) {
+    public static @Nullable DiagramKind fromLanguage(String language) {
         if (language == null) {
             return null;
         }

@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.function.LongConsumer;
 
 import com.editora.process.PosixShell;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A terminal's output with the pid line its start script printed ({@link PosixShell#TERMINAL_PID_MARK}) taken out
@@ -22,7 +23,7 @@ public final class PidMarkStream extends FilterInputStream {
     private static final byte[] MARK = PosixShell.TERMINAL_PID_MARK.getBytes(StandardCharsets.UTF_8);
 
     private final LongConsumer onPid;
-    private byte[] pending;
+    private byte @Nullable [] pending;
     private int pendingAt;
     private boolean scanned;
 

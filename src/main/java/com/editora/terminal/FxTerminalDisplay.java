@@ -13,6 +13,7 @@ import com.jediterm.terminal.TerminalDisplay;
 import com.jediterm.terminal.emulator.mouse.MouseFormat;
 import com.jediterm.terminal.emulator.mouse.MouseMode;
 import com.jediterm.terminal.model.TerminalSelection;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The emulator's view of the display: JediTerm calls into this whenever an escape sequence changes
@@ -34,7 +35,7 @@ public final class FxTerminalDisplay implements TerminalDisplay {
      * Null until a program requests a shape (DECSCUSR). Null is meaningful: it is what lets the
      * user's preference apply, while still yielding to a program that has an opinion.
      */
-    private volatile CursorShape cursorShape;
+    private volatile @Nullable CursorShape cursorShape;
 
     private volatile boolean alternateScreen;
     private volatile MouseMode mouseMode = MouseMode.MOUSE_REPORTING_NONE;
@@ -92,7 +93,7 @@ public final class FxTerminalDisplay implements TerminalDisplay {
     }
 
     @Override
-    public void setCursorShape(CursorShape shape) {
+    public void setCursorShape(@Nullable CursorShape shape) {
         // DECSCUSR 0 (and 1, the same blinking block) means "the terminal's default": that is the user's shape, not
         // a block for the rest of the tab. vim sends it on exit, after asking for its own shapes while it ran.
         cursorShape = shape == CursorShape.BLINK_BLOCK ? null : shape;
@@ -284,7 +285,7 @@ public final class FxTerminalDisplay implements TerminalDisplay {
     }
 
     /** The shape a program requested, or null if none has. */
-    public CursorShape getCursorShape() {
+    public @Nullable CursorShape getCursorShape() {
         return cursorShape;
     }
 

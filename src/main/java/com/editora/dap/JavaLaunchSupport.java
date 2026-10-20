@@ -11,6 +11,7 @@ import java.util.regex.Pattern;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The decisions behind a Java debug launch that need no session: reading what jdtls / java-debug answered
@@ -31,7 +32,7 @@ final class JavaLaunchSupport {
      * needs — while everything the user typed or clicked (a saved configuration, the gutter) carries the
      * plain fully-qualified name.
      */
-    static String className(String mainClass) {
+    static @Nullable String className(@Nullable String mainClass) {
         if (mainClass == null) {
             return null;
         }
@@ -43,7 +44,7 @@ final class JavaLaunchSupport {
      * (symlink-resolved) path, so a project opened through a symlink is compared by real path; a file that
      * cannot be resolved (it does not exist) falls back to the normalized absolute path.
      */
-    static boolean sameFile(String reported, Path file) {
+    static boolean sameFile(@Nullable String reported, Path file) {
         if (reported == null || file == null) {
             return false;
         }
@@ -55,7 +56,7 @@ final class JavaLaunchSupport {
     }
 
     /** As {@link #sameFile(String, Path)}, for a path {@code reported} by an adapter that names files by {@code paths}. */
-    static boolean sameFile(String reported, Path file, DapPaths paths) {
+    static boolean sameFile(@Nullable String reported, Path file, DapPaths paths) {
         if (paths == DapPaths.LOCAL) {
             return sameFile(reported, file);
         }
@@ -84,7 +85,7 @@ final class JavaLaunchSupport {
      * there is none (a compact source). The position is what {@code vscode.java.resolveElementAtSelection}
      * needs to name the project a file belongs to.
      */
-    static int[] typeNamePosition(List<String> lines) {
+    static int @Nullable [] typeNamePosition(List<String> lines) {
         boolean inBlockComment = false;
         for (int i = 0; i < lines.size(); i++) {
             String raw = lines.get(i);
@@ -109,7 +110,7 @@ final class JavaLaunchSupport {
     }
 
     /** {@link #typeNamePosition(List)} for a file on disk (one bounded read); null when unreadable. */
-    static int[] typeNamePosition(Path file) {
+    static int @Nullable [] typeNamePosition(Path file) {
         try (java.util.stream.Stream<String> s = Files.lines(file)) {
             return typeNamePosition(s.limit(500).toList());
         } catch (IOException | RuntimeException e) {
@@ -123,7 +124,7 @@ final class JavaLaunchSupport {
      * vscode.java.resolveMainMethod}'s {@code [{range, mainClass, projectName}, …]}. Null when the reply
      * carries none. Reads plain collections as well as gson elements, like the other reply parsers.
      */
-    static String projectName(Object reply) {
+    static @Nullable String projectName(Object reply) {
         Object o = reply;
         if (o instanceof List<?> list) {
             o = list.isEmpty() ? null : list.get(0);
@@ -146,7 +147,7 @@ final class JavaLaunchSupport {
      * it with autobuild off), so launching on that classpath can only end in {@code ClassNotFoundException}.
      * Jars are not opened: a source file being debugged is not compiled into one.
      */
-    static boolean classFilePresent(List<String> paths, String mainClass) {
+    static boolean classFilePresent(List<String> paths, @Nullable String mainClass) {
         String cls = className(mainClass);
         if (cls == null || cls.isBlank() || paths == null) {
             return false;
@@ -169,7 +170,7 @@ final class JavaLaunchSupport {
      * preview features. java-debug takes it as one JSON <em>string</em> (it casts the argument to
      * {@code String} before parsing), not as an object.
      */
-    static String previewSettingsQuery(String mainClass, String projectName) {
+    static String previewSettingsQuery(@Nullable String mainClass, String projectName) {
         JsonObject expected = new JsonObject();
         expected.addProperty(PREVIEW_OPTION, "enabled");
         JsonObject q = new JsonObject();
@@ -208,7 +209,7 @@ final class JavaLaunchSupport {
      * script was compiled from ({@code compiled}) named as the user's file ({@code original}), so a
      * {@code File.java:3: error:} line opens the file the user edits. Pure.
      */
-    static String compilerReport(String out, String err, Path compiled, Path original) {
+    static String compilerReport(String out, @Nullable String err, Path compiled, Path original) {
         String text = ((out == null ? "" : out) + "\n" + (err == null ? "" : err)).strip();
         if (compiled != null && original != null && !compiled.equals(original)) {
             text = text.replace(compiled.toString(), original.toString());
@@ -260,7 +261,7 @@ final class JavaLaunchSupport {
      * folder for the default package; null when the folders do not spell the package (the file is misplaced,
      * and no root makes it right). Pure.
      */
-    static Path sourceRoot(Path file, String declaredPackage) {
+    static @Nullable Path sourceRoot(Path file, String declaredPackage) {
         Path dir = file == null ? null : file.toAbsolutePath().normalize().getParent();
         if (dir == null) {
             return null;
@@ -302,7 +303,7 @@ final class JavaLaunchSupport {
      * {@code className}'s simple name in {@code declaredPackage}: the class a file declaring that package
      * compiles to, whatever package jdtls's guess put it in. Pure.
      */
-    static String qualified(String className, String declaredPackage) {
+    static @Nullable String qualified(@Nullable String className, String declaredPackage) {
         String cls = className(className);
         if (cls == null) {
             return null;
@@ -348,7 +349,7 @@ final class JavaLaunchSupport {
                 : status != null && "true".equals(status.getAsString());
     }
 
-    private static JsonElement toJson(Object reply) {
+    private static @Nullable JsonElement toJson(Object reply) {
         if (reply == null) {
             return null;
         }
@@ -378,7 +379,7 @@ final class JavaLaunchSupport {
      * Judges the class file of {@code mainClass} on {@code paths} against {@code source} (its {@code .java}),
      * by modification time. A path of jars only says nothing (the class may come from one). Bounded file reads.
      */
-    static ClassState classState(List<String> paths, String mainClass, Path source) {
+    static ClassState classState(List<String> paths, @Nullable String mainClass, Path source) {
         String cls = className(mainClass);
         if (cls == null || cls.isBlank() || paths == null) {
             return ClassState.UNKNOWN;
@@ -453,7 +454,7 @@ final class JavaLaunchSupport {
      * the debuggee never starts. {@code argfile} moves the paths into a {@code @file}, which needs a JDK 9+
      * launcher; an older one gets {@code jarmanifest}.
      */
-    static String shortenCommandLine(
+    static @Nullable String shortenCommandLine(
             Map<String, Object> launch, boolean windows, java.util.function.Predicate<String> supportsArgFiles) {
         long classPath = joinedLength(launch.get("classPaths"));
         long modulePath = joinedLength(launch.get("modulePaths"));
@@ -473,7 +474,7 @@ final class JavaLaunchSupport {
         return supportsArgFiles.test(launch.get("javaExec") instanceof String s ? s : null) ? "argfile" : "jarmanifest";
     }
 
-    private static long joinedLength(Object paths) {
+    private static long joinedLength(@Nullable Object paths) {
         long n = 0;
         if (paths instanceof List<?> list) {
             for (Object p : list) {

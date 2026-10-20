@@ -9,6 +9,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, high-confidence Markdown linter (a curated subset of the markdownlint rule set). Returns
  * 1-based {@link Diagnostic}s in document order, mirroring {@link com.editora.mermaid.MaidOutput}'s
@@ -35,7 +37,13 @@ public final class MarkdownLint {
      * catalog {@code key} the UI resolves it with ({@code null} when the producer has none).
      */
     public record Diagnostic(
-            int line, int column, int length, String severity, String code, String message, String key) {
+            int line,
+            int column,
+            int length,
+            String severity,
+            String code,
+            @Nullable String message,
+            @Nullable String key) {
 
         public Diagnostic(int line, int column, int length, String severity, String code, String message) {
             this(line, column, length, severity, code, message, null);
@@ -335,12 +343,13 @@ public final class MarkdownLint {
      * report nothing.
      */
     public static List<Diagnostic> lint(
-            String text, Set<String> disabled, MarkdownLintOptions options, LinkTargets targets) {
+            String text, Set<String> disabled, MarkdownLintOptions options, @Nullable LinkTargets targets) {
         return analyze(text, disabled, options, targets).diagnostics();
     }
 
     /** The lint run behind {@link #lint}, with the edits {@link MarkdownLintFix} applies. */
-    static Report analyze(String text, Set<String> disabled, MarkdownLintOptions options, LinkTargets targets) {
+    static Report analyze(
+            String text, Set<String> disabled, MarkdownLintOptions options, @Nullable LinkTargets targets) {
         List<Diagnostic> out = new ArrayList<>();
         Map<Diagnostic, List<Edit>> edits = new java.util.IdentityHashMap<>();
         if (text == null || text.isEmpty()) {
@@ -419,7 +428,7 @@ public final class MarkdownLint {
             MarkdownLintDirectives directives,
             MarkdownLintOptions options,
             Map<Diagnostic, List<Edit>> edits,
-            LinkTargets targets) {
+            @Nullable LinkTargets targets) {
 
         /** Whether rule {@code code} is switched on at all (a rule that is off need not do its work). */
         boolean on(String code) {
@@ -427,6 +436,7 @@ public final class MarkdownLint {
         }
 
         /** Reports an issue at 1-based {@code line}/{@code column}; null when it is suppressed there. */
+        @Nullable
         Diagnostic add(int line, int column, int length, String code, String message) {
             if (off.contains(code) || directives.disabled(line - 1, code)) {
                 return null;

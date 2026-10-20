@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import com.editora.editor.LspTextEdit;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure helper for the "Tab re-indents the current line to the LSP convention" feature. Given a line's text
@@ -22,7 +23,7 @@ public final class LineIndent {
      * touches another line, or inserts a newline (the formatter would merge/split lines). Edits are applied
      * right-to-left so earlier columns stay valid; out-of-range columns are clamped.
      */
-    public static String formattedIndent(String line, List<LspTextEdit> edits, int lineIndex) {
+    public static @Nullable String formattedIndent(String line, List<LspTextEdit> edits, int lineIndex) {
         if (line == null) {
             return null;
         }

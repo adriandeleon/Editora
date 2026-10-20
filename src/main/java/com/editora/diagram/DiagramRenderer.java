@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Low-level facade over the diagram-as-code CLIs ({@code dot}, {@code plantuml}). The generic analogue of
@@ -29,7 +30,7 @@ public final class DiagramRenderer {
     /** {@code extra} = the number of <em>additional</em> diagrams the tool produced beyond the one shown — a
      *  PlantUML file with several {@code @startuml} blocks writes one image per diagram, but the preview shows
      *  the first; a non-zero count surfaces a "N more diagram(s)" note so the rest aren't silently dropped. */
-    public record Render(byte[] image, String error, int extra) {
+    public record Render(byte @Nullable [] image, @Nullable String error, int extra) {
         public boolean ok() {
             return image != null && error == null;
         }
@@ -42,7 +43,7 @@ public final class DiagramRenderer {
             return new Render(image, null, Math.max(0, extra));
         }
 
-        static Render fail(String error) {
+        static Render fail(@Nullable String error) {
             return new Render(null, error == null || error.isBlank() ? "render failed" : error.strip(), 0);
         }
     }
@@ -59,7 +60,7 @@ public final class DiagramRenderer {
      * {@code [C:\Program, Files\…]} and the run died with "No such file or directory". Anything else is
      * tokenized quote-aware, so a multi-token command still works and a path can also be quoted by hand.
      */
-    public static List<String> command(String configured, String defaultCommand) {
+    public static List<String> command(@Nullable String configured, String defaultCommand) {
         String raw = configured == null || configured.isBlank() ? defaultCommand : configured.strip();
         if (isExistingFile(raw)) {
             return List.of(raw);
@@ -216,7 +217,7 @@ public final class DiagramRenderer {
                 .toList();
     }
 
-    private static Path producedFile(Path dir, Path in, Path out, String fmt) throws IOException {
+    private static @Nullable Path producedFile(Path dir, Path in, Path out, String fmt) throws IOException {
         if (Files.isRegularFile(out)) {
             return out;
         }
@@ -232,7 +233,7 @@ public final class DiagramRenderer {
         }
     }
 
-    private static void deleteRecursively(Path dir) {
+    private static void deleteRecursively(@Nullable Path dir) {
         if (dir == null) {
             return;
         }

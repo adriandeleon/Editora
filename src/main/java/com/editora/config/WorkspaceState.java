@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Persisted workspace/session state (not user preferences): collapsed fold regions and tool-window
@@ -208,7 +209,7 @@ public class WorkspaceState {
     private List<OpenFile> openFiles = new ArrayList<>();
 
     /** The editor-area split tree; null when unsplit (and for any session saved before groups existed). */
-    private EditorGroupLayout editorLayout;
+    private @Nullable EditorGroupLayout editorLayout;
     /** Absolute path of the tab that was active at last exit ("" if none/untitled). */
     private String activeFile = "";
 
@@ -499,7 +500,7 @@ public class WorkspaceState {
     }
 
     /** The deployment called {@code name}, or null. */
-    public Deployment deployment(String name) {
+    public @Nullable Deployment deployment(String name) {
         if (name == null || name.isBlank()) {
             return null;
         }
@@ -671,7 +672,7 @@ public class WorkspaceState {
      * The editor area's split layout, or {@code null} when it was a single group — which is also what an
      * older session file yields, so the unsplit case needs no migration. See {@link EditorGroupLayout}.
      */
-    public EditorGroupLayout getEditorLayout() {
+    public @Nullable EditorGroupLayout getEditorLayout() {
         return editorLayout;
     }
 

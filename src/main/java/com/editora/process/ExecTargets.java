@@ -9,6 +9,8 @@ import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Finds the {@link ExecTarget} for a path. A path on another filesystem (an SFTP folder) is offered to the
  * registered {@link Resolver}s, the same per-window registry shape as {@code Vfs.RemoteProvider}. A path on
@@ -25,6 +27,7 @@ public final class ExecTargets {
     @FunctionalInterface
     public interface Resolver {
         /** The target for {@code path}, or {@code null} when it is not on one of this engine's filesystems. */
+        @Nullable
         ExecTarget forPath(Path path);
     }
 
@@ -72,7 +75,7 @@ public final class ExecTargets {
     }
 
     /** Whether a tool for {@code path} runs on this machine: its target's {@link ExecTarget#isLocal()}. No I/O. */
-    public static boolean runsHere(Path path) {
+    public static boolean runsHere(@Nullable Path path) {
         return forPath(path).isLocal();
     }
 
@@ -102,7 +105,7 @@ public final class ExecTargets {
      * The command configured for {@code toolId} on the host that owns {@code path}, or {@code null}: for a
      * local path (local tools have their own settings), and when nothing is configured for that host.
      */
-    public static String remoteTool(Path path, String toolId) {
+    public static @Nullable String remoteTool(@Nullable Path path, String toolId) {
         ExecTarget target = forPath(path);
         if (target.isLocal()) {
             return null;
@@ -120,7 +123,7 @@ public final class ExecTargets {
      * directory never leaves this machine. A remote path nobody owns gets a target that cannot start
      * anything, rather than silently running the command here against the wrong files.
      */
-    public static ExecTarget forPath(Path path) {
+    public static ExecTarget forPath(@Nullable Path path) {
         if (path == null) {
             return LOCAL;
         }
@@ -189,8 +192,11 @@ public final class ExecTargets {
         }
 
         @Override
-        public String toTargetPath(Path path) {
-            return path.toAbsolutePath().normalize().toString();
+        public String toTargetPath(@Nullable Path path) {
+            return java.util.Objects.requireNonNull(path, "path")
+                    .toAbsolutePath()
+                    .normalize()
+                    .toString();
         }
 
         @Override

@@ -13,6 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Reads the tail of a (possibly huge, possibly still-growing) log file by byte offset, decoding UTF-8
  * and never re-reading the whole file. Two operations back the log viewer:
@@ -41,7 +43,13 @@ public final class LogTail {
      * the moment of the read, and {@code fileKey} identifies the file itself (null where the platform has
      * no such identity) so the next read can tell a replaced file from a grown one.
      */
-    public record Append(String text, long offset, boolean reset, long size, long modifiedMillis, Object fileKey) {
+    public record Append(
+            String text,
+            long offset,
+            boolean reset,
+            long size,
+            long modifiedMillis,
+            @Nullable Object fileKey) {
         public Append(String text, long offset, boolean reset) {
             this(text, offset, reset, offset, 0, null);
         }
@@ -100,8 +108,8 @@ public final class LogTail {
      *
      * @param knownKey the {@link Append#fileKey()} of the previous read, or null when there is none
      */
-    public static Append readAppended(Path file, long fromOffset, long maxBytes, Charset charset, Object knownKey)
-            throws IOException {
+    public static Append readAppended(
+            Path file, long fromOffset, long maxBytes, Charset charset, @Nullable Object knownKey) throws IOException {
         long cap = Math.max(1, Math.min(maxBytes, Integer.MAX_VALUE - 8));
         BasicFileAttributes attrs = Files.readAttributes(file, BasicFileAttributes.class);
         Object key = attrs.fileKey();

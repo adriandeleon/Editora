@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.sshd.common.AttributeRepository;
 import org.apache.sshd.common.session.Session;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One engine's way of putting a {@link LoginPrompt} question during a login, and what the login remembers about
@@ -33,7 +34,7 @@ final class LoginQuestions {
     /** No questions can be asked: a login without a person (tests, a probe). */
     static final LoginQuestions NONE = new LoginQuestions(null, new PromptClock());
 
-    private final LoginPrompt prompt;
+    private final @Nullable LoginPrompt prompt;
     private final PromptClock clock;
     /**
      * The same, for this engine's current connect: a session's attributes are cleared when it closes, and MINA
@@ -42,7 +43,7 @@ final class LoginQuestions {
     private final java.util.concurrent.atomic.AtomicBoolean cancelledThisConnect =
             new java.util.concurrent.atomic.AtomicBoolean();
 
-    LoginQuestions(LoginPrompt prompt, PromptClock clock) {
+    LoginQuestions(@Nullable LoginPrompt prompt, PromptClock clock) {
         this.prompt = prompt;
         this.clock = clock;
     }
@@ -59,11 +60,12 @@ final class LoginQuestions {
     }
 
     /** The answers, one per question, or null: cancelled, the wrong number of answers, or nobody to ask. */
-    char[][] ask(Session session, LoginPrompt.Challenge challenge) {
-        if (!canAsk(session)) {
+    char @Nullable [][] ask(Session session, LoginPrompt.Challenge challenge) {
+        LoginPrompt asked = prompt;
+        if (asked == null || cancelled(session)) { // !canAsk
             return null;
         }
-        char[][] answers = clock.timed(() -> prompt.answer(challenge));
+        char[][] answers = clock.timed(() -> asked.answer(challenge));
         if (answers != null && answers.length != challenge.questions().size()) {
             wipe(answers);
             return null;

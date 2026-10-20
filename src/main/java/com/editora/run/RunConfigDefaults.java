@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a newly added run configuration starts out as.
  *
@@ -44,7 +46,7 @@ public final class RunConfigDefaults {
      * so the saved configuration behaves exactly like ▶, and the field shows where it runs instead of a blank
      * that means something else. Blank when that folder is the project root (blank means the root).
      */
-    public static com.editora.config.RunConfiguration forScript(
+    public static com.editora.config.@Nullable RunConfiguration forScript(
             String type, java.nio.file.Path script, java.nio.file.Path projectRoot) {
         if (script == null
                 || !(ScriptRunCommand.PYTHON.equals(type)
@@ -82,7 +84,7 @@ public final class RunConfigDefaults {
      * Java 25 instance {@code void main()} or a multi-line signature the scanner does not see still runs as
      * that class. Null when {@code fileName} is not a {@code .java} file.
      */
-    public static String mainClassForSource(String source, String fileName) {
+    public static @Nullable String mainClassForSource(String source, String fileName) {
         if (fileName == null || !fileName.endsWith(".java") || fileName.length() == ".java".length()) {
             return null;
         }

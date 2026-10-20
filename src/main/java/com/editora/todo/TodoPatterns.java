@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Compiles the user's {@link TodoPattern}s into ready-to-match {@link Compiled} forms and supplies the
  * built-in defaults (TODO / FIXME). Disabled, blank, or invalid-regex patterns are skipped so one bad
@@ -45,7 +47,7 @@ public final class TodoPatterns {
      * Why {@code regex} cannot be compiled (the first line of the engine's description), or {@code null}
      * when it is valid. A blank expression is valid here: {@link #compile} skips it as "no pattern".
      */
-    public static String syntaxProblem(String regex) {
+    public static @Nullable String syntaxProblem(String regex) {
         if (regex == null || regex.isBlank()) {
             return null;
         }

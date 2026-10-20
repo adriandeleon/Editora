@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The pure half of running a response handler on Node.js ({@link NodeResponseScripts} launches it): the JSON object
@@ -60,7 +61,7 @@ public final class HttpScripts {
     }
 
     /** {@code {major, minor, patch}} of a {@code node --version} line ({@code v24.18.1}), or null. */
-    public static int[] parseVersion(String text) {
+    public static int @Nullable [] parseVersion(@Nullable String text) {
         if (text == null) {
             return null;
         }
@@ -104,7 +105,7 @@ public final class HttpScripts {
      * with the security warning that flag prints silenced where Node can ({@code --disable-warning}: 20.11+, 21.3+), so
      * the Debug console does not open on it.
      */
-    public static List<String> debugFlags(Guard guard, int[] version) {
+    public static List<String> debugFlags(Guard guard, int @Nullable [] version) {
         if (guard == Guard.NONE) {
             return List.of("--inspect-brk=127.0.0.1:0");
         }
@@ -121,7 +122,7 @@ public final class HttpScripts {
      * 24.12 (and 25.0). Before that the permission model shuts the inspector with no way to open it, so a debugged
      * script runs without the permission model there (adl, 2026-10-16), and says so.
      */
-    public static boolean allowsInspector(int[] version) {
+    public static boolean allowsInspector(int @Nullable [] version) {
         if (version == null || version.length < 2) {
             return false;
         }
@@ -133,7 +134,7 @@ public final class HttpScripts {
      * {@code shim}, and for a {@code debug} run the inspector flags — on a Node that cannot let a debugger in under its
      * permission model ({@link #allowsInspector}), without the permission model (adl, 2026-10-16).
      */
-    public static List<String> launchFlags(Guard guard, int[] version, Path shim, boolean debug) {
+    public static List<String> launchFlags(Guard guard, int @Nullable [] version, Path shim, boolean debug) {
         Guard g = debug && guard != Guard.NONE && !allowsInspector(version) ? Guard.NONE : guard;
         List<String> out = new ArrayList<>(flags(g, shim));
         if (debug) {
@@ -143,7 +144,7 @@ public final class HttpScripts {
     }
 
     /** Whether Node {@code version} takes {@code --disable-warning} (20.11+, 21.3+, 22+). */
-    static boolean disablesWarnings(int[] version) {
+    static boolean disablesWarnings(int @Nullable [] version) {
         if (version == null || version.length < 2) {
             return false;
         }
@@ -177,7 +178,7 @@ public final class HttpScripts {
     }
 
     /** One handler run's script: its source, the file stack traces name, and where the source starts in it. */
-    public record Script(String source, String filename, int line, int column) {}
+    public record Script(@Nullable String source, String filename, int line, int column) {}
 
     /**
      * The shim's input for one handler: the {@code nonce} that marks its result line, the {@code script}, the response
@@ -320,13 +321,13 @@ public final class HttpScripts {
             List<String> log,
             List<ResponseScripts.GlobalChange> changes,
             Map<String, String> variables,
-            String error) {}
+            @Nullable String error) {}
 
     /**
      * The result line marked {@code nonce} in {@code stdout} (the last one, should a script print the marker itself),
      * or null when there is none or it is not a result.
      */
-    public static Output parseOutput(String stdout, String nonce) {
+    public static @Nullable Output parseOutput(String stdout, String nonce) {
         if (stdout == null || nonce == null || nonce.isEmpty()) {
             return null;
         }

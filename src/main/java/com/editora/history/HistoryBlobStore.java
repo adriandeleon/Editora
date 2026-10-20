@@ -21,6 +21,8 @@ import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Content-addressed, gzip'd storage for Local File History revision bodies. Each unique content is
  * written once to {@code <blobsDir>/<2-hex-prefix>/<sha256>.txt.gz} (sharded by the hash prefix so a
@@ -91,9 +93,10 @@ public final class HistoryBlobStore {
         // correct content is in hand, so write it again. Returning on mere existence left every revision
         // with this sha "unavailable" for good.
         try {
-            createPrivateDirectories(file.getParent());
+            Path shard = shardFor(sha);
+            createPrivateDirectories(shard);
             harden(blobsDir, OWNER_DIRECTORY);
-            harden(file.getParent(), OWNER_DIRECTORY);
+            harden(shard, OWNER_DIRECTORY);
             byte[] gz = gzip(content);
             // Write to a temp file then move, so a crash mid-write can't leave a truncated blob — and sync it
             // first. The index that will reference this body is synced when it is written; without the same
@@ -121,7 +124,7 @@ public final class HistoryBlobStore {
     }
 
     /** Reads and gunzips the blob for {@code sha}, or {@code null} if it's missing/unreadable. */
-    public String get(String sha) {
+    public @Nullable String get(String sha) {
         Path file = pathFor(sha);
         if (sha == null || sha.isEmpty() || !Files.exists(file)) {
             return null;
@@ -228,8 +231,13 @@ public final class HistoryBlobStore {
 
     /** {@code <blobsDir>/<first-2-hex>/<sha>.txt.gz}; a too-short sha shards under {@code "_"}. */
     private Path pathFor(String sha) {
+        return shardFor(sha).resolve(sha + SUFFIX);
+    }
+
+    /** The directory {@link #pathFor} puts {@code sha}'s blob in. */
+    private Path shardFor(String sha) {
         String prefix = sha != null && sha.length() >= 2 ? sha.substring(0, 2) : "_";
-        return blobsDir.resolve(prefix).resolve(sha + SUFFIX);
+        return blobsDir.resolve(prefix);
     }
 
     private static Path createOwnerOnlyTemp(Path file) throws IOException {
@@ -257,7 +265,7 @@ public final class HistoryBlobStore {
         Files.createDirectories(directory);
     }
 
-    private static void harden(Path path, Set<PosixFilePermission> permissions) {
+    private static void harden(@Nullable Path path, Set<PosixFilePermission> permissions) {
         if (path == null || !path.getFileSystem().supportedFileAttributeViews().contains("posix")) {
             return;
         }

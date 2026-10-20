@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Finds the command-line tool that runs a JVM language's files — {@code groovy}, Scala CLI, {@code kotlinc}, and
  * Clojure's {@code clojure}, {@code lein} and {@code bb} — on this machine.
@@ -27,7 +29,8 @@ public final class JvmTools {
      * {@code PATH} in the order tried, its SDKMAN candidates with the program each holds, and the launcher's
      * extension on Windows.
      */
-    private record Tool(String homeVariable, List<String> pathNames, List<String[]> sdkman, String windowsSuffix) {}
+    private record Tool(
+            @Nullable String homeVariable, List<String> pathNames, List<String[]> sdkman, String windowsSuffix) {}
 
     /** The tools {@link #locate} knows. */
     private static final Map<String, Tool> TOOLS = Map.of(
@@ -93,18 +96,19 @@ public final class JvmTools {
      * {@code null} when none is installed. Looks at the disk (and may wait for the login-shell PATH): off the
      * FX thread where it can be.
      */
-    public static String locate(String tool) {
-        if (!knows(tool)) {
+    public static @Nullable String locate(String tool) {
+        Tool spec = tool == null ? null : TOOLS.get(tool);
+        if (spec == null) {
             return null;
         }
         boolean windows =
                 System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
         Path userHome = Path.of(System.getProperty("user.home", "."));
         List<Path> candidates = candidates(tool, System.getenv(), userHome, windows);
-        if (!candidates.isEmpty() && Files.isExecutable(candidates.get(0)) && hasHomeVariable(tool)) {
+        if (!candidates.isEmpty() && Files.isExecutable(candidates.get(0)) && hasHomeVariable(spec)) {
             return candidates.get(0).toString();
         }
-        for (String name : TOOLS.get(tool).pathNames()) {
+        for (String name : spec.pathNames()) {
             String onPath = com.editora.process.ProcessRunner.resolveExecutable(List.of(name))
                     .get(0);
             if (!onPath.equals(name)) {
@@ -119,8 +123,8 @@ public final class JvmTools {
         return null;
     }
 
-    private static boolean hasHomeVariable(String tool) {
-        String variable = TOOLS.get(tool).homeVariable();
+    private static boolean hasHomeVariable(Tool tool) {
+        String variable = tool.homeVariable();
         if (variable == null) {
             return false;
         }

@@ -3,6 +3,8 @@ package com.editora.http;
 import java.net.http.HttpClient;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -19,18 +21,19 @@ public final class HttpVersions {
     private HttpVersions() {}
 
     /** The version to send with and, when the request asked for something the JDK cannot do, a warning. */
-    public record Choice(HttpClient.Version version, String warning) {}
+    public record Choice(
+            HttpClient.Version version, @Nullable String warning) {}
 
     /**
      * The version for a request whose line said {@code requested} ({@code null} when it said nothing) to
      * {@code url}.
      */
-    public static Choice choose(String requested, String url) {
+    public static Choice choose(@Nullable String requested, String url) {
         String r = requested == null
                 ? ""
                 : requested.strip().toUpperCase(Locale.ROOT).replaceAll("\\s+", " ");
         boolean https = url != null && url.regionMatches(true, 0, "https:", 0, 6);
-        if (r.isEmpty()) {
+        if (requested == null || r.isEmpty()) {
             return new Choice(https ? HttpClient.Version.HTTP_2 : HttpClient.Version.HTTP_1_1, null);
         }
         if (r.equals("HTTP/1.1")) {

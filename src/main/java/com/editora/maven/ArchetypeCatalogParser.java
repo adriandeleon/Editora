@@ -14,6 +14,8 @@ import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses Maven's {@code archetype-catalog.xml} into {@link MavenArchetype}s — one per
  * {@code groupId:artifactId}, at its newest version.
@@ -60,7 +62,7 @@ public final class ArchetypeCatalogParser {
      *     hold the fetch for as long as it likes
      * @throws PomParseException on malformed XML, a DOCTYPE, or an entity reference
      */
-    public static List<MavenArchetype> parse(InputStream in, long maxBytes, Duration deadline)
+    public static List<MavenArchetype> parse(InputStream in, long maxBytes, @Nullable Duration deadline)
             throws PomParseException, IOException {
         Map<String, MavenArchetype> byKey = new LinkedHashMap<>();
         BoundedInputStream bounded = new BoundedInputStream(in, maxBytes, deadline);
@@ -166,11 +168,13 @@ public final class ArchetypeCatalogParser {
     private static final class BoundedInputStream extends FilterInputStream {
         private final long max;
         private final long end;
-        private final Duration deadline;
+        private final @Nullable Duration deadline;
         private long total;
+
+        @Nullable
         IOException aborted;
 
-        BoundedInputStream(InputStream in, long max, Duration deadline) {
+        BoundedInputStream(InputStream in, long max, @Nullable Duration deadline) {
             super(in);
             this.max = max;
             this.deadline = deadline;
@@ -201,8 +205,9 @@ public final class ArchetypeCatalogParser {
                 aborted = new IOException("response exceeds " + max + " bytes");
                 throw aborted;
             }
-            if (System.nanoTime() - end > 0) {
+            if (deadline != null && System.nanoTime() - end > 0) {
                 aborted = new IOException("response took longer than " + deadline.toSeconds() + " s");
+
                 throw aborted;
             }
         }

@@ -24,6 +24,7 @@ import com.editora.deploy.LocalFiles.LocalFile;
 import com.editora.process.ExecSpec;
 import com.editora.process.ExecTarget;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Brings a deployment's folder on its host up to date with the local project: lists both, works out a
@@ -90,14 +91,14 @@ public final class Deployer {
             int deleted,
             int unchanged,
             int keptOnHost,
-            DeployRoot.Problem rootProblem,
-            String error) {
+            DeployRoot.@Nullable Problem rootProblem,
+            @Nullable String error) {
 
         public boolean ok() {
             return status == Status.OK;
         }
 
-        static Outcome failed(String error) {
+        static Outcome failed(@Nullable String error) {
             return new Outcome(Status.FAILED, 0, 0, 0, 0, 0, null, error);
         }
 
@@ -347,7 +348,7 @@ public final class Deployer {
     }
 
     /** The first non-blank line of {@code text}, else {@code fallback}. */
-    static String firstLine(String text, String fallback) {
+    static @Nullable String firstLine(@Nullable String text, @Nullable String fallback) {
         if (text != null) {
             List<String> lines = new ArrayList<>(
                     text.lines().map(String::strip).filter(s -> !s.isEmpty()).toList());

@@ -16,6 +16,7 @@ import com.editora.process.TerminalChannel;
 import com.pty4j.PtyProcess;
 import com.pty4j.PtyProcessBuilder;
 import com.pty4j.WinSize;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A shell somewhere else reached through a launcher run here on a pseudo-terminal: {@code docker exec -it} (or
@@ -37,9 +38,13 @@ public final class PtyChannel implements TerminalChannel {
     private final Shell shell;
     private volatile long pid = -1;
     /** The close in progress: the hang-up, then the end of the launcher. Null until closed. */
-    private volatile Thread closing;
+    private volatile @Nullable Thread closing;
 
-    private PtyChannel(PtyProcess process, LongConsumer hangUp, String targetId, LauncherProcess.Recorder recorder) {
+    private PtyChannel(
+            PtyProcess process,
+            LongConsumer hangUp,
+            @Nullable String targetId,
+            LauncherProcess.@Nullable Recorder recorder) {
         this.process = process;
         this.hangUp = hangUp;
         this.shell = new Shell(targetId == null ? "local" : targetId, recorder);
@@ -72,8 +77,8 @@ public final class PtyChannel implements TerminalChannel {
             int columns,
             int rows,
             LongConsumer hangUp,
-            String targetId,
-            LauncherProcess.Recorder recorder)
+            @Nullable String targetId,
+            LauncherProcess.@Nullable Recorder recorder)
             throws IOException {
         PtyProcess process = new PtyProcessBuilder(argv.toArray(String[]::new))
                 .setEnvironment(env)
@@ -182,9 +187,9 @@ public final class PtyChannel implements TerminalChannel {
     private final class Shell extends RemoteProcess {
 
         private final String targetId;
-        private final LauncherProcess.Recorder recorder;
+        private final LauncherProcess.@Nullable Recorder recorder;
 
-        Shell(String targetId, LauncherProcess.Recorder recorder) {
+        Shell(String targetId, LauncherProcess.@Nullable Recorder recorder) {
             this.targetId = targetId;
             this.recorder = recorder;
         }
@@ -227,7 +232,7 @@ public final class PtyChannel implements TerminalChannel {
         }
 
         @Override
-        public List<String> orphanRecord() {
+        public @Nullable List<String> orphanRecord() {
             long known = pid;
             if (recorder == null || known <= 0 || !process.isAlive()) {
                 return null;

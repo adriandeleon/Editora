@@ -22,6 +22,7 @@ import org.apache.sshd.sftp.client.SftpVersionSelector;
 import org.apache.sshd.sftp.client.fs.SftpFileSystem;
 import org.apache.sshd.sftp.common.SftpConstants;
 import org.apache.sshd.sftp.common.SftpException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What {@link AtomicFileWrite} has to ask an SFTP server itself, because the NIO view of a remote file does
@@ -149,7 +150,7 @@ final class SftpFiles {
     private static final java.time.Duration STAT_TIMEOUT = java.time.Duration.ofSeconds(30);
 
     /** The link count a protocol-6 server reports for {@code path}, or null when its reply carries none. */
-    private static Integer statLinkCount(SftpFileSystem fs, String path) throws IOException {
+    private static @Nullable Integer statLinkCount(SftpFileSystem fs, String path) throws IOException {
         try (SftpClient client = fs.getClient()) {
             if (!(client instanceof RawSftpClient raw)) {
                 return null;
@@ -172,7 +173,7 @@ final class SftpFiles {
      * The {@code link-count} field of protocol-6 file attributes (draft-ietf-secsh-filexfer-13, section 7),
      * or null when the server did not send one. Every field before it is skipped by its flag.
      */
-    static Integer linkCountOfV6Attributes(Buffer attributes) {
+    static @Nullable Integer linkCountOfV6Attributes(Buffer attributes) {
         int flags = attributes.getInt();
         attributes.getUByte(); // type
         if ((flags & SftpConstants.SSH_FILEXFER_ATTR_SIZE) != 0) {
@@ -218,7 +219,7 @@ final class SftpFiles {
     }
 
     /** A protocol-3 client on {@code fs}'s SSH session, or null when the server does not speak 3. */
-    private static SftpClient listingClient(SftpFileSystem fs) {
+    private static @Nullable SftpClient listingClient(SftpFileSystem fs) {
         synchronized (LISTING_CLIENTS) {
             SftpClient client = LISTING_CLIENTS.get(fs);
             if (client != null && client.isOpen()) {
@@ -314,7 +315,7 @@ final class SftpFiles {
      * and removed by the next save that reaches the same server, in this run or a later one. The failure
      * never replaces the error that is already on its way to the user.
      */
-    static void discardStaged(Path tmp, Path ledgerDir) {
+    static void discardStaged(Path tmp, @Nullable Path ledgerDir) {
         try {
             Files.deleteIfExists(tmp);
         } catch (IOException | RuntimeException unreachable) {
@@ -331,7 +332,7 @@ final class SftpFiles {
     }
 
     /** Deletes the staging files earlier saves had to leave on {@code anyPath}'s server. Best effort. */
-    static void sweepOrphans(Path anyPath, Path ledgerDir) {
+    static void sweepOrphans(Path anyPath, @Nullable Path ledgerDir) {
         synchronized (ORPHANS) {
             loadLedger(ledgerDir);
             String server = ORPHANS.isEmpty() ? null : serverKey(anyPath);
@@ -355,7 +356,7 @@ final class SftpFiles {
     }
 
     /** Reads {@code ledgerDir}'s list once per run. Only names this class could have staged are taken. */
-    private static void loadLedger(Path ledgerDir) {
+    private static void loadLedger(@Nullable Path ledgerDir) {
         if (ledgerDir == null || !LOADED_LEDGERS.add(ledgerDir)) {
             return;
         }
@@ -378,7 +379,7 @@ final class SftpFiles {
         return name.length() > ".editora-tmp".length() + 1 && name.startsWith(".") && name.endsWith(".editora-tmp");
     }
 
-    private static void storeLedger(Path ledgerDir) {
+    private static void storeLedger(@Nullable Path ledgerDir) {
         if (ledgerDir == null) {
             return;
         }
@@ -407,7 +408,7 @@ final class SftpFiles {
     }
 
     /** {@code user@host:port} of the session behind {@code path}; it outlives the filesystem being closed. */
-    private static String serverKey(Path path) {
+    private static @Nullable String serverKey(Path path) {
         try {
             if (path.getFileSystem() instanceof SftpFileSystem fs && fs.getSession() != null) {
                 return fs.getSession().getUsername() + "@" + fs.getSession().getConnectAddress();

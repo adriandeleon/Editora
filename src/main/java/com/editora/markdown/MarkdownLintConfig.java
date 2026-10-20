@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Parses a project markdownlint configuration into the set of rule codes it turns <b>off</b>, so the
@@ -71,7 +72,11 @@ public final class MarkdownLintConfig {
      * @param entries the rule entries, in file order
      * @param extendsPath the {@code extends} entry, or {@code null}
      */
-    public record Parsed(boolean valid, Boolean defaults, List<Entry> entries, String extendsPath) {
+    public record Parsed(
+            boolean valid,
+            @Nullable Boolean defaults,
+            List<Entry> entries,
+            @Nullable String extendsPath) {
         static final Parsed INVALID = new Parsed(false, null, List.of(), null);
         static final Parsed EMPTY = new Parsed(true, null, List.of(), null);
     }
@@ -205,7 +210,7 @@ public final class MarkdownLintConfig {
      * added first in the object. {@code null} or blank input gives a new config; text that is not an object is
      * returned as {@code null} (the caller must not write it).
      */
-    public static String withRuleOff(String json, String code) {
+    public static @Nullable String withRuleOff(String json, String code) {
         if (json == null || json.isBlank()) {
             return "{\n  \"" + code + "\": false\n}\n";
         }
@@ -242,7 +247,7 @@ public final class MarkdownLintConfig {
      * file that does not parse, a rule written as a nested YAML mapping, a flow-style {@code config: {…}}): the
      * caller then tells the user the line to add ({@link #manualLine}).
      */
-    public static String withRuleOff(String fileName, String text, String code) {
+    public static @Nullable String withRuleOff(String fileName, String text, String code) {
         String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
         boolean yaml = name.endsWith(".yaml") || name.endsWith(".yml");
         boolean cli2 = name.startsWith(".markdownlint-cli2.");
@@ -272,7 +277,7 @@ public final class MarkdownLintConfig {
     }
 
     /** YAML: sets or appends {@code CODE: false} among the keys indented by {@code indent}. */
-    private static String yamlTopLevel(String text, String code, String indent) {
+    private static @Nullable String yamlTopLevel(String text, String code, String indent) {
         String eol = text.contains("\r\n") ? "\r\n" : "\n";
         String[] lines = text.split("\\r?\\n", -1);
         java.util.regex.Pattern key = java.util.regex.Pattern.compile(
@@ -307,7 +312,7 @@ public final class MarkdownLintConfig {
     }
 
     /** A cli2 YAML file: the rule goes under its block-style {@code config:} mapping. */
-    private static String yamlUnderConfig(String text, String code) {
+    private static @Nullable String yamlUnderConfig(String text, String code) {
         String eol = text.contains("\r\n") ? "\r\n" : "\n";
         String[] lines = text.split("\\r?\\n", -1);
         int config = -1;
@@ -362,7 +367,7 @@ public final class MarkdownLintConfig {
     }
 
     /** A cli2 JSONC file: the rule goes into its {@code "config"} object (added when there is none). */
-    private static String jsonUnderConfig(String text, String code) {
+    private static @Nullable String jsonUnderConfig(String text, String code) {
         if (text.isBlank()) {
             return "{\n  \"config\": {\n    \"" + code + "\": false\n  }\n}\n";
         }

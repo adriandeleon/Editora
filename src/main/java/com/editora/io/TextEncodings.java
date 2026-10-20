@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.editora.editorconfig.EditorConfigCharset;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The encodings a user can choose for a file (Reopen with Encoding, Save with Encoding), and a strict decode
@@ -156,7 +157,7 @@ public final class TextEncodings {
      * @param charset the name decoded as; {@code utf-8} becomes {@code utf-8-bom} for bytes that start with
      *     a UTF-8 byte-order mark, so the mark is neither shown nor lost
      */
-    public record Decoded(String text, String charset, int line, int column) {
+    public record Decoded(@Nullable String text, String charset, int line, int column) {
 
         public boolean ok() {
             return text != null;

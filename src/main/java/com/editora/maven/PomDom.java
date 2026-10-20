@@ -10,6 +10,7 @@ import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -87,7 +88,7 @@ final class PomDom {
     private static final class Builder extends DefaultHandler {
         private final Document doc;
         private final Deque<Node> stack = new ArrayDeque<>();
-        private Locator locator;
+        private @Nullable Locator locator;
 
         Builder(Document doc) {
             this.doc = doc;

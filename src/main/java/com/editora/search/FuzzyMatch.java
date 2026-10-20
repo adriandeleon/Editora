@@ -3,6 +3,8 @@ package com.editora.search;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Ranked fuzzy matching for the pickers — the shared answer to "does this candidate match what was typed,
  * and how well?". Pure and unit-tested.
@@ -98,7 +100,7 @@ public final class FuzzyMatch {
      * <p>A blank query returns {@code null} rather than a neutral match: "show everything" is the caller's
      * decision, and every current caller already special-cases the empty field before filtering.
      */
-    public static Match of(String candidate, String query) {
+    public static @Nullable Match of(String candidate, String query) {
         List<int[]> spans = new ArrayList<>();
         int total = run(candidate, query, spans);
         if (total == NO_MATCH) {
@@ -126,7 +128,7 @@ public final class FuzzyMatch {
     }
 
     /** Scoring core shared by {@link #of} and {@link #scoreOf}; fills {@code spans} when it is non-null. */
-    private static int run(String candidate, String query, List<int[]> spans) {
+    private static int run(String candidate, String query, @Nullable List<int[]> spans) {
         if (candidate == null || candidate.isEmpty() || query == null) {
             return NO_MATCH;
         }
@@ -178,7 +180,7 @@ public final class FuzzyMatch {
      * spanning both ({@code "ui main"}) still find {@code ui/MainController.java} while a plain
      * {@code "main"} is never dragged down by the directories above it.
      */
-    public static Match ofPath(String path, String query) {
+    public static @Nullable Match ofPath(String path, String query) {
         if (path == null || path.isEmpty()) {
             return null;
         }
@@ -231,7 +233,7 @@ public final class FuzzyMatch {
      * character to {@code spans} and returning the term's score. Returns {@link #NO_MATCH} — leaving
      * {@code spans} untouched — when the term does not match.
      */
-    private static int matchTerm(String s, String query, int qStart, int qEnd, List<int[]> spans) {
+    private static int matchTerm(String s, String query, int qStart, int qEnd, @Nullable List<int[]> spans) {
         // spans may be null — the scoreOf path wants the score without paying for the ranges.
         int m = qEnd - qStart;
         int n = s.length();

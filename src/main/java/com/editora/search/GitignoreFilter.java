@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A pragmatic, pure {@code .gitignore} matcher used by the built-in search walker (the fallback when
@@ -249,7 +250,7 @@ public final class GitignoreFilter {
     }
 
     /** What {@code rules} say about {@code relPath} (relative to their own directory), or null for nothing. */
-    private static Boolean decide(List<Rule> rules, String relPath, boolean isDir) {
+    private static @Nullable Boolean decide(List<Rule> rules, String relPath, boolean isDir) {
         String base = relPath.substring(relPath.lastIndexOf('/') + 1);
         Boolean ignored = null;
         for (Rule r : rules) {
@@ -265,7 +266,7 @@ public final class GitignoreFilter {
     }
 
     /** Translates a gitignore glob (slashes intact) into an anchored full-string regex. */
-    private static Pattern compile(String glob) {
+    private static @Nullable Pattern compile(String glob) {
         StringBuilder sb = new StringBuilder();
         int n = glob.length();
         for (int i = 0; i < n; i++) {

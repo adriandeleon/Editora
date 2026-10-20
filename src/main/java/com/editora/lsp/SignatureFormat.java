@@ -5,6 +5,7 @@ import java.util.List;
 import org.eclipse.lsp4j.ParameterInformation;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SignatureInformation;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Resolves an LSP {@link SignatureHelp} into what the popup renders (#674): the active signature's label,
@@ -24,7 +25,7 @@ public final class SignatureFormat {
     public record Active(String label, int paramStart, int paramEnd, String documentation, int index, int total) {}
 
     /** Resolves {@code help} to the active signature's rendering, or null when there is nothing to show. */
-    public static Active resolve(SignatureHelp help) {
+    public static @Nullable Active resolve(@Nullable SignatureHelp help) {
         if (help == null || help.getSignatures() == null || help.getSignatures().isEmpty()) {
             return null;
         }

@@ -7,6 +7,7 @@ import java.util.List;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The top-level object of a JSONC text, with where each member sits in the source — so a member can be
@@ -104,6 +105,7 @@ final class JsoncObject {
     }
 
     /** The last member called {@code name} (a duplicate key's last value is the one JSON readers keep), or null. */
+    @Nullable
     Member member(String name) {
         for (int i = members.size() - 1; i >= 0; i--) {
             if (members.get(i).name().equals(name)) {
@@ -135,7 +137,7 @@ final class JsoncObject {
      * {@code quotedName} is the JSON string literal of the key; {@code valueJson} is pretty-printed from
      * column 0 and is re-indented to sit where it lands.
      */
-    String with(String oldName, String quotedName, String valueJson) {
+    String with(@Nullable String oldName, String quotedName, String valueJson) {
         String indent = memberIndent();
         String member = quotedName + ": " + valueJson.replace("\n", "\n" + indent);
         Member old = oldName == null ? null : member(oldName);

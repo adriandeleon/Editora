@@ -14,6 +14,7 @@ import com.editora.editor.GrammarRegistry;
 import com.editora.editor.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Generates PDFs off the JavaFX thread (the {@code GitService}/{@code MermaidService} idiom): a single
@@ -455,7 +456,7 @@ public final class PdfExportService {
         });
     }
 
-    private static java.awt.image.BufferedImage toBufferedImage(Image image) {
+    private static java.awt.image.@Nullable BufferedImage toBufferedImage(Image image) {
         if (image == null || image.getPixelReader() == null) {
             return null;
         }

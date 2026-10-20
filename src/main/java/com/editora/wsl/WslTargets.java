@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.editora.process.ExecTarget;
 import com.editora.process.ExecTargets;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The {@link ExecTargets} resolver for folders inside a WSL distribution ({@code \\wsl.localhost\<distro>\…},
@@ -30,7 +31,7 @@ public final class WslTargets implements ExecTargets.Resolver {
     }
 
     @Override
-    public ExecTarget forPath(Path path) {
+    public @Nullable ExecTarget forPath(Path path) {
         String text = path.toString();
         String prefix = WslPaths.sharePrefix(text);
         if (prefix == null) {

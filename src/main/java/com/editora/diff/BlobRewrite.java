@@ -9,6 +9,7 @@ import java.util.List;
 
 import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Rebuilds a stored blob's <em>bytes</em> after a line-level edit of its decoded text, for hunk staging.
@@ -48,7 +49,8 @@ public final class BlobRewrite {
      *     terminators aside)
      * @param afterText the desired decoded text, line terminators not significant except at end of file
      */
-    public static byte[] rewrite(byte[] original, Charset charset, byte[] bom, String beforeText, String afterText) {
+    public static byte @Nullable [] rewrite(
+            byte[] original, Charset charset, byte[] bom, String beforeText, String afterText) {
         byte[] source = original == null ? new byte[0] : original;
         byte[] mark = bom != null && bom.length > 0 && startsWith(source, bom) ? bom : new byte[0];
         String decoded = new String(source, mark.length, source.length - mark.length, charset);

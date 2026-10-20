@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Repairs Java string values that java-debug sends with their emoji (any character outside the Basic
  * Multilingual Plane) garbled — follow-up 4 of the Java debugging review.
@@ -80,7 +82,7 @@ final class JdwpStringRepair {
      * byte order — the JVM's own, which a caller cannot know, so both are tried; null when an element is not a
      * byte.
      */
-    static String utf16(List<DapModels.VariableInfo> bytes, boolean littleEndian) {
+    static @Nullable String utf16(List<DapModels.VariableInfo> bytes, boolean littleEndian) {
         if (bytes.size() % 2 != 0) {
             return null;
         }
@@ -98,7 +100,7 @@ final class JdwpStringRepair {
         return out.toString();
     }
 
-    private static Integer byteOf(DapModels.VariableInfo v) {
+    private static @Nullable Integer byteOf(DapModels.VariableInfo v) {
         try {
             return Integer.parseInt(v.value().strip());
         } catch (RuntimeException notANumber) {
@@ -110,7 +112,7 @@ final class JdwpStringRepair {
      * {@code display} — a value of type {@code type} whose children are {@code ref} — repaired when it is a
      * garbled string the JVM's own characters confirm; otherwise {@code display}. Never fails.
      */
-    static CompletableFuture<String> repair(DapClient client, String display, String type, int ref) {
+    static CompletableFuture<String> repair(DapClient client, String display, @Nullable String type, int ref) {
         if (ref <= 0 || !"String".equals(type) || !suspect(display) || display.length() > MAX_CHECKED_CHARS + 2) {
             return CompletableFuture.completedFuture(display);
         }
@@ -130,7 +132,7 @@ final class JdwpStringRepair {
                 .exceptionally(e -> display);
     }
 
-    private static DapModels.VariableInfo field(List<DapModels.VariableInfo> fields, String name) {
+    private static DapModels.@Nullable VariableInfo field(List<DapModels.VariableInfo> fields, String name) {
         for (DapModels.VariableInfo f : fields) {
             if (name.equals(f.name())) {
                 return f;

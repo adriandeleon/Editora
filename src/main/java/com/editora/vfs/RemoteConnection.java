@@ -1,12 +1,20 @@
 package com.editora.vfs;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The (non-secret) description of an SFTP connection: where to connect and how to authenticate. The secret
  * itself (a password or a key passphrase) is never stored here — it is passed transiently to
  * {@link RemoteFileSystems#connect}. Persisted (in R2) as the {@code connections.json} entry.
  */
 public record RemoteConnection(
-        String host, int port, String user, AuthMethod auth, String keyPath, String label, String lastPath) {
+        String host,
+        int port,
+        String user,
+        AuthMethod auth,
+        String keyPath,
+        @Nullable String label,
+        @Nullable String lastPath) {
 
     public enum AuthMethod {
         /** Try the user's default key files in {@code ~/.ssh} (id_ed25519 / id_rsa / …). */

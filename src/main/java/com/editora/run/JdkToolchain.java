@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /** Resolves a configured JDK home into the launcher and environment used by Java run/debug flows. */
 public final class JdkToolchain {
 
@@ -34,7 +36,7 @@ public final class JdkToolchain {
      * {@code JAVA_HOME} whose launcher exists, else blank — PATH's {@code java}, which may be another version
      * than the one Maven compiled with.
      */
-    public static String inheritedJavaExecutable(Map<String, String> environment) {
+    public static String inheritedJavaExecutable(@Nullable Map<String, String> environment) {
         String home = environment == null ? "" : clean(environment.get("JAVA_HOME"));
         if (home.isEmpty()) {
             return "";
@@ -54,7 +56,7 @@ public final class JdkToolchain {
     }
 
     /** The compiler alongside a selected Java launcher, or {@code javac} when PATH supplies Java. */
-    public static String compilerForJavaExecutable(String javaExecutable) {
+    public static String compilerForJavaExecutable(@Nullable String javaExecutable) {
         if (javaExecutable == null || javaExecutable.isBlank()) {
             return "javac";
         }
@@ -92,7 +94,7 @@ public final class JdkToolchain {
         return Files.isRegularFile(bin.resolve(isWindows() ? "javac.exe" : "javac"));
     }
 
-    private static String clean(String value) {
+    private static String clean(@Nullable String value) {
         return value == null ? "" : value.strip();
     }
 

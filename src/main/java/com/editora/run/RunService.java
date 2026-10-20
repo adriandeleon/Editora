@@ -9,6 +9,7 @@ import javafx.application.Platform;
 import com.editora.process.ChildText;
 import com.editora.process.OutputPump;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs a single Java source file via the JDK's source-file launcher ({@code java <file.java>}) and streams
@@ -45,7 +46,7 @@ public final class RunService {
         void onError(String message);
     }
 
-    private volatile Process current;
+    private volatile @Nullable Process current;
 
     /** Whether the running program is a POSIX shell, whose input lines end in {@code \n} on every OS. */
     private volatile boolean posixShell;
@@ -160,7 +161,7 @@ public final class RunService {
      * As above, for the {@code java} of the machine {@code where} is on: a folder on a remote host asks the
      * host's. {@code null} is this machine.
      */
-    public void detectJavaMajor(String javaExecutable, Path where, java.util.function.IntConsumer cb) {
+    public void detectJavaMajor(String javaExecutable, @Nullable Path where, java.util.function.IntConsumer cb) {
         String executable = javaExecutable == null || javaExecutable.isBlank() ? "java" : javaExecutable;
         boolean remote = where != null && !com.editora.process.ExecTargets.runsHere(where);
         String key = remote ? com.editora.process.ExecTargets.forPath(where).id() + " " + executable : executable;
@@ -223,7 +224,7 @@ public final class RunService {
      * folder) and streams output to {@code listener}. Refuses to start if a previous run is still alive.
      * All listener callbacks run on the FX thread.
      */
-    public void runInDir(Path workingDir, List<String> argv, Listener listener) {
+    public void runInDir(@Nullable Path workingDir, List<String> argv, Listener listener) {
         runInDir(workingDir, argv, java.util.Map.of(), listener);
     }
 
@@ -236,7 +237,8 @@ public final class RunService {
      * JVM child decode file names as ASCII, so a project under {@code año/} could not be run at all and
      * anything it printed outside ASCII came out as {@code ?}.
      */
-    static ProcessBuilder processBuilder(Path workingDir, List<String> command, java.util.Map<String, String> env) {
+    static ProcessBuilder processBuilder(
+            @Nullable Path workingDir, List<String> command, java.util.Map<String, String> env) {
         ProcessBuilder pb = new ProcessBuilder(command);
         if (workingDir != null) {
             pb.directory(workingDir.toAbsolutePath().toFile());
@@ -261,8 +263,8 @@ public final class RunService {
      * The program on the host {@code workingDir} is on: in the user's locale (the host's), with {@code env} on
      * top (a null value unsets), long-lived — so Stop, and losing the connection, end it and what it started.
      */
-    public static Process startRemote(Path workingDir, List<String> command, java.util.Map<String, String> env)
-            throws IOException {
+    public static Process startRemote(
+            @Nullable Path workingDir, List<String> command, java.util.Map<String, String> env) throws IOException {
         java.util.Map<String, String> overrides = env == null ? java.util.Map.of() : env;
         return com.editora.process.ExecTargets.forPath(workingDir)
                 .start(com.editora.process.ExecSpec.of(
@@ -274,7 +276,8 @@ public final class RunService {
      * As {@link #runInDir(Path, List, Listener)}, plus {@code env} — extra environment variables for the
      * child (a saved run configuration's {@code KEY=VALUE} pairs), applied over the inherited environment.
      */
-    public void runInDir(Path workingDir, List<String> argv, java.util.Map<String, String> env, Listener listener) {
+    public void runInDir(
+            @Nullable Path workingDir, List<String> argv, java.util.Map<String, String> env, Listener listener) {
         if (argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }

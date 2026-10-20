@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One child process to start on an {@link ExecTarget}: what a {@link ProcessBuilder} would be told, in a
  * form that can also be sent to another machine.
@@ -22,7 +24,7 @@ import java.util.Map;
  */
 public record ExecSpec(
         List<String> argv,
-        Path workingDir,
+        @Nullable Path workingDir,
         Map<String, String> env,
         Locale locale,
         boolean longLived,
@@ -47,8 +49,9 @@ public record ExecSpec(
     }
 
     /** A one-shot command with piped output and nothing scrubbed. */
-    public static ExecSpec of(List<String> argv, Path workingDir, Map<String, String> env, Locale locale) {
-        return new ExecSpec(argv, workingDir, env, locale, false, false, false, false);
+    public static ExecSpec of(
+            @Nullable List<String> argv, @Nullable Path workingDir, Map<String, String> env, Locale locale) {
+        return new ExecSpec(argv == null ? List.of() : argv, workingDir, env, locale, false, false, false, false);
     }
 
     public ExecSpec withLongLived(boolean value) {

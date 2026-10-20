@@ -9,6 +9,7 @@ import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Detects installed desktop browsers and builds the per-OS command that opens a URL in a chosen one.
@@ -162,7 +163,7 @@ public final class Browsers {
         };
     }
 
-    private static Spec specFor(String id) {
+    private static @Nullable Spec specFor(String id) {
         for (Spec s : SPECS) {
             if (s.id().equals(id)) {
                 return s;

@@ -1,5 +1,7 @@
 package com.editora.editops;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested implementation of the Emacs transpose commands — character (`C-t`), word (`M-t`),
  * and line (`C-x C-t`) — computing a minimal {@link Edit} (a replacement span + the resulting caret)
@@ -41,7 +43,7 @@ public final class Transposer {
      * At end of line/buffer, swap the two preceding characters (leaving the caret in place). Never
      * transposes across a newline; no-op at the start of a line/buffer.
      */
-    public static Edit transposeChars(String text, int caret) {
+    public static @Nullable Edit transposeChars(String text, int caret) {
         int n = text.length();
         if (caret < 0 || caret > n) {
             return null;
@@ -79,7 +81,7 @@ public final class Transposer {
      * inside a word is first advanced to that word's end; at the end of the buffer the last two words
      * are swapped; at the start, the first two. No-op when fewer than two words are involved.
      */
-    public static Edit transposeWords(String text, int caret) {
+    public static @Nullable Edit transposeWords(String text, int caret) {
         int n = text.length();
         // Inside a word → advance to its end, so whole words are transposed.
         if (caret > 0 && caret < n && isWord(text.charAt(caret - 1)) && isWord(text.charAt(caret))) {
@@ -158,7 +160,7 @@ public final class Transposer {
      * Emacs {@code transpose-lines} (`C-x C-t`): exchange the current line with the previous one,
      * leaving the caret at the start of the line below the pair. No-op on the first line.
      */
-    public static Edit transposeLines(String text, int caret) {
+    public static @Nullable Edit transposeLines(String text, int caret) {
         int n = text.length();
         int curStart = lineStart(text, caret);
         if (curStart == 0) {

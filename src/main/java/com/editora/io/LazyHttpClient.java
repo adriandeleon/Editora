@@ -4,6 +4,8 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.function.Supplier;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * An {@link HttpClient} built on first use and released on {@link #close}.
  *
@@ -19,7 +21,7 @@ import java.util.function.Supplier;
 public final class LazyHttpClient implements AutoCloseable {
 
     private final Supplier<HttpClient> factory;
-    private HttpClient client;
+    private @Nullable HttpClient client;
 
     public LazyHttpClient(Supplier<HttpClient> factory) {
         this.factory = factory;

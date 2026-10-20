@@ -3,13 +3,16 @@ package com.editora.http;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a response's tests found: the {@code # @assert} checks ({@link HttpChecks}) and the {@code client.test} calls
  * of its JavaScript response handlers ({@link ResponseScripts}), in the order they ran; the handlers'
  * {@code client.log} lines; and the error a handler stopped with ({@code null} when none did), its stack included.
  * {@link #NONE} — nothing ran — is what a request without checks or handlers carries.
  */
-public record HttpTests(List<Test> tests, List<String> log, String error) {
+public record HttpTests(
+        List<Test> tests, List<String> log, @Nullable String error) {
 
     /** No tests, no log, no error. */
     public static final HttpTests NONE = new HttpTests(List.of(), List.of(), null);

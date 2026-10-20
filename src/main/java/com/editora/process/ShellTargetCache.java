@@ -17,6 +17,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A {@link TargetCache} this machine cannot see as a folder — a container's home — kept by POSIX commands run
  * on the target: {@code mkdir -p}, a file streamed through {@code cat} into a {@code .part} and moved in,
@@ -97,7 +99,7 @@ public final class ShellTargetCache implements TargetCache {
     }
 
     /** {@code script} with the folder, then {@code args}, as {@code $1…}; {@code input} as its stdin. */
-    private Ran run(String script, InputStream input, String... args) throws IOException {
+    private Ran run(String script, @Nullable InputStream input, String... args) throws IOException {
         List<String> argv = new ArrayList<>(List.of("/bin/sh", "-c", script, "editora", dir));
         argv.addAll(List.of(args));
         Process p = target.start(ExecSpec.of(argv, null, Map.of(), ExecSpec.Locale.PARSE_STABLE));

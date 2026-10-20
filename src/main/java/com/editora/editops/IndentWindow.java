@@ -1,5 +1,7 @@
 package com.editora.editops;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The Enter / Tab / closer-dedent edits of {@link Indenter} and {@link PlainTab}, computed from a bounded
  * slice of the document instead of all of it.
@@ -45,7 +47,8 @@ public final class IndentWindow {
     }
 
     /** As {@link #unit(Doc, int, Boolean, Integer)}, detecting the unit as {@code language} reads indentation. */
-    public static String unit(Doc doc, int tabSize, Boolean insertSpaces, Integer indentSize, String language) {
+    public static String unit(
+            Doc doc, int tabSize, Boolean insertSpaces, Integer indentSize, @Nullable String language) {
         String head = insertSpaces != null ? "" : doc.text(0, Math.min(doc.length(), HEAD_CHARS));
         return Indenter.unitFor(head, tabSize, insertSpaces, indentSize, language);
     }
@@ -80,7 +83,13 @@ public final class IndentWindow {
 
     /** As above, knowing the document's indent {@code unit} (see {@link Indenter#closerAlignIndent}). */
     public static String closerAlignIndent(
-            Indenter.Style style, Doc doc, int caret, int tabSize, String currentIndent, char typed, String unit) {
+            Indenter.Style style,
+            Doc doc,
+            int caret,
+            int tabSize,
+            String currentIndent,
+            char typed,
+            @Nullable String unit) {
         int line = doc.lineOf(caret);
         int start = backScanStart(doc, line);
         String window = doc.text(start, doc.lineStart(line) + doc.lineLength(line));

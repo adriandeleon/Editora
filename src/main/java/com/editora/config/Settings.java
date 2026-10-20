@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /** User preferences, (de)serialized to {@code settings.json}. Session/state lives in {@link WorkspaceState}. */
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -322,10 +323,10 @@ public class Settings {
     /** Per-part highlight colors for a structured TODO comment (web hex); defaults from {@code TodoColors}. */
     private String todoTagColor = com.editora.todo.TodoColors.TAG_COLOR;
 
-    private String todoPriorityCriticalColor = com.editora.todo.TodoColors.priorityColor("critical");
-    private String todoPriorityHighColor = com.editora.todo.TodoColors.priorityColor("high");
-    private String todoPriorityMediumColor = com.editora.todo.TodoColors.priorityColor("medium");
-    private String todoPriorityLowColor = com.editora.todo.TodoColors.priorityColor("low");
+    private @Nullable String todoPriorityCriticalColor = com.editora.todo.TodoColors.priorityColor("critical");
+    private @Nullable String todoPriorityHighColor = com.editora.todo.TodoColors.priorityColor("high");
+    private @Nullable String todoPriorityMediumColor = com.editora.todo.TodoColors.priorityColor("medium");
+    private @Nullable String todoPriorityLowColor = com.editora.todo.TodoColors.priorityColor("low");
 
     private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
     private boolean abbrevMode = false; // auto-expand abbreviations as you type on a word terminator
@@ -717,7 +718,7 @@ public class Settings {
     private boolean aiApiKeysInKeychain = false;
     /** Where the AI keys live this session; null (no keychain asked) means the fields above. Not persisted. */
     @JsonIgnore
-    private transient ApiKeyVault apiKeyVault;
+    private transient @Nullable ApiKeyVault apiKeyVault;
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -2003,7 +2004,7 @@ public class Settings {
         this.todoTagColor = todoTagColor;
     }
 
-    public String getTodoPriorityCriticalColor() {
+    public @Nullable String getTodoPriorityCriticalColor() {
         return todoPriorityCriticalColor;
     }
 
@@ -2011,7 +2012,7 @@ public class Settings {
         this.todoPriorityCriticalColor = c;
     }
 
-    public String getTodoPriorityHighColor() {
+    public @Nullable String getTodoPriorityHighColor() {
         return todoPriorityHighColor;
     }
 
@@ -2019,7 +2020,7 @@ public class Settings {
         this.todoPriorityHighColor = c;
     }
 
-    public String getTodoPriorityMediumColor() {
+    public @Nullable String getTodoPriorityMediumColor() {
         return todoPriorityMediumColor;
     }
 
@@ -2027,7 +2028,7 @@ public class Settings {
         this.todoPriorityMediumColor = c;
     }
 
-    public String getTodoPriorityLowColor() {
+    public @Nullable String getTodoPriorityLowColor() {
         return todoPriorityLowColor;
     }
 

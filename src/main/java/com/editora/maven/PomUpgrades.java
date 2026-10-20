@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What an "Update Versions" of one {@code pom.xml} can offer, as a plan the preview renders row by row.
  *
@@ -63,7 +65,7 @@ public final class PomUpgrades {
             Set<String> plugins,
             Map<String, List<String>> propertyUsers,
             Map<String, String> propertyValues,
-            String[] parent,
+            String @Nullable [] parent,
             int skippedPropertyDriven,
             int skippedInherited) {
 
@@ -111,6 +113,7 @@ public final class PomUpgrades {
                 String value = name == null ? null : properties.get(name);
                 boolean offerable = value != null
                         && CentralVersions.isPlainVersion(value)
+                        && name != null
                         && PomEdits.referenceCount(pom, name) == versionReferences.getOrDefault(name, 0);
                 if (!offerable) {
                     skippedProperty++;
@@ -173,9 +176,10 @@ public final class PomUpgrades {
                     .add(new Row(kind, ga, e.getValue(), next, isMajor(e.getValue(), next)));
         }
         out.addAll(plugins);
-        if (plan.hasParent()) {
-            String ga = plan.parent()[0] + ":" + plan.parent()[1];
-            String now = plan.parent()[2];
+        String[] parent = plan.parent();
+        if (parent != null) {
+            String ga = parent[0] + ":" + parent[1];
+            String now = parent[2];
             String next = latest.get(ga);
             if (next != null && CentralVersions.isUpgrade(now, next)) {
                 out.add(new Row(Kind.PARENT, ga, now, next, isMajor(now, next)));
@@ -196,7 +200,7 @@ public final class PomUpgrades {
      * and only when every one of them answered — {@code ${junit.version}} shared by the API and the engine
      * must not be bumped to a number one of them has not published.
      */
-    private static String commonUpgrade(List<String> users, Map<String, String> latest) {
+    private static @Nullable String commonUpgrade(List<String> users, Map<String, String> latest) {
         String best = null;
         for (String ga : users) {
             String candidate = latest.get(ga);

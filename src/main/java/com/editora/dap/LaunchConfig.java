@@ -4,6 +4,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Builds the argument maps for the DAP {@code launch} and {@code attach} requests understood by the
  * Microsoft java-debug adapter. Pure shaping (unit-tested): the maps are passed straight to
@@ -78,12 +80,12 @@ public final class LaunchConfig {
 
     /** As above, for an adapter on {@code target}. */
     public static Map<String, Object> launch(
-            String mainClass,
+            @Nullable String mainClass,
             String projectName,
             List<String> classPaths,
             List<String> modulePaths,
-            String javaExec,
-            String cwd,
+            @Nullable String javaExec,
+            @Nullable String cwd,
             List<String> args,
             String vmArgs,
             Map<String, String> env,
@@ -253,7 +255,7 @@ public final class LaunchConfig {
      * main class java-debug could infer the project from, and without one it can evaluate nothing — not an
      * expression, not a logpoint, and not a breakpoint condition, which it then treats as met.
      */
-    public static Map<String, Object> attach(String host, int port, String projectName) {
+    public static Map<String, Object> attach(String host, int port, @Nullable String projectName) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "java");
         m.put("name", "Editora (Attach)");
@@ -300,7 +302,7 @@ public final class LaunchConfig {
         return m;
     }
 
-    private static boolean notBlank(String s) {
+    private static boolean notBlank(@Nullable String s) {
         return s != null && !s.isBlank();
     }
 

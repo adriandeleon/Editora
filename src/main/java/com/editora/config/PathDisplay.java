@@ -50,6 +50,15 @@ public final class PathDisplay {
     }
 
     /**
+     * A path's last name, or the whole path for a root ({@code /}, {@code D:\}, an SFTP host's {@code /}), which
+     * has no name: {@link Path#getFileName()} is null there, and code naming a file must still show something.
+     */
+    public static String fileName(Path path) {
+        Path name = path.getFileName();
+        return name == null ? path.toString() : name.toString();
+    }
+
+    /**
      * A path as shown to a person. Null-safe, and inert for a remote (SFTP) path, whose string cannot
      * begin with the local home directory.
      */

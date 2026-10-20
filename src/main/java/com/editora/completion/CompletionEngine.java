@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetManager;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Merges completion sources for the word being typed: <b>snippets</b> (prefix-matched for the buffer's
@@ -206,7 +207,7 @@ public final class CompletionEngine {
      * would splice the two together: {@code APP} + {@code le} = {@code APPle}. Those are rejected (an
      * all-caps word is an acronym anyway — the spell checker skips them for the same reason).
      */
-    public static String ghostSuffix(String word, String prefix) {
+    public static @Nullable String ghostSuffix(String word, String prefix) {
         if (word == null || prefix == null || prefix.isEmpty() || word.length() <= prefix.length()) {
             return null;
         }

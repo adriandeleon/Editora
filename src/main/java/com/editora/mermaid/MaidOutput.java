@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure parser for <b>maid</b> ({@code probelabs/maid}) diagnostics. maid is invoked with
@@ -35,7 +36,7 @@ public final class MaidOutput {
     private MaidOutput() {}
 
     /** Parses maid output (JSON preferred, text fallback) into diagnostics; never throws, never null. */
-    public static List<Diagnostic> parse(String output) {
+    public static List<Diagnostic> parse(@Nullable String output) {
         if (output == null || output.isBlank()) {
             return List.of();
         }

@@ -36,6 +36,7 @@ import org.apache.sshd.common.session.SessionListener;
 import org.apache.sshd.core.CoreModuleProperties;
 import org.apache.sshd.sftp.client.SftpClientFactory;
 import org.apache.sshd.sftp.client.fs.SftpFileSystem;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Owns the SFTP connections (one {@link SftpFileSystem} per {@code user@host:port}) and reconstructs remote
@@ -50,7 +51,11 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * else the SFTP home) when {@code ok}, else {@code failure} says what went wrong and {@code error} is its
      * underlying message.
      */
-    public record Result(boolean ok, Path root, String error, ConnectFailure failure) {}
+    public record Result(
+            boolean ok,
+            @Nullable Path root,
+            @Nullable String error,
+            @Nullable ConnectFailure failure) {}
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration AUTH_TIMEOUT = Duration.ofSeconds(20);
@@ -114,12 +119,12 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * @param login asks for what a login needs while it runs; null asks nothing (only a secret given to {@link
      *     #connect} is tried).
      */
-    public RemoteFileSystems(HostKeyPrompt prompt, LoginPrompt login) {
+    public RemoteFileSystems(@Nullable HostKeyPrompt prompt, @Nullable LoginPrompt login) {
         this(prompt, login, SshEnvironment.standard());
     }
 
     /** As above, with the SSH setup read from {@code ssh} (a test's own folder, in a test). */
-    public RemoteFileSystems(HostKeyPrompt prompt, LoginPrompt login, SshEnvironment ssh) {
+    public RemoteFileSystems(@Nullable HostKeyPrompt prompt, @Nullable LoginPrompt login, SshEnvironment ssh) {
         this(prompt, login, ssh, null, CONNECT_TIMEOUT, AUTH_TIMEOUT);
     }
 
@@ -139,14 +144,19 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
 
     /** As above, with login questions (tests). */
     RemoteFileSystems(
-            HostKeyPrompt prompt, LoginPrompt login, Path knownHosts, Duration connectTimeout, Duration authTimeout) {
-        this(
-                prompt,
-                login,
-                SshEnvironment.at(knownHosts.toAbsolutePath().getParent()),
-                knownHosts,
-                connectTimeout,
-                authTimeout);
+            HostKeyPrompt prompt,
+            @Nullable LoginPrompt login,
+            Path knownHosts,
+            Duration connectTimeout,
+            Duration authTimeout) {
+        this(prompt, login, SshEnvironment.at(folderOf(knownHosts)), knownHosts, connectTimeout, authTimeout);
+    }
+
+    /** The folder holding {@code file}: its parent, or the path itself when it is a root. */
+    private static Path folderOf(Path file) {
+        Path abs = file.toAbsolutePath();
+        Path parent = abs.getParent();
+        return parent != null ? parent : abs;
     }
 
     /**
@@ -155,10 +165,10 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * @param knownHosts the {@code known_hosts} to check against; null for the one in {@code ssh}
      */
     RemoteFileSystems(
-            HostKeyPrompt prompt,
-            LoginPrompt login,
+            @Nullable HostKeyPrompt prompt,
+            @Nullable LoginPrompt login,
             SshEnvironment ssh,
-            Path knownHosts,
+            @Nullable Path knownHosts,
             Duration connectTimeout,
             Duration authTimeout) {
         this.connectTimeout = connectTimeout;
@@ -205,7 +215,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * left over from a closed connection has no target: nothing can run for it until it is reconnected.
      */
     @Override
-    public ExecTarget forPath(Path path) {
+    public @Nullable ExecTarget forPath(Path path) {
         return path == null ? null : execTargets.get(path.getFileSystem());
     }
 
@@ -272,7 +282,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
             new AttributeRepository.AttributeKey<>();
 
     /** {@link #AUTH} for {@code session}: its own, else its connect's (a jump hop has only that). */
-    static RemoteConnection.AuthMethod authOf(Session session) {
+    static RemoteConnection.@Nullable AuthMethod authOf(Session session) {
         RemoteConnection.AuthMethod own = session.getAttribute(AUTH);
         if (own != null) {
             return own;
@@ -304,7 +314,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * The delegate {@link KnownHostsServerKeyVerifier} consults for a host it has no entry for. Accepting here
      * is what makes MINA write the entry, so this is the only place trust is established.
      */
-    private ServerKeyVerifier unknownHostVerifier(HostKeyPrompt prompt) {
+    private ServerKeyVerifier unknownHostVerifier(@Nullable HostKeyPrompt prompt) {
         return (session, address, key) -> {
             if (prompt == null) {
                 session.setAttribute(HOST_KEY_REFUSED, ConnectFailure.Kind.HOST_KEY_DECLINED);
@@ -329,7 +339,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * {@code FileSystem} identity is exact, so in a multi-window session a path is stored by its owning window.
      */
     @Override
-    public String storable(Path path) {
+    public @Nullable String storable(Path path) {
         for (Map.Entry<String, SftpFileSystem> e : byAuthority.entrySet()) {
             if (path.getFileSystem() == e.getValue()) {
                 return "sftp://" + e.getKey() + remotePath(path);
@@ -442,7 +452,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      *
      * @param root the folder the receiving window opens, a path on this connection
      */
-    public LiveConnection handOff(String authority, Path root) {
+    public @Nullable LiveConnection handOff(String authority, Path root) {
         SftpFileSystem fs = byAuthority.remove(authority);
         if (fs == null) {
             return null;
@@ -463,7 +473,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * checks, its listeners and its commands belong to this window. Returns the folder to open; a connection
      * that ended on the way is closed and gives null.
      */
-    public Path adopt(LiveConnection live) {
+    public @Nullable Path adopt(LiveConnection live) {
         ClientSession session = live.fs.getSession();
         if (session == null || !session.isOpen()) {
             live.close();
@@ -631,7 +641,12 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * What {@code ~/.ssh/config} makes of a host, as a connect to it would: the address it really goes to, its
      * port and user, the jump host on the way, and the keys it names. For the connect form, which shows it.
      */
-    public record ConfiguredHost(String hostName, int port, String user, String proxyJump, List<String> identities) {
+    public record ConfiguredHost(
+            String hostName,
+            int port,
+            @Nullable String user,
+            @Nullable String proxyJump,
+            List<String> identities) {
         public ConfiguredHost {
             identities = List.copyOf(identities);
         }
@@ -657,7 +672,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * What {@code ~/.ssh/config} says about {@code host}, read the way a connect reads it (MINA's resolver, the
      * same path), or null when it says nothing beyond the host itself.
      */
-    public ConfiguredHost configured(String host) {
+    public @Nullable ConfiguredHost configured(String host) {
         if (host == null || host.isBlank()) {
             return null;
         }
@@ -684,8 +699,11 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     }
 
     /** A live {@link Path} for a remote URI, or {@code null} if its connection is not open. */
-    public Path pathFor(SftpUri uri) {
-        SftpFileSystem fs = uri == null ? null : byAuthority.get(uri.authority());
+    public @Nullable Path pathFor(@Nullable SftpUri uri) {
+        if (uri == null) {
+            return null;
+        }
+        SftpFileSystem fs = byAuthority.get(uri.authority());
         return fs == null ? null : fs.getPath(uri.path());
     }
 
@@ -694,7 +712,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * {@link Vfs.RemoteProvider} contract — an unowned authority falls through to the next registered provider).
      */
     @Override
-    public Path resolve(String storable) {
+    public @Nullable Path resolve(String storable) {
         return pathFor(SftpUri.parse(storable));
     }
 
@@ -752,7 +770,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         exec.shutdownNow();
     }
 
-    private static void close(SftpFileSystem fs) {
+    private static void close(@Nullable SftpFileSystem fs) {
         if (fs != null) {
             ClientSession session = null;
             try {

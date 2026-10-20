@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested implementations of the Emacs word/whitespace/line editing commands that produce a
  * minimal {@link Edit} (a replacement span + the resulting caret) from the current text + caret, or
@@ -63,7 +65,7 @@ public final class EmacsEdits {
      * non-word characters between the caret and that word, like {@code backward-word}). No-op at the
      * start of the buffer.
      */
-    public static Edit backwardKillWord(String text, int caret) {
+    public static @Nullable Edit backwardKillWord(String text, int caret) {
         int end = clamp(caret, text.length());
         int i = end;
         while (i > 0 && !isWord(text.charAt(i - 1))) {
@@ -82,12 +84,12 @@ public final class EmacsEdits {
      * Emacs {@code upcase-word} (`M-u`): upper-case from the caret to the end of the following word,
      * leaving the caret after it. No-op when there is no word ahead.
      */
-    public static Edit upcaseWord(String text, int caret) {
+    public static @Nullable Edit upcaseWord(String text, int caret) {
         return caseWord(text, caret, CaseOp.UPPER);
     }
 
     /** Emacs {@code downcase-word} (`M-l`): like {@link #upcaseWord} but lower-cases. */
-    public static Edit downcaseWord(String text, int caret) {
+    public static @Nullable Edit downcaseWord(String text, int caret) {
         return caseWord(text, caret, CaseOp.LOWER);
     }
 
@@ -95,7 +97,7 @@ public final class EmacsEdits {
      * Emacs {@code capitalize-word} (`M-c`): capitalize the following word — the first letter
      * upper-case, the rest lower-case — leaving the caret after it. No-op when there is no word ahead.
      */
-    public static Edit capitalizeWord(String text, int caret) {
+    public static @Nullable Edit capitalizeWord(String text, int caret) {
         return caseWord(text, caret, CaseOp.CAPITALIZE);
     }
 
@@ -105,7 +107,7 @@ public final class EmacsEdits {
         CAPITALIZE
     }
 
-    private static Edit caseWord(String text, int caret, CaseOp op) {
+    private static @Nullable Edit caseWord(String text, int caret, CaseOp op) {
         int n = text.length();
         int from = clamp(caret, n);
         int i = from;
@@ -143,16 +145,16 @@ public final class EmacsEdits {
     }
 
     /** Emacs {@code upcase-region} (`C-x C-u`): upper-case the selection {@code [start, end)}. */
-    public static Edit upcaseRegion(String text, int start, int end) {
+    public static @Nullable Edit upcaseRegion(String text, int start, int end) {
         return caseRegion(text, start, end, true);
     }
 
     /** Emacs {@code downcase-region} (`C-x C-l`): lower-case the selection {@code [start, end)}. */
-    public static Edit downcaseRegion(String text, int start, int end) {
+    public static @Nullable Edit downcaseRegion(String text, int start, int end) {
         return caseRegion(text, start, end, false);
     }
 
-    private static Edit caseRegion(String text, int start, int end, boolean upper) {
+    private static @Nullable Edit caseRegion(String text, int start, int end, boolean upper) {
         int n = text.length();
         int a = clamp(start, n);
         int b = clamp(end, n);
@@ -172,7 +174,7 @@ public final class EmacsEdits {
      * the trailing whitespace of the previous line and the leading whitespace of the current line into
      * a single space (or none when either side is empty). No-op on the first line.
      */
-    public static Edit deleteIndentation(String text, int caret) {
+    public static @Nullable Edit deleteIndentation(String text, int caret) {
         int cs = lineStart(text, caret);
         if (cs == 0) {
             return null; // first line: nothing above to join to
@@ -198,7 +200,7 @@ public final class EmacsEdits {
      * Emacs {@code delete-horizontal-space} (`M-\`): delete all spaces and tabs around the caret.
      * No-op when there is no surrounding horizontal whitespace.
      */
-    public static Edit deleteHorizontalSpace(String text, int caret) {
+    public static @Nullable Edit deleteHorizontalSpace(String text, int caret) {
         int n = text.length();
         int a = clamp(caret, n);
         int b = a;
@@ -218,7 +220,7 @@ public final class EmacsEdits {
      * Emacs {@code just-one-space} (`M-SPC`): replace all spaces and tabs around the caret with a
      * single space (inserting one when there is none).
      */
-    public static Edit justOneSpace(String text, int caret) {
+    public static @Nullable Edit justOneSpace(String text, int caret) {
         int n = text.length();
         int a = clamp(caret, n);
         int b = a;
@@ -247,7 +249,7 @@ public final class EmacsEdits {
      * newline, leaving the caret at the start of the next line. For a last line with no trailing
      * newline, the preceding newline is removed instead. No-op in an empty buffer.
      */
-    public static Edit killWholeLine(String text, int caret) {
+    public static @Nullable Edit killWholeLine(String text, int caret) {
         int n = text.length();
         if (n == 0) {
             return null;
@@ -275,7 +277,7 @@ public final class EmacsEdits {
      * occurrence of {@code target} at/after the caret. No-op when {@code target} is not found ahead.
      * (Without a kill ring the text is simply deleted, like {@code kill-line}.)
      */
-    public static Edit zapToChar(String text, int caret, char target) {
+    public static @Nullable Edit zapToChar(String text, int caret, char target) {
         int from = clamp(caret, text.length());
         int idx = text.indexOf(target, from);
         if (idx < 0) {
@@ -289,7 +291,7 @@ public final class EmacsEdits {
      * single one (or delete it when isolated); on a non-blank line, delete any blank lines immediately
      * following it. Returns {@code null} when there is nothing to delete.
      */
-    public static Edit deleteBlankLines(String text, int caret) {
+    public static @Nullable Edit deleteBlankLines(String text, int caret) {
         int n = text.length();
         int cs = lineStart(text, caret);
         int ce = lineEnd(text, caret);

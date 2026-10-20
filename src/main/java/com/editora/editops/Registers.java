@@ -4,6 +4,8 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Emacs registers: named slots, one character each, that hold either text ({@code copy-to-register},
  * {@code C-x r s}) or a position in a file ({@code point-to-register}, {@code C-x r SPC}). A position follows
@@ -34,7 +36,7 @@ public final class Registers {
     }
 
     /** What {@code name} holds, or null when it is empty. */
-    public Register get(char name) {
+    public @Nullable Register get(char name) {
         return registers.get(name);
     }
 

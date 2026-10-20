@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Locale;
 
 import com.editora.editor.LspDiagnostic;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The lemminx-maven quirks the client smooths over, all pure (Maven review C18–C20):
@@ -36,13 +37,13 @@ public final class MavenPomServer {
         private boolean held;
 
         /** One status to forward, as {@code {type, message}}. */
-        public record Status(String type, String message) {}
+        public record Status(String type, @Nullable String message) {}
 
         /**
          * Filters one status from the Maven server: the statuses to forward now (the ready one later, once
          * the initialization progress ends; never, if the server errors or relaunches first).
          */
-        public List<Status> onStatus(String type, String message) {
+        public List<Status> onStatus(@Nullable String type, @Nullable String message) {
             String t = type == null ? "" : type.toLowerCase(Locale.ROOT);
             List<Status> out = new ArrayList<>(2);
             if (t.equals("serviceready") && (message == null || message.isBlank())) {
@@ -52,7 +53,7 @@ public final class MavenPomServer {
             if (t.equals("launching") || t.equals("error")) {
                 held = false;
             }
-            out.add(new Status(type, message));
+            out.add(new Status(type == null ? "" : type, message));
             if (held
                     && t.equals("progressend")
                     && message != null

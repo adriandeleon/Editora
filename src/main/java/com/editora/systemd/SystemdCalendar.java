@@ -12,6 +12,8 @@ import java.util.Set;
 import java.util.StringJoiner;
 import java.util.TreeSet;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses a systemd {@code OnCalendar=} expression, describes it in English, and computes its upcoming
  * trigger times. Pure, java.base-only, unit-tested. Supports the shorthand keywords ({@code minutely},
@@ -49,24 +51,24 @@ public final class SystemdCalendar {
     };
     private static final int MAX_SCAN_MINUTES = 4 * 366 * 24 * 60;
 
-    private final Set<DayOfWeek> weekdays; // null = every day
+    private final @Nullable Set<DayOfWeek> weekdays; // null = every day
     private final Field month;
     private final Field day;
     private final Field hour;
     private final Field minute;
     private final int displaySecond;
-    private final String shorthand; // non-null when parsed from a keyword (nicer describe)
-    private final ZoneId zone; // null = the machine's local time
+    private final @Nullable String shorthand; // non-null when parsed from a keyword (nicer describe)
+    private final @Nullable ZoneId zone; // null = the machine's local time
 
     private SystemdCalendar(
-            Set<DayOfWeek> weekdays,
+            @Nullable Set<DayOfWeek> weekdays,
             Field month,
             Field day,
             Field hour,
             Field minute,
             int displaySecond,
-            String shorthand,
-            ZoneId zone) {
+            @Nullable String shorthand,
+            @Nullable ZoneId zone) {
         this.weekdays = weekdays;
         this.month = month;
         this.day = day;
@@ -77,7 +79,8 @@ public final class SystemdCalendar {
         this.zone = zone;
     }
 
-    public record Parsed(SystemdCalendar calendar, String error) {
+    public record Parsed(
+            @Nullable SystemdCalendar calendar, @Nullable String error) {
         public boolean ok() {
             return error == null;
         }
@@ -134,14 +137,14 @@ public final class SystemdCalendar {
     }
 
     /** {@code UTC} or an IANA zone id ({@code Europe/Berlin}); null when {@code token} is not a time zone. */
-    private static ZoneId zoneOf(String token) {
+    private static @Nullable ZoneId zoneOf(String token) {
         if (token.equalsIgnoreCase("UTC")) {
             return ZoneId.of("UTC");
         }
         return token.indexOf('/') > 0 && ZoneId.getAvailableZoneIds().contains(token) ? ZoneId.of(token) : null;
     }
 
-    private static SystemdCalendar build(String s, String shorthand, ZoneId zone) {
+    private static SystemdCalendar build(String s, @Nullable String shorthand, @Nullable ZoneId zone) {
         String[] parts = s.split("\\s+");
         String weekdaysTok = null;
         String dateTok = null;
@@ -273,7 +276,7 @@ public final class SystemdCalendar {
     }
 
     /** The expression's own time zone, or {@code null} when it runs in local time. */
-    public ZoneId zone() {
+    public @Nullable ZoneId zone() {
         return zone;
     }
 
@@ -393,11 +396,11 @@ public final class SystemdCalendar {
     private static final class Field {
         private final TreeSet<Integer> values;
         private final boolean star;
-        private final Integer step;
+        private final @Nullable Integer step;
         private final int min;
         private final int max;
 
-        private Field(TreeSet<Integer> values, boolean star, Integer step, int min, int max) {
+        private Field(TreeSet<Integer> values, boolean star, @Nullable Integer step, int min, int max) {
             this.values = values;
             this.star = star;
             this.step = step;
@@ -492,15 +495,17 @@ public final class SystemdCalendar {
             return star || values.size() == (max - min + 1);
         }
 
+        @Nullable
         Integer step() {
             return step;
         }
 
+        @Nullable
         Integer single() {
             return values.size() == 1 ? values.first() : null;
         }
 
-        int[] contiguousRange() {
+        int @Nullable [] contiguousRange() {
             if (values.size() < 2) {
                 return null;
             }

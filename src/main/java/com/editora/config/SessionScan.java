@@ -8,6 +8,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which of a saved session's open-file entries can be reopened right now, and which are kept although they
@@ -33,7 +34,7 @@ public record SessionScan(
     }
 
     /** Scans {@code files} against the real filesystem; {@code resolve} turns a stored path into a path. */
-    public static SessionScan of(List<WorkspaceState.OpenFile> files, Function<String, Path> resolve) {
+    public static SessionScan of(List<WorkspaceState.OpenFile> files, Function<String, @Nullable Path> resolve) {
         return of(files, resolve, Files::isReadable, Files::isDirectory, Files::notExists);
     }
 
@@ -44,7 +45,7 @@ public record SessionScan(
      */
     public static SessionScan of(
             List<WorkspaceState.OpenFile> files,
-            Function<String, Path> resolve,
+            Function<String, @Nullable Path> resolve,
             Predicate<Path> isReadable,
             Predicate<Path> isDirectory,
             Predicate<Path> notExists) {
@@ -69,7 +70,7 @@ public record SessionScan(
      * A remote file whose host is not connected: nothing is known about it either, so it is kept, like a file
      * on a volume that is not mounted. Whether the window wants it back is the window's decision.
      */
-    static boolean unreachableRemote(String stored, Path resolved) {
+    static boolean unreachableRemote(String stored, @Nullable Path resolved) {
         return resolved == null && stored != null && Vfs.isRemoteUri(stored);
     }
 
@@ -89,7 +90,7 @@ public record SessionScan(
      * @param file the resolved path, or {@code null} when the entry could not be resolved at all — those are
      *     not restorable and are dropped
      */
-    public static boolean keepUnreadable(Path file, Predicate<Path> isDirectory, Predicate<Path> notExists) {
+    public static boolean keepUnreadable(@Nullable Path file, Predicate<Path> isDirectory, Predicate<Path> notExists) {
         if (file == null) {
             return false;
         }

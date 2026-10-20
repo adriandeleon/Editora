@@ -14,6 +14,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.ui.Themes;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The JavaFX {@link Application} entry point. {@link #main} runs before the toolkit starts: it sets
@@ -25,7 +26,7 @@ import com.editora.ui.Themes;
  */
 public class App extends Application {
 
-    private SharedConfig sharedConfig;
+    private @Nullable SharedConfig sharedConfig;
 
     // Quiet tm4e/Oniguruma grammar-compile WARNINGs ("']' without escape", "No grammar source for
     // scope …") — benign noise from bundled-grammar regex quirks. Held in a static field so the JUL
@@ -257,7 +258,8 @@ public class App extends Application {
      * {@code WindowManager.launch} does for a cold start. {@code null} when the launch named none, or Projects
      * are switched off (the option is then ignored, as it is at startup).
      */
-    private static com.editora.config.Project forwardedProject(SharedConfig shared, String projectDir) {
+    private static com.editora.config.@Nullable Project forwardedProject(
+            SharedConfig shared, @Nullable String projectDir) {
         if (projectDir == null || !shared.getSettings().isProjectSupport()) {
             return null;
         }
@@ -328,7 +330,7 @@ public class App extends Application {
      * {@code --config-dir PATH}); returns the trimmed path, or {@code null} when not given. Pure +
      * unit-testable.
      */
-    static String configDirArg(java.util.List<String> args) {
+    static @Nullable String configDirArg(java.util.List<String> args) {
         if (args == null) {
             return null;
         }
@@ -474,9 +476,9 @@ public class App extends Application {
     private record Bootstrap(
             ConfigManager manager,
             Settings settings,
-            String language,
-            com.editora.plugin.PluginManager plugins,
-            ConfigManager projectWindow) {}
+            @Nullable String language,
+            com.editora.plugin.@Nullable PluginManager plugins,
+            @Nullable ConfigManager projectWindow) {}
 
     /** The UI language to load: the explicit setting, else the system language, else English. */
     private static String uiLanguage(Settings settings) {
@@ -486,7 +488,7 @@ public class App extends Application {
                 java.util.Locale.getDefault().getLanguage());
     }
 
-    private static volatile CompletableFuture<Bootstrap> configPrefetch;
+    private static volatile @Nullable CompletableFuture<Bootstrap> configPrefetch;
 
     /**
      * Loads the config on a daemon thread while the caller probes the single-instance endpoint and starts the
@@ -559,7 +561,7 @@ public class App extends Application {
      * {@code WindowManager.buildWindow} does not read, migrate and serialize it on the FX thread; {@code null}
      * when that window is the default one (its session is the bootstrap's) or has no session file yet.
      */
-    private static ConfigManager prefetchProjectWindow(SharedConfig shared, java.util.List<String> args) {
+    private static @Nullable ConfigManager prefetchProjectWindow(SharedConfig shared, java.util.List<String> args) {
         java.nio.file.Path stateFile = com.editora.ui.WindowManager.primaryWindowStateFile(
                 shared, projectArg(args), singleWindowArg(args) != null);
         if (stateFile == null || !java.nio.file.Files.isRegularFile(stateFile)) {
@@ -608,7 +610,7 @@ public class App extends Application {
      * in {@link #main} (before any {@code Application} instance exists) and wired to the UI in
      * {@link #start}. Null when the claim did not happen or was declined.
      */
-    private static com.editora.ipc.SingleInstance.Result singleInstance;
+    private static com.editora.ipc.SingleInstance.@Nullable Result singleInstance;
 
     static String helpText() {
         return """
@@ -644,7 +646,7 @@ public class App extends Application {
     }
 
     /** The {@code --project=DIR} / {@code --project DIR} value, or {@code null} when not given. */
-    static String projectArg(java.util.List<String> args) {
+    static @Nullable String projectArg(java.util.List<String> args) {
         return optionValue(args, "--project");
     }
 
@@ -765,7 +767,7 @@ public class App extends Application {
      * unlike normal editor targets, diff sides do not accept a line/column suffix. A malformed request is rejected in
      * {@link #main} before the JavaFX toolkit starts.
      */
-    static com.editora.ui.WindowManager.DiffUiRequest diffUiArg(java.util.List<String> args) {
+    static com.editora.ui.WindowManager.@Nullable DiffUiRequest diffUiArg(java.util.List<String> args) {
         if (args == null) {
             return null;
         }
@@ -808,7 +810,7 @@ public class App extends Application {
      * {@code NAME} ({@code --new-file=foo.txt}) ⇒ an unsaved buffer titled NAME (highlighted by its
      * extension). Pure + unit-testable.
      */
-    static String newFileArg(java.util.List<String> args) {
+    static @Nullable String newFileArg(java.util.List<String> args) {
         if (args == null) {
             return null;
         }
@@ -834,7 +836,7 @@ public class App extends Application {
      * to the no-project window if no project matches). Session-only — it doesn't change the saved layout.
      * Pure + unit-testable.
      */
-    static String singleWindowArg(java.util.List<String> args) {
+    static @Nullable String singleWindowArg(java.util.List<String> args) {
         if (args == null) {
             return null;
         }
@@ -853,7 +855,7 @@ public class App extends Application {
         return null;
     }
 
-    private static String optionValue(java.util.List<String> args, String name) {
+    private static @Nullable String optionValue(java.util.List<String> args, String name) {
         if (args == null) {
             return null;
         }
@@ -1008,7 +1010,7 @@ public class App extends Application {
      * meant the suffix, while an Apple Event delivers whatever was passed to the launcher, so only this side
      * needs the check — and paying for a filesystem probe on every command-line argument would be worse.
      */
-    static com.editora.ui.MainController.OpenTarget externalTarget(
+    static com.editora.ui.MainController.@Nullable OpenTarget externalTarget(
             String arg, java.util.function.Predicate<java.nio.file.Path> exists) {
         java.nio.file.Path literal;
         try {
@@ -1028,7 +1030,7 @@ public class App extends Application {
         return parseTarget(arg);
     }
 
-    static com.editora.ui.MainController.OpenTarget externalTarget(String arg) {
+    static com.editora.ui.MainController.@Nullable OpenTarget externalTarget(String arg) {
         return externalTarget(arg, java.nio.file.Files::exists);
     }
 

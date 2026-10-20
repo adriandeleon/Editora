@@ -8,6 +8,7 @@ import com.jediterm.terminal.TtyBasedArrayDataStream;
 import com.jediterm.terminal.model.JediTerminal;
 import com.jediterm.terminal.model.StyleState;
 import com.jediterm.terminal.model.TerminalTextBuffer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One shell attached to one emulator: a {@link TerminalConnector}, the escape-sequence parser, and the screen
@@ -110,10 +111,10 @@ public final class TerminalSession {
         waiter.interrupt();
     }
 
-    private volatile Integer exitCode;
+    private volatile @Nullable Integer exitCode;
 
     /** The program's exit code once it has ended and the code arrived; null before, or when none came. */
-    public Integer exitCode() {
+    public @Nullable Integer exitCode() {
         return exitCode;
     }
 
@@ -172,7 +173,7 @@ public final class TerminalSession {
     }
 
     /** The predicted text to paint over the cursor's row, or null. Caller holds the buffer lock. */
-    public TypeAheadOverlay.Prediction typeAheadPrediction() {
+    public TypeAheadOverlay.@Nullable Prediction typeAheadPrediction() {
         return typeAheadOverlay.prediction();
     }
 

@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.function.IntConsumer;
 
 import com.editora.terminal.ProgramRun;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Where a debugged program runs when it should have a real terminal (Settings → Debug): a Terminal tab, which the
@@ -20,6 +21,6 @@ public interface ProgramTerminal {
      * with {@code env} over its environment, a null value unsetting. {@code exited} gets the exit code on the FX
      * thread, -1 when there was none.
      */
-    ProgramRun start(String title, Path dir, List<String> argv, Map<String, String> env, IntConsumer exited)
+    ProgramRun start(String title, @Nullable Path dir, List<String> argv, Map<String, String> env, IntConsumer exited)
             throws IOException;
 }

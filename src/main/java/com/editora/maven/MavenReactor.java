@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Locates the Maven <b>reactor root</b> for a module so the Run classpath fallback resolves sibling-module
  * dependencies in a multi-module build. {@code mvn dependency:build-classpath} run in a submodule misses
@@ -51,7 +53,7 @@ public final class MavenReactor {
 
     /** The topmost ancestor of {@code moduleDir} in a contiguous chain of pom-bearing dirs, or {@code moduleDir}
      *  itself when its parent has no {@code pom.xml}. {@code hasPom} tests whether a directory holds a pom. */
-    public static Path reactorRoot(Path moduleDir, Predicate<Path> hasPom) {
+    public static @Nullable Path reactorRoot(Path moduleDir, Predicate<Path> hasPom) {
         if (moduleDir == null) {
             return null;
         }
@@ -84,8 +86,9 @@ public final class MavenReactor {
      * the selected project in the reactor". The topmost such ancestor wins, so a nested aggregator's module is
      * built from the whole reactor.
      */
-    public static Reactor describe(
-            Path moduleDir, Path boundary, Predicate<Path> hasPom, Function<Path, String> pomText) {
+    public static @Nullable Reactor describe(
+            Path moduleDir, @Nullable Path boundary, Predicate<Path> hasPom, Function<Path, @Nullable String> pomText) {
+
         if (moduleDir == null) {
             return null;
         }
@@ -112,12 +115,12 @@ public final class MavenReactor {
     }
 
     /** {@link #describe} against the files on disk (or a host's, through its file system). */
-    public static Reactor describeOnDisk(Path moduleDir, Path boundary) {
+    public static @Nullable Reactor describeOnDisk(Path moduleDir, @Nullable Path boundary) {
         return describe(moduleDir, boundary, MavenReactor::hasPomOnDisk, MavenReactor::readOrNull);
     }
 
     /** {@link #locateModule} against the files on disk. */
-    public static Path locateModuleOnDisk(Path root, String projectName, String mainClass) {
+    public static @Nullable Path locateModuleOnDisk(Path root, String projectName, String mainClass) {
         return locateModule(
                 root,
                 projectName,
@@ -135,7 +138,7 @@ public final class MavenReactor {
         }
     }
 
-    private static String readOrNull(Path pom) {
+    private static @Nullable String readOrNull(Path pom) {
         try {
             return Files.isRegularFile(pom) ? Files.readString(pom) : null;
         } catch (IOException | RuntimeException e) {
@@ -145,7 +148,12 @@ public final class MavenReactor {
 
     /** Whether {@code dir}'s pom lists {@code module} directly or through aggregators it lists. */
     private static boolean reaches(
-            Path dir, Path module, Predicate<Path> hasPom, Function<Path, String> pomText, int depth, int[] read) {
+            Path dir,
+            Path module,
+            Predicate<Path> hasPom,
+            Function<Path, @Nullable String> pomText,
+            int depth,
+            int[] read) {
         if (depth > MAX_MODULE_DEPTH || read[0]++ >= MAX_MODULES_READ) {
             return false;
         }
@@ -171,7 +179,7 @@ public final class MavenReactor {
     }
 
     /** A {@code <module>} entry of {@code dir}'s pom as a folder ({@code pom.xml} itself may be named too). */
-    private static Path childModule(Path dir, String entry) {
+    private static @Nullable Path childModule(Path dir, String entry) {
         try {
             Path child = dir.resolve(entry.replace('\\', '/')).normalize();
             Path name = child.getFileName();
@@ -204,7 +212,7 @@ public final class MavenReactor {
      * The argv that runs a module's phase from its reactor root with its upstream modules: {@code -f
      * <rootPom> -pl <module> -am}. {@code rootPom} is named as the machine Maven runs on names it.
      */
-    public static List<String> reactorArgs(String rootPom, String moduleSelector) {
+    public static List<String> reactorArgs(@Nullable String rootPom, String moduleSelector) {
         return List.of("-f", rootPom, "-pl", moduleSelector, "-am");
     }
 
@@ -220,7 +228,7 @@ public final class MavenReactor {
      * Every module folder the reactor at {@code root} reaches through its {@code <modules>} (aggregators
      * included), {@code root} first, in document order; bounded as {@link #describe}'s walk is.
      */
-    public static List<Path> modules(Path root, Predicate<Path> hasPom, Function<Path, String> pomText) {
+    public static List<Path> modules(Path root, Predicate<Path> hasPom, Function<Path, @Nullable String> pomText) {
         List<Path> out = new ArrayList<>();
         if (root == null) {
             return out;
@@ -230,7 +238,12 @@ public final class MavenReactor {
     }
 
     private static void collect(
-            Path dir, Predicate<Path> hasPom, Function<Path, String> pomText, int depth, int[] read, List<Path> out) {
+            Path dir,
+            Predicate<Path> hasPom,
+            Function<Path, @Nullable String> pomText,
+            int depth,
+            int[] read,
+            List<Path> out) {
         if (depth > MAX_MODULE_DEPTH || read[0]++ >= MAX_MODULES_READ || out.contains(dir)) {
             return;
         }
@@ -253,12 +266,12 @@ public final class MavenReactor {
      * {@code src/main/java} (or {@code src/test/java}) holds {@code mainClass}'s source file ({@code exists}
      * answers for a path); {@code null} when neither matches, so the caller keeps its own guess.
      */
-    public static Path locateModule(
+    public static @Nullable Path locateModule(
             Path root,
             String projectName,
             String mainClass,
             Predicate<Path> hasPom,
-            Function<Path, String> pomText,
+            Function<Path, @Nullable String> pomText,
             Predicate<Path> exists) {
         List<Path> modules = modules(root, hasPom, pomText);
         if (projectName != null && !projectName.isBlank()) {

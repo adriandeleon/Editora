@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Renders a (resolved) request as a {@code curl} command for the response viewer's "Copy as cURL" action.
  * Pure, so it is unit-tested.
@@ -38,7 +40,8 @@ public final class CurlExport {
     }
 
     /** The cURL command for a request from its parts; {@code details} null means known only by its text. */
-    static String toCurl(String method, String url, List<String[]> headers, String body, HttpExchange.Details details) {
+    static String toCurl(
+            String method, String url, List<String[]> headers, String body, HttpExchange.@Nullable Details details) {
         HttpExchange.Details d = details == null ? HttpExchange.Details.NONE : details;
         StringBuilder sb = new StringBuilder("curl");
         String m = method == null ? "" : method.strip();
@@ -91,7 +94,7 @@ public final class CurlExport {
      * The curl flag for the HTTP version the request line asked for, or null: {@code HTTP/1.1}, {@code HTTP/1.0},
      * {@code HTTP/2} and {@code HTTP/2 (Prior Knowledge)} as written.
      */
-    static String versionFlag(String requested) {
+    static @Nullable String versionFlag(@Nullable String requested) {
         if (requested == null || requested.isBlank()) {
             return null;
         }
