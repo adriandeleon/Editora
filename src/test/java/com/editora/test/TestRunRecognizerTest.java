@@ -37,6 +37,15 @@ class TestRunRecognizerTest {
     }
 
     @Test
+    void surefiresNoTestsMatchingLineIsRecognized() {
+        assertTrue(
+                TestRunRecognizer.isNoTestsMatchingLine(
+                        "[ERROR] No tests matching pattern \"Nope\" were executed! (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)"));
+        assertFalse(TestRunRecognizer.isNoTestsMatchingLine("[ERROR] There are test failures."));
+        assertFalse(TestRunRecognizer.isNoTestsMatchingLine(null));
+    }
+
+    @Test
     void augmentArgvInsertsJsonForGoOnly() {
         assertEquals(
                 List.of("go", "test", "-json", "./..."),

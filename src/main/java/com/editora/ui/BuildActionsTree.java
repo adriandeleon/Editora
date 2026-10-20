@@ -218,6 +218,11 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         rebuild(sections);
     }
 
+    /** The argv the active toggles add to a run ({@code -Pdev}, the reactor's {@code -f … -pl … -am}); empty with no provider. */
+    public List<String> activeToggleArgs() {
+        return provider == null ? List.of() : provider.toggleArgs(activeToggles);
+    }
+
     /** Re-renders the current provider in place (after a toggle flip or Gradle's loaded tasks land). */
     public void refreshFromProvider() {
         rebuild();

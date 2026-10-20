@@ -74,6 +74,11 @@ final class BeforeLaunchStep {
         return active;
     }
 
+    /** Whether the last step ended because {@link #stop} was asked (a retry must not follow a Stop). */
+    boolean wasStopped() {
+        return stopRequested;
+    }
+
     /**
      * Runs {@code cfg}'s before-launch command, if it has one, then {@code then} — or reports the failure and
      * runs nothing. With no before-launch step this is a straight call, so the common case is unchanged.

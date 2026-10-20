@@ -138,6 +138,15 @@ final class BuildCoordinator {
     }
 
     /**
+     * The active toggles' argv for the detected root — what the tasks tree adds to a task it runs (Maven's
+     * {@code -P<profiles>}, the reactor's {@code -f … -pl … -am}); empty with no tree or nothing checked. A
+     * launch's build commands carry the profiles and flags among them (review D13).
+     */
+    List<String> activeToggleArgs() {
+        return tree == null ? List.of() : tree.activeToggleArgs();
+    }
+
+    /**
      * The IntelliJ-style tasks-tree tool window content, built on first use and brought up to the state
      * detection and a running build have reached meanwhile. Every window used to build one per build tool at
      * open — five trees, most for tools the project does not use and whose stripe is never even shown.
@@ -497,8 +506,14 @@ final class BuildCoordinator {
     /** The launch argv prefix: the project wrapper when present, else the Settings override, else the tool's
      *  default command. */
     private List<String> executable(Path root) {
+        // On a host the user names the tool there (Settings → Remote → tools, e.g. a Maven outside the login
+        // PATH); this machine's command override names a path here. The host's wrapper still comes first.
+        String hostTool = com.editora.process.ExecTargets.remoteTool(root, tool.id());
         return tool.executable(
-                root, wrapperBoundary(root), isWindows(), host.projectScope().buildCommand(tool, host.settings()));
+                root,
+                wrapperBoundary(root),
+                isWindows(),
+                hostTool != null ? hostTool : host.projectScope().buildCommand(tool, host.settings()));
     }
 
     /**

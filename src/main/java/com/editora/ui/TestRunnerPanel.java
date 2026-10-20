@@ -559,6 +559,9 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         if (node.durationMs() > 0) {
             sb.append(" (").append(node.durationMs()).append(" ms)");
         }
+        if (node.retries() > 0) {
+            sb.append(" — ").append(tr(node.isFlaky() ? "testrunner.flaky" : "testrunner.retried", node.retries()));
+        }
         sb.append('\n');
         if (node.kind() != TestNodeKind.TEST) {
             TestCounts c = node.tally();
@@ -721,6 +724,13 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
                 Label dur = new Label(node.durationMs() + " ms");
                 dur.getStyleClass().add("test-duration");
                 row.getChildren().add(dur);
+            }
+            if (node.kind() == TestNodeKind.TEST && node.retries() > 0) {
+                // Surefire re-ran it: passed in the end (flaky) or failed every try (review D16).
+                Label retries =
+                        new Label(tr(node.isFlaky() ? "testrunner.flaky" : "testrunner.retried", node.retries()));
+                retries.getStyleClass().add("test-duration");
+                row.getChildren().add(retries);
             }
             setGraphic(row);
         }

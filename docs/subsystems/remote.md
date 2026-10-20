@@ -268,7 +268,7 @@ Three things have to hold before anything runs on a host, all checked by `ExecTa
 
 `ConnectionStore.exec[…].tools` holds a command per tool id for a host whose `PATH` does not have the right
 one; `ExecTargets.remoteTool(path, id)` reads it. Local tool settings are never used remotely: they are paths
-on this machine. The ids: `git`, `gh`, `rg`, `jdk.home`, `node`, `python`, `dap.python`, `dap.js`, `dap.java`, and
+on this machine. The ids: `git`, `gh`, `rg`, `jdk.home`, `maven`, `node`, `python`, `dap.python`, `dap.js`, `dap.java`, and
 `lsp.<server id>`.
 
 Settings → Remote edits both per saved site, below the connection form: "Allow running commands on this host"
@@ -356,9 +356,11 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   the execute bits over SFTP. Test reports are polled every 2 s instead of 750 ms. Run is enabled for a remote
   file whatever the host allows; a refusal is reported when it is launched.
 - **Java projects:** the main class (gutter ▶, Run Main Class, a saved configuration) runs on the host with
-  the class path the host's jdtls resolves, or — without java-debug — Maven's (`MavenClasspathResolver`
-  runs `mvn … dependency:build-classpath` there, writes the list into the module's `target/` with `:`
-  separators, and reads it back over SFTP). The JDK is the host's (`jdk.home`, else what jdtls resolved, else
+  the class path the host's jdtls resolves, or — without java-debug — Maven's (`MavenClasspathResolver.plan`
+  runs `mvn … dependency:build-classpath` there as a step of the Run console, so the host build's output
+  streams and Stop ends it; the Maven is the host's wrapper, else the `maven` tool named for the host, else
+  `mvn` on its non-login PATH; the list is written with `:` separators into the host's `/tmp` when Editora
+  reaches it, else the module's `target/`, and read back over SFTP). The JDK is the host's (`jdk.home`, else what jdtls resolved, else
   its `java`); this machine's JDK setting, `JAVA_HOME` and `PATH` are never sent
   (`RunCoordinator.jdkHomeFor` / `javaEnvironment` / `hostJava`). A configuration's working directory is a
   folder on the host. Gradle projects use their `run` task, as locally.

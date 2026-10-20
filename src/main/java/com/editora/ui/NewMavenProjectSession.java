@@ -65,8 +65,9 @@ final class NewMavenProjectSession {
             }
             ConfigManager seeded = new ConfigManager(config.shared(), stateFile);
             WorkspaceState state = seeded.getWorkspaceState(); // fresh defaults; see the note above
-            // workingDir = the project root, so the launch resolves against this project even with several
-            // open, and a relative path in the program behaves as it would from a terminal there.
+            // workingDir = blank, which already means the project root (RunConfigWorkingDirectory), so the
+            // configuration survives the folder being moved or renamed; a relative path in the program behaves
+            // as it would from a terminal at the root (review D20).
             // projectName = the artifactId, which is what jdtls names an imported Maven project. Blank works
             // too (Run falls back to jdtls's own enumeration), but naming it lets the very first launch
             // resolve directly instead of round-tripping an enumeration first.
@@ -85,7 +86,7 @@ final class NewMavenProjectSession {
                     name,
                     "",
                     "",
-                    root.toString(),
+                    "",
                     "",
                     com.editora.run.BuildBeforeLaunch.seededStep(BuildTool.MAVEN))));
             state.setSelectedRunConfig(name);

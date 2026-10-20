@@ -120,6 +120,43 @@ public final class MavenClasspath {
     }
 
     /**
+     * The tasks tree's active toggle args as a launch's Maven takes them (review D13): the profiles
+     * ({@code -Pdev}) and flags ({@code -o}, {@code -U}, {@code -s …}) are kept; the reactor toggle's
+     * {@code -f <pom> -pl <module> -am} is dropped, because a launch chooses its own reactor (the module of
+     * the class it runs, found through the {@code <modules>} walk) and a second {@code -pl} would select the
+     * tree's module instead.
+     */
+    public static List<String> withoutReactorArgs(List<String> toggleArgs) {
+        if (toggleArgs == null || toggleArgs.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(toggleArgs.size());
+        for (int i = 0; i < toggleArgs.size(); i++) {
+            String arg = toggleArgs.get(i);
+            if ("-am".equals(arg) || "--also-make".equals(arg)) {
+                continue;
+            }
+            if ("-f".equals(arg) || "--file".equals(arg) || "-pl".equals(arg) || "--projects".equals(arg)) {
+                i++; // its value
+                continue;
+            }
+            out.add(arg);
+        }
+        return List.copyOf(out);
+    }
+
+    /** {@code argv} followed by {@link #withoutReactorArgs the launch-safe part} of {@code toggleArgs}. */
+    public static List<String> withToggles(List<String> argv, List<String> toggleArgs) {
+        List<String> extra = withoutReactorArgs(toggleArgs);
+        if (extra.isEmpty()) {
+            return argv;
+        }
+        List<String> out = new ArrayList<>(argv);
+        out.addAll(extra);
+        return List.copyOf(out);
+    }
+
+    /**
      * Full launch classpath = the module's compiled output (when present) followed by the dependency
      * classpath from {@code dependencyClasspath} (a {@code File.pathSeparator}-joined string). Blank/empty
      * entries are dropped. {@code root} is the Maven module root ({@code root/target/classes}; a

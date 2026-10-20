@@ -84,6 +84,37 @@ public final class JUnitXmlParser implements TestResultParser {
             status = TestStatus.SKIPPED;
             failureMessage = attr(skipped, "message", null);
         }
+        // Surefire's reruns (rerunFailingTestsCount): a <flakyFailure>/<flakyError> per failed try before the
+        // pass, a <rerunFailure>/<rerunError> per failed retry after the first failure. The leaf keeps the
+        // count and the traces of every try (review D16).
+        List<Element> reruns = new ArrayList<>();
+        for (String tag : RERUN_TAGS) {
+            reruns.addAll(childElements(tc, tag));
+        }
+        if (!reruns.isEmpty()) {
+            StringBuilder tries = new StringBuilder();
+            int n = 0;
+            for (Element rerun : reruns) {
+                tries.append(tries.isEmpty() ? "" : "\n\n")
+                        .append("--- ")
+                        .append(rerun.getNodeName())
+                        .append(' ')
+                        .append(++n);
+                String type = attr(rerun, "type", null);
+                String message = attr(rerun, "message", null);
+                if (type != null || message != null) {
+                    tries.append(": ")
+                            .append(type != null ? type : "")
+                            .append(type != null && message != null ? ": " : "")
+                            .append(message != null ? message : "");
+                }
+                String trace = text(rerun);
+                if (trace != null) {
+                    tries.append('\n').append(trace);
+                }
+            }
+            stackTrace = stackTrace == null ? tries.toString() : stackTrace + "\n\n" + tries;
+        }
         String fileHint = TestSourceLocator.fileHint(className, tool);
         // Per-testcase captured output when the runner writes it (Surefire's is usually suite-level, but a
         // <testcase><system-out> does occur) — without this a passing test's detail pane had nothing to show.
@@ -91,8 +122,21 @@ public final class JUnitXmlParser implements TestResultParser {
         String err = text(firstChild(tc, "system-err"));
         String captured = out == null ? err : (err == null ? out : out + "\n" + err);
         return new ParsedTest(
-                className, method, status, durationMs, failureType, failureMessage, stackTrace, captured, fileHint, 0);
+                className,
+                method,
+                status,
+                durationMs,
+                failureType,
+                failureMessage,
+                stackTrace,
+                captured,
+                fileHint,
+                0,
+                reruns.size());
     }
+
+    /** Surefire's rerun elements, in the order they are read. */
+    static final List<String> RERUN_TAGS = List.of("flakyFailure", "flakyError", "rerunFailure", "rerunError");
 
     private static long seconds(String time) {
         if (time == null || time.isBlank()) {

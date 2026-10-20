@@ -58,7 +58,8 @@ for remote commands applies.
   the configuration's own JDK is dropped (it names a folder here); then the launch resolves against the
   deployment's folder (`launchRoot`), so scripts, Python, make and npm, and the before-launch step, run there
   exactly as in a remote project, with the host's tools (`jdk.home`, `python`, …).
-- Java builds on the host: Maven through `MavenClasspathResolver` (as for a remote project), Gradle through
+- Java builds on the host: Maven through `MavenClasspathResolver` (as for a remote project: a step of the Run
+  console, its output streamed, the host's `maven` tool or wrapper), Gradle through
   `build/GradleHostClasspath` (an init script with an `editoraClasspath` task, `sh ./gradlew` when the build
   has a wrapper). Projects with neither are refused with a message.
 - Debug (Java): the JVM gets `-agentlib:jdwp=…,suspend=y,address=127.0.0.1:0`; its "Listening" line is
