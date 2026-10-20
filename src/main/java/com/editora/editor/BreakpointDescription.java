@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.config.Breakpoint;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -16,7 +17,7 @@ public final class BreakpointDescription {
     private BreakpointDescription() {}
 
     /** One line per property that makes {@code bp} more than a plain breakpoint; empty for a plain one. */
-    public static List<String> lines(Breakpoint bp) {
+    public static List<String> lines(@Nullable Breakpoint bp) {
         List<String> out = new ArrayList<>();
         if (bp == null) {
             return out;
@@ -37,7 +38,7 @@ public final class BreakpointDescription {
     }
 
     /** {@link #lines} joined into a hover text, followed by what a live session says ({@code live}); null if none. */
-    public static String tooltip(Breakpoint bp, String live) {
+    public static @Nullable String tooltip(@Nullable Breakpoint bp, @Nullable String live) {
         List<String> all = lines(bp);
         if (live != null && !live.isBlank()) {
             all.add(live);

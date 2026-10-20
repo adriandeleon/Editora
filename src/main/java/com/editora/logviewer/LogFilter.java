@@ -21,7 +21,7 @@ public final class LogFilter {
      * for both a regex (e.g. {@code ERROR|WARN}, {@code timed?out}) and a plain string with metacharacters
      * (e.g. {@code GET /api(v2)}). Returns {@code null} for null/empty input (no filter).
      */
-    public static @Nullable Pattern compileFilter(String query) {
+    public static @Nullable Pattern compileFilter(@Nullable String query) {
         if (query == null || query.isEmpty()) {
             return null;
         }
@@ -73,7 +73,7 @@ public final class LogFilter {
             LogRecordFilter filter) {}
 
     /** Filters every complete line of {@code source}. Safe on any thread: it touches nothing but its arguments. */
-    public static Run run(String source, LogLevel minLevel, Pattern pattern) {
+    public static Run run(String source, @Nullable LogLevel minLevel, @Nullable Pattern pattern) {
         String text = source == null ? "" : source;
         LogRecordFilter filter = new LogRecordFilter(minLevel, pattern);
         Collector out = new Collector(Math.min(text.length(), 1 << 16));

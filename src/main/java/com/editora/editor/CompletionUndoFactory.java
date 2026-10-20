@@ -11,6 +11,7 @@ import org.fxmisc.undo.UndoManager;
 import org.fxmisc.undo.UndoManagerFactory;
 import org.fxmisc.undo.impl.ChangeQueue;
 import org.fxmisc.undo.impl.MultiChangeUndoManagerImpl;
+import org.jspecify.annotations.Nullable;
 import org.reactfx.EventStream;
 
 /** Keeps UndoFX's replay/merge/mark machinery, with a bounded queue able to rebase delayed imports. */
@@ -118,7 +119,7 @@ final class CompletionUndoFactory implements UndoManagerFactory {
     /** Delegates normal history unchanged. Rewriting happens inside push, before UndoFX invalidates its values. */
     static final class RebasableQueue<C> implements ChangeQueue<C> {
         private final BudgetedChangeQueue<C> delegate;
-        private C target;
+        private @Nullable C target;
         private Consumer<IdentityHashMap<C, C>> replaced = ignored -> {};
 
         RebasableQueue(int capacity) {
@@ -136,7 +137,7 @@ final class CompletionUndoFactory implements UndoManagerFactory {
             return delegate.retained();
         }
 
-        void target(Object batch) {
+        void target(@Nullable Object batch) {
             @SuppressWarnings("unchecked")
             var value = (C) batch;
             target = value;
@@ -189,7 +190,7 @@ final class CompletionUndoFactory implements UndoManagerFactory {
 
         private boolean span;
         /** The entry holding everything the open span has changed so far; null before its first change. */
-        private C spanEntry;
+        private @Nullable C spanEntry;
         /** Whether {@link #spanEntry} is a list this queue built, which it may therefore grow in place. */
         private boolean spanOwned;
         /** Size of {@link #spanEntry} when its cost was last accounted for. */
@@ -212,9 +213,10 @@ final class CompletionUndoFactory implements UndoManagerFactory {
         }
 
         void endSpan() {
-            if (span && spanOwned && onTop(spanEntry)) {
+            C entry = spanEntry;
+            if (span && spanOwned && entry != null && onTop(entry)) {
                 delegate.prev();
-                delegate.push(spanEntry); // the same entry again: its cost grew while it was grown in place
+                delegate.push(entry); // the same entry again: its cost grew while it was grown in place
             }
             span = false;
             spanEntry = null;
@@ -225,7 +227,7 @@ final class CompletionUndoFactory implements UndoManagerFactory {
             return span;
         }
 
-        private boolean onTop(C entry) {
+        private boolean onTop(@Nullable C entry) {
             return entry != null && !delegate.hasNext() && delegate.hasPrev() && delegate.peekPrev() == entry;
         }
 

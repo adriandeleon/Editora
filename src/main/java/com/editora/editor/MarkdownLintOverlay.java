@@ -11,6 +11,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Draws wavy underlines beneath {@link MarkdownLint} diagnostics (red for errors, amber for
@@ -37,7 +38,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private MarkdownLintOverlay follower;
+    private @Nullable MarkdownLintOverlay follower;
 
     MarkdownLintOverlay(CodeArea area) {
         this.area = area;
@@ -241,7 +242,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
     }
 
     /** The bounds of the first character of the first visible line that has one, or null. */
-    private Bounds firstCharacter(int first, int last) {
+    private @Nullable Bounds firstCharacter(int first, int last) {
         for (int p = first; p <= last; p++) {
             if (area.getParagraph(p).getText().isEmpty() || area.isFolded(p)) {
                 continue;
@@ -254,7 +255,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
         return null;
     }
 
-    private Bounds bounds(int paragraph, int start, int end) {
+    private @Nullable Bounds bounds(int paragraph, int start, int end) {
         return toLocal(area.getCharacterBoundsOnScreen(
                         area.getAbsolutePosition(paragraph, start), area.getAbsolutePosition(paragraph, end))
                 .orElse(null));
@@ -286,7 +287,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
         g.stroke();
     }
 
-    private Bounds toLocal(Bounds screen) {
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

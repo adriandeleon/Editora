@@ -22,6 +22,7 @@ import javafx.scene.paint.Color;
 import com.editora.i18n.Messages;
 import com.editora.markwhen.MwNode;
 import com.editora.markwhen.Timeline;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders a parsed Markwhen {@link Timeline} as a <b>month-grid calendar</b> — the alternative preview to
@@ -42,7 +43,12 @@ public final class MarkwhenCalendar {
     private static final int MAX_CHIPS_PER_DAY = 4;
     private static final String[] WEEKDAYS = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
-    private record Ev(long startDay, long endExclusive, String label, Color color, String tooltip) {}
+    private record Ev(
+            long startDay,
+            long endExclusive,
+            String label,
+            @Nullable Color color,
+            String tooltip) {}
 
     /** Builds the calendar node. {@code zoomScale} scales the font + cell height; {@code viewportWidth} is
      *  unused (the calendar fits the preview width and scrolls vertically). */
@@ -128,7 +134,7 @@ public final class MarkwhenCalendar {
         return card;
     }
 
-    private static VBox dayCell(int day, List<Ev> evs, double minHeight) {
+    private static VBox dayCell(int day, @Nullable List<Ev> evs, double minHeight) {
         VBox cell = new VBox(2);
         cell.getStyleClass().add("markwhen-cal-day");
         cell.setMinHeight(minHeight);
@@ -185,7 +191,7 @@ public final class MarkwhenCalendar {
         return sb.toString();
     }
 
-    private static Node placeholder(String title, String message) {
+    private static Node placeholder(@Nullable String title, String message) {
         VBox box = new VBox(6);
         box.getStyleClass().add("markwhen-calendar");
         if (title != null && !title.isBlank()) {

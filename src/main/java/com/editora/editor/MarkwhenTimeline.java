@@ -18,6 +18,7 @@ import javafx.scene.shape.Circle;
 import com.editora.i18n.Messages;
 import com.editora.markwhen.MwNode;
 import com.editora.markwhen.Timeline;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders a parsed Markwhen {@link Timeline} into a JavaFX timeline node for the in-editor preview — the
@@ -252,7 +253,7 @@ public final class MarkwhenTimeline {
         r.setMaxSize(w, h);
     }
 
-    private static Node placeholder(String title, String message) {
+    private static Node placeholder(@Nullable String title, String message) {
         VBox box = new VBox(6);
         box.getStyleClass().add("markwhen-root");
         if (title != null && !title.isBlank()) {

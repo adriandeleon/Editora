@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Null checking in the build.** NullAway, an Error Prone plugin, now checks every package marked
   `@NullMarked` (JSpecify) during compile and fails the build on a null that is not declared. Every package
-  is marked except the window UI (`ui`) and the editor component (`editor`), which follow on their own. A
+  is marked except the window UI (`ui`), which follows on its own. A
   new package must start marked, and the list of unmarked packages may only shrink (docs/conventions.md,
   "Null annotations").
 - **Maven tool window (review pass 2).** A module's tree now merges the parent chain found beside it on disk

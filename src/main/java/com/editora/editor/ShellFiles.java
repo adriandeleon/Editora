@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The one table of which files are shell scripts. Pure.
  *
@@ -164,7 +166,7 @@ public final class ShellFiles {
      * Whether {@code fileName} (a name or a path) is a startup file that is sourced rather than run — so it gets
      * no Run ▶ (see {@link #STARTUP}). A {@code *.bashrc}, {@code *.zshrc} or {@code *.profile} counts too.
      */
-    public static boolean isStartupFile(String fileName) {
+    public static boolean isStartupFile(@Nullable String fileName) {
         if (fileName == null) {
             return false;
         }

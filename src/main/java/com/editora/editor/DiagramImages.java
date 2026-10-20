@@ -18,6 +18,7 @@ import javafx.scene.layout.StackPane;
 import com.editora.diagram.DiagramKind;
 import com.editora.diagram.DiagramRenderer;
 import com.editora.i18n.Messages;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders diagram-as-code files (Graphviz DOT, PlantUML) to JavaFX nodes for the preview, asynchronously.
@@ -32,12 +33,16 @@ import com.editora.i18n.Messages;
 public final class DiagramImages {
 
     /** A finished render: a {@code loaded} image (success) or an {@code error} message (failure). */
-    private record Cached(PreviewImageLoader.Loaded loaded, String error, int extra, long at) {
-        Cached(PreviewImageLoader.Loaded loaded, String error) {
+    private record Cached(
+            PreviewImageLoader.@Nullable Loaded loaded,
+            @Nullable String error,
+            int extra,
+            long at) {
+        Cached(PreviewImageLoader.@Nullable Loaded loaded, @Nullable String error) {
             this(loaded, error, 0, System.currentTimeMillis());
         }
 
-        Cached(PreviewImageLoader.Loaded loaded, String error, int extra) {
+        Cached(PreviewImageLoader.Loaded loaded, @Nullable String error, int extra) {
             this(loaded, error, extra, System.currentTimeMillis());
         }
 
@@ -114,7 +119,10 @@ public final class DiagramImages {
     /** As {@link #node(DiagramKind, String, java.util.function.DoubleUnaryOperator)}, but coalesces queued
      *  live-preview renders for a non-null stable surface key. */
     public static Node node(
-            DiagramKind kind, String source, java.util.function.DoubleUnaryOperator sizer, String surfaceKey) {
+            DiagramKind kind,
+            String source,
+            java.util.function.DoubleUnaryOperator sizer,
+            @Nullable String surfaceKey) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-diagram");
         fill(host, kind, source, sizer, surfaceKey);
@@ -126,7 +134,7 @@ public final class DiagramImages {
             DiagramKind kind,
             String source,
             java.util.function.DoubleUnaryOperator sizer,
-            String surfaceKey) {
+            @Nullable String surfaceKey) {
         boolean useDark = dark && kind.themeSensitive();
         String key = key(kind, source, useDark);
         Cached hit = CACHE.get(key);
@@ -180,7 +188,7 @@ public final class DiagramImages {
         });
     }
 
-    static boolean superseded(String surfaceKey, long gen, Long latest) {
+    static boolean superseded(String surfaceKey, long gen, @Nullable Long latest) {
         return surfaceKey != null && latest != null && latest.longValue() != gen;
     }
 
@@ -213,7 +221,7 @@ public final class DiagramImages {
         return label;
     }
 
-    private static Label errorNode(String message) {
+    private static Label errorNode(@Nullable String message) {
         String body = message == null || message.isBlank()
                 ? Messages.tr("diagram.renderFailed")
                 : Messages.tr("diagram.renderFailed") + "\n" + message.strip();

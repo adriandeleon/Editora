@@ -7,6 +7,7 @@ import javafx.scene.control.ScrollPane;
 
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Keeps a buffer's editor and its rendered preview at the same place: while both are on screen (Split), and
@@ -174,7 +175,7 @@ public final class PreviewScrollSync {
         return syncing;
     }
 
-    private MarkdownPreview lines() {
+    private @Nullable MarkdownPreview lines() {
         MarkdownPreview d = document.get();
         return d != null && d.isShowing() ? d : null;
     }

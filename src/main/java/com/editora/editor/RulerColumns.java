@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Which columns a buffer's rulers stand at: the language's own list when Settings has one for it, else the
  * global list — and an {@code .editorconfig} {@code max_line_length} replaces the first of them, or hides
@@ -28,7 +30,11 @@ public final class RulerColumns {
      *     {@code off}
      */
     public static List<Integer> resolve(
-            List<Integer> global, Map<String, List<Integer>> perLanguage, String language, Integer editorConfig) {
+            List<Integer> global,
+            Map<String, List<Integer>> perLanguage,
+            String language,
+            @Nullable Integer editorConfig) {
+
         if (editorConfig != null && editorConfig == OFF) {
             return List.of();
         }
@@ -49,7 +55,7 @@ public final class RulerColumns {
      * The list {@code perLanguage} has for {@code language}, matching the name whatever its case (a list typed
      * as {@code Java:} before names were lower-cased still applies to java files), or null when it has none.
      */
-    private static List<Integer> forLanguage(Map<String, List<Integer>> perLanguage, String language) {
+    private static @Nullable List<Integer> forLanguage(Map<String, List<Integer>> perLanguage, String language) {
         if (perLanguage == null || language == null) {
             return null;
         }
@@ -80,7 +86,7 @@ public final class RulerColumns {
      * Reads {@code "80, 120"} (commas, spaces or both between the numbers). Blank means no rulers. Null when
      * any part is not a column number from 1 to {@link #MAX_COLUMN}.
      */
-    public static List<Integer> parse(String text) {
+    public static @Nullable List<Integer> parse(String text) {
         List<Integer> out = new ArrayList<>();
         if (text == null || text.isBlank()) {
             return out;
@@ -119,7 +125,7 @@ public final class RulerColumns {
      * after its colon has no rulers. Entries are separated by {@code ;} or line breaks. Blank means none. Null
      * when an entry has no language or a column is not a number from 1 to {@link #MAX_COLUMN}.
      */
-    public static Map<String, List<Integer>> parseByLanguage(String text) {
+    public static @Nullable Map<String, List<Integer>> parseByLanguage(String text) {
         Map<String, List<Integer>> out = new java.util.LinkedHashMap<>();
         if (text == null || text.isBlank()) {
             return out;
@@ -143,7 +149,7 @@ public final class RulerColumns {
      * Why {@code text} cannot be read as a list of ruler columns, or null when it can: what is wrong
      * ({@link Problem.Kind#NOT_A_COLUMN}) and the part that is wrong.
      */
-    public static Problem problem(String text) {
+    public static @Nullable Problem problem(String text) {
         if (text == null || text.isBlank()) {
             return null;
         }
@@ -159,7 +165,7 @@ public final class RulerColumns {
      * Why {@code text} cannot be read as the per-language form, or null when it can. A language name must be one
      * of {@code known} (compared without case) — a name no buffer ever has would be kept and never apply.
      */
-    public static Problem byLanguageProblem(String text, java.util.Collection<String> known) {
+    public static @Nullable Problem byLanguageProblem(String text, java.util.Collection<String> known) {
         if (text == null || text.isBlank()) {
             return null;
         }

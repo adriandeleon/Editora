@@ -21,6 +21,7 @@ import com.editora.completion.CompletionTrace;
 import com.editora.editor.EditorBuffer.AiCompletionProvider;
 import com.editora.snippet.Snippet;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /** Owns a buffer's completion, code-action and documentation popups and ghost-text state. */
 final class BufferCompletion {
@@ -29,8 +30,11 @@ final class BufferCompletion {
 
         AnchorPane root();
 
+        /** The split view's area, or {@code null} while the buffer is not split. */
+        @Nullable
         CodeArea area2();
 
+        @Nullable
         AnchorPane root2();
 
         boolean largeFile();
@@ -43,7 +47,7 @@ final class BufferCompletion {
 
         java.util.Set<Character> lspSignatureTriggerChars();
 
-        java.util.function.Consumer<Character> signatureHelpRequester();
+        java.util.function.@Nullable Consumer<Character> signatureHelpRequester();
 
         String language();
 
@@ -86,7 +90,7 @@ final class BufferCompletion {
          * one of the list-only ones ({@code date}, {@code time}). Without it, any snippet a completion may
          * offer for the text as typed.
          */
-        default com.editora.snippet.TabExpansion.Match snippetTrigger(CodeArea a, boolean tabOnly) {
+        default com.editora.snippet.TabExpansion.@Nullable Match snippetTrigger(CodeArea a, boolean tabOnly) {
             return null;
         }
 
@@ -94,7 +98,7 @@ final class BufferCompletion {
          * The abbreviation ending at the caret that abbrev-mode would expand on the next word terminator, in
          * document offsets, or null (abbrev-mode off, nothing matches, or the buffer may not expand here).
          */
-        default com.editora.editops.Abbrev.Edit abbrevAtCaret(CodeArea a) {
+        default com.editora.editops.Abbrev.@Nullable Edit abbrevAtCaret(CodeArea a) {
             return null;
         }
 
@@ -105,7 +109,7 @@ final class BufferCompletion {
 
     private CompletionProvider completionProvider = (s, d, p, sp, prose) -> List.of();
     /** What {@code {{} completion offers in a {@code .http} buffer; null: only the dynamic built-ins. */
-    private java.util.function.Supplier<com.editora.http.HttpVariableIndex.Context> httpVariables;
+    private java.util.function.@Nullable Supplier<com.editora.http.HttpVariableIndex.Context> httpVariables;
 
     private final Host host;
 
@@ -124,18 +128,19 @@ final class BufferCompletion {
     boolean autocompleteMermaid = true;
 
     /** The caret-anchored completion dropdown (lazily created). */
+    @Nullable
     CompletionPopup completionPopup;
 
     long completionGen;
     private long renderGen;
-    private CompletionSource completionSource;
+    private @Nullable CompletionSource completionSource;
     private Runnable cancelRequest = () -> {};
-    private CompletionSession session;
-    private CompletionSession shownSession;
+    private @Nullable CompletionSession session;
+    private @Nullable CompletionSession shownSession;
     private boolean immediateQueued;
     private long lastRequestVersion = -1;
     private long lastEditNanos;
-    private Bounds completionAnchor;
+    private @Nullable Bounds completionAnchor;
     private int completionAnchorStart = -1;
     private boolean filteringEmpty;
 
@@ -166,18 +171,22 @@ final class BufferCompletion {
     private boolean localSyncQueued;
 
     /** The view the completion popup is currently driven by (for click-accept routing). */
+    @Nullable
     CodeArea completionArea;
 
     /** The quick-fix list, anchored at the caret (#767). Lazily built, like the completion popup. */
+    @Nullable
     CodeActionPopup codeActionPopup;
 
     /** The area the quick-fix list belongs to, so its key ownership can be released on hide. */
+    @Nullable
     CodeArea codeActionArea;
 
     /** The IntelliJ-style documentation side-popup (lazily created) + its lazy resolver/state. */
+    @Nullable
     CompletionDocPopup docPopup;
 
-    java.util.function.BiConsumer<Object, java.util.function.Consumer<String>> completionDocResolver;
+    java.util.function.@Nullable BiConsumer<Object, java.util.function.Consumer<String>> completionDocResolver;
 
     boolean completionDocEnabled = true;
 
@@ -185,7 +194,7 @@ final class BufferCompletion {
 
     long docGen;
 
-    javafx.animation.PauseTransition docDebounce;
+    javafx.animation.@Nullable PauseTransition docDebounce;
 
     /**
      * The {@code docVersion} right after we programmatically accepted a completion, so the auto-trigger
@@ -201,30 +210,35 @@ final class BufferCompletion {
      * <em>before</em> that accept — can be translated into the document as it stands now. See
      * {@link LspEditShift}.
      */
-    LspEditShift.Change pendingCompletionShift;
+    LspEditShift.@Nullable Change pendingCompletionShift;
 
     /** Inline "ghost text" suggestion (prose buffers): a single muted suffix drawn after the caret. */
+    @Nullable
     Label ghostLabel;
 
     /** AI inline completion (any buffer): provider + gate + stale-result guard (see ui.AiCoordinator). */
+    @Nullable
     AiCompletionProvider aiCompletionProvider;
 
     boolean aiCompletionEnabled;
 
     long aiCompletionGen;
 
+    @Nullable
     String ghostSuffix;
 
+    @Nullable
     CodeArea ghostArea;
 
     /** The snippet the ghost offers in place of text to insert (Tab expands it), or null for a text ghost. */
+    @Nullable
     Snippet ghostSnippet;
 
     /** The abbreviation the ghost previews (Tab expands it), or null for any other ghost. */
-    com.editora.editops.Abbrev.Edit ghostAbbrev;
+    com.editora.editops.Abbrev.@Nullable Edit ghostAbbrev;
 
     /** The two document offsets currently carrying the {@code brace-match} style, or null. */
-    int[] braceMatch;
+    int @Nullable [] braceMatch;
 
     /** Longest snippet prefix we'll look up ({@code [SuppressMessageAttribute]} is the longest bundled one). */
     static final int MAX_SNIPPET_PREFIX = 40;
@@ -281,12 +295,13 @@ final class BufferCompletion {
     }
 
     /** Injects the {@code .http} variable context for {@code {{} completion (see {@link HttpCompletions}). */
-    public void setHttpVariables(java.util.function.Supplier<com.editora.http.HttpVariableIndex.Context> context) {
+    public void setHttpVariables(
+            java.util.function.@Nullable Supplier<com.editora.http.HttpVariableIndex.Context> context) {
         this.httpVariables = context;
     }
 
     /** Injects the completion lookup (set by the controller), mirroring {@link #setSnippetProvider}. */
-    public void setCompletionProvider(CompletionProvider provider) {
+    public void setCompletionProvider(@Nullable CompletionProvider provider) {
         if (provider != null) {
             completionProvider = provider;
         }
@@ -400,7 +415,11 @@ final class BufferCompletion {
         if (gen != docGen || !docPopupActive || completionPopup == null || !completionPopup.isShowing()) {
             return;
         }
-        completionDocResolver.accept(c.resolveToken(), doc -> {
+        var resolver = completionDocResolver;
+        if (resolver == null) {
+            return; // cleared since the debounce started
+        }
+        resolver.accept(c.resolveToken(), doc -> {
             if (gen != docGen || !docPopupActive || completionPopup == null || !completionPopup.isShowing()) {
                 return;
             }
@@ -417,7 +436,11 @@ final class BufferCompletion {
             hideDocPopup();
             return;
         }
-        Bounds anchor = completionPopup.screenBounds();
+        CompletionPopup popup = completionPopup;
+        if (popup == null) {
+            return;
+        }
+        Bounds anchor = popup.screenBounds();
         if (anchor == null || completionArea == null || completionArea.getScene() == null) {
             return;
         }
@@ -425,7 +448,7 @@ final class BufferCompletion {
     }
 
     /** Opens a link clicked in a completion's documentation: the window's own link opener. */
-    private java.util.function.Consumer<String> linkOpener;
+    private java.util.function.@Nullable Consumer<String> linkOpener;
 
     void setLinkOpener(java.util.function.Consumer<String> opener) {
         this.linkOpener = opener;
@@ -437,7 +460,7 @@ final class BufferCompletion {
      * as it would a link in the document — and its images are still limited to {@code data:} ones: the text
      * comes from a language server, not from the user.
      */
-    javafx.scene.Node renderDoc(String doc) {
+    javafx.scene.@Nullable Node renderDoc(String doc) {
         if (doc == null || doc.isBlank()) {
             return null;
         }
@@ -589,10 +612,13 @@ final class BufferCompletion {
                     || e.getCharacter().length() != 1
                     || !completionPopupShowing()
                     || host.multiCaretActiveOn(a)) return;
-            Completion item = completionPopup.selected();
-            if (item == null
-                    || item.protocol() == null
-                    || !item.protocol().commitCharacters().contains(e.getCharacter())) return;
+            CompletionPopup popup = completionPopup;
+            if (popup == null) return;
+            Completion item = popup.selected();
+            if (item == null) return;
+            Completion.Protocol protocol = item.protocol();
+            List<String> commit = protocol == null ? null : protocol.commitCharacters();
+            if (commit == null || !commit.contains(e.getCharacter())) return;
             String typed = e.getCharacter();
             int enclosing = host.snippetDepth();
             if (!acceptCompletion(a, item)) return;
@@ -649,19 +675,20 @@ final class BufferCompletion {
             }
             // Quick-fix list first: it and the completion popup are both caret-anchored and never coexist
             // (showCodeActions hides completion), so whichever is up owns the keys.
-            if (codeActionsShowing()) {
+            CodeActionPopup quickFixes = codeActionPopup;
+            if (quickFixes != null && quickFixes.isShowing()) {
                 boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown();
                 switch (e.getCode()) {
                     case DOWN -> {
-                        codeActionPopup.moveDown();
+                        quickFixes.moveDown();
                         e.consume();
                     }
                     case UP -> {
-                        codeActionPopup.moveUp();
+                        quickFixes.moveUp();
                         e.consume();
                     }
                     case ENTER -> {
-                        codeActionPopup.accept();
+                        quickFixes.accept();
                         e.consume();
                     }
                     case ESCAPE -> {
@@ -670,13 +697,13 @@ final class BufferCompletion {
                     }
                     case N -> {
                         if (ctrl) {
-                            codeActionPopup.moveDown();
+                            quickFixes.moveDown();
                             e.consume();
                         }
                     }
                     case P -> {
                         if (ctrl) {
-                            codeActionPopup.moveUp();
+                            quickFixes.moveUp();
                             e.consume();
                         }
                     }
@@ -822,7 +849,10 @@ final class BufferCompletion {
         org.fxmisc.richtext.model.PlainTextChange c = changes.get(0);
         if (signatureTriggerTyped(c.getInserted(), c.getRemoved())) {
             char trigger = c.getInserted().charAt(0); // the char, so the server sees TriggerCharacter (#725)
-            Platform.runLater(() -> host.signatureHelpRequester().accept(trigger));
+            Platform.runLater(() -> {
+                var requester = host.signatureHelpRequester();
+                if (requester != null) requester.accept(trigger);
+            });
         }
     }
 
@@ -890,7 +920,8 @@ final class BufferCompletion {
 
     /** Manual trigger (the {@code edit.completion} command), on the focused view. */
     public void triggerCompletion() {
-        CodeArea a = (host.area2() != null && host.area2().isFocused()) ? host.area2() : host.area();
+        CodeArea split = host.area2();
+        CodeArea a = (split != null && split.isFocused()) ? split : host.area();
         updateCompletion(a, true);
     }
 
@@ -1141,7 +1172,7 @@ final class BufferCompletion {
             boolean manual,
             int line,
             int column,
-            MarkdownCompletions.Offer offer) {
+            MarkdownCompletions.@Nullable Offer offer) {
         if (offer == null || a.getScene() == null) {
             return false;
         }
@@ -1284,7 +1315,7 @@ final class BufferCompletion {
     }
 
     /** The suffix of the best word completion that continues {@code prefix}, or null if none qualifies. */
-    static String bestGhostSuffix(List<Completion> items, String prefix) {
+    static @Nullable String bestGhostSuffix(List<Completion> items, String prefix) {
         for (Completion c : items) {
             if (c.kind() == Completion.Kind.WORD) {
                 // The accept path keeps the typed prefix and inserts only this suffix, so the word must be
@@ -1336,7 +1367,8 @@ final class BufferCompletion {
         if (screen == null) {
             return;
         }
-        AnchorPane target = (a == host.area2() && host.root2() != null) ? host.root2() : host.root();
+        AnchorPane split = host.root2();
+        AnchorPane target = (a == host.area2() && split != null) ? split : host.root();
         Bounds local = target.screenToLocal(screen);
         if (local == null) {
             return;
@@ -1376,7 +1408,7 @@ final class BufferCompletion {
         if (abbrev != null) {
             // Looked up again, so only what the ghost previewed is expanded, over what stands there now.
             com.editora.editops.Abbrev.Edit now = host.abbrevAtCaret(a);
-            if (abbrev.equals(now)) {
+            if (now != null && abbrev.equals(now)) {
                 Runnable endUndo = host.beginCompletionUndo();
                 try {
                     a.replaceText(now.from(), now.to(), now.replacement());
@@ -1455,7 +1487,7 @@ final class BufferCompletion {
                         });
     }
 
-    public void setLspCompletionSource(CompletionSource source) {
+    public void setLspCompletionSource(@Nullable CompletionSource source) {
         hideCompletion();
         completionSource = source;
     }
@@ -1505,7 +1537,11 @@ final class BufferCompletion {
                                 .contains(a.getText(caret - 1, caret).charAt(0))
                 ? a.getText(caret - 1, caret)
                 : null;
-        cancelRequest = completionSource.request(
+        CompletionSource source = completionSource;
+        if (source == null) {
+            return; // detached while the change synced
+        }
+        cancelRequest = source.request(
                 a.getCurrentParagraph(),
                 a.getCaretColumn(),
                 trigger != null ? 2 : incomplete ? 3 : 1,
@@ -1526,7 +1562,11 @@ final class BufferCompletion {
         long render = ++renderGen;
         long version = host.docVersion();
         String prefix = context.prefix();
-        var items = context.result().items();
+        CompletionResult result = context.result();
+        if (result == null) {
+            return;
+        }
+        var items = result.items();
         int line = a.getCurrentParagraph();
         int column = a.getCaretColumn();
         String beforeCaret = a.getText(
@@ -1803,8 +1843,8 @@ final class BufferCompletion {
                         || c.iconKind() == com.editora.completion.CompletionIconKind.CONSTRUCTOR)) {
             long acceptedVersion = host.docVersion();
             Platform.runLater(() -> {
-                if (acceptedVersion == host.docVersion())
-                    host.signatureHelpRequester().accept(null);
+                var requester = host.signatureHelpRequester();
+                if (acceptedVersion == host.docVersion() && requester != null) requester.accept(null);
             });
         }
         return true;

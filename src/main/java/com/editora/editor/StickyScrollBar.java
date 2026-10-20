@@ -17,6 +17,7 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.Paragraph;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The pinned scope headers drawn over the top of the editor — the rendering half of {@link StickyScroll}.
@@ -47,9 +48,9 @@ final class StickyScrollBar {
     /** What the bar shows right now. A scroll that pins the same lines reuses these nodes untouched. */
     private List<Row> rows = List.of();
 
-    private CodeArea shownArea;
+    private @Nullable CodeArea shownArea;
     private int shownTabSize;
-    private IntConsumer onClick;
+    private @Nullable IntConsumer onClick;
     /** Rows built since construction — the test seam that proves a scroll inside one scope builds none. */
     private int rowsBuilt;
 
@@ -102,7 +103,7 @@ final class StickyScrollBar {
      * {@link StickyScroll#headerLines} for {@code regions}, answered from an index that is rebuilt only when
      * the fold regions themselves are replaced — so a scroll step walks the enclosing scopes, not the file.
      */
-    List<Integer> pinnedLines(List<FoldRegions.Region> regions, int firstVisible) {
+    List<Integer> pinnedLines(@Nullable List<FoldRegions.Region> regions, int firstVisible) {
         if (!index.isFor(regions)) {
             index = StickyScroll.Index.of(regions);
         }
@@ -134,7 +135,7 @@ final class StickyScrollBar {
      *     so an indented header would sit at the wrong column against the code below it
      * @param onClick given the 0-based line of the row that was clicked
      */
-    void update(CodeArea area, List<Integer> lines, int tabSize, IntConsumer onClick) {
+    void update(@Nullable CodeArea area, List<Integer> lines, int tabSize, IntConsumer onClick) {
         this.onClick = onClick;
         if (area == null || lines == null || lines.isEmpty()) {
             hide();
@@ -170,7 +171,7 @@ final class StickyScrollBar {
         box.setVisible(!rows.isEmpty());
     }
 
-    private Row shown(int line, Paragraph<?, ?, ?> paragraph) {
+    private @Nullable Row shown(int line, Paragraph<?, ?, ?> paragraph) {
         for (Row row : rows) {
             if (row.line() == line && row.paragraph() == paragraph) {
                 return row;
@@ -239,7 +240,7 @@ final class StickyScrollBar {
         return out;
     }
 
-    private static Text run(String s, Collection<String> styles) {
+    private static Text run(String s, @Nullable Collection<String> styles) {
         Text t = new Text(s);
         // "text" is what the editor's own token rules key off (.text.<class> in syntax.css), so a pinned
         // line picks up the active editor theme with no rules of its own.

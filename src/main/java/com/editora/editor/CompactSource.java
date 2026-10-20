@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested heuristic for detecting a <strong>Java 25 compact source file</strong> (JEP 512):
  * a {@code .java} file whose members live directly at the top level inside an implicitly-declared class,
@@ -30,7 +32,7 @@ public final class CompactSource {
      * True if {@code fileName} is a {@code .java} file and {@code source} is a launchable compact source
      * file (a top-level {@code void main(...)} outside any explicit type).
      */
-    public static boolean isLaunchable(String fileName, String source) {
+    public static boolean isLaunchable(@Nullable String fileName, String source) {
         if (fileName == null || source == null || !fileName.endsWith(".java")) {
             return false;
         }

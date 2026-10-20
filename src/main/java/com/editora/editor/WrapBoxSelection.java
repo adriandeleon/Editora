@@ -12,6 +12,7 @@ import javafx.scene.input.MouseEvent;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
 import org.fxmisc.richtext.multi.MultiCaretManager;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Alt+drag column selection while <b>Word Wrap is on</b>: one range per <em>visual row</em> the rectangle
@@ -39,7 +40,7 @@ final class WrapBoxSelection {
     private boolean active;
     private double anchorX;
     private double anchorY;
-    private List<int[]> last;
+    private @Nullable List<int[]> last;
 
     private WrapBoxSelection(CodeArea area, MultiCaretManager<?, ?, ?> manager) {
         this.area = area;
@@ -149,7 +150,7 @@ final class WrapBoxSelection {
         return centres;
     }
 
-    private static boolean same(List<int[]> a, List<int[]> b) {
+    private static boolean same(@Nullable List<int[]> a, List<int[]> b) {
         if (a == null || a.size() != b.size()) {
             return false;
         }

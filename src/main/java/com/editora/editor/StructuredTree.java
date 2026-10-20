@@ -8,6 +8,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.structured.StructuredNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders a parsed {@link StructuredNode} tree (JSON / YAML / TOML) into a self-scrolling JavaFX
@@ -23,8 +24,8 @@ public final class StructuredTree {
 
     private StructuredTree() {}
 
-    public static Node build(StructuredNode root) {
-        TreeItem<StructuredNode> item = toItem(root);
+    public static Node build(@Nullable StructuredNode root) {
+        TreeItem<StructuredNode> item = root == null ? new TreeItem<>() : toItem(root);
         expand(item, AUTO_EXPAND_DEPTH);
         TreeView<StructuredNode> tree = new TreeView<>(item);
         tree.getStyleClass().add("structured-tree");
@@ -121,14 +122,14 @@ public final class StructuredTree {
         return flow;
     }
 
-    private static Text styled(String text, String styleClass) {
+    private static Text styled(@Nullable String text, String styleClass) {
         Text t = new Text(text);
         t.getStyleClass().add(styleClass);
         return t;
     }
 
     /** Collapses newlines/tabs so a multi-line string value stays on one tree row. */
-    private static String oneLine(String s) {
+    private static String oneLine(@Nullable String s) {
         return s == null ? "" : s.replace("\n", "\\n").replace("\r", "").replace("\t", "\\t");
     }
 

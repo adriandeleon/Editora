@@ -17,6 +17,7 @@ import org.eclipse.tm4e.core.grammar.IToken;
 import org.eclipse.tm4e.core.grammar.ITokenizeLineResult;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Computes RichTextFX style spans for a whole document using a TextMate {@link IGrammar}.
@@ -66,7 +67,7 @@ public final class TextMateHighlighter {
     public record Symbol(int line, String name, String kind) {}
 
     /** The result of one tokenization pass: highlight {@code spans} plus the document's {@code symbols}. */
-    public record Analysis(StyleSpans<Collection<String>> spans, List<Symbol> symbols) {}
+    public record Analysis(@Nullable StyleSpans<Collection<String>> spans, List<Symbol> symbols) {}
 
     /**
      * The result of an incremental pass tokenizing lines {@code [fromLine … end]}:
@@ -80,7 +81,10 @@ public final class TextMateHighlighter {
      * </ul>
      */
     public record IncrementalAnalysis(
-            int fromOffset, StyleSpans<Collection<String>> spans, List<IStateStack> endStates, List<Symbol> symbols) {}
+            int fromOffset,
+            @Nullable StyleSpans<Collection<String>> spans,
+            List<IStateStack> endStates,
+            List<Symbol> symbols) {}
 
     /**
      * Follows a pass line by line, on the tokenizing thread. It sees exactly what goes into the spans — so a
@@ -89,14 +93,14 @@ public final class TextMateHighlighter {
      */
     interface LineHook {
         /** The next {@code length} characters of the range carry {@code style} ({@code null} = unstyled). */
-        void run(String style, int length);
+        void run(@Nullable String style, int length);
 
         /**
          * As {@link #run}, for characters that look like brackets but do not pair: the {@code )} that ends a shell
          * {@code case} pattern ({@code start|stop)}, {@code *)}). Counted as a bracket it closed whatever was
          * open — a function's {@code {}} — and every later bracket in that block read one level too shallow.
          */
-        default void runNotBrackets(String style, int length) {
+        default void runNotBrackets(@Nullable String style, int length) {
             run(style, length);
         }
 
@@ -105,14 +109,14 @@ public final class TextMateHighlighter {
          * ended in {@code endState}. Returning {@code true} stops the pass after this line; the analysis then
          * covers up to {@code lineEnd}, without the line's terminator.
          */
-        boolean lineDone(int lineIndex, int lineStart, int lineEnd, IStateStack endState);
+        boolean lineDone(int lineIndex, int lineStart, int lineEnd, @Nullable IStateStack endState);
     }
 
     /**
      * Style spans covering the whole text. Returns {@code null} for empty text or a null grammar
      * (RichTextFX cannot build zero-length spans) — callers should skip applying styles then.
      */
-    public static StyleSpans<Collection<String>> compute(String text, IGrammar grammar) {
+    public static @Nullable StyleSpans<Collection<String>> compute(String text, IGrammar grammar) {
         Analysis analysis = analyze(text, grammar);
         return analysis == null ? null : analysis.spans();
     }
@@ -122,7 +126,7 @@ public final class TextMateHighlighter {
      * definitions (functions, types, sections, tags…) for the structure view. Returns {@code null}
      * for empty text or a null grammar.
      */
-    public static Analysis analyze(String text, IGrammar grammar) {
+    public static @Nullable Analysis analyze(String text, IGrammar grammar) {
         if (text == null || text.isEmpty() || grammar == null) {
             return null;
         }
@@ -136,7 +140,8 @@ public final class TextMateHighlighter {
      * re-highlighting: the unchanged prefix before an edit is skipped. Returns {@code null} for a
      * null grammar/text.
      */
-    public static IncrementalAnalysis analyzeFrom(String text, IGrammar grammar, int fromLine, IStateStack startState) {
+    public static @Nullable IncrementalAnalysis analyzeFrom(
+            String text, IGrammar grammar, int fromLine, @Nullable IStateStack startState) {
         return analyzeFrom(text, grammar, fromLine, startState, () -> false);
     }
 
@@ -150,8 +155,8 @@ public final class TextMateHighlighter {
      * fixed: a perf test's leaked pass serialized all java highlighting on CI). The check is one volatile
      * read per line — noise next to {@code tokenizeLine}.
      */
-    public static IncrementalAnalysis analyzeFrom(
-            String text, IGrammar grammar, int fromLine, IStateStack startState, BooleanSupplier cancelled) {
+    public static @Nullable IncrementalAnalysis analyzeFrom(
+            String text, IGrammar grammar, int fromLine, @Nullable IStateStack startState, BooleanSupplier cancelled) {
         return analyzeFrom(text, grammar, fromLine, startState, cancelled, null);
     }
 
@@ -160,36 +165,36 @@ public final class TextMateHighlighter {
      * {@link LineHook}, which may stop the pass before the end of the text. {@code spans} is {@code null}
      * when the tokenized range is empty.
      */
-    static IncrementalAnalysis analyzeFrom(
+    static @Nullable IncrementalAnalysis analyzeFrom(
             String text,
             IGrammar grammar,
             int fromLine,
-            IStateStack startState,
+            @Nullable IStateStack startState,
             BooleanSupplier cancelled,
-            LineHook hook) {
+            @Nullable LineHook hook) {
         return analyzeFrom(text, grammar, fromLine, startState, cancelled, hook, LINE_TIMEOUT);
     }
 
     /** As above with an explicit per-line budget, so a test can make a line run out of it. */
-    static IncrementalAnalysis analyzeFrom(
+    static @Nullable IncrementalAnalysis analyzeFrom(
             String text,
             IGrammar grammar,
             int fromLine,
-            IStateStack startState,
+            @Nullable IStateStack startState,
             BooleanSupplier cancelled,
-            LineHook hook,
+            @Nullable LineHook hook,
             Duration lineTimeout) {
         return analyzeFrom(text, grammar, fromLine, startState, cancelled, hook, lineTimeout, LONG_LINE_BUDGET);
     }
 
     /** As above with an explicit {@link #LONG_LINE_BUDGET}, so a test can exhaust it. */
-    static IncrementalAnalysis analyzeFrom(
+    static @Nullable IncrementalAnalysis analyzeFrom(
             String text,
             IGrammar grammar,
             int fromLine,
-            IStateStack startState,
+            @Nullable IStateStack startState,
             BooleanSupplier cancelled,
-            LineHook hook,
+            @Nullable LineHook hook,
             Duration lineTimeout,
             Duration longLineBudget) {
         if (text == null || grammar == null) {
@@ -229,13 +234,13 @@ public final class TextMateHighlighter {
         return REPORTED_FAILURES;
     }
 
-    private static IncrementalAnalysis analyzeFromLocked(
+    private static @Nullable IncrementalAnalysis analyzeFromLocked(
             String text,
             IGrammar grammar,
             int fromLine,
-            IStateStack startState,
+            @Nullable IStateStack startState,
             BooleanSupplier cancelled,
-            LineHook hook,
+            @Nullable LineHook hook,
             Duration lineTimeout,
             long longLineBudgetNanos) {
         // Adjacent runs with the same style are merged before they reach the builder: we collapse
@@ -432,7 +437,7 @@ public final class TextMateHighlighter {
      * so the methods of an anonymous class passed as an argument sit inside one — under their own
      * {@code meta.method} scope, which is nearer and wins.
      */
-    static String kindForScopes(List<String> scopes) {
+    static @Nullable String kindForScopes(List<String> scopes) {
         if (scopes == null) {
             return null;
         }
@@ -460,7 +465,7 @@ public final class TextMateHighlighter {
     }
 
     /** The definition kind a single scope names, or {@code null} — see {@link #kindForScopes}. */
-    private static String definitionKind(String scope) {
+    private static @Nullable String definitionKind(String scope) {
         if (!scope.startsWith("entity.name.")) {
             return null;
         }
@@ -487,7 +492,11 @@ public final class TextMateHighlighter {
      * ours, {@link #PLAIN} = decides the token as unstyled), whether it marks a call, whether it is a
      * structural {@code meta.*} scope, and the definition kind it names.
      */
-    private record ScopeInfo(String style, boolean call, boolean meta, String kind) {}
+    private record ScopeInfo(
+            @Nullable String style,
+            boolean call,
+            boolean meta,
+            @Nullable String kind) {}
 
     /** Bound on {@link #SCOPE_INFO}; the bundled grammars together name a few thousand scopes. */
     private static final int SCOPE_CACHE_LIMIT = 16_384;
@@ -576,13 +585,13 @@ public final class TextMateHighlighter {
      */
     private static final class SpanMerger {
         private final StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
-        private final LineHook hook;
-        private String current; // style class of the open run, or null for unstyled
+        private final @Nullable LineHook hook;
+        private @Nullable String current; // style class of the open run, or null for unstyled
         private int length; // accumulated length of the open run
         private int lineChars; // characters added since the last endLine()
         private boolean any;
 
-        SpanMerger(LineHook hook) {
+        SpanMerger(@Nullable LineHook hook) {
             this.hook = hook;
         }
 
@@ -596,16 +605,16 @@ public final class TextMateHighlighter {
         }
 
         /** Append {@code len} characters styled with {@code style} (null = unstyled). */
-        void add(String style, int len) {
+        void add(@Nullable String style, int len) {
             add(style, len, false);
         }
 
         /** As {@link #add}, for characters that are not brackets whatever they look like. */
-        void addNotBrackets(String style, int len) {
+        void addNotBrackets(@Nullable String style, int len) {
             add(style, len, true);
         }
 
-        private void add(String style, int len, boolean notBrackets) {
+        private void add(@Nullable String style, int len, boolean notBrackets) {
             if (len <= 0) {
                 return;
             }
@@ -638,6 +647,7 @@ public final class TextMateHighlighter {
         }
 
         /** The spans, or {@code null} when nothing was added (RichTextFX cannot build zero-length spans). */
+        @Nullable
         StyleSpans<Collection<String>> build() {
             flush();
             return any ? builder.create() : null;
@@ -648,7 +658,7 @@ public final class TextMateHighlighter {
      * Reduces a TextMate scope list (least-specific first) to one CSS style class, or {@code null}
      * for unstyled text. The most specific scope wins, so we scan from the end.
      */
-    static String styleForScopes(List<String> scopes) {
+    static @Nullable String styleForScopes(List<String> scopes) {
         if (scopes == null) {
             return null;
         }
@@ -699,7 +709,7 @@ public final class TextMateHighlighter {
     }
 
     /** Maps a single TextMate scope to a token category, checking the most specific prefixes first. */
-    private static String classify(String scope) {
+    private static @Nullable String classify(String scope) {
         if (scope.startsWith("comment")) {
             return "comment";
         }

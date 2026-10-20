@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A neutral in-editor TODO/highlight match for {@link TodoHighlightOverlay} (which uses the absolute
  * {@code [start,end)} offsets) and the {@link TodoStripe}/{@link Minimap} overview stripes (which use the
@@ -20,10 +22,10 @@ public record TodoMark(
         String colorWeb,
         int tagStart,
         int tagEnd,
-        String tagColorWeb,
+        @Nullable String tagColorWeb,
         int priStart,
         int priEnd,
-        String priColorWeb) {
+        @Nullable String priColorWeb) {
 
     /** Back-compat constructor for a keyword-only mark (no structured tag/priority parts). */
     public TodoMark(int start, int end, int line, String lineText, String colorWeb) {

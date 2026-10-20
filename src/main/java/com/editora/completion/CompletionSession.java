@@ -77,7 +77,7 @@ public final class CompletionSession {
     }
 
     /** Rebase the suffix end; the replacement start must remain in the unchanged prefix. */
-    public Completion.ReplaceRange range(Completion.ReplaceRange range) {
+    public Completion.@Nullable ReplaceRange range(Completion.@Nullable ReplaceRange range) {
         if (range == null || !range.hasEnd()) return range;
         if (range.endLine() != line || range.endCharacter() < column) return range;
         return new Completion.ReplaceRange(

@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import javafx.scene.Node;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Something that can live in an editor {@link javafx.scene.control.Tab}. The tab framework stores the
  * content in {@code Tab.userData}, so a tab is no longer assumed to be an {@link EditorBuffer}.
@@ -23,7 +25,7 @@ public interface TabContent {
     String title();
 
     /** An optional graphic for the tab header (e.g. an app logo); {@code null} for none. */
-    default Node icon() {
+    default @Nullable Node icon() {
         return null;
     }
 
@@ -38,7 +40,7 @@ public interface TabContent {
     }
 
     /** Immutable identity for the current draft, used to detect edits made during later close prompts. */
-    default Object unsavedStateToken() {
+    default @Nullable Object unsavedStateToken() {
         return hasUnsavedChanges() ? Boolean.TRUE : null;
     }
 

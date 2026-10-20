@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The small, safe subset of raw HTML the Markdown preview understands, as pure tokenising and classification.
  *
@@ -26,6 +28,7 @@ final class MarkdownHtml {
 
     /** {@code <name attr="v">}, {@code </name>} ({@code close}) — names and attribute names in lower case. */
     record Tag(String name, boolean close, Map<String, String> attrs) implements Token {
+        @Nullable
         String attr(String key) {
             return attrs.get(key);
         }
@@ -70,7 +73,7 @@ final class MarkdownHtml {
     }
 
     /** The single tag {@code literal} is (an inline HTML node is exactly one), or null for a comment or other. */
-    static Tag tag(String literal) {
+    static @Nullable Tag tag(String literal) {
         List<Token> t = tokens(literal == null ? "" : literal.strip());
         return t.size() == 1 && t.get(0) instanceof Tag tag ? tag : null;
     }
@@ -145,7 +148,7 @@ final class MarkdownHtml {
     }
 
     /** The preview style class an inline formatting tag maps to, or null when the tag carries no style. */
-    static String styleOf(String tag) {
+    static @Nullable String styleOf(String tag) {
         return switch (tag) {
             case "b", "strong" -> "md-bold";
             case "i", "em", "cite", "var" -> "md-italic";
@@ -226,7 +229,7 @@ final class MarkdownHtml {
     }
 
     /** A pixel length attribute ({@code width="60"}, {@code "60px"}), or -1 when absent or not a pixel count. */
-    static double pixels(String value) {
+    static double pixels(@Nullable String value) {
         if (value == null) {
             return -1;
         }

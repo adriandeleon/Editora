@@ -9,6 +9,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.shape.SVGPath;
 
 import com.editora.completion.CompletionIconKind;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Per-kind glyphs for the completion popup (IntelliJ-style icon column). A package-local helper in the
@@ -102,7 +103,7 @@ final class CompletionIcons {
         return boxed(of(path));
     }
 
-    private static Node of(String content) {
+    private static Node of(@Nullable String content) {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("toolbar-icon");

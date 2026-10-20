@@ -1,6 +1,7 @@
 package com.editora.editor;
 
 import com.editora.markdown.MarkdownLint;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -14,7 +15,7 @@ public final class MarkdownLintText {
     private MarkdownLintText() {}
 
     /** The diagnostic's message: its catalog entry, or the producer's own text when it carries no key. */
-    public static String message(MarkdownLint.Diagnostic d) {
+    public static @Nullable String message(MarkdownLint.Diagnostic d) {
         return d.key() == null ? d.message() : tr(d.key());
     }
 

@@ -14,6 +14,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A thin TODO/highlight stripe docked over the editor's vertical scrollbar (beside the LSP
@@ -35,10 +36,10 @@ final class TodoStripe extends Region implements SecondaryPane.Followed {
     private boolean active;
     private boolean redrawPending;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private TodoStripe follower;
+    private @Nullable TodoStripe follower;
 
-    private Tooltip tooltip;
-    private String shownText;
+    private @Nullable Tooltip tooltip;
+    private @Nullable String shownText;
     private IntConsumer onActivate = line -> {};
 
     TodoStripe(CodeArea area) {
@@ -208,7 +209,7 @@ final class TodoStripe extends Region implements SecondaryPane.Followed {
         return Math.max(2.0, h / total);
     }
 
-    private TodoMark hitAt(double localY) {
+    private @Nullable TodoMark hitAt(double localY) {
         int total = area.getParagraphs().size();
         if (total == 0) {
             return null;

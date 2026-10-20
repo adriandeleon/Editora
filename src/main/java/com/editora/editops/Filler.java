@@ -510,7 +510,7 @@ public final class Filler {
      * its wrapped tail starts with. They differ for a list item, whose tail hangs under the item's text
      * instead of becoming a second item.
      */
-    public static String[] proseBreakPrefixes(String line, String lineComment) {
+    public static String[] proseBreakPrefixes(String line, @Nullable String lineComment) {
         String list = listPrefix(line);
         if (list != null && !line.substring(list.length()).isBlank()) {
             return new String[] {list, hangingIndent(list)};
@@ -525,7 +525,7 @@ public final class Filler {
      * the whitespace after it. Pure (the controller supplies {@code lineComment}).
      */
     /** The continuation prefix (leading indent, plus a comment/quote marker for a comment line). */
-    public static String fillPrefix(String firstLine, String lineComment) {
+    public static String fillPrefix(String firstLine, @Nullable String lineComment) {
         int ws = leadingWhitespace(firstLine);
         for (String marker : markers(lineComment)) {
             int after = markerEnd(firstLine, ws, marker);
@@ -554,7 +554,7 @@ public final class Filler {
         return rest;
     }
 
-    private static List<String> markers(String lineComment) {
+    private static List<String> markers(@Nullable String lineComment) {
         List<String> m = new ArrayList<>();
         if (lineComment != null && !lineComment.isBlank()) {
             m.add(lineComment.strip());

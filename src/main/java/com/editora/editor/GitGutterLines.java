@@ -13,6 +13,7 @@ import javafx.beans.property.ReadOnlyBooleanProperty;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One buffer's Git gutter data — change bars, their hunk tooltips and the blame column — looked up by
@@ -33,9 +34,9 @@ public final class GitGutterLines implements LineMarks.Carrier {
     private final CodeArea area;
     private final DiskLineMap map = new DiskLineMap();
     /** Disk line → CSS class; {@code null} when the buffer is not under change tracking. */
-    private Map<Integer, String> bars;
+    private @Nullable Map<Integer, String> bars;
     /** Disk line → hunk text for the bar's tooltip; may be {@code null}. */
-    private Map<Integer, String> tooltips;
+    private @Nullable Map<Integer, String> tooltips;
     /** The changes behind the bars, in file order (empty when unknown): what the hunk commands act on. */
     private List<GitHunk> hunks = List.of();
     /** {@link GitHunk#line()} of each hunk, for a search without boxing. */
@@ -43,13 +44,13 @@ public final class GitGutterLines implements LineMarks.Carrier {
     /** Hunks put back by Revert Hunk: their bars are gone until the buffer and the disk agree again. */
     private final Set<GitHunk> reverted = new HashSet<>();
     /** {@link #marks()}, or {@code null} when it has to be recomputed. */
-    private int[] marks;
+    private int @Nullable [] marks;
     /** A change bar was clicked (area line). */
     private IntConsumer onBarClick = line -> {};
     /** The overview column that draws {@link #marks()}. */
     private final Minimap minimap;
     /** Per disk line; {@code null} = blame off. */
-    private List<BlameInfo> blame;
+    private @Nullable List<BlameInfo> blame;
     /** Document lines hidden above a narrowed region (0 when widened). */
     private int hiddenAbove;
     /** True while narrowing/widening swaps the area's text: that replacement is not an edit. */
@@ -101,6 +102,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
         return bars != null;
     }
 
+    @Nullable
     String barAt(int line) {
         if (bars == null) {
             return null;
@@ -109,6 +111,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
         return !reverted.isEmpty() && reverted.contains(hunkAtDisk(disk)) ? null : bars.get(disk);
     }
 
+    @Nullable
     String tooltipAt(int line) {
         return tooltips == null || barAt(line) == null ? null : tooltips.get(map.diskLine(line + hiddenAbove));
     }
@@ -147,7 +150,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
         return map.lost();
     }
 
-    private GitHunk hunkAtDisk(int disk) {
+    private @Nullable GitHunk hunkAtDisk(int disk) {
         if (disk < 0 || hunkStarts.length == 0) {
             return null;
         }
@@ -161,7 +164,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
     }
 
     /** The change marked on area line {@code line}, or {@code null}. */
-    public GitHunk hunkAt(int line) {
+    public @Nullable GitHunk hunkAt(int line) {
         GitHunk hunk = hunkAtDisk(map.diskLine(line + hiddenAbove));
         return hunk == null || reverted.contains(hunk) ? null : hunk;
     }
@@ -174,7 +177,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
      * its lines was removed or rewritten by an unsaved edit, lines were inserted inside it, or the buffer is
      * narrowed. A caller that edits by this answer must refuse on {@code null} rather than guess.
      */
-    public Span locate(GitHunk hunk) {
+    public @Nullable Span locate(GitHunk hunk) {
         if (hunk == null || map.lost() || hiddenAbove != 0) {
             return null;
         }
@@ -284,17 +287,19 @@ public final class GitGutterLines implements LineMarks.Carrier {
         minimap.gitMarksChanged();
     }
 
+    @Nullable
     List<BlameInfo> blame() {
         return blame;
     }
 
+    @Nullable
     BlameInfo blameAt(int line) {
         int disk = map.diskLine(line + hiddenAbove);
         return blame != null && disk >= 0 && disk < blame.size() ? blame.get(disk) : null;
     }
 
     /** Sets the blame column; returns false when it is what was already showing (no gutter rebuild then). */
-    boolean setBlame(List<BlameInfo> lines) {
+    boolean setBlame(@Nullable List<BlameInfo> lines) {
         List<BlameInfo> next = lines == null || lines.isEmpty() ? null : List.copyOf(lines);
         if (Objects.equals(next, blame)) {
             return false;
@@ -307,11 +312,13 @@ public final class GitGutterLines implements LineMarks.Carrier {
      * Sets the change bars. Returns {@code null} when tracking was switched on or off (the gutter's reserved
      * slot changed: rebuild it), otherwise the buffer lines whose bar may have changed.
      */
-    Set<Integer> setBars(Map<Integer, String> lineClasses, Map<Integer, String> hunkText) {
-        boolean wasTracked = bars != null;
+    @Nullable
+    Set<Integer> setBars(@Nullable Map<Integer, String> lineClasses, @Nullable Map<Integer, String> hunkText) {
+        Map<Integer, String> old = bars;
+        boolean wasTracked = old != null;
         Set<Integer> disk = new HashSet<>();
-        if (wasTracked) {
-            disk.addAll(bars.keySet());
+        if (old != null) {
+            disk.addAll(old.keySet());
         }
         bars = lineClasses;
         tooltips = lineClasses == null ? null : hunkText;
@@ -368,7 +375,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
      *
      * @param split the split view's second area, or {@code null}
      */
-    void edited(List<PlainTextChange> changes, IntConsumer repaintLine, CodeArea split) {
+    void edited(List<PlainTextChange> changes, IntConsumer repaintLine, @Nullable CodeArea split) {
         if (swapping) {
             return;
         }

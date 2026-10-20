@@ -3,6 +3,8 @@ package com.editora.editor;
 import javafx.scene.Node;
 import javafx.scene.layout.BorderPane;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A buffer's encryption: its {@link EncryptionState} (null for an ordinary file), the placeholder the tab shows
  * instead of the editor while the file is locked, and the banner about its encryption (a failed save). The
@@ -17,9 +19,9 @@ public final class BufferEncryption {
     private final Node editor;
     private final Runnable editabilityChanged;
     private final Runnable noticeChanged;
-    private EncryptionState state;
-    private Node lockedView;
-    private Node notice;
+    private @Nullable EncryptionState state;
+    private @Nullable Node lockedView;
+    private @Nullable Node notice;
 
     /**
      * @param outer              the buffer's outermost pane, whose centre is the editor
@@ -35,7 +37,7 @@ public final class BufferEncryption {
     }
 
     /** The file's encryption, or null for an ordinary file. */
-    public EncryptionState state() {
+    public @Nullable EncryptionState state() {
         return state;
     }
 
@@ -69,7 +71,7 @@ public final class BufferEncryption {
         return lockedView != null;
     }
 
-    public Node lockedView() {
+    public @Nullable Node lockedView() {
         return lockedView;
     }
 
@@ -80,7 +82,7 @@ public final class BufferEncryption {
     }
 
     /** The encryption banner while one is shown, else null. */
-    public Node notice() {
+    public @Nullable Node notice() {
         return notice;
     }
 

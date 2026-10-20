@@ -137,8 +137,7 @@ final class CaseFold {
                 return -1; // ran out of text mid-query
             }
             char c = text.charAt(ti);
-            if (expands(c)) {
-                String upper = Table.EXPANSIONS.get(c);
+            if (expands(c) && Table.EXPANSIONS.get(c) instanceof String upper) {
                 if (m - qi < upper.length() || !foldedQuery.startsWith(upper, qi)) {
                     // Too little query left to consume the whole expansion ⇒ the query would end inside this
                     // character, which is not a match on it.

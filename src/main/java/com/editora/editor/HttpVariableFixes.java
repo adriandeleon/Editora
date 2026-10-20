@@ -8,6 +8,7 @@ import javafx.scene.control.MenuItem;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -21,8 +22,8 @@ final class HttpVariableFixes {
     private HttpVariableFixes() {}
 
     /** The fixes for the marks at {@code offset} of {@code view}; empty when there are none (or the marks are off). */
-    static List<CodeAction> at(HttpVariableMarks marks, HttpHooks hooks, CodeArea view, int offset) {
-        if (!marks.enabled()) {
+    static List<CodeAction> at(HttpVariableMarks marks, HttpHooks hooks, @Nullable CodeArea view, int offset) {
+        if (!marks.enabled() || view == null) {
             return List.of();
         }
         var pos = view.offsetToPosition(Math.max(0, Math.min(offset, view.getLength())), TwoDimensional.Bias.Forward);
@@ -34,7 +35,7 @@ final class HttpVariableFixes {
      * The line the squiggle tooltip adds under marks that have a fix — "Right-click: Use environment dev" — so the fix
      * is found from the mark itself; null for other marks.
      */
-    static String hint(HttpVariableMarks marks, HttpHooks hooks, List<MarkdownLint.Diagnostic> hits) {
+    static @Nullable String hint(HttpVariableMarks marks, HttpHooks hooks, List<MarkdownLint.Diagnostic> hits) {
         if (!marks.enabled()) {
             return null;
         }

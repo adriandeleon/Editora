@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import com.editora.markdown.MarkdownLint;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The squiggles under the {@code {{variables}}} of a {@code .http} buffer that cannot resolve. The analysis is
@@ -23,12 +24,12 @@ final class HttpVariableMarks {
     /** Whether Markdown lint, which shares the overlay, still needs it when the marks turn off. */
     private final BooleanSupplier sharedUse;
 
-    private BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> validator;
+    private @Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> validator;
     private boolean enabled;
     /** Bumped on every request and on/off switch: a result for an older one is dropped. */
     private int generation;
     /** The marks last handed to the overlay (null when none are), so switching off can take back only its own. */
-    private List<MarkdownLint.Diagnostic> shown;
+    private @Nullable List<MarkdownLint.Diagnostic> shown;
 
     /**
      * @param overlay  the buffer's (lazily attached) squiggle overlay
@@ -48,7 +49,7 @@ final class HttpVariableMarks {
     }
 
     /** Injects the analysis ({@code accept(text, diagnostics -> …)}); null turns the marks off. */
-    void setValidator(BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> validator) {
+    void setValidator(@Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> validator) {
         this.validator = validator;
         update();
     }

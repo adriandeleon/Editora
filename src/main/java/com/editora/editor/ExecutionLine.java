@@ -11,6 +11,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The debugger's execution-point highlight of one {@link CodeArea}: a paragraph style class on the line
@@ -44,7 +45,7 @@ final class ExecutionLine {
     private int paragraphsThen;
 
     /** The area whose caret is watched, once {@link #set} has run on it (the listener is installed once). */
-    private CodeArea watched;
+    private @Nullable CodeArea watched;
 
     /** The current-line highlight colour to give back when the caret leaves the marked line. */
     private Supplier<? extends Paint> normalFill = () -> Color.TRANSPARENT;

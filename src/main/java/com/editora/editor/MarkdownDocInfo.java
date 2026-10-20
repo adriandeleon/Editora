@@ -16,6 +16,7 @@ import org.commonmark.node.Heading;
 import org.commonmark.node.Node;
 import org.commonmark.node.SoftLineBreak;
 import org.commonmark.node.Text;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure (no-toolkit, unit-tested) facts about a parsed Markdown document that every export states the same
@@ -31,7 +32,7 @@ public final class MarkdownDocInfo {
      * The document's title: the front matter's {@code title:}, else the text of its first level-1 heading,
      * else {@code fallback}.
      */
-    public static String title(Node ast, String fallback) {
+    public static @Nullable String title(Node ast, @Nullable String fallback) {
         String fromFrontMatter = frontMatter(ast, "title");
         if (fromFrontMatter != null) {
             return fromFrontMatter;
@@ -51,7 +52,7 @@ public final class MarkdownDocInfo {
      * The document's language as a BCP 47 tag from the front matter's {@code lang:} / {@code language:}
      * ({@code es}, {@code pt-BR}), or {@code fallback} when there is none or it is not shaped like a tag.
      */
-    public static String language(Node ast, String fallback) {
+    public static @Nullable String language(Node ast, @Nullable String fallback) {
         String lang = frontMatter(ast, "lang");
         if (lang == null) {
             lang = frontMatter(ast, "language");
@@ -64,7 +65,7 @@ public final class MarkdownDocInfo {
     }
 
     /** The first value of front-matter {@code key} (quotes removed), or null when absent or blank. */
-    static String frontMatter(Node ast, String key) {
+    static @Nullable String frontMatter(Node ast, String key) {
         for (Node n = ast.getFirstChild(); n != null; n = n.getNext()) {
             if (!(n instanceof YamlFrontMatterBlock)) {
                 continue;
@@ -110,7 +111,7 @@ public final class MarkdownDocInfo {
      * nothing but one display {@code $$…$$} — or null. Every renderer asks this the same way, so the preview
      * and all exports agree on what is a centred formula and what is a formula in a line of text.
      */
-    public static String blockFormula(Node block) {
+    public static @Nullable String blockFormula(Node block) {
         if (block instanceof MarkdownMath.Block math) {
             return math.isClosed() ? math.getLatex() : null;
         }
@@ -146,7 +147,7 @@ public final class MarkdownDocInfo {
     }
 
     /** The fragment of an in-document link ({@code #Set-Up} → {@code set-up}), or null when it is not one. */
-    public static String fragment(String href) {
+    public static @Nullable String fragment(String href) {
         if (href == null || !href.startsWith("#") || href.length() < 2) {
             return null;
         }

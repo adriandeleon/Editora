@@ -1902,7 +1902,7 @@ public final class MarkdownPdfWriter {
             glyphs.show(cs(), font, size, s, x, y);
         }
 
-        byte[] fetch(String url) {
+        byte @Nullable [] fetch(String url) {
             // The preview's guarded fetcher: internal-address block re-checked per redirect hop, UNC refusal,
             // regular files only, and a byte cap — exporting a document must not reach what previewing refuses.
             return com.editora.editor.PreviewImageLoader.fetchForExport(url, baseDir);

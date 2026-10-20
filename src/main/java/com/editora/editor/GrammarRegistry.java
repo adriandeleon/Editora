@@ -13,6 +13,7 @@ import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.registry.IGrammarSource;
 import org.eclipse.tm4e.core.registry.IRegistryOptions;
 import org.eclipse.tm4e.core.registry.Registry;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Maps file extensions to bundled TextMate grammars and tokenizes through the Eclipse tm4e engine.
@@ -63,7 +64,7 @@ public final class GrammarRegistry {
         languageNameToScope.remove("html-derivative"); // only ever embedded; not a language to pick for a file
         registry = new Registry(new IRegistryOptions() {
             @Override
-            public IGrammarSource getGrammarSource(String scopeName) {
+            public @Nullable IGrammarSource getGrammarSource(String scopeName) {
                 String resource = scopeToResource.get(scopeName);
                 if (resource == null) {
                     return null;
@@ -78,7 +79,7 @@ public final class GrammarRegistry {
     }
 
     /** The grammar for {@code fileName}'s extension, or {@code null} if none is bundled. */
-    public IGrammar forFileName(String fileName) {
+    public @Nullable IGrammar forFileName(String fileName) {
         String scope = scopeForFileName(fileName);
         return scope == null ? null : grammarForScope(scope);
     }
@@ -93,7 +94,7 @@ public final class GrammarRegistry {
      * Oniguruma compile. Returns {@code null} when not bundled <em>or</em> not yet loaded, so a caller can
      * apply a cached grammar instantly and otherwise load it off-thread (see {@code hasGrammarFor}).
      */
-    public IGrammar cachedForFileName(String fileName) {
+    public @Nullable IGrammar cachedForFileName(String fileName) {
         String scope = scopeForFileName(fileName);
         return scope == null ? null : grammarCache.get(scope);
     }
@@ -102,7 +103,7 @@ public final class GrammarRegistry {
      * The grammar for a language name (e.g. {@code "java"}, as produced by {@link LanguageRegistry}),
      * or {@code null} if no grammar is bundled for it.
      */
-    public IGrammar forLanguageName(String name) {
+    public @Nullable IGrammar forLanguageName(String name) {
         if (name == null) {
             return null;
         }
@@ -131,7 +132,7 @@ public final class GrammarRegistry {
         return names;
     }
 
-    private IGrammar grammarForScope(String scope) {
+    private @Nullable IGrammar grammarForScope(String scope) {
         IGrammar cached = grammarCache.get(scope);
         if (cached != null || failedScopes.contains(scope)) {
             return cached;
@@ -155,7 +156,7 @@ public final class GrammarRegistry {
         }
     }
 
-    private String scopeForFileName(String fileName) {
+    private @Nullable String scopeForFileName(String fileName) {
         if (fileName == null) {
             return null;
         }

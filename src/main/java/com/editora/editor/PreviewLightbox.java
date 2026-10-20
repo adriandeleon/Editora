@@ -11,6 +11,8 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Popup;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A picture of the Markdown preview shown enlarged over the app's window: dimmed backdrop, the image as large
  * as the window allows (a small one is magnified, at most {@link #MAX_MAGNIFICATION} times). Esc, a click
@@ -29,7 +31,7 @@ final class PreviewLightbox {
     private PreviewLightbox() {}
 
     /** The loaded image inside {@code picture} (an image's slot, a diagram's host), or null if none is. */
-    static Image imageOf(Node picture) {
+    static @Nullable Image imageOf(@Nullable Node picture) {
         if (picture instanceof ImageView iv) {
             Image image = iv.getImage();
             return image == null || image.isError() || image.getWidth() <= 0 ? null : image;

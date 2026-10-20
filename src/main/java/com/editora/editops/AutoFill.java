@@ -37,7 +37,7 @@ public final class AutoFill {
      * {@code 1. item}) wraps <em>under its text</em> — repeating the marker would turn the wrapped tail into
      * a second item.
      */
-    public static @Nullable Break computeProse(String lineText, int fillColumn, String lineComment) {
+    public static @Nullable Break computeProse(String lineText, int fillColumn, @Nullable String lineComment) {
         if (lineText == null) {
             return null;
         }

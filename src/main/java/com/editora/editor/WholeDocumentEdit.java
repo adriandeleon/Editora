@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The smallest single replacement that turns one document text into another: the span between their common
  * prefix and common suffix.
@@ -20,7 +22,7 @@ record WholeDocumentEdit(int start, int end, String replacement) {
      * never starts or ends inside a surrogate pair or between a {@code \r} and its {@code \n}, so applying it
      * can neither create a lone surrogate nor turn one line break into two.
      */
-    static WholeDocumentEdit between(String current, String next) {
+    static @Nullable WholeDocumentEdit between(String current, String next) {
         int currentLength = current.length();
         int nextLength = next.length();
         int limit = Math.min(currentLength, nextLength);

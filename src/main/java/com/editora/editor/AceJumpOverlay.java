@@ -17,6 +17,7 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * AceJump (avy-goto-char): press the trigger, type a character, and a short label is drawn over every
@@ -45,7 +46,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view; a jump started while that view has focus runs there. */
-    private AceJumpOverlay follower;
+    private @Nullable AceJumpOverlay follower;
 
     AceJumpOverlay(CodeArea area) {
         this.area = area;
@@ -341,7 +342,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
      * measured instead, and an empty last line takes its row from the paragraph and its x from the text's
      * left edge.
      */
-    private Bounds labelBounds(int at) {
+    private @Nullable Bounds labelBounds(int at) {
         if (at < area.getLength()) {
             return toLocal(area.getCharacterBoundsOnScreen(at, at + 1).orElse(null));
         }
@@ -376,7 +377,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
         return Double.NaN;
     }
 
-    private Bounds toLocal(Bounds screen) {
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

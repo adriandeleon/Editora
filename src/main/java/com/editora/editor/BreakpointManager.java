@@ -10,6 +10,7 @@ import com.editora.config.Breakpoint;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Tracks the breakpoints of a single {@link CodeArea}, keyed by 0-based line. Mirrors
@@ -38,7 +39,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
     /** A marked line's text changed since the last {@link #snapshot()} (reported once, not per keystroke). */
     private boolean textStale;
     /** While narrowed, the breakpoints outside the region (in whole-document lines); {@code null} otherwise. */
-    private LineMarks.Held<Breakpoint> held;
+    private LineMarks.@Nullable Held<Breakpoint> held;
 
     private static final LineMarks.Kind<Breakpoint> KIND = new LineMarks.Kind<>() {
         @Override
@@ -69,7 +70,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
 
     /** Notified after any change (toggle/edit-driven shift) for persistence + live re-send to a session. */
     /** See {@link #setLive}. */
-    private java.util.Map<Integer, Live> live;
+    private java.util.@Nullable Map<Integer, Live> live;
 
     public void setOnChanged(Runnable onChanged) {
         this.onChanged = onChanged == null ? () -> {} : onChanged;
@@ -111,7 +112,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
     }
 
     /** The live-session state of the breakpoint on (view) {@code line}; null with no session or none to tell. */
-    public Live live(int line) {
+    public @Nullable Live live(int line) {
         Breakpoint bp = byLine.get(line);
         if (live == null || bp == null || !bp.enabled()) {
             return null; // a disabled breakpoint is never sent to the adapter
@@ -123,7 +124,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
     private static final Live UNANSWERED = new Live(LiveState.PENDING, "");
 
     /** While Mute Breakpoints is on: the line every glyph's hover starts with; null when not muted. */
-    private String mutedText;
+    private @Nullable String mutedText;
 
     /**
      * Mute Breakpoints turned on ({@code hoverText}: what each glyph's hover says first) or off ({@code null}):
@@ -146,7 +147,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
      * the {@code breakpoint-} prefix: its kind (disabled / logpoint / conditional) and, while a session is
      * live, {@code unverified} or {@code unverified rejected}. Null for a plain breakpoint.
      */
-    public String styleClasses(int line) {
+    public @Nullable String styleClasses(int line) {
         Breakpoint bp = byLine.get(line);
         if (bp == null) {
             return null;
@@ -167,7 +168,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
 
     /** The hover text of the breakpoint on {@code line}: its condition / log message / hit count / disabled state
      *  and what the debug session says about it; null for a plain breakpoint the session has nothing to say on. */
-    public String tooltip(int line) {
+    public @Nullable String tooltip(int line) {
         Live state = live(line);
         String text = BreakpointDescription.tooltip(byLine.get(line), state == null ? null : state.tooltip());
         if (mutedText == null || !byLine.containsKey(line)) {
@@ -216,7 +217,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
         return true;
     }
 
-    public Breakpoint get(int line) {
+    public @Nullable Breakpoint get(int line) {
         return byLine.get(line);
     }
 
@@ -603,7 +604,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
      * added, or {@code null} when nothing came back. Typing never matches — the inserted text itself must
      * hold the whole line, which only an undo, a redo or a paste does.
      */
-    private NavigableMap<Integer, Breakpoint> revive(
+    private @Nullable NavigableMap<Integer, Breakpoint> revive(
             NavigableMap<Integer, Breakpoint> marks, List<PlainTextChange> changes) {
         if (dropped.isEmpty() || changes.size() != 1) {
             return null;

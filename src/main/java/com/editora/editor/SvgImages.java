@@ -16,6 +16,7 @@ import com.editora.i18n.Messages;
 import com.github.weisj.jsvg.SVGDocument;
 import com.github.weisj.jsvg.ui.jfx.FXSVGCanvas;
 import com.github.weisj.jsvg.view.ViewBox;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders standalone {@code .svg} files to JavaFX nodes for the 3-mode preview, asynchronously — the
@@ -42,7 +43,12 @@ import com.github.weisj.jsvg.view.ViewBox;
  */
 public final class SvgImages {
 
-    record Cached(SVGDocument document, double width, double height, String error, int sourceChars) {
+    record Cached(
+            @Nullable SVGDocument document,
+            double width,
+            double height,
+            @Nullable String error,
+            int sourceChars) {
 
         /** Estimated heap the parsed document holds (nodes, attributes, path data), per character of source. */
         long weight() {
@@ -119,7 +125,7 @@ public final class SvgImages {
     }
 
     /** A parsed document plus the size to draw it at, or the error to show instead. */
-    static Cached cachedFor(SVGDocument doc, int sourceChars) {
+    static Cached cachedFor(@Nullable SVGDocument doc, int sourceChars) {
         if (doc == null) {
             return new Cached(null, 0, 0, Messages.tr("svg.renderFailed"), sourceChars);
         }
@@ -184,7 +190,7 @@ public final class SvgImages {
         return label;
     }
 
-    private static Label errorNode(String message) {
+    private static Label errorNode(@Nullable String message) {
         Label label = new Label(message == null || message.isBlank() ? Messages.tr("svg.renderFailed") : message);
         label.getStyleClass().add("svg-error");
         label.setWrapText(true);

@@ -264,7 +264,7 @@ public record InlineRun(
      * display {@code $$…$$} — its LaTeX; else null (so the caller renders it as a normal paragraph). The
      * rule every renderer shares: {@link MarkdownDocInfo#blockFormula}.
      */
-    public static String soleDisplayMath(Node block) {
+    public static @Nullable String soleDisplayMath(Node block) {
         return MarkdownDocInfo.blockFormula(block);
     }
 

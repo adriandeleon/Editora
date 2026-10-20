@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -19,7 +21,7 @@ final class HttpGutter {
     /** The request (index in file order) whose ▶ shows as running — a ■ that cancels it; -1 = none. */
     private int runningIndex = -1;
     /** The running request's method/URL line as it read when the run started: the ■ follows it. */
-    private String runningText;
+    private @Nullable String runningText;
     /** …and the lines after it (its headers), to tell it from another request to the same URL. */
     private List<String> runningBlock = List.of();
 
@@ -118,6 +120,7 @@ final class HttpGutter {
     }
 
     /** {@link #tooltip(int)} for the glyph drawn on {@code line}, which may be a folded request's. */
+    @Nullable
     String tooltip(int line, IntPredicate hidden) {
         int r = requestLineAt(line, hidden);
         return r < 0 ? null : tooltip(r);
@@ -132,6 +135,7 @@ final class HttpGutter {
     }
 
     /** The hover text of the glyph on {@code line}: "cancel" on the ■, the run tooltip on a ▶, else null. */
+    @Nullable
     String tooltip(int line) {
         if (line == runningLine()) {
             return tr("editmenu.cancelHttpRequest.tip");

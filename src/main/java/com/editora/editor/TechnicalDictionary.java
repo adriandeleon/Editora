@@ -9,6 +9,8 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The bundled technical-terms dictionary: common programming / web / data / devops words that standard
  * prose dictionaries flag as misspellings (e.g. {@code config}, {@code async}, {@code middleware},
@@ -24,7 +26,7 @@ public final class TechnicalDictionary {
 
     private static final String RESOURCE = "/com/editora/dictionaries/technical.txt";
 
-    private static volatile Set<String> words; // lazily loaded, immutable once set
+    private static volatile @Nullable Set<String> words; // lazily loaded, immutable once set
 
     private TechnicalDictionary() {}
 

@@ -7,6 +7,8 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.shape.Rectangle;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Hosts one block that must keep its own width — a table with many columns, a code listing — and scrolls it
  * sideways when the Markdown column is narrower, instead of squeezing it.
@@ -25,7 +27,7 @@ final class SideScroll extends Region {
     private final Region child;
     /** Created the first time the child does not fit: most blocks never need one, and a scrollbar is a
      *  control with a skin of its own — thousands of them were a visible share of a long document's build. */
-    private ScrollBar bar;
+    private @Nullable ScrollBar bar;
 
     private final Rectangle clip = new Rectangle();
 
@@ -36,8 +38,9 @@ final class SideScroll extends Region {
         setClip(clip);
         addEventHandler(ScrollEvent.SCROLL, e -> {
             double dx = e.getDeltaX() != 0 ? e.getDeltaX() : (e.isShiftDown() ? e.getDeltaY() : 0);
-            if (dx != 0 && overflows()) {
-                bar.setValue(Math.max(0, Math.min(bar.getMax(), bar.getValue() - dx)));
+            ScrollBar b = bar;
+            if (dx != 0 && b != null && overflows()) {
+                b.setValue(Math.max(0, Math.min(b.getMax(), b.getValue() - dx)));
                 e.consume(); // a vertical wheel is not consumed: it scrolls the document
             }
         });

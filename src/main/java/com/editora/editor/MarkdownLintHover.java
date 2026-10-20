@@ -10,6 +10,7 @@ import javafx.scene.input.MouseEvent;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Shows the lint message(s) in a tooltip while the pointer is over a squiggled span — the overlay itself is
@@ -21,16 +22,16 @@ final class MarkdownLintHover {
     /** The overlay to read, or null while linting is off for the buffer. */
     private final Supplier<MarkdownLintOverlay> overlay;
     /** A line under the messages for the marks hovered (how to fix them), or null for none. */
-    private final Function<List<MarkdownLint.Diagnostic>, String> footer;
+    private final Function<List<MarkdownLint.Diagnostic>, @Nullable String> footer;
 
-    private Tooltip tooltip;
+    private @Nullable Tooltip tooltip;
     /** Text currently shown — skips a re-{@code show()} (flicker) on each pointer move. */
-    private String shown;
+    private @Nullable String shown;
 
     private MarkdownLintHover(
             CodeArea area,
             Supplier<MarkdownLintOverlay> overlay,
-            Function<List<MarkdownLint.Diagnostic>, String> footer) {
+            @Nullable Function<List<MarkdownLint.Diagnostic>, @Nullable String> footer) {
         this.area = area;
         this.overlay = overlay;
         this.footer = footer == null ? hits -> null : footer;
@@ -44,7 +45,7 @@ final class MarkdownLintHover {
     static void install(
             CodeArea area,
             Supplier<MarkdownLintOverlay> overlay,
-            Function<List<MarkdownLint.Diagnostic>, String> footer) {
+            @Nullable Function<List<MarkdownLint.Diagnostic>, @Nullable String> footer) {
         MarkdownLintHover hover = new MarkdownLintHover(area, overlay, footer);
         area.addEventHandler(MouseEvent.MOUSE_MOVED, hover::onMove);
         area.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hover.hide());

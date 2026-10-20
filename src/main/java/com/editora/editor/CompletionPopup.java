@@ -22,6 +22,7 @@ import javafx.stage.Window;
 
 import com.editora.completion.Completion;
 import com.editora.completion.MatchHighlighter;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The autocomplete dropdown: a <b>focus-less</b> {@link Popup} holding a {@link ListView} of
@@ -216,7 +217,7 @@ public final class CompletionPopup {
     }
 
     /** The popup's on-screen bounds (for positioning the doc popup beside it), or null when hidden. */
-    public Bounds screenBounds() {
+    public @Nullable Bounds screenBounds() {
         if (!popup.isShowing()) {
             return null;
         }
@@ -270,7 +271,7 @@ public final class CompletionPopup {
         private final TextFlow label = new TextFlow();
         private final Label detail = new Label();
         private final HBox row;
-        private Node iconHolder;
+        private @Nullable Node iconHolder;
 
         CompletionCell() {
             getStyleClass().add("completion-cell");

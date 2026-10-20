@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A language-server diagnostic as a flat, range-based value the editor surface can render — independent
  * of LSP4J types (the {@code com.editora.lsp} layer maps LSP {@code Diagnostic}s into these). Positions
@@ -13,9 +15,9 @@ public record LspDiagnostic(
         int endCol,
         Severity severity,
         String message,
-        String code,
+        @Nullable String code,
         String source,
-        String href,
+        @Nullable String href,
         boolean unnecessary,
         boolean deprecated) {
 

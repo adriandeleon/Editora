@@ -11,6 +11,8 @@ import javafx.stage.Popup;
 import javafx.stage.Screen;
 import javafx.stage.Window;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * IntelliJ's "quick documentation" panel for completion: a focus-less {@link Popup} shown <b>beside</b> the
  * completion list (to its right, flipping left at the screen edge). It renders the selected item's
@@ -68,7 +70,7 @@ final class CompletionDocPopup {
      * right, or flipped to its left when it would overflow the screen's visible bounds. Hides when there
      * is nothing to show.
      */
-    void show(Window owner, Bounds listBounds, String signature, Node docNode) {
+    void show(Window owner, Bounds listBounds, String signature, @Nullable Node docNode) {
         boolean hasSig = signature != null && !signature.isBlank();
         if (owner == null || listBounds == null || (!hasSig && docNode == null)) {
             hide();

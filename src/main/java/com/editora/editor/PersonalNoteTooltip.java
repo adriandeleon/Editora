@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import javafx.scene.control.Tooltip;
 
+import org.jspecify.annotations.Nullable;
+
 /** Creates the shared pale-paper popup shell used by Personal Note previews. */
 public final class PersonalNoteTooltip {
 
@@ -11,7 +13,7 @@ public final class PersonalNoteTooltip {
         return create(null);
     }
 
-    public static Tooltip create(String text) {
+    public static Tooltip create(@Nullable String text) {
         Tooltip tooltip = text == null ? new Tooltip() : new Tooltip(text);
         tooltip.getStyleClass().add("personal-note-tooltip");
         // Tooltip owns a separate popup scene and may replace it when first shown, so an author stylesheet

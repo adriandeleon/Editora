@@ -9,6 +9,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The selected part of a preview as an HTML fragment, read off the rendered nodes: what is bold, a link, code,
  * a heading, a list item or a table cell in the preview is that in the fragment. Used for a selection that
@@ -100,7 +102,7 @@ final class PreviewSelectionHtml {
     }
 
     /** "ul" or "ol" when {@code leaf} is the text of a list item, else null. */
-    private static String listOf(Node leaf) {
+    private static @Nullable String listOf(Node leaf) {
         for (Node n = leaf.getParent(); n != null; n = n.getParent()) {
             if (n.getStyleClass().contains("md-list-item") && n instanceof javafx.scene.Parent item) {
                 for (Node child : item.getChildrenUnmodifiable()) {

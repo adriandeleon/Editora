@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 import javafx.application.Platform;
 
 import com.editora.markdown.MarkdownLint;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs the pure {@link MarkdownLint} off the FX thread and posts results back via
@@ -78,7 +79,7 @@ public final class MarkdownLintService {
             String source,
             java.util.Set<String> disabled,
             com.editora.markdown.MarkdownLintOptions options,
-            MarkdownLint.LinkTargets targets,
+            MarkdownLint.@Nullable LinkTargets targets,
             Consumer<List<MarkdownLint.Diagnostic>> onResult) {
         Object key = requester == null ? this : requester;
         long mine = gen.incrementAndGet();

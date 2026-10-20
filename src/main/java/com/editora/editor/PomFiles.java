@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What makes an XML buffer a Maven pom for the editor's purposes (the summary preview, pom snippets, the
  * pom-aware outline): a file named {@code pom.xml} or {@code *.pom}, or any XML whose head carries a
@@ -16,7 +18,7 @@ public final class PomFiles {
 
     private PomFiles() {}
 
-    static boolean isPom(String fileName, String head) {
+    static boolean isPom(@Nullable String fileName, String head) {
         if (fileName != null && ("pom.xml".equalsIgnoreCase(fileName) || fileName.endsWith(".pom"))) {
             return true;
         }

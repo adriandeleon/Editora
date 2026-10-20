@@ -14,6 +14,8 @@ import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One HTTP(S) GET to an address that has already been chosen.
  *
@@ -33,7 +35,7 @@ final class PinnedHttp {
     private PinnedHttp() {}
 
     /** A response: {@code location} for a 3xx, {@code body} otherwise (null when over the byte cap). */
-    record Response(int status, String location, byte[] body) {}
+    record Response(int status, @Nullable String location, byte @Nullable [] body) {}
 
     /**
      * Fetches {@code uri} from {@code address}. Throws on anything that is not a well-formed HTTP response,

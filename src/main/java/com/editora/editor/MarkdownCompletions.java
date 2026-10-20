@@ -23,6 +23,7 @@ import com.editora.markdown.MarkdownCompletionContext.Context;
 import com.editora.markdown.MarkdownCompletionContext.Kind;
 import com.editora.markdown.MarkdownLinkAt;
 import com.editora.markdown.WikiTargets;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What a Markdown buffer offers where a dictionary word is the wrong suggestion: files and folders for a
@@ -88,7 +89,7 @@ public final class MarkdownCompletions implements CompletionProvider {
     }
 
     /** {@code base}, able to answer {@link #offer} for the document saved at {@code documentPath} (null: unsaved). */
-    public static CompletionProvider provider(CompletionProvider base, Supplier<Path> documentPath) {
+    public static @Nullable CompletionProvider provider(CompletionProvider base, Supplier<Path> documentPath) {
         return base == null ? null : new MarkdownCompletions(base, documentPath);
     }
 
@@ -104,7 +105,8 @@ public final class MarkdownCompletions implements CompletionProvider {
      *
      * @param identifier the identifier run before the caret (for Mermaid keywords)
      */
-    public Offer offer(String document, int line, int column, String identifier, String dictLang, boolean manual) {
+    public @Nullable Offer offer(
+            String document, int line, int column, String identifier, String dictLang, boolean manual) {
         MarkdownBlocks blocks = MarkdownBlocks.scan(document);
         if (line < 0 || line >= blocks.lineCount()) {
             return null;
@@ -139,7 +141,7 @@ public final class MarkdownCompletions implements CompletionProvider {
         return items.isEmpty() ? null : new Offer(ctx.start(), ctx.partial(), items);
     }
 
-    private static Completion row(String label, String insert, String detail, CompletionIconKind icon) {
+    private static Completion row(String label, String insert, @Nullable String detail, CompletionIconKind icon) {
         return Completion.lsp(label, insert, detail, null, icon, null, false, false, null);
     }
 
@@ -221,7 +223,7 @@ public final class MarkdownCompletions implements CompletionProvider {
     }
 
     /** The folder relative targets resolve against: the saved document's, on the local file system only. */
-    private Path documentDir() {
+    private @Nullable Path documentDir() {
         Path doc = documentPath.get();
         if (doc == null || doc.getFileSystem() != FileSystems.getDefault()) {
             return null;

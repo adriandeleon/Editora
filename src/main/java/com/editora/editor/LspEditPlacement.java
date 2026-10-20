@@ -1,6 +1,7 @@
 package com.editora.editor;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /** Resolves LSP text edits to document ranges and applies them; the pure-ish half of {@link EditorBuffer}'s LSP edits. */
 final class LspEditPlacement {
@@ -14,7 +15,7 @@ final class LspEditPlacement {
      * an edit that cannot be placed is left out. Strict: one such edit makes the whole set unplaceable and
      * the result is {@code null}.
      */
-    static Placement place(CodeArea a, java.util.List<LspTextEdit> edits, boolean strict) {
+    static @Nullable Placement place(CodeArea a, java.util.List<LspTextEdit> edits, boolean strict) {
         int len = a.getLength();
         int lineCount = a.getParagraphs().size();
         java.util.List<int[]> ranges = new java.util.ArrayList<>(); // {start, end}
@@ -104,7 +105,7 @@ final class LspEditPlacement {
     /** Puts the caret back where it was, translated across the edits just applied; see {@code LspEditShift}. */
     private static void restoreCaretAfterEdits(
             CodeArea a,
-            LspEditView.Before view,
+            LspEditView.@Nullable Before view,
             int caretBefore,
             int anchorBefore,
             java.util.List<int[]> ranges,

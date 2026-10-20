@@ -632,7 +632,8 @@ class EditorInteractionFxTest {
             Stage stage = EditorFx.show(mermaid, 600, 300);
             mermaid.setMermaidLintEnabled(true);
             mermaid.getArea().fireEvent(mouseAt(mermaid, 2, false, false));
-            Tooltip tip = EditorFx.field(mermaid, "lintTooltip");
+            Tooltip tip = MermaidLintHover.tooltipOf(mermaid.getArea());
+
             assertNotNull(tip, "hovering the squiggle shows a tooltip");
             assertTrue(tip.isShowing());
             assertEquals("Unknown diagram type\nSecond problem", tip.getText());

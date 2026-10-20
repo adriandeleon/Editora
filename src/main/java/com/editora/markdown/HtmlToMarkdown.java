@@ -144,7 +144,7 @@ public final class HtmlToMarkdown {
     }
 
     /** Whether plain text already reads as Markdown, so that it — not a conversion of the HTML — is pasted. */
-    public static boolean looksLikeMarkdown(String plain) {
+    public static boolean looksLikeMarkdown(@Nullable String plain) {
         return plain != null
                 && Pattern.compile(
                                 "(?m)^#{1,6} \\S|^\\s*(?:[-*+]|\\d+[.)]) \\S|\\]\\([^)\\s]+\\)|^\\|.*\\|\\s*$|^```|\\*\\*\\S[^*]*\\*\\*")

@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Which lines hold no code a debugger could stop on: blank lines and lines that are only a comment. A breakpoint
  * there was accepted, and java-debug even reported it verified, yet it never stopped (B8) — IntelliJ and NetBeans
@@ -54,7 +56,7 @@ public final class CodeLessLines {
      * Scans one line from the given state; returns {inBlockComment, inTextBlock} at its end. When {@code code}
      * is given, sets it if any character outside a comment is not whitespace.
      */
-    private static int[] scan(String s, boolean inBlock, boolean inTextBlock, boolean[] code) {
+    private static int[] scan(String s, boolean inBlock, boolean inTextBlock, boolean @Nullable [] code) {
         int i = 0;
         int n = s.length();
         while (i < n) {

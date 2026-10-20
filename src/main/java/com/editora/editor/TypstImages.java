@@ -24,6 +24,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.i18n.Messages;
 import com.editora.typst.TypstRenderer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders Typst documents to JavaFX nodes for the 3-mode preview, asynchronously and <b>multi-page</b>. The
@@ -46,8 +47,8 @@ public final class TypstImages {
     record Loaded(Image image, double logicalWidth) {}
 
     /** {@code more} = pages beyond the display cap that were not rendered into the preview (0 = all shown). */
-    record Cached(List<Loaded> pages, String error, int more, long at) {
-        Cached(List<Loaded> pages, String error, int more) {
+    record Cached(@Nullable List<Loaded> pages, @Nullable String error, int more, long at) {
+        Cached(@Nullable List<Loaded> pages, @Nullable String error, int more) {
             this(pages, error, more, System.currentTimeMillis());
         }
 
@@ -123,7 +124,7 @@ public final class TypstImages {
      * source, hence a new entry, and only the newest can be shown again — and both maps are then bounded by
      * pages and by decoded bytes, never evicting what was just stored.
      */
-    static void store(String key, Cached result, String retainKey, String surfaceKey) {
+    static void store(String key, Cached result, String retainKey, @Nullable String surfaceKey) {
         String replaced = NEWEST.record(surfaceKey, key);
         if (replaced != null) {
             CACHE.remove(replaced);
@@ -142,7 +143,7 @@ public final class TypstImages {
         }
     }
 
-    private static long footprint(List<Loaded> pages) {
+    private static long footprint(@Nullable List<Loaded> pages) {
         long bytes = 0;
         if (pages != null) {
             for (Loaded page : pages) {
@@ -240,10 +241,10 @@ public final class TypstImages {
             String source,
             DoubleUnaryOperator sizer,
             String retainKey,
-            String surfaceKey,
-            Path fileDir,
-            Path root,
-            String displayName) {
+            @Nullable String surfaceKey,
+            @Nullable Path fileDir,
+            @Nullable Path root,
+            @Nullable String displayName) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-diagram");
         fill(host, source, sizer, retainKey, surfaceKey, fileDir, root, displayName);
@@ -255,10 +256,10 @@ public final class TypstImages {
             String source,
             DoubleUnaryOperator sizer,
             String retainKey,
-            String surfaceKey,
-            Path fileDir,
-            Path root,
-            String displayName) {
+            @Nullable String surfaceKey,
+            @Nullable Path fileDir,
+            @Nullable Path root,
+            @Nullable String displayName) {
         String key = key(source, fileDir, root);
         Cached hit = CACHE.get(key);
         if (hit != null && hit.expired()) {
@@ -315,13 +316,14 @@ public final class TypstImages {
         });
     }
 
-    static boolean superseded(String surfaceKey, long gen, Long latest) {
+    static boolean superseded(String surfaceKey, long gen, @Nullable Long latest) {
         return surfaceKey != null && latest != null && latest.longValue() != gen;
     }
 
     private static void applyCached(StackPane host, Cached c, DoubleUnaryOperator sizer, String retainKey) {
-        if (c.ok()) {
-            host.getChildren().setAll(pagesColumn(c.pages(), sizer, null, c.more()));
+        List<Loaded> pages = c.pages();
+        if (pages != null && c.ok()) {
+            host.getChildren().setAll(pagesColumn(pages, sizer, null, c.more()));
             return;
         }
         List<Loaded> retained = LAST_GOOD.get(retainKey);
@@ -333,7 +335,7 @@ public final class TypstImages {
         }
     }
 
-    private static VBox pagesColumn(List<Loaded> pages, DoubleUnaryOperator sizer, String error, int more) {
+    private static VBox pagesColumn(List<Loaded> pages, DoubleUnaryOperator sizer, @Nullable String error, int more) {
         VBox column = new VBox(12);
         column.getStyleClass().add("typst-pages");
         if (error != null) {
@@ -369,7 +371,7 @@ public final class TypstImages {
         return label;
     }
 
-    private static Label errorNode(String message) {
+    private static Label errorNode(@Nullable String message) {
         Label label = new Label(banner(message));
         label.getStyleClass().add("diagram-error");
         label.setWrapText(true);
@@ -377,7 +379,7 @@ public final class TypstImages {
         return label;
     }
 
-    private static String banner(String message) {
+    private static String banner(@Nullable String message) {
         return message == null || message.isBlank()
                 ? Messages.tr("typst.renderFailed")
                 : Messages.tr("typst.renderFailed") + "\n" + message.strip();
@@ -392,7 +394,7 @@ public final class TypstImages {
      * same boilerplate {@code main.typ} in two projects, each with its own {@code conf.typ}) served each
      * other's render.
      */
-    private static String key(String source, Path fileDir, Path root) {
+    private static String key(String source, @Nullable Path fileDir, @Nullable Path root) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             md.update(source.getBytes(StandardCharsets.UTF_8));

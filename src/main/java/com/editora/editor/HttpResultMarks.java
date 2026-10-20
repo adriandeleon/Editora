@@ -22,6 +22,7 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.Inlay;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The results drawn after the method/URL lines of a {@code .http} buffer (U11), as inlays after the line's last
@@ -51,10 +52,10 @@ final class HttpResultMarks {
     /** A batch of changes moved lines in ways not replayed here: the next scan finds the lines by their text. */
     private boolean lost;
 
-    private Tooltip tooltip;
+    private @Nullable Tooltip tooltip;
     private int hoveredLine = -1;
     private final List<Node> hovered = new ArrayList<>(3);
-    private Cursor cursorBefore;
+    private @Nullable Cursor cursorBefore;
 
     boolean isEmpty() {
         return byLine.isEmpty();
@@ -63,13 +64,15 @@ final class HttpResultMarks {
     /** The results, by line, as drawn now. */
     List<HttpLineResult> all() {
         List<HttpLineResult> out = new ArrayList<>();
-        byLine.keySet().stream().sorted().forEach(line -> {
-            HttpLineResult r = byLine.get(line);
+        byLine.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(e -> {
+            int line = e.getKey();
+            HttpLineResult r = e.getValue();
             out.add(line == r.line() ? r : withLine(r, line));
         });
         return out;
     }
 
+    @Nullable
     HttpLineResult at(int line) {
         return byLine.get(line);
     }
@@ -78,6 +81,7 @@ final class HttpResultMarks {
      * Takes new results — each kept only when its line reads {@code anchor} now — and returns the lines whose look
      * changed (to repaint their gutter rows), or null when nothing that is drawn changed.
      */
+    @Nullable
     Set<Integer> set(List<HttpLineResult> results, IntFunction<String> textOf) {
         Map<Integer, HttpLineResult> next = new HashMap<>();
         if (results != null) {
@@ -132,6 +136,7 @@ final class HttpResultMarks {
      * After a Run scan: keeps each result whose line is still a request line reading as it did, else drops it.
      * Returns the lines whose look changed, or null.
      */
+    @Nullable
     Set<Integer> reanchor(List<Integer> requestLines, IntFunction<String> textOf) {
         if (byLine.isEmpty()) {
             lost = false;
@@ -193,6 +198,7 @@ final class HttpResultMarks {
     }
 
     /** The class {@code line}'s ▶ takes, or null. */
+    @Nullable
     String glyphClass(int line) {
         HttpLineResult r = byLine.isEmpty() ? null : byLine.get(line);
         return r == null ? null : r.glyphClass();
@@ -202,7 +208,8 @@ final class HttpResultMarks {
      * {@code base} (the line's other inlays, may be null) followed by its result, drawn at {@code column} — the end of
      * the line. {@code base} itself when the line has none.
      */
-    List<Inlay> inlays(int line, List<Inlay> base, int column) {
+    @Nullable
+    List<Inlay> inlays(int line, @Nullable List<Inlay> base, int column) {
         HttpLineResult r = byLine.isEmpty() ? null : byLine.get(line);
         if (r == null) {
             return base;
@@ -263,7 +270,7 @@ final class HttpResultMarks {
     }
 
     /** The result label under the pointer on {@code line}, or null. Looks only on a line that has a result. */
-    private Node resultNodeAt(CodeArea a, MouseEvent e, int line) {
+    private @Nullable Node resultNodeAt(CodeArea a, MouseEvent e, int line) {
         if (line < 0 || !byLine.containsKey(line)) {
             return null;
         }
@@ -290,7 +297,7 @@ final class HttpResultMarks {
         return false;
     }
 
-    private void hover(CodeArea a, int line, Node node, MouseEvent e) {
+    private void hover(CodeArea a, int line, @Nullable Node node, MouseEvent e) {
         if (line == hoveredLine) {
             return;
         }

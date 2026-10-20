@@ -1,6 +1,7 @@
 package com.editora.editor;
 
 import com.editora.editorconfig.EditorConfigTransform;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Line-ending bookkeeping for a document whose in-memory text always uses bare {@code \n}.
@@ -24,7 +25,7 @@ public final class LineEndings {
     }
 
     /** The label for an EditorConfig {@code end_of_line} value ({@code lf}/{@code crlf}/{@code cr}), else null. */
-    public static String labelOf(String editorConfigEol) {
+    public static @Nullable String labelOf(@Nullable String editorConfigEol) {
         return switch (editorConfigEol == null ? "" : editorConfigEol) {
             case "lf" -> LF;
             case "crlf" -> CRLF;

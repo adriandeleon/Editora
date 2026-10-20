@@ -14,6 +14,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A thin Markdown-lint overview stripe docked over the editor's vertical scrollbar (beside the TODO
@@ -39,10 +40,10 @@ final class MarkdownLintStripe extends Region implements SecondaryPane.Followed 
     private boolean active;
     private boolean redrawPending;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private MarkdownLintStripe follower;
+    private @Nullable MarkdownLintStripe follower;
 
-    private Tooltip tooltip;
-    private String shownText;
+    private @Nullable Tooltip tooltip;
+    private @Nullable String shownText;
     private IntConsumer onActivate = line -> {};
 
     MarkdownLintStripe(CodeArea area) {
@@ -203,7 +204,7 @@ final class MarkdownLintStripe extends Region implements SecondaryPane.Followed 
         return Math.max(2.0, h / total);
     }
 
-    private MarkdownLint.Diagnostic hitAt(double localY) {
+    private MarkdownLint.@Nullable Diagnostic hitAt(double localY) {
         int total = area.getParagraphs().size();
         if (total == 0) {
             return null;

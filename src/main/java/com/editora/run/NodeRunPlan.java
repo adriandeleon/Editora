@@ -54,7 +54,7 @@ public record NodeRunPlan(
      * Whether a file named {@code name} in a Node language gets a Run ▶ — every one but a declaration file
      * ({@code .d.ts}), which holds no code.
      */
-    public static boolean runnableName(String name) {
+    public static boolean runnableName(@Nullable String name) {
         if (name == null) {
             return true;
         }

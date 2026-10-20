@@ -10,6 +10,7 @@ import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 
+import org.jspecify.annotations.Nullable;
 import org.scilab.forge.jlatexmath.TeXConstants;
 import org.scilab.forge.jlatexmath.TeXFormula;
 
@@ -96,7 +97,8 @@ public final class MathImages {
     }
 
     /** Rasterizes a formula to PNG bytes (for PDF/HTML export); null on a LaTeX parse error. */
-    public static byte[] renderPng(String latex, boolean display, float pointSize, boolean darkTheme) {
+    public static byte @Nullable [] renderPng(
+            @Nullable String latex, boolean display, float pointSize, boolean darkTheme) {
         try {
             java.awt.Color fg = darkTheme ? new java.awt.Color(0xD0, 0xD7, 0xDE) : new java.awt.Color(0x1F, 0x23, 0x28);
             int style = display ? TeXConstants.STYLE_DISPLAY : TeXConstants.STYLE_TEXT;

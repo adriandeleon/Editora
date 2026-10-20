@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The file names of OpenPGP-encrypted files: {@code .gpg}, {@code .pgp} and {@code .asc}, and the inner name
  * that decides an encrypted file's language — {@code notes.md.gpg} is Markdown. Pure, in the editor package so
@@ -16,7 +18,7 @@ public final class EncryptedNames {
     public static final List<String> EXTENSIONS = List.of("gpg", "asc", "pgp");
 
     /** The encryption extension of {@code fileName} ({@code "gpg"}, …), lower case, or null. */
-    public static String extensionOf(String fileName) {
+    public static @Nullable String extensionOf(String fileName) {
         if (fileName == null) {
             return null;
         }

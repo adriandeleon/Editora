@@ -192,7 +192,8 @@ public final class MarkdownImagePaste {
      * or an http(s) address ending in an image extension. An ordinary link is not an image — taking every
      * http(s) URL for one downloaded the page it pointed to and saved the HTML as {@code assets/page.png}.
      */
-    public static @Nullable String imageUrlFromDrag(String url, String html, String string) {
+    public static @Nullable String imageUrlFromDrag(
+            @Nullable String url, @Nullable String html, @Nullable String string) {
         String u = firstNonBlank(url);
         if (u != null && isImageRef(u)) {
             return u.trim();
@@ -214,7 +215,7 @@ public final class MarkdownImagePaste {
      * The Markdown for a dragged hyperlink, or {@code null} when the drag carries no http(s)/mailto URL:
      * {@code [text](url)} with the anchor text of the dragged {@code html}, else the bare {@code <url>}.
      */
-    public static @Nullable String linkFromDrag(String url, String html) {
+    public static @Nullable String linkFromDrag(@Nullable String url, @Nullable String html) {
         String u = firstNonBlank(url);
         if (u == null || !u.trim().matches("(?i)(https?://|mailto:)\\S+")) {
             return null;
@@ -298,7 +299,7 @@ public final class MarkdownImagePaste {
         return true;
     }
 
-    private static @Nullable String firstNonBlank(String s) {
+    private static @Nullable String firstNonBlank(@Nullable String s) {
         return s == null || s.isBlank() ? null : s;
     }
 

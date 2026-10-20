@@ -19,6 +19,7 @@ import com.editora.markdown.MarkdownTyping;
 import com.editora.markdown.MarkdownWiki;
 import com.editora.typst.TypstMarkup;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -33,16 +34,16 @@ import static com.editora.i18n.Messages.tr;
 public final class MarkdownEditing {
 
     private final EditorBuffer buffer;
-    private Runnable insertTableHandler;
-    private Runnable editLinkHandler;
-    private java.util.function.UnaryOperator<String> wikiResolver;
+    private @Nullable Runnable insertTableHandler;
+    private @Nullable Runnable editLinkHandler;
+    private java.util.function.@Nullable UnaryOperator<String> wikiResolver;
     /** Image files a paste or drop into this buffer created in this session (see {@link #sessionImages()}). */
     private final java.util.Set<java.nio.file.Path> sessionImages = new java.util.LinkedHashSet<>();
 
-    private java.util.function.BiConsumer<String, String> tableFileExporter;
+    private java.util.function.@Nullable BiConsumer<String, String> tableFileExporter;
     private int tocMinLevel = 1;
     private int tocMaxLevel = 6;
-    private java.util.function.Function<String, String> chords = id -> null;
+    private java.util.function.Function<String, @Nullable String> chords = id -> null;
     private boolean smartTypography;
     private boolean tocSkipTitle;
     private boolean tocOrdered;
@@ -55,7 +56,8 @@ public final class MarkdownEditing {
      * Pushes what the commands take from the settings and the keymap: the heading levels a table of contents
      * lists, and the lookup from a command id to the chord the active keymap binds it to (null when unbound).
      */
-    public void configure(int tocMinLevel, int tocMaxLevel, java.util.function.Function<String, String> chords) {
+    public void configure(
+            int tocMinLevel, int tocMaxLevel, java.util.function.Function<String, @Nullable String> chords) {
         this.tocMinLevel = Math.max(1, Math.min(6, tocMinLevel));
         this.tocMaxLevel = Math.max(this.tocMinLevel, Math.min(6, tocMaxLevel));
         this.chords = chords == null ? id -> null : chords;
@@ -81,6 +83,7 @@ public final class MarkdownEditing {
     }
 
     /** The chord bound to {@code commandId} in the active keymap, as it is displayed; null when unbound. */
+    @Nullable
     String chord(String commandId) {
         String chord = chords.apply(commandId);
         return chord == null || chord.isBlank() ? null : chord;
@@ -90,7 +93,7 @@ public final class MarkdownEditing {
         return buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
     }
 
-    private void apply(MarkdownEdit edit) {
+    private void apply(@Nullable MarkdownEdit edit) {
         if (edit == null) {
             return;
         }
@@ -545,7 +548,7 @@ public final class MarkdownEditing {
     }
 
     /** The link under the caret, or null. */
-    public MarkdownLinks.Link linkAtCaret() {
+    public MarkdownLinks.@Nullable Link linkAtCaret() {
         CodeArea a = view();
         return MarkdownLinks.at(a.getText(), a.getCaretPosition());
     }
@@ -729,7 +732,7 @@ public final class MarkdownEditing {
     // ---- tables ----
 
     /** Replaces the table at {@code bounds} with {@code nav}'s block and moves the caret; false for null. */
-    private boolean place(CodeArea a, int[] bounds, MarkdownTable.Nav nav) {
+    private boolean place(CodeArea a, int[] bounds, MarkdownTable.@Nullable Nav nav) {
         if (nav == null) {
             return false;
         }
@@ -854,7 +857,7 @@ public final class MarkdownEditing {
     }
 
     /** The caret's table as CSV, or null when the caret is not on one. */
-    private String tableCsv() {
+    private @Nullable String tableCsv() {
         if (!buffer.canFormatMarkdown()) {
             return null;
         }
@@ -882,11 +885,12 @@ public final class MarkdownEditing {
 
     /** Exports the caret's table through the injected exporter; false when not on a table or none is wired. */
     public boolean exportTableFile(String format) {
-        String csv = tableFileExporter == null ? null : tableCsv();
-        if (csv == null) {
+        java.util.function.BiConsumer<String, String> exporter = tableFileExporter;
+        String csv = exporter == null ? null : tableCsv();
+        if (exporter == null || csv == null) {
             return false;
         }
-        tableFileExporter.accept(csv, format);
+        exporter.accept(csv, format);
         return true;
     }
 

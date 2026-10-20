@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.editor.FoldRegions.Region;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decides which lines to pin above the viewport — the enclosing scope headers that have scrolled off.
@@ -34,7 +35,7 @@ public final class StickyScroll {
      * scope is the one you can most easily infer from the code in front of you; the file-level type you
      * are in is the one that has been off screen longest.
      */
-    public static List<Integer> headerLines(List<Region> regions, int firstVisible, int max) {
+    public static List<Integer> headerLines(@Nullable List<Region> regions, int firstVisible, int max) {
         if (regions == null || regions.isEmpty() || firstVisible <= 0 || max <= 0) {
             return List.of();
         }
@@ -70,19 +71,19 @@ public final class StickyScroll {
 
         static final Index EMPTY = new Index(null, new int[0], new int[0], new int[0]);
 
-        private final List<Region> source;
+        private final @Nullable List<Region> source;
         private final int[] start;
         private final int[] end;
         private final int[] parent;
 
-        private Index(List<Region> source, int[] start, int[] end, int[] parent) {
+        private Index(@Nullable List<Region> source, int[] start, int[] end, int[] parent) {
             this.source = source;
             this.start = start;
             this.end = end;
             this.parent = parent;
         }
 
-        static Index of(List<Region> regions) {
+        static Index of(@Nullable List<Region> regions) {
             if (regions == null || regions.isEmpty()) {
                 return new Index(regions, new int[0], new int[0], new int[0]);
             }
@@ -109,7 +110,7 @@ public final class StickyScroll {
         }
 
         /** Whether this index was built from exactly this list (the fold manager replaces it wholesale). */
-        boolean isFor(List<Region> regions) {
+        boolean isFor(@Nullable List<Region> regions) {
             return source == regions;
         }
 
@@ -156,7 +157,7 @@ public final class StickyScroll {
      * number of headers that the resulting viewport would pin; iterating matters near a nested scope's
      * header, where moving the viewport up can make that scope visible and remove it from the pinned set.
      */
-    public static int navigationFirstVisible(List<Region> regions, int target, int max) {
+    public static int navigationFirstVisible(@Nullable List<Region> regions, int target, int max) {
         int clampedTarget = Math.max(0, target);
         int firstVisible = clampedTarget;
         for (int i = 0; i <= Math.max(0, max); i++) {
@@ -171,7 +172,7 @@ public final class StickyScroll {
     }
 
     /** As {@link #navigationFirstVisible(List, int, int)} with {@link #DEFAULT_MAX}. */
-    public static int navigationFirstVisible(List<Region> regions, int target) {
+    public static int navigationFirstVisible(@Nullable List<Region> regions, int target) {
         return navigationFirstVisible(regions, target, DEFAULT_MAX);
     }
 }

@@ -9,6 +9,7 @@ import java.util.Set;
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
 import com.editora.http.HttpVariableIndex;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -32,8 +33,8 @@ final class HttpCompletions {
      * The offer for the caret at {@code column} of {@code line}, or null when the caret is not inside an open
      * {@code {{}. {@code after} is the rest of the caret's line (a {@code }}} already there is not repeated).
      */
-    static MarkdownCompletions.Offer offer(
-            String document, int line, String before, String after, HttpVariableIndex.Context ctx) {
+    static MarkdownCompletions.@Nullable Offer offer(
+            String document, int line, String before, String after, HttpVariableIndex.@Nullable Context ctx) {
         int open = before.lastIndexOf("{{");
         if (open < 0 || before.indexOf("}}", open) >= 0) {
             return null;

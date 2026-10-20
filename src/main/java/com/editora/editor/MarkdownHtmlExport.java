@@ -8,6 +8,7 @@ import java.util.List;
 import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.heading.anchor.HeadingAnchorExtension;
 import org.commonmark.renderer.html.HtmlRenderer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Exports a Markdown document to a standalone HTML string: commonmark-java's {@link HtmlRenderer} over
@@ -57,9 +58,9 @@ public final class MarkdownHtmlExport {
     public record Options(
             boolean highlightCode,
             boolean embedImages,
-            java.nio.file.Path baseDir,
-            List<String> mmdc,
-            CodePainter painter) {
+            java.nio.file.@Nullable Path baseDir,
+            @Nullable List<String> mmdc,
+            @Nullable CodePainter painter) {
         public static final Options PLAIN = new Options(false, false, null, null, null);
     }
 
@@ -67,7 +68,9 @@ public final class MarkdownHtmlExport {
     @FunctionalInterface
     public interface CodePainter {
         String toHtml(
-                String text, org.fxmisc.richtext.model.StyleSpans<java.util.Collection<String>> spans, int tabSize);
+                String text,
+                org.fxmisc.richtext.model.@Nullable StyleSpans<java.util.Collection<String>> spans,
+                int tabSize);
 
         /** Extra page CSS the fragments need (token classes for the light and the dark scheme); "" for none. */
         default String css() {
@@ -81,7 +84,7 @@ public final class MarkdownHtmlExport {
             @Override
             public String toHtml(
                     String text,
-                    org.fxmisc.richtext.model.StyleSpans<java.util.Collection<String>> spans,
+                    org.fxmisc.richtext.model.@Nullable StyleSpans<java.util.Collection<String>> spans,
                     int tabSize) {
                 return fragment.toHtml(text, spans, tabSize);
             }
@@ -114,9 +117,13 @@ public final class MarkdownHtmlExport {
      * for a wiki target — relative, forward slashes, spaces escaped — or null when it does not resolve
      * ({@link WikiLinkTargets}, the resolver every surface asks).
      */
-    public static java.util.function.UnaryOperator<String> wikiPaths(java.nio.file.Path folder) {
+    public static java.util.function.UnaryOperator<@Nullable String> wikiPaths(java.nio.file.@Nullable Path folder) {
         return target -> {
+            if (target == null) {
+                return null; // never asked for: the operator's type also lets a null in
+            }
             java.nio.file.Path file = WikiLinkTargets.resolve(folder, target);
+
             if (file == null || folder == null) {
                 return null;
             }
@@ -133,7 +140,7 @@ public final class MarkdownHtmlExport {
         };
     }
 
-    private static void lowerWikiLinksOnly(org.commonmark.node.Node doc, java.nio.file.Path folder) {
+    private static void lowerWikiLinksOnly(org.commonmark.node.Node doc, java.nio.file.@Nullable Path folder) {
         com.editora.markdown.MarkdownExportTree.wikiLinksToLinks(doc, wikiPaths(folder));
     }
 
@@ -176,7 +183,7 @@ public final class MarkdownHtmlExport {
     }
 
     /** Rewrites every image the document can load into a {@code data:} URI; the others keep their address. */
-    private static void embedImages(org.commonmark.node.Node node, java.nio.file.Path baseDir) {
+    private static void embedImages(org.commonmark.node.Node node, java.nio.file.@Nullable Path baseDir) {
         for (org.commonmark.node.Node c = node.getFirstChild(); c != null; c = c.getNext()) {
             if (c instanceof org.commonmark.node.Image image) {
                 String dest = image.getDestination();
@@ -287,7 +294,7 @@ public final class MarkdownHtmlExport {
             html.line();
         }
 
-        private String mermaid(String source) {
+        private @Nullable String mermaid(String source) {
             if (options.mmdc() == null || options.mmdc().isEmpty()) {
                 return null;
             }
@@ -311,7 +318,7 @@ public final class MarkdownHtmlExport {
             return nl < 0 ? s : s.substring(0, nl);
         }
 
-        private static String highlighted(String code, String info, CodePainter painter) {
+        private static @Nullable String highlighted(String code, String info, CodePainter painter) {
             if (info.isEmpty() || code.isEmpty() || code.length() > MAX_HIGHLIGHT_CHARS) {
                 return null;
             }
@@ -364,7 +371,7 @@ public final class MarkdownHtmlExport {
         }
     }
 
-    private static String page(String title, String lang, String body, String extraCss) {
+    private static String page(@Nullable String title, @Nullable String lang, String body, String extraCss) {
         return "<!DOCTYPE html>\n<html" + (lang == null ? "" : " lang=\"" + escape(lang) + "\"")
                 + ">\n<head>\n<meta charset=\"utf-8\">\n"
                 + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
@@ -441,7 +448,7 @@ public final class MarkdownHtmlExport {
         return "body{font-family:sans-serif;max-width:820px;margin:2rem auto;padding:0 1rem;}";
     }
 
-    private static String escape(String s) {
+    private static String escape(@Nullable String s) {
         if (s == null) {
             return "";
         }

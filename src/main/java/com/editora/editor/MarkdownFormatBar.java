@@ -11,6 +11,8 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.layout.FlowPane;
 import javafx.util.StringConverter;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -36,7 +38,7 @@ final class MarkdownFormatBar {
     /** The inline markers whose buttons light up when the selection already carries them. */
     private final java.util.Map<Button, String> toggles = new java.util.LinkedHashMap<>();
 
-    private ComboBox<Integer> heading;
+    private final ComboBox<Integer> heading;
     /** True while {@link #sync} sets the Style box, so that is not taken for the user picking a level. */
     private boolean syncing;
 
@@ -48,6 +50,7 @@ final class MarkdownFormatBar {
         node.setPadding(new Insets(3));
         node.setAlignment(Pos.CENTER_LEFT);
         node.setRowValignment(javafx.geometry.VPos.CENTER);
+        heading = headingBox(buffer);
 
         // Icon glyphs (the same MenuIcons used by the editor right-click menu) instead of letter labels —
         // an italic "I" barely slants, and icons keep the bar consistent with the menu. Typst uses a
@@ -67,7 +70,7 @@ final class MarkdownFormatBar {
                                     "tooltip.markdown.insertTable",
                                     buffer::insertTypstTableInteractive),
                             new Separator(javafx.geometry.Orientation.VERTICAL),
-                            headingBox(buffer));
+                            heading);
         } else {
             node.getChildren()
                     .addAll(
@@ -88,7 +91,7 @@ final class MarkdownFormatBar {
                                     () -> buffer.markdown().formatBlockquote()),
                             button(MenuIcons.table(), "tooltip.markdown.insertTable", buffer::insertTableInteractive),
                             new Separator(javafx.geometry.Orientation.VERTICAL),
-                            headingBox(buffer));
+                            heading);
         }
     }
 
@@ -101,7 +104,8 @@ final class MarkdownFormatBar {
      * feature is on and {@code view} has a selection — or it is up and may have to move or go away. The
      * buffer asks before queueing an update, because the triggers are every scroll event and caret move.
      */
-    static boolean updateNeeded(MarkdownFormatBar bar, boolean enabled, org.fxmisc.richtext.CodeArea view) {
+    static boolean updateNeeded(
+            @Nullable MarkdownFormatBar bar, boolean enabled, org.fxmisc.richtext.@Nullable CodeArea view) {
         return view == null
                 || (enabled && view.getSelection().getLength() > 0)
                 || (bar != null && bar.node.isVisible());
@@ -201,7 +205,7 @@ final class MarkdownFormatBar {
     }
 
     /** A tooltip naming the key binding of its command when the active keymap has one. Pure. */
-    static String hint(String text, String chord) {
+    static String hint(String text, @Nullable String chord) {
         return chord == null ? text : text + "  ·  " + chord;
     }
 
@@ -253,7 +257,7 @@ final class MarkdownFormatBar {
             }
 
             @Override
-            public Integer fromString(String s) {
+            public @Nullable Integer fromString(String s) {
                 return null;
             }
         });
@@ -263,7 +267,6 @@ final class MarkdownFormatBar {
                 buffer.setHeadingLevel(v);
             }
         });
-        heading = box;
         return box;
     }
 }

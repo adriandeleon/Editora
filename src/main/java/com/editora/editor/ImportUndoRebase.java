@@ -6,6 +6,7 @@ import java.util.List;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.RichTextChange;
 import org.fxmisc.richtext.model.TextChange;
+import org.jspecify.annotations.Nullable;
 
 /** Commutes disjoint import edits before later typing, without changing the current document. */
 final class ImportUndoRebase {
@@ -14,7 +15,7 @@ final class ImportUndoRebase {
     private ImportUndoRebase() {}
 
     /** Null means overlap/unknown change/too much history: keep ordinary chronological undo. */
-    static <C> Plan<C> plan(List<C> accepted, List<List<C>> later, List<C> imports) {
+    static <C> @Nullable Plan<C> plan(List<C> accepted, List<List<C>> later, List<C> imports) {
         int count = accepted.size() + imports.size();
         for (var batch : later) count += batch.size();
         if (count > 256 || accepted.isEmpty() || imports.isEmpty()) return null;
@@ -47,7 +48,7 @@ final class ImportUndoRebase {
     }
 
     @SuppressWarnings("unchecked")
-    private static <C> C shift(C change, int delta) {
+    private static <C> @Nullable C shift(C change, int delta) {
         if (delta == 0) return change;
         int position;
         try {

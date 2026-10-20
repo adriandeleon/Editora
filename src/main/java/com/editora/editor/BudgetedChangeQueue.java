@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.function.ToLongFunction;
 
 import org.fxmisc.undo.impl.ChangeQueue;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An undo queue bounded by entry count <em>and</em> by the text its entries retain.
@@ -25,7 +26,7 @@ final class BudgetedChangeQueue<C> implements ChangeQueue<C> {
     private final long budget;
     private final ToLongFunction<? super C> cost;
     /** The budget shared with every other document's queue, or null for a queue bounded on its own only. */
-    private final UndoQueueBudget shared;
+    private final @Nullable UndoQueueBudget shared;
 
     private final ArrayList<Entry<C>> entries = new ArrayList<>();
     /** Number of entries before the position: undo walks down from here, redo up. */
@@ -51,7 +52,7 @@ final class BudgetedChangeQueue<C> implements ChangeQueue<C> {
      * As above, also counted against {@code shared}, which may evict this queue's oldest undo entries when the
      * queues of every document together exceed it (see {@link UndoQueueBudget}).
      */
-    BudgetedChangeQueue(int capacity, long budget, ToLongFunction<? super C> cost, UndoQueueBudget shared) {
+    BudgetedChangeQueue(int capacity, long budget, ToLongFunction<? super C> cost, @Nullable UndoQueueBudget shared) {
         if (capacity <= 0) {
             throw new IllegalArgumentException("capacity must be positive");
         }

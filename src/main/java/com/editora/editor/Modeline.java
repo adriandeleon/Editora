@@ -6,6 +6,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Reads the language a file names for itself when its name says nothing: a first-line shebang ({@link Shebang}),
  * else a vim or emacs modeline. Pure.
@@ -87,7 +89,7 @@ public final class Modeline {
      * The language {@code head} (the start of the file) and {@code tail} (its end; may overlap {@code head}) name
      * for the file: a shebang wins, then a modeline. {@code null} when they name nothing Editora knows.
      */
-    public static Shebang.Result detect(String head, String tail) {
+    public static Shebang.@Nullable Result detect(String head, String tail) {
         List<String> first =
                 head == null ? List.of() : head.lines().limit(VIM_LINES).toList();
         if (!first.isEmpty() && first.get(0).startsWith("#!")) {
@@ -108,7 +110,7 @@ public final class Modeline {
     }
 
     /** The extension an emacs {@code -*- … -*-} line names: the first line, or the second after a shebang. */
-    private static String emacs(List<String> first) {
+    private static @Nullable String emacs(List<String> first) {
         int limit = Math.min(first.size(), !first.isEmpty() && first.get(0).startsWith("#!") ? 2 : 1);
         for (int i = 0; i < limit; i++) {
             Matcher m = EMACS.matcher(first.get(i));
@@ -130,7 +132,7 @@ public final class Modeline {
     }
 
     /** The extension a vim modeline among {@code lines} names, or {@code null}. */
-    private static String vim(List<String> lines) {
+    private static @Nullable String vim(List<String> lines) {
         for (String line : lines) {
             Matcher m = VIM.matcher(line);
             if (m.find()) {
@@ -146,7 +148,7 @@ public final class Modeline {
         return null;
     }
 
-    private static String extensionFor(String name) {
+    private static @Nullable String extensionFor(String name) {
         String n = name.toLowerCase(Locale.ROOT);
         if (n.endsWith("-mode")) {
             n = n.substring(0, n.length() - "-mode".length());

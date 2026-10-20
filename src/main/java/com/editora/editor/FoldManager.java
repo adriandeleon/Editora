@@ -45,6 +45,7 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Computes foldable regions for a {@link CodeArea}, drives folding/unfolding, and supplies the gutter
@@ -66,7 +67,7 @@ public final class FoldManager {
     private List<Region> regions = List.of();
     /** Server-supplied regions ({@code textDocument/foldingRange}, #738); null while none have arrived, in
      *  which case {@link #recompute()} falls back to the {@link FoldRegions} heuristic. */
-    private List<Region> serverRegions;
+    private @Nullable List<Region> serverRegions;
 
     private Map<Integer, Region> byStart = Map.of();
     private String language = "plaintext";
@@ -120,7 +121,7 @@ public final class FoldManager {
     /** True from a deferred restore until its regions (or any newer ones) are applied. */
     private boolean regionsPending;
     /** Saved collapsed header lines waiting for those regions, kept in step with edits; null when none. */
-    private List<Integer> pendingCollapsed;
+    private @Nullable List<Integer> pendingCollapsed;
 
     /** Whether a line carries a bookmark (drawn as a gutter marker); default none. */
     private IntPredicate isBookmarked = i -> false;
@@ -176,7 +177,7 @@ public final class FoldManager {
 
     /** Shared hover preview of a collapsed line's hidden content; reused across all lines, and built on the
      *  first hover over a collapsed header (a Tooltip is a popup window with a scene of its own). */
-    private Tooltip linePreview;
+    private @Nullable Tooltip linePreview;
     /** The inline colours {@link #setPreviewColors} chose, applied to the preview when it is built. */
     private String previewStyle = "";
     /** Paragraph whose preview is currently showing, or -1 when hidden. */
@@ -462,16 +463,16 @@ public final class FoldManager {
     private static List<Region> detectRegions(
             String text,
             String language,
-            List<Region> serverRegions,
+            @Nullable List<Region> serverRegions,
             List<Region> manualRegions,
             boolean heuristicEnabled) {
         // A language server's regions win when it supplied any: it parses the grammar, so it knows the
         // import block is one region and where a javadoc ends — neither of which brace/indent scanning can
         // derive. An empty or absent answer falls back to the heuristic rather than leaving the file
         // unfoldable, which also covers the window between opening a file and its server reporting ready.
-        boolean serverBacked = serverRegions != null && !serverRegions.isEmpty();
-        List<Region> base =
-                serverBacked ? serverRegions : heuristicEnabled ? FoldRegions.detect(text, language) : List.of();
+        List<Region> base = serverRegions != null && !serverRegions.isEmpty()
+                ? serverRegions
+                : heuristicEnabled ? FoldRegions.detect(text, language) : List.of();
         // Block comments, #region markers, and the user's manual ranges are ADDITIVE regardless of where
         // the base came from — a server's answer replaces the structural heuristic, not these. A server
         // that also reports comment regions (LSP folding kinds) just dedups in canonicalOrder.
@@ -623,7 +624,7 @@ public final class FoldManager {
     }
 
     /** Recreates the gutter graphics of those of {@code lines} (null = all) that {@code view} is showing. */
-    private static void recreateVisibleGutter(CodeArea view, java.util.Collection<Integer> lines, int total) {
+    private static void recreateVisibleGutter(CodeArea view, java.util.@Nullable Collection<Integer> lines, int total) {
         int first;
         int last;
         try {
@@ -697,7 +698,10 @@ public final class FoldManager {
     /** As {@link #setRunHooks(BooleanSupplier, IntPredicate, IntConsumer)}, plus {@code extraClassFor} — an
      *  extra CSS class per Run-glyph line (e.g. {@code test-run-marker} to tint a JUnit test ▶), or null. */
     public void setRunHooks(
-            BooleanSupplier enabled, IntPredicate isRunLine, IntConsumer onRun, IntFunction<String> extraClassFor) {
+            BooleanSupplier enabled,
+            IntPredicate isRunLine,
+            IntConsumer onRun,
+            @Nullable IntFunction<String> extraClassFor) {
         setRunHooks(enabled, isRunLine, onRun, extraClassFor, null);
     }
 
@@ -706,8 +710,8 @@ public final class FoldManager {
             BooleanSupplier enabled,
             IntPredicate isRunLine,
             IntConsumer onRun,
-            IntFunction<String> extraClassFor,
-            IntFunction<String> tooltipFor) {
+            @Nullable IntFunction<String> extraClassFor,
+            @Nullable IntFunction<String> tooltipFor) {
         this.runEnabled = enabled == null ? () -> false : enabled;
         this.isRunLine = isRunLine == null ? i -> false : isRunLine;
         this.onRun = onRun == null ? i -> {} : onRun;
@@ -1752,7 +1756,7 @@ public final class FoldManager {
     private static final java.util.Map<String, Background> BLAME_TINTS = new java.util.HashMap<>();
 
     /** The cached {@link Background} for a heatmap colour, or {@code null} when it is not a plain colour. */
-    static Background blameTint(String web) {
+    static @Nullable Background blameTint(String web) {
         Background tint = BLAME_TINTS.get(web);
         if (tint == null) {
             try {
@@ -1831,7 +1835,7 @@ public final class FoldManager {
     }
 
     /** {@code extraClass} (e.g. {@code test-run-marker}) tints/distinguishes the glyph; null for the plain ▶. */
-    static Node runGlyph(String extraClass) {
+    static Node runGlyph(@Nullable String extraClass) {
         SVGPath svg = new SVGPath();
         svg.setContent(HTTP_RUNNING_CLASS.equals(extraClass) ? STOP_GLYPH_PATH : RUN_GLYPH_PATH);
         svg.getStyleClass().add("run-marker");
@@ -1941,7 +1945,7 @@ public final class FoldManager {
         return line;
     }
 
-    private static Text textRun(String value, Collection<String> styles) {
+    private static Text textRun(String value, @Nullable Collection<String> styles) {
         Text text = new Text(value);
         text.getStyleClass().add("text");
         if (styles != null) {

@@ -82,8 +82,8 @@ public final class SystemdPreview {
 
         if (d.key().equalsIgnoreCase("OnCalendar")) {
             SystemdCalendar.Parsed p = SystemdCalendar.parse(d.value());
-            if (p.ok()) {
-                List<LocalDateTime> runs = p.calendar().nextRuns(now, NEXT_RUNS);
+            if (p.ok() && p.calendar() instanceof SystemdCalendar calendar) {
+                List<LocalDateTime> runs = calendar.nextRuns(now, NEXT_RUNS);
                 if (!runs.isEmpty()) {
                     StringJoiner sj = new StringJoiner(", ");
                     for (LocalDateTime r : runs) {

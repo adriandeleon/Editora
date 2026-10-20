@@ -23,6 +23,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.i18n.Messages;
 import com.editora.maven.PomSummary;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders a {@link PomSummary} as the pom.xml preview: a header (artifact name, coordinates, packaging,
@@ -70,7 +71,7 @@ public final class PomPreview {
     }
 
     /** The interactive preview: {@code onNavigate} receives the 1-based line of the element clicked. */
-    public static Node build(PomSummary summary, IntConsumer onNavigate) {
+    public static Node build(PomSummary summary, @Nullable IntConsumer onNavigate) {
         Renderer r = new Renderer(onNavigate, true);
         VBox body = r.render(summary, -1);
         ScrollPane sp = new ScrollPane(body);
@@ -96,10 +97,10 @@ public final class PomPreview {
         final Label titleLabel;
         final List<Row> rows = new ArrayList<>();
         final List<Node> extras = new ArrayList<>(); // full-width lines that belong to the section (goal lists)
-        final Section parent; // the profile heading a profile's sub-section sits under, else null
+        final @Nullable Section parent; // the profile heading a profile's sub-section sits under, else null
         boolean collapsed;
 
-        Section(Node title, Label titleLabel, Section parent) {
+        Section(Node title, Label titleLabel, @Nullable Section parent) {
             this.title = title;
             this.titleLabel = titleLabel;
             this.parent = parent;
@@ -107,14 +108,14 @@ public final class PomPreview {
     }
 
     private static final class Renderer {
-        private final IntConsumer onNavigate;
+        private final @Nullable IntConsumer onNavigate;
         private final boolean interactive;
         private final List<Section> sections = new ArrayList<>();
-        private Section current;
-        private Section profileSection; // set while a profile's sub-sections are added
+        private @Nullable Section current; // the section rows go into: set by addSection before any row
+        private @Nullable Section profileSection; // set while a profile's sub-sections are added
         private String filter = "";
 
-        Renderer(IntConsumer onNavigate, boolean interactive) {
+        Renderer(@Nullable IntConsumer onNavigate, boolean interactive) {
             this.onNavigate = onNavigate;
             this.interactive = interactive;
         }
@@ -274,7 +275,7 @@ public final class PomPreview {
                 // run into the tag column instead of widening the version column for every dependency below it.
                 GridPane.setColumnSpan(value, 2);
                 g.add(value, 1, row);
-                current.rows.add(new Row(List.of(name, value), p.name() + " " + p.value()));
+                current().rows.add(new Row(List.of(name, value), p.name() + " " + p.value()));
             }
         }
 
@@ -439,7 +440,7 @@ public final class PomPreview {
         }
 
         /** The tags as one label each, separated by " · " labels, in a pane that wraps only between them. */
-        private static Node tagFlow(List<String> tags) {
+        private static @Nullable Node tagFlow(List<String> tags) {
             if (tags.isEmpty()) {
                 return null;
             }
@@ -517,7 +518,13 @@ public final class PomPreview {
             return g;
         }
 
-        private Row addRow(GridPane g, Node name, Node version, Node tags, boolean indented, String searchText) {
+        private Row addRow(
+                GridPane g,
+                Node name,
+                @Nullable Node version,
+                @Nullable Node tags,
+                boolean indented,
+                String searchText) {
             int row = g.getRowCount();
             List<Node> nodes = new ArrayList<>();
             g.add(indent(name, indented), 0, row);
@@ -531,8 +538,16 @@ public final class PomPreview {
                 nodes.add(tags);
             }
             Row r = new Row(nodes, searchText.toLowerCase(Locale.ROOT));
-            current.rows.add(r);
+            current().rows.add(r);
             return r;
+        }
+
+        private Section current() {
+            Section s = current;
+            if (s == null) {
+                throw new IllegalStateException("a row added before any section");
+            }
+            return s;
         }
 
         private Section addSection(GridPane g, String title, boolean indented, boolean collapsed) {

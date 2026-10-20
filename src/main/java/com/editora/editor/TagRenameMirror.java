@@ -12,6 +12,7 @@ import org.fxmisc.richtext.model.EditableStyledDocument;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.StyledDocument;
 import org.fxmisc.richtext.model.TwoDimensional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Auto-rename-tag: editing an HTML/XML tag name mirrors the rename onto the paired open/close tag (the
@@ -45,7 +46,7 @@ final class TagRenameMirror {
     /** Re-entrancy guard: the mirrored {@code replaceText} must not itself trigger another mirror. */
     private boolean applying;
     /** The buffer's areas (the split view's second one shares the document; each records its own undo). */
-    private CodeArea primary;
+    private @Nullable CodeArea primary;
 
     /** Weak: a closed split view's area must not be kept alive by its buffer's mirror. */
     private java.lang.ref.WeakReference<CodeArea> secondary = new java.lang.ref.WeakReference<>(null);
@@ -65,7 +66,7 @@ final class TagRenameMirror {
     }
 
     /** A new editor area wired to this mirror: over {@code document}, or over a fresh one when it is null. */
-    CodeArea newArea(EditableStyledDocument<Collection<String>, String, Collection<String>> document) {
+    CodeArea newArea(@Nullable EditableStyledDocument<Collection<String>, String, Collection<String>> document) {
         Area area = document == null ? new Area() : new Area(document);
         area.onCommitted = this::committed;
         area.language = language;
@@ -136,7 +137,7 @@ final class TagRenameMirror {
 
         private BiConsumer<CodeArea, PlainTextChange> onCommitted = (area, change) -> {};
         private Supplier<String> language = () -> null;
-        private PlainTextChange inFlight;
+        private @Nullable PlainTextChange inFlight;
         private int depth;
         private boolean nested;
 

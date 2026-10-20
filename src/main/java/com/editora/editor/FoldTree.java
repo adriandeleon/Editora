@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.editor.FoldRegions.Region;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure, unit-tested tree queries over the flat {@link FoldRegions.Region} list. {@link FoldRegions#detect}
@@ -72,7 +73,7 @@ public final class FoldTree {
      * {@code line} is outside every region. "Innermost" = the containing region with the largest start
      * line, breaking ties toward the smaller (later-ending) span.
      */
-    public static Region innermostContaining(List<Region> regions, int line) {
+    public static @Nullable Region innermostContaining(List<Region> regions, int line) {
         Region best = null;
         for (Region r : regions) {
             if (r.startLine() <= line && line <= r.endLine()) {
@@ -91,7 +92,7 @@ public final class FoldTree {
      * header of its innermost region, the region enclosing that one; otherwise the innermost region's own
      * header. Returns {@code null} at the top level (nothing to ascend to).
      */
-    public static Region parentFold(List<Region> regions, int line) {
+    public static @Nullable Region parentFold(List<Region> regions, int line) {
         Region innermost = innermostContaining(regions, line);
         if (innermost == null) {
             return null;
@@ -113,7 +114,7 @@ public final class FoldTree {
     }
 
     /** The next fold whose header starts after {@code line} (smallest such start), or {@code null}. */
-    public static Region nextFold(List<Region> regions, int line) {
+    public static @Nullable Region nextFold(List<Region> regions, int line) {
         Region best = null;
         for (Region r : regions) {
             if (r.startLine() > line && (best == null || r.startLine() < best.startLine())) {
@@ -124,7 +125,7 @@ public final class FoldTree {
     }
 
     /** The previous fold whose header starts before {@code line} (largest such start), or {@code null}. */
-    public static Region previousFold(List<Region> regions, int line) {
+    public static @Nullable Region previousFold(List<Region> regions, int line) {
         Region best = null;
         for (Region r : regions) {
             if (r.startLine() < line && (best == null || r.startLine() > best.startLine())) {

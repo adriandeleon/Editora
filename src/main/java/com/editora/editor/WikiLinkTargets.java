@@ -8,6 +8,7 @@ import java.util.Locale;
 
 import com.editora.markdown.MarkdownToc;
 import com.editora.markdown.MarkdownWikiLinks.WikiLink;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Where a wiki link leads: the one place the renderers ask, and the seam the project's link index is plugged
@@ -28,7 +29,8 @@ public final class WikiLinkTargets {
          * @param target the link's target as written ({@code note}, {@code folder/note.md}); never empty
          * @return the file, or null when nothing (or more than one thing) answers to the name
          */
-        Path resolve(Path folder, String target);
+        @Nullable
+        Path resolve(@Nullable Path folder, String target);
     }
 
     /** The scheme of the address a click on an <em>unresolved</em> wiki link is reported with:
@@ -66,7 +68,7 @@ public final class WikiLinkTargets {
     }
 
     /** The file {@code target} names for a document in {@code folder}, or null. Never throws. */
-    public static Path resolve(Path folder, String target) {
+    public static @Nullable Path resolve(@Nullable Path folder, String target) {
         if (target == null || target.isBlank()) {
             return null;
         }
@@ -78,7 +80,7 @@ public final class WikiLinkTargets {
     }
 
     /** The built-in resolver: the file of that name beside the document, a Markdown extension optional. */
-    static Path beside(Path folder, String target) {
+    static @Nullable Path beside(@Nullable Path folder, String target) {
         if (folder == null || folder.getFileSystem() != FileSystems.getDefault()) {
             return null;
         }
@@ -98,7 +100,7 @@ public final class WikiLinkTargets {
         return null;
     }
 
-    private static Path child(Path folder, String name) {
+    private static @Nullable Path child(Path folder, String name) {
         try {
             Path p = folder.resolve(name).normalize();
             return p.startsWith(folder) || p.isAbsolute() ? p : null;
@@ -140,7 +142,7 @@ public final class WikiLinkTargets {
 
     /** The heading of a wiki address as an anchor slug ({@code wikilink:note#Some Heading} gives
      *  {@code some-heading}), or null when it names none. Pure. */
-    public static String fragmentOf(String address) {
+    public static @Nullable String fragmentOf(String address) {
         int hash = address.indexOf('#', SCHEME.length());
         return hash < 0 || hash == address.length() - 1 ? null : MarkdownToc.slug(address.substring(hash + 1));
     }
