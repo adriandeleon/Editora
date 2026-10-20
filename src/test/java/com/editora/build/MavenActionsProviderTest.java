@@ -147,4 +147,128 @@ class MavenActionsProviderTest {
                 new MavenActionsProvider(pom()).sections(Set.of()),
                 new MavenActionsProvider(pom(), List.of()).sections(Set.of()));
     }
+
+    // --- Maven pass 2 (B7 tri-state + activation notes, B9 @executionId, B28 managed groups, E6 tooltips) ---
+
+    private static BuildAction.Toggle toggle(List<BuildAction.Section> sections, String id) {
+        return sections.stream()
+                .flatMap(s -> s.rows().stream())
+                .filter(r -> r instanceof BuildAction.Toggle t && t.id().equals(id))
+                .map(r -> (BuildAction.Toggle) r)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    @Test
+    void profileRowsSayWhyMavenWouldActivateThemAndAreTriState() {
+        PomModel.Profile dev = new PomModel.Profile("dev", true, List.of());
+        PomModel.Profile jdk = new PomModel.Profile(
+                "jdk25", false, List.of(), List.of(new PomModel.Activation(PomModel.Activation.Kind.JDK, "[25,)")));
+        PomModel.Profile ci = new PomModel.Profile(
+                "ci", false, List.of(), List.of(new PomModel.Activation(PomModel.Activation.Kind.PROPERTY, "env.CI")));
+        PomModel.Profile corp = new PomModel.Profile("corp", false, List.of());
+        PomModel.Profile plain = new PomModel.Profile("plain", false, List.of());
+        PomModel model = new PomModel("g", "a", "1", "jar", List.of(), List.of(dev, jdk, ci, corp, plain));
+        var p = new MavenActionsProvider(
+                model, List.of(), null, null, new MavenActionsProvider.Extras(List.of(), Set.of("corp"), false));
+        var sections = p.sections(Set.of());
+
+        assertEquals(
+                "(" + tr("mavenpopup.activeByDefault") + ")",
+                toggle(sections, "dev").note());
+        assertEquals(
+                "(" + tr("mavenpopup.activation.jdk", "[25,)") + ")",
+                toggle(sections, "jdk25").note());
+        assertEquals(
+                "(" + tr("mavenpopup.activation.property", "env.CI") + ")",
+                toggle(sections, "ci").note());
+        assertEquals("", toggle(sections, "plain").note(), "a plain profile has no note");
+        assertTrue(toggle(sections, "dev").triState(), "off / -P / -P!id");
+        assertFalse(toggle(sections, "dev").locked());
+        BuildAction.Toggle settings = toggle(sections, "corp");
+        assertTrue(settings.locked(), "activated by ~/.m2/settings.xml: on whatever the argv says");
+        assertFalse(settings.triState());
+        assertEquals("(" + tr("mavenpopup.settingsActive") + ")", settings.note());
+    }
+
+    @Test
+    void anExplicitlyOffProfileBecomesMinusPBang() {
+        var p = new MavenActionsProvider(pom());
+        assertEquals(List.of("-Pdist,!dev"), p.toggleArgs(new java.util.LinkedHashSet<>(List.of("dist", "!dev"))));
+        assertEquals(List.of("-P!dev"), p.toggleArgs(Set.of("!dev")));
+        assertEquals(
+                List.of(),
+                p.toggleArgs(Set.of("!" + MavenActionsProvider.REACTOR_TOGGLE)),
+                "the reactor switch has no off form");
+    }
+
+    @Test
+    void aNamedExecutionRunsAsPrefixGoalAtId() {
+        PomModel.Plugin surefire = new PomModel.Plugin(
+                "org.apache.maven.plugins",
+                "maven-surefire-plugin",
+                "3.2.5",
+                List.of(
+                        new PomModel.Execution("default-test", "test", List.of("test")),
+                        new PomModel.Execution("integration-tests", "verify", List.of("test")),
+                        new PomModel.Execution("default", "", List.of("test"))));
+        var p = new MavenActionsProvider(new PomModel("g", "a", "1", "jar", List.of(surefire), List.of()));
+        List<BuildAction.Task> tasks = p.sections(Set.of()).stream()
+                .filter(s -> s.title().equals(tr("mavenpopup.plugins")))
+                .flatMap(s -> s.rows().stream())
+                .map(r -> (BuildAction.Task) r)
+                .toList();
+        assertEquals(
+                List.of("surefire:test", "surefire:test", "surefire:test"),
+                tasks.stream().map(BuildAction.Task::label).toList(),
+                "labels stay short");
+        assertEquals(List.of("surefire:test"), tasks.get(0).args(), "default-<goal> is Maven's own id");
+        assertEquals(
+                List.of("surefire:test@integration-tests"),
+                tasks.get(1).args(),
+                "a named execution runs with its own <configuration>");
+        assertEquals(List.of("surefire:test"), tasks.get(2).args());
+        assertEquals(
+                tr(
+                        "mavenpopup.goalTooltipRuns",
+                        tr("mavenpopup.goalTooltip", "verify", "integration-tests"),
+                        "surefire:test@integration-tests"),
+                tasks.get(1).tooltip(),
+                "the @id is in the tooltip");
+        assertEquals(
+                tr("mavenpopup.goalTooltip", "test", "default-test"),
+                tasks.get(0).tooltip());
+    }
+
+    @Test
+    void goalGroupsCarryTheirVersionManagedPluginsAndTheRemoteCaveat() {
+        MavenPluginGoals.Descriptor javafx = new MavenPluginGoals.Descriptor(
+                "javafx", List.of(new MavenPluginGoals.Goal("run", "")), "0.0.8", false);
+        MavenPluginGoals.Descriptor enforcer = new MavenPluginGoals.Descriptor(
+                "enforcer", List.of(new MavenPluginGoals.Goal("enforce", "")), "3.5.0", true);
+        PomModel model = new PomModel("g", "a", "1", "jar", List.of(), List.of());
+        var local = new MavenActionsProvider(
+                model,
+                List.of(javafx),
+                null,
+                null,
+                new MavenActionsProvider.Extras(List.of(enforcer), Set.of(), false));
+        var sections = local.sections(Set.of());
+        BuildAction.Section javafxGroup = sections.get(sections.size() - 2);
+        BuildAction.Section enforcerGroup = sections.get(sections.size() - 1);
+        assertEquals("javafx", javafxGroup.title());
+        assertEquals(tr("mavenpopup.goalGroupTooltip", "javafx", "0.0.8"), javafxGroup.tooltip());
+        assertTrue(javafxGroup.collapsed());
+        assertEquals(tr("mavenpopup.managedGroup", "enforcer"), enforcerGroup.title());
+        assertEquals(tr("mavenpopup.goalGroupTooltipNewest", "enforcer", "3.5.0"), enforcerGroup.tooltip());
+        assertEquals(List.of("enforcer:enforce"), taskLabels(List.of(enforcerGroup)));
+
+        var remote = new MavenActionsProvider(
+                model, List.of(javafx), null, null, new MavenActionsProvider.Extras(List.of(), Set.of(), true));
+        var remoteSections = remote.sections(Set.of());
+        assertEquals(
+                tr("mavenpopup.localRepositoryGroup", "javafx"),
+                remoteSections.get(remoteSections.size() - 1).title(),
+                "goals read from this machine's ~/.m2 while the build runs elsewhere: say so");
+    }
 }

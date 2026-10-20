@@ -267,6 +267,22 @@ public final class LspManager {
         });
     }
 
+    /** Whether lemminx-maven may use the Maven Central index (Settings → LSP; off = local repository only). */
+    private volatile boolean mavenCentralIndex;
+
+    /**
+     * Pushes the Settings → LSP "Maven Central index" choice (Maven review C10). It is sent at {@code
+     * initialize}, so a running Maven server is shut down when the choice changes; the coordinator's gating
+     * reopens the pom buffers on a server started with the new options.
+     */
+    public void setMavenCentralIndex(boolean enabled) {
+        boolean changed = mavenCentralIndex != enabled;
+        mavenCentralIndex = enabled;
+        if (changed) {
+            shutdownServer(LspServerRegistry.MAVEN_POM_SERVER_ID);
+        }
+    }
+
     /**
      * Sets bash-language-server's {@code bashIde} configuration: answered when a Bash server asks for it, and
      * pushed to the running ones when it changed (they re-read it and re-lint).
@@ -1324,6 +1340,7 @@ public final class LspManager {
         String workspaceBaseName = needsJdtlsWorkspace && !remote ? LspServerRegistry.workspaceDirName(root) : null;
         List<String> bundles = List.copyOf(debugBundles);
         boolean onTypeFormatting = javaOnTypeFormatting;
+        boolean centralIndex = mavenCentralIndex;
         // Trust is read here, on the caller's thread, where the trust list is also edited.
         Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) || TypeScriptServer.SERVER_ID.equals(serverId)
                 ? trustedCeiling(root, folderTrust)
@@ -1426,7 +1443,8 @@ public final class LspManager {
                             ? TypeScriptServer.initializationOptions(tsserverPath, typeAcquisition, loose)
                             : TypeScriptServer.SERVER_ID.equals(serverId)
                                     ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
-                                    : initOptionsFor(serverId, startBundles, astroTsdk, onTypeFormatting, jdks));
+                                    : initOptionsFor(
+                                            serverId, startBundles, astroTsdk, onTypeFormatting, jdks, centralIndex));
             if (!session.start()) {
                 dropSession(key, session);
                 if (session.startFailed()) {
@@ -4110,8 +4128,10 @@ public final class LspManager {
      *       the lemminx-maven settings live under an {@code xml.maven} object (schema verified against the
      *       extension's {@code XMLMavenSettings}). {@code central.skip=true} disables the heavy Maven Central
      *       <i>index</i> download so completion is served from the local {@code ~/.m2} repository only —
-     *       offline-friendly and network-conservative, matching how Git/LSP/update-check are gated. Sending any
-     *       {@code xml.maven} object is also what activates the extension's POM awareness in the first place.</li>
+     *       offline-friendly and network-conservative, matching how Git/LSP/update-check are gated — unless
+     *       Settings → LSP "Use the Maven Central index" is on ({@link #setMavenCentralIndex}, review C10).
+     *       Sending any {@code xml.maven} object is also what activates the extension's POM awareness in the
+     *       first place.</li>
      * </ul>
      */
     static @Nullable Object initOptionsFor(String serverId, List<String> debugBundles) {
@@ -4131,6 +4151,17 @@ public final class LspManager {
             @Nullable Path astroTsdk,
             boolean javaOnTypeFormatting,
             @Nullable List<JavaRuntimes.Jdk> jdks) {
+        return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, jdks, false);
+    }
+
+    /** As above; {@code mavenCentralIndex} lets lemminx-maven download and use the Maven Central index. */
+    static @Nullable Object initOptionsFor(
+            String serverId,
+            List<String> debugBundles,
+            @Nullable Path astroTsdk,
+            boolean javaOnTypeFormatting,
+            @Nullable List<JavaRuntimes.Jdk> jdks,
+            boolean mavenCentralIndex) {
         return switch (serverId == null ? "" : serverId) {
             case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting, jdks);
             case "go" -> Map.of("semanticTokens", true);
@@ -4142,7 +4173,9 @@ public final class LspManager {
             case ASTRO_SERVER_ID ->
                 astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->
-                Map.of("settings", Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true)))));
+                Map.of(
+                        "settings",
+                        Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)))));
             default -> null;
         };
     }
@@ -4544,7 +4577,8 @@ public final class LspManager {
         Integer acceptedVersion = params.getVersion();
         List<org.eclipse.lsp4j.Diagnostic> raw =
                 params.getDiagnostics() == null ? List.of() : List.copyOf(params.getDiagnostics());
-        List<LspDiagnostic> mapped = DiagnosticMapper.map(params.getDiagnostics());
+        List<LspDiagnostic> mapped = MavenPomServer.adjustDiagnostics(
+                serverDisplayName(source.serverId()), DiagnosticMapper.map(params.getDiagnostics()));
         Platform.runLater(() -> {
             if (source.isDisposed()
                     || !sessionsByRoot.containsValue(source)
@@ -4560,6 +4594,12 @@ public final class LspManager {
             }
             onDiagnostics.accept(file, mapped);
         });
+    }
+
+    /** The name a diagnostic without a {@code source} is attributed to: the server's display name, else its id. */
+    private static String serverDisplayName(String serverId) {
+        String name = LspServerRegistry.displayNameFor(serverId);
+        return name != null ? name : serverId;
     }
 
     private @Nullable String managedDocumentUri(LanguageServerSession source, Path file, String reportedUri) {

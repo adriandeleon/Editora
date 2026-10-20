@@ -174,6 +174,14 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
         }
     }
 
+    /** {@code owner}'s build ended because the user stopped it: the header reads "Stopped", not an exit code. */
+    public void stopped(Object owner) {
+        BuildToolPanel console = consoles.get(owner);
+        if (console != null) {
+            console.stopped();
+        }
+    }
+
     public void failed(Object owner, String message) {
         BuildToolPanel console = consoles.get(owner);
         if (console != null) {
@@ -185,6 +193,7 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
         BuildToolPanel console = consoles.get(owner);
         if (console == null) {
             console = new BuildToolPanel();
+            console.setTitle(toolName);
             if (onLink != null) {
                 console.setOnLink(onLink);
             }

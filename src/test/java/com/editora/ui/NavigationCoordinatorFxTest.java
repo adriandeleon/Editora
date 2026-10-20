@@ -412,9 +412,7 @@ class NavigationCoordinatorFxTest {
                 assertTrue(nav.relatedPalette.isShown(), "two stylesheets: only the user knows which was meant");
                 assertEquals(List.of(css, scss), WindowRig.items(nav.relatedPalette));
                 assertEquals(
-                        "page.css|"
-                                + FxTestSupport.call(
-                                        w.controller, "homeCollapsed", new Class<?>[] {String.class}, css.toString()),
+                        "page.css|" + com.editora.config.PathDisplay.collapseHome(css.toString()),
                         WindowRig.row(nav.relatedPalette, css));
                 WindowRig.choose(nav.relatedPalette, scss);
             });

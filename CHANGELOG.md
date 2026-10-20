@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is marked except the window UI (`ui`) and the editor component (`editor`), which follow on their own. A
   new package must start marked, and the list of unmarked packages may only shrink (docs/conventions.md,
   "Null annotations").
+- **Maven tool window (review pass 2).** A module's tree now merges the parent chain found beside it on disk
+  (profiles, plugins, `pluginManagement` goal groups shown as managed, `${property}` plugin versions resolved);
+  profiles are tri-state (off, `-P`, `-P!id`) with their activation condition (JDK, OS, property, file) beside
+  them, and the profiles your `settings.xml` activates are shown locked; the tree and the actions popup share one
+  set of checked profiles. A bound execution runs as `prefix:goal@id`. Every first build in a Maven or Gradle
+  folder that is not yet trusted asks once, wrapper or not, and the prompt lists what will run (the wrapper, the
+  pom's plugins, `.mvn/` files, a project.json override); the tree header shows the trust state with Revoke, and
+  the same gate fronts build-before-launch, the classpath fallback and "Load all tasks". A project whose build
+  files sit one or two folders below its root lists them under Projects; the detection never walks above the
+  open project. Run custom prefills the last command, keeps a per-project history (Recent rows) and says which
+  profile flags it will not add; Rerun Last names the folder. A Build submenu in the Run menu and default chords
+  (IntelliJ `Ctrl+Shift+F10`, `Alt+Shift+B`) reach the Maven actions; the Maven submenu drops its "Maven:" prefix;
+  a malformed pom keeps the lifecycle and shows the error with an Open pom.xml link; goal tooltips lose their
+  Javadoc markup; Run is greyed until a task is selected; Settings and Doctor show which Maven a module's build
+  really runs ("./mvnw (trusted)" or "mvn on PATH"); the Default JDK hint names the tools it drives. Workspace
+  state schema 22 → 23.
 
 ### Fixed
 
@@ -105,6 +121,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running test…", and Debug ▸ Stop ends the Maven run before a session exists. The JVM prints one "Debugger
   failed to attach: handshake failed" line in the Build Output: that is Editora's port check, not an error.
   Gradle is unchanged.
+- **Maven: New Maven Project and Update Versions (review pass 2).** The wizard runs Maven on the JDK chosen in
+  Settings → Build Tools, opens the Output window while it generates, and shows the archetype's own properties
+  (JavaFX version, JUnit version, …) with their defaults once the archetype is in your local repository; the Java
+  release goes through quickstart's `javaCompilerVersion`. The form says which field blocks Create, accepts a
+  relative or `~` location and shows the folder it means, allows an existing empty folder, derives a lower-case
+  package, and the generated `pom.xml` opens in the new project's window. A project generated inside an open
+  aggregator stays a module of it instead of becoming a second project. A JavaFX archetype gets no `java` run
+  configuration (it cannot launch that way); the wizard says to run it with `javafx:run`. The consent prompt names
+  the archetype's repository, "Trust and Generate" skips it for the rest of the session, and Cancel returns to the
+  form. Update Versions shows a checkbox per row under Dependencies / BOM imports / Plugins / Parent, tags a major
+  jump, counts what it did not check (property-driven, inherited), offers the parent pom from a module and the
+  property itself when a version is `${property}` used only there; the Central lookups run in parallel under a
+  background task, stop at the first connection failure, and a second invocation cancels the first. Counts are
+  pluralised; the wizard's Output tab is "New Project".
+- **Maven / Output console (review pass 2).** `[ERROR]`, `[WARNING]`, `BUILD SUCCESS` and `BUILD FAILURE` lines keep
+  their colours under every editor theme; Maven's compiler locations (`App.java:[5,18]`) are clickable, column
+  included; a build you stop reads **Stopped** in the console header, the status bar and Test Results instead of
+  "exit code 143" / "Run failed"; starting a task while another runs offers **Stop and run**; the console keeps the
+  **previous run** behind a header toggle, has a find bar and **Save output…**.
+- **Run, Debug and Test on Maven (review pass 2).** Run's Maven fallback and the build before Run/Debug find a
+  module's reactor through the poms' `<modules>` (a `modules/` folder without a pom included, never above the open
+  project), build from the root with `-pl <module> -am` only when the root lists the module, fall back to the
+  module alone when the reactor does not hold it, and say in the Run console which mode ran; both carry the
+  Maven window's checked profiles and flags. A saved configuration resolves the module its project name or main
+  class belongs to, whatever file is active; with no Maven JDK selected the program runs on `$JAVA_HOME`'s `java`,
+  the one Maven compiled with. Remote hosts get a `maven` tool beside the JDK (Settings → Remote → tools); the
+  host's build streams into the Run console and Stop ends it. A hand-typed `-Dtest=` that matches nothing reads
+  "no test matched"; Test Results marks retried and flaky tests with their retry traces and reads a custom
+  Surefire or Failsafe report folder; Debug via build tool warns when the Boot plugin configures `jvmArguments`
+  and says so after 45 s without a debug banner; a generated project's configuration keeps a blank working
+  directory (the project root).
+- **Maven pom.xml editing (review pass 2).** The pom summary preview now reads the parent chain beside a local file and the BOMs it imports from the local repository, so a managed version shows its number with its source (*from reactor-parent 2.0.0*, *from junit-bom 5.11.0 (import)*); "inherited" is said only under a declared `<parent>` and a dangling `${…}` reads "unresolved". Rows take you to their element, section titles collapse (Properties starts collapsed on a long pom), a filter narrows the rows, Dependencies come before Properties, and repositories (flagged when not Maven Central), reporting plugins, URL/SCM and each profile's activation conditions are listed; a malformed pom names its line and column. Names never break mid-word in a narrow split. Same-named open files show their folder in the tab ("pom.xml · core"), the Structure window names a pom's dependencies, plugins and profiles, a pom gets Maven snippets (dep, plugin, profile, …) and there is a "Maven pom.xml" file template. The Maven language server runs on the Build Tools JDK (also for Install…), serves a whole reactor from one JVM without a project, announces "ready" only once its Maven initialization is done, names its diagnostics, hides `${…}` property items from artifact completion unless you type `$`, and Settings → LSP can turn on the Maven Central index (off by default: local repository only). The native XML server is shown as "lemminx". Settings schema 141 → 142.
 
 ## [0.23.0] - 2026-10-19
 

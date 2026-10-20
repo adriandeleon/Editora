@@ -75,6 +75,54 @@ public final class GeneratedProject {
         return null;
     }
 
+    /**
+     * The Maven goal a generated project is meant to be <em>run</em> with, when its pom says so: {@code
+     * javafx:run} for a pom that declares {@code org.openjfx:javafx-maven-plugin}, {@code spring-boot:run}
+     * for {@code spring-boot-maven-plugin}; null for a plain main class.
+     *
+     * <p>Matters for what gets seeded: a JavaFX archetype's {@code App} launched as a plain classpath main
+     * dies with "JavaFX runtime components are missing" — the module path the plugin sets up is the launch.
+     * Spring Boot's main runs fine on the classpath, so the goal there is a hint, not a replacement.
+     */
+    public static @Nullable String mavenRunGoal(@Nullable String pom) {
+        if (pom == null || pom.isBlank()) {
+            return null;
+        }
+        for (PomEdits.VersionSite site : PomEdits.versionSites(pom)) {
+            if (!site.isPlugin()) {
+                continue;
+            }
+            if ("org.openjfx:javafx-maven-plugin".equals(site.ga())) {
+                return "javafx:run";
+            }
+            if ("org.springframework.boot:spring-boot-maven-plugin".equals(site.ga())) {
+                return "spring-boot:run";
+            }
+        }
+        return null;
+    }
+
+    /** {@link #mavenRunGoal(String)} for the pom under {@code projectDir}; null when there is none to read. */
+    public static @Nullable String mavenRunGoal(@Nullable Path projectDir) {
+        if (projectDir == null) {
+            return null;
+        }
+        try {
+            Path pom = projectDir.resolve("pom.xml");
+            if (!Files.isRegularFile(pom) || Files.size(pom) > MAX_FILE_BYTES) {
+                return null;
+            }
+            return mavenRunGoal(Files.readString(pom, StandardCharsets.UTF_8));
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** Whether a plain {@code java} main-class launch of this project is known to fail (a JavaFX module app). */
+    public static boolean needsMavenToRun(@Nullable String goal) {
+        return "javafx:run".equals(goal);
+    }
+
     private static @Nullable String mainClassIn(Path file) {
         try {
             if (Files.size(file) > MAX_FILE_BYTES) {

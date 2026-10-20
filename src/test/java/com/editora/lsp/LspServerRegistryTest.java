@@ -269,8 +269,20 @@ class LspServerRegistryTest {
         // No built-in command — the install recipe writes the java -cp launcher into Settings.
         assertEquals("", LspServerRegistry.defaultCommandFor("maven-pom"));
         assertEquals(List.of("pom.xml", ".git"), LspServerRegistry.rootMarkersForServer("maven-pom"));
+        // Tiered: the nearest pom first, then the repository (the coordinator then widens to the reactor root).
+        assertEquals(
+                List.of(List.of("pom.xml"), List.of(".git")), LspServerRegistry.rootMarkerTiersForServer("maven-pom"));
         // The plain XML server is unchanged and distinct from the Maven server.
         assertEquals("xml", LspServerRegistry.serverIdFor("xml"));
+    }
+
+    @Test
+    void displayNamesCoverTheServersWhoseProgramNameSaysTheWrongThing() {
+        assertEquals("lemminx", LspServerRegistry.displayNameFor("xml"), "not lemminx-linux-x86_64");
+        assertEquals("lemminx-maven", LspServerRegistry.displayNameFor("maven-pom"), "not java");
+        assertEquals("jdtls", LspServerRegistry.displayNameFor("java"));
+        assertNull(LspServerRegistry.displayNameFor("go"), "gopls is its own right name");
+        assertNull(LspServerRegistry.displayNameFor(null));
     }
 
     @Test

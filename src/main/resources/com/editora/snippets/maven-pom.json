@@ -1,0 +1,110 @@
+{
+  "Dependency": {
+    "prefix": "dep",
+    "body": [
+      "<dependency>",
+      "\t<groupId>${1:org.example}</groupId>",
+      "\t<artifactId>${2:artifact}</artifactId>",
+      "\t<version>${3:1.0.0}</version>$0",
+      "</dependency>"
+    ],
+    "description": "A <dependency> with groupId, artifactId and version"
+  },
+  "Managed dependency": {
+    "prefix": "depm",
+    "body": [
+      "<dependency>",
+      "\t<groupId>${1:org.example}</groupId>",
+      "\t<artifactId>${2:artifact}</artifactId>$0",
+      "</dependency>"
+    ],
+    "description": "A <dependency> without a version (managed by a parent or BOM)"
+  },
+  "Test dependency": {
+    "prefix": "dept",
+    "body": [
+      "<dependency>",
+      "\t<groupId>${1:org.junit.jupiter}</groupId>",
+      "\t<artifactId>${2:junit-jupiter}</artifactId>",
+      "\t<version>${3:5.11.0}</version>",
+      "\t<scope>test</scope>$0",
+      "</dependency>"
+    ],
+    "description": "A test-scoped <dependency>"
+  },
+  "BOM import": {
+    "prefix": "bom",
+    "body": [
+      "<dependency>",
+      "\t<groupId>${1:org.junit}</groupId>",
+      "\t<artifactId>${2:junit-bom}</artifactId>",
+      "\t<version>${3:5.11.0}</version>",
+      "\t<type>pom</type>",
+      "\t<scope>import</scope>$0",
+      "</dependency>"
+    ],
+    "description": "A BOM import for <dependencyManagement>"
+  },
+  "Plugin": {
+    "prefix": "plugin",
+    "body": [
+      "<plugin>",
+      "\t<groupId>${1:org.apache.maven.plugins}</groupId>",
+      "\t<artifactId>${2:maven-compiler-plugin}</artifactId>",
+      "\t<version>${3:3.14.0}</version>",
+      "\t<configuration>",
+      "\t\t$0",
+      "\t</configuration>",
+      "</plugin>"
+    ],
+    "description": "A <plugin> with a <configuration> block"
+  },
+  "Plugin execution": {
+    "prefix": "exec",
+    "body": [
+      "<execution>",
+      "\t<id>${1:default}</id>",
+      "\t<phase>${2:package}</phase>",
+      "\t<goals>",
+      "\t\t<goal>${3:goal}</goal>",
+      "\t</goals>$0",
+      "</execution>"
+    ],
+    "description": "An <execution> binding a goal to a phase"
+  },
+  "Profile": {
+    "prefix": "profile",
+    "body": [
+      "<profile>",
+      "\t<id>${1:ci}</id>",
+      "\t<activation>",
+      "\t\t<property>",
+      "\t\t\t<name>${2:env.CI}</name>",
+      "\t\t</property>",
+      "\t</activation>",
+      "\t$0",
+      "</profile>"
+    ],
+    "description": "A <profile> activated by a property"
+  },
+  "Property": {
+    "prefix": "prop",
+    "body": "<${1:name}>${2:value}</${1:name}>$0",
+    "description": "A <properties> entry (name mirrored)"
+  },
+  "Module": {
+    "prefix": "module",
+    "body": "<module>${1:name}</module>$0",
+    "description": "A <module> entry of a reactor"
+  },
+  "Repository": {
+    "prefix": "repo",
+    "body": [
+      "<repository>",
+      "\t<id>${1:id}</id>",
+      "\t<url>${2:https://}</url>$0",
+      "</repository>"
+    ],
+    "description": "A <repository> entry"
+  }
+}

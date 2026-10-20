@@ -1351,9 +1351,11 @@ final class LspCoordinator {
         return commands;
     }
 
-    /** Pushes {@code Settings.lspOnTypeFormatting} to the manager, which jdtls needs to register the provider. */
+    /** Pushes {@code Settings.lspOnTypeFormatting} to the manager, which jdtls needs to register the provider,
+     *  and the Maven server's Central-index choice (which restarts that server when it changes). */
     void applyOnTypeFormatting() {
         lspManager.setJavaOnTypeFormatting(host.settings().isLspOnTypeFormatting());
+        lspManager.setMavenCentralIndex(host.settings().isMavenPomCentralIndex());
     }
 
     /** Clears the diagnostics (Problems entry + editor overlay) of every open buffer served by {@code serverId}
@@ -1938,7 +1940,9 @@ final class LspCoordinator {
             case "csharp" -> s.getCsharpLspCommand();
             case "typst" -> s.getTypstLspCommand();
             case "astro" -> s.getAstroLspCommand();
-            case "maven-pom" -> s.getMavenPomLspCommand();
+            // The stored command starts with a bare `java`: run it on the Maven JDK like groovy/scala (review C4).
+            case "maven-pom" ->
+                com.editora.lsp.JvmServerCommand.withJdk(s.getMavenPomLspCommand(), s.getMavenJdkHome());
             default -> s.getJavaLspCommand();
         };
     }
@@ -2509,10 +2513,15 @@ final class LspCoordinator {
                         ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId))) {
             return loose; // one server for every loose script, wherever it is (B7)
         }
-        return com.editora.lsp.RootResolver.resolveTiered(
+        Path resolved = com.editora.lsp.RootResolver.resolveTiered(
                 ops.lspProjectRoot(),
                 lspPath(buffer),
                 com.editora.lsp.LspServerRegistry.rootMarkerTiersForServer(serverId));
+        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
+            // A module pom's root is its reactor's: one lemminx-maven JVM per reactor, not per module (C11).
+            return com.editora.lsp.RootResolver.outermostContiguous(resolved, "pom.xml", ops.lspProjectRoot());
+        }
+        return resolved;
     }
 
     /** Library files already put in View mode once (Enable Editing then sticks). */
@@ -2624,6 +2633,33 @@ final class LspCoordinator {
         return com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
                 ? com.editora.lsp.LspServerRegistry.MAVEN_POM_LANGUAGE_ID
                 : buffer.getLanguage();
+    }
+
+    /**
+     * On the Maven server, drops the {@code ${…}} property items that flood a GAV completion unless the typed
+     * prefix starts with {@code $} (Maven review C19); every other server's results pass through untouched.
+     */
+    private java.util.function.Consumer<com.editora.completion.CompletionResult> pomCompletionFilter(
+            EditorBuffer buffer,
+            int line,
+            int column,
+            java.util.function.Consumer<com.editora.completion.CompletionResult> cb) {
+        Path p = lspPath(buffer);
+        if (p == null || !com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(lspManager.managedServerId(p))) {
+            return cb;
+        }
+        String lineText = line >= 0 && line < buffer.getArea().getParagraphs().size()
+                ? buffer.getArea().getParagraph(line).getText()
+                : "";
+        String prefix = com.editora.lsp.MavenPomServer.elementPrefix(lineText, column);
+        return result -> {
+            var items = com.editora.lsp.MavenPomServer.filterCompletion(
+                    prefix, result.items(), com.editora.completion.Completion::label);
+            cb.accept(
+                    items == result.items()
+                            ? result
+                            : new com.editora.completion.CompletionResult(items, result.incomplete()));
+        };
     }
 
     /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
@@ -2825,9 +2861,11 @@ final class LspCoordinator {
 
     /** The program a server runs ("typescript-language-server"), as the status bar's LSP segment shows it. */
     private String serverProgram(String serverId) {
-        // The Maven server launches via `java -cp ...`, whose basename ("java") is meaningless — name it directly.
-        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
-            return "lemminx-maven";
+        // Servers whose program name says the wrong thing — `java` for the Maven server, the platform-suffixed
+        // lemminx download for XML — have a display name of their own (Maven review C14).
+        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId);
+        if (named != null) {
+            return named;
         }
         String configured = serverCommand(serverId);
         String cmd = configured == null || configured.isBlank()
@@ -2859,6 +2897,22 @@ final class LspCoordinator {
         if (!ops.lspFeatureEnabled()) {
             return;
         }
+        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
+            // lemminx-maven answers initialize long before it can answer a request: its ready line waits for
+            // the "Maven initialization done" progress end (Maven review C18).
+            for (var status : mavenReadyGate.onStatus(type, message)) {
+                narrateServerStatus(serverId, status.type(), status.message());
+            }
+            return;
+        }
+        narrateServerStatus(serverId, type, message);
+    }
+
+    /** Holds the Maven server's ready status until its own initialization progress ends (C18). */
+    private final com.editora.lsp.MavenPomServer.ReadyGate mavenReadyGate =
+            new com.editora.lsp.MavenPomServer.ReadyGate();
+
+    private void narrateServerStatus(String serverId, String type, String message) {
         showStatusLine(statusNarrator.onStatus(serverId, type, message, System.currentTimeMillis()));
         if (statusNarrator.pending()) {
             statusSettle.playFromStart(); // every status restarts the quiet period
@@ -2994,7 +3048,13 @@ final class LspCoordinator {
         buffer.setLspCompletionSource((line, column, kind, trigger, cb) -> {
             if (lspPath(buffer) != null && lspManager.isManaged(lspPath(buffer))) {
                 return lspManager.completion(
-                        lspPath(buffer), line, column, kind, trigger, item -> autoImportAccept(buffer, item), cb);
+                        lspPath(buffer),
+                        line,
+                        column,
+                        kind,
+                        trigger,
+                        item -> autoImportAccept(buffer, item),
+                        pomCompletionFilter(buffer, line, column, cb));
             }
             cb.accept(com.editora.completion.CompletionResult.EMPTY);
             return () -> {};

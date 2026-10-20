@@ -7,7 +7,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GeneratedProjectTest {
 
@@ -109,5 +111,25 @@ class GeneratedProjectTest {
     @Test
     void nullProjectDirIsNullNotAnException() {
         assertNull(GeneratedProject.findMainClass(null));
+    }
+
+    @Test
+    void theMavenRunGoalComesFromThePluginsThePomDeclares(@TempDir Path root) throws Exception {
+        String javafx = "<project><build><plugins><plugin><groupId>org.openjfx</groupId>"
+                + "<artifactId>javafx-maven-plugin</artifactId><version>0.0.8</version></plugin></plugins></build></project>";
+        assertEquals("javafx:run", GeneratedProject.mavenRunGoal(javafx));
+        assertTrue(GeneratedProject.needsMavenToRun("javafx:run"), "a module app cannot be launched as a plain main");
+        String boot = "<project><build><plugins><plugin><groupId>org.springframework.boot</groupId>"
+                + "<artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build></project>";
+        assertEquals("spring-boot:run", GeneratedProject.mavenRunGoal(boot));
+        assertFalse(GeneratedProject.needsMavenToRun("spring-boot:run"), "Boot's main runs fine on the classpath");
+        assertNull(GeneratedProject.mavenRunGoal("<project><build><plugins><plugin>"
+                + "<artifactId>maven-compiler-plugin</artifactId></plugin></plugins></build></project>"));
+        assertNull(GeneratedProject.mavenRunGoal((String) null));
+        assertFalse(GeneratedProject.needsMavenToRun(null));
+
+        write(root, "pom.xml", javafx);
+        assertEquals("javafx:run", GeneratedProject.mavenRunGoal(root));
+        assertNull(GeneratedProject.mavenRunGoal(root.resolve("nowhere")));
     }
 }

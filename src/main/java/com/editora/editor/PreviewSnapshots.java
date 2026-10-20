@@ -162,7 +162,7 @@ public final class PreviewSnapshots {
                     "structured-tree");
         }
         if (b.hasPomPreview()) {
-            return Plan.of(PomPreview.content(com.editora.maven.PomSummary.parse(text), EXPORT_WIDTH));
+            return Plan.of(PomPreview.content(com.editora.maven.PomSummary.parse(text, b.getPath()), EXPORT_WIDTH));
         }
         if (b.isXml()) {
             XmlParser.Parsed p = XmlParser.parse(text);

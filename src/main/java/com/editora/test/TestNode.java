@@ -28,6 +28,7 @@ public final class TestNode {
     private int sourceLineHint; // 1-based; 0 = unknown
     private @Nullable String className; // for a TEST leaf: the owning class/package (for source navigation)
     private @Nullable String methodName; // for a TEST leaf: the method/case name (for rerun-failed + navigation)
+    private int retries; // Surefire reruns before this result: PASSED + retries = flaky (review D16)
 
     private final List<TestNode> children = new ArrayList<>();
     private @Nullable TestNode parent;
@@ -144,6 +145,20 @@ public final class TestNode {
 
     public void setMethodName(@Nullable String methodName) {
         this.methodName = methodName;
+    }
+
+    /** Reruns before this result ({@link ParsedTest#retries()}); a passed test with any is flaky. */
+    public int retries() {
+        return retries;
+    }
+
+    public void setRetries(int retries) {
+        this.retries = retries;
+    }
+
+    /** Whether the test passed only after failing: Surefire's {@code flakyFailure}/{@code flakyError}. */
+    public boolean isFlaky() {
+        return retries > 0 && status == TestStatus.PASSED;
     }
 
     public List<TestNode> children() {

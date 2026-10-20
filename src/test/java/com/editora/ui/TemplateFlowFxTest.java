@@ -79,7 +79,7 @@ class TemplateFlowFxTest {
     }
 
     private static String collapsed(Path path) {
-        return (String) FxTestSupport.call(controller, "homeCollapsed", new Class<?>[] {String.class}, path.toString());
+        return com.editora.config.PathDisplay.collapseHome(path.toString());
     }
 
     private static EditorBuffer active() {

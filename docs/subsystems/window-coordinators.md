@@ -87,7 +87,16 @@ the project's wrapper after the trust gate, the project-scoped command override,
 no-jdtls Maven fallback uses too: `MavenClasspathResolver.plan` builds the `dependency:build-classpath` command with
 that prefix and the launch's scope (`-Dmdep.includeScope=runtime`, `test` for a test class), and the coordinator runs
 it as a before-launch step — its output streams, Stop kills it, a second Run is refused, and a failure's status
-quotes Maven's first `[ERROR]` line (`BeforeLaunchStep.failureDetail`). A configuration's before-launch text may be
+quotes Maven's first `[ERROR]` line (`BeforeLaunchStep.failureDetail`). Both commands carry the Maven tasks tree's
+active profiles and flags (`BuildCoordinator.activeToggleArgs` → `RunCoordinator.Ops.mavenToggleArgs`; the tree's
+reactor switch is dropped, `MavenClasspath.withoutReactorArgs`), and both choose the module's reactor themselves:
+`MavenReactor.describe` walks the ancestors' `<modules>` (a `modules/` folder without a pom included), bounded by
+the open project, and a module its reactor lists builds from the root with `-pl <module> -am`; when Maven answers
+"Could not find the selected project in the reactor", the fallback runs the module alone (`Plan.singleModule`) and
+the console says which mode ran. A saved configuration's fallback resolves the module `projectName` (= the
+artifactId) or the main class's source file names (`MavenReactor.locateModule`), not the routing file's. With no
+JDK selected the program runs on `$JAVA_HOME/bin/java` when the inherited environment names one
+(`JdkToolchain.inheritedJavaExecutable`), i.e. the JDK Maven just compiled with. A configuration's before-launch text may be
 symbolic — `maven:compile`, `gradle:compileJava` (`run.BuildBeforeLaunch.symbolic`) — resolved through the same
 executable at run time; the configuration seeded for a generated Maven project stores that.
 

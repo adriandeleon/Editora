@@ -94,6 +94,12 @@ class TestRunCoordinatorUpToDateFxTest {
     /** Runs a whole (instant) test run that writes no report, and returns the finished run's leaf names. */
     private static List<String> runThatRewritesNothing(RecordingHost host, BuildTool tool, Path dir, int exitCode)
             throws Exception {
+        return runThatRewritesNothing(host, tool, dir, exitCode, List.of());
+    }
+
+    /** As above, with {@code output} lines the build printed before it exited. */
+    private static List<String> runThatRewritesNothing(
+            RecordingHost host, BuildTool tool, Path dir, int exitCode, List<String> output) throws Exception {
         TestRunCoordinator coordinator = FxTestSupport.callOnFx(() -> new TestRunCoordinator(host, new Ops()));
         try {
             // "--tests" / "-Dtest" so the run is filtered and no pending tree is pre-seeded from sources.
@@ -102,6 +108,7 @@ class TestRunCoordinatorUpToDateFxTest {
                     : List.of("test", "-Dtest=FooTest");
             FxTestSupport.runOnFx(() -> {
                 assertTrue(coordinator.onTestRunStart(tool, dir, task, List.of(), List.of("tool", "test")));
+                output.forEach(line -> coordinator.onTestOutput(line, true));
                 coordinator.onTestExit(exitCode);
             });
             // The baseline, the final sweep and the completion are queued on the poller in that order: one
@@ -176,6 +183,20 @@ class TestRunCoordinatorUpToDateFxTest {
         RecordingHost failed = new RecordingHost();
         runThatRewritesNothing(failed, BuildTool.MAVEN, dir, 1);
         assertFalse(failed.statuses.contains(tr("status.testrunner.noMatch")), "a failed build has its own message");
+
+        // A hand-typed -Dtest= lacks Editora's reactor flags: Surefire fails the build saying nothing matched,
+        // which must read as "no test matched", not as a broken build (review D9).
+        RecordingHost typed = new RecordingHost();
+        assertTrue(runThatRewritesNothing(
+                        typed,
+                        BuildTool.MAVEN,
+                        dir,
+                        1,
+                        List.of(
+                                "[ERROR] No tests matching pattern \"Nope\" were executed! (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)",
+                                "[ERROR] -> [Help 1]"))
+                .isEmpty());
+        assertTrue(typed.statuses.contains(tr("status.testrunner.noMatch")), typed.statuses.toString());
     }
 
     private static final String LIB_REPORT = """

@@ -21,6 +21,29 @@ class JdkToolchainTest {
         assertEquals("", JdkToolchain.effectiveHome(null, null));
     }
 
+    /** No JDK selected: the program runs on the JAVA_HOME Maven compiled with, when it names a real launcher (review D18). */
+    @Test
+    void theInheritedJavaHomeNamesTheLauncherWhenItExists(@org.junit.jupiter.api.io.TempDir java.nio.file.Path home)
+            throws Exception {
+        assertEquals("", JdkToolchain.inheritedJavaExecutable(java.util.Map.of()));
+        assertEquals("", JdkToolchain.inheritedJavaExecutable(null));
+        assertEquals(
+                "",
+                JdkToolchain.inheritedJavaExecutable(
+                        java.util.Map.of("JAVA_HOME", home.resolve("nope").toString())));
+        java.nio.file.Path bin = java.nio.file.Files.createDirectories(home.resolve("bin"));
+        String launcher =
+                System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win") ? "java.exe" : "java";
+        java.nio.file.Files.writeString(bin.resolve(launcher), "");
+        assertEquals(
+                bin.resolve(launcher).toString(),
+                JdkToolchain.inheritedJavaExecutable(java.util.Map.of("JAVA_HOME", " " + home + " ")));
+        assertEquals(
+                JdkToolchain.javaExecutable(home.toString()),
+                JdkToolchain.javaExecutableOrInherited(home.toString()),
+                "a selected JDK wins over the environment");
+    }
+
     @Test
     void blankSelectionLeavesLauncherAndEnvironmentAutomatic() {
         assertEquals("", JdkToolchain.javaExecutable(" "));

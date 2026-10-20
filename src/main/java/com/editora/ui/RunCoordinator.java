@@ -149,6 +149,15 @@ final class RunCoordinator {
         }
 
         /**
+         * The Maven tasks tree's active toggle args (profiles, offline, the reactor switch) for its detected
+         * root, as it would add them to a task; empty with no tree. A launch's Maven commands carry the
+         * profiles and flags among them (review D13).
+         */
+        default List<String> mavenToggleArgs() {
+            return List.of();
+        }
+
+        /**
          * The argv prefix a launch may start {@code tool} with from {@code root}: what the tasks tree would
          * run (the project's wrapper, the command override, the PATH command), after the tasks tree's trust
          * gate — or null when the user declined to trust the project's wrapper, in which case the gate has
@@ -1067,18 +1076,14 @@ final class RunCoordinator {
         };
         host.setStatus(tr("status.deploy.building", deployed.deployment().name()));
         if (maven) {
-            List<String> mvn = ops.buildExecutable(com.editora.build.BuildTool.MAVEN, hostModule);
-            if (mvn == null) {
-                return; // the trust gate said why
-            }
-            com.editora.maven.MavenClasspath.Scope scope =
-                    com.editora.maven.MavenClasspath.Scope.forSource(routing, localModule);
-            ops.resolveMavenClasspath(hostModule, plan.jdkHome(), mvn, scope, cp -> {
-                if (cp == null || cp.isEmpty()) {
-                    host.setStatus(tr("status.deploy.buildFailed", cfg.name()));
-                }
-                launch.accept(cp);
-            });
+            // The host's Maven build streams into the Run console like a local one (review D10); the scope
+            // is the local copy's (the routing file's tree), the module the host's.
+            resolveMavenClasspath(
+                    hostModule,
+                    com.editora.maven.MavenClasspath.Scope.forSource(routing, localModule),
+                    plan.jdkHome(),
+                    label,
+                    launch);
             return;
         }
         Path gradleRoot = onLaunchHost(gradleBuildRoot(localRoot, localModule));
@@ -1304,8 +1309,16 @@ final class RunCoordinator {
         if (executable == null) {
             return; // the trust gate said why
         }
+        // Maven: from the module's reactor when one lists it (its uninstalled siblings compile first), with
+        // the tasks tree's profiles and flags (reviews D5, D13).
+        List<String> extra = tool == com.editora.build.BuildTool.MAVEN
+                ? BuildBeforeLaunch.mavenExtraArgs(
+                        com.editora.maven.MavenReactor.describeOnDisk(root, ops.projectRoot()),
+                        null,
+                        ops.mavenToggleArgs())
+                : List.of();
         List<String> argv =
-                BuildBeforeLaunch.compileArgv(tool, executable, BuildBeforeLaunch.isTestSource(source, root));
+                BuildBeforeLaunch.compileArgv(tool, executable, BuildBeforeLaunch.isTestSource(source, root), extra);
         beforeLaunch.run(
                 host,
                 new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
@@ -1318,41 +1331,81 @@ final class RunCoordinator {
 
     /**
      * Resolves the Maven classpath of {@code root} for a launch of the class declared in {@code source}, then
-     * {@code then} with it. On this machine the resolution runs in the Run console as a before-launch step —
-     * its output streams, Stop ends it, a second Run is refused while it runs, the window's close kills it
-     * (reviews D4, D8) — with the executable the tasks tree uses (review D3), and a failure's status quotes
-     * Maven's first {@code [ERROR]} line. A project on a host resolves there, silently, as before.
+     * {@code then} with it. The resolution runs in the Run console as a before-launch step — its output
+     * streams, Stop ends it, a second Run is refused while it runs, the window's close kills it (reviews D4,
+     * D8) — with the executable the tasks tree uses (review D3) and its profiles (review D13), and a failure's
+     * status quotes Maven's first {@code [ERROR]} line. A module its reactor lists builds from the reactor
+     * root; when Maven then answers that its reactor does not hold the module, the module is built alone
+     * instead, and the console says which it was (review D5). A project on a host resolves the same way,
+     * with Maven on the host and its build streamed here (review D10).
      */
     private void resolveMavenClasspath(
             Path root, Path source, String jdkHome, String label, Consumer<List<String>> then) {
-        com.editora.maven.MavenClasspath.Scope scope = com.editora.maven.MavenClasspath.Scope.forSource(source, root);
+        resolveMavenClasspath(
+                root, com.editora.maven.MavenClasspath.Scope.forSource(source, root), jdkHome, label, then);
+    }
+
+    /** As {@link #resolveMavenClasspath(Path, Path, String, String, Consumer)} for a known {@code scope}. */
+    private void resolveMavenClasspath(
+            Path root,
+            com.editora.maven.MavenClasspath.Scope scope,
+            String jdkHome,
+            String label,
+            Consumer<List<String>> then) {
         List<String> executable = ops.buildExecutable(com.editora.build.BuildTool.MAVEN, root);
         if (executable == null) {
             return; // the trust gate said why
-        }
-        if (!com.editora.process.ExecTargets.runsHere(root)) {
-            host.setStatus(tr("status.run.resolvingClasspath"));
-            ops.resolveMavenClasspath(root, jdkHome, executable, scope, cp -> {
-                if (cp == null || cp.isEmpty()) {
-                    host.setStatus(tr("status.run.resolveFailed"));
-                    return;
-                }
-                then.accept(cp);
-            });
-            return;
         }
         if (consoleRunning()) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
+        List<String> toggles = ops.mavenToggleArgs();
+        Path boundary = ops.projectRoot();
+        if (!com.editora.process.ExecTargets.runsHere(root)) {
+            // Planning asks the host whether its temp folder is in view: off the FX thread.
+            host.setStatus(tr("status.run.resolveClasspath", label));
+            Thread.ofVirtual().name("editora-maven-plan").start(() -> {
+                com.editora.maven.MavenClasspathResolver.Plan plan;
+                try {
+                    plan = com.editora.maven.MavenClasspathResolver.plan(root, boundary, executable, toggles, scope);
+                } catch (java.io.IOException | RuntimeException e) {
+                    javafx.application.Platform.runLater(() -> host.setStatus(
+                            tr("status.run.resolveClasspathFailed", label, String.valueOf(e.getMessage()))));
+                    return;
+                }
+                javafx.application.Platform.runLater(() -> runResolution(plan, root, jdkHome, label, then, false));
+            });
+            return;
+        }
         com.editora.maven.MavenClasspathResolver.Plan plan;
         try {
-            plan = com.editora.maven.MavenClasspathResolver.plan(root, executable, scope);
+            plan = com.editora.maven.MavenClasspathResolver.plan(root, boundary, executable, toggles, scope);
         } catch (java.io.IOException | RuntimeException e) {
             host.setStatus(tr("status.run.resolveClasspathFailed", label, String.valueOf(e.getMessage())));
             return;
         }
+        runResolution(plan, root, jdkHome, label, then, false);
+    }
+
+    /**
+     * Runs {@code plan} as a step of the Run console, then {@code then} with the classpath it wrote.
+     * {@code retried}: this is the single-module retry after Maven refused the reactor selection.
+     */
+    private void runResolution(
+            com.editora.maven.MavenClasspathResolver.Plan plan,
+            Path root,
+            String jdkHome,
+            String label,
+            Consumer<List<String>> then,
+            boolean retried) {
+        if (consoleRunning()) {
+            com.editora.maven.MavenClasspathResolver.discard(plan);
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
         BeforeLaunchStep.Console console = stepConsole(plan.workingDirectory());
+        boolean[] notInReactor = {false};
         beforeLaunch.run(
                 host,
                 new BeforeLaunchStep.Command(label, plan.argv(), "status.run.resolveClasspath"),
@@ -1361,20 +1414,40 @@ final class RunCoordinator {
                 new BeforeLaunchStep.Console() {
                     @Override
                     public void started(String commandLine) {
-                        console.started(commandLine);
+                        console.started(commandLine); // clears the console: the notices follow it
+                        if (retried) {
+                            panel().appendNotice(tr("run.console.mavenReactorRetry", selectorOf(root)));
+                        }
+                        panel().appendNotice(
+                                        plan.multiModule()
+                                                ? tr(
+                                                        "run.console.mavenReactor",
+                                                        plan.reactor().rootName(),
+                                                        plan.reactor().moduleSelector())
+                                                : tr("run.console.mavenSingleModule"));
                     }
 
                     @Override
                     public void output(String line, boolean stderr) {
                         console.output(line, stderr);
+                        if (plan.multiModule() && com.editora.maven.MavenReactor.isNotInReactor(line)) {
+                            notInReactor[0] = true;
+                        }
                     }
 
                     @Override
                     public void ended(int code, String launchError) {
                         console.ended(code, launchError);
-                        if (code != 0 || launchError != null) {
-                            com.editora.maven.MavenClasspathResolver.discard(plan); // the step said why
+                        if (code == 0 && launchError == null) {
+                            return;
                         }
+                        if (notInReactor[0] && launchError == null && !beforeLaunch.wasStopped()) {
+                            // Maven's reactor is the authority: the module it does not hold builds alone.
+                            javafx.application.Platform.runLater(
+                                    () -> runResolution(plan.singleModule(), root, jdkHome, label, then, true));
+                            return;
+                        }
+                        com.editora.maven.MavenClasspathResolver.discard(plan); // the step said why
                     }
                 },
                 () -> {
@@ -1387,6 +1460,12 @@ final class RunCoordinator {
                     then.accept(cp);
                 });
         ops.onRunStateChanged();
+    }
+
+    /** The module's folder name, for a notice. */
+    private static String selectorOf(Path root) {
+        Path name = root.getFileName();
+        return name == null ? root.toString() : name.toString();
     }
 
     /**
@@ -1538,25 +1617,47 @@ final class RunCoordinator {
                 });
             });
         } else if (ops.mavenProjectAt(root)) {
+            // The configuration's module, not the routing file's (review D12); with no JDK selected, the java
+            // of the JAVA_HOME Maven compiled with (review D18).
+            Path module = mavenModuleOf(root, cfg);
+            String java = !javaOverride.isBlank()
+                    ? javaOverride
+                    : onHost ? "java" : JdkToolchain.inheritedJavaExecutable(System.getenv());
             resolveMavenClasspath(
-                    root,
-                    routing,
+                    module,
+                    module.equals(root) ? routing : module,
                     jdkHome,
                     label,
                     cp -> streamRun(
                             label,
-                            cwd,
-                            JavaRunCommand.build(
-                                    javaOverride.isBlank() && onHost ? "java" : javaOverride,
-                                    List.of(),
-                                    cp,
-                                    cfg.mainClass(),
-                                    vm,
-                                    args),
+                            module.equals(root) || !cfg.workingDir().isBlank() ? cwd : module,
+                            JavaRunCommand.build(java, List.of(), cp, cfg.mainClass(), vm, args),
                             launchEnv));
         } else {
             host.setStatus(tr("status.run.javaUnavailable"));
         }
+    }
+
+    /**
+     * The Maven module a saved configuration's class lives in (review D12): the configuration's
+     * {@code projectName} (jdtls's name for a module = its artifactId) or its main class's source file, looked
+     * for among the modules of the reactor around {@code root} (the open project when it is a Maven root,
+     * else the reactor {@code root} belongs to, else {@code root} alone); {@code root} — the routing file's
+     * module — when nothing matches.
+     */
+    private Path mavenModuleOf(Path root, RunConfiguration cfg) {
+        if (!com.editora.process.ExecTargets.runsHere(root)) {
+            return root;
+        }
+        Path project = ops.projectRoot();
+        Path start = project != null && ops.mavenProjectAt(project) && root.startsWith(project) ? project : null;
+        if (start == null) {
+            com.editora.maven.MavenReactor.Reactor reactor =
+                    com.editora.maven.MavenReactor.describeOnDisk(root, project);
+            start = reactor != null ? reactor.root() : root;
+        }
+        Path module = com.editora.maven.MavenReactor.locateModuleOnDisk(start, cfg.projectName(), cfg.mainClass());
+        return module != null && ops.mavenProjectAt(module) ? module : root;
     }
 
     /** What a {@link com.editora.run.JavaLaunchPlan} of a configuration in {@code root}'s project needs to know. */
@@ -1726,9 +1827,10 @@ final class RunCoordinator {
             if (args == null) {
                 return;
             }
+            // With no JDK selected, the java of the JAVA_HOME Maven just compiled with (review D18).
             String java = !com.editora.process.ExecTargets.runsHere(root)
                     ? hostJava(jdkHome, null)
-                    : JdkToolchain.javaExecutable(jdkHome);
+                    : JdkToolchain.javaExecutableOrInherited(jdkHome);
             List<String> command = JavaRunCommand.build(java, List.of(), cp, m.fqn(), List.of(), args);
             streamRun(shortName(m.fqn()), root, command, javaEnvironment(root, jdkHome, null));
         });
