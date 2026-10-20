@@ -150,6 +150,33 @@ class ProjectPanelDirectoryLoadingFxTest {
         }
     }
 
+    /**
+     * A panel is disposed with its window, but the tree can still be laid out once more as that window closes
+     * (or a filter's debounce can still fire): a folder asked for its children then, and a filtered rebuild,
+     * submitted to executors that dispose had shut down and threw RejectedExecutionException on the FX thread,
+     * where it failed whichever test happened to be running next.
+     */
+    @Test
+    void foldersAndFiltersReachedAfterDisposeAreLeftAloneInsteadOfThrowing(@TempDir Path dir) throws Exception {
+        Path folder = Files.createDirectory(dir.resolve("folder"));
+        Files.writeString(folder.resolve("inner.txt"), "inner");
+        ProjectPanel panel = FxTestSupport.callOnFx(
+                () -> DisposedPanels.track(new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false)));
+        FxTestSupport.runOnFx(() -> panel.setRoot(dir));
+        TreeView<Path> tree = FxTestSupport.field(panel, "tree");
+        TreeItem<Path> unloaded = awaitChild(FxTestSupport.callOnFx(tree::getRoot), folder);
+
+        FxTestSupport.runOnFx(panel::dispose);
+        FxTestSupport.runOnFx(() -> {
+            unloaded.getChildren(); // the first ask is what lists a folder
+            unloaded.setExpanded(true);
+            javafx.scene.control.TextField filter = FxTestSupport.field(panel, "filterField");
+            filter.setText("inner");
+            FxTestSupport.invoke(panel, "rebuildBody");
+        });
+        assertTrue(FxTestSupport.callOnFx(() -> unloaded.getChildren().isEmpty()), "nothing is listed any more");
+    }
+
     private static TreeItem<Path> awaitChild(TreeItem<Path> parent, Path path) throws Exception {
         for (int i = 0; i < 100; i++) {
             TreeItem<Path> match = FxTestSupport.callOnFx(() -> parent.getChildren().stream()

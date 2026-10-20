@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -1051,7 +1052,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 Path searchRoot = root;
                 boolean includeHidden = showHidden;
                 boolean useGitignore = respectGitignore && com.editora.vfs.Vfs.isLocal(root);
-                searchExecutor.submit(() -> {
+                submitUnlessDisposed(searchExecutor, () -> {
                     com.editora.search.GitignoreFilter gitignore = useGitignore
                             ? com.editora.search.GitignoreFilter.load(searchRoot)
                             : com.editora.search.GitignoreFilter.NONE;
@@ -1082,7 +1083,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             PathItem pending = new PathItem(root, includeHidden, true, true);
             pending.setExpanded(true);
             tree.setRoot(pending);
-            searchExecutor.submit(() -> {
+            submitUnlessDisposed(searchExecutor, () -> {
                 // Load the root .gitignore off the FX thread (reads one file); NONE = no exclusion.
                 com.editora.search.GitignoreFilter gitignore = useGitignore
                         ? com.editora.search.GitignoreFilter.load(searchRoot)
@@ -1363,6 +1364,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Whether {@code name} is an Editora-internal throwaway file the tree watcher should ignore. */
     static boolean isEditoraTempName(String name) {
         return ProjectWatchChanges.isInternalName(name);
+    }
+
+    /**
+     * Runs {@code task} on {@code executor} unless this panel has been disposed, which shuts both executors
+     * down. A tree can still be laid out once more as its window closes (a folder is then asked for its
+     * children) and a filter's debounce can still fire: those threw RejectedExecutionException on the FX thread.
+     */
+    private void submitUnlessDisposed(ExecutorService executor, Runnable task) {
+        if (disposed) {
+            return;
+        }
+        try {
+            executor.submit(task);
+        } catch (RejectedExecutionException shutDown) {
+            // disposed meanwhile: nothing is shown any more
+        }
     }
 
     /** Stops the watcher + its thread; call on window close so the daemon thread + native handles are freed. */
@@ -2475,7 +2492,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     long generation = ++loadGeneration;
                     long treeGeneration = searchGen.get();
                     Path parent = getValue();
-                    listExecutor.submit(() -> {
+                    submitUnlessDisposed(listExecutor, () -> {
                         Runnable hook = beforeDirectoryListForTest;
                         if (hook != null) {
                             hook.run();
@@ -2523,7 +2540,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             long treeGeneration = searchGen.get();
             Path parent = getValue();
             directoryListCountForTest++;
-            listExecutor.submit(() -> {
+            submitUnlessDisposed(listExecutor, () -> {
                 Runnable hook = beforeDirectoryListForTest;
                 if (hook != null) {
                     hook.run();
