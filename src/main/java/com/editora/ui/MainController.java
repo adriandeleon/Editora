@@ -184,7 +184,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     Stage stage;
     ConfigManager config;
     CommandRegistry registry;
-    private KeymapManager keymap;
+    KeymapManager keymap;
     /** Keyboard macros (record/replay/save/run); see {@link MacroCoordinator}. Created in {@link #init}. */
     MacroCoordinator macroCoordinator;
 
@@ -216,7 +216,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> projectGitStatus;
 
     private ProjectDeleteCoordinator projectDeletes;
-    private ProjectManager projects;
+    ProjectManager projects;
     /** The multi-window coordinator (null in single-window/test use); set right after {@link #init}. */
     WindowManager windowManager;
     /** This window's project ({@code null} = the no-project/global window). */
@@ -5595,88 +5595,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     final LogViewerCoordinator logViewer = new LogViewerCoordinator(coordinatorHost);
 
     /** New Maven Project wizard; owns the archetype picker/form and the archetype:generate run. */
-    final MavenProjectCoordinator mavenProjectCoordinator = new MavenProjectCoordinator(
-            coordinatorHost,
-            new MavenProjectCoordinator.Ops() {
-                @Override
-                public java.nio.file.Path defaultParentDir() {
-                    return templateActions.defaultNewDir();
-                }
-
-                @Override
-                public EditorBuffer openBuffer(java.nio.file.Path file) {
-                    return bufferOf(tabForPath(file));
-                }
-
-                @Override
-                public void openProject(
-                        java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
-                    if (projectsEnabled()) { // else still generated on disk; just not registered as a project
-                        NewMavenProjectSession.open(projects, config, windowManager, root, name, main);
-                    }
-                }
-
-                @Override
-                public boolean projectsEnabled() {
-                    return MainController.this.projectsEnabled() && windowManager != null;
-                }
-
-                @Override
-                public java.nio.file.Path currentProjectRoot() {
-                    return windowProjectRoot();
-                }
-
-                @Override
-                public void openPath(java.nio.file.Path file) {
-                    fileWorkflows.openPath(file);
-                }
-
-                @Override
-                public void openConsole() {
-                    if (buildOutputToolWindow != null) {
-                        toolWindows.open(buildOutputToolWindow, true);
-                    }
-                }
-
-                @Override
-                public com.editora.command.KeymapManager keymap() {
-                    return keymap;
-                }
-
-                @Override
-                public boolean confirmArchetype(com.editora.maven.MavenArchetype archetype) {
-                    return consentFor(archetype) != MavenProjectCoordinator.Consent.CANCEL;
-                }
-
-                @Override
-                public MavenProjectCoordinator.Consent consentFor(com.editora.maven.MavenArchetype archetype) {
-                    return NewMavenProjectSession.confirmArchetype(stage, archetype);
-                }
-
-                @Override
-                public void refreshProjectTree() {
-                    if (projectPanel != null) {
-                        projectPanel.refreshTree();
-                    }
-                }
-
-                @Override
-                public void showActionsAt(java.nio.file.Path root) {
-                    BuildCoordinator maven = buildCoordinator(BuildTool.MAVEN);
-                    if (maven != null) {
-                        maven.showActionsAt(root);
-                    }
-                }
-
-                @Override
-                public void runCustomAt(java.nio.file.Path root) {
-                    BuildCoordinator maven = buildCoordinator(BuildTool.MAVEN);
-                    if (maven != null) {
-                        maven.runCustomAt(root);
-                    }
-                }
-            },
-            buildOutputPanel);
+    final MavenProjectCoordinator mavenProjectCoordinator =
+            new MavenProjectCoordinator(coordinatorHost, new MavenProjectWindowOps(this), buildOutputPanel);
 
     /** External Tools feature; owns the service/console panel/commands (the tool window stays here). */
     final ExternalToolCoordinator externalToolCoordinator =
@@ -5874,7 +5794,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The coordinator for a specific build tool (for the palette gate / Settings status reads). */
-    private BuildCoordinator buildCoordinator(BuildTool tool) {
+    BuildCoordinator buildCoordinator(BuildTool tool) {
         for (BuildCoordinator c : buildCoordinators) {
             if (c.tool() == tool) {
                 return c;
@@ -8625,7 +8545,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Welcome tab) — every {@code tab.userData} read must go through here, since {@code userData} is
      * {@code Object} and a raw cast would throw {@link ClassCastException} on a non-buffer tab.
      */
-    private static EditorBuffer bufferOf(Tab tab) {
+    static EditorBuffer bufferOf(Tab tab) {
         return tab != null && tab.getUserData() instanceof EditorBuffer b ? b : null;
     }
 
@@ -9026,7 +8946,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return file != null && tabForPath(file) != null;
     }
 
-    private Tab tabForPath(Path file) {
+    Tab tabForPath(Path file) {
         return OpenBufferLifecycle.tabForPath(editorArea, MainController::tabPath, file); // buffer or viewer path
     }
 

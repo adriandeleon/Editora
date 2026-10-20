@@ -185,15 +185,6 @@ final class BuildCoordinator {
     }
 
     /**
-     * The active toggles' argv for the detected root — what the tasks tree adds to a task it runs (Maven's
-     * {@code -P<profiles>}, the reactor's {@code -f … -pl … -am}); empty with no tree or nothing checked. A
-     * launch's build commands carry the profiles and flags among them (review D13).
-     */
-    List<String> activeToggleArgs() {
-        return tree == null ? List.of() : tree.activeToggleArgs();
-    }
-
-    /**
      * The IntelliJ-style tasks-tree tool window content, built on first use and brought up to the state
      * detection and a running build have reached meanwhile. Every window used to build one per build tool at
      * open — five trees, most for tools the project does not use and whose stripe is never even shown.
