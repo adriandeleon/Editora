@@ -46,6 +46,38 @@ class BuildBeforeLaunchTest {
         assertFalse(BuildBeforeLaunch.isTestSource(root.resolve("src/main/java/a/A.java"), root));
     }
 
+    /** A Maven compile carries the module's reactor selection and the tasks tree's profiles (reviews D5, D13). */
+    @Test
+    void aMavenCompileAppendsTheReactorSelectionAndTheToggles() {
+        Path repo = Path.of("/repo").toAbsolutePath().normalize();
+        com.editora.maven.MavenReactor.Reactor reactor =
+                new com.editora.maven.MavenReactor.Reactor(repo, repo.resolve("pom.xml"), "modules/b");
+        List<String> extra = BuildBeforeLaunch.mavenExtraArgs(
+                reactor, null, List.of("-f", "/elsewhere/pom.xml", "-pl", "app", "-am", "-Pdev", "-o"));
+        assertEquals(
+                List.of("-f", repo.resolve("pom.xml").toString(), "-pl", "modules/b", "-am", "-Pdev", "-o"), extra);
+        assertEquals(
+                List.of(
+                        "mvn",
+                        "-q",
+                        "compile",
+                        "-f",
+                        repo.resolve("pom.xml").toString(),
+                        "-pl",
+                        "modules/b",
+                        "-am",
+                        "-Pdev",
+                        "-o"),
+                BuildBeforeLaunch.compileArgv(BuildTool.MAVEN, List.of("mvn"), false, extra));
+        assertEquals(List.of("-Pdev"), BuildBeforeLaunch.mavenExtraArgs(null, null, List.of("-Pdev")), "no reactor");
+        assertEquals(
+                List.of("-f", "/host/pom.xml", "-pl", "modules/b", "-am"),
+                BuildBeforeLaunch.mavenExtraArgs(reactor, "/host/pom.xml", null));
+        assertEquals(
+                List.of("mvn", "-q", "compile"),
+                BuildBeforeLaunch.compileArgv(BuildTool.MAVEN, List.of("mvn"), false, null));
+    }
+
     @Test
     void aSymbolicStepNamesAToolAndItsGoals() {
         BuildBeforeLaunch.Symbolic step = BuildBeforeLaunch.symbolic("maven:compile");

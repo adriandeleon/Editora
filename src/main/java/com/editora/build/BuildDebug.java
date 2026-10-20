@@ -58,8 +58,25 @@ public final class BuildDebug {
         return List.of("spring-boot:run", "-Dspring-boot.run.jvmArguments=" + JDWP_AGENT);
     }
 
-    /** Whether {@code pomText} declares the Spring Boot Maven plugin (a lightweight sniff, not a real parse). */
+    /**
+     * Whether {@code pomText} declares the Spring Boot Maven plugin — in {@code <build><plugins>}, its
+     * {@code <pluginManagement>} or a profile's (a real parse through {@code PomBuildConfig}, so a mention in
+     * a comment no longer counts — review D11). The file alone: {@link #springBootConfig} also reads the
+     * parents on disk.
+     */
     public static boolean isSpringBootMavenPom(String pomText) {
-        return pomText != null && pomText.contains("spring-boot-maven-plugin");
+        return com.editora.maven.PomBuildConfig.parse(pomText, "").springBoot();
     }
+
+    /** The module at {@code root}'s build configuration, parents on disk included (review D11). */
+    public static com.editora.maven.PomBuildConfig springBootConfig(Path root) {
+        return com.editora.maven.PomBuildConfig.read(root);
+    }
+
+    /**
+     * How long the "Debug via build tool" flow waits for the JDWP banner before saying so: a Boot pom whose
+     * {@code <jvmArguments>} beat the agent, or a build that never started the app, otherwise looks like a
+     * launch that is still "starting" while the app runs normally in Output (review D11).
+     */
+    public static final int BANNER_TIMEOUT_SECONDS = 45;
 }

@@ -191,7 +191,10 @@ class MavenProjectWizardFxTest {
             assertEquals(1, configs.size(), "exactly one seeded configuration");
             assertEquals("demo", configs.get(0).name(), "named after the project");
             assertEquals("com.example.demo.App", configs.get(0).mainClass());
-            assertEquals(projectDir.toString(), configs.get(0).workingDir());
+            assertEquals(
+                    "",
+                    configs.get(0).workingDir(),
+                    "blank = the project root, so a moved folder keeps working (review D20)");
             // jdtls names an imported Maven project by its artifactId; a blank projectName makes
             // resolveClasspath answer with an EMPTY classpath and no error.
             assertEquals("demo", configs.get(0).projectName(), "so the first launch resolves directly");

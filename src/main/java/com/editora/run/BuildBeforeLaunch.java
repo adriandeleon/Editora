@@ -62,6 +62,38 @@ public final class BuildBeforeLaunch {
         return withGoals(executable, compileGoals(tool, testScope));
     }
 
+    /**
+     * As {@link #compileArgv(BuildTool, List, boolean)} with {@code extraArgs} after the goals: for Maven, the
+     * module's reactor selection ({@code -f <root pom> -pl <module> -am}, so a module's uninstalled siblings
+     * compile first — review D5) and the tasks tree's active toggles (profiles, offline — review D13).
+     */
+    public static List<String> compileArgv(
+            BuildTool tool, List<String> executable, boolean testScope, List<String> extraArgs) {
+        List<String> argv = new ArrayList<>(compileArgv(tool, executable, testScope));
+        if (extraArgs != null) {
+            argv.addAll(extraArgs);
+        }
+        return List.copyOf(argv);
+    }
+
+    /**
+     * What a Maven compile before a launch of {@code root}'s class appends (review D5, D13): the reactor
+     * args when {@code reactor} is the module's, then the launch-safe part of {@code toggleArgs}.
+     */
+    public static List<String> mavenExtraArgs(
+            com.editora.maven.MavenReactor.Reactor reactor, String rootPomOnTarget, List<String> toggleArgs) {
+        List<String> extra = new ArrayList<>();
+        if (reactor != null) {
+            extra.addAll(com.editora.maven.MavenReactor.reactorArgs(
+                    rootPomOnTarget != null
+                            ? rootPomOnTarget
+                            : reactor.rootPom().toString(),
+                    reactor.moduleSelector()));
+        }
+        extra.addAll(com.editora.maven.MavenClasspath.withoutReactorArgs(toggleArgs));
+        return List.copyOf(extra);
+    }
+
     /** {@code executable -q goals…}. */
     public static List<String> withGoals(List<String> executable, List<String> goals) {
         List<String> argv = new ArrayList<>(executable);

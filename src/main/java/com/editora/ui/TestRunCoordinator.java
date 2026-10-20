@@ -207,6 +207,12 @@ final class TestRunCoordinator implements TestRunHook {
     /** Gradle's own account of this run: whether it printed task lines, and the tasks it reused. */
     private boolean sawGradleTaskLines;
 
+    /** Maven said a {@code -Dtest=} filter matched nothing (and failed the build for it, without Editora's flags). */
+    private boolean sawNoTestsMatching;
+
+    /** The report folders of this run's module beyond the standard ones (a pom's {@code reportsDirectory}, review D17). */
+    private volatile List<Path> configuredReportDirs = List.of();
+
     private final Set<String> reusedGradleTasks = new java.util.HashSet<>();
 
     // npm TAP sniffing
@@ -336,6 +342,8 @@ final class TestRunCoordinator implements TestRunHook {
         followTarget = null;
         awaitingAttachFor = null;
         sawGradleTaskLines = false;
+        sawNoTestsMatching = false;
+        configuredReportDirs = List.of();
         reusedGradleTasks.clear();
 
         panel().startRun(String.join(" ", taskArgs));
@@ -349,7 +357,11 @@ final class TestRunCoordinator implements TestRunHook {
             // Snapshot the pre-run report mtimes on the poller thread BEFORE the first tick, so a leftover
             // TEST-*.xml from a prior run is never parsed as this run's result (a full `mvn test` recreates
             // the dir, but `-Dtest=Foo` leaves every other class's stale report in place).
-            poller.execute(() -> baselineReports(t, dir));
+            poller.execute(() -> {
+                configuredReportDirs = JvmReportDirs.reportDirs(
+                        t, dir, t == BuildTool.MAVEN ? com.editora.maven.PomBuildConfig.read(dir) : null);
+                baselineReports(t, dir);
+            });
             startPolling(gen, t, dir);
             // IntelliJ-style: pre-seed the whole expected test list greyed-out (RUNNING) for an unfiltered run,
             // so tests show as pending and flip to green/red instead of popping in per finished class. A
@@ -386,6 +398,9 @@ final class TestRunCoordinator implements TestRunHook {
             }
         }
         if (fileBased) {
+            if (currentTool == BuildTool.MAVEN && TestRunRecognizer.isNoTestsMatchingLine(line)) {
+                sawNoTestsMatching = true; // a hand-typed -Dtest= without the reactor flags (review D9)
+            }
             if (currentTool == BuildTool.GRADLE) {
                 sawGradleTaskLines |= GradleTaskOutcomes.isTaskLine(line);
                 String reused = GradleTaskOutcomes.reusedTask(line);
@@ -501,8 +516,9 @@ final class TestRunCoordinator implements TestRunHook {
         run.finish(code, System.currentTimeMillis());
         panel().finishRun(run, code);
         // A Maven filter that matches nothing is not an error (the flags a reactor needs see to that), so
-        // the build is green and the tree empty. Say so: "0 of 0 tests passed" reads as a pass.
-        if (code == 0
+        // the build is green and the tree empty. Say so: "0 of 0 tests passed" reads as a pass. A hand-typed
+        // filter lacks those flags: Surefire then fails the build saying so, which reads like a broken build.
+        if ((code == 0 || sawNoTestsMatching)
                 && run.tool() == BuildTool.MAVEN
                 && TestRunRecognizer.isFilteredRun(run.tool(), run.taskArgs())
                 && run.counts().total() == 0) {
@@ -578,7 +594,7 @@ final class TestRunCoordinator implements TestRunHook {
     private void baselineReports(BuildTool tool, Path root) {
         seenMtimes.clear();
         baselineMtimes.clear();
-        for (Path file : reportFiles(tool, root)) {
+        for (Path file : reportFilesOfRun(tool, root)) {
             try {
                 baselineMtimes.put(file, Files.getLastModifiedTime(file).toMillis());
             } catch (Exception ignored) {
@@ -673,7 +689,7 @@ final class TestRunCoordinator implements TestRunHook {
             int gen, BuildTool tool, Path root, boolean full, java.util.function.Predicate<Path> leftovers) {
         try {
             List<ParsedSuite> parsed = new ArrayList<>();
-            for (Path file : reportFiles(tool, root)) {
+            for (Path file : reportFilesOfRun(tool, root)) {
                 long mtime = Files.getLastModifiedTime(file).toMillis();
                 Long base = baselineMtimes.get(file);
                 if (base != null && base == mtime && (leftovers == null || !leftovers.test(file))) {
@@ -713,8 +729,19 @@ final class TestRunCoordinator implements TestRunHook {
      * cannot contain one: dot-directories ({@code .git} alone is thousands of entries), dependency trees,
      * anything below the depth limit, and a report directory's own contents.
      */
+    private List<Path> reportFilesOfRun(BuildTool tool, Path root) {
+        return reportFiles(tool, root, configuredReportDirs);
+    }
+
+    /** {@link #reportFiles(BuildTool, Path, List)} with the standard folders only. */
     static List<Path> reportFiles(BuildTool tool, Path root) {
+        return reportFiles(tool, root, List.of());
+    }
+
+    /** As {@link #reportFiles(BuildTool, Path)} with {@code configured} (a pom's own folders) looked in too. */
+    static List<Path> reportFiles(BuildTool tool, Path root, List<Path> configured) {
         Set<Path> dirs = new LinkedHashSet<>(JvmReportDirs.reportDirs(tool, root));
+        dirs.addAll(configured);
         ProjectWalk.walk(
                 root,
                 new ProjectWalk.Options(WALK_DEPTH + 1, Integer.MAX_VALUE, GitignoreFilter.NONE),

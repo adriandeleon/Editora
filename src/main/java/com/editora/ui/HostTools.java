@@ -20,6 +20,7 @@ final class HostTools {
             new Tool("gh", "settings.remote.tool.gh"),
             new Tool("rg", "settings.remote.tool.rg"),
             new Tool("jdk.home", "settings.remote.tool.jdkHome"),
+            new Tool("maven", "settings.remote.tool.maven"),
             new Tool("node", "settings.remote.tool.node"),
             new Tool("python", "settings.remote.tool.python"),
             new Tool("dap.python", "settings.remote.tool.dapPython"),

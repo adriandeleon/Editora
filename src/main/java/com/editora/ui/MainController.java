@@ -5707,9 +5707,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                 return c.trustedExecutable(root);
             }
         }
+        String hostTool = com.editora.process.ExecTargets.remoteTool(root, tool.id());
         return com.editora.build.BuildExecutable.resolve(
                 List.of(),
-                coordinatorHost.projectScope().buildCommand(tool, config.getSettings()),
+                hostTool != null ? hostTool : coordinatorHost.projectScope().buildCommand(tool, config.getSettings()),
                 tool.commandExample());
     }
 
@@ -6366,13 +6367,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void resolveMavenClasspath(java.nio.file.Path root, java.util.function.Consumer<List<String>> cb) {
-            resolveMavenClasspath(root, "", cb);
-        }
-
-        @Override
-        public void resolveMavenClasspath(
-                java.nio.file.Path root, String jdkHome, java.util.function.Consumer<List<String>> cb) {
-            resolveMavenClasspath(root, jdkHome, List.of("mvn"), com.editora.maven.MavenClasspath.Scope.RUNTIME, cb);
+            resolveMavenClasspath(root, "", List.of("mvn"), com.editora.maven.MavenClasspath.Scope.RUNTIME, cb);
         }
 
         @Override
@@ -6382,20 +6377,25 @@ public class MainController implements com.editora.mcp.McpBridge {
                 List<String> executable,
                 com.editora.maven.MavenClasspath.Scope scope,
                 java.util.function.Consumer<List<String>> cb) {
-            Thread t = new Thread(
-                    () -> {
-                        List<String> result =
-                                com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome, executable, scope);
-                        Platform.runLater(() -> cb.accept(result));
-                    },
-                    "editora-maven-cp");
-            t.setDaemon(true);
-            t.start();
+            Thread.ofVirtual().name("editora-maven-cp").start(() -> {
+                List<String> result =
+                        com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome, executable, scope);
+                Platform.runLater(() -> cb.accept(result));
+            });
         }
 
         @Override
         public List<String> buildExecutable(BuildTool tool, java.nio.file.Path root) {
             return buildExecutableFor(tool, root);
+        }
+
+        @Override
+        public List<String> mavenToggleArgs() {
+            return buildCoordinators.stream()
+                    .filter(c -> c.tool() == BuildTool.MAVEN)
+                    .findFirst()
+                    .map(BuildCoordinator::activeToggleArgs)
+                    .orElse(List.of());
         }
 
         @Override

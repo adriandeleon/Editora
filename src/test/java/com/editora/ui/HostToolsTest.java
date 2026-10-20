@@ -20,6 +20,17 @@ class HostToolsTest {
                         "python = basedpyright-langserver --stdio\n\n# a note\ngo=/home/u/go/bin/gopls\n"));
     }
 
+    /** A host names its Maven beside its JDK (review D10); the page shows the field after the JDK's. */
+    @Test
+    void mavenIsANamedHostTool() {
+        java.util.List<String> ids =
+                HostTools.NAMED.stream().map(HostTools.Tool::id).toList();
+        assertEquals(ids.indexOf("jdk.home") + 1, ids.indexOf("maven"), ids.toString());
+        assertEquals(
+                "settings.remote.tool.maven",
+                HostTools.NAMED.get(ids.indexOf("maven")).labelKey());
+    }
+
     @Test
     void halfWrittenLinesAreSkipped() {
         assertEquals(Map.of(), HostTools.parseServers("python\n= cmd\nrust =\ntwo words = cmd\n"));

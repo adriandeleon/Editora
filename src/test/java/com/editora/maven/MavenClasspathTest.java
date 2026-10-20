@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MavenClasspathTest {
@@ -89,6 +90,21 @@ class MavenClasspathTest {
         assertTrue(argv.contains("-am"));
         assertTrue(argv.contains("dependency:build-classpath"));
         assertTrue(argv.contains("-Dmdep.outputFile=" + out));
+    }
+
+    /** The tasks tree's profiles and flags go along; its reactor switch does not — a launch picks its own module (review D13). */
+    @Test
+    void theToggleArgsKeepProfilesAndFlagsButNotTheReactorSelection() {
+        List<String> toggles = List.of("-f", "/repo/pom.xml", "-pl", "app", "-am", "-Pdev,ci", "-o");
+        assertEquals(List.of("-Pdev,ci", "-o"), MavenClasspath.withoutReactorArgs(toggles));
+        assertEquals(List.of(), MavenClasspath.withoutReactorArgs(null));
+        assertEquals(List.of("-U"), MavenClasspath.withoutReactorArgs(List.of("--projects", "x", "--also-make", "-U")));
+        List<String> argv = MavenClasspath.argv(MVN, "cp.txt", S, MavenClasspath.Scope.RUNTIME);
+        assertSame(argv, MavenClasspath.withToggles(argv, List.of()), "nothing to add: the same argv");
+        List<String> with = MavenClasspath.withToggles(argv, toggles);
+        assertEquals(argv.size() + 2, with.size());
+        assertEquals("-o", with.get(with.size() - 1));
+        assertEquals("-Pdev,ci", with.get(with.size() - 2));
     }
 
     @Test
