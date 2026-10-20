@@ -19,6 +19,7 @@ import org.apache.pdfbox.pdmodel.font.PDCIDFontType2;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.util.Matrix;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Glyph coverage for one PDF document: splits text into runs by the font that can actually draw each
@@ -229,7 +230,7 @@ final class PdfGlyphs implements Closeable {
     }
 
     /** The first fallback font with a glyph for {@code cp}, loading further candidates only as needed. */
-    private PDFont fallback(int cp, String s) {
+    private @Nullable PDFont fallback(int cp, String s) {
         if (fallbackFor.containsKey(cp)) {
             return fallbackFor.get(cp);
         }
@@ -277,7 +278,7 @@ final class PdfGlyphs implements Closeable {
      * variable font; PDFBox reads its {@code glyf} outlines and ignores the variation tables, which gives
      * the default instance (Regular). Null when it is missing from the build or cannot be parsed.
      */
-    private PDFont loadBundledEmoji() {
+    private @Nullable PDFont loadBundledEmoji() {
         try (java.io.InputStream in = PdfGlyphs.class.getResourceAsStream(EMOJI_FONT)) {
             return in == null ? null : PDType0Font.load(doc, in);
         } catch (IOException | RuntimeException e) {
@@ -289,7 +290,7 @@ final class PdfGlyphs implements Closeable {
      * Loads a system font file for subset embedding, or returns null when PDFBox cannot embed it — a font
      * with PostScript (CFF) outlines, one whose licence bits forbid embedding, or a file that fails to parse.
      */
-    private PDFont load(Path file) {
+    private @Nullable PDFont load(Path file) {
         try {
             String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
             if (name.endsWith(".ttc") || name.endsWith(".otc")) {

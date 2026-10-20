@@ -8,6 +8,7 @@ import java.util.List;
 
 import com.editora.process.ProcessRunner;
 import com.editora.run.JdkToolchain;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Resolves a Maven module's runtime classpath off the JavaFX application thread.
@@ -28,6 +29,7 @@ public final class MavenClasspathResolver {
      */
     public record Plan(
             Path workingDirectory, List<String> argv, Path outputFile, Path root, MavenClasspath.Scope scope) {
+
         /** Whether the module is built from its reactor root with {@code -pl -am}. */
         public boolean multiModule() {
             return !workingDirectory.equals(root);
@@ -43,10 +45,10 @@ public final class MavenClasspathResolver {
     public static Plan plan(Path root, List<String> executable, MavenClasspath.Scope scope) throws IOException {
         Path output = Files.createTempFile("editora-cp", ".txt");
         Path reactor = MavenReactor.reactorRoot(root, dir -> Files.isRegularFile(dir.resolve("pom.xml")));
-        boolean multiModule = reactor != null && !reactor.equals(root);
-        Path workingDirectory = multiModule ? reactor : root;
-        List<String> argv = multiModule
-                ? MavenClasspath.reactorArgv(executable, output, MavenReactor.moduleSelector(reactor, root), scope)
+        Path multiModule = reactor != null && !reactor.equals(root) ? reactor : null; // null: a lone module
+        Path workingDirectory = multiModule != null ? multiModule : root;
+        List<String> argv = multiModule != null
+                ? MavenClasspath.reactorArgv(executable, output, MavenReactor.moduleSelector(multiModule, root), scope)
                 : MavenClasspath.argv(executable, output, scope);
         return new Plan(workingDirectory, argv, output, root, scope);
     }
@@ -55,7 +57,7 @@ public final class MavenClasspathResolver {
      * The launch classpath {@code plan}'s command wrote, or {@code null} when it wrote none (it failed before
      * {@code dependency:build-classpath} ran). Deletes the scratch file either way.
      */
-    public static List<String> finish(Plan plan) {
+    public static @Nullable List<String> finish(Plan plan) {
         try {
             if (!Files.exists(plan.outputFile())) {
                 return null;
@@ -78,7 +80,7 @@ public final class MavenClasspathResolver {
     }
 
     /** {@link #resolve(Path, String, List, MavenClasspath.Scope)} with PATH {@code mvn} and the runtime scope. */
-    public static List<String> resolve(Path root, String jdkHome) {
+    public static @Nullable List<String> resolve(Path root, String jdkHome) {
         return resolve(root, jdkHome, List.of("mvn"), MavenClasspath.Scope.RUNTIME);
     }
 
@@ -87,7 +89,8 @@ public final class MavenClasspathResolver {
      * The selected JDK is exposed to Maven through {@code JAVA_HOME} and the process {@code PATH}. Blocking,
      * with the output captured: the Run console's streamed {@link Plan} is the better path on this machine.
      */
-    public static List<String> resolve(Path root, String jdkHome, List<String> executable, MavenClasspath.Scope scope) {
+    public static @Nullable List<String> resolve(
+            Path root, String jdkHome, List<String> executable, MavenClasspath.Scope scope) {
         if (!com.editora.process.ExecTargets.runsHere(root)) {
             return resolveOnHost(root, jdkHome, executable, scope);
         }
@@ -120,7 +123,7 @@ public final class MavenClasspathResolver {
      * is a path on the host, or blank for its own) and none of this machine's environment, and writes the
      * classpath into the module's {@code target/}, read back over the connection.
      */
-    private static List<String> resolveOnHost(
+    private static @Nullable List<String> resolveOnHost(
             Path root, String jdkHome, List<String> executable, MavenClasspath.Scope scope) {
         com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
         Path output = null;
@@ -128,16 +131,17 @@ public final class MavenClasspathResolver {
             Path targetDir = Files.createDirectories(root.resolve("target"));
             output = targetDir.resolve("editora-cp-" + java.util.UUID.randomUUID() + ".txt");
             Path reactor = MavenReactor.reactorRoot(root, dir -> Files.isRegularFile(dir.resolve("pom.xml")));
-            boolean multiModule = reactor != null && !reactor.equals(root);
+            Path multiModule = reactor != null && !reactor.equals(root) ? reactor : null; // null: a lone module
             String outputOnHost = target.toTargetPath(output);
-            List<String> argv = multiModule
+            List<String> argv = multiModule != null
                     ? MavenClasspath.reactorArgv(
-                            executable, outputOnHost, MavenReactor.moduleSelector(reactor, root), ":", scope)
+                            executable, outputOnHost, MavenReactor.moduleSelector(multiModule, root), ":", scope)
                     : MavenClasspath.argv(executable, outputOnHost, ":", scope);
+
             java.util.Map<String, String> env =
                     jdkHome == null || jdkHome.isBlank() ? java.util.Map.of() : java.util.Map.of("JAVA_HOME", jdkHome);
-            ProcessRunner.Result result =
-                    ProcessRunner.runInUserLocale(multiModule ? reactor : root, Duration.ofMinutes(5), argv, env);
+            ProcessRunner.Result result = ProcessRunner.runInUserLocale(
+                    multiModule != null ? multiModule : root, Duration.ofMinutes(5), argv, env);
             if (result.exit() != 0) {
                 return null;
             }

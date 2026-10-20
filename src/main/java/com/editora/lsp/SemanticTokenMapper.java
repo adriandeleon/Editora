@@ -2,6 +2,8 @@ package com.editora.lsp;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure mapping of a semantic-token <em>type name</em> + modifier bitset to a single CSS class string
  * (or {@code null} = "leave TextMate's lexical class in place"). The mapping is driven by the server's
@@ -21,7 +23,7 @@ public final class SemanticTokenMapper {
      * {@code modLegend}; {@code null} for a type TextMate already classifies well (keyword/comment/
      * string/number/operator), so those fall through to the lexical highlight.
      */
-    static String cssClass(String type, int modBits, List<String> modLegend) {
+    static @Nullable String cssClass(String type, int modBits, List<String> modLegend) {
         String base = baseClass(type);
         if (base == null) {
             return null;
@@ -38,7 +40,7 @@ public final class SemanticTokenMapper {
     }
 
     /** The base {@code sem-*} class for a semantic token type, or {@code null} to defer to TextMate. */
-    private static String baseClass(String type) {
+    private static @Nullable String baseClass(String type) {
         if (type == null) {
             return null;
         }

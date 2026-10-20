@@ -21,6 +21,7 @@ import com.editora.process.ProcessRunner;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The post-install proof that a freshly extracted pom.xml language server can answer a request — not merely
@@ -92,7 +93,7 @@ public final class JvmLspSmoke {
     }
 
     /** A message read from the server, or the end of its output ({@code eof}, with the exit code once known). */
-    private record Incoming(JsonObject message, boolean eof) {}
+    private record Incoming(@Nullable JsonObject message, boolean eof) {}
 
     private static Optional<String> exchange(Process process, Path dir, Path pom, Duration deadline)
             throws IOException, InterruptedException {
@@ -200,7 +201,7 @@ public final class JvmLspSmoke {
      * Reads one framed message from {@code in}: the headers up to the blank line, then {@code Content-Length}
      * bytes of body. Null at a clean end of stream; an {@link IOException} on a malformed or oversized frame.
      */
-    public static String readFrame(InputStream in) throws IOException {
+    public static @Nullable String readFrame(InputStream in) throws IOException {
         int length = -1;
         boolean any = false;
         while (true) {
@@ -235,7 +236,7 @@ public final class JvmLspSmoke {
     }
 
     /** One header line without its line ending; null at end of stream before any byte. */
-    private static String readLine(InputStream in) throws IOException {
+    private static @Nullable String readLine(InputStream in) throws IOException {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         int c;
         while ((c = in.read()) >= 0) {
@@ -260,7 +261,7 @@ public final class JvmLspSmoke {
     }
 
     /** Whether {@code msg} is the response to request {@code id}. Pure. */
-    static boolean isResponseTo(JsonObject msg, int id) {
+    static boolean isResponseTo(@Nullable JsonObject msg, int id) {
         if (msg == null || !msg.has("id") || msg.has("method")) {
             return false;
         }
@@ -278,7 +279,7 @@ public final class JvmLspSmoke {
      * {@code "<code> <message>: <first line of data>"} (the data is where lemminx puts the stack trace, whose
      * first line names the missing class). Pure.
      */
-    public static Optional<String> verdict(JsonObject response) {
+    public static Optional<String> verdict(@Nullable JsonObject response) {
         if (response == null || !response.has("error") || response.get("error").isJsonNull()) {
             return Optional.empty();
         }
@@ -317,7 +318,7 @@ public final class JvmLspSmoke {
         return "";
     }
 
-    static String request(int id, String method, JsonElement params) {
+    static String request(int id, String method, @Nullable JsonElement params) {
         JsonObject o = new JsonObject();
         o.addProperty("jsonrpc", "2.0");
         o.addProperty("id", id);
@@ -328,7 +329,7 @@ public final class JvmLspSmoke {
         return o.toString();
     }
 
-    static String notification(String method, JsonElement params) {
+    static String notification(String method, @Nullable JsonElement params) {
         JsonObject o = new JsonObject();
         o.addProperty("jsonrpc", "2.0");
         o.addProperty("method", method);

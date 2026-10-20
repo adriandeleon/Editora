@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.math.BigInteger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Increment / decrement the number at a caret, as Vim's {@code Ctrl-A} / {@code Ctrl-X} do: the number the
  * caret is on, or else the first one after it on the same line. Decimal integers (a minus sign right before
@@ -17,7 +19,7 @@ public final class NumberAtCaret {
      * The edit adding {@code delta} to the number at {@code [selStart, selEnd)} — with a selection, the first
      * number inside it — leaving the caret at the number's end; null when there is no number there.
      */
-    public static Indenter.TabEdit change(String text, int selStart, int selEnd, long delta) {
+    public static Indenter.@Nullable TabEdit change(String text, int selStart, int selEnd, long delta) {
         int lo = Math.clamp(Math.min(selStart, selEnd), 0, text.length());
         int hi = Math.clamp(Math.max(selStart, selEnd), 0, text.length());
         int lineEnd = text.indexOf('\n', lo);
@@ -32,7 +34,7 @@ public final class NumberAtCaret {
     }
 
     /** {@code [start, end)} of the number at or after {@code from}, starting before {@code limit}; null if none. */
-    static int[] find(String text, int from, int limit, boolean inside) {
+    static int @Nullable [] find(String text, int from, int limit, boolean inside) {
         int start = from;
         if (!inside) {
             int[] hex = hexAround(text, from);
@@ -64,7 +66,7 @@ public final class NumberAtCaret {
     }
 
     /** The {@code 0x…} literal {@code pos} is inside or right after, or null. */
-    private static int[] hexAround(String text, int pos) {
+    private static int @Nullable [] hexAround(String text, int pos) {
         int j = Math.min(pos, text.length());
         while (j > 0 && Character.digit(text.charAt(j - 1), 16) >= 0) {
             j--;

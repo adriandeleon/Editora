@@ -6,6 +6,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Where a POSIX shell ({@code bash}, {@code sh}, …) comes from on Windows (pure, unit-tested).
  *
@@ -37,7 +39,8 @@ public final class WindowsShells {
      *     {@code %ProgramFiles(x86)%}, {@code %LOCALAPPDATA%\Programs}), in order; blanks are skipped
      * @param isFile whether a path names an existing file
      */
-    public static String find(String name, List<String> pathDirs, List<String> installRoots, Predicate<String> isFile) {
+    public static @Nullable String find(
+            String name, List<String> pathDirs, List<String> installRoots, Predicate<String> isFile) {
         String exe = stem(name) + ".exe";
         // 1. The Git a user runs from a terminal: Git\cmd\git.exe (or Git\bin, Git\mingw64\bin) → Git\…
         for (String dir : pathDirs) {
@@ -85,7 +88,7 @@ public final class WindowsShells {
         return roots;
     }
 
-    private static String inGit(String gitRoot, String exe, Predicate<String> isFile) {
+    private static @Nullable String inGit(@Nullable String gitRoot, String exe, Predicate<String> isFile) {
         if (gitRoot == null || gitRoot.isBlank()) {
             return null;
         }
@@ -119,7 +122,7 @@ public final class WindowsShells {
         return dir.endsWith("\\") || dir.endsWith("/") ? dir + child : dir + "\\" + child;
     }
 
-    private static String parent(String dir) {
+    private static @Nullable String parent(@Nullable String dir) {
         if (dir == null) {
             return null;
         }

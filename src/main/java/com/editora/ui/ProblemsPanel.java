@@ -26,6 +26,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.config.PathDisplay;
 import com.editora.editor.LanguageRegistry;
 import com.editora.editor.LspDiagnostic;
 
@@ -279,7 +280,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
             paths.sort(ActiveFileOrder.activeFirst(
                     p -> p,
                     activeFile,
-                    Comparator.comparing(p -> p.getFileName().toString().toLowerCase(Locale.ROOT))));
+                    Comparator.comparing(p -> PathDisplay.fileName(p).toLowerCase(Locale.ROOT))));
             for (Path file : paths) {
                 List<LspDiagnostic> sorted = new ArrayList<>(kept.get(file));
                 sorted.sort((a, b) -> a.startLine() != b.startLine()

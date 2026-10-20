@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure tokenizers for a user-typed argument string (unit-tested).
  *
@@ -53,7 +55,7 @@ public final class ProgramArgs {
      * {@code lookup} (an unknown name expands to nothing, as in a shell). {@code null} turns expansion off.
      * A {@code $} not followed by a name is literal.
      */
-    public static List<String> parse(String text, Function<String, String> lookup) {
+    public static List<String> parse(String text, @Nullable Function<String, ? extends @Nullable String> lookup) {
         List<String> out = new ArrayList<>();
         if (text == null || text.isBlank()) {
             return out;
@@ -116,7 +118,8 @@ public final class ProgramArgs {
     }
 
     /** Appends the value of the variable starting at {@code text[dollar]}; returns the index of its last char. */
-    private static int expand(String text, int dollar, Function<String, String> lookup, StringBuilder cur) {
+    private static int expand(
+            String text, int dollar, Function<String, ? extends @Nullable String> lookup, StringBuilder cur) {
         int n = text.length();
         int start = dollar + 1;
         if (start < n && text.charAt(start) == '{') {

@@ -12,6 +12,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Format Document for Python (adl's decision 4): Pyright has no formatter, so a {@code .py} file is piped through
@@ -49,7 +50,7 @@ public final class PythonFormatter {
     }
 
     /** What a run produced: the formatted text, or an error line to show. */
-    public record Outcome(String text, String error) {
+    public record Outcome(@Nullable String text, @Nullable String error) {
         public boolean ok() {
             return error == null;
         }
@@ -108,7 +109,7 @@ public final class PythonFormatter {
     }
 
     /** Pure: a formatter's exit, stdout and stderr → the formatted text, or the first useful error line. */
-    static Outcome outcome(Found formatter, int exit, String out, String err) {
+    static Outcome outcome(Found formatter, int exit, String out, @Nullable String err) {
         if (exit == 0) {
             return new Outcome(out, null);
         }
@@ -122,7 +123,7 @@ public final class PythonFormatter {
         return new Outcome(null, formatter.name() + ": " + (line.isEmpty() ? "exit " + exit : line));
     }
 
-    private static String firstLine(String s) {
+    private static String firstLine(@Nullable String s) {
         if (s == null) {
             return "";
         }
@@ -140,7 +141,7 @@ public final class PythonFormatter {
      * {@code before} becomes {@code after.substring(start, endAfter)}. Keeps the caret, folds and undo step
      * tight instead of replacing the whole document. Null when nothing changed.
      */
-    public static int[] changedSpan(String before, String after) {
+    public static int @Nullable [] changedSpan(String before, String after) {
         if (before.equals(after)) {
             return null;
         }

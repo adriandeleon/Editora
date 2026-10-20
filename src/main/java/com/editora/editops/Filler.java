@@ -3,6 +3,8 @@ package com.editora.editops;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested implementation of the Emacs <em>fill</em> commands — {@code fill-paragraph} (`M-q`),
  * {@code fill-region}, and the {@code set-fill-column} target width — computing a minimal {@link Edit}
@@ -66,7 +68,7 @@ public final class Filler {
 
     private final String text;
     private final List<int[]> lines; // each = {start, end} (end excludes the newline)
-    private final String[] kinds;
+    private final @Nullable String[] kinds;
     private final String lineComment;
     private final Mode mode;
     private final int tabSize;
@@ -87,12 +89,12 @@ public final class Filler {
      * {@code null} — used (with {@code >}/{@code *}) to detect a fill prefix. Reads the buffer as
      * {@link Mode#TEXT}.
      */
-    public static Edit fillParagraph(String text, int caret, int fillColumn, String lineComment) {
+    public static @Nullable Edit fillParagraph(String text, int caret, int fillColumn, String lineComment) {
         return fillParagraph(text, caret, fillColumn, lineComment, Mode.TEXT, DEFAULT_TAB_SIZE);
     }
 
     /** As {@link #fillParagraph(String, int, int, String)}, reading the buffer as {@code mode}. */
-    public static Edit fillParagraph(
+    public static @Nullable Edit fillParagraph(
             String text, int caret, int fillColumn, String lineComment, Mode mode, int tabSize) {
         return new Filler(text, lineComment, mode, tabSize).paragraph(caret, fillColumn);
     }
@@ -102,17 +104,17 @@ public final class Filler {
      * the blank lines between them. {@code null} if the region holds no fillable text. Reads the buffer as
      * {@link Mode#TEXT}.
      */
-    public static Edit fillRegion(String text, int selStart, int selEnd, int fillColumn, String lineComment) {
+    public static @Nullable Edit fillRegion(String text, int selStart, int selEnd, int fillColumn, String lineComment) {
         return fillRegion(text, selStart, selEnd, fillColumn, lineComment, Mode.TEXT, DEFAULT_TAB_SIZE);
     }
 
     /** As {@link #fillRegion(String, int, int, int, String)}, reading the buffer as {@code mode}. */
-    public static Edit fillRegion(
+    public static @Nullable Edit fillRegion(
             String text, int selStart, int selEnd, int fillColumn, String lineComment, Mode mode, int tabSize) {
         return new Filler(text, lineComment, mode, tabSize).region(selStart, selEnd, fillColumn);
     }
 
-    private Edit paragraph(int caret, int fillColumn) {
+    private @Nullable Edit paragraph(int caret, int fillColumn) {
         int li = lineIndexAt(lines, caret);
         // On a blank line, advance to the next non-blank line (fill the following paragraph).
         while (li < lines.size() && line(li).isBlank()) {
@@ -136,7 +138,7 @@ public final class Filler {
         return new Edit(from, to, filled, from + filled.length());
     }
 
-    private Edit region(int selStart, int selEnd, int fillColumn) {
+    private @Nullable Edit region(int selStart, int selEnd, int fillColumn) {
         int start = Math.min(selStart, selEnd);
         int end = Math.max(selStart, selEnd);
         if (end > start && text.charAt(end - 1) == '\n') {
@@ -174,7 +176,7 @@ public final class Filler {
     }
 
     /** Fills lines {@code [firstLine, lastLine]} (all non-blank) into a wrapped block; null if no words. */
-    private String fillBlock(int firstLine, int lastLine, int fillColumn) {
+    private @Nullable String fillBlock(int firstLine, int lastLine, int fillColumn) {
         String prefix = prefixOf(firstLine);
         // A list item hangs: its wrapped lines are indented under the text, not given a bullet each.
         String continuation = isBullet(firstLine) ? hangingIndent(prefix) : prefix;
@@ -255,8 +257,8 @@ public final class Filler {
      * code between them, the heading above a setext underline, and — in {@link Mode#CODE} — whether a line
      * is comment text at all.
      */
-    private String[] classify() {
-        String[] out = new String[lines.size()];
+    private @Nullable String[] classify() {
+        @Nullable String[] out = new @Nullable String[lines.size()];
         String marker = lineComment == null || lineComment.isBlank() ? null : lineComment.strip();
         String fence = null; // the open Markdown fence's marker
         boolean inBlockComment = false;
@@ -369,7 +371,7 @@ public final class Filler {
      * {@code ""} for a plain line. A paragraph never mixes kinds, so a comment that touches code is
      * filled on its own and code is never pulled into it.
      */
-    static String kind(String line, String lineComment) {
+    static @Nullable String kind(String line, String lineComment) {
         String rest = line.strip();
         if (rest.isEmpty() || rest.startsWith("/*") || rest.startsWith("*/")) {
             return null;
@@ -459,14 +461,14 @@ public final class Filler {
         // A list item continues over the plain lines under it; anything else over lines of its own kind.
         String want = isBullet(first) ? "" : kinds[first];
         int last = first;
-        while (last + 1 <= limit && want.equals(kinds[last + 1]) && !isBlockTag(last + 1)) {
+        while (want != null && last + 1 <= limit && want.equals(kinds[last + 1]) && !isBlockTag(last + 1)) {
             last++;
         }
         return last;
     }
 
     /** {@code {first, last}} line indices of the paragraph holding line {@code li}; null on a separator. */
-    private int[] paragraphAt(int li) {
+    private int @Nullable [] paragraphAt(int li) {
         String k = kinds[li];
         if (k == null) {
             return null;
@@ -489,11 +491,12 @@ public final class Filler {
     /** The fill prefix of line {@code index}: a list item's indent and marker, else its {@link #fillPrefix}. */
     private String prefixOf(int index) {
         String line = line(index);
-        return LIST.equals(kinds[index]) ? listPrefix(line) : fillPrefix(line, lineComment);
+        String list = LIST.equals(kinds[index]) ? listPrefix(line) : null;
+        return list != null ? list : fillPrefix(line, lineComment);
     }
 
     /** {@code line}'s leading whitespace, list marker and the whitespace after it; null when it is no list item. */
-    private static String listPrefix(String line) {
+    private static @Nullable String listPrefix(String line) {
         int ws = leadingWhitespace(line);
         int end = listMarkerEnd(line, ws);
         if (end < 0 && line.startsWith("*", ws)) {

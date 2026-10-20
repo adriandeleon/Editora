@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure (no-toolkit, unit-tested) Markdown table-of-contents builder. Reuses {@link MarkdownOutline} for the
  * heading list (ATX + Setext, skipping fenced code blocks and a leading YAML front-matter block) and emits a
@@ -139,7 +141,7 @@ public final class MarkdownToc {
      * built TOC and returns the new document; returns {@code null} when there is no marker block (the caller
      * then inserts a new one). See {@link #update}.
      */
-    public static String updated(String doc, int minLevel, int maxLevel) {
+    public static @Nullable String updated(String doc, int minLevel, int maxLevel) {
         MarkdownEdit e = update(doc, minLevel, maxLevel);
         return e == null ? null : doc.substring(0, e.from()) + e.replacement() + doc.substring(e.to());
     }
@@ -150,12 +152,12 @@ public final class MarkdownToc {
      * block is an example, not the TOC; an opening marker whose closing one is missing takes the list under
      * it as the stale TOC, so a second block is never added beside it. The edit's caret is its start.
      */
-    public static MarkdownEdit update(String doc, int minLevel, int maxLevel) {
+    public static @Nullable MarkdownEdit update(String doc, int minLevel, int maxLevel) {
         return update(doc, new Style(minLevel, maxLevel, false, false));
     }
 
     /** {@link #update(String, int, int)} in {@code style}. */
-    public static MarkdownEdit update(String doc, Style style) {
+    public static @Nullable MarkdownEdit update(String doc, Style style) {
         if (doc == null) {
             return null;
         }

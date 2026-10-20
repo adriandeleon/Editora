@@ -9,6 +9,7 @@ import java.util.function.Consumer;
 import javafx.application.Platform;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * UI-facing façade for the Mermaid CLIs, mirroring {@code GitService}: work runs on a single daemon
@@ -40,7 +41,7 @@ public final class MermaidService {
 
     private volatile String mmdcPath = "";
     private volatile String maidPath = "";
-    private volatile Availability cached;
+    private volatile @Nullable Availability cached;
 
     /**
      * Updates the configured executable paths/commands. Clears the cached availability <b>only when they

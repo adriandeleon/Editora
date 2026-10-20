@@ -9,6 +9,7 @@ import com.jediterm.terminal.model.hyperlinks.HyperlinkFilter;
 import com.jediterm.terminal.model.hyperlinks.LinkInfo;
 import com.jediterm.terminal.model.hyperlinks.LinkResult;
 import com.jediterm.terminal.model.hyperlinks.LinkResultItem;
+import org.jspecify.annotations.Nullable;
 
 /**
  * OSC 8 hyperlinks ({@code ESC ] 8 ; ; URI ST text ESC ] 8 ; ; ST}): text a program marked as a link to a URI it
@@ -59,7 +60,7 @@ public final class Osc8Links {
     }
 
     /** The OSC 8 target of a cell's style, or null when the cell is not part of one. */
-    public static Target targetOf(TextStyle style) {
+    public static @Nullable Target targetOf(@Nullable TextStyle style) {
         return style instanceof HyperlinkStyle link && link.getLinkInfo() instanceof Target target ? target : null;
     }
 }

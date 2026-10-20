@@ -9,6 +9,7 @@ import java.util.function.Predicate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure parser for ripgrep's {@code --json} output: a stream of one JSON object per line, of type
@@ -146,11 +147,11 @@ public final class RipgrepOutput {
     }
 
     /** rg objects carry text as {@code {"text": "..."}} (or {@code {"bytes": "<base64>"}} for non-UTF-8). */
-    private static String textField(JsonNode node) {
+    private static @Nullable String textField(JsonNode node) {
         return node == null ? null : text(node.get("text"));
     }
 
-    private static String text(JsonNode node) {
+    private static @Nullable String text(JsonNode node) {
         return node == null || node.isNull() ? null : node.asText();
     }
 

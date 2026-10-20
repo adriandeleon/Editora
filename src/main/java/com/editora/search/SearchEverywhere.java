@@ -6,6 +6,8 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Merges results from the separate things a user might be looking for — a command, a file, a symbol —
  * into one ranked list.
@@ -70,7 +72,7 @@ public final class SearchEverywhere {
     public record Group(Kind kind, List<Item> items) {}
 
     /** A query's scope: which single kind it restricts to ({@code null} = all), and the query minus its sigil. */
-    public record Scope(Kind kind, String query) {}
+    public record Scope(@Nullable Kind kind, String query) {}
 
     /**
      * Reads a leading sigil off {@code raw}: {@code >} commands, {@code #} files, {@code @} symbols.

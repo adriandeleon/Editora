@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Maps the LSP {@code textDocument/documentSymbol} response into the neutral {@link SymbolNode} tree the
@@ -105,7 +106,7 @@ final class DocumentSymbolMapper {
         return contains && !same;
     }
 
-    private static SymbolNode fromDocumentSymbol(DocumentSymbol s) {
+    private static @Nullable SymbolNode fromDocumentSymbol(DocumentSymbol s) {
         if (s == null || s.getName() == null) {
             return null;
         }

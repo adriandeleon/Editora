@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Renders a {@link CommandLog.Entry} as console lines: the echoed command, its output, and an exit footer.
  * Pure and toolkit-free — the panel only appends what this returns, so the whole format is unit-testable.
@@ -36,7 +38,7 @@ public final class CommandLogFormat {
     public static final String ERROR_STYLE = "log-error";
 
     /** One console line plus the {@code .text.<class>} style to paint it with ({@code null} = default). */
-    public record Line(String text, String styleClass) {}
+    public record Line(String text, @Nullable String styleClass) {}
 
     /** The full transcript entry: {@code $ <command>}, the output, then the exit footer. */
     public static List<Line> format(CommandLog.Entry entry) {
@@ -119,7 +121,7 @@ public final class CommandLogFormat {
     }
 
     /** Splits captured output into lines, dropping a single trailing newline and any trailing {@code \r}. */
-    private static List<String> splitLines(String text) {
+    private static List<String> splitLines(@Nullable String text) {
         if (text == null || text.isEmpty()) {
             return List.of();
         }

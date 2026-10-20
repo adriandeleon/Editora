@@ -10,6 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.editora.run.NodeRuntimes;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What Editora asks vscode-js-debug for, and how it reads what js-debug says back. Pure (unit-tested).
@@ -115,7 +116,7 @@ public final class JsLaunch {
      * can (or the version is unknown — Node then says so itself). JSX/TSX is not something Node runs; TypeScript
      * runs only on a Node that strips types (22.18+, or 23.6+).
      */
-    public static String launchProblemKey(String fileName, String nodeVersion) {
+    public static @Nullable String launchProblemKey(String fileName, @Nullable String nodeVersion) {
         String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
         if (name.endsWith(".jsx") || name.endsWith(".tsx")) {
             return "debug.error.jsxNotRunnable";
@@ -131,13 +132,13 @@ public final class JsLaunch {
     }
 
     /** Whether a Node.js of {@code version} can run the js-debug server; an unknown version is given the chance. */
-    public static boolean runsAdapter(String version) {
+    public static boolean runsAdapter(@Nullable String version) {
         Optional<int[]> v = version == null ? Optional.empty() : NodeRuntimes.parseVersion(version);
         return v.isEmpty() || v.get()[0] >= MIN_ADAPTER_NODE_MAJOR;
     }
 
     /** The {@code vNN.N.N} a {@code node --version} printed, or null. */
-    public static String version(String output) {
+    public static @Nullable String version(String output) {
         if (output == null) {
             return null;
         }

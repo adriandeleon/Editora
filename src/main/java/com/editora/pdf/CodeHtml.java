@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders syntax-highlighted code to a self-contained HTML fragment for the clipboard's {@code text/html}
@@ -105,7 +106,7 @@ public final class CodeHtml {
         return sb.append("</code></pre>").toString();
     }
 
-    private static String tokenClass(Color color) {
+    private static @Nullable String tokenClass(Color color) {
         String hex = hex(color);
         for (String[] row : TOKEN_CLASSES) {
             if (row[0].equalsIgnoreCase(hex)) {

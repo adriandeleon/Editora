@@ -36,6 +36,7 @@ import org.commonmark.node.Node;
 import org.commonmark.node.OrderedList;
 import org.commonmark.node.Paragraph;
 import org.commonmark.node.ThematicBreak;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders a Markdown document to an OpenDocument Text ({@code .odt}) file — hand-written (a ZIP of XML, via
@@ -421,7 +422,7 @@ public final class OdtWriter {
      * headings points at that heading's bookmark, and only a web or mail address or a relative reference
      * stays live ({@link InlineRun#isSafeHref}).
      */
-    private static String href(String href, Pictures ctx) {
+    private static @Nullable String href(@Nullable String href, Pictures ctx) {
         if (href == null || href.isBlank()) {
             return null;
         }
@@ -444,7 +445,7 @@ public final class OdtWriter {
     }
 
     /** Embeds {@code png} as an as-char {@code <draw:frame>} sized to roughly the line height; false if undecodable. */
-    private static boolean mathFrame(StringBuilder b, byte[] png, Pictures images, boolean display) {
+    private static boolean mathFrame(StringBuilder b, byte @Nullable [] png, Pictures images, boolean display) {
         if (png == null) {
             return false;
         }
@@ -479,7 +480,7 @@ public final class OdtWriter {
     }
 
     /** Embeds raster {@code bytes} as a {@code <draw:frame>} + a {@code Pictures/} entry; false if undecodable. */
-    private static boolean imageFrameBytes(StringBuilder b, byte[] bytes, Pictures images) {
+    private static boolean imageFrameBytes(StringBuilder b, byte @Nullable [] bytes, Pictures images) {
         if (bytes == null) {
             return false;
         }
@@ -558,7 +559,7 @@ public final class OdtWriter {
 
     // ---- escaping ----
 
-    private static String esc(String s) {
+    private static String esc(@Nullable String s) {
         return stripInvalidXml(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
@@ -570,7 +571,7 @@ public final class OdtWriter {
      * pasted terminal output is enough. POI does the same for the {@code .docx} side, which is why only this
      * hand-rolled writer was exposed.
      */
-    static String stripInvalidXml(String s) {
+    static String stripInvalidXml(@Nullable String s) {
         if (s == null || s.isEmpty()) {
             return s == null ? "" : s;
         }
@@ -604,7 +605,7 @@ public final class OdtWriter {
                 : i > 0 && Character.isHighSurrogate(s.charAt(i - 1));
     }
 
-    private static String escAttr(String s) {
+    private static String escAttr(@Nullable String s) {
         return esc(s).replace("\"", "&quot;");
     }
 

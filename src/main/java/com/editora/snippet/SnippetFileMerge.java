@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A user snippet file as its entries, for merging two machines' copies of it (settings sync): reads the
@@ -54,7 +55,7 @@ public final class SnippetFileMerge {
      *
      * @throws IOException when the text is not a JSONC object
      */
-    public static String apply(String text, Map<String, String> changes) throws IOException {
+    public static String apply(@Nullable String text, Map<String, String> changes) throws IOException {
         String current = text == null ? "" : text;
         for (Map.Entry<String, String> change : changes.entrySet()) {
             JsoncObject doc = JsoncObject.parse(current, MAPPER.getFactory());

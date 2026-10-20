@@ -6,6 +6,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Where the SSH agent is, as {@code ssh} finds it: the config's {@code IdentityAgent} for the host when it names
  * one ({@code none} turns the agent off; {@code SSH_AUTH_SOCK} or {@code $VAR} reads that variable; a path may
@@ -29,7 +31,8 @@ record AgentLocation(Kind kind, String where) {
      *
      * @param identityAgent the host's {@code IdentityAgent} from {@code ~/.ssh/config}; empty or null when unset
      */
-    static AgentLocation find(String identityAgent, Map<String, String> env, boolean windows, Path home, String user) {
+    static @Nullable AgentLocation find(
+            String identityAgent, Map<String, String> env, boolean windows, Path home, String user) {
         String named = identityAgent == null ? "" : identityAgent.strip();
         if (named.length() >= 2 && named.startsWith("\"") && named.endsWith("\"")) {
             named = named.substring(1, named.length() - 1);

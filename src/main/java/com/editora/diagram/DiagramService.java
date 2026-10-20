@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import javafx.application.Platform;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * UI-facing façade for the diagram CLIs, mirroring {@code MermaidService}/{@code GitService}: work runs
@@ -36,7 +37,7 @@ public final class DiagramService {
     });
 
     private final Map<DiagramKind, String> paths = new EnumMap<>(DiagramKind.class);
-    private volatile Availability cached;
+    private volatile @Nullable Availability cached;
 
     /** Updates the configured executable paths/commands; clears the cached availability so it re-probes. */
     public void setPaths(Map<DiagramKind, String> newPaths) {

@@ -8,6 +8,7 @@ import java.util.List;
 
 import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure text-layout helpers for the code PDF: flatten a document + its highlight {@link StyleSpans} into
@@ -26,7 +27,8 @@ public final class PdfText {
      * token color/bold/italic (from {@link PdfTheme}); when null every run is default-colored plain text.
      * Tabs expand to spaces against {@code tabSize} (column-aware); {@code \r} is dropped.
      */
-    public static List<List<Run>> splitIntoLineRuns(String text, StyleSpans<Collection<String>> spans, int tabSize) {
+    public static List<List<Run>> splitIntoLineRuns(
+            String text, @Nullable StyleSpans<Collection<String>> spans, int tabSize) {
         Iterator<StyleSpan<Collection<String>>> it = spans == null ? null : spans.iterator();
         Collection<String> style = null;
         int left = 0;

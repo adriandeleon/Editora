@@ -3,6 +3,8 @@ package com.editora.build;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Reads the main class a Gradle build script declares via the {@code application} plugin, so Run/Debug can
  * name what it will launch (and pre-fill a saved run configuration) without scanning sources or asking the
@@ -29,7 +31,7 @@ public final class GradleApplication {
             Pattern.compile("\\bmainClass(?:Name)?\\s*\\.\\s*set\\s*\\(\\s*[\"']([\\w.$]+)[\"']\\s*\\)");
 
     /** The declared main class, or {@code null} when the script doesn't declare a literal one. */
-    public static String mainClass(String buildScript) {
+    public static @Nullable String mainClass(String buildScript) {
         if (buildScript == null || buildScript.isBlank()) {
             return null;
         }

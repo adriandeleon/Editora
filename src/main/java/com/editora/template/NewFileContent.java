@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The pure half of "New ▸ &lt;type&gt;": turns the name the user typed into a path to create, works
  * out the Java package the target folder implies, and renders the type's initial contents.
@@ -53,7 +55,7 @@ public final class NewFileContent {
     }
 
     /** The outcome of {@link #decide}: exactly one of {@code plan} / {@code refusal} is non-null. */
-    public record Decision(Plan plan, Refusal refusal) {
+    public record Decision(@Nullable Plan plan, @Nullable Refusal refusal) {
         static Decision refuse(Refusal why) {
             return new Decision(null, why);
         }
@@ -123,7 +125,7 @@ public final class NewFileContent {
      * The path to create, or null when {@code input} is unusable (blank after trimming is <em>not</em>
      * unusable — it falls back to the type's suggested name). {@link #decide} also says why.
      */
-    public static Plan plan(NewFileType type, String input, String basePackage) {
+    public static @Nullable Plan plan(NewFileType type, String input, String basePackage) {
         return decide(type, input, basePackage).plan();
     }
 
@@ -297,7 +299,7 @@ public final class NewFileContent {
      * right-clicked. A folder whose name isn't a Java identifier ({@code my-notes}) ends the walk with
      * what precedes it, since the rest cannot be a package.
      */
-    public static String packageFor(Path dir, Path projectRoot) {
+    public static String packageFor(@Nullable Path dir, @Nullable Path projectRoot) {
         if (dir == null) {
             return "";
         }
@@ -305,7 +307,7 @@ public final class NewFileContent {
         Path root = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
         boolean bounded = root != null && abs.startsWith(root);
         List<String> segments = new ArrayList<>();
-        for (Path part : bounded ? root.relativize(abs) : abs) {
+        for (Path part : root != null && bounded ? root.relativize(abs) : abs) {
             if (!part.toString().isEmpty()) {
                 segments.add(part.toString());
             }

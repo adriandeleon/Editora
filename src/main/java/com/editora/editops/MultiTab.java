@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Tab / Shift-Tab with several carets: the buffer's own Tab at every caret, as one edit.
  *
@@ -50,12 +52,12 @@ public final class MultiTab {
      * Returns null when {@code edits} declines any caret (a read-only or huge buffer), so the caller leaves
      * the key alone.
      */
-    public static Plan plan(String text, List<int[]> carets, boolean shift, Edits edits) {
+    public static @Nullable Plan plan(String text, List<int[]> carets, boolean shift, Edits edits) {
         return plan(carets, shift, (selStart, selEnd, back) -> edits.edit(text, selStart, selEnd, back));
     }
 
     /** As {@link #plan(String, List, boolean, Edits)}, without handing the document's text through. */
-    public static Plan plan(List<int[]> carets, boolean shift, CaretEdits edits) {
+    public static @Nullable Plan plan(List<int[]> carets, boolean shift, CaretEdits edits) {
         int n = carets.size();
         Indenter.TabEdit[] wanted = new Indenter.TabEdit[n];
         List<Integer> order = new ArrayList<>(n);

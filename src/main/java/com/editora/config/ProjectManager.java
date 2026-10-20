@@ -15,6 +15,7 @@ import com.editora.vfs.Vfs;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Tracks the user's projects and the active one, persisted as JSON in {@code <configDir>/projects.json}.
@@ -273,7 +274,7 @@ public class ProjectManager {
     }
 
     /** The active project, or {@code null} when none is open (the default global session). */
-    public Project active() {
+    public @Nullable Project active() {
         String id = index.getActiveProjectId();
         if (id.isEmpty()) {
             return null;
@@ -353,7 +354,7 @@ public class ProjectManager {
     }
 
     /** The project whose root is {@code root} (matched by absolute, normalized path), or {@code null}. */
-    public Project find(Path root) {
+    public @Nullable Project find(Path root) {
         String absRoot = storedRoot(root);
         for (Project p : index.getProjects()) {
             if (p.root().equals(absRoot)) {

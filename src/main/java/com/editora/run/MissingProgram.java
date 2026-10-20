@@ -2,6 +2,8 @@ package com.editora.run;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Turns "the program is not installed" into a message that says what to do. A launch of a missing {@code npm},
  * {@code pnpm} or {@code node} used to show the JDK's own words — {@code Cannot run program "pnpm" (in
@@ -40,7 +42,7 @@ public final class MissingProgram {
      *
      * @param reason what chose a package manager ({@code pnpm-lock.yaml}), or "" / null
      */
-    public static Message forProgram(String executable, String reason) {
+    public static @Nullable Message forProgram(String executable, String reason) {
         String name = baseName(executable);
         return switch (name) {
             case "node", "nodejs" -> new Message("status.run.nodeMissing", name);

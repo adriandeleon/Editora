@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Low-level facade over the Mermaid command-line tools — <b>mmdc</b> (mermaid-cli, renders/exports) and
@@ -30,7 +31,7 @@ public final class Mermaid {
     public static final int RENDER_SCALE = 2;
 
     /** A render outcome: PNG {@code image} bytes on success, else {@code error} (mmdc's message). */
-    public record Render(byte[] image, String error) {
+    public record Render(byte @Nullable [] image, @Nullable String error) {
         public boolean ok() {
             return image != null && error == null;
         }
@@ -39,7 +40,7 @@ public final class Mermaid {
             return new Render(image, null);
         }
 
-        static Render fail(String error) {
+        static Render fail(@Nullable String error) {
             return new Render(null, error == null || error.isBlank() ? "render failed" : error.strip());
         }
     }
@@ -101,7 +102,7 @@ public final class Mermaid {
      * {@link #RENDER_SCALE}×). Blocking. PNG (not SVG) because JavaFX/JSVG can't apply mermaid's embedded
      * CSS or render its {@code <foreignObject>} HTML labels — mmdc rasterizes faithfully via Chromium.
      */
-    public static Render renderPng(List<String> mmdc, String source, boolean dark) {
+    public static Render renderPng(@Nullable List<String> mmdc, String source, boolean dark) {
         Path dir = null;
         try {
             dir = Files.createTempDirectory("editora-mermaid");
@@ -165,7 +166,7 @@ public final class Mermaid {
     }
 
     /** The full mmdc argument list (base command + flags; pure, unit-tested). {@code -s} affects raster only. */
-    static List<String> renderArgs(List<String> mmdc, Path in, Path out, boolean dark) {
+    static List<String> renderArgs(@Nullable List<String> mmdc, Path in, Path out, boolean dark) {
         List<String> cmd = new ArrayList<>(mmdc);
         cmd.add("-i");
         cmd.add(in.toString());
@@ -188,7 +189,7 @@ public final class Mermaid {
         return cmd;
     }
 
-    private static void deleteRecursively(Path dir) {
+    private static void deleteRecursively(@Nullable Path dir) {
         if (dir == null) {
             return;
         }

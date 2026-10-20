@@ -17,6 +17,7 @@ import java.util.function.BooleanSupplier;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A minimal streaming client for the Anthropic Messages API over the JDK's {@link HttpClient} —
@@ -248,7 +249,7 @@ public final class AiClient {
     }
 
     /** Extracts the model reported by an OpenAI chunk or Anthropic {@code message_start} event. */
-    static String streamModel(AiProvider provider, JsonNode data) {
+    static @Nullable String streamModel(AiProvider provider, JsonNode data) {
         JsonNode value = provider.usesOpenAiApi()
                 ? data.path("model")
                 : data.path("message").path("model");
@@ -291,7 +292,7 @@ public final class AiClient {
      * a slow local server warming up a model can't leave the caller hanging — it fails with a clear
      * "timed out" instead. Used by the Settings connection check.
      */
-    public String check(
+    public @Nullable String check(
             AiProvider provider, String endpoint, String apiKey, JsonNode request, java.time.Duration timeout) {
         String refusal = insecureKeyRefusal(endpoint, apiKey);
         if (refusal != null) {
@@ -325,7 +326,7 @@ public final class AiClient {
      * fires when a key is actually present, so a keyless local OpenAI-compatible server over http loopback is
      * unaffected; https and loopback hosts are always allowed. See {@link AiEndpoints}.
      */
-    private static String insecureKeyRefusal(String endpoint, String apiKey) {
+    private static @Nullable String insecureKeyRefusal(String endpoint, String apiKey) {
         boolean hasKey = apiKey != null && !apiKey.isBlank();
         if (hasKey && AiEndpoints.isCleartextRemote(endpoint)) {
             return "refusing to send your API key in cleartext to " + AiEndpoints.hostOf(endpoint)

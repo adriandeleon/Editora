@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Decides how blame uses an <em>ignore-revs file</em> — the list of commits (mass reformatting, a licence
  * header sweep) that blame should look through. Pure; the process and file-system facts are passed in.
@@ -43,7 +45,10 @@ public final class BlameIgnoreRevs {
      * @param withoutGlobalConfig run blame without the user's global {@code blame.ignoreRevsFile}
      * @param unreadable          a configured file that is missing and cannot be skipped, or {@code null}
      */
-    public record Plan(List<String> files, boolean withoutGlobalConfig, String unreadable) {
+    public record Plan(
+            List<String> files,
+            boolean withoutGlobalConfig,
+            @Nullable String unreadable) {
 
         public static final Plan NONE = new Plan(List.of(), false, null);
 
@@ -115,12 +120,11 @@ public final class BlameIgnoreRevs {
             } catch (java.nio.file.InvalidPathException invalid) {
                 file = null;
             }
-            boolean ok = file != null && readable.test(file);
             boolean global = "global".equals(entry.scope());
-            if (!ok && !global) {
-                return new Plan(List.of(), false, entry.path());
-            }
-            if (!ok) {
+            if (file == null || !readable.test(file)) {
+                if (!global) {
+                    return new Plan(List.of(), false, entry.path());
+                }
                 globalBroken = true;
             } else if (global) {
                 globalReadable.add(file.toString());
@@ -188,7 +192,7 @@ public final class BlameIgnoreRevs {
     }
 
     /** Whether a failed blame's message is about an ignore-revs file (so retrying without one may succeed). */
-    public static boolean isIgnoreRevsFailure(String err) {
+    public static boolean isIgnoreRevsFailure(@Nullable String err) {
         return err != null && (err.contains("object name list") || err.contains("invalid object name"));
     }
 }

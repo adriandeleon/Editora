@@ -18,6 +18,7 @@ import com.editora.config.SearchHistory;
 import com.editora.config.Settings;
 import com.editora.config.TrustStore;
 import com.editora.config.WorkspaceState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The versioned config files and their migration registries. Each entry knows its <b>current</b> schema
@@ -498,7 +499,7 @@ public enum ConfigSchema {
     }
 
     /** The step that upgrades {@code fromVersion → fromVersion+1}, or {@code null} if none is registered. */
-    public Migration step(int fromVersion) {
+    public @Nullable Migration step(int fromVersion) {
         return steps.get(fromVersion);
     }
 }

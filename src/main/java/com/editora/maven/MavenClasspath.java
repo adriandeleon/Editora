@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Builds the Maven command that dumps a project's runtime classpath, and assembles the full classpath for
  * launching a main class without the Java language server. Used by the Run feature's build-tool fallback
@@ -150,7 +152,8 @@ public final class MavenClasspath {
      * As {@link #assemble(String, Path)}, with the module's output folder and the separator named as the
      * machine the program runs on names them (a remote host's paths, {@code :}).
      */
-    public static List<String> assemble(String dependencyClasspath, String classesFolder, String pathSeparator) {
+    public static List<String> assemble(
+            String dependencyClasspath, @Nullable String classesFolder, String pathSeparator) {
         List<String> cp = new ArrayList<>();
         if (classesFolder != null) {
             cp.add(classesFolder);

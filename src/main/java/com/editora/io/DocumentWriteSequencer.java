@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.editora.config.PathKeys;
+import org.jspecify.annotations.Nullable;
 
 /**
  * App-wide ordering for writes to one document path. A newer ticket makes an older queued write obsolete;
@@ -21,7 +22,7 @@ public final class DocumentWriteSequencer {
         T get() throws IOException;
     }
 
-    public record Outcome<T>(boolean executed, T value) {}
+    public record Outcome<T>(boolean executed, @Nullable T value) {}
 
     private static final class State {
         final AtomicLong generation = new AtomicLong();

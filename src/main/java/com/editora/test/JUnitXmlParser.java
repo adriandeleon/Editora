@@ -11,6 +11,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.xml.sax.InputSource;
@@ -34,7 +35,7 @@ public final class JUnitXmlParser implements TestResultParser {
     }
 
     @Override
-    public ParsedSuite parseReportFile(Path file) {
+    public @Nullable ParsedSuite parseReportFile(Path file) {
         try {
             String xml = Files.readString(file);
             return parse(xml);
@@ -44,7 +45,7 @@ public final class JUnitXmlParser implements TestResultParser {
     }
 
     /** Parses a JUnit XML {@code <testsuite>} document; {@code null} if the root isn't a testsuite. */
-    public ParsedSuite parse(String xml) throws IOException, SAXException, ParserConfigurationException {
+    public @Nullable ParsedSuite parse(String xml) throws IOException, SAXException, ParserConfigurationException {
         Element suite = document(xml);
         if (suite == null || !"testsuite".equals(suite.getNodeName())) {
             return null;
@@ -58,7 +59,7 @@ public final class JUnitXmlParser implements TestResultParser {
                 suiteName, tests, text(firstChild(suite, "system-out")), text(firstChild(suite, "system-err")));
     }
 
-    private ParsedTest parseCase(Element tc, String suiteName) {
+    private ParsedTest parseCase(Element tc, @Nullable String suiteName) {
         String method = attr(tc, "name", "");
         String className = attr(tc, "classname", suiteName);
         long durationMs = seconds(attr(tc, "time", ""));
@@ -94,7 +95,7 @@ public final class JUnitXmlParser implements TestResultParser {
                 className, method, status, durationMs, failureType, failureMessage, stackTrace, captured, fileHint, 0);
     }
 
-    private static long seconds(String time) {
+    private static long seconds(@Nullable String time) {
         if (time == null || time.isBlank()) {
             return 0;
         }
@@ -119,7 +120,7 @@ public final class JUnitXmlParser implements TestResultParser {
         return builder.parse(new InputSource(new StringReader(xml))).getDocumentElement();
     }
 
-    private static Element firstChild(Element parent, String tag) {
+    private static @Nullable Element firstChild(Element parent, String tag) {
         if (parent == null) {
             return null;
         }
@@ -143,14 +144,14 @@ public final class JUnitXmlParser implements TestResultParser {
         return out;
     }
 
-    private static String attr(Element el, String name, String fallback) {
+    private static @Nullable String attr(Element el, String name, @Nullable String fallback) {
         if (el == null || !el.hasAttribute(name)) {
             return fallback;
         }
         return el.getAttribute(name);
     }
 
-    private static String text(Element el) {
+    private static @Nullable String text(@Nullable Element el) {
         if (el == null) {
             return null;
         }

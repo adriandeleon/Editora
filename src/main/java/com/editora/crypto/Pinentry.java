@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 
+import com.editora.config.PathDisplay;
 import com.editora.process.ProcessRunner;
 import org.jspecify.annotations.Nullable;
 
@@ -49,7 +50,7 @@ public final class Pinentry {
         if (real == null) {
             return new Verdict(program, false, false);
         }
-        String name = real.getFileName().toString();
+        String name = PathDisplay.fileName(real);
         return new Verdict(name, graphical(name), true);
     }
 

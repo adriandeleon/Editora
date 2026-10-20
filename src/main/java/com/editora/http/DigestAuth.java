@@ -13,6 +13,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * HTTP Digest access authentication (RFC 7616, and the RFC 2617 forms it keeps) for the
  * {@code Authorization: Digest user pass} shorthand: the executor sends once, and on a {@code 401} with
@@ -46,7 +48,7 @@ public final class DigestAuth {
      * of the value the password, so a password may contain spaces. A real Digest header ({@code Digest
      * username="…", …}) is not shorthand.
      */
-    public static Credentials shorthand(String authValue) {
+    public static @Nullable Credentials shorthand(String authValue) {
         if (authValue == null) {
             return null;
         }
@@ -88,7 +90,7 @@ public final class DigestAuth {
      * The strongest Digest challenge this class can answer among all the {@code WWW-Authenticate} header
      * values, or {@code null} when there is none (no Digest challenge, or only unsupported algorithms or qops).
      */
-    public static Map<String, String> strongest(List<String> wwwAuthenticate) {
+    public static @Nullable Map<String, String> strongest(List<String> wwwAuthenticate) {
         Map<String, String> best = null;
         int bestRank = -1;
         for (String header : wwwAuthenticate == null ? List.<String>of() : wwwAuthenticate) {
@@ -153,7 +155,7 @@ public final class DigestAuth {
     }
 
     /** {@code auth} when offered, else {@code auth-int}, null for a challenge without qop, "?" for none usable. */
-    private static String chooseQop(String qop) {
+    private static @Nullable String chooseQop(@Nullable String qop) {
         if (qop == null || qop.isBlank()) {
             return null;
         }

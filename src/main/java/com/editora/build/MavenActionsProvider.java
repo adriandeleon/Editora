@@ -10,6 +10,7 @@ import com.editora.maven.MavenPluginGoals;
 import com.editora.maven.MavenPluginPrefix;
 import com.editora.maven.MavenReactor;
 import com.editora.maven.PomModel;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -39,9 +40,9 @@ public final class MavenActionsProvider implements BuildActionsProvider {
 
     private final PomModel model;
     private final List<MavenPluginGoals.Descriptor> pluginGoals;
-    private final MavenReactor.Reactor reactor;
+    private final MavenReactor.@Nullable Reactor reactor;
     /** The root pom as the machine Maven runs on names it (a remote host's path when the build runs there). */
-    private final String rootPomOnTarget;
+    private final @Nullable String rootPomOnTarget;
 
     public MavenActionsProvider(PomModel model) {
         this(model, List.of());
@@ -58,8 +59,8 @@ public final class MavenActionsProvider implements BuildActionsProvider {
     public MavenActionsProvider(
             PomModel model,
             List<MavenPluginGoals.Descriptor> pluginGoals,
-            MavenReactor.Reactor reactor,
-            String rootPomOnTarget) {
+            MavenReactor.@Nullable Reactor reactor,
+            @Nullable String rootPomOnTarget) {
         this.model = model;
         this.pluginGoals = List.copyOf(pluginGoals);
         this.reactor = reactor;
@@ -69,7 +70,7 @@ public final class MavenActionsProvider implements BuildActionsProvider {
     }
 
     /** The module's reactor, or {@code null}. */
-    public MavenReactor.Reactor reactor() {
+    public MavenReactor.@Nullable Reactor reactor() {
         return reactor;
     }
 
@@ -131,10 +132,11 @@ public final class MavenActionsProvider implements BuildActionsProvider {
     @Override
     public List<String> toggleArgs(Set<String> activeToggleIds) {
         Set<String> profiles = new LinkedHashSet<>(activeToggleIds);
-        boolean viaReactor = profiles.remove(REACTOR_TOGGLE) && reactor != null;
+        MavenReactor.Reactor r = reactor;
+        boolean viaReactor = profiles.remove(REACTOR_TOGGLE) && r != null;
         List<String> out = new ArrayList<>();
-        if (viaReactor) {
-            out.addAll(MavenReactor.reactorArgs(rootPomOnTarget, reactor.moduleSelector()));
+        if (viaReactor && r != null) {
+            out.addAll(MavenReactor.reactorArgs(rootPomOnTarget, r.moduleSelector()));
         }
         if (!profiles.isEmpty()) {
             out.add("-P" + String.join(",", profiles));

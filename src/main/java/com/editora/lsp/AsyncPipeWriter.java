@@ -7,6 +7,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The single ordered writer for one language server's stdin — and, since they have the same problem, for a
  * debug adapter's socket or stdin ({@code dap.DapClient}) and an ACP agent's stdin ({@code agent.AcpClient}).
@@ -165,7 +167,7 @@ public final class AsyncPipeWriter extends OutputStream {
     }
 
     /** The deferred entry's bytes, or null when producing them failed (the entry is then dropped). */
-    private static byte[] produce(Deferred deferred) {
+    private static byte @Nullable [] produce(Deferred deferred) {
         try {
             return deferred.bytes().get();
         } catch (RuntimeException e) {

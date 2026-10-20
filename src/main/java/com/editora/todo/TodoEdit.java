@@ -1,5 +1,7 @@
 package com.editora.todo;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure rebuilds of a structured TODO comment line for the tool window's edit actions — set priority, mark
  * done (rewrite the keyword to {@code DONE}), reopen, and edit the description. Each returns the whole new
@@ -18,7 +20,12 @@ public final class TodoEdit {
      * (a null/blank tag, priority, or description is omitted). Used by the {@code with*} helpers below.
      */
     public static String rebuild(
-            String lineText, int keywordStart, String keyword, String tag, String priority, String description) {
+            String lineText,
+            int keywordStart,
+            String keyword,
+            @Nullable String tag,
+            @Nullable String priority,
+            String description) {
         String prefix = lineText.substring(0, Math.max(0, Math.min(keywordStart, lineText.length())));
         StringBuilder sb = new StringBuilder(prefix).append(keyword);
         if (tag != null && !tag.isEmpty()) {

@@ -4,6 +4,8 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Turns a link target into a path on this machine.
  *
@@ -22,7 +24,7 @@ public final class LinkPaths {
      * reason this is useful: {@code src/main/java/Foo.java} in a build's output means that file in
      * the directory the build ran in, and every tab has its own.
      */
-    public static Path resolve(String token, Path cwd) {
+    public static @Nullable Path resolve(String token, @Nullable Path cwd) {
         if (token == null || token.isBlank()) return null;
         try {
             String expanded = expandHome(token);
@@ -43,7 +45,7 @@ public final class LinkPaths {
      * container mounts). Null when it is not a path or there is no directory to resolve a relative one against.
      * {@code ~} is not expanded: it is that machine's home, not this one's.
      */
-    public static Path resolveOn(String token, String cwd, java.util.function.Function<String, Path> toPath) {
+    public static @Nullable Path resolveOn(String token, String cwd, java.util.function.Function<String, Path> toPath) {
         if (token == null || token.isBlank()) return null;
         try {
             if (token.startsWith("/")) return toPath.apply(token).normalize();
@@ -72,7 +74,7 @@ public final class LinkPaths {
      * {@code file:///tmp/a%20b} is one file whose name has a space in it, and treating those bytes
      * as a path would look for a file called {@code a%20b}.
      */
-    public static Path fromFileUri(String target) {
+    public static @Nullable Path fromFileUri(String target) {
         if (target == null || !target.regionMatches(true, 0, "file:", 0, 5)) return null;
         try {
             URI uri = new URI(target);

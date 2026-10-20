@@ -9,6 +9,7 @@ import java.util.Map;
 
 import com.editora.vfs.Vfs;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The persisted set of <b>trusted workspace roots</b> (in {@code trusted-folders.json}) — folders whose
@@ -103,7 +104,7 @@ public class TrustStore {
         return Vfs.toStorableString(PathKeys.canonical(root));
     }
 
-    private static Path parse(String key) {
+    private static @Nullable Path parse(String key) {
         try {
             return Vfs.parseStorable(key); // null for a remote folder whose host is not connected
         } catch (InvalidPathException e) {

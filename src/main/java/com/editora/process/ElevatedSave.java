@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure helpers for saving a file that the user lacks write permission for (e.g. a root-owned file under
  * {@code /etc}) by elevating through the OS's own graphical authentication agent — the password is never
@@ -88,10 +90,10 @@ public final class ElevatedSave {
         /** Anything else: the target is as it was (or was newly created and is incomplete). */
         OTHER(null, -1);
 
-        private final String marker;
+        private final @Nullable String marker;
         private final int exit;
 
-        Failure(String marker, int exit) {
+        Failure(@Nullable String marker, int exit) {
             this.marker = marker;
             this.exit = exit;
         }
@@ -156,7 +158,7 @@ public final class ElevatedSave {
      * The elevated argv for {@code osName}: macOS → {@link #osascriptArgv}, Linux → {@link #pkexecArgv},
      * else {@code null} (unsupported OS).
      */
-    public static List<String> elevatedArgv(String osName, String pkexec, Path source, Path target) {
+    public static @Nullable List<String> elevatedArgv(String osName, String pkexec, Path source, Path target) {
         if (isMac(osName)) {
             return osascriptArgv(source, target);
         }

@@ -138,12 +138,14 @@ public final class MarkdownDefinitions {
         List<SourceSpan> spans = new ArrayList<>(list.getSourceSpans());
         spans.addAll(p.getSourceSpans());
         list.setSourceSpans(spans);
-        Description current = null;
-        for (int i = 0; i < starts.size(); i++) {
+        for (int i = 0; i < first; i++) {
+            list.appendChild(line(new Term(), starts.get(i), false));
+        }
+        Description current = (Description) line(new Description(), starts.get(first), true);
+        list.appendChild(current);
+        for (int i = first + 1; i < starts.size(); i++) {
             Node start = starts.get(i);
-            if (i < first) {
-                list.appendChild(line(new Term(), start, false));
-            } else if (isDefinitionStart(start)) {
+            if (isDefinitionStart(start)) {
                 current = (Description) line(new Description(), start, true);
                 list.appendChild(current);
             } else {

@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Tiny UI-localization catalog. Strings live in {@code resources/com/editora/i18n/messages.properties}
  * (English, the base/fallback) plus {@code messages_<lang>.properties} overlays, loaded once at startup
@@ -103,7 +105,8 @@ public final class Messages {
      * for a line number, a port, a pull-request number or an exit code: those patterns use
      * {@code {0,number,#}}.
      */
-    public static String tr(String key, Object... args) {
+    public static String tr(String key, @Nullable Object... args) {
+
         String pattern = tr(key);
         if (args == null || args.length == 0 || pattern.indexOf('{') < 0) {
             return pattern;

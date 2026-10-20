@@ -20,6 +20,8 @@ import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A {@link WatchService} that finds changes by listing the registered folders every few seconds — what Editora
  * falls back to when the operating system will not give it a watcher of its own ({@link WatchServices#open}).
@@ -100,6 +102,10 @@ public final class PollingWatchService implements WatchService {
             return; // unreadable this time: compare again next round
         }
         Map<String, Stamp> before = key.last;
+        if (before == null) {
+            key.last = now; // the folder was unreadable when registered: this is its first listing
+            return;
+        }
         List<WatchEvent<?>> events = new ArrayList<>();
         now.forEach((name, stamp) -> {
             Stamp old = before.get(name);
@@ -120,7 +126,7 @@ public final class PollingWatchService implements WatchService {
     }
 
     /** The folder's entries by name, or null when it cannot be listed (a vanished folder lists as empty). */
-    private static Map<String, Stamp> snapshot(Path dir) {
+    private static @Nullable Map<String, Stamp> snapshot(Path dir) {
         Map<String, Stamp> out = new HashMap<>();
         if (!Files.isDirectory(dir)) {
             return out;
@@ -190,7 +196,7 @@ public final class PollingWatchService implements WatchService {
     private final class Key implements WatchKey {
         final Path dir;
         final Set<WatchEvent.Kind<?>> kinds;
-        volatile Map<String, Stamp> last = Map.of();
+        volatile @Nullable Map<String, Stamp> last = Map.of();
         volatile boolean valid = true;
         private final List<WatchEvent<?>> pending = new ArrayList<>();
         private boolean queued;

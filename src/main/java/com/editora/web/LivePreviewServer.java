@@ -16,6 +16,7 @@ import java.util.function.Supplier;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A tiny embedded HTTP server (JDK {@link HttpServer}) that serves one HTML file's folder so a real browser
@@ -47,11 +48,11 @@ public final class LivePreviewServer {
 
     private static final long POLL_TIMEOUT_MS = 25_000;
 
-    private HttpServer server;
-    private ExecutorService pool;
+    private @Nullable HttpServer server;
+    private @Nullable ExecutorService pool;
 
-    private volatile Path docRoot; // absolute, normalized; the previewed file's parent
-    private volatile String previewRelPath; // the file served from live text, relative to docRoot
+    private volatile @Nullable Path docRoot; // absolute, normalized; the previewed file's parent
+    private volatile @Nullable String previewRelPath; // the file served from live text, relative to docRoot
     private volatile Supplier<String> liveText = () -> "";
 
     private final AtomicLong version = new AtomicLong(1);
@@ -278,7 +279,7 @@ public final class LivePreviewServer {
         return token;
     }
 
-    private static Path userHome() {
+    private static @Nullable Path userHome() {
         String home = System.getProperty("user.home");
         return home == null || home.isBlank() ? null : Path.of(home);
     }
@@ -302,7 +303,7 @@ public final class LivePreviewServer {
      * with {@code /}), or {@code null} when the prefix is absent or wrong — the caller answers 404 without
      * touching the doc root. Compared in constant time so the token cannot be recovered byte-by-byte.
      */
-    static String route(String path, String token) {
+    static @Nullable String route(String path, String token) {
         if (path == null || token == null || token.isEmpty() || !path.startsWith("/")) {
             return null;
         }
@@ -338,7 +339,7 @@ public final class LivePreviewServer {
      * into the home folder would otherwise publish {@code ~/.ssh}, browser profiles and every dotfile to
      * whatever can reach the port. {@code home} may be null (unknown) — then only a filesystem root is refused.
      */
-    public static boolean isUnsafeDocRoot(Path docRoot, Path home) {
+    public static boolean isUnsafeDocRoot(@Nullable Path docRoot, @Nullable Path home) {
         if (docRoot == null) {
             return true;
         }
@@ -373,7 +374,7 @@ public final class LivePreviewServer {
      * preview server read an arbitrary file (same-origin with the previewed page). A target that doesn't exist
      * yet (or can't be canonicalized) falls back to the lexical result — the subsequent read just 404s.
      */
-    static Path safeResolve(Path root, String rel) {
+    static @Nullable Path safeResolve(Path root, String rel) {
         Path resolved = root.resolve(rel).normalize();
         if (!resolved.startsWith(root)) {
             return null; // lexical escape (…/../…, absolute path)

@@ -2,6 +2,8 @@ package com.editora.fstab;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One parsed {@code /etc/fstab} line: the six whitespace-separated columns (device spec, mount point,
  * filesystem type, options, dump, fsck pass). {@code dump}/{@code pass} default to 0 when omitted. A
@@ -15,7 +17,7 @@ public record FstabEntry(
         List<String> options,
         int dump,
         int pass,
-        String error,
+        @Nullable String error,
         int line) {
 
     public boolean ok() {

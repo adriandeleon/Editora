@@ -9,6 +9,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.StringJoiner;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A parsed standard 5-field cron expression (minute hour day-of-month month day-of-week), plus the
  * {@code @macro} shorthands ({@code @reboot @yearly @annually @monthly @weekly @daily @midnight @hourly}).
@@ -65,25 +67,18 @@ public final class CronExpression {
     /** Guards {@link #nextRuns} against an impossible expression (e.g. Feb 31): scan at most ~4 years. */
     private static final int MAX_SCAN_MINUTES = 4 * 366 * 24 * 60;
 
-    private final boolean reboot;
-    private final CronField minute;
-    private final CronField hour;
-    private final CronField dom;
-    private final CronField month;
-    private final CronField dow;
+    /** The five parsed fields; null only for {@code @reboot}. */
+    private final @Nullable Fields fields;
 
-    private CronExpression(
-            boolean reboot, CronField minute, CronField hour, CronField dom, CronField month, CronField dow) {
-        this.reboot = reboot;
-        this.minute = minute;
-        this.hour = hour;
-        this.dom = dom;
-        this.month = month;
-        this.dow = dow;
+    private record Fields(CronField minute, CronField hour, CronField dom, CronField month, CronField dow) {}
+
+    private CronExpression(@Nullable Fields fields) {
+        this.fields = fields;
     }
 
     /** Result of {@link #parse}: exactly one of {@link #expr} / {@link #error} is non-null. */
-    public record Parsed(CronExpression expr, String error) {
+    public record Parsed(
+            @Nullable CronExpression expr, @Nullable String error) {
         public boolean ok() {
             return error == null;
         }
@@ -101,7 +96,7 @@ public final class CronExpression {
         if (s.startsWith("@")) {
             String macro = s.toLowerCase(Locale.ROOT);
             if (macro.equals("@reboot")) {
-                return new Parsed(new CronExpression(true, null, null, null, null, null), null);
+                return new Parsed(new CronExpression(null), null);
             }
             String expanded = switch (macro) {
                 case "@yearly", "@annually" -> "0 0 1 1 *";
@@ -126,27 +121,30 @@ public final class CronExpression {
             CronField dm = CronField.parse(f[2], 1, 31, null, false);
             CronField mo = CronField.parse(f[3], 1, 12, MONTHS, false);
             CronField dw = CronField.parse(f[4], 0, 6, DOWS, true);
-            return new Parsed(new CronExpression(false, min, hr, dm, mo, dw), null);
+            return new Parsed(new CronExpression(new Fields(min, hr, dm, mo, dw)), null);
         } catch (CronField.ParseException e) {
             return new Parsed(null, e.getMessage());
         }
     }
 
     public boolean isReboot() {
-        return reboot;
+        return fields == null;
     }
 
     /** Whether a wall-clock time (to the minute) is a fire time. Never true for {@code @reboot}. */
     public boolean matches(LocalDateTime t) {
-        if (reboot) {
+        Fields f = fields;
+        if (f == null) {
             return false;
         }
-        if (!minute.matches(t.getMinute()) || !hour.matches(t.getHour()) || !month.matches(t.getMonthValue())) {
+        if (!f.minute().matches(t.getMinute())
+                || !f.hour().matches(t.getHour())
+                || !f.month().matches(t.getMonthValue())) {
             return false;
         }
-        boolean domOk = dom.matches(t.getDayOfMonth());
-        boolean dowOk = dow.matches(dowIndex(t.getDayOfWeek()));
-        if (!dom.isStar() && !dow.isStar()) {
+        boolean domOk = f.dom().matches(t.getDayOfMonth());
+        boolean dowOk = f.dow().matches(dowIndex(t.getDayOfWeek()));
+        if (!f.dom().isStar() && !f.dow().isStar()) {
             return domOk || dowOk; // Vixie OR-rule when both restricted
         }
         return domOk && dowOk;
@@ -155,7 +153,7 @@ public final class CronExpression {
     /** The next {@code n} fire times strictly after {@code from} (empty for {@code @reboot} or an impossible spec). */
     public List<LocalDateTime> nextRuns(LocalDateTime from, int n) {
         List<LocalDateTime> out = new ArrayList<>();
-        if (reboot || n <= 0) {
+        if (fields == null || n <= 0) {
             return out;
         }
         LocalDateTime t = from.truncatedTo(ChronoUnit.MINUTES).plusMinutes(1);
@@ -188,21 +186,22 @@ public final class CronExpression {
 
     /** A human-readable summary of the schedule (e.g. "At 02:30, Monday through Friday"). */
     public String describe() {
-        if (reboot) {
+        Fields f = fields;
+        if (f == null) {
             return "At system startup";
         }
-        StringBuilder sb = new StringBuilder(timePhrase());
-        String day = dayPhrase();
+        StringBuilder sb = new StringBuilder(timePhrase(f.minute(), f.hour()));
+        String day = dayPhrase(f.dom(), f.dow());
         if (!day.isEmpty()) {
             sb.append(", ").append(day);
         }
-        if (!month.coversAll()) {
-            sb.append(", in ").append(namesOf(month, MONTH_NAMES, 1));
+        if (!f.month().coversAll()) {
+            sb.append(", in ").append(namesOf(f.month(), MONTH_NAMES, 1));
         }
         return sb.toString();
     }
 
-    private String timePhrase() {
+    private static String timePhrase(CronField minute, CronField hour) {
         boolean mStar = minute.coversAll();
         boolean hStar = hour.coversAll();
         if (mStar && hStar) {
@@ -252,18 +251,18 @@ public final class CronExpression {
      * a step of one) is not a star, so it still forces the OR-rule, but it was dropped from the prose —
      * {@code 0 0 1-31 * 5} claimed "on Friday" while firing every day.
      */
-    private String dayPhrase() {
+    private static String dayPhrase(CronField dom, CronField dow) {
         boolean domRestricted = !dom.isStar();
         boolean dowRestricted = !dow.isStar();
-        String domPart = domRestricted ? domPhrase() : "";
-        String dowPart = dowRestricted ? dowPhrase() : "";
+        String domPart = domRestricted ? domPhrase(dom) : "";
+        String dowPart = dowRestricted ? dowPhrase(dow) : "";
         if (!domPart.isEmpty() && !dowPart.isEmpty()) {
             return domPart + " or " + dowPart; // both restricted ⇒ the OR-rule; see matches()
         }
         return domPart.isEmpty() ? dowPart : domPart;
     }
 
-    private String domPhrase() {
+    private static String domPhrase(CronField dom) {
         Integer d = dom.single();
         if (d != null) {
             return "on day " + d + " of the month";
@@ -271,7 +270,7 @@ public final class CronExpression {
         return "on days " + fieldList(dom) + " of the month";
     }
 
-    private String dowPhrase() {
+    private static String dowPhrase(CronField dow) {
         int[] range = dow.contiguousRange();
         if (range != null) {
             return DOW_NAMES[range[0]] + " through " + DOW_NAMES[range[1]];

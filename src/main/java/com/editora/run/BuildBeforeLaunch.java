@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The build a Java launch runs first in a Maven or Gradle project (review D2): what the "Build before Run and
@@ -24,7 +25,7 @@ public final class BuildBeforeLaunch {
     private BuildBeforeLaunch() {}
 
     /** The build tool of {@code root}: {@link BuildTool#MAVEN} for a {@code pom.xml}, {@link BuildTool#GRADLE} for a Gradle script, else null. */
-    public static BuildTool toolAt(Path root) {
+    public static @Nullable BuildTool toolAt(Path root) {
         if (root == null) {
             return null;
         }
@@ -84,7 +85,7 @@ public final class BuildBeforeLaunch {
     }
 
     /** The symbolic step a configuration's before-launch text names, or null for a plain command (or none). */
-    public static Symbolic symbolic(String beforeLaunch) {
+    public static @Nullable Symbolic symbolic(String beforeLaunch) {
         if (beforeLaunch == null) {
             return null;
         }

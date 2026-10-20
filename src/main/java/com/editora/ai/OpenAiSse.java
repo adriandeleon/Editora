@@ -1,6 +1,7 @@
 package com.editora.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure readers for the OpenAI-compatible streaming dialect (LM Studio, Ollama, vLLM): data-only SSE
@@ -21,14 +22,14 @@ public final class OpenAiSse {
     }
 
     /** The chunk's text delta ({@code choices[0].delta.content}), or null when none. */
-    public static String textDelta(JsonNode data) {
+    public static @Nullable String textDelta(JsonNode data) {
         JsonNode content = choice(data).path("delta").path("content");
         return content.isTextual() ? content.asText() : null;
     }
 
     /** The finish reason mapped to the Anthropic-style stop reasons the callers already handle
      *  ({@code stop} → {@code end_turn}, {@code length} → {@code max_tokens}); null when absent. */
-    public static String finishReason(JsonNode data) {
+    public static @Nullable String finishReason(JsonNode data) {
         JsonNode reason = choice(data).path("finish_reason");
         if (!reason.isTextual()) {
             return null;
@@ -42,7 +43,7 @@ public final class OpenAiSse {
     }
 
     /** The error message of an {@code {"error":{…}}} payload, or null when this isn't an error. */
-    public static String errorMessage(JsonNode data) {
+    public static @Nullable String errorMessage(JsonNode data) {
         if (data == null || !data.has("error")) {
             return null;
         }

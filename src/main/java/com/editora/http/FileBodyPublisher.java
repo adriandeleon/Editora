@@ -14,6 +14,8 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A request body streamed from a file, like {@link HttpRequest.BodyPublishers#ofFile}, that can be {@link #close
  * closed}: closing it closes every file it has open and fails the uploads still reading. The JDK's own file
@@ -83,7 +85,7 @@ public final class FileBodyPublisher implements HttpRequest.BodyPublisher, Close
         private final Flow.Subscriber<? super ByteBuffer> subscriber;
         private final AtomicLong demand = new AtomicLong();
         private final AtomicInteger wip = new AtomicInteger();
-        private volatile SeekableByteChannel channel;
+        private volatile @Nullable SeekableByteChannel channel;
         private volatile boolean done;
 
         Upload(Flow.Subscriber<? super ByteBuffer> subscriber) {

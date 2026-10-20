@@ -1,11 +1,12 @@
 package com.editora.lsp;
 
 import org.eclipse.lsp4j.SignatureHelp;
+import org.jspecify.annotations.Nullable;
 
 /** Retains an explicitly selected overload across server refreshes without inventing applicability. */
 public final class SignatureSelection {
-    private SignatureHelp help;
-    private String selectedLabel;
+    private @Nullable SignatureHelp help;
+    private @Nullable String selectedLabel;
 
     public void update(SignatureHelp next) {
         if (SignatureFormat.resolve(next) == null) {
@@ -25,19 +26,20 @@ public final class SignatureSelection {
     }
 
     public void move(int delta) {
+        var current = help;
         var active = active();
-        if (active == null || active.total() < 2) return;
+        if (current == null || active == null || active.total() < 2) return;
         int index = Math.floorMod(active.index() + delta, active.total());
-        help = new SignatureHelp(help.getSignatures(), index, help.getActiveParameter());
+        help = new SignatureHelp(current.getSignatures(), index, current.getActiveParameter());
         var next = active();
         selectedLabel = next == null ? null : next.label();
     }
 
-    public SignatureHelp context() {
+    public @Nullable SignatureHelp context() {
         return help;
     }
 
-    public SignatureFormat.Active active() {
+    public SignatureFormat.@Nullable Active active() {
         return SignatureFormat.resolve(help);
     }
 

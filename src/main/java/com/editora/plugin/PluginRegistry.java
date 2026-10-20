@@ -18,6 +18,7 @@ import javafx.application.Platform;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fetches a remote plugin registry's {@code index.json} (the {@code HttpClientService} idiom: one daemon
@@ -41,7 +42,11 @@ public final class PluginRegistry {
      * The outcome of a fetch: either {@code entries} (possibly empty) or a non-null {@code error}.
      * {@code signed} is true when the index's detached signature verified against the bundled registry key.
      */
-    public record Result(List<RegistryEntry> entries, String error, boolean signed, PluginProblem problem) {
+    public record Result(
+            List<RegistryEntry> entries,
+            @Nullable String error,
+            boolean signed,
+            @Nullable PluginProblem problem) {
         public boolean ok() {
             return error == null;
         }
@@ -113,7 +118,8 @@ public final class PluginRegistry {
      * passed since the read began. The JDK's request timeout ends when the headers arrive; a server that then
      * sends a byte every few seconds kept Browse "Fetching…" for minutes.
      */
-    public static byte[] readCapped(java.io.InputStream in, long max, Duration deadline) throws java.io.IOException {
+    public static byte[] readCapped(java.io.InputStream in, long max, @Nullable Duration deadline)
+            throws java.io.IOException {
         long end = deadline == null ? Long.MAX_VALUE : System.nanoTime() + deadline.toNanos();
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
         byte[] buf = new byte[8192];
@@ -125,7 +131,7 @@ public final class PluginRegistry {
                 throw new TooLargeException(max);
             }
             out.write(buf, 0, n);
-            if (System.nanoTime() - end > 0) {
+            if (deadline != null && System.nanoTime() - end > 0) {
                 throw new java.io.IOException(PluginProblem.DEADLINE + deadline.toSeconds() + " s");
             }
         }
@@ -133,7 +139,7 @@ public final class PluginRegistry {
     }
 
     /** Whether {@code url} is a usable HTTPS registry URL. Pure — unit-tested. */
-    public static boolean isHttps(String url) {
+    public static boolean isHttps(@Nullable String url) {
         if (url == null) {
             return false;
         }

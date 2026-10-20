@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Finds a source file in a project from the part of its path that is known: {@code com/foo/Bar.java} (from
  * a stack frame's qualified class or a test's class name), or a bare {@code Bar.java}.
@@ -46,7 +48,7 @@ public final class SourceFileFinder {
      * The file under {@code root} whose root-relative path is {@code relPath} or ends with
      * {@code /relPath} ('/'-separated, so it means the same on Windows), or {@code null}.
      */
-    public static Path find(Path root, String relPath, BooleanSupplier cancelled) {
+    public static @Nullable Path find(Path root, String relPath, BooleanSupplier cancelled) {
         if (root == null || relPath == null || relPath.isBlank() || !Files.isDirectory(root)) {
             return null;
         }

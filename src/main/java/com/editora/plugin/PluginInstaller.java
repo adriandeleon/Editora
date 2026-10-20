@@ -27,6 +27,7 @@ import javafx.application.Platform;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Installs a plugin from a remote registry entry (download + verify sha-256) or a local {@code .zip}, in two
@@ -55,9 +56,14 @@ public final class PluginInstaller {
     private static final long MAX_DOWNLOAD_BYTES = 128L * 1024 * 1024;
 
     /** Outcome of a one-step install (tests, tools): {@code ok} + the plugin {@code id} + {@code name}, or why not. */
-    public record Result(boolean ok, String id, String name, String error, PluginProblem problem) {
-        static Result failed(PluginProblem p) {
-            return new Result(false, "", "", p.english(), p);
+    public record Result(
+            boolean ok,
+            String id,
+            String name,
+            @Nullable String error,
+            @Nullable PluginProblem problem) {
+        static Result failed(@Nullable PluginProblem p) {
+            return new Result(false, "", "", p == null ? null : p.english(), p);
         }
     }
 
@@ -70,7 +76,12 @@ public final class PluginInstaller {
      * @param jars     its jar files, relative ({@code x.jar}, {@code lib/y.jar})
      * @param previous the manifest of the copy installed now, or null for a new plugin
      */
-    public record Staged(Path root, Path staging, PluginManifest manifest, List<String> jars, PluginManifest previous) {
+    public record Staged(
+            Path root,
+            Path staging,
+            PluginManifest manifest,
+            List<String> jars,
+            @Nullable PluginManifest previous) {
         public String id() {
             return manifest.id;
         }
@@ -90,14 +101,15 @@ public final class PluginInstaller {
     }
 
     /** What staging produced: a {@link Staged} install, or the reason there is none. */
-    public record Staging(Staged staged, PluginProblem problem) {
+    public record Staging(@Nullable Staged staged, @Nullable PluginProblem problem) {
         public boolean ok() {
             return staged != null;
         }
     }
 
     /** How a commit went: installed now, waiting for the next start, or failed for {@code problem}. */
-    public record Commit(boolean ok, boolean pending, PluginProblem problem) {}
+    public record Commit(
+            boolean ok, boolean pending, @Nullable PluginProblem problem) {}
 
     private final PluginManager manager;
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
@@ -219,7 +231,7 @@ public final class PluginInstaller {
      * install ({@code entry} not null) must be the plugin and version its entry names: an index that pointed
      * one entry at another plugin's archive downgraded or replaced that plugin without a word.
      */
-    Staging stageBytes(byte[] zipBytes, RegistryEntry entry) {
+    Staging stageBytes(byte[] zipBytes, @Nullable RegistryEntry entry) {
         Path staging = null;
         boolean keep = false;
         try {
@@ -413,15 +425,16 @@ public final class PluginInstaller {
     }
 
     private Result installStaged(Staging s) {
-        if (!s.ok()) {
+        Staged staged = s.staged();
+        if (staged == null) {
             return Result.failed(s.problem());
         }
-        Commit c = commit(s.staged(), false);
+        Commit c = commit(staged, false);
         if (!c.ok()) {
             return Result.failed(c.problem());
         }
         manager.discover();
-        return new Result(true, s.staged().id(), s.staged().name(), null, null);
+        return new Result(true, staged.id(), staged.name(), null, null);
     }
 
     /**
@@ -563,7 +576,7 @@ public final class PluginInstaller {
      * write: {@code ".."} resolved to the whole Editora config directory, an absolute path to that path, and
      * another plugin's name to that plugin.
      */
-    public static Path removableDir(Path pluginsDir, PluginDescriptor plugin) {
+    public static @Nullable Path removableDir(Path pluginsDir, PluginDescriptor plugin) {
         if (pluginsDir == null || plugin == null || plugin.dir() == null) {
             return null;
         }
@@ -637,7 +650,7 @@ public final class PluginInstaller {
     }
 
     /** The dir containing {@code plugin.json}: the extract root, else its sole subdirectory. */
-    private static Path findPluginRoot(Path extracted) throws IOException {
+    private static @Nullable Path findPluginRoot(Path extracted) throws IOException {
         if (Files.isRegularFile(extracted.resolve("plugin.json"))) {
             return extracted;
         }
@@ -761,7 +774,7 @@ public final class PluginInstaller {
         return dash < 0 || dash + 1 >= v.length() ? "" : v.substring(dash + 1);
     }
 
-    private static Integer tryInt(String s) {
+    private static @Nullable Integer tryInt(String s) {
         try {
             return Integer.valueOf(s);
         } catch (NumberFormatException e) {

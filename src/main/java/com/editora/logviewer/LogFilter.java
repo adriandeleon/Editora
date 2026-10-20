@@ -4,6 +4,8 @@ import java.util.Arrays;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Filtering a whole log document for the viewer: the lines of the records whose (inherited) severity is at
  * least {@code minLevel} and which match an optional pattern. Pure (java.base only), so it is unit-tested and
@@ -19,7 +21,7 @@ public final class LogFilter {
      * for both a regex (e.g. {@code ERROR|WARN}, {@code timed?out}) and a plain string with metacharacters
      * (e.g. {@code GET /api(v2)}). Returns {@code null} for null/empty input (no filter).
      */
-    public static Pattern compileFilter(String query) {
+    public static @Nullable Pattern compileFilter(String query) {
         if (query == null || query.isEmpty()) {
             return null;
         }
@@ -96,7 +98,7 @@ public final class LogFilter {
         }
 
         @Override
-        public void keep(String line, int index, LogLevel level) {
+        public void keep(String line, int index, @Nullable LogLevel level) {
             if (count == lines.length) {
                 lines = Arrays.copyOf(lines, count * 2);
                 levels = Arrays.copyOf(levels, count * 2);

@@ -2,6 +2,7 @@ package com.editora.build;
 
 import com.editora.logviewer.LogLevel;
 import com.editora.logviewer.LogPatterns;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Chooses the {@code .text.<class>} CSS class to color one line of a build tool's console output, or {@code
@@ -14,6 +15,7 @@ import com.editora.logviewer.LogPatterns;
 public interface OutputStyle {
 
     /** The CSS class to color {@code line}, or {@code null} for no special coloring. */
+    @Nullable
     String styleClassFor(String line);
 
     /** No per-line coloring (default console foreground). */
@@ -61,7 +63,7 @@ public interface OutputStyle {
         return OutputStyle::gitStyle;
     }
 
-    private static String ciStyle(String line) {
+    private static @Nullable String ciStyle(String line) {
         if (line == null) {
             return null;
         }
@@ -82,7 +84,7 @@ public interface OutputStyle {
         };
     }
 
-    private static String mavenStyle(String line) {
+    private static @Nullable String mavenStyle(String line) {
         if (line == null) {
             return null;
         }
@@ -106,7 +108,7 @@ public interface OutputStyle {
         };
     }
 
-    private static String gitStyle(String line) {
+    private static @Nullable String gitStyle(String line) {
         if (line == null) {
             return null;
         }

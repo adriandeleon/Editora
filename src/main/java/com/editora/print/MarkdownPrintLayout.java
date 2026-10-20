@@ -23,6 +23,7 @@ import javafx.scene.text.TextFlow;
 
 import com.editora.editor.MarkdownPrintAssets;
 import com.editora.editor.MarkdownRenderer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds printable JavaFX page nodes for the rendered Markdown preview — the {@code javafx.print}
@@ -259,7 +260,7 @@ public final class MarkdownPrintLayout {
      * for content that is not flowing down a page (the cells of one table row, split side by side).
      */
     private static final class Flow {
-        private final Packer packer;
+        private final @Nullable Packer packer;
         private final double fixed;
 
         Flow(Packer packer) {
@@ -300,16 +301,16 @@ public final class MarkdownPrintLayout {
             }
         }
 
-        Packer.Mark mark() {
+        Packer.@Nullable Mark mark() {
             return packer == null ? null : packer.mark();
         }
 
-        boolean brokeSince(Packer.Mark mark) {
-            return packer != null && packer.brokeSince(mark);
+        boolean brokeSince(Packer.@Nullable Mark mark) {
+            return packer != null && mark != null && packer.brokeSince(mark);
         }
 
-        void rewind(Packer.Mark mark) {
-            if (packer != null) {
+        void rewind(Packer.@Nullable Mark mark) {
+            if (packer != null && mark != null) {
                 packer.rewind(mark);
             }
         }
@@ -338,7 +339,7 @@ public final class MarkdownPrintLayout {
      * overflow their page, and code prints uncoloured — acceptable only where there are none.
      */
     public static List<Node> paginate(
-            org.commonmark.node.Node ast, Path baseDir, MarkdownPrintAssets assets, double pw, double ph) {
+            org.commonmark.node.Node ast, Path baseDir, @Nullable MarkdownPrintAssets assets, double pw, double ph) {
         return paginate(ast, baseDir, assets, pw, ph, null);
     }
 
@@ -350,10 +351,10 @@ public final class MarkdownPrintLayout {
     public static List<Node> paginate(
             org.commonmark.node.Node ast,
             Path baseDir,
-            MarkdownPrintAssets assets,
+            @Nullable MarkdownPrintAssets assets,
             double pw,
             double ph,
-            PageFooter footer) {
+            @Nullable PageFooter footer) {
         double pageHeight = ph;
         ph = footer == null ? ph : PageFooter.bodyHeight(ph); // everything below lays out above the footer
         // Render to native nodes, then pull out the inner ".markdown-preview" VBox of blocks.
@@ -889,7 +890,8 @@ public final class MarkdownPrintLayout {
      * of a binary search, per emitted piece. Measured on this repo's CLAUDE.md, where pagination is 94%
      * layout: 3,728 measurements over 1.31M cumulative nodes.
      */
-    private static double[] ownHeights(Pane pane, List<Wrapper> chain, List<Node> children, double pw, double ph) {
+    private static double @Nullable [] ownHeights(
+            Pane pane, List<Wrapper> chain, List<Node> children, double pw, double ph) {
         if (!(pane instanceof VBox)) {
             return null;
         }
@@ -931,7 +933,7 @@ public final class MarkdownPrintLayout {
             List<Wrapper> chain,
             List<Node> children,
             int from,
-            double[] own,
+            double @Nullable [] own,
             double pw,
             double ph,
             double limit,
@@ -1163,7 +1165,7 @@ public final class MarkdownPrintLayout {
      * cell to {@code needs} (when given) while it is laid out.
      */
     private static TableRows measureRows(
-            GridPane table, List<List<Node>> rows, ColumnNeeds needs, double pw, double ph) {
+            GridPane table, List<List<Node>> rows, @Nullable ColumnNeeds needs, double pw, double ph) {
         double[] heights = new double[rows.size()];
         double overhead = 0;
         for (int from = 0; from < rows.size(); from += MEASURE_CHUNK_ROWS) {
@@ -1588,7 +1590,7 @@ public final class MarkdownPrintLayout {
         return heights;
     }
 
-    private static StackPane cachedMeasureRoot;
+    private static @Nullable StackPane cachedMeasureRoot;
     private static double cachedMeasureWidth = -1;
 
     /**

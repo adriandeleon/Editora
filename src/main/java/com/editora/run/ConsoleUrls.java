@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /** Pure URL detection for console output. */
 public final class ConsoleUrls {
 
@@ -35,7 +37,7 @@ public final class ConsoleUrls {
     }
 
     /** Returns the URL covering {@code offset}, or {@code null} when the character is plain output. */
-    public static Link at(String text, int offset) {
+    public static @Nullable Link at(String text, int offset) {
         if (text == null || offset < 0 || offset >= text.length()) {
             return null;
         }

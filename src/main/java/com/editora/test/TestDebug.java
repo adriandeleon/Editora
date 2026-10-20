@@ -6,6 +6,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 
 /**
  * "Debug this test": the JVM build tools can fork the test JVM suspended on a JDWP port — Maven via
@@ -52,7 +53,11 @@ public final class TestDebug {
      * {@code --debug-jvm}'s fixed 5005.
      */
     public static List<String> debugTaskArgs(
-            BuildTool tool, String className, String methodName, java.nio.file.Path gradleInitScript, int mavenPort) {
+            BuildTool tool,
+            String className,
+            String methodName,
+            java.nio.file.@Nullable Path gradleInitScript,
+            int mavenPort) {
         List<String> base = TestRunRecognizer.singleTestTask(tool, className, methodName);
         if (base.isEmpty()) {
             return List.of(); // non-JVM tool — no supported suspend-and-wait flag

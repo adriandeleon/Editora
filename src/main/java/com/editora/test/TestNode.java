@@ -3,6 +3,8 @@ package com.editora.test;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A node in the test-results tree: the {@code ROOT}, a {@code SUITE} grouping (class/package/crate), or a
  * {@code TEST} leaf. Deliberately a mutable class (not a record) because a live run updates a node's
@@ -13,24 +15,24 @@ import java.util.List;
 public final class TestNode {
 
     private final TestNodeKind kind;
-    private final String id; // stable key: suite = its name; test = "<className>#<methodName>"
-    private String displayName;
+    private final @Nullable String id; // stable key: suite = its name; test = "<className>#<methodName>"
+    private @Nullable String displayName;
     private TestStatus status = TestStatus.RUNNING;
     private long durationMs;
-    private String failureType;
-    private String failureMessage;
-    private String stackTrace;
-    private String stdout;
-    private String stderr;
-    private String sourceFileHint; // bare/relative name, e.g. "FooTest.java" / "foo_test.go"; may be null
+    private @Nullable String failureType;
+    private @Nullable String failureMessage;
+    private @Nullable String stackTrace;
+    private @Nullable String stdout;
+    private @Nullable String stderr;
+    private @Nullable String sourceFileHint; // bare/relative name, e.g. "FooTest.java" / "foo_test.go"; may be null
     private int sourceLineHint; // 1-based; 0 = unknown
-    private String className; // for a TEST leaf: the owning class/package (for source navigation)
-    private String methodName; // for a TEST leaf: the method/case name (for rerun-failed + navigation)
+    private @Nullable String className; // for a TEST leaf: the owning class/package (for source navigation)
+    private @Nullable String methodName; // for a TEST leaf: the method/case name (for rerun-failed + navigation)
 
     private final List<TestNode> children = new ArrayList<>();
-    private TestNode parent;
+    private @Nullable TestNode parent;
 
-    public TestNode(TestNodeKind kind, String id, String displayName) {
+    public TestNode(TestNodeKind kind, @Nullable String id, @Nullable String displayName) {
         this.kind = kind;
         this.id = id;
         this.displayName = displayName;
@@ -44,15 +46,15 @@ public final class TestNode {
         return kind;
     }
 
-    public String id() {
+    public @Nullable String id() {
         return id;
     }
 
-    public String displayName() {
+    public @Nullable String displayName() {
         return displayName;
     }
 
-    public void setDisplayName(String displayName) {
+    public void setDisplayName(@Nullable String displayName) {
         this.displayName = displayName;
     }
 
@@ -72,7 +74,7 @@ public final class TestNode {
         this.durationMs = durationMs;
     }
 
-    public String failureType() {
+    public @Nullable String failureType() {
         return failureType;
     }
 
@@ -80,7 +82,7 @@ public final class TestNode {
         this.failureType = failureType;
     }
 
-    public String failureMessage() {
+    public @Nullable String failureMessage() {
         return failureMessage;
     }
 
@@ -88,7 +90,7 @@ public final class TestNode {
         this.failureMessage = OutputCap.cap(failureMessage);
     }
 
-    public String stackTrace() {
+    public @Nullable String stackTrace() {
         return stackTrace;
     }
 
@@ -96,7 +98,7 @@ public final class TestNode {
         this.stackTrace = OutputCap.cap(stackTrace);
     }
 
-    public String stdout() {
+    public @Nullable String stdout() {
         return stdout;
     }
 
@@ -104,7 +106,7 @@ public final class TestNode {
         this.stdout = OutputCap.cap(stdout);
     }
 
-    public String stderr() {
+    public @Nullable String stderr() {
         return stderr;
     }
 
@@ -112,7 +114,7 @@ public final class TestNode {
         this.stderr = OutputCap.cap(stderr);
     }
 
-    public String sourceFileHint() {
+    public @Nullable String sourceFileHint() {
         return sourceFileHint;
     }
 
@@ -128,19 +130,19 @@ public final class TestNode {
         this.sourceLineHint = sourceLineHint;
     }
 
-    public String className() {
+    public @Nullable String className() {
         return className;
     }
 
-    public void setClassName(String className) {
+    public void setClassName(@Nullable String className) {
         this.className = className;
     }
 
-    public String methodName() {
+    public @Nullable String methodName() {
         return methodName;
     }
 
-    public void setMethodName(String methodName) {
+    public void setMethodName(@Nullable String methodName) {
         this.methodName = methodName;
     }
 
@@ -148,7 +150,7 @@ public final class TestNode {
         return children;
     }
 
-    public TestNode parent() {
+    public @Nullable TestNode parent() {
         return parent;
     }
 
@@ -164,9 +166,9 @@ public final class TestNode {
     }
 
     /** The direct child with the given id, or {@code null}. */
-    public TestNode childById(String childId) {
+    public @Nullable TestNode childById(@Nullable String childId) {
         for (TestNode c : children) {
-            if (c.id.equals(childId)) {
+            if (java.util.Objects.equals(c.id, childId)) {
                 return c;
             }
         }

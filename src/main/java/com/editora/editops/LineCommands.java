@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.util.function.IntFunction;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The line commands of the VS Code family — Insert Line Below / Above, Delete Line, Select Line, Indent /
  * Outdent Lines — as the edit each makes for <b>one</b> caret or selection. {@link MultiTab#plan} runs them at
@@ -83,7 +85,7 @@ public final class LineCommands {
      * Tab / Shift-Tab ({@code tab}, given the whole lines). A bare caret keeps its place in the text.
      * Null when {@code tab} declines.
      */
-    public static Indenter.TabEdit indentLines(
+    public static Indenter.@Nullable TabEdit indentLines(
             String text, int selStart, int selEnd, boolean outdent, TabFunction tab) {
         int lo = Math.min(selStart, selEnd);
         int hi = Math.max(selStart, selEnd);

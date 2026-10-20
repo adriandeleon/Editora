@@ -10,6 +10,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What {@code docker inspect} / {@code podman inspect} says about a container, as far as running commands in
@@ -29,7 +30,7 @@ public record ContainerInfo(
     public static final String METADATA_LABEL = "devcontainer.metadata";
 
     /** Parses {@code inspect} output (a JSON array of one object); null when it is not one. Pure. */
-    public static ContainerInfo parse(String json) {
+    public static @Nullable ContainerInfo parse(String json) {
         try {
             JsonElement root = JsonParser.parseString(json == null ? "" : json.strip());
             JsonObject c = root.isJsonArray() && !root.getAsJsonArray().isEmpty()
@@ -80,7 +81,7 @@ public record ContainerInfo(
      * The {@code remoteUser} (else {@code containerUser}) a dev container's tools run as: the last entry of its
      * metadata array that names one wins, as the Dev Containers CLI merges them. "" when none does. Pure.
      */
-    static String remoteUser(String metadata) {
+    static String remoteUser(@Nullable String metadata) {
         if (metadata == null || metadata.isBlank()) {
             return "";
         }
@@ -112,7 +113,7 @@ public record ContainerInfo(
         return o.has(key) && !o.get(key).isJsonNull() ? o.get(key).getAsString() : "";
     }
 
-    private static JsonObject object(JsonObject o, String key) {
+    private static @Nullable JsonObject object(JsonObject o, String key) {
         return o.has(key) && o.get(key).isJsonObject() ? o.getAsJsonObject(key) : null;
     }
 }

@@ -7,6 +7,7 @@ import java.util.Map;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A debug adapter that a language server starts on request ({@link DapServerRegistry.Kind#LANGUAGE_SERVER}): the
@@ -26,7 +27,7 @@ public final class HostedDebugAdapter {
     private HostedDebugAdapter() {}
 
     /** The command that asks {@code language}'s language server for a debug adapter, or null. */
-    public static String startCommand(String language) {
+    public static @Nullable String startCommand(String language) {
         return "scala".equals(language) ? "debug-adapter-start" : null;
     }
 
@@ -59,7 +60,7 @@ public final class HostedDebugAdapter {
      * Reads the start command's reply ({@code {name, uri: "tcp://host:port"}}); null when it names no port. A
      * bare port number is accepted too.
      */
-    public static Address address(Object reply) {
+    public static @Nullable Address address(Object reply) {
         JsonElement el = JdtlsReplies.asJson(reply instanceof Map<?, ?> m ? LspJson.toJson(m) : reply);
         if (el == null) {
             return null;

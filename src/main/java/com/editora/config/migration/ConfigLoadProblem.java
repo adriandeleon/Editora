@@ -3,6 +3,8 @@ package com.editora.config.migration;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Something {@link ConfigMigrations#readVersioned} could not read as written, reported to the caller so it
  * can be shown to the user instead of silently loading defaults.
@@ -12,7 +14,11 @@ import java.util.List;
  * @param skipped the top-level property names that kept their default ({@link Kind#VALUES_SKIPPED} only)
  * @param backup where the original content was preserved, or {@code null} when preserving it failed
  */
-public record ConfigLoadProblem(Path file, Kind kind, List<String> skipped, Path backup) {
+public record ConfigLoadProblem(
+        Path file,
+        Kind kind,
+        List<String> skipped,
+        @Nullable Path backup) {
 
     public enum Kind {
         /** Individual values had the wrong type; every other value in the file was kept. */

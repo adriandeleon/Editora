@@ -2,6 +2,8 @@ package com.editora.process;
 
 import java.nio.file.Path;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A shell for the integrated terminal, on a target: where it starts and the size of the pseudo-terminal it is
  * given. Kept apart from {@link ExecSpec}, which every tool command uses and which never asks for a PTY: a PTY
@@ -18,7 +20,7 @@ public record TerminalSpec(
         Path workingDir,
         int columns,
         int rows,
-        String shellIntegration,
+        @Nullable String shellIntegration,
         java.util.List<String> command,
         java.util.Map<String, String> env) {
 
@@ -31,8 +33,8 @@ public record TerminalSpec(
                 : java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(env));
     }
 
-    public TerminalSpec(Path workingDir, int columns, int rows, String shellIntegration) {
-        this(workingDir, columns, rows, shellIntegration, null, null);
+    public TerminalSpec(Path workingDir, int columns, int rows, @Nullable String shellIntegration) {
+        this(workingDir, columns, rows, shellIntegration, java.util.List.of(), java.util.Map.of());
     }
 
     public TerminalSpec(Path workingDir, int columns, int rows) {

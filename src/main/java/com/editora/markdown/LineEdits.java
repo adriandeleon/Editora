@@ -1,6 +1,8 @@
 package com.editora.markdown;
 
-import java.util.function.UnaryOperator;
+import java.util.function.Function;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * The shared mechanics of a line-wise Markdown command (bullet, task, heading): which whole lines a
@@ -39,10 +41,15 @@ final class LineEdits {
      * a {@code null} entry deletes that line) and maps {@code [selStart, selEnd]} into the result. Returns
      * {@code null} when nothing changes.
      */
-    static MarkdownEdit rewrite(
-            String text, int blockStart, int blockEnd, int selStart, int selEnd, UnaryOperator<String[]> rewrite) {
+    static @Nullable MarkdownEdit rewrite(
+            String text,
+            int blockStart,
+            int blockEnd,
+            int selStart,
+            int selEnd,
+            Function<String[], @Nullable String[]> rewrite) {
         String[] before = text.substring(blockStart, blockEnd).split("\n", -1);
-        String[] after = rewrite.apply(before.clone());
+        @Nullable String[] after = rewrite.apply(before.clone());
         StringBuilder out = new StringBuilder();
         int[] oldStart = new int[before.length];
         int[] newStart = new int[before.length];
@@ -51,7 +58,8 @@ final class LineEdits {
         for (int i = 0; i < before.length; i++) {
             oldStart[i] = at;
             at += before[i].length() + 1;
-            if (after[i] == null) {
+            String line = after[i];
+            if (line == null) {
                 newStart[i] = -1;
                 continue;
             }
@@ -60,7 +68,7 @@ final class LineEdits {
             }
             first = false;
             newStart[i] = blockStart + out.length();
-            out.append(after[i]);
+            out.append(line);
         }
         String replacement = out.toString();
         if (replacement.equals(text.substring(blockStart, blockEnd))) {
@@ -83,7 +91,7 @@ final class LineEdits {
             int blockEnd,
             int delta,
             String[] before,
-            String[] after,
+            @Nullable String[] after,
             int[] oldStart,
             int[] newStart) {
         if (offset < blockStart) {
@@ -96,16 +104,18 @@ final class LineEdits {
         while (i > 0 && oldStart[i] > offset) {
             i--;
         }
-        if (after[i] == null) {
+        String line = after[i];
+        if (line == null) {
             // The line is gone: the end of the nearest line that is still there.
             for (int k = i - 1; k >= 0; k--) {
-                if (after[k] != null) {
-                    return newStart[k] + after[k].length();
+                String kept = after[k];
+                if (kept != null) {
+                    return newStart[k] + kept.length();
                 }
             }
             return blockStart;
         }
-        return newStart[i] + mapColumn(offset - oldStart[i], before[i], after[i], stayLeft);
+        return newStart[i] + mapColumn(offset - oldStart[i], before[i], line, stayLeft);
     }
 
     /** A column of {@code before} in {@code after}: the two share their tail, and differ in a prefix. */

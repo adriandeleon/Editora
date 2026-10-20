@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.apache.sshd.client.auth.keyboard.UserInteraction;
 import org.apache.sshd.client.session.ClientSession;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The shared client's answers to the server's login questions, put to the person through the {@link LoginPrompt}
@@ -26,7 +27,7 @@ final class LoginInteraction implements UserInteraction {
     }
 
     @Override
-    public String[] interactive(
+    public String @Nullable [] interactive(
             ClientSession session, String name, String instruction, String lang, String[] prompt, boolean[] echo) {
         if (prompt == null || prompt.length == 0) {
             return new String[0]; // an information-only round (a banner, "code accepted"): nothing to answer
@@ -55,7 +56,7 @@ final class LoginInteraction implements UserInteraction {
      * for, up to {@link #PASSWORD_ATTEMPTS} in all. Null ends the method.
      */
     @Override
-    public String resolveAuthPasswordAttempt(ClientSession session) {
+    public @Nullable String resolveAuthPasswordAttempt(ClientSession session) {
         LoginQuestions questions = LoginQuestions.of(session);
         if (!questions.canAsk(session)) {
             return null;
@@ -82,7 +83,7 @@ final class LoginInteraction implements UserInteraction {
 
     /** A server asking for a new password (an expired one) is not supported: the login fails, as it says. */
     @Override
-    public String getUpdatedPassword(ClientSession session, String prompt, String lang) {
+    public @Nullable String getUpdatedPassword(ClientSession session, String prompt, String lang) {
         return null;
     }
 

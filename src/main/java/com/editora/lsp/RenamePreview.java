@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Summarising and filtering a rename's {@link WorkspaceEditMapper.Mapped} so it can be previewed before it is
  * applied (#768).
@@ -35,8 +37,12 @@ public final class RenamePreview {
      *     one at {@code renamedTo} by this file moving onto it
      */
     public record FileChange(
-            Path file, int edits, Path renamedTo, WorkspaceEditHazards.Kind deletion, boolean overwrites) {
-        public FileChange(Path file, int edits, Path renamedTo) {
+            Path file,
+            int edits,
+            @Nullable Path renamedTo,
+            WorkspaceEditHazards.@Nullable Kind deletion,
+            boolean overwrites) {
+        public FileChange(Path file, int edits, @Nullable Path renamedTo) {
             this(file, edits, renamedTo, null, false);
         }
     }
@@ -86,7 +92,7 @@ public final class RenamePreview {
         return List.copyOf(rows.values());
     }
 
-    private static Path renameTargetOf(WorkspaceEditMapper.Mapped mapped, Path file) {
+    private static @Nullable Path renameTargetOf(WorkspaceEditMapper.Mapped mapped, Path file) {
         for (WorkspaceEditMapper.FileRename rename : mapped.renames()) {
             if (rename.from().equals(file)) {
                 return rename.to();
@@ -96,7 +102,7 @@ public final class RenamePreview {
     }
 
     /** As {@link #filter(WorkspaceEditMapper.Mapped, Set, Set)}, with the rows {@link #summarise} lists. */
-    public static WorkspaceEditMapper.Mapped filter(WorkspaceEditMapper.Mapped mapped, Set<Path> keep) {
+    public static WorkspaceEditMapper.@Nullable Mapped filter(WorkspaceEditMapper.Mapped mapped, Set<Path> keep) {
         Set<Path> listed = new LinkedHashSet<>();
         summarise(mapped).forEach(row -> listed.add(row.file()));
         return filter(mapped, keep, listed);
@@ -113,7 +119,7 @@ public final class RenamePreview {
      * not shown is the scaffolding of the refactoring (jdtls's package rename creates and removes a
      * placeholder) and travels with it.
      */
-    public static WorkspaceEditMapper.Mapped filter(
+    public static WorkspaceEditMapper.@Nullable Mapped filter(
             WorkspaceEditMapper.Mapped mapped, Set<Path> keep, Set<Path> listed) {
         if (mapped == null) {
             return null;

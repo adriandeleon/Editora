@@ -6,6 +6,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Finds JUnit test methods + the enclosing top-level test class in Java source text, for the editor's gutter
  * ▶ Run markers. A lightweight, length-preserving blank-comments-and-literals pass + brace-depth walk — no
@@ -30,7 +32,8 @@ public final class JavaTestScanner {
      * method name — so pre-seeding skips them (they'd be grey ghosts); false for a plain {@code @Test} + the
      * class target.
      */
-    public record TestTarget(int line, String className, String methodName, boolean dynamic) {}
+    public record TestTarget(
+            int line, String className, @Nullable String methodName, boolean dynamic) {}
 
     private static final Set<String> TEST_ANNOTATIONS =
             Set.of("Test", "ParameterizedTest", "RepeatedTest", "TestFactory", "TestTemplate");

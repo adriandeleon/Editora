@@ -2,6 +2,8 @@ package com.editora.terminal;
 
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Finds the link under a position on a line of terminal text.
  *
@@ -45,7 +47,7 @@ public final class LinkScanner {
      *     that wraps at the right edge is one link and not two
      * @param index a character index into it
      */
-    public static LinkMatch at(String text, int index) {
+    public static @Nullable LinkMatch at(String text, int index) {
         if (text == null || index < 0 || index >= text.length()) return null;
         if (Character.isWhitespace(text.charAt(index))) return null;
 
@@ -115,7 +117,7 @@ public final class LinkScanner {
     }
 
     /** The token's scheme when it has one we will open, else null. */
-    private static String schemeOf(String token) {
+    private static @Nullable String schemeOf(String token) {
         int colon = token.indexOf(':');
         if (colon <= 0 || colon + 1 >= token.length()) return null;
         String scheme = token.substring(0, colon).toLowerCase(java.util.Locale.ROOT);
@@ -137,7 +139,7 @@ public final class LinkScanner {
      * {@code C:\src\Foo.cs:42} keeps its drive letter: only digits immediately before the end, each
      * preceded by a colon, can be a position.
      */
-    private static LinkMatch path(String token, int start, int end) {
+    private static @Nullable LinkMatch path(String token, int start, int end) {
         String file = token;
         int line = 0;
         int column = 0;

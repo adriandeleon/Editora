@@ -9,6 +9,7 @@ import java.util.logging.Logger;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Reading what jdtls answers the debugger's {@code workspace/executeCommand}s ({@code vscode.java.*}): lsp4j hands
@@ -146,7 +147,7 @@ final class JdtlsReplies {
      * {@link #asJson} threw on every debug launch, logged a WARNING with a stack trace, and then fell back
      * to exactly this value anyway. The result was always right; the noise said otherwise.
      */
-    static String asString(Object res) {
+    static @Nullable String asString(Object res) {
         if (res instanceof String s) {
             return s;
         }
@@ -154,13 +155,13 @@ final class JdtlsReplies {
         return el != null && el.isJsonPrimitive() ? el.getAsString() : null;
     }
 
-    static String str(JsonObject o, String key) {
+    static @Nullable String str(JsonObject o, String key) {
         JsonElement e = o.get(key);
         return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
     }
 
     /** The {@link Map} twin of the above, for a reply lsp4j deserialized to plain collections. */
-    static String str(Map<?, ?> m, String key) {
+    static @Nullable String str(Map<?, ?> m, String key) {
         Object v = m.get(key);
         return v == null ? null : String.valueOf(v);
     }
@@ -174,7 +175,7 @@ final class JdtlsReplies {
     }
 
     /** lsp4j hands untyped executeCommand results back as gson {@link JsonElement}s; pass others through. */
-    static JsonElement asJson(Object res) {
+    static @Nullable JsonElement asJson(Object res) {
         if (res instanceof JsonElement el) {
             return el;
         }

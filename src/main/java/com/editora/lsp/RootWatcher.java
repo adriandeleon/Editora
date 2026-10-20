@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Watches a language server's workspace folder when nothing else does — a window with no project, or a server
  * rooted outside the project — and reports what changed on disk as {@code workspace/didChangeWatchedFiles}
@@ -56,7 +58,7 @@ final class RootWatcher implements AutoCloseable {
     }
 
     /** Starts watching {@code root}; {@code sink} gets each coalesced batch on the watcher's thread. Null on failure. */
-    static RootWatcher start(Path root, Consumer<List<LspManager.WatchedFile>> sink) {
+    static @Nullable RootWatcher start(Path root, Consumer<List<LspManager.WatchedFile>> sink) {
         try {
             if (!Files.isDirectory(root) || root.getFileSystem() != FileSystems.getDefault()) {
                 return null;

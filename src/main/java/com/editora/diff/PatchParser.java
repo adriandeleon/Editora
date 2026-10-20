@@ -151,7 +151,7 @@ public final class PatchParser {
                 }
                 continue;
             }
-            if (inHunk && (oldRemaining > 0 || newRemaining > 0)) {
+            if (inHunk && cur != null && (oldRemaining > 0 || newRemaining > 0)) { // inHunk implies cur
                 char tag = line.isEmpty() ? ' ' : line.charAt(0);
                 String rest = line.isEmpty() || line.length() == 1 ? "" : line.substring(1);
                 switch (tag) {

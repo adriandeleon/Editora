@@ -58,7 +58,11 @@ public final class PlainTab {
     /** As {@link #edit(String, int, int, String, int, boolean, Boolean, Integer)} with the unit decided. */
     static Indenter.TabEdit edit(String text, int selStart, int selEnd, int tabSize, boolean shift, String unit) {
         if (selStart != selEnd || shift) {
-            return Indenter.smartTab(text, selStart, selEnd, STYLED_LANGUAGE, tabSize, shift, unit);
+            Indenter.TabEdit edit = Indenter.smartTab(text, selStart, selEnd, STYLED_LANGUAGE, tabSize, shift, unit);
+            if (edit == null) { // only the plain style has no smart Tab
+                throw new IllegalStateException(STYLED_LANGUAGE + " has no indent style");
+            }
+            return edit;
         }
         int caret = selStart + unit.length();
         return new Indenter.TabEdit(selStart, selStart, unit, caret, caret);

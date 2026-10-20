@@ -21,6 +21,7 @@ import com.editora.process.RemoteEnv;
 import com.editora.process.TerminalChannel;
 import com.editora.process.TerminalSpec;
 import com.editora.terminal.PtyChannel;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A WSL distribution, for its folders as Windows reaches them ({@code \\wsl.localhost\<distro>\…}): their
@@ -34,22 +35,22 @@ public final class WslExecTarget implements ExecTarget {
     static final Duration START_TIMEOUT = Duration.ofSeconds(60); // a distribution may have to boot first
 
     private final List<String> launcher;
-    private final String distro;
+    private final @Nullable String distro;
     private final String sharePrefix;
-    private volatile RemoteEnv env;
-    private volatile String relayTool;
+    private volatile @Nullable RemoteEnv env;
+    private volatile @Nullable String relayTool;
 
     /**
      * @param launcher the {@code wsl.exe} command
      * @param sharePrefix how Windows reaches the distribution's root ({@code \\wsl.localhost\Ubuntu})
      */
-    public WslExecTarget(List<String> launcher, String distro, String sharePrefix) {
+    public WslExecTarget(List<String> launcher, @Nullable String distro, String sharePrefix) {
         this.launcher = List.copyOf(launcher);
         this.distro = distro;
         this.sharePrefix = sharePrefix;
     }
 
-    public String distro() {
+    public @Nullable String distro() {
         return distro;
     }
 
@@ -297,8 +298,8 @@ public final class WslExecTarget implements ExecTarget {
 
     /** The distribution's name for {@code path}: inside it, or a drive under {@code /mnt}; else as it is. */
     @Override
-    public String toTargetPath(Path path) {
-        String windows = path.toString();
+    public String toTargetPath(@Nullable Path path) {
+        String windows = java.util.Objects.requireNonNull(path, "path").toString();
         String linux = WslPaths.toLinux(windows, distro);
         return linux != null ? linux : windows;
     }

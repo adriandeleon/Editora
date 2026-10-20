@@ -2,6 +2,7 @@ package com.editora.github;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Parses {@code gh repo view --json nameWithOwner,defaultBranchRef,url} — the repository {@code gh} resolved
@@ -19,7 +20,7 @@ public final class RepoViewParser {
     public record RepoInfo(String nameWithOwner, String defaultBranch, String url) {}
 
     /** Parses the {@code gh repo view --json …} object, or {@code null} on bad/empty input. */
-    public static RepoInfo parse(String json) {
+    public static @Nullable RepoInfo parse(String json) {
         if (json == null || json.isBlank()) {
             return null;
         }

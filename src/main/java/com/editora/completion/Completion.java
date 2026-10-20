@@ -1,6 +1,7 @@
 package com.editora.completion;
 
 import com.editora.snippet.Snippet;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One entry in the autocomplete popup. {@code insert} is the text that replaces the typed prefix when
@@ -18,20 +19,23 @@ public record Completion(
         String label,
         String insert,
         Kind kind,
-        String detail,
-        Snippet snippet,
-        Runnable onAccept,
+        @Nullable String detail,
+        @Nullable Snippet snippet,
+        @Nullable Runnable onAccept,
         CompletionIconKind iconKind,
-        String sortText,
+        @Nullable String sortText,
         boolean preselect,
         boolean deprecated,
-        Object resolveToken,
-        ReplaceRange replaceRange,
-        Protocol protocol) {
+        @Nullable Object resolveToken,
+        @Nullable ReplaceRange replaceRange,
+        @Nullable Protocol protocol) {
 
     /** Optional protocol semantics; kept independent of lsp4j wire objects. */
     public record Protocol(
-            String filterText, ReplaceRange replaceRange, java.util.List<String> commitCharacters, int insertTextMode) {
+            String filterText,
+            @Nullable ReplaceRange replaceRange,
+            java.util.List<String> commitCharacters,
+            int insertTextMode) {
         public Protocol(String filterText, ReplaceRange replaceRange, java.util.List<String> commitCharacters) {
             this(filterText, replaceRange, commitCharacters, 0);
         }
@@ -94,7 +98,7 @@ public record Completion(
     }
 
     /** Returns a copy carrying the given LSP replace range (or null to clear it). */
-    public Completion withReplaceRange(ReplaceRange rs) {
+    public Completion withReplaceRange(@Nullable ReplaceRange rs) {
         return new Completion(
                 label,
                 insert,
@@ -117,7 +121,7 @@ public record Completion(
      * real tab stops. {@link #kind} is deliberately unchanged: {@link Kind#SNIPPET} marks a <em>local</em>
      * snippet, which is what the engine's ranking and the wide-token replace range key on.
      */
-    public Completion withSnippet(Snippet s) {
+    public Completion withSnippet(@Nullable Snippet s) {
         return new Completion(
                 label,
                 insert,
@@ -135,7 +139,7 @@ public record Completion(
     }
 
     /** A plain word completion (dictionary or user word). */
-    public static Completion word(String w, String detail) {
+    public static Completion word(String w, @Nullable String detail) {
         return new Completion(
                 w, w, Kind.WORD, detail, null, null, CompletionIconKind.TEXT, null, false, false, null, null, null);
     }
@@ -168,7 +172,7 @@ public record Completion(
      * A language-server completion with an optional {@code onAccept} action run after the text is
      * inserted — used for TypeScript auto-imports (resolve the item + apply its additional edits).
      */
-    public static Completion lsp(String label, String insert, String detail, Runnable onAccept) {
+    public static Completion lsp(String label, String insert, String detail, @Nullable Runnable onAccept) {
         return lsp(label, insert, detail, onAccept, CompletionIconKind.OTHER, null, false, false, null);
     }
 
@@ -180,12 +184,12 @@ public record Completion(
             String label,
             String insert,
             String detail,
-            Runnable onAccept,
+            @Nullable Runnable onAccept,
             CompletionIconKind iconKind,
-            String sortText,
+            @Nullable String sortText,
             boolean preselect,
             boolean deprecated,
-            Object resolveToken) {
+            @Nullable Object resolveToken) {
         return new Completion(
                 label,
                 insert,

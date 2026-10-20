@@ -8,6 +8,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Reads {@code gh auth status --json hosts} (gh 2.81+). Unlike the command's exit code — which is 1 both for
@@ -44,7 +45,7 @@ public final class GhAuthStatus {
      * Parses the JSON document; {@code null} when {@code json} is not one (an older gh that has no
      * {@code --json} here, a stand-in) — the caller then falls back to the exit code.
      */
-    public static Parsed parse(String json) {
+    public static @Nullable Parsed parse(String json) {
         if (json == null || json.isBlank()) {
             return null;
         }
@@ -142,7 +143,7 @@ public final class GhAuthStatus {
     }
 
     /** The host's active account (the one gh uses), else its first; {@code null} when it has none. */
-    private static JsonNode activeAccount(JsonNode accounts) {
+    private static @Nullable JsonNode activeAccount(JsonNode accounts) {
         if (accounts == null || !accounts.isArray() || accounts.isEmpty()) {
             return null;
         }

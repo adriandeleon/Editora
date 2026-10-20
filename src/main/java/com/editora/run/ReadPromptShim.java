@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Makes {@code read -p "Prompt: "} show its prompt in the Run console.
  *
@@ -63,7 +65,7 @@ public final class ReadPromptShim {
             case $__editora_xtrace in *x*) set -x ;; esac
             """;
 
-    private static volatile Path written;
+    private static volatile @Nullable Path written;
 
     /**
      * The variables that load the shim into a bash run: {@code BASH_ENV} pointing at it, plus the user's own
@@ -85,7 +87,7 @@ public final class ReadPromptShim {
     }
 
     /** The shim written once per process to a temp file (deleted on exit); null when that failed. */
-    static Path file() {
+    static @Nullable Path file() {
         Path f = written;
         if (f != null && Files.isRegularFile(f)) {
             return f;

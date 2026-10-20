@@ -4,6 +4,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeSet;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One parsed field of a cron expression (minute, hour, day-of-month, month, or day-of-week). Holds the
  * expanded set of matching values plus enough structure ({@link #star}, {@link #step}) for
@@ -28,9 +30,9 @@ final class CronField {
     /** True only when the whole field was the literal {@code *} (drives the DOM/DOW OR-rule + "every"). */
     private final boolean star;
     /** The step of a pure {@code &#42;/n} / {@code a-b/n} field, else {@code null} (for "every N …"). */
-    private final Integer step;
+    private final @Nullable Integer step;
 
-    private CronField(int min, int max, TreeSet<Integer> values, boolean star, Integer step) {
+    private CronField(int min, int max, TreeSet<Integer> values, boolean star, @Nullable Integer step) {
         this.min = min;
         this.max = max;
         this.values = values;
@@ -47,7 +49,7 @@ final class CronField {
      * expanding, so that is what we do: folding first turns the canonical weekend {@code 6-7} into
      * {@code lo=6, hi=0} and rejects a schedule real cron runs happily.
      */
-    static CronField parse(String token, int min, int max, Map<String, Integer> names, boolean sundayWrap) {
+    static CronField parse(String token, int min, int max, @Nullable Map<String, Integer> names, boolean sundayWrap) {
         String t = token.trim();
         if (t.isEmpty()) {
             throw new ParseException("empty field");
@@ -69,14 +71,14 @@ final class CronField {
     }
 
     /** Expands one comma element into {@code out}; returns the field-level step if this element sets one. */
-    private static Integer parseElement(
+    private static @Nullable Integer parseElement(
             String el,
             int min,
             int max,
-            Map<String, Integer> names,
+            @Nullable Map<String, Integer> names,
             TreeSet<Integer> out,
             boolean isList,
-            Integer priorStep) {
+            @Nullable Integer priorStep) {
         int slash = el.indexOf('/');
         int step = 1;
         String rangePart = el;
@@ -113,7 +115,7 @@ final class CronField {
         return (!isList && slash >= 0) ? Integer.valueOf(step) : priorStep;
     }
 
-    private static int value(String s, int min, int max, Map<String, Integer> names) {
+    private static int value(String s, int min, int max, @Nullable Map<String, Integer> names) {
         String v = s.trim();
         int n;
         if (names != null && !v.isEmpty() && !Character.isDigit(v.charAt(0)) && v.charAt(0) != '-') {
@@ -147,6 +149,7 @@ final class CronField {
         return star;
     }
 
+    @Nullable
     Integer step() {
         return step;
     }
@@ -164,12 +167,13 @@ final class CronField {
     }
 
     /** The sole value when the field matches exactly one number, else {@code null}. */
+    @Nullable
     Integer single() {
         return values.size() == 1 ? values.first() : null;
     }
 
     /** {@code {lo,hi}} when the values form a contiguous run of size &gt; 1 (for "X through Y"), else {@code null}. */
-    int[] contiguousRange() {
+    int @Nullable [] contiguousRange() {
         if (values.size() < 2) {
             return null;
         }

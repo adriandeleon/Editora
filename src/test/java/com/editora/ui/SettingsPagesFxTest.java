@@ -817,8 +817,12 @@ class SettingsPagesFxTest {
             } catch (Throwable t) {
                 failure[0] = t;
             } finally {
-                if (pane != null && pane.getScene().getWindow().isShowing()) {
-                    pane.getScene().getWindow().hide();
+                // A test that clicks a link closing the panel has already taken it out of its scene.
+                javafx.scene.Scene scene = pane == null ? null : pane.getScene();
+                if (scene != null
+                        && scene.getWindow() != null
+                        && scene.getWindow().isShowing()) {
+                    scene.getWindow().hide();
                 }
             }
         });

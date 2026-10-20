@@ -1,5 +1,7 @@
 package com.editora.vfs;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A parsed {@code sftp://[user@]host[:port]/path} URI — the storable form of a remote file and the key for
  * a cached connection. Pure (no toolkit, no network), so it is unit-tested.
@@ -9,7 +11,7 @@ public record SftpUri(String user, String host, int port, String path) {
     public static final int DEFAULT_PORT = 22;
 
     /** Parses {@code sftp://[user@]host[:port]/path}; returns {@code null} if it is not a valid sftp URI. */
-    public static SftpUri parse(String uri) {
+    public static @Nullable SftpUri parse(String uri) {
         if (uri == null) {
             return null;
         }

@@ -12,6 +12,8 @@ import java.time.Duration;
 import java.util.Locale;
 import javax.net.ssl.SSLException;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -108,7 +110,7 @@ public final class HttpErrors {
     }
 
     /** The first throwable of {@code type} in the cause chain, or null. */
-    private static <T extends Throwable> T find(Throwable t, Class<T> type) {
+    private static <T extends Throwable> @Nullable T find(Throwable t, Class<T> type) {
         for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
             if (type.isInstance(c)) {
                 return type.cast(c);

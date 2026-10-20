@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses a TextMate/VS Code snippet body into a {@link ParsedSnippet}: the literal text to insert plus
  * the tab stops and their offset ranges. Pure (no toolkit), so it is unit-tested.
@@ -49,6 +51,7 @@ public final class SnippetParser {
     /** Resolves a snippet variable name to its value, or {@code null} when unknown. */
     @FunctionalInterface
     public interface Variables {
+        @Nullable
         String resolve(String name);
     }
 
@@ -68,8 +71,8 @@ public final class SnippetParser {
         c.ranges.keySet().stream()
                 .sorted((a, b) -> Integer.compare(a == 0 ? Integer.MAX_VALUE : a, b == 0 ? Integer.MAX_VALUE : b))
                 .forEach(n -> {
-                    List<int[]> rs = c.ranges.get(n);
-                    List<SnippetTransform> ts = c.transforms.get(n);
+                    List<int[]> rs = recorded(c.ranges, n);
+                    List<SnippetTransform> ts = recorded(c.transforms, n);
                     int primary = c.primaryIndex.getOrDefault(n, firstNonTransform(ts));
                     stops.add(new TabStop(
                             n,
@@ -199,7 +202,7 @@ public final class SnippetParser {
 
     /** A tab-stop number {@code s[from,to)}, or {@code null} when the digit run overflows an int (so the
      *  caller can treat the {@code $…} as literal text rather than throwing). */
-    private static Integer parseStopNumber(String s, int from, int to) {
+    private static @Nullable Integer parseStopNumber(String s, int from, int to) {
         try {
             return Integer.parseInt(s.substring(from, to));
         } catch (NumberFormatException overflow) {
@@ -399,7 +402,7 @@ public final class SnippetParser {
 
     /** Appends one leaf occurrence's text (value, transformed when {@code transform != null}) and records
      *  its range in pass 2. */
-    private static void emitOccurrence(Ctx c, int num, SnippetTransform transform) {
+    private static void emitOccurrence(Ctx c, int num, @Nullable SnippetTransform transform) {
         if (c.open.contains(num)) {
             return; // ${1:a$1} — a stop cannot mirror the default it is still defining
         }
@@ -413,7 +416,7 @@ public final class SnippetParser {
     }
 
     /** Records an occurrence that was entered at sequence number {@code open} and is being left now. */
-    private static void record(Ctx c, int num, int start, int end, SnippetTransform t, int open) {
+    private static void record(Ctx c, int num, int start, int end, @Nullable SnippetTransform t, int open) {
         c.ranges.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[] {start, end});
         c.transforms.computeIfAbsent(num, k -> new ArrayList<>()).add(t);
         c.spans.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[] {open, c.seq++});
@@ -421,7 +424,16 @@ public final class SnippetParser {
 
     /** Marks the range just recorded for {@code num} as the editable field (the value-defining one). */
     private static void markPrimary(Ctx c, int num) {
-        c.primaryIndex.putIfAbsent(num, c.ranges.get(num).size() - 1);
+        c.primaryIndex.putIfAbsent(num, recorded(c.ranges, num).size() - 1);
+    }
+
+    /** {@code map}'s list for stop {@code num}, which {@link #record} has made. */
+    private static <T> List<T> recorded(Map<Integer, List<T>> map, int num) {
+        List<T> list = map.get(num);
+        if (list == null) {
+            throw new IllegalStateException("no occurrence recorded for $" + num);
+        }
+        return list;
     }
 
     /** First occurrence that is not a transform (the fallback editable field for a stop with no

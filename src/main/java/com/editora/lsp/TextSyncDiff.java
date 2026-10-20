@@ -2,6 +2,7 @@ package com.editora.lsp;
 
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The minimal single-splice difference between the server's last-known document text and the editor's
@@ -23,7 +24,7 @@ final class TextSyncDiff {
     record Delta(int start, int end, String replacement) {}
 
     /** The minimal splice turning {@code oldText} into {@code newText}, or null when they are identical. */
-    static Delta diff(String oldText, String newText) {
+    static @Nullable Delta diff(String oldText, String newText) {
         int lo = oldText.length();
         int ln = newText.length();
         int min = Math.min(lo, ln);

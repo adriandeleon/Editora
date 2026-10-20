@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One pure pass over a Markdown document that says, for every line, what kind of block it belongs to — so the
  * linter, the fixer, folding, spell check, the outline and the table/list helpers all agree on what is code and
@@ -258,7 +260,7 @@ public final class MarkdownBlocks {
     }
 
     /** The fenced block {@code line} belongs to (its fence lines included), or {@code null}. */
-    public Fence fenceAt(int line) {
+    public @Nullable Fence fenceAt(int line) {
         return line < 0 || line >= fenceOf.length || fenceOf[line] < 0 ? null : fences.get(fenceOf[line]);
     }
 
@@ -383,7 +385,7 @@ public final class MarkdownBlocks {
         int markerOffset;
         int contentColumn;
         int quoteDepth;
-        String info;
+        String info = "";
     }
 
     private void scan() {
@@ -673,7 +675,7 @@ public final class MarkdownBlocks {
         return -1;
     }
 
-    private static OpenFence opensFence(String line, int at) {
+    private static @Nullable OpenFence opensFence(String line, int at) {
         if (at >= line.length()) {
             return null;
         }
@@ -791,7 +793,7 @@ public final class MarkdownBlocks {
     }
 
     /** The closing tag that ends the verbatim HTML block opening at {@code at}, or null when none opens there. */
-    private static String verbatimHtmlEnd(String line, int at) {
+    private static @Nullable String verbatimHtmlEnd(String line, int at) {
         if (at >= line.length() || line.charAt(at) != '<') {
             return null;
         }

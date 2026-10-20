@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.lsp4j.SelectionRange;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Flattens a server's {@code textDocument/selectionRange} answer into the innermost-first chain of
@@ -59,7 +60,7 @@ public final class LspSelection {
     /** Depth cap: a malformed self-referential parent chain must not spin. */
     private static final int MAX_DEPTH = 256;
 
-    private static int[] toOffsets(SelectionRange r, int[] lineStarts) {
+    private static int @Nullable [] toOffsets(SelectionRange r, int[] lineStarts) {
         if (r == null || r.getRange() == null) {
             return null;
         }
@@ -72,7 +73,7 @@ public final class LspSelection {
         return new int[] {start, end};
     }
 
-    private static Integer offsetOf(org.eclipse.lsp4j.Position p, int[] lineStarts) {
+    private static @Nullable Integer offsetOf(org.eclipse.lsp4j.Position p, int[] lineStarts) {
         if (p == null) {
             return null;
         }

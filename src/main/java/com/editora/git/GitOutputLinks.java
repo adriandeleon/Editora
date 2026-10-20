@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * File paths printed by Git's human-readable status and diff formats.  Kept separate from the view so paths
  * can be styled and opened without trying to infer a file from arbitrary command output.
@@ -84,7 +86,7 @@ public final class GitOutputLinks {
     }
 
     /** The file link at {@code offset}, or null when that character is plain transcript text. */
-    public static Link at(String text, int offset) {
+    public static @Nullable Link at(String text, int offset) {
         if (text == null || offset < 0 || offset >= text.length()) {
             return null;
         }

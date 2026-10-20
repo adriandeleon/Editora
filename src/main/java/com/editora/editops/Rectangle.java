@@ -3,6 +3,8 @@ package com.editora.editops;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The Emacs rectangle commands: operations on the <em>columns</em> between point and mark rather than
  * on the linear span between them.
@@ -155,7 +157,7 @@ public final class Rectangle {
      * Rewrites each line of the rectangle through {@code perLine}, which receives the line's full text
      * and returns its replacement, and packages the result as one block replacement.
      */
-    private static Edit rewrite(String text, Bounds b, java.util.function.UnaryOperator<String> perLine) {
+    private static @Nullable Edit rewrite(String text, Bounds b, java.util.function.UnaryOperator<String> perLine) {
         int[] starts = lineStarts(text);
         if (b.topLine >= starts.length) {
             return null;
@@ -179,7 +181,7 @@ public final class Rectangle {
     }
 
     /** Emacs {@code delete-rectangle} (`C-x r d`): remove the columns, closing the gap. */
-    public static Edit delete(String text, Bounds b) {
+    public static @Nullable Edit delete(String text, Bounds b) {
         if (b.width() == 0) {
             return null;
         }
@@ -195,7 +197,7 @@ public final class Rectangle {
      * Emacs {@code clear-rectangle} (`C-x r c`): overwrite the columns with spaces, keeping the width.
      * Lines too short are padded out first, matching Emacs' forced {@code move-to-column}.
      */
-    public static Edit clear(String text, Bounds b) {
+    public static @Nullable Edit clear(String text, Bounds b) {
         if (b.width() == 0) {
             return null;
         }
@@ -207,7 +209,7 @@ public final class Rectangle {
     }
 
     /** Emacs {@code open-rectangle} (`C-x r o`): insert blanks, shifting the existing text right. */
-    public static Edit open(String text, Bounds b) {
+    public static @Nullable Edit open(String text, Bounds b) {
         if (b.width() == 0) {
             return null;
         }
@@ -222,7 +224,7 @@ public final class Rectangle {
      * Emacs {@code string-rectangle} (`C-x r t`): replace each line's rectangle segment with
      * {@code s} — with a zero-width rectangle this inserts {@code s} at that column on every line.
      */
-    public static Edit replace(String text, Bounds b, String s) {
+    public static @Nullable Edit replace(String text, Bounds b, String s) {
         String insert = s == null ? "" : s;
         return rewrite(text, b, line -> {
             String head = head(line, b.leftCol());
@@ -235,7 +237,7 @@ public final class Rectangle {
      * Emacs {@code rectangle-number-lines} (`C-x r N`): insert consecutive numbers down the left edge,
      * right-aligned to the widest of them and followed by a space.
      */
-    public static Edit numberLines(String text, Bounds b, int firstNumber) {
+    public static @Nullable Edit numberLines(String text, Bounds b, int firstNumber) {
         int width = Math.max(
                 String.valueOf(firstNumber).length(),
                 String.valueOf(firstNumber + b.lineCount() - 1).length());
@@ -252,7 +254,7 @@ public final class Rectangle {
      * corner at the caret, pushing existing text right on each line. Lines are appended when the
      * rectangle extends past the end of the document, and short lines are padded out to the caret column.
      */
-    public static Edit yank(String text, int caret, List<String> lines) {
+    public static @Nullable Edit yank(String text, int caret, List<String> lines) {
         if (lines == null || lines.isEmpty()) {
             return null;
         }

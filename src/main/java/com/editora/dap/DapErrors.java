@@ -2,6 +2,8 @@ package com.editora.dap;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How an error an adapter or jdtls reports is said to the user. java-debug answers a refused request with
  * the text of the Java exception behind it, class names and all — {@code
@@ -20,7 +22,7 @@ public final class DapErrors {
             Pattern.compile("^\\s*(?:[a-zA-Z_$][\\w$]*\\.)+[A-Z][\\w$]*(?:Exception|Error|Throwable)\\s*:\\s*");
 
     /** {@code text} without the Java exception class names it starts with; {@code text} itself when it is only that. */
-    public static String userText(String text) {
+    public static String userText(@Nullable String text) {
         if (text == null) {
             return "";
         }
@@ -53,7 +55,7 @@ public final class DapErrors {
      * response body as lsp4j hands it over (a gson {@code JsonObject} or a {@code Map}). Null when neither says
      * anything.
      */
-    public static String responseText(String message, Object body) {
+    public static @Nullable String responseText(String message, Object body) {
         if (message != null && !message.isBlank() && !LSP4J_UNSET.equals(message.strip())) {
             return message;
         }
@@ -75,7 +77,7 @@ public final class DapErrors {
         return REPEATED_ERROR_NAME.matcher(first).replaceFirst("$1: ");
     }
 
-    private static Object member(Object container, String name) {
+    private static @Nullable Object member(@Nullable Object container, String name) {
         if (container instanceof com.google.gson.JsonObject o) {
             return o.has(name) ? o.get(name) : null;
         }

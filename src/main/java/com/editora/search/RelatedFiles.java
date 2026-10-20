@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The file names most likely to be the counterpart of the one you are in: a test and its subject, a C
  * header and its implementation, a component and its stylesheet.
@@ -80,7 +82,7 @@ public final class RelatedFiles {
      * <p>The suffix must leave something behind: a file actually named {@code Test.java} is a subject in
      * its own right, not a test of the empty string.
      */
-    public static String testSubject(String base) {
+    public static @Nullable String testSubject(String base) {
         if (base == null) {
             return null;
         }

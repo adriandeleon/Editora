@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import org.eclipse.lsp4j.SemanticTokensEdit;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Applies a {@code semanticTokens/full/delta} response's edits to the previously cached token data array
@@ -21,7 +22,7 @@ final class SemanticTokensSplice {
      * out of range (a stale/garbled delta — the caller falls back to a full request rather than decode a
      * corrupted array).
      */
-    static List<Integer> apply(List<Integer> previous, List<SemanticTokensEdit> edits) {
+    static @Nullable List<Integer> apply(List<Integer> previous, List<SemanticTokensEdit> edits) {
         if (previous == null) {
             return null;
         }

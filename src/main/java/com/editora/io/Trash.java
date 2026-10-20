@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Moves a file to the operating system's trash instead of deleting it, without AWT.
@@ -71,7 +72,7 @@ public final class Trash {
     private static final Duration GIO_TIMEOUT = Duration.ofSeconds(15);
     private static final DateTimeFormatter DELETION_DATE = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
-    private static volatile Bin system;
+    private static volatile @Nullable Bin system;
 
     private Trash() {}
 
@@ -122,7 +123,7 @@ public final class Trash {
      * A FreeDesktop.org home trash at {@code trashDir} ({@code files/} + {@code info/}). {@code gio}, when not
      * null, is GLib's command-line tool, used for files on another volume than the trash directory.
      */
-    public static Bin freedesktop(Path trashDir, Path gio) {
+    public static Bin freedesktop(Path trashDir, @Nullable Path gio) {
         return new Bin() {
             @Override
             public boolean accepts(Path file) {
@@ -306,7 +307,7 @@ public final class Trash {
     }
 
     /** The first executable called {@code name} in {@code pathVariable}, or null. */
-    static Path findOnPath(String name, String pathVariable) {
+    static @Nullable Path findOnPath(String name, @Nullable String pathVariable) {
         if (pathVariable == null || pathVariable.isBlank()) {
             return null;
         }

@@ -5,6 +5,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Reads terminal escape sequences out of program output for the Run console (pure, unit-tested).
  *
@@ -43,7 +45,7 @@ public final class AnsiText {
 
     /** The colour state of one output stream. Not thread-safe; one per stream per run. */
     public static final class Parser {
-        private String fg;
+        private @Nullable String fg;
         private boolean bold;
         private boolean dim;
         private boolean italic;

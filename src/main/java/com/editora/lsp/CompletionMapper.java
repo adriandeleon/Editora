@@ -9,6 +9,7 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.CompletionItemTag;
 import org.eclipse.lsp4j.InsertTextFormat;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure mapping from LSP {@link CompletionItem}s to the editor's {@link Completion} popup entries. The
@@ -41,7 +42,7 @@ public final class CompletionMapper {
      * resolve + apply a TypeScript auto-import's {@code additionalTextEdits}). A null factory ⇒ no hook.
      */
     public static List<Completion> map(
-            List<CompletionItem> items, java.util.function.Function<CompletionItem, Runnable> onAcceptFor) {
+            List<CompletionItem> items, java.util.function.@Nullable Function<CompletionItem, Runnable> onAcceptFor) {
         List<Completion> out = new ArrayList<>();
         if (items == null) {
             return out;
@@ -114,7 +115,7 @@ public final class CompletionMapper {
         return list.getItems();
     }
 
-    private static Completion.ReplaceRange replacementRangeOf(CompletionItem item) {
+    private static Completion.@Nullable ReplaceRange replacementRangeOf(CompletionItem item) {
         if (item.getTextEdit() == null
                 || item.getTextEdit().isLeft()
                 || item.getTextEdit().getRight() == null) return null;
@@ -239,7 +240,7 @@ public final class CompletionMapper {
      * a shell variable), and running that through the snippet parser would read {@code $user} as a
      * variable and insert nothing at all. A body with no stop has nothing for a session to do anyway.
      */
-    static com.editora.snippet.Snippet snippetOf(CompletionItem item, String label) {
+    static com.editora.snippet.@Nullable Snippet snippetOf(CompletionItem item, String label) {
         if (item.getInsertTextFormat() != InsertTextFormat.Snippet) {
             return null;
         }
@@ -308,7 +309,7 @@ public final class CompletionMapper {
      * mode: its replace range deliberately reaches over the whole token after the caret, which would eat
      * text the user has not asked to lose.
      */
-    static Completion.ReplaceRange replaceRangeOf(CompletionItem item) {
+    static Completion.@Nullable ReplaceRange replaceRangeOf(CompletionItem item) {
         if (item.getTextEdit() == null) {
             return null;
         }
@@ -333,7 +334,7 @@ public final class CompletionMapper {
                 range.getEnd().getCharacter());
     }
 
-    private static String textEditNewText(CompletionItem item) {
+    private static @Nullable String textEditNewText(CompletionItem item) {
         if (item.getTextEdit() == null) {
             return null;
         }

@@ -4,6 +4,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Resolves the latest stable version of each artifact from a Maven repository's metadata.
  *
@@ -116,7 +118,7 @@ public final class CentralVersions {
         return !s.equalsIgnoreCase("LATEST") && !s.equalsIgnoreCase("RELEASE");
     }
 
-    private static String[] split(String ga) {
+    private static String @Nullable [] split(String ga) {
         if (ga == null) {
             return null;
         }

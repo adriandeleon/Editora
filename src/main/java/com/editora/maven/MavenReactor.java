@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Locates the Maven <b>reactor root</b> for a module so the Run classpath fallback resolves sibling-module
  * dependencies in a multi-module build. {@code mvn dependency:build-classpath} run in a submodule misses
@@ -37,7 +39,7 @@ public final class MavenReactor {
 
     /** The topmost ancestor of {@code moduleDir} in a contiguous chain of pom-bearing dirs, or {@code moduleDir}
      *  itself when its parent has no {@code pom.xml}. {@code hasPom} tests whether a directory holds a pom. */
-    public static Path reactorRoot(Path moduleDir, Predicate<Path> hasPom) {
+    public static @Nullable Path reactorRoot(Path moduleDir, Predicate<Path> hasPom) {
         if (moduleDir == null) {
             return null;
         }
@@ -67,8 +69,9 @@ public final class MavenReactor {
      * sits under an unrelated pom (a {@code samples/} folder of another repository): Maven would then answer
      * "Could not find the selected project in the reactor".
      */
-    public static Reactor describe(
-            Path moduleDir, Path boundary, Predicate<Path> hasPom, Function<Path, String> pomText) {
+    public static @Nullable Reactor describe(
+            Path moduleDir, @Nullable Path boundary, Predicate<Path> hasPom, Function<Path, @Nullable String> pomText) {
+
         if (moduleDir == null) {
             return null;
         }
@@ -111,7 +114,7 @@ public final class MavenReactor {
      * The argv that runs a module's phase from its reactor root with its upstream modules: {@code -f
      * <rootPom> -pl <module> -am}. {@code rootPom} is named as the machine Maven runs on names it.
      */
-    public static List<String> reactorArgs(String rootPom, String moduleSelector) {
+    public static List<String> reactorArgs(@Nullable String rootPom, String moduleSelector) {
         return List.of("-f", rootPom, "-pl", moduleSelector, "-am");
     }
 }

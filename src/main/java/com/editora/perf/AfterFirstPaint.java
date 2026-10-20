@@ -7,6 +7,8 @@ import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Startup work that can wait for the first painted frame.
  *
@@ -29,7 +31,7 @@ public final class AfterFirstPaint {
     private static final Object LOCK = new Object();
 
     /** Guarded by {@link #LOCK}; {@code null} while not held. */
-    private static List<Runnable> queue;
+    private static @Nullable List<Runnable> queue;
 
     /** The keys of {@link #runOnce} tasks queued during this hold. Guarded by {@link #LOCK}. */
     private static final Set<Object> QUEUED_KEYS = new HashSet<>();

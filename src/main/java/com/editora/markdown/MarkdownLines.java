@@ -2,6 +2,8 @@ package com.editora.markdown;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure (no-toolkit, unit-tested) helpers for Markdown list/blockquote continuation on Enter.
  * {@code EditorBuffer}'s Enter filter (markdown buffers only) uses {@link #continuation(String)} to carry
@@ -92,7 +94,7 @@ public final class MarkdownLines {
      * an ordered item's number is replaced, not kept behind a second marker. Returns {@code null} when
      * nothing changes.
      */
-    public static MarkdownEdit toggleBullet(String text, int selStart, int selEnd) {
+    public static @Nullable MarkdownEdit toggleBullet(String text, int selStart, int selEnd) {
         int[] b = LineEdits.block(text, selStart, selEnd);
         return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
             boolean remove = all(lines, l -> l.isListItem() && !l.isOrdered());
@@ -117,7 +119,7 @@ public final class MarkdownLines {
      * bulleted or numbered, gains a {@code "[ ] "} box and a bare line becomes {@code "- [ ] "}. Returns
      * {@code null} when nothing changes.
      */
-    public static MarkdownEdit toggleTask(String text, int selStart, int selEnd) {
+    public static @Nullable MarkdownEdit toggleTask(String text, int selStart, int selEnd) {
         int[] b = LineEdits.block(text, selStart, selEnd);
         return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
             boolean remove = all(lines, MarkdownLine::isTask);
@@ -143,7 +145,7 @@ public final class MarkdownLines {
      * non-blank lines are already numbered, otherwise numbers them 1, 2, 3… at each indentation level in
      * turn — a bullet is replaced, a task box kept. Returns {@code null} when nothing changes.
      */
-    public static MarkdownEdit toggleOrdered(String text, int selStart, int selEnd) {
+    public static @Nullable MarkdownEdit toggleOrdered(String text, int selStart, int selEnd) {
         int[] b = LineEdits.block(text, selStart, selEnd);
         return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
             boolean remove = all(lines, MarkdownLine::isOrdered);
@@ -174,7 +176,7 @@ public final class MarkdownLines {
      * line (blank ones aside) is quoted, otherwise quotes them all — blank lines inside the block too, so it
      * stays one quote. Returns {@code null} when nothing changes.
      */
-    public static MarkdownEdit toggleQuote(String text, int selStart, int selEnd) {
+    public static @Nullable MarkdownEdit toggleQuote(String text, int selStart, int selEnd) {
         int[] b = LineEdits.block(text, selStart, selEnd);
         return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
             boolean any = false;
@@ -241,7 +243,7 @@ public final class MarkdownLines {
      * Ticks or unticks the task items among the lines the selection covers: all are unticked when every one
      * is ticked, otherwise all are ticked. Returns {@code null} when none of the lines is a task item.
      */
-    public static MarkdownEdit toggleDone(String text, int selStart, int selEnd) {
+    public static @Nullable MarkdownEdit toggleDone(String text, int selStart, int selEnd) {
         int[] b = LineEdits.block(text, selStart, selEnd);
         return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
             boolean allDone = true;
@@ -280,13 +282,18 @@ public final class MarkdownLines {
      * is not a list or blockquote item. Ordered lists auto-increment; task items reset to {@code [ ]};
      * indentation and a blockquote prefix in front of the marker are preserved.
      */
-    public static String continuation(String line) {
+    public static @Nullable String continuation(String line) {
         if (line == null) {
             return null;
         }
         MarkdownLine l = MarkdownLine.parse(line);
+        return !l.isListItem() && l.quote().isEmpty() ? null : continuationOf(l);
+    }
+
+    /** {@link #continuation(String)} of a line that is a list or quote item. */
+    private static String continuationOf(MarkdownLine l) {
         if (!l.isListItem()) {
-            return l.quote().isEmpty() ? null : l.indent() + l.quote();
+            return l.indent() + l.quote();
         }
         String marker = l.isOrdered() ? l.markerNumbered(l.number() + 1) : l.marker();
         return l.indent() + l.quote() + marker + (l.isTask() ? "[ ] " : "");
@@ -321,7 +328,7 @@ public final class MarkdownLines {
      * {@code null} when the caret's line is not an item (or only looks like one: a thematic break, a line
      * inside a fenced block, the caret still inside the marker), so the caller inserts a plain newline.
      */
-    public static MarkdownEdit enter(String text, int caret) {
+    public static @Nullable MarkdownEdit enter(String text, int caret) {
         int ls = lineStart(text, caret);
         int le = lineEnd(text, caret);
         String line = text.substring(ls, le);
@@ -345,7 +352,7 @@ public final class MarkdownLines {
         boolean lazy = next != null && next.number() == l.number();
         String cont = l.isOrdered() && lazy
                 ? l.indent() + l.quote() + l.marker() + (l.isTask() ? "[ ] " : "")
-                : continuation(line);
+                : continuationOf(l);
         int at = caret + 1 + cont.length();
         if (l.isOrdered() && !lazy) {
             int end = runEnd(text, le, l);
@@ -362,7 +369,7 @@ public final class MarkdownLines {
      * Backspace at the end of an empty list/quote item: step out one level, like Enter there. Returns
      * {@code null} anywhere else (the caller does a normal Backspace).
      */
-    public static MarkdownEdit backspace(String text, int caret) {
+    public static @Nullable MarkdownEdit backspace(String text, int caret) {
         int ls = lineStart(text, caret);
         int le = lineEnd(text, caret);
         if (caret != le || caret == ls) {
@@ -392,7 +399,7 @@ public final class MarkdownLines {
      * the caller's ordinary Tab runs; an item that cannot be nested any deeper is an edit that changes
      * nothing (Tab is still consumed: spaces in the middle of the item are never what was meant).
      */
-    public static MarkdownEdit indentItem(String text, int caret, boolean outdent) {
+    public static @Nullable MarkdownEdit indentItem(String text, int caret, boolean outdent) {
         int ls = lineStart(text, caret);
         int le = lineEnd(text, caret);
         String line = text.substring(ls, le);
@@ -417,7 +424,7 @@ public final class MarkdownLines {
     }
 
     /** Moves the item on {@code [ls, le)} one level in or out; null when there is no level to move to. */
-    private static MarkdownEdit shift(String text, int ls, int le, MarkdownLine l, boolean outdent) {
+    private static @Nullable MarkdownEdit shift(String text, int ls, int le, MarkdownLine l, boolean outdent) {
         int width = l.indent().length();
         // Walk up: the nearest item that is not deeper than this one (indent), or shallower (outdent).
         MarkdownLine anchor = null;
@@ -476,7 +483,8 @@ public final class MarkdownLines {
         if (!tail.isEmpty()) {
             long oldLevelNext = outdent ? 1 : (anchor != null && anchor.isOrdered() ? anchor.number() + 1 : l.number());
             tail = renumberTail(tail, moved, l.isOrdered() ? number + 1 : -1);
-            tail = renumberTail(tail, l, l.isOrdered() && (outdent || anchor.isOrdered()) ? oldLevelNext : -1);
+            tail = renumberTail(
+                    tail, l, l.isOrdered() && (outdent || (anchor != null && anchor.isOrdered())) ? oldLevelNext : -1);
         }
         return new MarkdownEdit(ls, end, moved.text() + children + tail, ls, ls);
     }
@@ -536,7 +544,7 @@ public final class MarkdownLines {
      * ordered item, the list is numbered lazily (every item the same number) or is already in order; the
      * edit's caret is {@code offset} on its text.
      */
-    public static MarkdownEdit renumber(String text, int offset) {
+    public static @Nullable MarkdownEdit renumber(String text, int offset) {
         return renumber(text, offset, offset);
     }
 
@@ -544,7 +552,7 @@ public final class MarkdownLines {
      * {@link #renumber(String, int)} for a selection (a block of lines that was moved): the list is the one
      * the selection starts in, and both ends of the selection are mapped into the result.
      */
-    public static MarkdownEdit renumber(String text, int selStart, int selEnd) {
+    public static @Nullable MarkdownEdit renumber(String text, int selStart, int selEnd) {
         int offset = Math.min(selStart, selEnd);
         int ls = lineStart(text, offset);
         int le = lineEnd(text, offset);
@@ -644,7 +652,7 @@ public final class MarkdownLines {
     }
 
     /** The next item after offset {@code le} at the level of {@code l}, or null. */
-    private static MarkdownLine nextSibling(String text, int le, MarkdownLine l) {
+    private static @Nullable MarkdownLine nextSibling(String text, int le, MarkdownLine l) {
         int at = le;
         while (at < text.length()) {
             int end = lineEnd(text, at + 1);

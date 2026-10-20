@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure helpers for "select all occurrences" — turning the word/selection under the caret into a set of
  * ranges that the caller places multiple carets at. No toolkit, so it is unit-tested; the actual caret
@@ -16,12 +18,12 @@ public final class SelectOccurrences {
      * caret is not on a word — used to seed the query when there's no selection. A word char is a letter,
      * digit or underscore, matching {@code SearchMatcher}'s whole-word test.
      */
-    public static int[] wordAt(String text, int caret) {
+    public static int @Nullable [] wordAt(String text, int caret) {
         return wordAt(text, caret, null);
     }
 
     /** As {@link #wordAt(String, int)}, with {@code language}'s identifier characters ({@code $el} in JavaScript). */
-    public static int[] wordAt(String text, int caret, String language) {
+    public static int @Nullable [] wordAt(String text, int caret, @Nullable String language) {
         if (text == null || caret < 0 || caret > text.length()) {
             return null;
         }

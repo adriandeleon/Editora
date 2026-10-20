@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -82,7 +84,7 @@ public interface ResponseScripts {
      * only), their tests and log, their session changes, and warnings.
      */
     record PreResult(
-            String notSent,
+            @Nullable String notSent,
             Map<String, String> variables,
             HttpTests tests,
             List<GlobalChange> changes,
@@ -113,7 +115,8 @@ public interface ResponseScripts {
      * A change to the session, in the order the scripts made it: {@code set} {@code name} to {@code value},
      * {@code clear} {@code name}, {@code clearAll}, or a global header's {@code headerSet} / {@code headerClear}.
      */
-    record GlobalChange(String kind, String name, String value) {
+    record GlobalChange(
+            String kind, @Nullable String name, @Nullable String value) {
         public static final String SET = "set";
         public static final String CLEAR = "clear";
         public static final String CLEAR_ALL = "clearAll";

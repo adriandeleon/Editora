@@ -7,6 +7,7 @@ import java.util.List;
 
 import com.editora.process.ConfiguredCommand;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The container engine's command line: {@code docker}, or {@code podman}, which takes the same arguments.
@@ -55,7 +56,7 @@ public record ContainerEngine(List<String> command) {
     }
 
     /** {@code inspect <container>}, parsed; null when the engine does not answer or knows no such container. */
-    public ContainerInfo inspect(String container) {
+    public @Nullable ContainerInfo inspect(String container) {
         List<String> argv = new ArrayList<>(command);
         argv.addAll(List.of("inspect", "--type", "container", container));
         ProcessRunner.Result r = ProcessRunner.run(null, QUICK, argv);
@@ -76,7 +77,7 @@ public record ContainerEngine(List<String> command) {
      * The running container the Dev Containers CLI or VS Code started for {@code folder} (its
      * {@value ContainerInfo#LOCAL_FOLDER_LABEL} label), or null.
      */
-    public String devContainerFor(Path folder) {
+    public @Nullable String devContainerFor(Path folder) {
         List<String> argv = new ArrayList<>(command);
         argv.addAll(List.of(
                 "ps",

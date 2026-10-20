@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 import com.editora.editops.StringCase;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A VS Code snippet regex transform — the {@code /regex/format/flags} half of {@code ${1/re/fmt/flags}}.
@@ -69,7 +70,7 @@ public final class SnippetTransform {
      * legitimately contain an unbalanced brace (a character class like {@code [}]}), which would send a
      * brace counter off the end of the body.
      */
-    public static Parsed parseAt(String s, int from) {
+    public static @Nullable Parsed parseAt(String s, int from) {
         if (s == null || from < 0 || from > s.length()) {
             return null;
         }
@@ -135,7 +136,11 @@ public final class SnippetTransform {
      * A {@code $n} reference, optionally carrying a case modifier or a conditional. {@code ifText} is used
      * when the group matched something, {@code elseText} when it did not; either may be null.
      */
-    private record Group(int index, Modifier modifier, String ifText, String elseText) implements Part {
+    private record Group(
+            int index,
+            Modifier modifier,
+            @Nullable String ifText,
+            @Nullable String elseText) implements Part {
         @Override
         public String resolve(Matcher m) {
             String value = groupOrEmpty(m, index);
@@ -273,7 +278,7 @@ public final class SnippetTransform {
     }
 
     /** Parses the inside of a {@code ${…}} reference: {@code n}, {@code n:/mod}, {@code n:+if}, etc. */
-    private static Group parseBracedGroup(String body) {
+    private static @Nullable Group parseBracedGroup(String body) {
         int k = 0;
         while (k < body.length() && Character.isDigit(body.charAt(k))) {
             k++;
@@ -317,7 +322,7 @@ public final class SnippetTransform {
     }
 
     /** A group index, or null when the digit run overflows an int (treat the {@code $…} as literal). */
-    private static Integer parseIndex(String s, int from, int to) {
+    private static @Nullable Integer parseIndex(String s, int from, int to) {
         try {
             return Integer.parseInt(s.substring(from, to));
         } catch (NumberFormatException overflow) {

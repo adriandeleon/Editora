@@ -18,6 +18,7 @@ import javafx.scene.input.Clipboard;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 
+import com.editora.config.PathDisplay;
 import com.editora.diff.BinaryDiff;
 import com.editora.diff.BlobRewrite;
 import com.editora.diff.ConflictParser;
@@ -979,8 +980,8 @@ final class DiffCoordinator {
         String summary = tr("diff.directory.summary", entries.size(), result.identicalFiles())
                 + (result.truncated() ? " · " + tr("diff.directory.truncated") : "")
                 + (result.incomplete() ? " · " + tr("diff.directory.incomplete") : "");
-        String leftName = pathName(leftRoot);
-        String rightName = pathName(rightRoot);
+        String leftName = PathDisplay.fileName(leftRoot);
+        String rightName = PathDisplay.fileName(rightRoot);
         DirectoryReviewPane review = new DirectoryReviewPane(
                 tr("diff.title.directories", leftName, rightName), entries, summary, (entry, ready) -> {
                     Path leftFile = leftRoot.resolve(entry.label());
@@ -1022,10 +1023,6 @@ final class DiffCoordinator {
                                                 : "status.diff.directoriesIdentical",
                                 result.identicalFiles())
                         : tr("status.diff.directoryOpened", entries.size()));
-    }
-
-    private static String pathName(Path path) {
-        return path.getFileName() == null ? path.toString() : path.getFileName().toString();
     }
 
     private static boolean readableFile(Path path) {
@@ -1278,7 +1275,7 @@ final class DiffCoordinator {
                         : tr("diff.directory.refSummary", entries.size(), displayRef, rightRef))
                 + (result.truncated() ? " · " + tr("diff.directory.truncated") : "");
         String reviewTitle = working
-                ? tr("diff.title.vsBranch", pathName(folder), displayRef)
+                ? tr("diff.title.vsBranch", PathDisplay.fileName(folder), displayRef)
                 : tr("diff.title.refVsRef", displayRef, rightRef);
         DirectoryReviewPane review = new DirectoryReviewPane(reviewTitle, entries, summary, (entry, ready) -> {
             String repoPath = prefix + entry.label();

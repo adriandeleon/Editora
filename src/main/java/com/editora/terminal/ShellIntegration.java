@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.process.TargetCache;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The scripts that make bash and zsh tell the terminal where they are and where each prompt, command and exit
@@ -35,7 +36,7 @@ public final class ShellIntegration {
 
     private static final String RESOURCES = "/com/editora/terminal/shell-integration/";
 
-    private static volatile Map<String, String> scripts;
+    private static volatile @Nullable Map<String, String> scripts;
 
     /** The scripts' text by relative name, read once. */
     static Map<String, String> scripts() {
@@ -58,6 +59,15 @@ public final class ShellIntegration {
         return scripts;
     }
 
+    /** The text of {@code name}, one of {@link #FILES}. */
+    private static String script(String name) {
+        String text = scripts().get(name);
+        if (text == null) {
+            throw new IllegalStateException("not a shell integration script: " + name);
+        }
+        return text;
+    }
+
     /** The folder name: the first 12 hex digits of the scripts' SHA-256. */
     static String version() {
         try {
@@ -65,7 +75,7 @@ public final class ShellIntegration {
             for (String name : FILES) {
                 sha.update(name.getBytes(StandardCharsets.UTF_8));
                 sha.update((byte) 0);
-                sha.update(scripts().get(name).getBytes(StandardCharsets.UTF_8));
+                sha.update(script(name).getBytes(StandardCharsets.UTF_8));
                 sha.update((byte) 0);
             }
             return HexFormat.of().formatHex(sha.digest()).substring(0, 12);
@@ -84,7 +94,7 @@ public final class ShellIntegration {
             }
             Files.createDirectories(file.getParent());
             Path aside = Files.createTempFile(file.getParent(), ".editora-", ".tmp");
-            Files.writeString(aside, scripts().get(name));
+            Files.writeString(aside, script(name));
             Files.move(aside, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         }
         return folder;
@@ -98,10 +108,13 @@ public final class ShellIntegration {
         String base = "shell-integration/" + version();
         String bash = null;
         for (String name : FILES) {
-            String written = cache.putText(base + "/" + name, scripts().get(name));
+            String written = cache.putText(base + "/" + name, script(name));
             if (name.equals("editora.bash")) {
                 bash = written;
             }
+        }
+        if (bash == null) {
+            throw new IllegalStateException("editora.bash is not among the shell integration scripts");
         }
         return bash.substring(0, bash.length() - "/editora.bash".length());
     }
@@ -110,7 +123,7 @@ public final class ShellIntegration {
      * The path an OSC 7 report names: the path of its {@code file://host/path} URL, percent-decoded, or the text
      * itself when a shell sent a bare path. Null when it is neither.
      */
-    static String pathOfCwdUrl(String url) {
+    static @Nullable String pathOfCwdUrl(String url) {
         CwdReport report = parseCwdUrl(url);
         return report == null ? null : report.path();
     }
@@ -123,7 +136,7 @@ public final class ShellIntegration {
      * {@code URI} cut a path at {@code #} and {@code ?} and refused {@code [}, {@code "}, {@code |} and
      * {@code \}, so a folder named {@code dir #1} became {@code dir }. Null when it is not a folder report.
      */
-    static CwdReport parseCwdUrl(String url) {
+    static @Nullable CwdReport parseCwdUrl(String url) {
         if (url == null || url.isBlank()) {
             return null;
         }

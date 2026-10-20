@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +29,7 @@ import com.editora.install.InstallCatalog.Step;
 import com.editora.plugin.PluginRegistry;
 import com.editora.plugin.Unzip;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs {@link InstallCatalog} steps off the FX thread (the {@code GitService}/{@code MermaidService} idiom:
@@ -43,8 +45,9 @@ public final class InstallService {
      * resolved command for a per-OS binary install ({@code installedCommand}, the extracted binary path +
      * any suffix — the coordinator persists it into the server's Settings command; {@code null} otherwise).
      */
-    public record Result(boolean ok, String message, String installedCommand) {
-        public Result(boolean ok, String message) {
+    public record Result(
+            boolean ok, @Nullable String message, @Nullable String installedCommand) {
+        public Result(boolean ok, @Nullable String message) {
             this(ok, message, null);
         }
     }
@@ -168,7 +171,7 @@ public final class InstallService {
     // --- step execution ------------------------------------------------------------------------
 
     /** Runs one step; returns the resolved server command for an ARCHIVE step, else {@code null}. */
-    private String runStep(Step s, Path configDir) throws Exception {
+    private @Nullable String runStep(Step s, Path configDir) throws Exception {
         switch (s.kind()) {
             case NPM_GLOBAL -> runCommand(InstallCatalog.npmInstallGlobalArgv(s.npmPackages()), s.id());
             case PIP_TARGET -> {
@@ -534,7 +537,8 @@ public final class InstallService {
                 makeExecutable(launcher);
                 return staged.relativize(launcher);
             });
-            return InstallCatalog.binaryCommand(dest.resolve(launcherInInstall.toString()), server.arguments());
+            Path launcherPath = Objects.requireNonNull(launcherInInstall, "the unpack step returns the launcher");
+            return InstallCatalog.binaryCommand(dest.resolve(launcherPath.toString()), server.arguments());
         } finally {
             deleteQuietly(archive);
         }
@@ -597,6 +601,7 @@ public final class InstallService {
     /** Unpacks an install into {@code staged} and checks it; throws to reject it. */
     @FunctionalInterface
     private interface Unpack<T> {
+        @Nullable
         T into(Path staged) throws Exception;
     }
 
@@ -610,9 +615,12 @@ public final class InstallService {
      * the working version. Now the work happens in a folder beside {@code dest} (same volume, so the swap is
      * a rename) and a failure leaves {@code dest} exactly as it was.
      */
-    private static <T> T replaceInstall(Path dest, Unpack<T> unpack) throws Exception {
+    private static <T> @Nullable T replaceInstall(Path dest, Unpack<T> unpack) throws Exception {
         Path target = dest.toAbsolutePath();
         Path parent = target.getParent();
+        if (parent == null) {
+            throw new IOException("cannot install into a filesystem root: " + target);
+        }
         Files.createDirectories(parent);
         String prefix = STAGING_PREFIX + target.getFileName() + "-";
         sweepAbandonedStaging(parent, prefix);
@@ -713,7 +721,8 @@ public final class InstallService {
             makeExecutable(binary);
             return staged.relativize(binary);
         });
-        return InstallCatalog.binaryCommand(dest.resolve(binaryInInstall.toString()), spec.commandSuffix());
+        Path binaryPath = Objects.requireNonNull(binaryInInstall, "the unpack step returns the binary");
+        return InstallCatalog.binaryCommand(dest.resolve(binaryPath.toString()), spec.commandSuffix());
     }
 
     /** Extracts a downloaded binary archive (by the suffix of the URL it came from) into {@code dest}. */
@@ -763,7 +772,7 @@ public final class InstallService {
     /** The first archive URL (.zip/.tar.gz/.tgz/.tar.xz/.txz) in {@code json} that contains {@code substr} —
      *  skips the sibling {@code .sha256}/{@code .sig} checksum URLs that also contain the per-platform
      *  substring. */
-    static String pickArchiveUrl(String json, String substr) {
+    static @Nullable String pickArchiveUrl(String json, String substr) {
         java.util.regex.Matcher m = ARCHIVE_URL.matcher(json == null ? "" : json);
         while (m.find()) {
             if (m.group().contains(substr)) {
@@ -774,7 +783,7 @@ public final class InstallService {
     }
 
     /** Walks {@code dest} for the LS binary (exact or {@code prefix} match; tolerates a Windows extension). */
-    static Path findBinary(Path dest, String name, boolean prefix) throws IOException {
+    static @Nullable Path findBinary(Path dest, String name, boolean prefix) throws IOException {
         try (Stream<Path> s = Files.walk(dest)) {
             return s.filter(Files::isRegularFile)
                     .filter(p -> linkStaysInside(dest, p))
@@ -825,7 +834,7 @@ public final class InstallService {
      * parse-stable C one: the output is only ever shown, and several of these (RubyGems, a JVM-based tool)
      * fail on non-ASCII package metadata or install paths when forced to ASCII.
      */
-    private void runCommand(List<String> argv, String id) throws InstallException {
+    private void runCommand(@Nullable List<String> argv, String id) throws InstallException {
         ProcessRunner.Result r = ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, argv);
         if (!r.ok()) {
             throw new InstallException(id + ": " + (r.message().isBlank() ? "command failed" : r.message()));
@@ -921,7 +930,7 @@ public final class InstallService {
         return url;
     }
 
-    private byte[] download(String url) throws Exception {
+    private byte[] download(@Nullable String url) throws Exception {
         if (!PluginRegistry.isHttps(url)) {
             throw new InstallException("download url must be https: " + url);
         }
@@ -950,7 +959,7 @@ public final class InstallService {
         return !ProcessRunner.resolveExecutable(List.of(exe)).get(0).equals(exe);
     }
 
-    private static Path findJavaDebugJar(Path root) throws IOException {
+    private static @Nullable Path findJavaDebugJar(Path root) throws IOException {
         try (Stream<Path> s = Files.walk(root)) {
             return s.filter(Files::isRegularFile)
                     .filter(p -> DebugAdapterLocator.matches(p.getFileName().toString()))

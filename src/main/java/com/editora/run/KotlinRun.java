@@ -7,6 +7,8 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How Run and Debug start one Kotlin file. A file is one of three shapes:
  *
@@ -91,7 +93,7 @@ public final class KotlinRun {
     }
 
     /** {@code kotlinc -script <file> args…}. */
-    public static List<String> scriptArgv(String kotlinc, String file, List<String> args) {
+    public static List<String> scriptArgv(String kotlinc, String file, @Nullable List<String> args) {
         List<String> argv = new ArrayList<>(List.of(kotlinc, "-script", file));
         if (args != null) {
             argv.addAll(args);
@@ -191,7 +193,7 @@ public final class KotlinRun {
      * {@code output} is not the Kotlin compiler's — JetBrains' Kotlin toolchain CLI, also named {@code kotlin},
      * prints something else.
      */
-    public static String[] compilerVersion(String output) {
+    public static String @Nullable [] compilerVersion(String output) {
         if (output == null) {
             return null;
         }
@@ -215,7 +217,7 @@ public final class KotlinRun {
     }
 
     /** {@code 25.0.4+7-LTS} → {@code 25.0.4}: the build suffix says nothing a reader needs. */
-    private static String jre(String version) {
+    private static @Nullable String jre(String version) {
         if (version == null) {
             return null;
         }

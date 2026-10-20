@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The saved shape of a window's editor area: the tree of split groups, so a layout of two files side by side
@@ -24,7 +25,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class EditorGroupLayout {
 
     /** {@code "HORIZONTAL"} or {@code "VERTICAL"} on a branch; {@code null} on a leaf. */
-    private String orientation;
+    private @Nullable String orientation;
 
     /** Two or more children on a branch; empty on a leaf. */
     private List<EditorGroupLayout> children = new ArrayList<>();
@@ -68,7 +69,7 @@ public class EditorGroupLayout {
         return n;
     }
 
-    public String getOrientation() {
+    public @Nullable String getOrientation() {
         return orientation;
     }
 

@@ -1,5 +1,7 @@
 package com.editora.editops;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested line operations — <b>duplicate line</b>, <b>move line up</b>, and <b>move line
  * down</b> — computing a minimal {@link Edit} (a replacement span + the resulting caret) from the current
@@ -36,7 +38,7 @@ public final class LineOps {
     }
 
     /** Move the selection's lines above the line before them, still selected. No-op at the top. */
-    public static BlockEdit moveLinesUp(String text, int selStart, int selEnd) {
+    public static @Nullable BlockEdit moveLinesUp(String text, int selStart, int selEnd) {
         int[] block = blockBounds(text, selStart, selEnd);
         if (block[0] == 0) {
             return null;
@@ -49,7 +51,7 @@ public final class LineOps {
     }
 
     /** Move the selection's lines below the line after them, still selected. No-op at the bottom. */
-    public static BlockEdit moveLinesDown(String text, int selStart, int selEnd) {
+    public static @Nullable BlockEdit moveLinesDown(String text, int selStart, int selEnd) {
         int[] block = blockBounds(text, selStart, selEnd);
         if (block[1] >= text.length()) {
             return null;
@@ -100,7 +102,7 @@ public final class LineOps {
      * Swap the caret's line with the previous one; the caret follows the moved line up, keeping its
      * column. No-op on the first line.
      */
-    public static Edit moveLineUp(String text, int caret) {
+    public static @Nullable Edit moveLineUp(String text, int caret) {
         int curStart = lineStart(text, caret);
         if (curStart == 0) {
             return null; // already the first line
@@ -118,7 +120,7 @@ public final class LineOps {
      * Swap the caret's line with the next one; the caret follows the moved line down, keeping its
      * column. No-op on the last line.
      */
-    public static Edit moveLineDown(String text, int caret) {
+    public static @Nullable Edit moveLineDown(String text, int caret) {
         int n = text.length();
         int curStart = lineStart(text, caret);
         int curEnd = lineEnd(text, caret);

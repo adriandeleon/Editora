@@ -4,6 +4,8 @@ import java.nio.charset.StandardCharsets;
 
 import javafx.scene.input.KeyEvent;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Records what a keystroke actually was and what went to the shell.
  *
@@ -31,7 +33,7 @@ final class KeyTrace {
     }
 
     /** Logs one event and the bytes it produced. {@code sent} may be null for "nothing sent". */
-    static void log(KeyEvent e, byte[] sent) {
+    static void log(KeyEvent e, byte @Nullable [] sent) {
         if (!ENABLED) return;
         LOG.info(describe(e, sent));
     }
@@ -43,7 +45,7 @@ final class KeyTrace {
      * where it is something unprintable, which written literally would be invisible in the log —
      * exactly as it was invisible on screen.
      */
-    static String describe(KeyEvent e, byte[] sent) {
+    static String describe(KeyEvent e, byte @Nullable [] sent) {
         StringBuilder out = new StringBuilder();
         out.append(e.getEventType().getName())
                 .append(" code=")
@@ -94,7 +96,7 @@ final class KeyTrace {
      * unprintable box, which looks identical to a character it merely has no glyph for. One is a bug
      * here and the other is a font.
      */
-    static String hex(byte[] sent) {
+    static String hex(byte @Nullable [] sent) {
         if (sent == null) return "<nothing>";
         StringBuilder out = new StringBuilder();
         for (byte b : sent) {

@@ -11,6 +11,8 @@ import java.util.Base64;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Ed25519 signature verification for the plugin registry (Option 1: one pinned key). The registry's
  * {@code index.json} is signed with a private key held by the registry owner; the matching <b>public</b>
@@ -26,13 +28,13 @@ public final class PluginSignature {
     private static final Logger LOG = Logger.getLogger(PluginSignature.class.getName());
     private static final String RESOURCE = "/com/editora/plugin/editora-registry.pub";
 
-    private static volatile PublicKey cached;
+    private static volatile @Nullable PublicKey cached;
     private static volatile boolean loaded;
 
     private PluginSignature() {}
 
     /** The bundled registry public key, or {@code null} when absent/unreadable. Cached. */
-    public static PublicKey bundledPublicKey() {
+    public static @Nullable PublicKey bundledPublicKey() {
         if (loaded) {
             return cached;
         }
@@ -50,7 +52,7 @@ public final class PluginSignature {
         return bundledPublicKey() != null;
     }
 
-    private static PublicKey load() {
+    private static @Nullable PublicKey load() {
         try (InputStream in = PluginSignature.class.getResourceAsStream(RESOURCE)) {
             if (in == null) {
                 return null;

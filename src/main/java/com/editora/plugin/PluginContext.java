@@ -7,6 +7,8 @@ import java.util.function.Supplier;
 import javafx.scene.Node;
 import javafx.scene.layout.Region;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The capability surface handed to a {@link Plugin#start(PluginContext)}. A fresh context is created
  * <em>per window</em> (Editora is multi-window), so commands and tool-window content nodes a plugin
@@ -59,7 +61,12 @@ public interface PluginContext {
      * {@link #registerToolWindow(String, String, ToolWindowSide, Region, String, Supplier, boolean)} to opt out.
      */
     default void registerToolWindow(
-            String id, String title, ToolWindowSide side, Region content, String commandId, Supplier<Node> icon) {
+            String id,
+            String title,
+            ToolWindowSide side,
+            Region content,
+            String commandId,
+            @Nullable Supplier<Node> icon) {
         registerToolWindow(id, title, side, content, commandId, icon, true);
     }
 
@@ -81,7 +88,7 @@ public interface PluginContext {
             ToolWindowSide side,
             Region content,
             String commandId,
-            Supplier<Node> icon,
+            @Nullable Supplier<Node> icon,
             boolean needsBuffer);
 
     /** Adds an item to the editor's right-click menu; the action receives the {@link ActiveEditor}. */

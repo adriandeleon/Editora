@@ -13,6 +13,7 @@ import javafx.scene.control.TabPane;
 import javafx.stage.Stage;
 
 import com.editora.config.ConfigManager;
+import com.editora.config.PathDisplay;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.config.WorkspaceState;
@@ -245,7 +246,7 @@ final class WindowSessionCoordinator {
             Path p = com.editora.vfs.Vfs.parseStorable(f.getPath()); // non-null: the filter above kept only readable
             boolean active = i == selectIndex;
             // A raster image restores into the read-only image viewer.
-            if (ImageFormats.isSupported(p.getFileName().toString())) {
+            if (ImageFormats.isSupported(PathDisplay.fileName(p))) {
                 Tab tab = host.fileWorkflows().openImageTab(p, active);
                 if (f.isPinned()) {
                     host.pinned().add(tab);
@@ -254,7 +255,7 @@ final class WindowSessionCoordinator {
                 continue;
             }
             // A PDF restores into the read-only PDF viewer.
-            if (PdfViewerPane.isPdf(p.getFileName().toString())) {
+            if (PdfViewerPane.isPdf(PathDisplay.fileName(p))) {
                 Tab tab = host.fileWorkflows().openPdfTab(p, active);
                 if (f.isPinned()) {
                     host.pinned().add(tab);

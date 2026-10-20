@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Assigning and finding the single-character shortcuts that give a bookmark a one-chord jump.
  *
@@ -71,7 +73,7 @@ public final class BookmarkMnemonics {
     }
 
     /** Where {@code mnemonic} points, or {@code null} when nothing holds it. */
-    public static Located find(Map<String, List<Bookmark>> bookmarks, String mnemonic) {
+    public static @Nullable Located find(Map<String, List<Bookmark>> bookmarks, String mnemonic) {
         String m = normalize(mnemonic);
         if (m.isEmpty()) {
             return null;

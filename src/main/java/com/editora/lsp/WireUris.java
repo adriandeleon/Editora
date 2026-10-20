@@ -2,6 +2,8 @@ package com.editora.lsp;
 
 import java.nio.file.Path;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Converts between the URI a document is <em>keyed</em> by inside {@link LspManager} and the URI its language
  * server knows it by. For a server running on this machine the two are the same {@code file:} string. They
@@ -34,7 +36,7 @@ interface WireUris {
      * {@code sftp://<authority>/a b/c.py} is {@code file:///a%20b/c.py} to it, and any {@code file:} URI it
      * sends names a file on that host. Other schemes pass through.
      */
-    static WireUris remote(String authority) {
+    static WireUris remote(@Nullable String authority) {
         String prefix = "sftp://" + authority;
         return new WireUris() {
             @Override
@@ -154,7 +156,7 @@ interface WireUris {
     String toKey(String wireUri);
 
     /** The file a server's URI names, or {@code null} when it is not a file Editora can open. */
-    default Path toPath(String wireUri) {
+    default @Nullable Path toPath(String wireUri) {
         return DocumentUris.toPath(toKey(wireUri));
     }
 }

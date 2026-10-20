@@ -15,6 +15,7 @@ import com.editora.maven.MavenPluginGoals;
 import com.editora.maven.PomModel;
 import com.editora.maven.PomParser;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The set of build tools Editora integrates as a toolbar button + actions popup + streaming console (see
@@ -45,7 +46,7 @@ public enum BuildTool {
         }
 
         @Override
-        public Detected parse(Path root, Path projectRoot) throws Exception {
+        public Detected parse(Path root, @Nullable Path projectRoot) throws Exception {
             PomModel model = PomParser.parseFile(root.resolve("pom.xml"));
             // Local repository only, and best-effort: a plugin that isn't downloaded yet simply contributes
             // no goal group. Never let that sink the detection — the lifecycle/profile sections don't need it.
@@ -73,7 +74,7 @@ public enum BuildTool {
         }
 
         @Override
-        public Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
+        public @Nullable Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
             return wrapperFile(root, projectRoot, isWindows, "mvnw", "mvnw.cmd");
         }
     },
@@ -191,7 +192,7 @@ public enum BuildTool {
         }
 
         @Override
-        public Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
+        public @Nullable Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
             return wrapperFile(root, projectRoot, isWindows, "gradlew", "gradlew.bat");
         }
 
@@ -278,7 +279,7 @@ public enum BuildTool {
         }
 
         @Override
-        public Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
+        public @Nullable Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
             return wrapperFile(root, projectRoot, isWindows, "mill", "mill.bat");
         }
 
@@ -405,7 +406,8 @@ public enum BuildTool {
      * short {@code label} (Maven's artifactId / npm's package name, may be {@code null}) for the Settings
      * "Found: …" status row.
      */
-    public record Detected(BuildActionsProvider provider, String label) {}
+    public record Detected(
+            BuildActionsProvider provider, @Nullable String label) {}
 
     private final String id;
     private final String displayName;
@@ -449,12 +451,12 @@ public enum BuildTool {
      * anything a tool looks for <em>above</em> the marker directory (Maven's reactor root). The default
      * ignores it.
      */
-    public Detected parse(Path root, Path projectRoot) throws Exception {
+    public Detected parse(Path root, @Nullable Path projectRoot) throws Exception {
         return parse(root);
     }
 
     /** A file's text, or {@code null} when it cannot be read (a reactor check must never fail a detection). */
-    private static String readOrNull(Path file) {
+    private static @Nullable String readOrNull(Path file) {
         try {
             return Files.isRegularFile(file) ? Files.readString(file) : null;
         } catch (java.io.IOException | RuntimeException e) {
@@ -492,7 +494,7 @@ public enum BuildTool {
      * privileges. Only Maven and Gradle have wrappers; every other tool returns {@code null} and so is never
      * gated. Empty by default so a new tool is un-gated unless it opts in.
      */
-    public final Path repoWrapper(Path root, boolean isWindows) {
+    public final @Nullable Path repoWrapper(Path root, boolean isWindows) {
         return repoWrapper(root, root, isWindows);
     }
 
@@ -501,7 +503,7 @@ public enum BuildTool {
      * {@link #executable(Path, Path, boolean, String)} — the two must agree, and the trust gate keys on the
      * file returned here: its directory is the one whose author gets to run code.
      */
-    public Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
+    public @Nullable Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
         return null;
     }
 
@@ -628,7 +630,7 @@ public enum BuildTool {
      *
      * <p>The nearest usable wrapper wins, from {@code root} up to and including {@code projectRoot}.
      */
-    private static Path wrapperFile(
+    private static @Nullable Path wrapperFile(
             Path root, Path projectRoot, boolean isWindows, String unixName, String windowsName) {
         if (!com.editora.process.ExecTargets.runsHere(root)) {
             isWindows = false; // a remote host, a container, WSL: POSIX, whatever this machine is
@@ -678,7 +680,7 @@ public enum BuildTool {
      * else its workspace root's (looked for up to {@code projectRoot}). See {@link NpmPackageManager#detect(Path,
      * Path, Path, java.util.function.Predicate, java.util.function.Function)}.
      */
-    public static NpmPackageManager.Detection npmManager(Path root, Path projectRoot) {
+    public static NpmPackageManager.Detection npmManager(Path root, @Nullable Path projectRoot) {
         return NpmPackageManager.detect(root, projectRoot, userHome(), Files::exists, p -> {
             try {
                 return Files.isRegularFile(p) ? java.util.Optional.of(Files.readString(p)) : java.util.Optional.empty();

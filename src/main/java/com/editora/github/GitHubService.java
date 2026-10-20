@@ -22,6 +22,7 @@ import com.editora.process.CommandLog;
 import com.editora.process.ConfiguredCommand;
 import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The native-{@code gh} facade — a structural clone of {@code GitService}. Every GitHub command shells out via
@@ -106,14 +107,14 @@ public final class GitHubService {
      * null = not yet probed (for the current {@link #command}, on the host of {@link #location}); cached by
      * every conclusive {@link #detect}.
      */
-    private volatile Availability availability;
+    private volatile @Nullable Availability availability;
 
     /**
      * Where {@code gh} is asked: the window's repository (or folder). A repository on a remote host is served
      * by that host's own {@code gh}, signed in there or not, so availability is per host: {@link #byHost}
      * keeps each host's last answer, and {@link #availability} is the one for {@link #location}'s.
      */
-    private volatile Path location;
+    private volatile @Nullable Path location;
 
     private volatile String locationHost = LOCAL;
 
@@ -125,7 +126,7 @@ public final class GitHubService {
     private final Object probeLock = new Object();
 
     /** The consumers of the probe that is queued or running ({@code null} when none is): detects coalesce. */
-    private List<Consumer<Availability>> probeWaiters;
+    private @Nullable List<Consumer<Availability>> probeWaiters;
 
     /** {@link System#nanoTime} when the last probe finished ({@link #redetectIfOlderThan}). */
     private volatile long lastProbeNanos = System.nanoTime() - TimeUnit.HOURS.toNanos(1);
@@ -283,7 +284,7 @@ public final class GitHubService {
     }
 
     /** The last probed availability (may be {@code null} before the first {@link #detect}). */
-    public Availability availability() {
+    public @Nullable Availability availability() {
         return availability;
     }
 
@@ -306,12 +307,12 @@ public final class GitHubService {
         }
     }
 
-    private static String hostOf(Path dir) {
+    private static String hostOf(@Nullable Path dir) {
         return ExecTargets.runsHere(dir) ? LOCAL : ExecTargets.forPath(dir).id();
     }
 
     /** The gh for {@code dir}'s machine: the configured one here, the host's own (or its configured tool) there. */
-    private List<String> commandFor(Path dir) {
+    private List<String> commandFor(@Nullable Path dir) {
         if (ExecTargets.runsHere(dir)) {
             return command;
         }
@@ -372,7 +373,7 @@ public final class GitHubService {
                 List<String> probed = commandFor(at);
                 // Another machine is asked from a directory it certainly has: a remote filesystem's root, or the
                 // folder itself when it is this machine's but its tools run elsewhere. This machine from anywhere.
-                Path anchor = LOCAL.equals(host)
+                Path anchor = at == null || LOCAL.equals(host) // no location is this machine
                         ? null
                         : at.getFileSystem() == java.nio.file.FileSystems.getDefault()
                                 ? at.toAbsolutePath()
@@ -421,12 +422,12 @@ public final class GitHubService {
      * (inconclusive: not evidence that it is missing). Never logged to the {@link CommandLog}. Public so the
      * Doctor screen reports the same answer.
      */
-    public static Availability probe(List<String> command, Duration timeout) {
+    public static @Nullable Availability probe(List<String> command, Duration timeout) {
         return probe(command, null, timeout);
     }
 
     /** {@link #probe(List, Duration)} run in {@code dir}: on the machine {@code dir} is on. */
-    static Availability probe(List<String> command, Path dir, Duration timeout) {
+    static @Nullable Availability probe(List<String> command, @Nullable Path dir, Duration timeout) {
         ProcessRunner.Result v;
         try {
             v = run(command, dir, timeout, null, "--version");
@@ -509,7 +510,7 @@ public final class GitHubService {
     private ProcessRunner.Cancellation listPrs(
             Path dir,
             GitHubListQuery query,
-            AtomicReference<ProcessRunner.Cancellation> slot,
+            @Nullable AtomicReference<ProcessRunner.Cancellation> slot,
             Consumer<PrListResult> onResult) {
         return read(
                 slot,
@@ -524,8 +525,8 @@ public final class GitHubService {
     }
 
     /** A PR's detail ({@code gh pr view <n> --json …}); posts {@code null} on failure. */
-    public ProcessRunner.Cancellation prView(Path dir, int number, Consumer<PrViewParser.PrDetail> onResult) {
-        return read(
+    public ProcessRunner.Cancellation prView(Path dir, int number, Consumer<PrViewParser.@Nullable PrDetail> onResult) {
+        return this.<PrViewParser.@Nullable PrDetail>read(
                 null,
                 cancel -> {
                     ProcessRunner.Result r = gh(
@@ -698,7 +699,7 @@ public final class GitHubService {
      * @param pr the pull request ({@code null} when {@code !ok})
      * @param runs its check runs, with names and links; empty when it has none
      */
-    public record BranchChecks(boolean ok, PrViewParser.PrDetail pr, List<ChecksParser.CheckRun> runs) {
+    public record BranchChecks(boolean ok, PrViewParser.@Nullable PrDetail pr, List<ChecksParser.CheckRun> runs) {
         public static final BranchChecks NONE = new BranchChecks(false, null, List.of());
     }
 
@@ -739,7 +740,8 @@ public final class GitHubService {
     }
 
     /** The pull request of the checked-out branch, or {@code null} when it has none. Runs on the lane. */
-    private PrViewParser.PrDetail currentBranchPr(Path dir, ProcessRunner.Cancellation cancel, boolean logged) {
+    private PrViewParser.@Nullable PrDetail currentBranchPr(
+            Path dir, ProcessRunner.Cancellation cancel, boolean logged) {
         String[] args = {
             "pr", "view", "--json", "number,title,body,author,baseRefName,headRefName,state,url,additions,deletions"
         };
@@ -790,7 +792,7 @@ public final class GitHubService {
     private ProcessRunner.Cancellation listRuns(
             Path dir,
             GitHubListQuery query,
-            AtomicReference<ProcessRunner.Cancellation> slot,
+            @Nullable AtomicReference<ProcessRunner.Cancellation> slot,
             Consumer<RunListResult> onResult) {
         return read(
                 slot,
@@ -902,12 +904,13 @@ public final class GitHubService {
      * {@code null} when it cannot tell. With a fork's {@code origin} and an {@code upstream} remote this is
      * the upstream repository — the one every list and run action of the tool window then addresses.
      */
-    public ProcessRunner.Cancellation repoInfo(Path dir, Consumer<RepoViewParser.RepoInfo> onResult) {
+    public ProcessRunner.Cancellation repoInfo(Path dir, Consumer<RepoViewParser.@Nullable RepoInfo> onResult) {
         // Asked for by the tool window itself, once per repository: a background lookup (see branchChecks).
-        return call(lookups, false, null, cancel -> repoInfoNow(dir, cancel, false), onResult);
+        return this.<RepoViewParser.@Nullable RepoInfo>call(
+                lookups, false, null, cancel -> repoInfoNow(dir, cancel, false), onResult);
     }
 
-    private RepoViewParser.RepoInfo repoInfoNow(Path dir, ProcessRunner.Cancellation cancel, boolean logged) {
+    private RepoViewParser.@Nullable RepoInfo repoInfoNow(Path dir, ProcessRunner.Cancellation cancel, boolean logged) {
         String[] args = {"repo", "view", "--json", "nameWithOwner,defaultBranchRef,url"};
         ProcessRunner.Result r = logged ? gh(dir, LOOKUP, cancel, args) : ghSilent(dir, LOOKUP, cancel, args);
         return r.ok() ? RepoViewParser.parse(r.out()) : null;
@@ -920,7 +923,8 @@ public final class GitHubService {
      * @param existing the checked-out branch's pull request, or {@code null} when it has none
      * @param template the repository's pull-request template, {@code ""} when it has none
      */
-    public record CreateContext(RepoViewParser.RepoInfo repo, PrViewParser.PrDetail existing, String template) {}
+    public record CreateContext(
+            RepoViewParser.@Nullable RepoInfo repo, PrViewParser.@Nullable PrDetail existing, String template) {}
 
     /**
      * Gathers the {@link CreateContext} for the repository at {@code root} ({@code gh} runs in {@code dir}).
@@ -1011,8 +1015,8 @@ public final class GitHubService {
      * cancelled</em> — by the caller, or because a newer request took {@code slot} (a refreshing list's
      * "request in flight"; {@code null} for a one-shot read).
      */
-    private <T> ProcessRunner.Cancellation read(
-            AtomicReference<ProcessRunner.Cancellation> slot,
+    private <T extends @Nullable Object> ProcessRunner.Cancellation read(
+            @Nullable AtomicReference<ProcessRunner.Cancellation> slot,
             Function<ProcessRunner.Cancellation, T> work,
             Consumer<T> onResult) {
         return call(reads, true, slot, work, onResult);
@@ -1022,10 +1026,10 @@ public final class GitHubService {
      * {@link #read} on a given {@code lane}; {@code counted} says whether the call shows in
      * {@link #activeCallsProperty()} (a user's call does, a background poll does not).
      */
-    private <T> ProcessRunner.Cancellation call(
+    private <T extends @Nullable Object> ProcessRunner.Cancellation call(
             ThreadPoolExecutor lane,
             boolean counted,
-            AtomicReference<ProcessRunner.Cancellation> slot,
+            @Nullable AtomicReference<ProcessRunner.Cancellation> slot,
             Function<ProcessRunner.Cancellation, T> work,
             Consumer<T> onResult) {
         ProcessRunner.Cancellation cancel = new ProcessRunner.Cancellation();
@@ -1068,7 +1072,8 @@ public final class GitHubService {
     }
 
     /** Runs {@code gh} and reports it to the {@link CommandLog}; {@code cancel} (may be null) kills it. */
-    private ProcessRunner.Result gh(Path dir, Duration timeout, ProcessRunner.Cancellation cancel, String... args) {
+    private ProcessRunner.Result gh(
+            @Nullable Path dir, Duration timeout, ProcessRunner.@Nullable Cancellation cancel, String... args) {
         long startNanos = System.nanoTime();
         ProcessRunner.Result r = ghSilent(dir, timeout, cancel, args);
         record(r, r.out(), startNanos, args);
@@ -1114,7 +1119,7 @@ public final class GitHubService {
      * whose handle was cancelled while it waited in the queue is not started at all.
      */
     private ProcessRunner.Result ghSilent(
-            Path dir, Duration timeout, ProcessRunner.Cancellation cancel, String... args) {
+            @Nullable Path dir, Duration timeout, ProcessRunner.@Nullable Cancellation cancel, String... args) {
         if (cancel != null && cancel.cancelled()) {
             return new ProcessRunner.Result(-1, "", ProcessRunner.CANCELLED);
         }
@@ -1122,7 +1127,11 @@ public final class GitHubService {
     }
 
     private static ProcessRunner.Result run(
-            List<String> command, Path dir, Duration timeout, ProcessRunner.Cancellation cancel, String... args) {
+            List<String> command,
+            @Nullable Path dir,
+            Duration timeout,
+            ProcessRunner.@Nullable Cancellation cancel,
+            String... args) {
         return ProcessRunner.run(dir, timeout, argv(command, args), GH_ENV, cancel);
     }
 

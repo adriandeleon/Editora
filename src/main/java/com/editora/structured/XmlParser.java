@@ -6,6 +6,7 @@ import java.util.List;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
@@ -26,7 +27,7 @@ public final class XmlParser {
     static final int MAX_NODES = 50_000;
 
     /** The parse outcome: a {@code root} element (never null on success) or an {@code error} message. */
-    public record Parsed(XmlNode root, String error) {
+    public record Parsed(@Nullable XmlNode root, @Nullable String error) {
         public boolean ok() {
             return error == null && root != null;
         }
@@ -129,7 +130,7 @@ public final class XmlParser {
         }
     }
 
-    private static String firstLine(String msg) {
+    private static String firstLine(@Nullable String msg) {
         if (msg == null || msg.isBlank()) {
             return "invalid XML";
         }

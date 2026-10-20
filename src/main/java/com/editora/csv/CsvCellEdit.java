@@ -2,6 +2,8 @@ package com.editora.csv;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure helpers for writing one grid cell back into CSV/TSV text: locate a record's physical line in the
  * whole document, and replace a single field of that line <em>in place</em>. Only the edited field's
@@ -16,7 +18,7 @@ public final class CsvCellEdit {
      * The span {@code [start, end)} of 0-based {@code line} in LF-separated {@code text}, without its line
      * break; {@code null} when the text has no such line.
      */
-    public static int[] lineSpan(String text, int line) {
+    public static int @Nullable [] lineSpan(String text, int line) {
         if (text == null || line < 0) {
             return null;
         }
@@ -33,7 +35,7 @@ public final class CsvCellEdit {
     }
 
     /** The text of 0-based {@code line} in {@code text}, or {@code null} when there is no such line. */
-    public static String lineText(String text, int line) {
+    public static @Nullable String lineText(String text, int line) {
         int[] span = lineSpan(text, line);
         return span == null ? null : text.substring(span[0], span[1]);
     }

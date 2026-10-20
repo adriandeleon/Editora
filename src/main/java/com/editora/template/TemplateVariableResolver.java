@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.editora.snippet.VariableResolver;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Resolves template variables for {@link TemplateEngine}: the wizard's named answers first, then the
@@ -94,7 +95,7 @@ public final class TemplateVariableResolver implements TemplateEngine.Variables 
     }
 
     @Override
-    public String resolve(String name) {
+    public @Nullable String resolve(String name) {
         if (answers.containsKey(name)) {
             return answers.get(name);
         }
@@ -119,7 +120,7 @@ public final class TemplateVariableResolver implements TemplateEngine.Variables 
         };
     }
 
-    private static String blankToNull(String s) {
+    private static @Nullable String blankToNull(String s) {
         return s == null || s.isEmpty() ? null : s;
     }
 

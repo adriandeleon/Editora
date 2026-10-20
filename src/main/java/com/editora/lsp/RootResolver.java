@@ -4,6 +4,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Resolves the workspace root for a language server. Precedence (per the design): the active Editora
  * project folder if set; otherwise the nearest ancestor of the file that contains a build-file marker
@@ -22,13 +24,13 @@ public final class RootResolver {
      * The workspace root for {@code filePath}. Uses {@code projectRoot} when non-null; else the nearest
      * marker-bearing ancestor; else the file's parent directory (or the file itself if it has no parent).
      */
-    public static Path resolve(Path projectRoot, Path filePath, List<String> markers) {
+    public static @Nullable Path resolve(Path projectRoot, Path filePath, List<String> markers) {
         String home = System.getProperty("user.home");
         return resolve(projectRoot, filePath, markers, home == null || home.isBlank() ? null : Path.of(home));
     }
 
     /** {@link #resolve(Path, Path, List)} with the user's home directory supplied (tests). */
-    static Path resolve(Path projectRoot, Path filePath, List<String> markers, Path home) {
+    static @Nullable Path resolve(Path projectRoot, Path filePath, List<String> markers, @Nullable Path home) {
         Path abs = filePath == null ? null : filePath.toAbsolutePath().normalize();
         // Use the active project root only when the file actually lives under it — otherwise a file
         // opened outside the active project (or with the wrong project active) would be misrooted.
@@ -53,13 +55,14 @@ public final class RootResolver {
      * As {@link #resolve(Path, Path, List)} with markers in tiers: the nearest ancestor holding a marker of the
      * first tier wins, else of the second, and so on; then the file's folder.
      */
-    public static Path resolveTiered(Path projectRoot, Path filePath, List<List<String>> tiers) {
+    public static @Nullable Path resolveTiered(Path projectRoot, Path filePath, List<List<String>> tiers) {
         String home = System.getProperty("user.home");
         return resolveTiered(projectRoot, filePath, tiers, home == null || home.isBlank() ? null : Path.of(home));
     }
 
     /** {@link #resolveTiered(Path, Path, List)} with the user's home directory supplied (tests). */
-    static Path resolveTiered(Path projectRoot, Path filePath, List<List<String>> tiers, Path home) {
+    static @Nullable Path resolveTiered(
+            Path projectRoot, Path filePath, List<List<String>> tiers, @Nullable Path home) {
         if (tiers == null || tiers.size() <= 1) {
             return resolve(projectRoot, filePath, tiers == null || tiers.isEmpty() ? List.of() : tiers.get(0), home);
         }
@@ -101,7 +104,7 @@ public final class RootResolver {
     }
 
     /** {@link #isLoose(Path, Path, List)} with the user's home directory supplied (tests). */
-    static boolean isLoose(Path projectRoot, Path filePath, List<String> markers, Path home) {
+    static boolean isLoose(Path projectRoot, Path filePath, List<String> markers, @Nullable Path home) {
         if (filePath == null) {
             return false;
         }
@@ -152,7 +155,7 @@ public final class RootResolver {
      * workspace: a dotfiles {@code ~/.git} or a stray {@code ~/package.json} would hand a language server
      * the whole home directory to enumerate and index for one loose file in {@code ~/Downloads}.
      */
-    static boolean tooBroad(Path root, Path home) {
+    static boolean tooBroad(Path root, @Nullable Path home) {
         if (root.getParent() == null) {
             return true;
         }
@@ -168,7 +171,7 @@ public final class RootResolver {
      * any of {@code markers} (as a regular file <em>or</em> a directory); returns that ancestor, or
      * {@code null} if none is found up to the root. Pure.
      */
-    public static Path findMarkerRoot(Path filePath, List<String> markers) {
+    public static @Nullable Path findMarkerRoot(@Nullable Path filePath, List<String> markers) {
         return findMarkerRoot(filePath, markers, false);
     }
 
@@ -180,7 +183,7 @@ public final class RootResolver {
      * read the build file" error for a project that has none). LSP markers include real directories
      * ({@code .git}/{@code .terraform}), so those callers pass {@code filesOnly=false}. Pure.
      */
-    public static Path findMarkerRoot(Path filePath, List<String> markers, boolean filesOnly) {
+    public static @Nullable Path findMarkerRoot(@Nullable Path filePath, List<String> markers, boolean filesOnly) {
         if (filePath == null || markers == null || markers.isEmpty()) {
             return null;
         }

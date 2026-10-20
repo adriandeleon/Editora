@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A tiny JSONPath <b>subset</b> evaluator (Jackson-backed) used to pull values out of a captured response
@@ -29,7 +30,7 @@ public final class JsonPath {
      * The value at {@code path} in {@code json} as text (objects/arrays serialized; a JSON {@code null} is
      * {@code ""}), or {@code null} when there is nothing there — the path misses, or {@code json} is not JSON.
      */
-    public static String find(String json, String path) {
+    public static @Nullable String find(String json, String path) {
         if (json == null || json.isBlank()) {
             return null;
         }
@@ -48,7 +49,7 @@ public final class JsonPath {
     }
 
     /** Walks {@code path} from {@code root}; {@code null} on any miss. */
-    static JsonNode node(JsonNode root, String path) {
+    static @Nullable JsonNode node(JsonNode root, @Nullable String path) {
         JsonNode cur = root;
         for (String tok : tokenize(path)) {
             if (cur == null) {
@@ -68,7 +69,7 @@ public final class JsonPath {
     }
 
     /** Splits a path like {@code $.a.b[2]["c.d"]} into its field/index tokens. */
-    static List<String> tokenize(String path) {
+    static List<String> tokenize(@Nullable String path) {
         List<String> out = new ArrayList<>();
         if (path == null) {
             return out;

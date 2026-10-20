@@ -5,6 +5,7 @@ import java.awt.Graphics2D;
 import java.awt.Insets;
 import java.awt.image.BufferedImage;
 
+import org.jspecify.annotations.Nullable;
 import org.scilab.forge.jlatexmath.TeXConstants;
 import org.scilab.forge.jlatexmath.TeXFormula;
 import org.scilab.forge.jlatexmath.TeXIcon;
@@ -42,7 +43,7 @@ final class PdfMath {
     }
 
     /** Renders {@code latex} at {@code em} points in {@code color}; null when it does not parse. */
-    static Formula render(String latex, boolean display, float em, Color color) {
+    static @Nullable Formula render(String latex, boolean display, float em, Color color) {
         try {
             int style = display ? TeXConstants.STYLE_DISPLAY : TeXConstants.STYLE_TEXT;
             TeXIcon icon = new TeXFormula(latex).createTeXIcon(style, em * SCALE);

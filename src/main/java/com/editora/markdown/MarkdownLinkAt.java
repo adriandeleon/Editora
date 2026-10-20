@@ -2,6 +2,8 @@ package com.editora.markdown;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure (no-toolkit, unit-tested) answer to "which link is the caret on?" in Markdown source — what
  * <em>Open Link</em> and Ctrl/Cmd-click open.
@@ -24,7 +26,7 @@ public final class MarkdownLinkAt {
     private MarkdownLinkAt() {}
 
     /** The destination of the link whose source span contains {@code caret}, or {@code null} when there is none. */
-    public static String destination(String text, int caret) {
+    public static @Nullable String destination(String text, int caret) {
         if (text == null || caret < 0 || caret > text.length()) {
             return null;
         }
@@ -70,7 +72,8 @@ public final class MarkdownLinkAt {
     // --- [text](dest), [text][label], [label] -------------------------------------------------------------
 
     /** The innermost bracket link in {@code [from, to)} whose span contains {@code caret}. */
-    private static String bracketLink(String text, MarkdownBlocks blocks, int from, int to, int caret, boolean[] code) {
+    private static @Nullable String bracketLink(
+            String text, MarkdownBlocks blocks, int from, int to, int caret, boolean[] code) {
         String found = null;
         for (int i = from; i < to; i++) {
             if (text.charAt(i) != '[' || isEscaped(text, i, from) || isCode(code, from, i)) {
@@ -91,7 +94,7 @@ public final class MarkdownLinkAt {
     }
 
     /** The destination of the link whose text is {@code [open, close]}; {@code end[0]} is set past the link. */
-    private static String target(String text, MarkdownBlocks blocks, int open, int close, int to, int[] end) {
+    private static @Nullable String target(String text, MarkdownBlocks blocks, int open, int close, int to, int[] end) {
         int next = close + 1;
         if (next < to && text.charAt(next) == '(') {
             String inline = inlineDestination(text, next, to, end);
@@ -119,7 +122,7 @@ public final class MarkdownLinkAt {
     }
 
     /** Parses {@code (dest "title")} starting at the {@code (} at {@code open}; null when it is not one. */
-    private static String inlineDestination(String text, int open, int to, int[] end) {
+    private static @Nullable String inlineDestination(String text, int open, int to, int[] end) {
         int i = skipSpace(text, open + 1, to);
         String dest;
         if (i < to && text.charAt(i) == '<') {
@@ -194,7 +197,7 @@ public final class MarkdownLinkAt {
     // --- reference definitions ----------------------------------------------------------------------------
 
     /** The destination defined for {@code label} ({@code [label]: dest}), or null. Footnotes are not links. */
-    static String definition(String text, MarkdownBlocks blocks, String label) {
+    static @Nullable String definition(String text, MarkdownBlocks blocks, String label) {
         String wanted = normalize(label);
         if (wanted.isEmpty() || wanted.startsWith("^")) {
             return null;
@@ -247,7 +250,7 @@ public final class MarkdownLinkAt {
     }
 
     /** The destination when {@code [start, end)} is a definition line {@code [label]: dest}, else null. */
-    private static String definitionOn(String text, int start, int end) {
+    private static @Nullable String definitionOn(String text, int start, int end) {
         int close = definitionLabelEnd(text, start, end);
         if (close < 0 || text.charAt(text.indexOf('[', start) + 1) == '^') {
             return null;
@@ -268,7 +271,7 @@ public final class MarkdownLinkAt {
         return close > i + 1 && close + 1 < end && text.charAt(close + 1) == ':' ? close : -1;
     }
 
-    private static String definitionDestination(String text, int from, int end) {
+    private static @Nullable String definitionDestination(String text, int from, int end) {
         int i = skipSpace(text, from, end);
         if (i >= end) {
             return null;
@@ -291,7 +294,8 @@ public final class MarkdownLinkAt {
 
     // --- <autolinks> and bare URLs ------------------------------------------------------------------------
 
-    private static String autolinkOrBareUrl(String text, int start, int end, int caret, boolean[] code, int from) {
+    private static @Nullable String autolinkOrBareUrl(
+            String text, int start, int end, int caret, boolean[] code, int from) {
         for (int i = start; i < end; i++) {
             if (isCode(code, from, i)) {
                 continue;
@@ -331,7 +335,7 @@ public final class MarkdownLinkAt {
     }
 
     /** {@code <scheme:…>} or {@code <user@host>} without spaces; null for anything else (an HTML tag). */
-    private static String autolink(String inner) {
+    private static @Nullable String autolink(String inner) {
         if (inner.isEmpty() || inner.chars().anyMatch(Character::isWhitespace)) {
             return null;
         }

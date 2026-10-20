@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Semantic "expand selection" — the growing-selection primitive of VS Code ({@code Shift+Alt+Right}),
  * IntelliJ ({@code Ctrl+W}) and Emacs {@code expand-region}. Pure (no toolkit), so it is unit-tested.
@@ -33,7 +35,7 @@ public final class SmartSelect {
      * {@code null} when the selection already spans the whole document. The result always
      * <em>strictly</em> contains the input.
      */
-    public static int[] expand(String text, int selStart, int selEnd) {
+    public static int @Nullable [] expand(String text, int selStart, int selEnd) {
         int n = text.length();
         int s = clamp(selStart, n);
         int e = clamp(selEnd, n);

@@ -3,6 +3,7 @@ package com.editora.update;
 import com.editora.plugin.PluginInstaller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure, toolkit-free core of the update check: parse a GitHub {@code /releases/latest} JSON payload into a
@@ -22,7 +23,7 @@ public final class UpdateCheck {
      * or {@code null} when it isn't a usable release ({@code draft}/{@code prerelease}, or no {@code tag_name}).
      * Reads via {@code readTree} (no POJO binding, so no {@code module-info opens}).
      */
-    public static ReleaseInfo parseLatest(ObjectMapper mapper, byte[] json) {
+    public static @Nullable ReleaseInfo parseLatest(ObjectMapper mapper, byte[] json) {
         try {
             JsonNode root = mapper.readTree(json);
             if (root == null || !root.isObject()) {

@@ -7,6 +7,7 @@ import java.util.Set;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The jdtls refactorings the <em>client</em> has to carry out: Move (a file to another package, a type, a
@@ -40,15 +41,16 @@ public final class JdtlsRefactor {
     public static final String CHANGE_SIGNATURE = "changeSignature";
 
     /** One refactoring command: its name, the {@code CodeActionParams} it was offered for, and its info. */
-    public record Request(String name, JsonElement params, JsonObject info) {
+    public record Request(
+            String name, JsonElement params, @Nullable JsonObject info) {
 
         /** A string field of the info object, or null. */
-        public String info(String key) {
+        public @Nullable String info(String key) {
             return info == null ? null : string(info, key);
         }
 
         /** The document the action was offered in. */
-        public String documentUri() {
+        public @Nullable String documentUri() {
             if (params == null || !params.isJsonObject()) {
                 return null;
             }
@@ -72,7 +74,7 @@ public final class JdtlsRefactor {
     }
 
     /** The request a command carries, or null when it is not {@link #COMMAND} or has no usable arguments. */
-    public static Request parse(String commandId, List<JsonElement> arguments) {
+    public static @Nullable Request parse(String commandId, List<JsonElement> arguments) {
         if (!COMMAND.equals(commandId) || arguments == null || arguments.size() < 2) {
             return null;
         }
@@ -88,10 +90,10 @@ public final class JdtlsRefactor {
     }
 
     /** A place something can be moved to: what the user sees, and the server object naming it. */
-    public record Destination(String label, String detail, JsonElement raw) {}
+    public record Destination(String label, @Nullable String detail, JsonElement raw) {}
 
     /** The {@code errorMessage} of a destinations or refactor-edit answer, or null. */
-    public static String errorMessage(JsonElement response) {
+    public static @Nullable String errorMessage(@Nullable JsonElement response) {
         if (response == null || !response.isJsonObject()) {
             return null;
         }
@@ -104,7 +106,7 @@ public final class JdtlsRefactor {
      * Extract Interface check). {@code includeCurrent} keeps the package the file is already in — a move
      * there does nothing, but it is the usual home of an extracted interface, so it is then listed first.
      */
-    public static List<Destination> packages(JsonElement response, boolean includeCurrent) {
+    public static List<Destination> packages(@Nullable JsonElement response, boolean includeCurrent) {
         List<Destination> out = new ArrayList<>();
         for (JsonElement e : destinations(response)) {
             if (!e.isJsonObject()) {
@@ -174,7 +176,7 @@ public final class JdtlsRefactor {
         return out;
     }
 
-    private static JsonArray destinations(JsonElement response) {
+    private static JsonArray destinations(@Nullable JsonElement response) {
         if (response != null && response.isJsonObject()) {
             JsonElement arr = response.getAsJsonObject().get("destinations");
             if (arr != null && arr.isJsonArray()) {
@@ -234,7 +236,7 @@ public final class JdtlsRefactor {
      * The {@code WorkspaceEdit} inside an answer: {@code java/move} and {@code java/getRefactorEdit} wrap it
      * ({@code {edit, command, errorMessage}}), the generate requests answer with the edit itself.
      */
-    public static JsonElement editOf(JsonElement response) {
+    public static @Nullable JsonElement editOf(@Nullable JsonElement response) {
         if (response == null || !response.isJsonObject()) {
             return null;
         }
@@ -276,7 +278,7 @@ public final class JdtlsRefactor {
     }
 
     /** The class the interface is extracted from. */
-    public static String subTypeName(JsonElement status) {
+    public static @Nullable String subTypeName(JsonElement status) {
         return status != null && status.isJsonObject() ? string(status.getAsJsonObject(), "subTypeName") : null;
     }
 
@@ -353,7 +355,7 @@ public final class JdtlsRefactor {
      * first. A parameter written with {@code = value} is always new, and so is anything left over; call
      * sites get that value, or {@code null} without one.
      */
-    public static JsonArray changeSignatureArguments(JsonElement info, String edited) {
+    public static @Nullable JsonArray changeSignatureArguments(JsonElement info, String edited) {
         if (info == null || !info.isJsonObject() || edited == null) {
             return null;
         }
@@ -532,7 +534,7 @@ public final class JdtlsRefactor {
         return out;
     }
 
-    private static String string(JsonObject o, String key) {
+    private static @Nullable String string(JsonObject o, String key) {
         JsonElement e = o.get(key);
         return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
     }

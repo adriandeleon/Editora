@@ -3,6 +3,8 @@ package com.editora.git;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses {@code git diff --numstat -z}: per changed path, the lines added and deleted. Pure.
  *
@@ -58,7 +60,7 @@ public final class GitNumstat {
         return counts;
     }
 
-    private static Counts counts(String added, String deleted) {
+    private static @Nullable Counts counts(String added, String deleted) {
         if (added.equals("-") && deleted.equals("-")) {
             return new Counts(0, 0, true);
         }

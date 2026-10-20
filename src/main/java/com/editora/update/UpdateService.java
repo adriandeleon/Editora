@@ -17,6 +17,7 @@ import javafx.application.Platform;
 import com.editora.AppInfo;
 import com.editora.plugin.PluginRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Checks GitHub for a newer release (the {@code GitService}/{@code PluginRegistry} idiom: one daemon executor,
@@ -35,7 +36,10 @@ public final class UpdateService {
     /** The result of a check: {@code available} = a newer release exists; {@code latest} = the newest published
      *  release (non-null on success even when it isn't newer, for "you're up to date" messaging); {@code error}
      *  = a short failure reason (null on success). */
-    public record Outcome(boolean available, ReleaseInfo latest, String error) {
+    public record Outcome(
+            boolean available,
+            @Nullable ReleaseInfo latest,
+            @Nullable String error) {
         public boolean ok() {
             return error == null;
         }
@@ -53,9 +57,9 @@ public final class UpdateService {
      *  there, for a check that is throttled to once a day and runs after {@code init}. Both fields are touched
      *  only from {@link #fetchSync}, which runs solely on the single-threaded {@link #exec}, so the lazy init is
      *  confined to that one thread and needs no synchronization. */
-    private HttpClient client;
+    private @Nullable HttpClient client;
 
-    private ObjectMapper mapper;
+    private @Nullable ObjectMapper mapper;
 
     /** Executor-thread-confined; see the field comment. */
     private HttpClient client() {
