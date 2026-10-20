@@ -1,0 +1,7 @@
+{
+  "Example Callout": {
+    "prefix": "callout",
+    "body": ["> **Note:** $1"],
+    "description": "A callout snippet contributed by example-plugin"
+  }
+}
