@@ -12,6 +12,15 @@ public final class InstallTestAccess {
         return new InstallService(client, maxDownloadBytes);
     }
 
+    /**
+     * Makes {@code service} install the JVM lemminx-maven bundle as it comes: no extra jars downloaded beside it
+     * and no request sent to the extracted server — for tests whose "bundle" is a few text files in a zip.
+     */
+    public static void bareJvmLspZip(InstallService service) {
+        service.setJvmLspExtraJarsForTest(id -> java.util.List.of());
+        service.setJvmLspSmokeForTest((argv, dir) -> java.util.Optional.empty());
+    }
+
     /** Makes {@code service} install pinned tools from {@code recipes} (hashes matching a test's own files). */
     public static void pinnedTools(
             InstallService service,
