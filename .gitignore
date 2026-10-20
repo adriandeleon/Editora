@@ -58,6 +58,8 @@ Thumbs.db
 /samples/build-tools/gradle/build/
 /samples/build-tools/go/go-demo
 /samples/build-tools/npm/node_modules/
+# The Clojure CLI caches a project's classpath beside its deps.edn when the debug sample is run.
+/samples/debug/clojure/.cpcache/
 
 # Corpus log samples are intentionally tracked (the global *.log above would drop them)
 !/samples/log/*.log
