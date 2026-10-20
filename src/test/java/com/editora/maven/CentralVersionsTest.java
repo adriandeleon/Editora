@@ -101,6 +101,26 @@ class CentralVersionsTest {
         assertFalse(CentralVersions.isUpgrade("1.0", "zzz"));
     }
 
+    /**
+     * Seen in the fix pass's own probe: with the semver comparator gone, {@code ${surefire.version}} ranked
+     * below {@code 3.6.0} and the preview offered to overwrite the property reference with a literal.
+     */
+    @Test
+    void aPropertyRangeOrKeywordVersionIsNeverUpgraded() {
+        for (String now : List.of("${surefire.version}", "[2.0,3.0)", "(,1.0]", "LATEST", "RELEASE", "", " ")) {
+            assertFalse(CentralVersions.isUpgrade(now, "3.6.0"), now + " must be left alone");
+            assertTrue(
+                    CentralVersions.upgradesOnly(Map.of(SUREFIRE, now), Map.of(SUREFIRE, "3.6.0"))
+                            .isEmpty(),
+                    now);
+        }
+        assertFalse(CentralVersions.isUpgrade("3.5.0", "${latest}"), "nor is one written");
+        assertTrue(CentralVersions.isPlainVersion("3.6.0"));
+        assertTrue(CentralVersions.isPlainVersion("33.7.2-jre"));
+        assertTrue(CentralVersions.isPlainVersion("2.0.0.Final"));
+        assertTrue(CentralVersions.isPlainVersion("r09"), "a literal, if an odd one: the guards decide, not this");
+    }
+
     /** A plugin with no version in the pom is not ours to pin — see PomEdits.setPluginVersions. */
     @Test
     void ignoresArtifactsWithNoCurrentVersion() {

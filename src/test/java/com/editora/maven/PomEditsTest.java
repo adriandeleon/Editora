@@ -181,6 +181,18 @@ class PomEditsTest {
                 PomEdits.pluginVersions(QUICKSTART));
     }
 
+    /** Like dependencyVersions: a property reference is the author's indirection, not a version to rewrite. */
+    @Test
+    void pluginVersionsSkipsPropertyReferences() {
+        String pom = """
+                <project><build><plugins>
+                  <plugin><artifactId>maven-surefire-plugin</artifactId><version>${surefire.version}</version></plugin>
+                  <plugin><artifactId>maven-compiler-plugin</artifactId><version>3.11.0</version></plugin>
+                </plugins></build></project>
+                """;
+        assertEquals(Map.of("org.apache.maven.plugins:maven-compiler-plugin", "3.11.0"), PomEdits.pluginVersions(pom));
+    }
+
     /** A plugin with no version has nothing to compare against, so it is not reported. */
     @Test
     void pluginVersionsOmitsUnpinnedPlugins() {

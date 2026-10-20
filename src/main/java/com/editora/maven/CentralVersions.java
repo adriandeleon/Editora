@@ -83,14 +83,37 @@ public final class CentralVersions {
         return out;
     }
 
-    /** Strictly newer by Maven's ordering, and not starting with a smaller number. Pure — unit-tested. */
+    /**
+     * Strictly newer by Maven's ordering, and not starting with a smaller number. Pure — unit-tested.
+     *
+     * <p>A current version that is not a plain version — a property reference ({@code ${surefire.version}}),
+     * a range ({@code [2.0,3.0)}), {@code LATEST}/{@code RELEASE} — is never "upgraded": {@code PomEdits}
+     * would write a literal over the indirection or range the author chose. The semver comparator used to
+     * drop these by accident (a letter outranked every number); now it is deliberate.
+     */
     static boolean isUpgrade(String now, String next) {
+        if (!isPlainVersion(now) || !isPlainVersion(next)) {
+            return false;
+        }
         if (!MavenVersion.isNewer(next, now)) {
             return false;
         }
         long nowLeading = MavenVersion.leadingNumber(now);
         long nextLeading = MavenVersion.leadingNumber(next);
         return nowLeading < 0 || nextLeading >= nowLeading;
+    }
+
+    /** A literal version: no property reference, no range brackets or list, no {@code LATEST}/{@code RELEASE}. */
+    static boolean isPlainVersion(String v) {
+        if (v == null || v.isBlank()) {
+            return false;
+        }
+        String s = v.strip();
+        char c = s.charAt(0);
+        if (c == '[' || c == '(' || s.contains("${") || s.contains(",")) {
+            return false;
+        }
+        return !s.equalsIgnoreCase("LATEST") && !s.equalsIgnoreCase("RELEASE");
     }
 
     private static String[] split(String ga) {
