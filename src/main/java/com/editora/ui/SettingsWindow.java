@@ -297,6 +297,9 @@ public class SettingsWindow {
     private CheckBox logViewerCheck;
     private CheckBox testRunnerCheck;
     private CheckBox buildBeforeRunCheck;
+    /** Settings → LSP: lemminx-maven may download and use the Maven Central index (Maven review C10). */
+    private CheckBox mavenCentralIndexCheck;
+
     private CheckBox csvGridCheck;
     private CheckBox structuredPreviewCheck;
     private CheckBox svgPreviewCheck;
@@ -1473,6 +1476,7 @@ public class SettingsWindow {
         logViewerCheck = viewCheck(tr("settings.logViewer"), Settings::setLogViewer);
         testRunnerCheck = viewCheck(tr("settings.testRunner"), Settings::setTestRunner);
         buildBeforeRunCheck = viewCheck(tr("settings.buildBeforeRun"), Settings::setBuildBeforeRun);
+        mavenCentralIndexCheck = viewCheck(tr("settings.lsp.mavenCentralIndex"), Settings::setMavenPomCentralIndex);
         csvGridCheck = viewCheck(tr("settings.csvPreview"), Settings::setCsvPreview);
         structuredPreviewCheck = viewCheck(tr("settings.structuredPreview"), Settings::setStructuredPreview);
         svgPreviewCheck = viewCheck(tr("settings.svgPreview"), Settings::setSvgPreview);
@@ -5194,6 +5198,11 @@ public class SettingsWindow {
                     buildToolStatusLabels.get(bt),
                     kw);
             if (bt == BuildTool.MAVEN) {
+                // pom.xml editing support (lemminx-maven) is an LSP server: say so here, where Maven users look.
+                Hyperlink pomLsp = new Hyperlink(tr("settings.maven.pomLspLink"));
+                pomLsp.setWrapText(true);
+                pomLsp.setOnAction(e -> sidebar.getSelectionModel().select(Category.LSP));
+                cardRow(c, Category.BUILD_TOOLS, pomLsp, kw + " pom.xml editing completion lemminx lsp install");
                 mavenArchetypeCatalogField.setPrefWidth(PATH_FIELD_WIDTH + 120); // the default URL in full
                 cardRow(
                         c,
@@ -6976,6 +6985,19 @@ public class SettingsWindow {
             project.managedProperty().bind(project.visibleProperty());
             lspProjectLabels.put(srv.id(), project);
             c.body().getChildren().add(project);
+            if (MAVEN_POM.equals(srv.id())) {
+                // What the server adds, what a pom gets without it, and which java runs it (review C17); and the
+                // Central-index choice that decides whether completion sees more than ~/.m2 (review C10).
+                Label hint = note(tr("settings.lsp.mavenPom.hint"));
+                hint.setWrapText(true);
+                cardRow(c, Category.LSP, hint, srv.keywords() + " hint jdk fallback xml artifact");
+                checkRow(
+                        c,
+                        Category.LSP,
+                        mavenCentralIndexCheck,
+                        tr("settings.lsp.mavenCentralIndex.hint"),
+                        "lsp maven central index pom.xml completion download artifacts remote");
+            }
             if ("bash".equals(srv.id())) {
                 bashServerRows(c);
             } else if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(srv.id())) {
@@ -7225,6 +7247,17 @@ public class SettingsWindow {
                         () -> config.getSettings().isXmlLspEnabled(),
                         v -> config.getSettings().setXmlLspCommand(v),
                         () -> config.getSettings().getXmlLspCommand()),
+                // Right after XML: the pom.xml server replaces it for poms (Maven review C17).
+                new LspServerUi(
+                        com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID,
+                        com.editora.lsp.LspServerRegistry.DEFAULT_MAVEN_POM_COMMAND,
+                        "settings.lsp.enableMavenPom",
+                        "settings.lsp.mavenPomCommand",
+                        "lsp maven pom.xml lemminx dependency completion language server found command path",
+                        v -> config.getSettings().setMavenPomLspEnabled(v),
+                        () -> config.getSettings().isMavenPomLspEnabled(),
+                        v -> config.getSettings().setMavenPomLspCommand(v),
+                        () -> config.getSettings().getMavenPomLspCommand()),
                 new LspServerUi(
                         "json",
                         com.editora.lsp.LspServerRegistry.DEFAULT_JSON_COMMAND,
@@ -7448,17 +7481,7 @@ public class SettingsWindow {
                         v -> config.getSettings().setAstroLspEnabled(v),
                         () -> config.getSettings().isAstroLspEnabled(),
                         v -> config.getSettings().setAstroLspCommand(v),
-                        () -> config.getSettings().getAstroLspCommand()),
-                new LspServerUi(
-                        com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID,
-                        com.editora.lsp.LspServerRegistry.DEFAULT_MAVEN_POM_COMMAND,
-                        "settings.lsp.enableMavenPom",
-                        "settings.lsp.mavenPomCommand",
-                        "lsp maven pom.xml lemminx dependency completion language server found command path",
-                        v -> config.getSettings().setMavenPomLspEnabled(v),
-                        () -> config.getSettings().isMavenPomLspEnabled(),
-                        v -> config.getSettings().setMavenPomLspCommand(v),
-                        () -> config.getSettings().getMavenPomLspCommand()));
+                        () -> config.getSettings().getAstroLspCommand()));
     }
 
     /** A "[label] [path field] [Browse…]" row for picking a CLI executable. */
@@ -7803,9 +7826,11 @@ public class SettingsWindow {
                 serverId, LspCoordinator.commandsForAllServers(config.getSettings()));
     }
 
-    /** The program a server runs, as its pill names it (the pom.xml server runs through java). */
+    /** The program a server runs, as its pill names it: the display-name table first (the pom.xml server runs
+     *  through java; the native XML download is platform-suffixed — Maven review C14), else the command's name. */
     private static String lspToolName(String serverId, List<String> argv) {
-        return MAVEN_POM.equals(serverId) ? "lemminx-maven" : ToolStatusRow.toolName(argv, serverId);
+        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId);
+        return named != null ? named : ToolStatusRow.toolName(argv, serverId);
     }
 
     /**
@@ -8666,6 +8691,7 @@ public class SettingsWindow {
             logViewerCheck.setSelected(settings.isLogViewer());
             testRunnerCheck.setSelected(settings.isTestRunner());
             buildBeforeRunCheck.setSelected(settings.isBuildBeforeRun());
+            mavenCentralIndexCheck.setSelected(settings.isMavenPomCentralIndex());
             csvGridCheck.setSelected(settings.isCsvPreview());
             structuredPreviewCheck.setSelected(settings.isStructuredPreview());
             svgPreviewCheck.setSelected(settings.isSvgPreview());
@@ -9186,6 +9212,7 @@ public class SettingsWindow {
             logViewerCheck.setSelected(config.getSettings().isLogViewer());
             testRunnerCheck.setSelected(config.getSettings().isTestRunner());
             buildBeforeRunCheck.setSelected(config.getSettings().isBuildBeforeRun());
+            mavenCentralIndexCheck.setSelected(config.getSettings().isMavenPomCentralIndex());
         } finally {
             loading = prev;
         }
@@ -9329,6 +9356,7 @@ public class SettingsWindow {
             logViewerCheck.setSelected(s.isLogViewer());
             testRunnerCheck.setSelected(s.isTestRunner());
             buildBeforeRunCheck.setSelected(s.isBuildBeforeRun());
+            mavenCentralIndexCheck.setSelected(s.isMavenPomCentralIndex());
             csvGridCheck.setSelected(s.isCsvPreview());
             structuredPreviewCheck.setSelected(s.isStructuredPreview());
             svgPreviewCheck.setSelected(s.isSvgPreview());

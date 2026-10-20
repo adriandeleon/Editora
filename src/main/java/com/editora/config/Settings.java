@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 141;
+    public static final int SCHEMA_VERSION = 142;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -899,6 +899,9 @@ public class Settings {
     /** Whether the Maven-aware pom.xml server is enabled (only effective once installed — see
      *  {@link #mavenPomLspCommand} — and under the global LSP enable). */
     private boolean mavenPomLspEnabled = true;
+    /** Whether lemminx-maven may download and use the Maven Central index for pom.xml completion (a large
+     *  one-time download); off = completion from the local repository ({@code ~/.m2}) only. */
+    private boolean mavenPomCentralIndex = false;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -3995,6 +3998,14 @@ public class Settings {
 
     public void setMavenPomLspEnabled(boolean mavenPomLspEnabled) {
         this.mavenPomLspEnabled = mavenPomLspEnabled;
+    }
+
+    public boolean isMavenPomCentralIndex() {
+        return mavenPomCentralIndex;
+    }
+
+    public void setMavenPomCentralIndex(boolean mavenPomCentralIndex) {
+        this.mavenPomCentralIndex = mavenPomCentralIndex;
     }
 
     public boolean isPdfLineNumbers() {
