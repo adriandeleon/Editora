@@ -3,8 +3,12 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
@@ -13,6 +17,7 @@ import javafx.scene.Node;
 import com.editora.build.BuildActionsProvider;
 import com.editora.build.BuildService;
 import com.editora.build.BuildTool;
+import com.editora.build.BuildTrust;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
@@ -54,13 +59,28 @@ final class BuildCoordinator {
         boolean isTrusted(Path root);
 
         /**
-         * Asks the user whether to trust {@code root}, which ships the build script {@code wrapper}. Blocking
-         * (a security decision must not be dismissible by clicking past it). Returns true to grant trust.
+         * Asks the user whether to trust {@code root}, whose build would run what {@code summary} lists (the
+         * wrapper if any, the pom's plugins, {@code .mvn/} files, a project.json override). Blocking (a
+         * security decision must not be dismissible by clicking past it). Returns true to grant trust.
          */
-        boolean confirmTrust(Path root, Path wrapper);
+        boolean confirmTrust(Path root, BuildTrust.Summary summary);
 
         /** Records {@code root} as trusted and persists it. */
         void trust(Path root);
+
+        /** Drops {@code root}'s own trust entry (the tasks window's Revoke); inherited trust stays. */
+        default void revokeTrust(Path root) {}
+
+        /** Opens {@code file} in the editor (the broken-pom notice's link). */
+        default void openFile(Path file) {}
+
+        /** The remembered "Run custom…" strings of {@code toolId}, newest first (this project's). */
+        default List<String> customHistory(String toolId) {
+            return List.of();
+        }
+
+        /** Remembers {@code text} as the newest custom string of {@code toolId}. */
+        default void rememberCustom(String toolId, String text) {}
     }
 
     private final BuildTool tool;
@@ -101,6 +121,33 @@ final class BuildCoordinator {
 
     private List<String> lastTaskArgs;
     private List<String> lastToggleArgs = List.of();
+
+    /**
+     * The active toggle ids (profiles, the reactor switch) per detected root — one set, read and written by
+     * both the tasks tree and the popup. Each view used to keep its own, so a profile ticked in the tool
+     * window was not the one a run from the popup used, and the popup forgot its set on every open (review
+     * B8). Kept per root so switching to another module and back keeps the choice; bounded.
+     */
+    private final Map<Path, Set<String>> togglesByRoot = new LinkedHashMap<>();
+
+    private static final int MAX_TOGGLE_ROOTS = 16;
+
+    /** The last string typed into "Run custom…" this session (prefills the next prompt). */
+    private String lastCustomText;
+
+    /** The build roots found below the open project (the tree's "Projects" section) and the project they
+     *  were scanned for. */
+    private List<Path> projectRoots = List.of();
+
+    private Path scannedProject;
+
+    /**
+     * A root picked in the tree's "Projects" section: it drives detection instead of the active file until
+     * the active file changes ({@link #pinnedContext} is what it was when the pick was made).
+     */
+    private Path pinnedRoot;
+
+    private Path pinnedContext;
 
     /** When set, a recognized test run is forwarded here (the Test Results window); null = feature absent. */
     private TestRunHook testRunHook;
@@ -149,6 +196,8 @@ final class BuildCoordinator {
             tree.setOnRefresh(this::refreshMarker);
             tree.setOnRunCustom(this::runCustom);
             tree.setOnStop(this::stop);
+            tree.setOnSelectProject(this::selectRoot);
+            tree.setOnRevokeTrust(this::revokeTrust);
             tool.taskLoadLabel().ifPresent(key -> tree.setSecondaryAction(tr(key), this::loadAllTasks));
             showDetectedInTree();
             tree.setRunning(service.isRunning());
@@ -161,11 +210,111 @@ final class BuildCoordinator {
         if (tree == null) {
             return;
         }
+        tree.setActiveToggles(togglesFor(markerRoot));
         // A marker that exists but doesn't parse is not the same as no marker at all: the stripe stays (the
         // root is real), so the tree must say the build file is broken rather than "no build tool detected".
         tree.setProvider(
                 provider,
                 markerRoot != null && provider == null ? tr("status.build.malformed", tool.displayName()) : null);
+        // The reason, with a way to the file — it used to appear only in the status bar after Show Actions.
+        if (markerRoot != null && parseError != null && !parseError.isBlank()) {
+            Path file = markerRoot.resolve(tool.markers().get(0));
+            tree.setNotice(
+                    tr("status.build.malformedAt", tool.displayName(), parseError),
+                    tr("buildtree.openBuildFile", tool.markers().get(0)),
+                    () -> ops.openFile(file));
+        } else {
+            tree.setNotice(null, null, null);
+        }
+        tree.setProjects(projectRoots);
+        tree.setHeader(markerRoot, ops.projectRoot(), trustState(markerRoot));
+    }
+
+    /** The toggle set of {@code root} (created on first use); a throwaway set for no root. */
+    private Set<String> togglesFor(Path root) {
+        if (root == null) {
+            return new LinkedHashSet<>();
+        }
+        Path key = root.toAbsolutePath().normalize();
+        Set<String> set = togglesByRoot.get(key);
+        if (set == null) {
+            if (togglesByRoot.size() >= MAX_TOGGLE_ROOTS) {
+                togglesByRoot.remove(togglesByRoot.keySet().iterator().next());
+            }
+            set = new LinkedHashSet<>();
+            togglesByRoot.put(key, set);
+        }
+        return set;
+    }
+
+    /**
+     * The extra argv the active toggles of the detected root contribute right now — Maven's {@code -P}
+     * profiles and the reactor switch — for Run and Debug's build-before-launch and the classpath fallback,
+     * so a program is compiled the way the tasks tree builds it. Empty with nothing detected.
+     */
+    List<String> activeToggleArgs() {
+        return provider == null || markerRoot == null ? List.of() : provider.toggleArgs(togglesFor(markerRoot));
+    }
+
+    /** The folder whose trust a build from {@code root} needs: the wrapper's, else the project (or root). */
+    private Path trustRoot(Path root) {
+        Path wrapper = tool.repoWrapper(root, wrapperBoundary(root), isWindows());
+        return wrapper != null ? wrapper.getParent() : wrapperBoundary(root);
+    }
+
+    private BuildActionsTree.TrustState trustState(Path root) {
+        if (root == null || !BuildTrust.gates(tool)) {
+            return BuildActionsTree.TrustState.NOT_GATED;
+        }
+        return ops.isTrusted(trustRoot(root))
+                ? BuildActionsTree.TrustState.TRUSTED
+                : BuildActionsTree.TrustState.UNTRUSTED;
+    }
+
+    /** The tree header's Revoke: drops the detected root's trust and restates the header. */
+    private void revokeTrust() {
+        if (markerRoot == null) {
+            return;
+        }
+        ops.revokeTrust(trustRoot(markerRoot));
+        if (tree != null) {
+            tree.setHeader(markerRoot, ops.projectRoot(), trustState(markerRoot));
+        }
+    }
+
+    /** A row of the tree's "Projects" section was chosen: detect that root instead of the active file's. */
+    void selectRoot(Path root) {
+        if (root == null) {
+            return;
+        }
+        pinnedRoot = root;
+        pinnedContext = contextPath();
+        appliedStamp = null;
+        refresh();
+    }
+
+    /**
+     * What a build from the detected root runs as, for Settings' project row and Doctor: the wrapper and its
+     * trust state ({@code ./mvnw (trusted)}), the command override, or the tool on PATH. Null when nothing
+     * is detected.
+     */
+    String executableSummary() {
+        if (markerRoot == null) {
+            return null;
+        }
+        Path wrapper = tool.repoWrapper(markerRoot, wrapperBoundary(markerRoot), isWindows());
+        if (wrapper != null) {
+            String name = "./" + wrapper.getFileName();
+            return ops.isTrusted(wrapper.getParent())
+                    ? tr("settings.buildTools.exec.wrapperTrusted", name)
+                    : tr("settings.buildTools.exec.wrapperUntrusted", name);
+        }
+        String override = host.projectScope().buildCommand(tool, host.settings());
+        if (override != null && !override.isBlank()) {
+            return tr("settings.buildTools.exec.override", override.strip());
+        }
+        List<String> argv = executable(markerRoot);
+        return tr("settings.buildTools.exec.onPath", argv.isEmpty() ? tool.commandExample() : argv.get(0));
     }
 
     /** This tool's stripe/tool-window icon (also the toolbar button glyph). */
@@ -186,6 +335,13 @@ final class BuildCoordinator {
     /** Whether a task can actually run right now: enabled, a marker file was found, and it parsed. */
     private boolean isAvailable() {
         return isEnabled() && markerRoot != null && provider != null;
+    }
+
+    /** Why the tool is off: Simple UI mode (the Settings toggle may well be on), else the Settings toggle. */
+    private String disabledMessage() {
+        return host.simpleModeActive()
+                ? tr("status.build.simpleMode", tool.displayName())
+                : tr("status.build.disabled", tool.displayName());
     }
 
     /** Whether a marker file is currently detected for the active context (the Settings found/not-found row). */
@@ -255,12 +411,33 @@ final class BuildCoordinator {
             return;
         }
         BuildDetection.Stamp known = appliedStamp;
-        Path searchFrom = context;
         Path project = ops.projectRoot();
+        // A root picked in the Projects section holds until the active file changes; then the file leads.
+        if (pinnedRoot != null && !java.util.Objects.equals(pinnedContext, context)) {
+            pinnedRoot = null;
+        }
+        Path searchFrom = pinnedRoot != null ? pinnedRoot : context;
+        boolean scanProjects = project != null && !project.equals(scannedProject);
         BuildDetection.execute(() -> {
             // filesOnly: every build marker is a file (pom.xml/package.json/go.mod/…), so a directory
             // merely named like one must not root the tool there (it would then fail to parse) — #451.
-            Path root = RootResolver.findMarkerRoot(searchFrom, tool.markers(), true);
+            // The walk stops at the open project: a project opened inside a module must not build the pom
+            // above the folder the user opened (review B27).
+            Path root = RootResolver.findMarkerRoot(searchFrom, tool.markers(), true, project);
+            List<Path> found = scanProjects
+                    ? RootResolver.findMarkerRootsBelow(project, tool.markers(), PROJECT_SCAN_DEPTH, PROJECT_SCAN_DIRS)
+                    : null;
+            if (found != null) {
+                Platform.runLater(() -> {
+                    if (gen == detectGeneration) {
+                        scannedProject = project;
+                        projectRoots = found.size() > 1 || root == null ? found : List.of();
+                        if (tree != null) {
+                            tree.setProjects(projectRoots);
+                        }
+                    }
+                });
+            }
             BuildDetection.Stamp stamp = BuildDetection.Stamp.of(root, tool.markers());
             if (stamp.equals(known)) {
                 // Same build file, untouched: what is applied is what a parse would produce, so keep the
@@ -284,7 +461,9 @@ final class BuildCoordinator {
                     parsed = detected.provider();
                     label = detected.label();
                 } catch (Exception e) {
-                    parsed = null; // marker found but malformed — applyDetected reports it distinctly
+                    // Marker found but malformed — reported distinctly (the error under the tree, with a
+                    // link to the file); Maven still offers its lifecycle, so `validate` can say what's wrong.
+                    parsed = tool.brokenFileProvider();
                     error = e.getMessage();
                 }
                 if (tool == BuildTool.NPM) {
@@ -310,6 +489,11 @@ final class BuildCoordinator {
         });
     }
 
+    /** How far below the project root build markers are looked for, and how many folders at most. */
+    private static final int PROJECT_SCAN_DEPTH = 2;
+
+    private static final int PROJECT_SCAN_DIRS = 400;
+
     /** Re-derives the tool windows' stripe visibility from the last detection without a fresh re-detect. */
     void reapplyVisibility() {
         ops.setToolWindowsAvailable(isEnabled() && markerRoot != null);
@@ -325,29 +509,46 @@ final class BuildCoordinator {
         if (parsed != null && root != null && root.equals(loadedTasksRoot) && !loadedTasks.isEmpty()) {
             parsed.addLoadedTasks(loadedTasks);
         }
+        if (root != null && projectRoots.size() == 1 && projectRoots.get(0).equals(root)) {
+            projectRoots = List.of(); // one root, and it is this one: nothing to pick between
+        }
         showDetectedInTree();
         ops.setToolWindowsAvailable(isEnabled() && root != null);
+    }
+
+    /** Whether the detected build file exists but did not parse (the tree shows the reason). */
+    boolean isMalformed() {
+        return markerRoot != null && parseError != null && !parseError.isBlank();
     }
 
     /** Opens the searchable actions popup, centered (the {@code <tool>.showActions} palette command). */
     void showActionsPopup() {
         if (!isEnabled()) {
-            host.setStatus(tr("status.build.disabled", tool.displayName()));
+            host.setStatus(disabledMessage());
             return;
         }
         if (markerRoot == null) {
             host.setStatus(tr("status.build.notDetected", tool.displayName()));
             return;
         }
-        if (provider == null) {
+        if (provider == null || isMalformed()) {
             host.setStatus(
                     parseError == null || parseError.isBlank()
                             ? tr("status.build.malformed", tool.displayName())
                             : tr("status.build.malformedAt", tool.displayName(), parseError));
-            return;
+            if (provider == null) {
+                return;
+            }
         }
         popupRoot = null;
-        popup.show(host.window(), provider);
+        showPopup(provider, markerRoot);
+    }
+
+    /** Shows the popup over {@code provider} for {@code root}, with that root's toggle set and this tool's
+     *  recent custom strings. */
+    private void showPopup(BuildActionsProvider forRoot, Path root) {
+        popup.setRecent(ops.customHistory(tool.id()), text -> runCustomText(root, text));
+        popup.show(host.window(), forRoot, togglesFor(root));
     }
 
     /**
@@ -363,7 +564,7 @@ final class BuildCoordinator {
             return;
         }
         if (!isEnabled()) {
-            host.setStatus(tr("status.build.disabled", tool.displayName()));
+            host.setStatus(disabledMessage());
             return;
         }
         if (!Files.isDirectory(root)) {
@@ -391,7 +592,7 @@ final class BuildCoordinator {
                     return;
                 }
                 popupRoot = root;
-                popup.show(host.window(), finalParsed);
+                showPopup(finalParsed, root);
             });
         });
     }
@@ -399,7 +600,7 @@ final class BuildCoordinator {
     /** Runs a selected task with its args + the active toggles' args (the popup's callback). */
     void runTask(List<String> taskArgs, List<String> toggleArgs) {
         if (!isAvailable()) {
-            host.setStatus(tr(isEnabled() ? "status.build.notDetected" : "status.build.disabled", tool.displayName()));
+            host.setStatus(isEnabled() ? tr("status.build.notDetected", tool.displayName()) : disabledMessage());
             return;
         }
         if (service.isRunning()) {
@@ -424,7 +625,7 @@ final class BuildCoordinator {
             return;
         }
         if (!isEnabled()) {
-            host.setStatus(tr("status.build.disabled", tool.displayName()));
+            host.setStatus(disabledMessage());
             return;
         }
         if (service.isRunning()) {
@@ -453,7 +654,7 @@ final class BuildCoordinator {
      */
     void runCustomAt(Path root) {
         if (root == null ? !isAvailable() : !isEnabled()) {
-            host.setStatus(tr(isEnabled() ? "status.build.notDetected" : "status.build.disabled", tool.displayName()));
+            host.setStatus(isEnabled() ? tr("status.build.notDetected", tool.displayName()) : disabledMessage());
             return;
         }
         if (service.isRunning()) {
@@ -463,23 +664,53 @@ final class BuildCoordinator {
         // Capture the root now: the prompt is an in-scene overlay, so a focus-regain can re-detect (and null
         // markerRoot, e.g. the pom was deleted meanwhile) while it is open — executable(null) then NPEs.
         Path at = root == null ? markerRoot : root;
-        host.promptText(
-                tr("dialog.buildCustom.title", tool.displayName()), tr("dialog.buildCustom.label"), "", text -> {
-                    if (text == null || text.isBlank()) {
-                        return;
-                    }
-                    List<String> tokens = ProgramArgs.tokenize(text.strip());
-                    if (tokens.isEmpty()) {
-                        return;
-                    }
-                    if (at == null || !Files.isDirectory(at)) {
-                        host.setStatus(tr("status.build.notDetected", tool.displayName()));
-                        return;
-                    }
-                    List<String> argv = new ArrayList<>(executable(at));
-                    argv.addAll(tokens);
-                    launch(at, argv, tokens, List.of());
-                });
+        // Prefilled with the last string (this session's, else the project's history), and the label says
+        // how quoting works and that the checked toggles are NOT added — they used to be dropped silently.
+        List<String> history = ops.customHistory(tool.id());
+        String initial = lastCustomText != null ? lastCustomText : history.isEmpty() ? "" : history.get(0);
+        List<String> toggles = at == null ? List.of() : providerToggleArgs(at);
+        String label = tr("dialog.buildCustom.label") + " — "
+                + (toggles.isEmpty()
+                        ? tr("dialog.buildCustom.hintNoToggles")
+                        : tr("dialog.buildCustom.hint", String.join(" ", toggles)));
+        host.promptText(tr("dialog.buildCustom.title", tool.displayName()), label, initial, text -> {
+            if (text == null || text.isBlank()) {
+                return;
+            }
+            runCustomText(at, text.strip());
+        });
+    }
+
+    /** The toggle args of {@code root}'s set, through the current provider when {@code root} is the detected
+     *  one (another root's popup has its own parsed provider, which the toggles were checked against). */
+    private List<String> providerToggleArgs(Path root) {
+        if (provider == null || markerRoot == null || !markerRoot.equals(root)) {
+            return List.of();
+        }
+        return provider.toggleArgs(togglesFor(root));
+    }
+
+    /** Runs the custom string {@code text} verbatim in {@code root} and remembers it (the prompt's accept, a
+     *  "Recent" row of the popup). */
+    void runCustomText(Path root, String text) {
+        List<String> tokens = ProgramArgs.tokenize(text);
+        if (tokens.isEmpty()) {
+            return;
+        }
+        Path at = root == null ? markerRoot : root;
+        if (at == null || !Files.isDirectory(at)) {
+            host.setStatus(tr("status.build.notDetected", tool.displayName()));
+            return;
+        }
+        if (service.isRunning()) {
+            host.setStatus(tr("status.build.busy", tool.displayName()));
+            return;
+        }
+        lastCustomText = text;
+        ops.rememberCustom(tool.id(), text);
+        List<String> argv = new ArrayList<>(executable(at));
+        argv.addAll(tokens);
+        launch(at, argv, tokens, List.of());
     }
 
     /** Re-runs the most recent invocation (same root + task + toggle args). */
@@ -522,36 +753,41 @@ final class BuildCoordinator {
     /**
      * The workspace-trust gate: whether a build may execute from {@code root} right now.
      *
-     * <p>Passes straight through for a root with no repo-shipped wrapper — {@code argv[0]} is then the tool
-     * the <em>user</em> installed, so there is nothing new to consent to and the overwhelmingly common case
-     * costs one {@code Files.isRegularFile} probe. When the root does ship a wrapper ({@code ./mvnw},
-     * {@code ./gradlew}), running the build hands whoever wrote that file code execution with the user's
-     * privileges, so it runs only once the user has trusted the folder. Trust is remembered per root (and
-     * inherited by subfolders), so this asks once per repository, not once per build.
+     * <p>Every build of a Maven or Gradle project runs code the repository supplies — not only a shipped
+     * {@code ./mvnw}/{@code ./gradlew} (the one case this used to gate) but the pom's plugins and
+     * extensions, the files under {@code .mvn/}, every Gradle script — on the user's own {@code mvn} just
+     * the same. So the first build of any kind in an untrusted folder asks once, with a prompt that lists
+     * what it found ({@link BuildTrust}); trust is remembered per folder (the wrapper's, else the open
+     * project — a module must not silently cover a script one level up), inherited by subfolders, shown in
+     * the tasks window's header with a Revoke, and revocable in Settings → Workspace. Tools whose builds
+     * run nothing of the repository's (npm, Cargo, Go, …) pass straight through.
      *
-     * <p>Declining does <b>not</b> silently fall back to the PATH tool: a hostile {@code pom.xml} or
-     * {@code build.gradle} can execute code through {@code mvn}/{@code gradle} just as well (build plugins
-     * and Gradle scripts run in-process), so "no" has to mean no build, not a quieter one.
+     * <p>Declining does <b>not</b> silently fall back to anything: "no" has to mean no build, not a quieter
+     * one. The same gate covers Gradle's "Load all tasks…", the Run/Debug build-before-launch step and the
+     * Maven classpath fallback ({@link #trustedExecutable}).
      */
     private boolean allowRun(Path root) {
         if (root == null) {
             return false;
         }
+        if (!BuildTrust.gates(tool)) {
+            return true;
+        }
         Path wrapper = tool.repoWrapper(root, wrapperBoundary(root), isWindows());
-        if (wrapper == null) {
+        Path trustRoot = wrapper != null ? wrapper.getParent() : wrapperBoundary(root);
+        if (ops.isTrusted(trustRoot)) {
             return true;
         }
-        // Trust is asked about the folder that ships the wrapper actually launched — the module's own, or
-        // the project root above it. Trusting a module must not silently cover a script one level up.
-        Path wrapperDir = wrapper.getParent();
-        if (ops.isTrusted(wrapperDir)) {
-            return true;
-        }
-        if (!ops.confirmTrust(wrapperDir, wrapper)) {
+        BuildTrust.Summary summary =
+                BuildTrust.describe(tool, root, wrapper, host.projectScope().buildCommand(tool, host.settings()));
+        if (!ops.confirmTrust(trustRoot, summary)) {
             host.setStatus(tr("status.build.untrusted", tool.displayName()));
             return false;
         }
-        ops.trust(wrapperDir);
+        ops.trust(trustRoot);
+        if (tree != null && markerRoot != null) {
+            tree.setHeader(markerRoot, ops.projectRoot(), trustState(markerRoot));
+        }
         return true;
     }
 
@@ -587,14 +823,10 @@ final class BuildCoordinator {
         if (tree != null) {
             tree.setRunning(true);
         }
+        // Always names the folder: Rerun Last runs where the last build did, which may be a root whose tool
+        // windows are no longer shown (review B21).
         Path rootName = root.toAbsolutePath().normalize().getFileName();
-        host.setStatus(
-                markerRoot == null
-                                || root.toAbsolutePath()
-                                        .normalize()
-                                        .equals(markerRoot.toAbsolutePath().normalize())
-                        ? tr("status.build.started", tool.displayName(), label)
-                        : tr("status.build.startedIn", tool.displayName(), label, String.valueOf(rootName)));
+        host.setStatus(tr("status.build.startedIn", tool.displayName(), label, String.valueOf(rootName)));
         // Maven and the Scala tools (sbt, Mill, Scala CLI) run on the JDK chosen in Settings, as Run does; Gradle
         // picks its own through its toolchains.
         boolean onSettingsJdk = tool == BuildTool.MAVEN

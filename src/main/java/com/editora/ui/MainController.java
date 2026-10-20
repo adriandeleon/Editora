@@ -5719,7 +5719,18 @@ public class MainController implements com.editora.mcp.McpBridge {
             list.add(new BuildCoordinator(
                     tool,
                     coordinatorHost,
-                    new BuildCoordinator.Ops() {
+                    // Trust, the custom-task history and the build-file link live in BuildTrustOps.
+                    new BuildTrustOps(
+                            () -> config,
+                            () -> stage,
+                            this::saveTrustDecision,
+                            () -> {
+                                if (settingsWindow != null) {
+                                    settingsWindow.refreshTrustedFolders();
+                                }
+                            },
+                            this::requestSave,
+                            file -> fileWorkflows.openPath(file)) {
                         @Override
                         public java.nio.file.Path projectRoot() {
                             return windowProject != null ? windowProject.rootPath() : null;
@@ -5763,22 +5774,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                             if (settingsWindow != null) {
                                 settingsWindow.refreshBuildToolStatus();
                             }
-                        }
-
-                        @Override
-                        public boolean isTrusted(java.nio.file.Path root) {
-                            return config.getTrustStore().isTrusted(root);
-                        }
-
-                        @Override
-                        public boolean confirmTrust(java.nio.file.Path root, java.nio.file.Path wrapper) {
-                            return MainController.this.confirmTrustFolder(root, wrapper);
-                        }
-
-                        @Override
-                        public void trust(java.nio.file.Path root) {
-                            config.getTrustStore().trust(root);
-                            saveTrustDecision(); // durable: a security decision must survive a crash
                         }
                     },
                     buildOutputPanel));
@@ -7027,6 +7022,26 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public java.nio.file.Path buildRoot(BuildTool tool) {
+                    for (BuildCoordinator c : buildCoordinators) {
+                        if (c.tool() == tool) {
+                            return c.markerRoot();
+                        }
+                    }
+                    return null;
+                }
+
+                @Override
+                public String buildExecutableSummary(BuildTool tool) {
+                    for (BuildCoordinator c : buildCoordinators) {
+                        if (c.tool() == tool) {
+                            return c.executableSummary();
+                        }
+                    }
+                    return null;
+                }
+
+                @Override
                 public String pythonInterpreterChoice() {
                     return config.getWorkspaceState().getPythonInterpreter();
                 }
@@ -7213,11 +7228,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         config.getTrustStore().trust(root);
         saveTrustDecision(); // durable: a security decision must survive a crash
         return true;
-    }
-
-    private boolean confirmTrustFolder(java.nio.file.Path root, java.nio.file.Path wrapper) {
-        TrustPrompts.Prompt prompt = TrustPrompts.buildWrapper(stage, root, wrapper);
-        return prompt.alert().showAndWait().orElse(ButtonType.CANCEL) == prompt.trust();
     }
 
     /**

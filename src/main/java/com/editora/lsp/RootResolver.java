@@ -181,10 +181,25 @@ public final class RootResolver {
      * ({@code .git}/{@code .terraform}), so those callers pass {@code filesOnly=false}. Pure.
      */
     public static Path findMarkerRoot(Path filePath, List<String> markers, boolean filesOnly) {
+        return findMarkerRoot(filePath, markers, filesOnly, null);
+    }
+
+    /**
+     * As {@link #findMarkerRoot(Path, List, boolean)}, but the walk stops at {@code boundary} (inclusive) when
+     * {@code filePath} is inside it — the open project's root, so a project opened inside a module never
+     * roots a build at a pom <em>above</em> the folder the user opened (the wrapper lookup already stops
+     * there; detection did not, and built a folder the UI never showed). {@code null}, or a path outside the
+     * boundary, means unbounded as before. Pure.
+     */
+    public static Path findMarkerRoot(Path filePath, List<String> markers, boolean filesOnly, Path boundary) {
         if (filePath == null || markers == null || markers.isEmpty()) {
             return null;
         }
         Path dir = Files.isDirectory(filePath) ? filePath : filePath.getParent();
+        Path top = boundary == null ? null : boundary.toAbsolutePath().normalize();
+        if (top != null && (dir == null || !dir.toAbsolutePath().normalize().startsWith(top))) {
+            top = null;
+        }
         while (dir != null) {
             for (String marker : markers) {
                 Path candidate = dir.resolve(marker);
@@ -192,8 +207,66 @@ public final class RootResolver {
                     return dir;
                 }
             }
+            if (top != null && dir.toAbsolutePath().normalize().equals(top)) {
+                return null;
+            }
             dir = dir.getParent();
         }
         return null;
+    }
+
+    /** Folders whose name says they hold no build of the user's: dependencies, build output, VCS metadata. */
+    private static final java.util.Set<String> SKIPPED_FOLDERS = java.util.Set.of(
+            "node_modules", "target", "build", "out", "dist", ".git", ".idea", ".editora", ".gradle", ".mvn");
+
+    /**
+     * The directories at most {@code depth} levels below {@code root} (the root itself included) that hold
+     * one of {@code markers} as a regular file, in breadth-first order, visiting at most {@code maxDirs}
+     * folders. The "Projects" list of a build tool's tasks window: a workspace whose poms sit one folder down
+     * ({@code backend/}, a monorepo) otherwise looks as if it had no build tool until a file inside a module
+     * is opened. Hidden folders and the usual dependency/output folders are skipped. Pure, bounded, no
+     * symlink following.
+     */
+    public static List<Path> findMarkerRootsBelow(Path root, List<String> markers, int depth, int maxDirs) {
+        List<Path> found = new java.util.ArrayList<>();
+        if (root == null || markers == null || markers.isEmpty() || !Files.isDirectory(root)) {
+            return found;
+        }
+        java.util.ArrayDeque<Path> queue = new java.util.ArrayDeque<>();
+        java.util.ArrayDeque<Integer> depths = new java.util.ArrayDeque<>();
+        queue.add(root);
+        depths.add(0);
+        int visited = 0;
+        while (!queue.isEmpty() && visited < maxDirs) {
+            Path dir = queue.poll();
+            int level = depths.poll();
+            visited++;
+            for (String marker : markers) {
+                if (Files.isRegularFile(dir.resolve(marker))) {
+                    found.add(dir);
+                    break;
+                }
+            }
+            if (level >= depth) {
+                continue;
+            }
+            try (java.util.stream.Stream<Path> children = Files.list(dir)) {
+                for (Path child : (Iterable<Path>) children.sorted()::iterator) {
+                    String name = child.getFileName() == null
+                            ? ""
+                            : child.getFileName().toString();
+                    if (name.startsWith(".") || SKIPPED_FOLDERS.contains(name)) {
+                        continue;
+                    }
+                    if (Files.isDirectory(child, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                        queue.add(child);
+                        depths.add(level + 1);
+                    }
+                }
+            } catch (java.io.IOException | RuntimeException e) {
+                // unreadable folder: nothing below it is listed
+            }
+        }
+        return found;
     }
 }

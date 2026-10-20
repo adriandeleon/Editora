@@ -176,4 +176,56 @@ class RootResolverTest {
                 RootResolver.resolveTiered(null, Files.createFile(svc.resolve("m.py")), tiers, null),
                 "a nested package in a monorepo keeps its own root");
     }
+
+    // --- Maven pass 2 (B27 bounded marker walk, B11 roots below the project) ---
+
+    @Test
+    void theMarkerWalkStopsAtTheProjectRoot(@TempDir Path dir) throws IOException {
+        Path repo = Files.createDirectories(dir.resolve("repo"));
+        Files.writeString(repo.resolve("pom.xml"), "<project/>");
+        Path src = Files.createDirectories(repo.resolve("app").resolve("src"));
+        Path file = Files.writeString(src.resolve("A.java"), "");
+        assertEquals(repo, RootResolver.findMarkerRoot(file, List.of("pom.xml"), true), "unbounded: the pom above");
+        assertNull(
+                RootResolver.findMarkerRoot(file, List.of("pom.xml"), true, repo.resolve("app")),
+                "opened inside the module: the pom above the opened folder must not root a build");
+        assertEquals(
+                repo,
+                RootResolver.findMarkerRoot(file, List.of("pom.xml"), true, repo),
+                "the boundary itself is still looked at");
+        assertEquals(
+                repo,
+                RootResolver.findMarkerRoot(file, List.of("pom.xml"), true, dir.resolve("elsewhere")),
+                "a boundary the file is not inside does not bound");
+    }
+
+    @Test
+    void findsMarkerRootsBelowAProjectBoundedAndSkippingOutputFolders(@TempDir Path dir) throws IOException {
+        Files.writeString(Files.createDirectories(dir.resolve("backend")).resolve("pom.xml"), "<project/>");
+        Files.writeString(
+                Files.createDirectories(dir.resolve("services").resolve("billing"))
+                        .resolve("pom.xml"),
+                "<project/>");
+        Files.writeString(
+                Files.createDirectories(dir.resolve("too").resolve("deep").resolve("down"))
+                        .resolve("pom.xml"),
+                "<project/>");
+        Files.writeString(
+                Files.createDirectories(dir.resolve("target").resolve("gen")).resolve("pom.xml"), "<project/>");
+        Files.writeString(Files.createDirectories(dir.resolve(".hidden")).resolve("pom.xml"), "<project/>");
+        Files.createDirectories(dir.resolve("frontend"));
+
+        List<Path> found = RootResolver.findMarkerRootsBelow(dir, List.of("pom.xml"), 2, 100);
+        assertEquals(List.of(dir.resolve("backend"), dir.resolve("services").resolve("billing")), found);
+
+        Files.writeString(dir.resolve("pom.xml"), "<project/>");
+        assertEquals(
+                dir,
+                RootResolver.findMarkerRootsBelow(dir, List.of("pom.xml"), 2, 100)
+                        .get(0),
+                "the root itself first");
+        assertEquals(
+                List.of(dir), RootResolver.findMarkerRootsBelow(dir, List.of("pom.xml"), 2, 1), "the visit cap holds");
+        assertEquals(List.of(), RootResolver.findMarkerRootsBelow(dir.resolve("missing"), List.of("pom.xml"), 2, 100));
+    }
 }

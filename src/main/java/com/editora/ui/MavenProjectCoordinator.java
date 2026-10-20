@@ -352,9 +352,19 @@ final class MavenProjectCoordinator {
 
     /** Labels reuse the commands' own titles, so the menu and the palette can never say different things. */
     private static javafx.scene.control.MenuItem item(String titleKey, javafx.scene.Node icon, Runnable action) {
-        javafx.scene.control.MenuItem menuItem = new javafx.scene.control.MenuItem(tr(titleKey), icon);
+        javafx.scene.control.MenuItem menuItem = new javafx.scene.control.MenuItem(submenuLabel(tr(titleKey)), icon);
         menuItem.setOnAction(e -> action.run());
         return menuItem;
+    }
+
+    /**
+     * A command title inside the <b>Maven</b> submenu, without the "Maven: " the palette needs: the submenu
+     * already says Maven, so "Maven ▸ Maven: Show Actions" read twice (review B24). The prefix is whatever
+     * precedes the first ": " — the convention every build-tool command title follows in all six catalogs.
+     */
+    static String submenuLabel(String title) {
+        int colon = title.indexOf(": ");
+        return colon > 0 ? title.substring(colon + 2) : title;
     }
 
     /** Entry point for the project-tree folder menu — generate into {@code folder}. */
