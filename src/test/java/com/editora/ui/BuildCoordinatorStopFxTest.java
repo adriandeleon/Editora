@@ -197,10 +197,10 @@ class BuildCoordinatorStopFxTest {
         waitUntil(
                 () -> c.isRunning() && List.of("verify", "-DskipTests").equals(lastTaskArgs(c)),
                 "the second build started once the first one's exit was delivered");
-        assertEquals(
-                tr("status.build.started", BuildTool.MAVEN.displayName(), "verify -DskipTests"),
-                host.lastStatus(),
-                host.statuses.toString());
+        assertTrue(
+                host.lastStatus()
+                        .startsWith(tr("status.build.started", BuildTool.MAVEN.displayName(), "verify -DskipTests")),
+                host.statuses.toString()); // "… in <folder>": the status names the root (review B21)
         assertTrue(
                 host.statuses.contains(tr("status.build.stopped", BuildTool.MAVEN.displayName())),
                 "the first build was stopped on the way: " + host.statuses);

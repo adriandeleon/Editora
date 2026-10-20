@@ -73,6 +73,10 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     private final HBox toolbar = new HBox(2);
     private final TextField filterField = new TextField();
     private final Button runButton;
+    /** A build of this tool is running (Stop live, Run greyed). */
+    private final javafx.beans.property.BooleanProperty running =
+            new javafx.beans.property.SimpleBooleanProperty(false);
+
     private final Button stopButton;
     private Button secondaryButton;
 
@@ -188,9 +192,10 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
                 .bind(javafx.beans.binding.Bindings.createBooleanBinding(
                         () -> {
                             TreeItem<Item> selected = tree.getSelectionModel().getSelectedItem();
-                            return selected == null || !(selected.getValue() instanceof TaskItem);
+                            return running.get() || selected == null || !(selected.getValue() instanceof TaskItem);
                         },
-                        tree.getSelectionModel().selectedItemProperty()));
+                        tree.getSelectionModel().selectedItemProperty(),
+                        running));
 
         setRunning(false); // nothing is running yet — Stop must not look live on a fresh window
         setProvider(null);
@@ -331,7 +336,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
      */
     public void setRunning(boolean running) {
         stopButton.setDisable(!running);
-        runButton.setDisable(running);
+        this.running.set(running); // Run's disable is bound: greyed while a build runs or no task is selected
     }
 
     /**

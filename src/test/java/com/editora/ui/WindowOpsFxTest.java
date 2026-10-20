@@ -574,7 +574,7 @@ class WindowOpsFxTest {
 
     @Test
     void generatingFromAnArchetypeAsksFirstAndNamesTheArchetype() throws Exception {
-        MavenProjectCoordinator.Ops maven = ops(MavenProjectCoordinator.Ops.class);
+        MavenProjectCoordinator.Ops maven = new MavenProjectWindowOps(controller); // a named class, not an adapter
         MavenArchetype archetype =
                 new MavenArchetype("org.example", "quickstart-archetype", "1.4", "A quick start", "", false);
         Path root = Files.createDirectories(dir.resolve("generated"));
