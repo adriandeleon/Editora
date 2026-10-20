@@ -9,9 +9,10 @@ import com.editora.build.BuildTool;
 
 /**
  * "Debug this test": the JVM build tools can fork the test JVM suspended on a JDWP port — Maven via
- * {@code -Dmaven.surefire.debug}, Gradle via {@code --debug-jvm}. Both then print the standard
+ * {@code -Dmaven.surefire.debug}, Gradle via {@code --debug-jvm}. Gradle prints the standard
  * {@code Listening for transport dt_socket at address: 5005} line, which {@link #jdwpPort} recognizes so the
- * coordinator can attach the debugger to the waiting JVM. Pure.
+ * coordinator can attach the debugger to the waiting JVM; Surefire 3 withholds that line until the fork has
+ * run, so for Maven the port is chosen up front and polled instead ({@link JdwpAttachRetry}). Pure.
  *
  * <p>Only Maven/Gradle are supported (Go/Cargo/npm have no equivalent one-flag suspend-and-wait).
  */
@@ -20,11 +21,22 @@ public final class TestDebug {
     private TestDebug() {}
 
     /**
-     * The Maven/Gradle flag that forks the test JVM suspended on a JDWP port: for Maven one the system picks
-     * (surefire's own default is a fixed 5005, review A15); for Gradle an init script does the same, and
-     * {@code --debug-jvm} (always 5005) is the fallback.
+     * The Maven flag that forks the test JVM suspended on a JDWP port Editora chose ({@link #mavenDebugArg}):
+     * surefire's own default is a fixed 5005 (review A15), and a system-picked port ({@code :0}) is only ever
+     * announced through a banner Surefire 3 withholds until the suspended JVM has run (review D1). For Gradle
+     * an init script picks ports and prints the banner, and {@code --debug-jvm} (always 5005) is the fallback.
      */
-    private static final String MAVEN_DEBUG = "-Dmaven.surefire.debug=" + com.editora.build.BuildDebug.JDWP_AGENT;
+    private static final String MAVEN_DEBUG_PREFIX = "-Dmaven.surefire.debug=";
+
+    /** {@code -Dmaven.surefire.debug=-agentlib:jdwp=…,suspend=y,address=127.0.0.1:<port>}. */
+    public static String mavenDebugArg(int port) {
+        return MAVEN_DEBUG_PREFIX + com.editora.build.BuildDebug.jdwpAgent(port);
+    }
+
+    /** Surefire's own banner, printed once the build reaches the test phase: the attach wait restarts there. */
+    public static boolean isSurefireTestsBanner(String line) {
+        return line != null && line.contains("T E S T S");
+    }
 
     private static final String GRADLE_DEBUG = "--debug-jvm";
 
@@ -34,25 +46,20 @@ public final class TestDebug {
 
     /**
      * Task args that run one test class/method under a suspended debuggee, or an empty list when the tool
-     * can't ({@code null} {@code methodName} debugs the whole class).
-     */
-    public static List<String> debugTaskArgs(BuildTool tool, String className, String methodName) {
-        return debugTaskArgs(tool, className, methodName, null);
-    }
-
-    /**
-     * As above; {@code gradleInitScript}, when given, debugs Gradle's test JVMs on ports the system picks (see
-     * {@code GradleDebugInit}) instead of {@code --debug-jvm}'s fixed 5005.
+     * can't ({@code null} {@code methodName} debugs the whole class). Maven forks the JVM on {@code mavenPort},
+     * a free loopback port chosen beforehand ({@link JdwpAttachRetry#freeLoopbackPort}); {@code gradleInitScript},
+     * when given, debugs Gradle's test JVMs on ports the system picks (see {@code GradleDebugInit}) instead of
+     * {@code --debug-jvm}'s fixed 5005.
      */
     public static List<String> debugTaskArgs(
-            BuildTool tool, String className, String methodName, java.nio.file.Path gradleInitScript) {
+            BuildTool tool, String className, String methodName, java.nio.file.Path gradleInitScript, int mavenPort) {
         List<String> base = TestRunRecognizer.singleTestTask(tool, className, methodName);
         if (base.isEmpty()) {
             return List.of(); // non-JVM tool — no supported suspend-and-wait flag
         }
         List<String> args = new ArrayList<>(base);
         if (tool != BuildTool.GRADLE) {
-            args.add(MAVEN_DEBUG);
+            args.add(mavenDebugArg(mavenPort));
         } else if (gradleInitScript != null) {
             args.addAll(com.editora.build.GradleDebugInit.args(gradleInitScript));
         } else {

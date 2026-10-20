@@ -24,7 +24,16 @@ public final class BuildDebug {
      * unauthenticated: {@code address=*:5005} offered code execution as the user to every host that could
      * reach the machine, and Editora only ever attaches to {@code localhost}.
      */
-    public static final String JDWP_AGENT = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:0";
+    public static final String JDWP_AGENT = jdwpAgent(0);
+
+    /**
+     * The same suspended loopback agent on a port chosen beforehand ({@code 0} lets the system pick). A Maven
+     * test debug chooses its own free port (review D1): Surefire 3 holds the fork's stdout — the banner with
+     * the system-picked port included — until the suspended JVM has run, so the port must be known up front.
+     */
+    public static String jdwpAgent(int port) {
+        return "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:" + port;
+    }
 
     /** Gradle Run under debug: {@code <runTask> --debug-jvm} (suspends on 5005, prints the JDWP banner). */
     public static List<String> gradleDebugArgs(String runTask) {

@@ -156,6 +156,9 @@ class DebugJavaLaunchFxTest {
             host = new Host();
             host.settings.setDebugSupport(true);
             host.settings.setLspSupport(true);
+            // The pom.xml marks a Maven project for routing only; nothing here can be built, so the
+            // build-before-launch step (tested in RunCoordinatorFlowsFxTest) stays off.
+            host.settings.setBuildBeforeRun(false);
             LspCoordinator lsp = new LspCoordinator(host, lspManager, new LspOpsStub());
             lsp.setServerAvailableForTest("java", true);
             dap.configure(true, project.resolve("no-plugin-here").toString());

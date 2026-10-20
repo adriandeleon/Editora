@@ -296,6 +296,7 @@ public class SettingsWindow {
     private CheckBox editorConfigCheck;
     private CheckBox logViewerCheck;
     private CheckBox testRunnerCheck;
+    private CheckBox buildBeforeRunCheck;
     private CheckBox csvGridCheck;
     private CheckBox structuredPreviewCheck;
     private CheckBox svgPreviewCheck;
@@ -1471,6 +1472,7 @@ public class SettingsWindow {
         editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
         logViewerCheck = viewCheck(tr("settings.logViewer"), Settings::setLogViewer);
         testRunnerCheck = viewCheck(tr("settings.testRunner"), Settings::setTestRunner);
+        buildBeforeRunCheck = viewCheck(tr("settings.buildBeforeRun"), Settings::setBuildBeforeRun);
         csvGridCheck = viewCheck(tr("settings.csvPreview"), Settings::setCsvPreview);
         structuredPreviewCheck = viewCheck(tr("settings.structuredPreview"), Settings::setStructuredPreview);
         svgPreviewCheck = viewCheck(tr("settings.svgPreview"), Settings::setSvgPreview);
@@ -5162,6 +5164,12 @@ public class SettingsWindow {
                 Category.BUILD_TOOLS,
                 settingRow(tr("settings.maven.jdk"), tr("settings.maven.jdk.hint"), mavenJdkCombo),
                 "java jdk default compact source file maven sdkman toolchain run debug");
+        checkRow(
+                javaCard,
+                Category.BUILD_TOOLS,
+                buildBeforeRunCheck,
+                tr("settings.buildBeforeRun.hint"),
+                "java build before run debug compile maven gradle launch main class stale");
         for (BuildTool bt : BuildTool.enabled()) {
             Card c = card(p, bt.displayName());
             String kw = bt.id() + " build tool project detected enable command override toolbar";
@@ -7763,14 +7771,28 @@ public class SettingsWindow {
             List<String> argv = lspArgv(srv.id());
             status.tool(lspToolName(srv.id(), argv));
             status.checking();
-            lspManager.detectCommand(
-                    srv.id(),
-                    shown.get(srv.id()),
-                    found -> status.show(
-                            found,
-                            found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "",
-                            lspCheck.isSelected()));
+            lspManager.detectCommand(srv.id(), shown.get(srv.id()), found -> {
+                if (!found && MAVEN_POM.equals(srv.id()) && mavenInstallIncomplete(argv)) {
+                    // The folder is there but lacks jars (the upstream bundle without the ones it leaves out, or
+                    // a wiped install): not "not found" — "incomplete", with Install… to repair (Maven review C3).
+                    status.showProblem(
+                            tr("settings.lsp.mavenIncomplete", lspToolName(srv.id(), argv)), lspCheck.isSelected());
+                    return;
+                }
+                status.show(
+                        found,
+                        found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "",
+                        lspCheck.isSelected());
+            });
         }
+    }
+
+    /** Whether the Maven server's {@code java -cp "<dir>/*"} folder exists but lacks required jars. Pure (file lookups). */
+    static boolean mavenInstallIncomplete(List<String> argv) {
+        return com.editora.install.MavenServerInstall.classpathDir(argv)
+                .filter(java.nio.file.Files::isDirectory)
+                .map(dir -> !com.editora.install.MavenServerInstall.complete(dir))
+                .orElse(false);
     }
 
     private static final String MAVEN_POM = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
@@ -8643,6 +8665,7 @@ public class SettingsWindow {
             editorConfigCheck.setSelected(settings.isEditorConfigSupport());
             logViewerCheck.setSelected(settings.isLogViewer());
             testRunnerCheck.setSelected(settings.isTestRunner());
+            buildBeforeRunCheck.setSelected(settings.isBuildBeforeRun());
             csvGridCheck.setSelected(settings.isCsvPreview());
             structuredPreviewCheck.setSelected(settings.isStructuredPreview());
             svgPreviewCheck.setSelected(settings.isSvgPreview());
@@ -9162,6 +9185,7 @@ public class SettingsWindow {
         try {
             logViewerCheck.setSelected(config.getSettings().isLogViewer());
             testRunnerCheck.setSelected(config.getSettings().isTestRunner());
+            buildBeforeRunCheck.setSelected(config.getSettings().isBuildBeforeRun());
         } finally {
             loading = prev;
         }
@@ -9304,6 +9328,7 @@ public class SettingsWindow {
             editorConfigCheck.setSelected(s.isEditorConfigSupport());
             logViewerCheck.setSelected(s.isLogViewer());
             testRunnerCheck.setSelected(s.isTestRunner());
+            buildBeforeRunCheck.setSelected(s.isBuildBeforeRun());
             csvGridCheck.setSelected(s.isCsvPreview());
             structuredPreviewCheck.setSelected(s.isStructuredPreview());
             svgPreviewCheck.setSelected(s.isSvgPreview());

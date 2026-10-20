@@ -77,6 +77,11 @@ final class DoctorCoordinator {
         /** The server's tokenized launch argv (configured command, blank ⇒ default; empty = unconfigured). */
         List<String> lspServerArgv(String serverId);
 
+        /** Why the server was given up on after failing its requests (Maven review C2), or null while it is not. */
+        default String lspServerFailure(String serverId) {
+            return null;
+        }
+
         void installServer(String serverId, Consumer<Boolean> onDone);
 
         void installLang(InstallCatalog.Lang lang, Consumer<Boolean> onDone);
@@ -847,6 +852,7 @@ final class DoctorCoordinator {
         }
         boolean python = "python".equals(serverId);
         boolean configured = ops.lspServerCommandSet(serverId);
+        String failing = ops.lspServerFailure(serverId);
         return probe(row, base -> {
             if (argv.isEmpty()) {
                 // No command at all (an uninstalled maven-pom): say that, not "not found on PATH" (review A3).
@@ -869,6 +875,17 @@ final class DoctorCoordinator {
             }
             if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
                 return typeScriptServerRow(base, argv, path); // found is not enough: it needs a tsserver (E4)
+            }
+            if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
+                // `java` found is not enough either: the command loads a folder of jars, and an emptied folder or
+                // the upstream bundle without the jars it leaves out looked installed (Maven review C1/C3).
+                List<String> missingJars = com.editora.install.MavenServerInstall.missingJars(argv);
+                if (!missingJars.isEmpty()) {
+                    return base.missing("doctor.tip.mavenIncomplete", String.join(", ", missingJars));
+                }
+            }
+            if (failing != null) {
+                return base.warn(failing, "doctor.tip.serverFailing"); // it starts, then fails every request (C2)
             }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
             String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";

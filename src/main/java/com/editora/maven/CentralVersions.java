@@ -62,6 +62,9 @@ public final class CentralVersions {
      *
      * <p>Without this an "update" can silently <em>downgrade</em>: a pom pinned to a milestone the archetype
      * chose deliberately, or to a version newer than the latest stable one, would be rewritten backwards.
+     * "Newer" is {@link MavenVersion}'s — Maven's own rules, under which a number beats any qualifier — and,
+     * belt and braces, the candidate's leading number must not be below the current one: whatever a
+     * comparator makes of {@code r09} against {@code 33.0.0-jre}, no version that starts lower is an upgrade.
      *
      * @param current {@code groupId:artifactId} → the version in the pom today
      * @param latest {@code groupId:artifactId} → the newest stable version found
@@ -73,11 +76,44 @@ public final class CentralVersions {
         }
         latest.forEach((ga, next) -> {
             String now = current.get(ga);
-            if (now != null && com.editora.plugin.PluginInstaller.compareVersions(next, now) > 0) {
+            if (now != null && isUpgrade(now, next)) {
                 out.put(ga, next);
             }
         });
         return out;
+    }
+
+    /**
+     * Strictly newer by Maven's ordering, and not starting with a smaller number. Pure — unit-tested.
+     *
+     * <p>A current version that is not a plain version — a property reference ({@code ${surefire.version}}),
+     * a range ({@code [2.0,3.0)}), {@code LATEST}/{@code RELEASE} — is never "upgraded": {@code PomEdits}
+     * would write a literal over the indirection or range the author chose. The semver comparator used to
+     * drop these by accident (a letter outranked every number); now it is deliberate.
+     */
+    static boolean isUpgrade(String now, String next) {
+        if (!isPlainVersion(now) || !isPlainVersion(next)) {
+            return false;
+        }
+        if (!MavenVersion.isNewer(next, now)) {
+            return false;
+        }
+        long nowLeading = MavenVersion.leadingNumber(now);
+        long nextLeading = MavenVersion.leadingNumber(next);
+        return nowLeading < 0 || nextLeading >= nowLeading;
+    }
+
+    /** A literal version: no property reference, no range brackets or list, no {@code LATEST}/{@code RELEASE}. */
+    static boolean isPlainVersion(String v) {
+        if (v == null || v.isBlank()) {
+            return false;
+        }
+        String s = v.strip();
+        char c = s.charAt(0);
+        if (c == '[' || c == '(' || s.contains("${") || s.contains(",")) {
+            return false;
+        }
+        return !s.equalsIgnoreCase("LATEST") && !s.equalsIgnoreCase("RELEASE");
     }
 
     private static String[] split(String ga) {

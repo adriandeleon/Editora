@@ -291,6 +291,15 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         showRunSummary(); // the detail pane shows the run header until a test is selected
     }
 
+    /**
+     * Replaces the header's "Running <argv>…" with what the run is really doing — Debug Test waiting for the
+     * suspended test JVM (review D14: the status bar's version was overwritten at once, and the header showed
+     * a 180-character argv instead).
+     */
+    void setRunNote(String note) {
+        status.setText(note == null ? tr("testrunner.running", runLabel) : note);
+    }
+
     /** Live update: sync the tree from the (mutated-in-place) root and refresh the header counts/progress. */
     void update(TestRun run) {
         update(run, null);

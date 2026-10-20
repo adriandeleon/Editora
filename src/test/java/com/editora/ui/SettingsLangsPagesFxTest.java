@@ -187,6 +187,34 @@ class SettingsLangsPagesFxTest {
         });
     }
 
+    /** The Maven pill: a folder that exists but lacks required jars is "incomplete" (Maven review C3), not "not found". */
+    @Test
+    void theMavenServerPillTellsAnIncompleteFolderFromAMissingOne(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path maven = java.nio.file.Files.createDirectories(dir.resolve("maven"));
+        java.util.List<String> argv =
+                com.editora.lsp.LspServerRegistry.tokenize(com.editora.install.InstallCatalog.jvmClasspathCommand(
+                        maven, com.editora.install.InstallCatalog.LEMMINX_MAIN_CLASS));
+        assertTrue(SettingsWindow.mavenInstallIncomplete(argv), "an empty folder is incomplete");
+        for (String name : java.util.List.of(
+                "org.eclipse.lemminx-0.30.1.jar",
+                "lemminx-maven-0.12.0.jar",
+                "guava-33.7.2-jre.jar",
+                "commons-lang3-3.21.0.jar",
+                "jsoup-1.23.2.jar")) {
+            java.nio.file.Files.writeString(maven.resolve(name), "");
+        }
+        assertFalse(SettingsWindow.mavenInstallIncomplete(argv), "complete");
+        java.util.List<String> gone =
+                com.editora.lsp.LspServerRegistry.tokenize(com.editora.install.InstallCatalog.jvmClasspathCommand(
+                        dir.resolve("never-installed"), com.editora.install.InstallCatalog.LEMMINX_MAIN_CLASS));
+        assertFalse(
+                SettingsWindow.mavenInstallIncomplete(gone), "no folder at all is \"not found\", not \"incomplete\"");
+        assertFalse(
+                SettingsWindow.mavenInstallIncomplete(java.util.List.of("/home/me/lemminx-maven.sh")),
+                "a launcher script has no folder");
+    }
+
     /**
      * The Web page chooses the preview browser (it was only ever remembered from the last preview) and says
      * whether the HTTP scripts' node is there; a build tool override naming no program says so.

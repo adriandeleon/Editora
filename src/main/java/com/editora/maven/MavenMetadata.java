@@ -4,8 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import com.editora.plugin.PluginInstaller;
-
 /**
  * Reads the latest usable version out of a repository's {@code maven-metadata.xml}.
  *
@@ -29,6 +27,9 @@ public final class MavenMetadata {
     /**
      * The highest stable version in the metadata, or null when there is none.
      *
+     * <p>"Highest" by {@link MavenVersion} — Maven's own ordering — not the plugin registry's semver
+     * comparator, which ranked Guava's {@code r09} above {@code 33.0.0-jre} and so offered a downgrade.
+     *
      * <p>Parsed by scanning for {@code <version>} elements rather than through a DOM: the file is a flat
      * list, this avoids standing up a parser (and its XXE hardening) for it, and a malformed or truncated
      * download degrades to "no answer" rather than an exception.
@@ -36,7 +37,7 @@ public final class MavenMetadata {
     public static String latestStable(String metadataXml) {
         String best = null;
         for (String v : versions(metadataXml)) {
-            if (isStable(v) && (best == null || PluginInstaller.compareVersions(v, best) > 0)) {
+            if (isStable(v) && (best == null || MavenVersion.isNewer(v, best))) {
                 best = v;
             }
         }

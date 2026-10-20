@@ -31,6 +31,7 @@ import com.editora.dap.DapServerRegistry;
 import com.editora.editor.BreakpointManager;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
+import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.ProgramArgs;
 import com.editora.run.StackTraceLinks;
 import com.editora.vfs.Vfs;
@@ -72,6 +73,15 @@ final class DebugCoordinator {
 
         /** Opens the Run Configurations page on {@code name} — see {@code RunCoordinator.Ops}. */
         void editConfiguration(String name);
+
+        /**
+         * The argv prefix a launch may start {@code tool} with from {@code root} (the tasks tree's choice after
+         * its trust gate), or null when the user declined to trust the project's wrapper — see
+         * {@code RunCoordinator.Ops#buildExecutable}.
+         */
+        default List<String> buildExecutable(com.editora.build.BuildTool tool, Path root) {
+            return List.of(tool.commandExample());
+        }
 
         void toggleToolWindow();
 
@@ -382,6 +392,12 @@ final class DebugCoordinator {
             ops.setStatusDebugLoading(false);
             host.setStatus(tr("status.debug.launchCancelled"));
             updateDebugAvailability();
+        } else if (pendingAttachStop != null && !dapManager.isActive()) {
+            // Debug Test waiting for its suspended JVM: there is no session yet, so Stop ends the build that
+            // would fork it (review D1) — as it ends the run of an attached session below.
+            Runnable cancel = pendingAttachStop;
+            setPendingAttach(null);
+            cancel.run();
         } else {
             Runnable owner = relaunch == ONE_SHOT_ATTACH ? ownerStop : null;
             ownerStop = null;
@@ -391,6 +407,27 @@ final class DebugCoordinator {
                 owner.run();
             }
         }
+    }
+
+    /** What Debug ▸ Stop runs while a test run waits for its JVM to attach (no session yet). */
+    private Runnable pendingAttachStop;
+
+    /**
+     * A Debug Test run is waiting for its suspended JVM ({@code cancel} ends that build), or no longer is
+     * ({@code null}): the window opens with Stop usable and its spinner on, like a before-launch build.
+     */
+    void setPendingAttach(Runnable cancel) {
+        boolean was = pendingAttachStop != null;
+        pendingAttachStop = cancel;
+        if (cancel != null && !was) {
+            ops.openToolWindow();
+        }
+        // A session being debugged keeps its own buttons (Continue, Stop through ownerStop): the waiting state
+        // shows once it ends, when the run's next fork is what Stop would end (see the state listener).
+        if (!beforeLaunch.isActive() && pendingBuild == null && !dapManager.isActive()) {
+            panel().setPreparing(cancel != null);
+        }
+        updateDebugAvailability();
     }
 
     /**
@@ -461,7 +498,10 @@ final class DebugCoordinator {
 
     /** A session is starting, running, paused or being built for — the states Stop / Restart act on. */
     boolean sessionLive() {
-        return dapManager.state() != DapManager.State.INACTIVE || beforeLaunch.isActive() || pendingBuild != null;
+        return dapManager.state() != DapManager.State.INACTIVE
+                || beforeLaunch.isActive()
+                || pendingBuild != null
+                || pendingAttachStop != null;
     }
 
     /** Names the session being launched in the panel; survives the end of the session it replaces. */
@@ -1191,6 +1231,10 @@ final class DebugCoordinator {
                 }
                 if (state == DapManager.State.INACTIVE && relaunch == ONE_SHOT_ATTACH && !queuedAttaches.isEmpty()) {
                     Platform.runLater(queuedAttaches.poll()); // the next JVM of the same run is waiting
+                } else if (state == DapManager.State.INACTIVE
+                        && pendingAttachStop != null
+                        && !beforeLaunch.isActive()) {
+                    panel().setPreparing(true); // a Debug Test run still waits for its next fork: Stop ends it
                 }
                 boolean starting = state == DapManager.State.STARTING;
                 ops.setStatusDebugLoading(starting);
@@ -2276,13 +2320,55 @@ final class DebugCoordinator {
         // A before-launch step builds the project the user's way, in the project root (review A12); without
         // one, jdtls builds it (review A2). A plain folder has nothing to build: its class is compiled at launch.
         boolean hasStep = cfg.beforeLaunch() != null && !cfg.beforeLaunch().isBlank();
-        beforeLaunch.run(host, cfg, root, plan.jdkEnvironment(), beforeLaunchConsole(), () -> {
-            if (!hasStep && !plainFolder) {
-                buildThenLaunch(routing, launch);
-            } else {
-                launch.run();
-            }
-        });
+        Path toolRoot = buildRoot != null ? buildRoot : root;
+        beforeLaunch.run(
+                host,
+                cfg,
+                tool -> ops.buildExecutable(tool, toolRoot), // a symbolic step (maven:compile) runs the tree's Maven
+                root,
+                plan.jdkEnvironment(),
+                beforeLaunchConsole(),
+                () -> {
+                    if (!hasStep && !plainFolder) {
+                        buildToolThenLaunch(
+                                buildRoot, routing, shortName(cfg.mainClass()), plan.jdkEnvironment(), launch);
+                    } else {
+                        launch.run();
+                    }
+                });
+    }
+
+    /**
+     * The build before a main-class launch in a Maven or Gradle project: with "Build before Run and Debug" on,
+     * the build tool's compile ({@code test-compile} / {@code compileTestJava} for a class under
+     * {@code src/test}) in the Debug console, through the executable the tasks tree uses, aborting the launch
+     * when it fails (review D2) — the tool is the authority on how the project compiles, where jdtls's own
+     * build knows nothing of annotation processors or generated sources; with the setting off, jdtls's
+     * workspace build as before (review A2). {@code source} decides the scope; {@code env} is the JDK's.
+     */
+    private void buildToolThenLaunch(
+            Path buildRoot, Path source, String label, Map<String, String> env, Runnable launch) {
+        com.editora.build.BuildTool tool = buildRoot != null && com.editora.process.ExecTargets.runsHere(buildRoot)
+                ? BuildBeforeLaunch.toolAt(buildRoot)
+                : null;
+        if (!BuildBeforeLaunch.wanted(host.settings().isBuildBeforeRun(), "", tool)) {
+            buildThenLaunch(source, launch);
+            return;
+        }
+        List<String> executable = ops.buildExecutable(tool, buildRoot);
+        if (executable == null) {
+            return; // the trust gate said why
+        }
+        List<String> argv =
+                BuildBeforeLaunch.compileArgv(tool, executable, BuildBeforeLaunch.isTestSource(source, buildRoot));
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
+                buildRoot,
+                env,
+                beforeLaunchConsole(),
+                launch);
+        updateDebugAvailability();
     }
 
     /**
@@ -2534,7 +2620,14 @@ final class DebugCoordinator {
                 if (plainFolder) {
                     go.run();
                 } else {
-                    buildThenLaunch(routing, go);
+                    Path source =
+                            opt.filePath() == null || opt.filePath().isBlank() ? routing : Path.of(opt.filePath());
+                    buildToolThenLaunch(
+                            buildRoot,
+                            source,
+                            shortName(opt.mainClass()),
+                            configuredJdkEnvironment(buildRoot, null),
+                            go);
                 }
             };
             if (targetFqn != null) {
@@ -2669,6 +2762,9 @@ final class DebugCoordinator {
             queuedAttaches.add(() -> attachToPort(anchorFile, attachHost, port, stopOwner));
             host.setStatus(tr("status.debug.attachQueued", port));
             return;
+        }
+        if (pendingAttachStop != null) {
+            setPendingAttach(null); // the wait is over: from here Stop goes through the session (ownerStop)
         }
         ownerStop = stopOwner;
         String jvmLanguage = jvmAdapterLanguage(anchorFile);

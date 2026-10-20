@@ -53,6 +53,7 @@ class InstallServiceDownloadTest {
         config = Files.createDirectories(sandbox.resolve("config"));
         web = new LoopbackDownloads();
         service = new InstallService(web.client(), DOWNLOAD_CAP);
+        InstallTestAccess.bareJvmLspZip(service); // the "bundles" here are text files in a zip
     }
 
     @AfterEach
