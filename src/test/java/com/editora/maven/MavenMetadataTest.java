@@ -63,6 +63,42 @@ class MavenMetadataTest {
         }
     }
 
+    /**
+     * Guava's real metadata: the pre-Maven {@code r0N} releases pass the stability filter (nothing in them
+     * says "alpha"), so the <em>ordering</em> has to put them below every numbered release — the semver
+     * comparator this used to run on ranked {@code r09} above {@code 33.0.0-jre} and offered a downgrade.
+     */
+    @Test
+    void anAlphabeticEarlyReleaseNeverBeatsANumberedOne() {
+        assertEquals(
+                "33.7.2-jre",
+                MavenMetadata.latestStable(metadata(
+                        "r03",
+                        "r05",
+                        "r06",
+                        "r07",
+                        "r08",
+                        "r09",
+                        "10.0",
+                        "19.0",
+                        "23.0",
+                        "23.0-android",
+                        "33.0.0-jre",
+                        "33.0.0-android",
+                        "33.7.0-jre",
+                        "33.7.1-jre",
+                        "33.7.2-jre",
+                        "33.7.2-android")));
+    }
+
+    @Test
+    void ordersByMavensRulesNotSemvers() {
+        assertEquals("3.0.0", MavenMetadata.latestStable(metadata("3.0.0-M9", "3.0.0", "2.22.2")));
+        assertEquals("2.0.0.Final", MavenMetadata.latestStable(metadata("1.9.0", "2.0.0.Final")));
+        assertEquals("1.0.1", MavenMetadata.latestStable(metadata("1.0", "1.0.1", "1.0.1-SNAPSHOT")));
+        assertEquals("4.0.0", MavenMetadata.latestStable(metadata("4.0.0", "3.9.9", "4.0.0-RC2")));
+    }
+
     @Test
     void nothingStableMeansNoAnswer() {
         assertNull(MavenMetadata.latestStable(metadata("1.0-SNAPSHOT", "2.0-M1")));

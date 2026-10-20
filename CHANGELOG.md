@@ -48,6 +48,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Remote: a login or host-key question left unanswered for two minutes closes its dialog.** The login gave up
   but the dialog stayed on screen, and an answer typed into it went nowhere.
 
+- **Maven: the submenu acts on the pom it was opened on.** Right-click `moduleB/pom.xml` (or its folder) and
+  *Update Versions*, *Show Actions* and *Run custom* now read, list and run that module. They used to act on
+  whichever module the active editor tab was in, so a version update could rewrite the wrong pom. The status
+  line names the folder when it is not the active tab's. *Rerun Last* and *Stop* are window-wide and left
+  the submenu (the palette and the tool window keep them).
+- **Maven: a module can build from its reactor root.** In a multi-module project the Maven tool window starts
+  with a *Reactor* section whose toggle runs every task as `mvn -f <root>/pom.xml -pl <module> -am …`, so
+  `compile` or `test` in a module that depends on a sibling no longer fails with "Could not find artifact"
+  until the sibling is installed. Offered only when the root pom lists the module and the root is inside the
+  open project.
+- **Maven: Update Versions and the New Project wizard order versions as Maven does.** Versions are compared
+  with a port of Maven's `ComparableVersion`, not a semver comparator: Update Versions no longer proposes a
+  *downgrade* such as `guava 33.0.0-jre → r09`, and a candidate whose leading number is below the current one,
+  a property reference (`${surefire.version}`), a range or `LATEST`/`RELEASE` is never offered. The wizard's
+  "Update dependencies and plugins to the latest versions" resolves dependencies through the same Maven
+  Central path and stable filter as plugins. It used to run `versions:use-latest-releases`, which wrote
+  milestones, betas and alphas (`7.1.0-M2`, `8.0.0.Beta3`, `5.0.0.Alpha2`) into brand-new projects. The status
+  reports both counts.
+- **Maven: "Load full catalog…" works again.** Maven Central's 18 MB `archetype-catalog.xml` is streamed (no
+  DOM, no 16 MiB or 20,000-row cap) into one row per archetype at its newest version (about 3,800 rows),
+  cached under `~/.editora/cache/archetype-catalog.json` for a day and then re-checked with a conditional
+  request; picker rows show `groupId:artifactId:version` before the description. The curated list now holds
+  only archetypes that generate *and* build on a current JDK: `maven-archetype-plugin` and `-site` 1.5, Camel
+  4.23.0; the Quarkus row (a plugin, not an archetype) and the 2010 Scala row are gone.
+- **Run and Debug Main Class in a Maven or Gradle project build first.** Maven `compile` (`test-compile` for a
+  class under `src/test`) or Gradle `compileJava` runs in the Run/Debug console before the launch and a failed
+  build aborts it, so a fresh clone no longer dies with `ClassNotFoundException` and an edited file no longer
+  runs the previous binary (jdtls runs with autobuild off). Settings → Build Tools → "Build before Run and
+  Debug" (on) turns it off; a run configuration with its own before-launch step keeps that step. The no-jdtls
+  Maven fallback resolves the classpath with the same Maven the Maven window runs (`./mvnw` once trusted, the
+  command override, else PATH `mvn`) instead of a hard-coded `mvn`, in the Run console: its output streams, Stop
+  ends it, a second Run is refused while it runs, and a failure's status quotes Maven's first `[ERROR]` line
+  instead of "Could not resolve the classpath."; the program's classpath carries the runtime scope only. A
+  before-launch step may be symbolic (`maven:compile`, `gradle:compileJava`), resolved through the same
+  executable at run time; a generated Maven project's configuration stores that. A launch that ran without the
+  build prints a hint to build when the JVM cannot find the main class. Settings schema 141.
+- **Maven `pom.xml` server (lemminx-maven): repaired install, honest status.** The Maven-aware `pom.xml` server
+  Editora installed could not answer a single request: lemminx-maven's "zip with dependencies" leaves out Guava,
+  Commons Lang and jsoup, so every completion, hover, definition and outline failed inside the server while the
+  status bar said "Loaded and ready". Install… now also downloads those three libraries from Maven Central
+  (pinned by version and SHA-256) into the same folder and, before keeping an install, starts the server and asks
+  it one hover request; an install whose server cannot answer is refused with the reason. A folder that lacks
+  jars (an earlier install, a wiped folder) is no longer "found": `pom.xml` falls back to the XML server,
+  Settings → LSP shows "lemminx-maven: incomplete — Install… repairs it" and Doctor names the missing jars. Any
+  language server that answers a request with an internal error is now logged with the server's detail and
+  announced once per request kind ("lemminx-maven: internal error on hover — see the log"); three failures in a
+  row stop the server (Restart Language Servers retries) and Doctor shows it as a warning; hover says "Hover
+  failed: …" instead of "No documentation at the caret". **Existing installs: click Install… once.**
+- **Debug Test on a Maven project attaches again.** Surefire 3 withholds the JDWP "Listening for transport…"
+  banner until the suspended test JVM has run, so waiting for it hung the run forever. Editora now picks a free
+  loopback port before the launch, passes it in `-Dmaven.surefire.debug`, and attaches as soon as the fork
+  listens on it (a further fork of the same run is attached after the first finished; after 60 s without a
+  listener the status says so). While it waits, the Test Results header reads "Debug: waiting for the test JVM
+  to open port N…" instead of the whole Maven argv, the status-bar message is no longer overwritten by "Maven:
+  running test…", and Debug ▸ Stop ends the Maven run before a session exists. The JVM prints one "Debugger
+  failed to attach: handshake failed" line in the Build Output: that is Editora's port check, not an error.
+  Gradle is unchanged.
+
 ## [0.23.0] - 2026-10-19
 
 ### Security

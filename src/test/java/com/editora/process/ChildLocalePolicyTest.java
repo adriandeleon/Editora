@@ -101,6 +101,7 @@ class ChildLocalePolicyTest {
             Map.entry("container/ContainerExecTarget.java", 1), // the engine's exec client of a container command
             Map.entry("wsl/WslExecTarget.java", 1), // wsl.exe, the launcher of a command in a WSL distribution
             Map.entry("lsp/LanguageServerSession.java", 1), // language servers
+            Map.entry("install/JvmLspSmoke.java", 1), // a just-installed JVM language server, asked one request
             Map.entry("maven/MavenClasspathResolver.java", 1), // Maven on the user's project
             Map.entry("mermaid/Mermaid.java", 2), // render + export
             Map.entry("process/DesktopActions.java", 1), // terminal / file manager
@@ -121,6 +122,7 @@ class ChildLocalePolicyTest {
             "build/BuildService.java",
             "dap/DapManager.java",
             "http/NodeResponseScripts.java", // applyUserEnv, then reduced to a minimal environment
+            "install/JvmLspSmoke.java", // the post-install smoke: a JVM server, applyUserEnv like a session
             "lsp/LanguageServerSession.java",
             "process/DesktopActions.java",
             "process/LocalExecTarget.java", // what run() starts for a local working directory

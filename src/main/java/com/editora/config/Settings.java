@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 140;
+    public static final int SCHEMA_VERSION = 141;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -535,6 +535,9 @@ public class Settings {
      *  (per-test pass/fail/skip + stack traces) instead of only the raw Output console. On by default;
      *  suppressed in Simple UI mode. */
     private boolean testRunner = true;
+    /** Build before Run and Debug: in a Maven or Gradle project, compile with the build tool before a main class
+     *  runs or is debugged (review D2), unless the configuration has a before-launch step of its own. */
+    private boolean buildBeforeRun = true;
     /** Use ripgrep to accelerate Find in Files when it's detected on PATH (default on; falls back otherwise). */
     private boolean ripgrepSearch = true;
     /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
@@ -2922,6 +2925,14 @@ public class Settings {
 
     public void setTestRunner(boolean testRunner) {
         this.testRunner = testRunner;
+    }
+
+    public boolean isBuildBeforeRun() {
+        return buildBeforeRun;
+    }
+
+    public void setBuildBeforeRun(boolean buildBeforeRun) {
+        this.buildBeforeRun = buildBeforeRun;
     }
 
     public String getMavenCommand() {

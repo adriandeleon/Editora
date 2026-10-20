@@ -96,6 +96,9 @@ final class BuildCoordinator {
     /** The most recent launch, for {@code <tool>.rerunLast}. */
     private Path lastRoot;
 
+    /** The root the open popup acts on when it is not the active tab's ({@link #showActionsAt}); null = that one. */
+    private Path popupRoot;
+
     private List<String> lastTaskArgs;
     private List<String> lastToggleArgs = List.of();
 
@@ -113,14 +116,25 @@ final class BuildCoordinator {
         this.panel = sharedConsole; // the shared tabbed Output window (owned by MainController)
         this.popup = new BuildActionsPopup(new BuildActionsPopup.Labels(
                 tool.displayName(), tr("buildpopup.searchPrompt"), tr("buildpopup.runCustom")));
-        popup.setOnRunCustom(this::runCustom);
-        popup.setOnRun(this::runTask);
+        // The popup runs where it was opened for: the active tab's module, or the pom a context menu named.
+        popup.setOnRunCustom(() -> runCustomAt(popupRoot));
+        popup.setOnRun((taskArgs, toggleArgs) -> runTaskAt(popupRoot, taskArgs, toggleArgs));
         // A DSL-based tool (Gradle) whose tasks can't be statically parsed gets a "Load all tasks…" action.
         tool.taskLoadLabel().ifPresent(key -> popup.setSecondaryAction(tr(key), this::loadAllTasks));
     }
 
     BuildTool tool() {
         return tool;
+    }
+
+    /**
+     * The argv prefix a launch may start this tool with from {@code root} — the tasks tree's own choice
+     * (wrapper, override, PATH command) after the tasks tree's own trust gate — or null when the user declined
+     * to trust the project's wrapper, in which case the gate has said so and nothing may run. For Run and
+     * Debug's build before a launch and the Maven classpath fallback (reviews D2, D3).
+     */
+    List<String> trustedExecutable(Path root) {
+        return allowRun(root) ? executable(root) : null;
     }
 
     /**
@@ -266,7 +280,7 @@ final class BuildCoordinator {
             if (root != null) {
                 BuildDetection.countParse();
                 try {
-                    BuildTool.Detected detected = tool.parse(root);
+                    BuildTool.Detected detected = tool.parse(root, project);
                     parsed = detected.provider();
                     label = detected.label();
                 } catch (Exception e) {
@@ -332,7 +346,54 @@ final class BuildCoordinator {
                             : tr("status.build.malformedAt", tool.displayName(), parseError));
             return;
         }
+        popupRoot = null;
         popup.show(host.window(), provider);
+    }
+
+    /**
+     * As {@link #showActionsPopup}, for the project whose marker directory is {@code root} — the Maven
+     * submenu on a {@code pom.xml} row or folder. The active tab's module and its already-parsed provider are
+     * reused when {@code root} is that one; any other root is parsed off the FX thread first, and the popup's
+     * tasks then run <em>there</em>. A right-click on {@code moduleB/pom.xml} used to open the popup of the
+     * module the editor was in, so every task ran in the wrong place.
+     */
+    void showActionsAt(Path root) {
+        if (root == null || (markerRoot != null && markerRoot.equals(root))) {
+            showActionsPopup();
+            return;
+        }
+        if (!isEnabled()) {
+            host.setStatus(tr("status.build.disabled", tool.displayName()));
+            return;
+        }
+        if (!Files.isDirectory(root)) {
+            host.setStatus(tr("status.build.notDetected", tool.displayName()));
+            return;
+        }
+        Path project = ops.projectRoot();
+        BuildDetection.execute(() -> {
+            BuildActionsProvider parsed;
+            String error = null;
+            try {
+                parsed = tool.parse(root, project).provider();
+            } catch (Exception e) {
+                parsed = null;
+                error = e.getMessage();
+            }
+            BuildActionsProvider finalParsed = parsed;
+            String finalError = error;
+            Platform.runLater(() -> {
+                if (finalParsed == null) {
+                    host.setStatus(
+                            finalError == null || finalError.isBlank()
+                                    ? tr("status.build.malformed", tool.displayName())
+                                    : tr("status.build.malformedAt", tool.displayName(), finalError));
+                    return;
+                }
+                popupRoot = root;
+                popup.show(host.window(), finalParsed);
+            });
+        });
     }
 
     /** Runs a selected task with its args + the active toggles' args (the popup's callback). */
@@ -383,7 +444,15 @@ final class BuildCoordinator {
     /** Prompts for a freeform task string and runs it verbatim (no toggle args — type the modifier flag
      *  directly if one is needed). */
     void runCustom() {
-        if (!isAvailable()) {
+        runCustomAt(null);
+    }
+
+    /**
+     * As {@link #runCustom}, in {@code root} — the Maven submenu's "Run custom" on a {@code pom.xml} row runs
+     * in that pom's folder, not the active tab's. {@code null} means the active tab's module.
+     */
+    void runCustomAt(Path root) {
+        if (root == null ? !isAvailable() : !isEnabled()) {
             host.setStatus(tr(isEnabled() ? "status.build.notDetected" : "status.build.disabled", tool.displayName()));
             return;
         }
@@ -393,7 +462,7 @@ final class BuildCoordinator {
         }
         // Capture the root now: the prompt is an in-scene overlay, so a focus-regain can re-detect (and null
         // markerRoot, e.g. the pom was deleted meanwhile) while it is open — executable(null) then NPEs.
-        Path root = markerRoot;
+        Path at = root == null ? markerRoot : root;
         host.promptText(
                 tr("dialog.buildCustom.title", tool.displayName()), tr("dialog.buildCustom.label"), "", text -> {
                     if (text == null || text.isBlank()) {
@@ -403,13 +472,13 @@ final class BuildCoordinator {
                     if (tokens.isEmpty()) {
                         return;
                     }
-                    if (!Files.isDirectory(root)) {
+                    if (at == null || !Files.isDirectory(at)) {
                         host.setStatus(tr("status.build.notDetected", tool.displayName()));
                         return;
                     }
-                    List<String> argv = new ArrayList<>(executable(root));
+                    List<String> argv = new ArrayList<>(executable(at));
                     argv.addAll(tokens);
-                    launch(root, argv, tokens, List.of());
+                    launch(at, argv, tokens, List.of());
                 });
     }
 
@@ -518,7 +587,14 @@ final class BuildCoordinator {
         if (tree != null) {
             tree.setRunning(true);
         }
-        host.setStatus(tr("status.build.started", tool.displayName(), label));
+        Path rootName = root.toAbsolutePath().normalize().getFileName();
+        host.setStatus(
+                markerRoot == null
+                                || root.toAbsolutePath()
+                                        .normalize()
+                                        .equals(markerRoot.toAbsolutePath().normalize())
+                        ? tr("status.build.started", tool.displayName(), label)
+                        : tr("status.build.startedIn", tool.displayName(), label, String.valueOf(rootName)));
         // Maven and the Scala tools (sbt, Mill, Scala CLI) run on the JDK chosen in Settings, as Run does; Gradle
         // picks its own through its toolchains.
         boolean onSettingsJdk = tool == BuildTool.MAVEN

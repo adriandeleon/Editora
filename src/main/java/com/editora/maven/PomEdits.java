@@ -129,7 +129,9 @@ public final class PomEdits {
      * Every plugin the pom pins a version for, as {@code groupId:artifactId → version}.
      *
      * <p>A plugin with no {@code <version>} is omitted rather than mapped to null: it has no version *here*
-     * to compare against or replace, and {@link #setPluginVersions} would leave it alone anyway.
+     * to compare against or replace, and {@link #setPluginVersions} would leave it alone anyway. A
+     * property-driven version ({@code ${surefire.version}}) is omitted like {@link #dependencyVersions} omits
+     * it: rewriting the reference would replace the indirection the author chose with a literal.
      */
     public static Map<String, String> pluginVersions(String pom) {
         Map<String, String> out = new LinkedHashMap<>();
@@ -141,7 +143,7 @@ public final class PomEdits {
             int[] version = ga == null ? null : findChild(pom, span[1], span[2], "version");
             if (version != null) {
                 String v = pom.substring(version[1], version[2]).trim();
-                if (!v.isEmpty()) {
+                if (!v.isEmpty() && !v.startsWith("${")) {
                     out.put(ga, v);
                 }
             }

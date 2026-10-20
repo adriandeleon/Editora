@@ -1,13 +1,16 @@
 package com.editora.build;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 import com.editora.maven.MavenLifecycle;
 import com.editora.maven.MavenPluginGoals;
 import com.editora.maven.MavenPluginPrefix;
+import com.editora.maven.MavenReactor;
 import com.editora.maven.PomModel;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -24,24 +27,64 @@ import static com.editora.i18n.Messages.tr;
  * {@code javafx:run}, {@code spring-boot:run}, {@code exec:java} — had no row at all. The two overlap by
  * design and say different things: the flat section is <em>what this build runs</em> (with the phase and
  * execution id in its tooltip), a per-plugin group is <em>what this plugin can run</em>.
+ *
+ * <p>A module of a multi-module build gets a <b>Reactor</b> section first: one toggle that runs every task
+ * from the reactor root with the module's upstream modules ({@code -f <root pom> -pl <module> -am}). Without
+ * it, {@code compile} in a module that depends on a sibling fails with "Could not find artifact" until the
+ * sibling was installed by hand; with it, Maven builds the sibling first, as it would from the root.
  */
 public final class MavenActionsProvider implements BuildActionsProvider {
 
+    /** The toggle id of the reactor switch; never a profile id (Maven profile ids cannot start with {@code @}). */
+    public static final String REACTOR_TOGGLE = "@reactor";
+
     private final PomModel model;
     private final List<MavenPluginGoals.Descriptor> pluginGoals;
+    private final MavenReactor.@Nullable Reactor reactor;
+    /** The root pom as the machine Maven runs on names it (a remote host's path when the build runs there). */
+    private final @Nullable String rootPomOnTarget;
 
     public MavenActionsProvider(PomModel model) {
         this(model, List.of());
     }
 
     public MavenActionsProvider(PomModel model, List<MavenPluginGoals.Descriptor> pluginGoals) {
+        this(model, pluginGoals, null, null);
+    }
+
+    /**
+     * @param reactor the module's reactor, or {@code null} for a top-level project (no Reactor section)
+     * @param rootPomOnTarget the reactor's root pom as Maven's machine names it; {@code null} = the local path
+     */
+    public MavenActionsProvider(
+            PomModel model,
+            List<MavenPluginGoals.Descriptor> pluginGoals,
+            MavenReactor.@Nullable Reactor reactor,
+            @Nullable String rootPomOnTarget) {
         this.model = model;
         this.pluginGoals = List.copyOf(pluginGoals);
+        this.reactor = reactor;
+        this.rootPomOnTarget = reactor == null
+                ? null
+                : rootPomOnTarget != null ? rootPomOnTarget : reactor.rootPom().toString();
+    }
+
+    /** The module's reactor, or {@code null}. */
+    public MavenReactor.@Nullable Reactor reactor() {
+        return reactor;
     }
 
     @Override
     public List<BuildAction.Section> sections(Set<String> activeToggleIds) {
         List<BuildAction.Section> out = new ArrayList<>();
+
+        if (reactor != null) {
+            out.add(new BuildAction.Section(
+                    tr("mavenpopup.reactor"),
+                    List.of(new BuildAction.Toggle(
+                            REACTOR_TOGGLE,
+                            tr("mavenpopup.reactorToggle", reactor.rootName(), reactor.moduleSelector())))));
+        }
 
         List<BuildAction.Row> phases = new ArrayList<>();
         for (String phase : MavenLifecycle.PHASES) {
@@ -88,7 +131,17 @@ public final class MavenActionsProvider implements BuildActionsProvider {
 
     @Override
     public List<String> toggleArgs(Set<String> activeToggleIds) {
-        return activeToggleIds.isEmpty() ? List.of() : List.of("-P" + String.join(",", activeToggleIds));
+        Set<String> profiles = new LinkedHashSet<>(activeToggleIds);
+        MavenReactor.Reactor r = reactor;
+        boolean viaReactor = profiles.remove(REACTOR_TOGGLE) && r != null;
+        List<String> out = new ArrayList<>();
+        if (viaReactor && r != null) {
+            out.addAll(MavenReactor.reactorArgs(rootPomOnTarget, r.moduleSelector()));
+        }
+        if (!profiles.isEmpty()) {
+            out.add("-P" + String.join(",", profiles));
+        }
+        return List.copyOf(out);
     }
 
     private static List<BuildAction.Row> goalTasks(List<PomModel.Plugin> plugins) {

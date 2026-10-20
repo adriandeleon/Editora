@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -267,10 +268,50 @@ public final class InstallService {
         return dest.resolve(fileName).toString();
     }
 
-    /** Downloads the self-contained JVM LSP bundle ({@code directUrl}), extracts it into the config dir, and
-     *  returns the {@code java -cp "<dir>/*" <mainClass>} launch command. */
+    /** The jars a {@link InstallCatalog.Kind#JVM_LSP_ZIP} step adds beside its bundle, by step id; a test supplies its own. */
+    private java.util.function.Function<String, List<InstallCatalog.JvmLspJar>> jvmLspExtraJars =
+            InstallCatalog::jvmLspExtraJars;
+
+    /** The request a freshly extracted JVM server must answer before it counts as installed; a test supplies its own. */
+    @FunctionalInterface
+    interface JvmLspSmokeCheck {
+        /** Why the server launched by {@code argv} (whose jars are in {@code dir}) failed, or empty when it answered. */
+        java.util.Optional<String> check(List<String> argv, Path dir);
+    }
+
+    private JvmLspSmokeCheck jvmLspSmoke = (argv, dir) -> JvmLspSmoke.hoverCheck(argv);
+
+    /** Test seam for {@link #jvmLspExtraJars}: recipes whose hashes match a test's own bytes, or none. */
+    void setJvmLspExtraJarsForTest(java.util.function.Function<String, List<InstallCatalog.JvmLspJar>> recipes) {
+        this.jvmLspExtraJars = recipes;
+    }
+
+    /** Test seam for {@link #jvmLspSmoke}: a verdict without a process. */
+    void setJvmLspSmokeForTest(JvmLspSmokeCheck smoke) {
+        this.jvmLspSmoke = smoke;
+    }
+
+    /**
+     * Downloads the self-contained JVM LSP bundle ({@code directUrl}), extracts it into the config dir, adds the
+     * pinned jars the bundle leaves out ({@link InstallCatalog#jvmLspExtraJars}, each refused unless its SHA-256
+     * is the catalog's), proves the server answers a request ({@link JvmLspSmoke}) and returns the
+     * {@code java -cp "<dir>/*" <mainClass>} launch command. All of it happens in the staging folder: a bundle
+     * that fails any of these leaves the previous install (or nothing) in place.
+     */
     private String installJvmLspZip(Step s, Path configDir) throws Exception {
         byte[] data = download(s.directUrl());
+        List<InstallCatalog.JvmLspJar> extras = jvmLspExtraJars.apply(s.id());
+        List<byte[]> extraData = new ArrayList<>();
+        for (InstallCatalog.JvmLspJar jar : extras) {
+            byte[] bytes = download(jar.url());
+            String actual = InstallCatalog.sha256Hex(bytes);
+            if (!actual.equalsIgnoreCase(jar.sha256())) {
+                throw new InstallException(s.id() + ": " + jar.fileName()
+                        + " does not match its published checksum (expected " + jar.sha256() + ", got " + actual
+                        + ") — not installed");
+            }
+            extraData.add(bytes);
+        }
         Path dest = configDir.resolve(s.destSubpath());
         replaceInstall(dest, staged -> {
             Unzip.extract(
@@ -284,6 +325,18 @@ public final class InstallService {
             // this check that was a "successful" install of an empty folder.
             if (!hasTopLevelJar(staged)) {
                 throw new InstallException(s.id() + ": no jar found in the downloaded bundle");
+            }
+            for (int i = 0; i < extras.size(); i++) {
+                Files.write(staged.resolve(extras.get(i).fileName()), extraData.get(i));
+            }
+            // A bundle that starts and says it is ready can still fail every request inside the server (the
+            // upstream zip without its `provided` jars did, for a whole release): ask it one before swapping it in.
+            List<String> argv = com.editora.run.ProgramArgs.commandLine(
+                    InstallCatalog.jvmClasspathCommand(staged, InstallCatalog.LEMMINX_MAIN_CLASS));
+            java.util.Optional<String> failed = jvmLspSmoke.check(argv, staged);
+            if (failed.isPresent()) {
+                throw new InstallException(s.id() + ": the server was extracted but could not answer a request ("
+                        + failed.get() + ") — not installed");
             }
             return null;
         });
