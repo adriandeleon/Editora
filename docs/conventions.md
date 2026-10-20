@@ -237,4 +237,4 @@ focused guides and preserve established implementation detail in the
 
 Keep production Java files below 10,000 lines, enforced by `SourceFileSizeTest`. This is an upper
 bound; prefer small classes with cohesive responsibilities. Extract feature state and behavior
-behind explicit callbacks before a file approaches the limit. See [window coordinators](subsystems/window-coordinators.md).
+behind explicit callbacks before a file approaches the limit. See [window coordinators](subsystems/window-coordinators.md); with `editor` marked too (2026-10-20), about 12.3 s.
