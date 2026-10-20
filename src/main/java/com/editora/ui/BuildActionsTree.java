@@ -162,9 +162,14 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         this.onStop = onStop;
     }
 
-    /** Enables/disables the Stop button to mirror whether a build is currently running. */
+    /**
+     * Mirrors whether a build is currently running: Stop is live only then, and Run is greyed meanwhile (Maven
+     * review B13) — a double-click or Enter on a row still reaches the coordinator, which offers to stop the
+     * running build and start the new one.
+     */
     public void setRunning(boolean running) {
         stopButton.setDisable(!running);
+        runButton.setDisable(running);
     }
 
     /**

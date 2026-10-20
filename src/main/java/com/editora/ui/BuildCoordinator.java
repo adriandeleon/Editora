@@ -402,8 +402,7 @@ final class BuildCoordinator {
             host.setStatus(tr(isEnabled() ? "status.build.notDetected" : "status.build.disabled", tool.displayName()));
             return;
         }
-        if (service.isRunning()) {
-            host.setStatus(tr("status.build.busy", tool.displayName()));
+        if (busy(String.join(" ", taskArgs), () -> runTask(taskArgs, toggleArgs))) {
             return;
         }
         List<String> argv = new ArrayList<>(executable(markerRoot));
@@ -427,8 +426,7 @@ final class BuildCoordinator {
             host.setStatus(tr("status.build.disabled", tool.displayName()));
             return;
         }
-        if (service.isRunning()) {
-            host.setStatus(tr("status.build.busy", tool.displayName()));
+        if (busy(String.join(" ", taskArgs), () -> runTaskAt(root, taskArgs, toggleArgs))) {
             return;
         }
         if (!Files.isDirectory(root)) {
@@ -456,8 +454,7 @@ final class BuildCoordinator {
             host.setStatus(tr(isEnabled() ? "status.build.notDetected" : "status.build.disabled", tool.displayName()));
             return;
         }
-        if (service.isRunning()) {
-            host.setStatus(tr("status.build.busy", tool.displayName()));
+        if (busy(tr("buildtree.runCustom"), () -> runCustomAt(root))) {
             return;
         }
         // Capture the root now: the prompt is an in-scene overlay, so a focus-regain can re-detect (and null
@@ -488,8 +485,7 @@ final class BuildCoordinator {
             host.setStatus(tr("status.build.noRerun", tool.displayName()));
             return;
         }
-        if (service.isRunning()) {
-            host.setStatus(tr("status.build.busy", tool.displayName()));
+        if (busy(String.join(" ", lastTaskArgs), this::rerunLast)) {
             return;
         }
         List<String> argv = new ArrayList<>(executable(lastRoot));
@@ -562,6 +558,7 @@ final class BuildCoordinator {
         lastRoot = root;
         lastTaskArgs = taskArgs;
         lastToggleArgs = toggleArgs;
+        stopRequested = false;
 
         // Intercept a recognized test run for the Test Results window, without duplicating BuildService: the
         // same process runs, and its stream is forwarded to the hook. The hook may decline (feature off), in
@@ -646,18 +643,33 @@ final class BuildCoordinator {
             public void onExit(int code) {
                 outputWatcher = null; // the run is over; drop any JDWP watcher that never fired
                 appliedStamp = null; // the run may have changed what a parse reads (downloaded plugins)
-                panel.finished(BuildCoordinator.this, code);
+                // A deliberate Stop is "Stopped" everywhere — the console header, the status bar, Test Results —
+                // whatever code the killed tree reported (143 after SIGTERM): not a crash (Maven review B5).
+                boolean stopped = stopRequested;
+                stopRequested = false;
+                if (stopped) {
+                    panel.stopped(BuildCoordinator.this);
+                } else {
+                    panel.finished(BuildCoordinator.this, code);
+                }
                 if (tree != null) {
                     tree.setRunning(false);
                 }
                 if (claimed) {
-                    testRunHook.onTestExit(code);
+                    if (stopped) {
+                        testRunHook.onTestStopped(code);
+                    } else {
+                        testRunHook.onTestExit(code);
+                    }
                 }
                 host.setStatus(
-                        code == 0
-                                ? tr("status.build.ok", tool.displayName())
-                                : tr("status.build.exit", tool.displayName(), code));
-                if (code > 0 && tool == BuildTool.NPM) {
+                        stopped
+                                ? tr("status.build.stopped", tool.displayName())
+                                : code == 0
+                                        ? tr("status.build.ok", tool.displayName())
+                                        : tr("status.build.exit", tool.displayName(), code));
+                runAfterStop();
+                if (!stopped && code > 0 && tool == BuildTool.NPM) {
                     // A script that failed because nothing is installed yet (a fresh clone, a new template):
                     // say so, instead of leaving "tsc: not found" or a missing-module trace to be decoded.
                     NpmRunSupport.whenDependenciesMissing(root, ops.projectRoot(), manager -> {
@@ -671,6 +683,8 @@ final class BuildCoordinator {
             @Override
             public void onError(String message) {
                 outputWatcher = null;
+                stopRequested = false;
+                afterStop = null; // nothing ran, so nothing was stopped: a queued run would start from a failure
                 panel.failed(BuildCoordinator.this, message);
                 if (tree != null) {
                     tree.setRunning(false);
@@ -709,9 +723,90 @@ final class BuildCoordinator {
     /** Stops the running process (Console Stop button / {@code <tool>.stop}). */
     void stop() {
         if (service.isRunning()) {
+            stopRequested = true; // the exit that follows is "Stopped", not the killed tree's code (B5)
             service.stop();
             host.setStatus(tr("status.build.stopped", tool.displayName()));
         }
+    }
+
+    /**
+     * Set by {@link #stop()} for the run in flight and read once by its exit: a build the user stopped ends as
+     * "Stopped" in the console header, the status bar and Test Results, whatever code the killed process tree
+     * reported (SIGTERM's 143, a force-kill's 137). Cleared by every launch and launch failure.
+     */
+    private boolean stopRequested;
+
+    /**
+     * A run the user asked to start while another was in progress, accepted through {@link #busy}'s
+     * "Stop and run" prompt; started by the running build's exit, once the service can take it.
+     */
+    private Runnable afterStop;
+
+    /**
+     * What {@link #busy} asks: (tool name, the task about to run) → whether to stop the running build for it.
+     * Null = the modal {@link #confirmStopAndRun} dialog; a test installs an answer instead.
+     */
+    private java.util.function.BiPredicate<String, String> stopAndRunPrompt;
+
+    /** For tests: answers the "Stop and run" question without a dialog ({@code null} restores the dialog). */
+    void setStopAndRunPrompt(java.util.function.BiPredicate<String, String> prompt) {
+        this.stopAndRunPrompt = prompt;
+    }
+
+    /**
+     * The busy guard (Maven review B13). A second run while one is in progress used to be refused with one
+     * status line; now it asks "Stop the running build and run <task>?" — accepted, the running build is
+     * stopped and {@code rerun} is queued for the moment its exit has been delivered ({@code BuildService}
+     * refuses a start before that, and the tree's Run button is greyed meanwhile); declined, the old status
+     * line says a run is in progress. Returns true when the caller must return: a run was in progress.
+     */
+    private boolean busy(String task, Runnable rerun) {
+        if (!service.isRunning()) {
+            return false;
+        }
+        boolean accepted = stopAndRunPrompt == null
+                ? confirmStopAndRun(host.window(), tool.displayName(), task)
+                : stopAndRunPrompt.test(tool.displayName(), task);
+        if (!accepted) {
+            host.setStatus(tr("status.build.busy", tool.displayName()));
+            return true;
+        }
+        if (!service.isRunning()) {
+            rerun.run(); // it ended while the question was open: nothing to stop
+            return true;
+        }
+        afterStop = rerun;
+        stop();
+        return true;
+    }
+
+    /** Starts the run queued behind a stop, if any — from the stopped build's exit. */
+    private void runAfterStop() {
+        Runnable next = afterStop;
+        afterStop = null;
+        if (next != null) {
+            next.run();
+        }
+    }
+
+    /** The "Stop and run" question: a modal confirmation whose default is Cancel (Enter must not kill a build). */
+    private static boolean confirmStopAndRun(javafx.stage.Window owner, String toolName, String task) {
+        javafx.scene.control.ButtonType accept = new javafx.scene.control.ButtonType(
+                tr("dialog.buildStopAndRun.accept"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.Alert alert = Dialogs.styled(new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                tr("dialog.buildStopAndRun.body", task),
+                accept,
+                javafx.scene.control.ButtonType.CANCEL));
+        if (owner != null) {
+            alert.initOwner(owner);
+        }
+        alert.setTitle(tr("dialog.buildStopAndRun.title", toolName));
+        alert.setHeaderText(tr("dialog.buildStopAndRun.header", toolName));
+        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(accept)).setDefaultButton(false);
+        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL))
+                .setDefaultButton(true);
+        return alert.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == accept;
     }
 
     /** Force re-parses the marker file right now (e.g. after an external edit) — {@code <tool>.refresh}. */

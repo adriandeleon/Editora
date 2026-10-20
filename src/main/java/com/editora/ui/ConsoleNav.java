@@ -40,6 +40,39 @@ public final class ConsoleNav {
         install(console, TextInputKeymap.sharedKeymap());
     }
 
+    /**
+     * Runs {@code action} when a chord the configured keymap binds to {@code command} ({@code find.show}, say)
+     * is pressed in {@code console} — a console action that is not a caret motion, so not in {@link #install}'s
+     * table. The keymap is read per key press: a console built before {@link TextInputKeymap#setShared} ran
+     * still picks the binding up, and a changed keymap applies at once.
+     */
+    public static void onCommand(CodeArea console, String command, Runnable action) {
+        if (console == null || command == null || action == null) {
+            return;
+        }
+        boolean[] consumed = {false};
+        console.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            consumed[0] = false;
+            KeymapManager keymap = TextInputKeymap.sharedKeymap();
+            if (e.isConsumed() || keymap == null) {
+                return;
+            }
+            String token = KeyDispatcher.chord(e);
+            if (token == null || !command.equals(keymap.commandFor(token))) {
+                return;
+            }
+            action.run();
+            e.consume();
+            consumed[0] = true;
+        });
+        console.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (consumed[0]) {
+                consumed[0] = false;
+                e.consume();
+            }
+        });
+    }
+
     /** Installs {@code keymap}'s console navigation on {@code console}. */
     public static void install(CodeArea console, KeymapManager keymap) {
         if (console == null || keymap == null) {

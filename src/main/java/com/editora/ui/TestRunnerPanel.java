@@ -360,11 +360,24 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
      * too — the leaves alone would read "N of N passed" — so it gets its own header and the failed style.
      */
     void finishRun(TestRun run, int exitCode) {
+        finishRun(run, exitCode, false);
+    }
+
+    /**
+     * As {@link #finishRun(TestRun, int)}; {@code stopped} when the user ended the run (Maven review B5): the
+     * header then reads "Stopped" with what had been counted so far — neither a pass nor "Run failed (exit
+     * code 143)", which is SIGTERM's code and not a verdict — and the bar is not painted as failed unless a
+     * test had already failed.
+     */
+    void finishRun(TestRun run, int exitCode, boolean stopped) {
         update(run);
         TestCounts counts = run.counts();
         setElapsed(run.elapsedMillis(0)); // finished → elapsedMillis ignores the arg and uses the stored finish time
         boolean aborted = exitCode != 0 && !counts.anyFailed();
-        if (aborted) {
+        if (stopped) {
+            status.setText(tr("testrunner.finishedStopped", counts.passed(), counts.failedOrErrored()));
+            setProgressFailed(counts.anyFailed());
+        } else if (aborted) {
             status.setText(tr("testrunner.finishedAborted", exitCode));
             progress.setProgress(1); // an empty bar cannot show the failed colour (0 tests reported)
             setProgressFailed(true);

@@ -324,6 +324,7 @@ final class TestRunCoordinator implements TestRunHook {
         }
         currentTool = tool;
         external = null;
+        stoppedByUser = false;
         currentRun = new TestRun(tool, workingDir, taskArgs, toggleArgs, System.currentTimeMillis());
         parser = TestResultParsers.forTool(tool);
         fileBased = TestResultParsers.isFileBased(tool);
@@ -421,6 +422,16 @@ final class TestRunCoordinator implements TestRunHook {
         finish(code);
     }
 
+    /** The run the user stopped ends as "Stopped" (Maven review B5), not as a failed run with SIGTERM's code. */
+    @Override
+    public void onTestStopped(int code) {
+        stoppedByUser = true;
+        finish(code);
+    }
+
+    /** Set by {@link #onTestStopped} for the run in flight; {@link #completeRun} reads it into the header. */
+    private boolean stoppedByUser;
+
     @Override
     public void onTestError(String message) {
         if (currentRun != null) {
@@ -499,7 +510,7 @@ final class TestRunCoordinator implements TestRunHook {
             run.root().pruneRunning(); // drop pre-seeded placeholders that never got a result (parameterized/skipped)
         }
         run.finish(code, System.currentTimeMillis());
-        panel().finishRun(run, code);
+        panel().finishRun(run, code, stoppedByUser);
         // A Maven filter that matches nothing is not an error (the flags a reactor needs see to that), so
         // the build is green and the tree empty. Say so: "0 of 0 tests passed" reads as a pass.
         if (code == 0

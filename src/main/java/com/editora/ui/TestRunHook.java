@@ -31,6 +31,14 @@ interface TestRunHook {
     /** The claimed run exited with {@code code}. */
     void onTestExit(int code);
 
+    /**
+     * The claimed run ended because the user stopped it; {@code code} is what the killed process reported
+     * (143 after SIGTERM) and is not a verdict. Default: as an exit, for a hook that does not tell them apart.
+     */
+    default void onTestStopped(int code) {
+        onTestExit(code);
+    }
+
     /** The claimed run failed to launch / errored. */
     void onTestError(String message);
 
