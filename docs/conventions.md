@@ -198,8 +198,8 @@ and not checked.
 - **Plumbing.** Only NullAway runs (`-XepDisableAllChecks -Xep:NullAway:ERROR`), and only in the main compile,
   not on tests. `.mvn/jvm.config` exports the javac internals that Error Prone needs. JSpecify is a `provided`
   dependency read through `requires static org.jspecify`, so nothing ships. It runs on JDK 25 and JDK 27.
-  Cost on 2026-10-19, with every package but `ui` and `editor` marked (before `editor` was): a clean `mvn -DskipTests compile`
-  took about 11.5 s, against 9.5 s with nine packages marked and about 9.5 s with none (two runs each).
+  Cost of a clean `mvn -DskipTests compile` (two runs each): about 9.5 s with no package or nine marked,
+  11.5 s with all but `ui` and `editor` (2026-10-19), 12.3 s with all but `ui` (2026-10-20).
 
 ## Worktrees: one per task
 
@@ -237,4 +237,4 @@ focused guides and preserve established implementation detail in the
 
 Keep production Java files below 10,000 lines, enforced by `SourceFileSizeTest`. This is an upper
 bound; prefer small classes with cohesive responsibilities. Extract feature state and behavior
-behind explicit callbacks before a file approaches the limit. See [window coordinators](subsystems/window-coordinators.md); with `editor` marked too (2026-10-20), about 12.3 s.
+behind explicit callbacks before a file approaches the limit. See [window coordinators](subsystems/window-coordinators.md).
