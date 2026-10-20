@@ -233,6 +233,9 @@ class DebugCoordinatorCommandsFxTest {
             overlay.install(sceneRoot);
             host = new Host();
             host.settings.setDebugSupport(true);
+            // The pom.xml above marks a Maven project for routing only; nothing here can be built, so the
+            // build-before-launch step (its own tests live in RunCoordinatorFlowsFxTest) stays off.
+            host.settings.setBuildBeforeRun(false);
             host.settings.setLspSupport(true);
             LspCoordinator lsp = new LspCoordinator(host, lspManager, new LspOpsStub());
             lsp.setServerAvailableForTest("java", true);
