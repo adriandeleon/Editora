@@ -26,9 +26,12 @@ import org.jspecify.annotations.Nullable;
  * @param displayCommand the argv joined with spaces, for console/status display
  */
 public record ToolInvocation(
-        List<String> argv, Path workingDir, @Nullable String stdin, String displayCommand) {
+        List<String> argv,
+        @Nullable Path workingDir,
+        @Nullable String stdin,
+        String displayCommand) {
 
-    public static ToolInvocation of(ExternalTool tool, ToolContext ctx, Path defaultDir) {
+    public static ToolInvocation of(ExternalTool tool, ToolContext ctx, @Nullable Path defaultDir) {
         List<String> argv = new ArrayList<>();
         argv.addAll(expandTokens(tool.getCommand(), ctx));
         argv.addAll(expandTokens(tool.getArguments(), ctx));

@@ -38,6 +38,7 @@ import com.editora.config.RunConfiguration;
 import com.editora.deploy.DeployExcludes;
 import com.editora.deploy.DeployRoot;
 import com.editora.vfs.RemoteConnection;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -80,7 +81,7 @@ public final class DeploymentsWindow {
     }
 
     /** Opens the editor and selects {@code selectName} when that deployment exists. */
-    public void show(String selectName, Window owner) {
+    public void show(@Nullable String selectName, Window owner) {
         if (!built) {
             build(owner);
             built = true;
@@ -143,7 +144,7 @@ public final class DeploymentsWindow {
             }
 
             @Override
-            public RemoteConnection.AuthMethod fromString(String value) {
+            public RemoteConnection.@Nullable AuthMethod fromString(String value) {
                 return null;
             }
         });
@@ -200,7 +201,7 @@ public final class DeploymentsWindow {
             keyBrowse.setDisable(!key);
         };
         Runnable checkRoot = () -> {
-            DeployRoot.Problem problem = DeployRoot.problem(remoteRoot.getText(), null);
+            DeployRoot.Problem problem = DeployRoot.problem(remoteRoot.getText(), "");
             rootProblem.setText(
                     problem == null || problem == DeployRoot.Problem.EMPTY
                             ? ""
@@ -434,7 +435,7 @@ public final class DeploymentsWindow {
         return -1;
     }
 
-    private void reload(String selectName) {
+    private void reload(@Nullable String selectName) {
         String previous = selectName;
         if ((previous == null || previous.isBlank()) && list.getSelectionModel().getSelectedItem() != null) {
             previous = list.getSelectionModel().getSelectedItem().name();
@@ -458,7 +459,7 @@ public final class DeploymentsWindow {
     }
 
     /** Saves the list; a rename from {@code oldName} to {@code newName} carries over to the configurations. */
-    private void persist(String oldName, String newName) {
+    private void persist(@Nullable String oldName, @Nullable String newName) {
         config.getWorkspaceState().setDeployments(new ArrayList<>(items));
         if (oldName != null && !oldName.isBlank() && newName != null && !oldName.equals(newName)) {
             config.getWorkspaceState()

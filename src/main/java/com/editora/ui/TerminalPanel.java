@@ -40,6 +40,7 @@ import com.editora.terminal.TerminalPalettes;
 import com.editora.terminal.TerminalView;
 import com.editora.terminal.ThemeSampler;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -111,7 +112,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /** Opens a shell for a new tab: in {@code directory}, running {@code shell} (blank = the login shell). */
     interface Shells {
-        TerminalConnector.Factory open(Path directory, String shell);
+        TerminalConnector.Factory open(@Nullable Path directory, String shell);
     }
 
     /** Asks before a tab whose shell is running {@code programs} is closed; true closes it. */
@@ -134,10 +135,11 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
      */
     private final Map<Tab, String> dirs = new LinkedHashMap<>();
 
-    private java.util.function.Function<Path, String> targetLabel = dir -> tr("terminal.target.local");
+    private java.util.function.Function<@Nullable Path, String> targetLabel = dir -> tr("terminal.target.local");
 
     /** For a tab's folder, how its shell's paths map to paths here (null: this machine). */
-    private java.util.function.Function<Path, java.util.function.Function<String, Path>> shellPaths = dir -> null;
+    private java.util.function.Function<@Nullable Path, java.util.function.@Nullable Function<String, Path>>
+            shellPaths = dir -> null;
 
     /** What a shell elsewhere (its folder, its pid there) is running; asked before its tab closes. */
     private java.util.function.BiFunction<Path, Long, List<String>> remotePrograms = (dir, pid) -> List.of();
@@ -150,7 +152,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     private TerminalPalette fallbackPalette = TerminalPalettes.EDITORA_DARK;
     private Consumer<String> onError = message -> {};
     private Supplier<List<MenuItem>> menuExtras = List::of;
-    private LinkActions linkActions;
+    private @Nullable LinkActions linkActions;
 
     TerminalPanel(Shells shells, CloseGuard closeGuard, Supplier<Path> directory) {
         this.shells = shells;
@@ -237,7 +239,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     }
 
     /** How a tab's shell's paths map to paths here, by the tab's folder (null for this machine). */
-    void setShellPaths(java.util.function.Function<Path, java.util.function.Function<String, Path>> shellPaths) {
+    void setShellPaths(
+            java.util.function.Function<@Nullable Path, java.util.function.@Nullable Function<String, Path>>
+                    shellPaths) {
         this.shellPaths = shellPaths == null ? dir -> null : shellPaths;
     }
 
@@ -273,7 +277,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     }
 
     /** What a tab's chip says about where its shell runs ("Local", a host name). */
-    void setTargetLabel(java.util.function.Function<Path, String> targetLabel) {
+    void setTargetLabel(java.util.function.Function<@Nullable Path, String> targetLabel) {
         this.targetLabel = targetLabel == null ? dir -> tr("terminal.target.local") : targetLabel;
     }
 
@@ -307,6 +311,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     }
 
     /** The link actions every tab uses, or null. */
+    @Nullable
     LinkActions linkActions() {
         return linkActions;
     }
@@ -333,7 +338,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     }
 
     /** Opens a new tab with a shell in {@code dir} (null: home), and focuses it. */
-    void newTerminal(Path dir) {
+    void newTerminal(@Nullable Path dir) {
         // Named while it connects: the host's name says what is coming, where an empty tab said nothing.
         Tab tab = new Tab(dir == null ? tr("toolwindow.terminal") : targetLabel.apply(dir));
         // The view paints its own grid; the wrapper fills the strip a whole number of rows leaves below it
@@ -384,14 +389,17 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     ProgramRun runProgram(
             String title,
             String program,
-            Path dir,
+            @Nullable Path dir,
             TerminalConnector.Factory connector,
             java.util.function.IntConsumer onExit)
             throws IOException {
         TerminalView view = new TerminalView(config.fontSize());
         configure(view);
         view.setPalette(palette);
-        view.setShellPaths(dir == null ? null : shellPaths.apply(dir));
+        var paths = dir == null ? null : shellPaths.apply(dir);
+        if (paths != null) { // a new view maps no paths until told to
+            view.setShellPaths(paths);
+        }
         Tab tab = new Tab(title);
         String runKey = title + "\u0000" + (dir == null ? "" : Vfs.toStorableString(dir));
         runKeys.put(tab, runKey);
@@ -460,7 +468,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     }
 
     /** {@link #startSlowly} for a program tab: connected, it shows the program; failed, the tab goes. */
-    private void startProgramSlowly(Tab tab, TerminalView view, TerminalConnector.Factory factory, Path dir) {
+    private void startProgramSlowly(Tab tab, TerminalView view, TerminalConnector.Factory factory, @Nullable Path dir) {
         StackPane content = (StackPane) tab.getContent();
         Label note = new Label(tr("terminal.connecting", targetLabel.apply(dir)));
         note.getStyleClass().add("terminal-connecting");
@@ -533,6 +541,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     }
 
     /** The banner a program tab shows once its program ended, or null; for tests. */
+    @Nullable
     String exitBanner(Tab tab) {
         return ((StackPane) tab.getContent())
                 .getChildren().stream()
@@ -559,7 +568,10 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         TerminalView view = new TerminalView(config.fontSize());
         configure(view);
         view.setPalette(palette);
-        view.setShellPaths(dir == null ? null : shellPaths.apply(dir));
+        var paths = dir == null ? null : shellPaths.apply(dir);
+        if (paths != null) { // a new view maps no paths until told to
+            view.setShellPaths(paths);
+        }
         view.setOnSessionEnded(() -> shellEnded(tab, view));
         TerminalConnector.Factory factory;
         try {
@@ -586,7 +598,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
      * of the shell it replaces (a reconnect) or on its own (a new tab). Connected, the new view takes the tab;
      * failed, a new tab goes away and a reconnecting one keeps its banner, and the error says why.
      */
-    private void startSlowly(Tab tab, TerminalView view, TerminalConnector.Factory factory, Path dir) {
+    private void startSlowly(Tab tab, TerminalView view, TerminalConnector.Factory factory, @Nullable Path dir) {
         StackPane content = (StackPane) tab.getContent();
         Label note = new Label(tr("terminal.connecting", targetLabel.apply(dir)));
         note.getStyleClass().add("terminal-connecting");
@@ -748,6 +760,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     }
 
     /** The selected tab's view, or null. */
+    @Nullable
     TerminalView activeView() {
         Tab tab = tabs.getSelectionModel().getSelectedItem();
         return tab == null ? null : views.get(tab);
@@ -776,7 +789,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
      * A tab whose shell was asked for the keyboard while it was still starting. Only an asked-for focus follows a
      * start: a shell started quietly (a restored window's) must not take the keyboard when it comes up.
      */
-    private Tab focusWhenStarted;
+    private @Nullable Tab focusWhenStarted;
 
     private void focusIfAsked(Tab tab, TerminalView view) {
         if (focusWhenStarted == tab) {
@@ -848,7 +861,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         view.setScrollbackLines(config.scrollback());
         view.setMenuIcons(TerminalPanel::menuIcon);
         view.setMenuExtras(menuExtras);
-        view.setLinkActions(linkActions);
+        if (linkActions != null) { // null until the coordinator sets it
+            view.setLinkActions(linkActions);
+        }
     }
 
     /** Tabs whose remote shell is being asked what it runs; a second close request waits for that answer. */
@@ -1137,7 +1152,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     }
 
     /** The tab being dragged (a Dragboard carries only serialisable data, and a Tab is not). */
-    private Tab draggedTab;
+    private @Nullable Tab draggedTab;
 
     private static final javafx.scene.input.DataFormat TAB_DRAG =
             new javafx.scene.input.DataFormat("application/x-editora-terminal-tab");
@@ -1272,7 +1287,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         return title == null || title.isBlank() ? tr("toolwindow.terminal") : title;
     }
 
-    private static Node menuIcon(String key) {
+    private static @Nullable Node menuIcon(String key) {
         return switch (key) {
             case "copy" -> Icons.copy();
             case "paste" -> Icons.paste();

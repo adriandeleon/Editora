@@ -25,6 +25,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
 import com.editora.command.TextInputKeymap;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -54,13 +55,13 @@ public class FileFinder {
     private final ObservableList<Path> items = FXCollections.observableArrayList();
 
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
-    private OverlayHost overlayHost;
+    private @Nullable OverlayHost overlayHost;
 
     private VBox content;
     private boolean showing;
 
     /** Cached listing of {@link #currentDir}; re-read only when the directory part of the path changes. */
-    private Path currentDir;
+    private @Nullable Path currentDir;
 
     /** The listing of {@link #currentDir}, once its read has landed; knows which entries are folders. */
     private DirectoryListing listing = DirectoryListing.UNREADABLE;
@@ -248,7 +249,7 @@ public class FileFinder {
     }
 
     /** The selected list entry, or the literal typed path when nothing is selected. */
-    private Path targetPath() {
+    private @Nullable Path targetPath() {
         Path selected = list.getSelectionModel().getSelectedItem();
         if (selected != null) {
             return selected;
@@ -261,7 +262,7 @@ public class FileFinder {
      * shows it filtered — not to the process working directory, where {@code Path.of("notes.txt")} put a new
      * buffer and its first save.
      */
-    static Path typedPath(String text, Path currentDir) {
+    static @Nullable Path typedPath(String text, @Nullable Path currentDir) {
         if (text == null || text.isBlank()) {
             return null;
         }

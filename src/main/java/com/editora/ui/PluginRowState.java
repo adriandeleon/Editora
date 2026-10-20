@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import java.util.Objects;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -42,9 +44,9 @@ final class PluginRowState {
             boolean allowed,
             boolean switchedOn,
             boolean running,
-            String runningVersion,
+            @Nullable String runningVersion,
             String diskVersion,
-            String pendingUpdate,
+            @Nullable String pendingUpdate,
             boolean pendingRemoval) {
         if (pendingRemoval) {
             return Pill.REMOVAL_PENDING;
@@ -67,12 +69,12 @@ final class PluginRowState {
         return Pill.NONE;
     }
 
-    private static String blank(String s) {
+    private static String blank(@Nullable String s) {
         return s == null ? "" : s.strip();
     }
 
     /** The pill's text, or null for {@link Pill#NONE}. */
-    static String text(Pill pill, String pendingVersion) {
+    static @Nullable String text(Pill pill, @Nullable String pendingVersion) {
         return switch (pill) {
             case NONE -> null;
             case RESTART_TO_LOAD, RESTART_TO_UNLOAD -> tr("settings.plugins.restartPill");

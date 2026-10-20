@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -24,9 +26,9 @@ final class GitAuthFailure {
         /** SSH did not recognise the server's host key and could not ask whether to trust it. */
         HOST_KEY("git.auth.hint.hostKey");
 
-        private final String hintKey;
+        private final @Nullable String hintKey;
 
-        Kind(String hintKey) {
+        Kind(@Nullable String hintKey) {
             this.hintKey = hintKey;
         }
     }
@@ -79,7 +81,7 @@ final class GitAuthFailure {
 
     /** {@code detail} followed by the next step for its kind of sign-in failure; unchanged for any other error. */
     static String withGuidance(String detail) {
-        Kind kind = classify(detail);
-        return kind == Kind.NONE ? detail : detail.strip() + "\n\n" + tr(kind.hintKey);
+        String hintKey = classify(detail).hintKey; // null only for Kind.NONE
+        return hintKey == null ? detail : detail.strip() + "\n\n" + tr(hintKey);
     }
 }

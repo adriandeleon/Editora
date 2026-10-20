@@ -3,6 +3,8 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Light shell-command tokenizer for the AI Agent chat's tool-call lines (the {@code ⚙ …} rows). Splits a
  * command string into colored {@link Span}s reusing the editor's {@code .text.<class>} token classes, so
@@ -19,7 +21,7 @@ final class AgentCommandHighlighter {
 
     /** A run of text and the token style class to pair with {@code text} ({@code null} = default foreground,
      *  no {@code .text} class). */
-    record Span(String text, String styleClass) {}
+    record Span(String text, @Nullable String styleClass) {}
 
     /** Tokenizes {@code command} into ordered spans whose concatenated {@link Span#text} equals the input. */
     static List<Span> spans(String command) {

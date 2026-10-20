@@ -26,6 +26,7 @@ import com.editora.macro.MacroPlayer;
 import com.editora.macro.MacroReplay;
 import com.editora.macro.MacroService;
 import com.editora.macro.MacroStep;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -63,6 +64,7 @@ final class MacroCoordinator implements MacroCapture {
         void setRecordingIndicator(boolean recording);
 
         /** The prefix argument ({@code C-u N}) the running command was given, or null. */
+        @Nullable
         Integer prefixArgument();
 
         /** Drop the user's key binding for {@code commandId}. */
@@ -93,14 +95,14 @@ final class MacroCoordinator implements MacroCapture {
     /** Depth of key events this coordinator is firing right now (see {@link MacroCapture#SYNTHETIC}). */
     private int synthetic;
     /** The replay in progress, or null. */
-    private Run run;
+    private @Nullable Run run;
 
     // --- recording state ---
-    private Scene recordingScene;
+    private @Nullable Scene recordingScene;
     private boolean mouseHintShown;
     private boolean dialogHintShown;
     /** The outermost command now running, while recording — to notice one that blocks in a dialog. */
-    private String commandInFlight;
+    private @Nullable String commandInFlight;
 
     private final EventHandler<KeyEvent> escapeCancels = this::onUnhandledKey;
     private final EventHandler<MouseEvent> mouseWatch = this::onMousePressed;
@@ -188,14 +190,15 @@ final class MacroCoordinator implements MacroCapture {
     public void key(KeyEvent event, EventTarget target) {
         int where = classify(target);
         if (where != Target.NONE) {
-            service.onKey(
-                    MacroKey.encode(
-                            event.isControlDown(),
-                            event.isAltDown(),
-                            event.isMetaDown(),
-                            event.isShiftDown(),
-                            event.getCode().name()),
-                    where == Target.PROMPT);
+            String token = MacroKey.encode(
+                    event.isControlDown(),
+                    event.isAltDown(),
+                    event.isMetaDown(),
+                    event.isShiftDown(),
+                    event.getCode().name());
+            if (token != null) { // null only for a blank key-code name, which no KeyCode has
+                service.onKey(token, where == Target.PROMPT);
+            }
             boundConsequences();
         }
     }
@@ -575,7 +578,7 @@ final class MacroCoordinator implements MacroCapture {
      * invoked it resumes when it ends — refusing a macro that is already running further down (it would
      * never finish) or a pile of macros deeper than anyone builds by hand.
      */
-    private void play(String key, Macro macro, int times, String name) {
+    private void play(String key, Macro macro, int times, @Nullable String name) {
         MacroPlayer player = service.player();
         if (run != null && !run.delivering) {
             // Asked for from outside the replay (a menu item clicked while a long one is still running):
@@ -607,7 +610,7 @@ final class MacroCoordinator implements MacroCapture {
 
     /** One replay, from the first step to the status line that reports how it went. */
     private final class Run {
-        final String name;
+        final @Nullable String name;
         final int times;
         final MacroPlayer player = service.player();
 
@@ -616,6 +619,7 @@ final class MacroCoordinator implements MacroCapture {
 
         boolean cancelled;
         /** Why the replay must stop, already translated; null while it is fine. */
+        @Nullable
         String failure;
         /** True once the loop has yielded to the event loop at least once. */
         boolean async;
@@ -623,13 +627,19 @@ final class MacroCoordinator implements MacroCapture {
         long waitingSince;
         int readOnlySkips;
         int missingCommands;
+
+        @Nullable
         String firstMissing;
+
         boolean noBuffer;
 
+        @Nullable
         EditorBuffer spanBuffer;
+
+        @Nullable
         Runnable spanEnd;
 
-        Run(String name, int times) {
+        Run(@Nullable String name, int times) {
             this.name = name;
             this.times = times;
         }
@@ -707,7 +717,7 @@ final class MacroCoordinator implements MacroCapture {
                     overlayShowing && owner != null && overlay.contains(owner));
         }
 
-        private Node focusOwner() {
+        private @Nullable Node focusOwner() {
             Scene scene = host.window() == null ? null : host.window().getScene();
             return scene == null ? null : scene.getFocusOwner();
         }
@@ -751,7 +761,7 @@ final class MacroCoordinator implements MacroCapture {
             if (step.isKey()) {
                 MacroKey.Decoded k = MacroKey.decode(step.value());
                 KeyCode code = k == null ? null : keyCode(k.keyCodeName());
-                if (code != null) {
+                if (k != null && code != null) {
                     press(target, code, k.shift(), k.ctrl(), k.alt(), k.meta(), step.isPrompt());
                 }
             } else {
@@ -768,7 +778,7 @@ final class MacroCoordinator implements MacroCapture {
         }
 
         /** The key a step names, or null for a name that is none (a hand-edited macros.json). */
-        private KeyCode keyCode(String name) {
+        private @Nullable KeyCode keyCode(String name) {
             try {
                 return KeyCode.valueOf(name);
             } catch (IllegalArgumentException e) {
@@ -780,7 +790,7 @@ final class MacroCoordinator implements MacroCapture {
          * Types {@code text} at {@code target}, one key event per character, as the keyboard would.
          * {@code buffer} is the editor being typed into, or null for a prompt.
          */
-        private void type(Node target, String text, EditorBuffer buffer) {
+        private void type(Node target, String text, @Nullable EditorBuffer buffer) {
             boolean prompt = buffer == null;
             for (int i = 0; i < text.length(); ) {
                 int cp = text.codePointAt(i);

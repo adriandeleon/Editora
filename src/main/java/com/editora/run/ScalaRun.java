@@ -197,7 +197,7 @@ public final class ScalaRun {
      * {@code runMain demo.hello a "b c"} (sbt splits it at spaces, honouring double quotes); plain {@code run}
      * when the main class is not known (sbt then picks it, or asks).
      */
-    public static List<String> sbtRunTask(String mainClass, List<String> args) {
+    public static List<String> sbtRunTask(@Nullable String mainClass, List<String> args) {
         StringBuilder command = new StringBuilder(mainClass == null ? "run" : "runMain " + mainClass);
         for (String a : args == null ? List.<String>of() : args) {
             command.append(' ').append(sbtQuote(a));
@@ -217,7 +217,7 @@ public final class ScalaRun {
      * {@code core.runMain demo.hello args…} — {@code runMain} alone for the root module, {@code core.run args…}
      * when the main class is not known.
      */
-    public static List<String> millRunTask(String module, String mainClass, List<String> args) {
+    public static List<String> millRunTask(String module, @Nullable String mainClass, List<String> args) {
         String prefix = module == null || module.isEmpty() ? "" : module + ".";
         List<String> task = new ArrayList<>();
         if (mainClass == null) {
@@ -237,7 +237,7 @@ public final class ScalaRun {
      * module's {@code src} folder, joined by dots ({@code core/src/demo/Main.scala} → {@code core},
      * {@code core/test/src/…} → {@code core.test}); empty for a file of the root module ({@code src/…}).
      */
-    public static String millModule(Path root, Path file) {
+    public static String millModule(@Nullable Path root, Path file) {
         if (root == null || file == null) {
             return "";
         }

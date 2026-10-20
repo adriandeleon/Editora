@@ -18,6 +18,7 @@ import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -43,6 +44,7 @@ final class NavigationCoordinator {
         ProjectManager projects();
 
         /** This window's project, or null (none, or Projects switched off). */
+        @Nullable
         Project windowProject();
 
         ToolWindowManager toolWindows();
@@ -69,7 +71,7 @@ final class NavigationCoordinator {
 
         LspCoordinator lspCoordinator();
 
-        void openAndGoto(Path file, int line0, int col0);
+        void openAndGoto(@Nullable Path file, int line0, int col0);
 
         java.util.Map<String, String> invertBindings();
 
@@ -77,12 +79,14 @@ final class NavigationCoordinator {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints();
 
         void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c);
 
+        @Nullable
         CodeArea activeArea();
 
         Tab addBuffer(EditorBuffer buffer);
@@ -93,11 +97,13 @@ final class NavigationCoordinator {
 
         void openRecent(Path file);
 
-        void openPathPreview(Path file);
+        void openPathPreview(@Nullable Path file);
 
+        @Nullable
         EditorBuffer bufferOf(Tab tab);
 
-        Tab tabForPath(Path file);
+        @Nullable
+        Tab tabForPath(@Nullable Path file);
 
         void persistFolds(EditorBuffer buffer);
     }
@@ -136,9 +142,11 @@ final class NavigationCoordinator {
 
     FileFinder fileFinder;
 
+    @Nullable
     FileFinder folderFinder;
 
     /** Builds the keyboard "Jump to…" pickers (recent files, structure) — command-palette-style popups. */
+    @Initializer
     void setupJumpPickers() {
         recentPalette = new QuickOpen<>(
                 tr("nav.recentFiles.title"),
@@ -156,11 +164,15 @@ final class NavigationCoordinator {
                     StructurePanel panel = host.structurePanel();
                     // With the Structure window closed the server outline is fetched on demand: show what
                     // there is now and take the server's when it arrives.
-                    panel.setOnHiddenOutlineChanged(() -> structurePalette.reload());
+                    panel.setOnHiddenOutlineChanged(() -> {
+                        if (structurePalette != null) {
+                            structurePalette.reload();
+                        }
+                    });
                     return panel.outline();
                 },
                 StructurePanel.Outline::label,
-                StructurePanel.Outline::kind,
+                o -> java.util.Objects.requireNonNullElse(o.kind(), ""),
                 entry -> host.navigateToLine(entry.line()));
         openFilesPalette = new QuickOpen<>(
                 tr("nav.openFiles.title"),
@@ -242,6 +254,7 @@ final class NavigationCoordinator {
     }
 
     /** Start directory for the keyboard file finder: the active file's folder, else this window's project, else home. */
+    @Nullable
     Path finderStartDir() {
         EditorBuffer buffer = host.activeBuffer();
         Path path = buffer == null ? null : buffer.getPath();
@@ -300,7 +313,7 @@ final class NavigationCoordinator {
     }
 
     /** The active file-backed buffer's current caret location (0-based), or {@code null} when none. */
-    NavigationHistory.Location captureCurrent() {
+    NavigationHistory.@Nullable Location captureCurrent() {
         EditorBuffer b = host.activeBuffer();
         if (b == null || b.getPath() == null) {
             return null;
@@ -330,7 +343,7 @@ final class NavigationCoordinator {
      * first</b> (what Emacs does for a jump from outside, {@code widen-automatically}) — the alternative was
      * landing on whatever region line happened to carry that number, or silently not moving at all.
      */
-    int areaLine(EditorBuffer buffer, int documentLine) {
+    int areaLine(@Nullable EditorBuffer buffer, int documentLine) {
         if (buffer == null || !buffer.isNarrowed()) {
             return documentLine;
         }
@@ -346,12 +359,12 @@ final class NavigationCoordinator {
     }
 
     /** Records a jump to the start of {@code areaLine} of {@code buffer} (a file-backed buffer's area line). */
-    void recordJumpToLine(NavigationHistory.Location origin, EditorBuffer buffer, int areaLine) {
+    void recordJumpToLine(NavigationHistory.@Nullable Location origin, EditorBuffer buffer, int areaLine) {
         recordJump(origin, new NavigationHistory.Location(buffer.getPath(), documentLine(buffer, areaLine), 0));
     }
 
     /** Records a jump into the back/forward history: the {@code origin} we left, then the {@code dest}. */
-    void recordJump(NavigationHistory.Location origin, NavigationHistory.Location dest) {
+    void recordJump(NavigationHistory.@Nullable Location origin, NavigationHistory.Location dest) {
         if (dest == null) {
             return;
         }
@@ -378,11 +391,13 @@ final class NavigationCoordinator {
     }
 
     /** The trimmed, length-capped text of {@code line} in an open buffer for {@code path}; "" if not open. */
-    String lineTextAt(Path path, int line) {
+    String lineTextAt(@Nullable Path path, int line) {
         Tab tab = host.tabForPath(path);
         EditorBuffer buffer = tab == null ? null : host.bufferOf(tab);
         CodeArea area = buffer == null ? null : buffer.getArea();
-        if (area != null && buffer.isNarrowed()) { // a recorded line is a document line; the area is the region
+        if (buffer != null
+                && area != null
+                && buffer.isNarrowed()) { // a recorded line is a document line; the area is the region
             line -= documentLine(buffer, 0);
         }
         if (area == null || line < 0 || line >= area.getParagraphs().size()) {
@@ -399,7 +414,7 @@ final class NavigationCoordinator {
      * even though {@link #navigating} is released now (a load that fails never runs the continuation, and
      * must not leave every later jump unrecorded).
      */
-    void landJump(NavigationHistory.Location origin, Path file, int line0, int col0) {
+    void landJump(NavigationHistory.@Nullable Location origin, @Nullable Path file, int line0, int col0) {
         boolean record = !navigating;
         navigating = false;
         host.fileWorkflows().whenLoaded(file, () -> {
@@ -450,11 +465,13 @@ final class NavigationCoordinator {
             return;
         }
         previewOrigin = captureCurrent();
-        recentLocationsPalette.show(host.stage());
+        if (recentLocationsPalette != null) {
+            recentLocationsPalette.show(host.stage());
+        }
     }
 
     /** Where the editor was when a previewing picker opened, so cancelling can put it back. */
-    NavigationHistory.Location previewOrigin;
+    NavigationHistory.@Nullable Location previewOrigin;
 
     /**
      * Shows a highlighted location in the editor without committing to it: no focus change, and nothing
@@ -465,7 +482,7 @@ final class NavigationCoordinator {
      * was skipped entirely, which made the feature useless for exactly the locations you had navigated
      * away from.
      */
-    void previewLocation(NavigationHistory.Location loc) {
+    void previewLocation(NavigationHistory.@Nullable Location loc) {
         if (loc == null) {
             return;
         }
@@ -568,7 +585,9 @@ final class NavigationCoordinator {
             return;
         }
         relatedCandidates = found;
-        relatedPalette.show(host.stage());
+        if (relatedPalette != null) {
+            relatedPalette.show(host.stage());
+        }
     }
 
     List<Path> relatedCandidates = List.of();
@@ -597,7 +616,8 @@ final class NavigationCoordinator {
 
     /** {@code file.java:214} — a location's file and 1-based line, for a picker's detail column. */
     static String locationLabel(NavigationHistory.Location loc) {
-        return loc.path().getFileName() + ":" + (loc.line() + 1);
+        Path path = loc.path();
+        return (path == null ? "" : path.getFileName()) + ":" + (loc.line() + 1);
     }
 
     void foldAll() {
@@ -722,7 +742,7 @@ final class NavigationCoordinator {
     }
 
     /** Moves the caret to {@code target}'s header line, revealing it if it's hidden inside a fold. */
-    void gotoFold(com.editora.editor.FoldRegions.Region target) {
+    void gotoFold(com.editora.editor.FoldRegions.@Nullable Region target) {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null) {
             return;

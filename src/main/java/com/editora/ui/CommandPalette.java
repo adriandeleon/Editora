@@ -27,6 +27,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.search.FuzzyMatch;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -80,7 +81,7 @@ public class CommandPalette {
      * Returns null/blank when there is nothing useful to say, in which case no tooltip is installed.
      * Injected rather than derived here so {@link CommandPalette} stays free of the feature-gate model.
      */
-    private java.util.function.Function<Command, String> disabledReason = c -> null;
+    private java.util.function.Function<Command, @Nullable String> disabledReason = c -> null;
 
     private final TextField input = new TextField();
     /** The input row's chord chip: the chord bound to {@code palette.show}. */
@@ -88,7 +89,7 @@ public class CommandPalette {
     /** The navigation legend under the list; rebuilt from the live keymap (see {@link #refreshKeyHints}). */
     private final Label hint = new Label();
     /** The raw chord token that opens the highlighted command's docs, or null if the keymap leaves none free. */
-    private String docsChord;
+    private @Nullable String docsChord;
 
     private final ListView<Command> list = new ListView<>();
     private final ObservableList<Command> items = FXCollections.observableArrayList();
@@ -98,7 +99,7 @@ public class CommandPalette {
     /** The palette card (header + input + list + hint); shown via the shared {@link OverlayHost}. */
     private VBox content;
     /** Shared in-scene overlay host (injected); shows the card centered with a dim backdrop. */
-    private OverlayHost overlayHost;
+    private @Nullable OverlayHost overlayHost;
     /** Shown state for the toolbar button + MainController; flipped by show()/the host's onHidden hook. */
     private final BooleanProperty showing = new SimpleBooleanProperty(false);
 
@@ -146,7 +147,9 @@ public class CommandPalette {
         // Emacs keymap but is Replace in the CUA/VS Code/Sublime ones, where the dispatcher would take it.
         docsChord = PickerKeys.freeChord(keymap, "C-h", "f1", "S-f1");
         hint.setText(PickerKeys.legend(
-                keymap, PickerKeys.hint("run", "↵"), PickerKeys.hint("docs", keymap.display(docsChord))));
+                keymap,
+                PickerKeys.hint("run", "↵"),
+                PickerKeys.hint("docs", docsChord == null ? null : keymap.display(docsChord))));
     }
 
     /** Height of one command row, and how many the list shows before it scrolls. */
@@ -213,7 +216,7 @@ public class CommandPalette {
      * Injects the explainer for grayed-out rows (see {@link #disabledReason}). Only consulted for a command
      * that already failed the enabled predicate, so it costs nothing on the common path.
      */
-    public void setDisabledReason(java.util.function.Function<Command, String> disabledReason) {
+    public void setDisabledReason(java.util.function.Function<Command, @Nullable String> disabledReason) {
         this.disabledReason = disabledReason == null ? c -> null : disabledReason;
     }
 

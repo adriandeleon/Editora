@@ -5,6 +5,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 import com.editora.http.HttpFile;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -24,8 +25,8 @@ final class HttpPanelStates {
      * How a request is named to the user: its {@code ###} title ({@code titleLine} is the line its section starts
      * with, null when unknown), else its {@code # @name} ({@code name}), else its method and URL as written.
      */
-    static String requestLabel(String titleLine, String name, String method, String url) {
-        String title = HttpFile.separatorTitle(titleLine);
+    static String requestLabel(@Nullable String titleLine, @Nullable String name, String method, String url) {
+        String title = titleLine == null ? null : HttpFile.separatorTitle(titleLine);
         if (title != null) {
             return title;
         }
@@ -41,8 +42,8 @@ final class HttpPanelStates {
      * How a request being sent is named on the status line ("Sending Get one user…"): its {@code ###} title, else its
      * {@code # @name}, else {@code resolved} — its method and URL with the variables filled in.
      */
-    static String runLabel(String titleLine, String name, String resolved) {
-        String title = HttpFile.separatorTitle(titleLine);
+    static String runLabel(@Nullable String titleLine, @Nullable String name, String resolved) {
+        String title = titleLine == null ? null : HttpFile.separatorTitle(titleLine);
         if (title != null) {
             return title;
         }

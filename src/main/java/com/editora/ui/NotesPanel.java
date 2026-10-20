@@ -29,6 +29,7 @@ import javafx.scene.text.Text;
 import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
 import com.editora.config.PersonalNote;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -234,7 +235,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         getChildren().setAll(header, treePane);
     }
 
-    private static boolean hasAnyNote(Map<String, List<PersonalNote>> bucket) {
+    private static boolean hasAnyNote(@Nullable Map<String, List<PersonalNote>> bucket) {
         if (bucket == null) {
             return false;
         }

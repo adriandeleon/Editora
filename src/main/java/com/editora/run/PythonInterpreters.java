@@ -112,7 +112,7 @@ public final class PythonInterpreters {
      * @param onPath the absolute path of a bare command name found on PATH, if any
      */
     public record Inputs(
-            Path file,
+            @Nullable Path file,
             @Nullable Path projectRoot,
             String configured,
             String projectChoice,
@@ -130,8 +130,8 @@ public final class PythonInterpreters {
 
         /** Local inputs: the real file system and {@code onPath}, this JVM's environment and OS. */
         public static Inputs local(
-                Path file,
-                Path projectRoot,
+                @Nullable Path file,
+                @Nullable Path projectRoot,
                 String configured,
                 String projectChoice,
                 String setting,
@@ -161,7 +161,7 @@ public final class PythonInterpreters {
 
     /** Resolves for a local file with the real file system, environment, OS and augmented PATH. */
     public static PythonInterpreter resolveLocal(
-            Path file, Path projectRoot, String configured, String projectChoice, String setting) {
+            @Nullable Path file, @Nullable Path projectRoot, String configured, String projectChoice, String setting) {
         return resolve(Inputs.local(
                 file, projectRoot, configured, projectChoice, setting, PythonInterpreters::onAugmentedPath));
     }
@@ -296,7 +296,7 @@ public final class PythonInterpreters {
      * is never taken for a loose script.
      */
     public static Optional<Path> findProjectVenv(
-            Path file, @Nullable Path projectRoot, Predicate<Path> isFile, boolean windows) {
+            @Nullable Path file, @Nullable Path projectRoot, Predicate<Path> isFile, boolean windows) {
         Path dir = file == null ? projectRoot : file.getParent();
         Path stop = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
         Path home = projectRoot == null ? userHome() : null;
@@ -331,7 +331,7 @@ public final class PythonInterpreters {
      * and any direct sub-folder that is an environment (a {@code .venv-py312} next to {@code .venv}), in a
      * stable order. Filesystem-touching (lists one directory).
      */
-    public static List<Path> listVenvs(Path root, boolean windows) {
+    public static List<Path> listVenvs(@Nullable Path root, boolean windows) {
         if (root == null) {
             return List.of();
         }

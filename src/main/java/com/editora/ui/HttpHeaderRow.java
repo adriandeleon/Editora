@@ -7,6 +7,8 @@ import javafx.geometry.VPos;
 import javafx.scene.control.Label;
 import javafx.scene.layout.Region;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The response view's header row: Run, the status pill, the timing and size, then (right-aligned) the History
  * picker. In a narrow panel the parts give way in the order {@link HttpPanelLayout#header} decides, and History
@@ -25,7 +27,7 @@ final class HttpHeaderRow extends Region {
     private static final double RUNNING_STATUS_MIN = 120;
 
     /** The last fit, for tests. */
-    private HttpPanelLayout.HeaderFit fit;
+    private HttpPanelLayout.@Nullable HeaderFit fit;
 
     HttpHeaderRow(Region run, Label status, Label meta, Region history) {
         this.run = run;
@@ -44,7 +46,7 @@ final class HttpHeaderRow extends Region {
         }
     }
 
-    HttpPanelLayout.HeaderFit fitForTest() {
+    HttpPanelLayout.@Nullable HeaderFit fitForTest() {
         return fit;
     }
 

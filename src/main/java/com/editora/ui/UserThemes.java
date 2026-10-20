@@ -11,6 +11,8 @@ import java.util.stream.Stream;
 
 import javafx.scene.paint.Color;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * User-defined themes loaded from the config folder (first pass — discovered once at startup, plus a
  * palette "reload" command). Two folders:
@@ -98,7 +100,7 @@ final class UserThemes {
         return Themes.NAMES.contains(name) || EditorThemes.NAMES.contains(name);
     }
 
-    private static Entry parse(Path css, boolean controlKind) {
+    private static @Nullable Entry parse(Path css, boolean controlKind) {
         String text;
         try {
             if (Files.size(css) > MAX_CSS_BYTES) {
@@ -152,7 +154,7 @@ final class UserThemes {
         return css.contains("-color-") || css.contains("-fx-");
     }
 
-    private static Color firstNonNull(Color a, Color b) {
+    private static @Nullable Color firstNonNull(@Nullable Color a, @Nullable Color b) {
         return a != null ? a : b;
     }
 
@@ -203,11 +205,11 @@ final class UserThemes {
      * glaring white editor. The bundled themes and AtlantaFX's own all use literal hex, which is why the
      * happy path never showed it.
      */
-    static Color parseColor(String css, String token) {
+    static @Nullable Color parseColor(String css, String token) {
         return parseColor(css, token, MAX_VAR_HOPS);
     }
 
-    private static Color parseColor(String css, String token, int hopsLeft) {
+    private static @Nullable Color parseColor(String css, String token, int hopsLeft) {
         // The lookahead keeps `-color-bg-default` from matching a longer token that merely starts with it.
         Matcher m = Pattern.compile(Pattern.quote(token) + "(?![A-Za-z0-9_-])\\s*:?\\s*([^;{}]*)")
                 .matcher(css);

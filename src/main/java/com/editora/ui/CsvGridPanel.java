@@ -29,6 +29,7 @@ import javafx.util.Callback;
 
 import com.editora.csv.CsvColumns;
 import com.editora.csv.CsvColumns.ColumnType;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -74,7 +75,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
      * What a print or an export of a CSV holds: {@code rows} in the order to put out, under {@code header}
      * (null: no header row, every row is data), out of {@code totalRows} data rows in the file.
      */
-    record Shown(List<String> header, List<List<String>> rows, int totalRows) {
+    record Shown(@Nullable List<String> header, List<List<String>> rows, int totalRows) {
         /** Whether a filter is hiding some of the file's rows. */
         boolean filtered() {
             return rows.size() < totalRows;
@@ -115,7 +116,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     private List<List<String>> rows = List.of();
     private boolean editable;
     private EditCommit editCommit = (r, f, v) -> {};
-    private ExportActions exportActions;
+    private @Nullable ExportActions exportActions;
     private Runnable onShown = () -> {};
 
     // View state (survives rebuilds so an edit's re-parse keeps the current sort/filter).
@@ -219,7 +220,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
 
     /** Enables/disables in-place cell editing; when enabled, a committed edit calls {@code onCommit}. Stores
      *  the state only — the caller must follow with {@link #setData} to rebuild the columns. */
-    void setEditable(boolean editable, EditCommit onCommit) {
+    void setEditable(boolean editable, @Nullable EditCommit onCommit) {
         this.editable = editable;
         this.editCommit = onCommit == null ? (r, f, v) -> {} : onCommit;
         table.setEditable(editable);
@@ -287,10 +288,11 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         table.getColumns().add(rowNumberColumn(rows.size()));
         for (int c = 0; c < cols; c++) {
             final int col = c;
-            String title =
-                    header && col < headerRow.size() && !headerRow.get(col).isBlank()
-                            ? headerRow.get(col)
-                            : tr("csvgrid.column", col + 1);
+            String title = headerRow != null
+                            && col < headerRow.size()
+                            && !headerRow.get(col).isBlank()
+                    ? headerRow.get(col)
+                    : tr("csvgrid.column", col + 1);
             baseTitles.add(title);
             boolean numeric = col < types.size() && CsvColumns.isNumeric(types.get(col));
             TableColumn<Row, String> tc = new TableColumn<>();
@@ -369,7 +371,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         return a.compareToIgnoreCase(b);
     }
 
-    private static Double tryNumber(String s) {
+    private static @Nullable Double tryNumber(String s) {
         String t = s.trim();
         if (t.isEmpty()) {
             return null;

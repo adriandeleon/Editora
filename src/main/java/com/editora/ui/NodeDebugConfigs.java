@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.dap.DapManager;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Debug on a {@code node} or {@code npm} run configuration: the launch is planned the way Run plans it, so Debug
@@ -22,11 +23,12 @@ final class NodeDebugConfigs {
     /**
      * The js-debug launch for a planned Node run: {@code argv} split at the script ({@code target}, as the
      * machine running it names it) into the runtime with its arguments, the script, and its arguments. Null when
-     * the script is not in {@code argv} (nothing to split at).
+     * the script is not in {@code argv} (nothing to split at), or there is no folder to run it in.
      */
-    static DapManager.JsProgram fromRunPlan(List<String> argv, String target, Map<String, String> env, Path dir) {
+    static DapManager.@Nullable JsProgram fromRunPlan(
+            List<String> argv, String target, Map<String, String> env, @Nullable Path dir) {
         int at = argv == null || target == null ? -1 : argv.indexOf(target);
-        if (at < 1) {
+        if (at < 1 || dir == null) {
             return null;
         }
         return new DapManager.JsProgram(
@@ -38,7 +40,7 @@ final class NodeDebugConfigs {
      * ({@code npm run start -- …}), launched as js-debug's {@code runtimeExecutable}/{@code runtimeArgs} with no
      * program of its own. {@code npmEnv} (colour, the configuration's variables) is set on top.
      */
-    static DapManager.JsProgram forPackageManager(List<String> argv, Path dir, Map<String, String> npmEnv) {
+    static DapManager.@Nullable JsProgram forPackageManager(List<String> argv, Path dir, Map<String, String> npmEnv) {
         if (argv == null || argv.isEmpty()) {
             return null;
         }

@@ -18,6 +18,7 @@ import com.editora.git.StashOptions;
 import com.editora.git.StashOutcome;
 import com.editora.git.StashParser.StashEntry;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -35,8 +36,8 @@ final class GitStashCoordinator {
 
     private final CoordinatorHost host;
     private final GitCoordinator git;
-    private DiffCoordinator diff;
-    private GitStashPopup popup;
+    private @Nullable DiffCoordinator diff;
+    private @Nullable GitStashPopup popup;
 
     GitStashCoordinator(CoordinatorHost host, GitCoordinator git) {
         this.host = host;
@@ -48,6 +49,7 @@ final class GitStashCoordinator {
     }
 
     /** The list card, once it has been shown (for tests). */
+    @Nullable
     GitStashPopup popup() {
         return popup;
     }
@@ -56,10 +58,10 @@ final class GitStashCoordinator {
 
     /** {@code git.stashes}: the stashes of the active repository, each with its files and actions. */
     void showList() {
-        if (git.reportIfNoRepo()) {
+        Path root = git.repoRootOrReport();
+        if (root == null) {
             return;
         }
-        Path root = git.repoRoot();
         git.service().stashList(root, stashes -> {
             if (stashes.isEmpty()) {
                 host.setStatus(tr("stash.empty"));
@@ -99,8 +101,9 @@ final class GitStashCoordinator {
      * was made on (the stash commit's first parent), and each untracked file of an
      * {@code --include-untracked} stash, read from the third parent that holds them, as an addition.
      */
-    void show(Path root, StashEntry entry) {
-        if (root == null || diff == null) {
+    void show(@Nullable Path root, StashEntry entry) {
+        DiffCoordinator review = diff;
+        if (root == null || review == null) {
             return;
         }
         String stash = id(entry);
@@ -124,7 +127,7 @@ final class GitStashCoordinator {
                             default -> new DiffCoordinator.BlobReviewTarget(file.path(), file.status(), left, right);
                         });
             }
-            diff.openBlobReview(
+            review.openBlobReview(
                     tr("stash.review.title", entry.ref(), targets.size()),
                     tr("stash.side.base"),
                     tr("stash.side.stash"),
@@ -188,7 +191,7 @@ final class GitStashCoordinator {
      * stashes the files on disk, so the edits still in an editor would otherwise stay behind in the buffer
      * while the file under them is reset.
      */
-    void stash(Path root, StashOptions options) {
+    void stash(@Nullable Path root, StashOptions options) {
         if (root == null || !git.saveUnsaved(root, List.of())) {
             return;
         }
@@ -220,10 +223,10 @@ final class GitStashCoordinator {
 
     /** {@code git.stashPop}: pops the newest stash. */
     void popLatest() {
-        if (git.reportIfNoRepo()) {
+        Path root = git.repoRootOrReport();
+        if (root == null) {
             return;
         }
-        Path root = git.repoRoot();
         git.service().stashList(root, stashes -> {
             if (stashes.isEmpty()) {
                 host.setStatus(tr("stash.empty"));
@@ -251,7 +254,7 @@ final class GitStashCoordinator {
      * Applies {@code entry} ({@code pop}: and drops it when that succeeds). The buffers of the files the
      * stash touches are saved first, as for a stage: git merges the stash into the files on disk.
      */
-    void apply(Path root, StashEntry entry, boolean pop) {
+    void apply(@Nullable Path root, StashEntry entry, boolean pop) {
         if (root == null) {
             return;
         }
@@ -298,7 +301,7 @@ final class GitStashCoordinator {
     // --- drop / branch -----------------------------------------------------------------------------
 
     /** Confirms, then drops {@code entry} from the repository at {@code root} (the one it was listed from). */
-    void drop(Path root, StashEntry entry) {
+    void drop(@Nullable Path root, StashEntry entry) {
         if (root == null) {
             return;
         }
@@ -326,7 +329,7 @@ final class GitStashCoordinator {
     }
 
     /** Asks for a branch name, then {@link #branch}. */
-    void promptBranch(Path root, StashEntry entry) {
+    void promptBranch(@Nullable Path root, StashEntry entry) {
         host.promptText(tr("stash.branch.title"), tr("dialog.newBranch.content"), "", input -> {
             String name = input.strip();
             if (!name.isEmpty() && !git.rejectUnsafeRevision(name)) {
@@ -339,7 +342,7 @@ final class GitStashCoordinator {
      * {@code git stash branch}: creates {@code name} at the commit the stash was made on, switches to it,
      * applies the stash there and drops it — the way out when a stash no longer applies to its branch.
      */
-    void branch(Path root, StashEntry entry, String name) {
+    void branch(@Nullable Path root, StashEntry entry, String name) {
         if (root == null) {
             return;
         }
@@ -367,10 +370,10 @@ final class GitStashCoordinator {
      * re-read {@code repoRoot} after the picker (or a confirmation) has been on screen.
      */
     private void chooseStash(String title, java.util.function.BiConsumer<Path, StashEntry> onPick) {
-        if (git.reportIfNoRepo()) {
+        Path root = git.repoRootOrReport();
+        if (root == null) {
             return;
         }
-        Path root = git.repoRoot();
         git.service().stashList(root, stashes -> {
             if (stashes.isEmpty()) {
                 host.setStatus(tr("stash.empty"));

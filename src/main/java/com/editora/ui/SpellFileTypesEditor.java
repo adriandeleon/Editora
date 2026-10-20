@@ -58,8 +58,10 @@ final class SpellFileTypesEditor extends VBox {
         list.setOnKeyPressed(e -> {
             String selected = list.getSelectionModel().getSelectedItem();
             if (e.getCode() == KeyCode.SPACE && selected != null) {
-                BooleanProperty on = ticked.get(selected);
-                on.set(!on.get());
+                BooleanProperty on = ticked.get(selected); // every listed row has one
+                if (on != null) {
+                    on.set(!on.get());
+                }
                 e.consume();
             }
         });
@@ -123,6 +125,10 @@ final class SpellFileTypesEditor extends VBox {
 
     /** Ticks or unticks {@code language} as a click would — for tests. */
     void setTicked(String language, boolean on) {
-        ticked.get(language).set(on);
+        BooleanProperty property = ticked.get(language);
+        if (property == null) {
+            throw new IllegalArgumentException("not a listed language: " + language);
+        }
+        property.set(on);
     }
 }

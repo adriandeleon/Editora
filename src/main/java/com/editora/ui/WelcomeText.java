@@ -9,6 +9,7 @@ import java.util.function.Function;
 
 import com.editora.config.Project;
 import com.editora.vfs.RemoteConnection;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The text decisions behind the Welcome page's rows, kept pure so they are unit-tested: how a recent file's
@@ -27,7 +28,7 @@ final class WelcomeText {
      * project chip already names the root; a file at the root shows nothing). Under the home directory it starts
      * with {@code ~}. Anywhere else it is the full folder.
      */
-    static String folderText(Path file, Path projectRoot, Path home) {
+    static String folderText(Path file, @Nullable Path projectRoot, @Nullable Path home) {
         Path parent = file == null ? null : file.getParent();
         if (parent == null) {
             return "";
@@ -39,7 +40,7 @@ final class WelcomeText {
     }
 
     /** A folder written for the UI: under the home directory it starts with {@code ~}, else in full. */
-    static String dirText(Path dir, Path home) {
+    static String dirText(@Nullable Path dir, @Nullable Path home) {
         if (dir == null) {
             return "";
         }
@@ -55,7 +56,8 @@ final class WelcomeText {
      * {@code recentFiles}; projects with no recent file follow in their saved order. {@code owner} finds the
      * project a file belongs to (or null).
      */
-    static List<Project> recentProjects(List<Project> projects, List<Path> recentFiles, Function<Path, Project> owner) {
+    static List<Project> recentProjects(
+            List<Project> projects, List<Path> recentFiles, Function<Path, @Nullable Project> owner) {
         Set<Project> ordered = new LinkedHashSet<>();
         for (Path file : recentFiles) {
             Project p = owner.apply(file);
@@ -68,7 +70,7 @@ final class WelcomeText {
     }
 
     /** {@code user@host:port} without the port when it is the SSH default. */
-    static String withoutDefaultPort(String authority) {
+    static String withoutDefaultPort(@Nullable String authority) {
         if (authority == null) {
             return "";
         }

@@ -312,10 +312,10 @@ public final class PdfExportService {
     /** As {@link #exportMarkdown(String, Path, String, java.util.List, Path, Consumer)} with a page and metadata. */
     public void exportMarkdown(
             String markdown,
-            Path baseDir,
+            @Nullable Path baseDir,
             PdfPageSpec page,
             PdfDocMeta meta,
-            java.util.List<String> mmdcCommand,
+            java.util.@Nullable List<String> mmdcCommand,
             Path out,
             Consumer<Result> onResult) {
         submit(onResult, () -> {

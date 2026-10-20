@@ -62,7 +62,7 @@ public final class TodoService {
      */
     public void scan(
             List<TodoPatterns.Compiled> patterns,
-            Path scopeRoot,
+            @Nullable Path scopeRoot,
             Map<Path, String> openContents,
             Consumer<Outcome> onResult) {
         long g = gen.incrementAndGet();
@@ -81,7 +81,7 @@ public final class TodoService {
      */
     Outcome run(
             List<TodoPatterns.Compiled> patterns,
-            Path scopeRoot,
+            @Nullable Path scopeRoot,
             Map<Path, String> open,
             java.util.function.BooleanSupplier superseded) {
         if (superseded.getAsBoolean() || patterns == null || patterns.isEmpty()) {

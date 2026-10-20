@@ -10,6 +10,7 @@ import java.util.function.Predicate;
 
 import com.editora.ui.ProjectPanel.FsChange;
 import com.editora.ui.ProjectPanel.FsKind;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What the project watcher saw between two debounce ticks, kept by directory so the panel can re-list only
@@ -67,7 +68,7 @@ final class ProjectWatchChanges {
      * without {@code overflow} is a key that fired with nothing to say, which is treated as "this directory
      * changed somehow".
      */
-    void add(Path dir, List<FsChange> named, boolean overflow) {
+    void add(@Nullable Path dir, List<FsChange> named, boolean overflow) {
         recorded = true;
         if (overflow) {
             this.overflow = true;

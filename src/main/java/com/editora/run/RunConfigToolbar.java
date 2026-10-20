@@ -3,6 +3,8 @@ package com.editora.run;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Decides whether the toolbar's run-configuration group (selector + Run/Debug/Stop) is worth showing.
  *
@@ -58,7 +60,8 @@ public final class RunConfigToolbar {
      * @param markerRoot where a build tool's marker file was detected, or null when none was
      * @param makefileAtProjectRoot the project root holds a makefile (false when there is no project)
      */
-    public static boolean launchable(Path projectRoot, Path markerRoot, boolean makefileAtProjectRoot) {
+    public static boolean launchable(
+            @Nullable Path projectRoot, @Nullable Path markerRoot, boolean makefileAtProjectRoot) {
         if (projectRoot == null) {
             return false;
         }
@@ -76,7 +79,7 @@ public final class RunConfigToolbar {
      * <p>Compared on path components, not strings, so {@code ~/src/app2} never counts as inside
      * {@code ~/src/app} — the same trap {@code PathKeys} guards for trusted folders.
      */
-    public static boolean withinProject(Path projectRoot, Path markerRoot) {
+    public static boolean withinProject(Path projectRoot, @Nullable Path markerRoot) {
         if (projectRoot == null || markerRoot == null) {
             return false;
         }

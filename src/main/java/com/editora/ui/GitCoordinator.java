@@ -31,6 +31,7 @@ import com.editora.git.GitSafety;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -59,13 +60,13 @@ final class GitCoordinator {
     interface WindowOps {
         void setStatusBarGitEnabled(boolean enabled);
 
-        void setStatusBarBranch(String branch, int ahead, int behind);
+        void setStatusBarBranch(@Nullable String branch, int ahead, int behind);
 
         void setCommitWindowAvailable(boolean available);
 
         void setGitLogWindowAvailable(boolean available);
 
-        void setGitPanelStatus(GitStatus status);
+        void setGitPanelStatus(@Nullable GitStatus status);
 
         /**
          * The merge / rebase / cherry-pick / revert the repository is in the middle of
@@ -95,6 +96,7 @@ final class GitCoordinator {
         void refreshOpenDiffs();
 
         /** The active project's root folder, or {@code null} when no project is open. */
+        @Nullable
         Path projectRoot();
 
         /** Invalidates queued or staged editor writes before Git mutates the same working-tree path. */
@@ -130,14 +132,14 @@ final class GitCoordinator {
         com.editora.command.KeymapManager keymap();
 
         /** Opens (or focuses) the tab for {@code file} (used to open a file from a fresh clone). */
-        void openPath(Path file);
+        void openPath(@Nullable Path file);
 
         /** Re-syncs the Settings window's "inline blame" checkbox after the blame toggle. */
         void syncBlameCheck();
 
         /** Opens a read-only diff of {@code repoRel} at {@code hash} vs its parent (a blame-annotation click).
          *  Routed through the window to reach {@code DiffCoordinator} without a circular dependency. */
-        void openCommitFileDiff(String hash, String repoRel, String origRepoRel);
+        void openCommitFileDiff(String hash, String repoRel, @Nullable String origRepoRel);
     }
 
     private final CoordinatorHost host;
@@ -159,7 +161,7 @@ final class GitCoordinator {
     /** "Fetch automatically"; see {@link GitAutoFetch}. */
     private final GitAutoFetch autoFetch;
 
-    private Path repoRoot;
+    private @Nullable Path repoRoot;
     /** Complete status snapshot paired with {@link #repoRoot}; consumed by repository-wide diff review. */
     private GitStatus lastStatus = GitStatus.NOT_A_REPO;
     /** The last computed per-file status (absolute normalized path → status); used by the Project-tree
@@ -188,6 +190,7 @@ final class GitCoordinator {
 
     private boolean supportApplied;
     /** Replaces the body of {@link #gitPush} once the branch coordinator exists; null in a bare engine. */
+    @Nullable
     Runnable pushHandler;
 
     GitCoordinator(CoordinatorHost host, WindowOps ops) {
@@ -241,6 +244,7 @@ final class GitCoordinator {
     }
 
     /** The active repo root, or {@code null} when the current context isn't inside a repo. */
+    @Nullable
     Path repoRoot() {
         return repoRoot;
     }
@@ -321,10 +325,21 @@ final class GitCoordinator {
         return true;
     }
 
+    /** The active repo root, or {@code null} after {@link #reportIfNoRepo()}'s status when there is none. */
+    @Nullable
+    Path repoRootOrReport() {
+        Path root = repoRoot;
+        if (root == null) {
+            reportIfNoRepo();
+        }
+        return root;
+    }
+
     /**
      * The path whose repo drives the Git UI: the active file, else the active project root, else — on a diff
      * or review tab — the repository already active, else null.
      */
+    @Nullable
     Path contextPath() {
         EditorBuffer b = host.activeBuffer();
         Path file = b == null ? null : b.getPath();
@@ -412,7 +427,8 @@ final class GitCoordinator {
         // Only diff a real, non-huge file (huge files disable the gutter anyway). A narrowed buffer shows
         // region-relative lines, so whole-file change bars would land on the wrong ones: it gets none.
         // An encrypted file's text would be diffed against its ciphertext in the repository: meaningless bars.
-        Path diffFile = (file != null
+        Path diffFile = (b != null
+                        && file != null
                         && !b.isLargeFile()
                         && !b.isNarrowed()
                         && !b.encryption().isEncrypted())
@@ -423,7 +439,8 @@ final class GitCoordinator {
 
     /** Applies a completed Git refresh to the status bar, tool window, and active buffer's gutter. */
     void applyState(GitService.RepoState state) {
-        repoRoot = state.root();
+        Path root = state.root();
+        repoRoot = root;
         lastStatus = state.isRepo() ? state.status() : GitStatus.NOT_A_REPO;
         // Before the window surfaces below are told: they re-evaluate menu and palette enablement, which asks
         // whether an operation is in progress.
@@ -433,7 +450,7 @@ final class GitCoordinator {
         // with a Clone button, which is the way in. (Transient; the user's show/hide preference is untouched.)
         ops.setCommitWindowAvailable(isEnabled());
         ops.setGitLogWindowAvailable(state.isRepo());
-        if (!state.isRepo()) {
+        if (!state.isRepo() || root == null) {
             branchName = "";
             upstream = "";
             repositoryListener.accept(null, "");
@@ -461,7 +478,7 @@ final class GitCoordinator {
         ops.setGitOperation(operation, GitConflicts.unmerged(status).size());
         ops.setGitPanelStatus(status);
         commits.repositoryApplied(repoRoot); // the template of a new repository, the line counts of this status
-        lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, state.root());
+        lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, root);
         ops.setProjectGitStatus(lastStatusByPath); // color the tree
         if (b != null && b.isNarrowed()) {
             b.setChangeBars(null, null); // line numbers refer to the whole file, the view to the region
@@ -493,15 +510,17 @@ final class GitCoordinator {
         EditorBuffer active = host.activeBuffer();
         host.forEachBuffer(buf -> {
             // The active buffer is handled by refresh(); skip non-file/huge buffers + files outside this repo.
-            if (buf.isNarrowed()
+            Path bufPath = buf.getPath();
+            if (bufPath == null
+                    || buf.isNarrowed()
                     || !GitChangeBars.shouldRediff(
-                            buf.getPath(),
+                            bufPath,
                             root,
                             buf == active,
                             buf.isLargeFile() || buf.encryption().isEncrypted())) {
                 return;
             }
-            Path path = buf.getPath().toAbsolutePath();
+            Path path = bufPath.toAbsolutePath();
             service.diff(root, path, diff -> {
                 if (!buf.isDisposed()
                         && !buf.isNarrowed()
@@ -550,7 +569,7 @@ final class GitCoordinator {
         blame.onGutterClick(buffer, line);
     }
 
-    void refreshBlame(EditorBuffer b) {
+    void refreshBlame(@Nullable EditorBuffer b) {
         blame.refresh(b);
     }
 
@@ -558,10 +577,10 @@ final class GitCoordinator {
 
     /** Runs a git command, reporting success/failure + refreshing state afterward. */
     void gitOp(String successMessage, String... args) {
-        if (reportIfNoRepo()) {
-            return;
+        Path root = repoRootOrReport();
+        if (root != null) {
+            gitOpIn(root, successMessage, args);
         }
-        gitOpIn(repoRoot, successMessage, args);
     }
 
     /** {@link #gitOp} in the repository the caller resolved its arguments against. */
@@ -655,8 +674,9 @@ final class GitCoordinator {
      * multi-select). One invocation — and therefore one refresh — for the whole set.
      */
     void gitStagePaths(List<String> paths) {
-        if (!paths.isEmpty() && !reportIfNoRepo()) {
-            stageIn(repoRoot, paths);
+        Path root = paths.isEmpty() ? null : repoRootOrReport();
+        if (root != null) {
+            stageIn(root, paths);
         }
     }
 
@@ -664,7 +684,7 @@ final class GitCoordinator {
         stageIn(root, root.equals(repoRoot) ? lastStatus : null, paths);
     }
 
-    private void stageIn(Path root, GitStatus status, List<String> paths) {
+    private void stageIn(Path root, @Nullable GitStatus status, List<String> paths) {
         if (!saveUnsaved(root, paths) || !confirmStagingMarkers(root, status, paths)) {
             return;
         }
@@ -676,8 +696,8 @@ final class GitCoordinator {
 
     /** {@code git add -A}: the Commit window's Stage All. */
     void gitStageAll() {
-        Path root = repoRoot; // the confirmation below runs a nested event loop: the root is captured first
-        if (!reportIfNoRepo() && saveUnsaved(root, List.of()) && confirmStagingMarkers(root, lastStatus, List.of())) {
+        Path root = repoRootOrReport(); // the confirmation below runs a nested event loop: the root is captured first
+        if (root != null && saveUnsaved(root, List.of()) && confirmStagingMarkers(root, lastStatus, List.of())) {
             gitOpIn(root, tr("status.git.stagedAll"), "add", "-A");
         }
     }
@@ -693,7 +713,7 @@ final class GitCoordinator {
      * @param pathspecs the paths being staged; empty means the whole repository (Stage All)
      * @return false when the user declined
      */
-    private boolean confirmStagingMarkers(Path root, GitStatus status, List<String> pathspecs) {
+    private boolean confirmStagingMarkers(Path root, @Nullable GitStatus status, List<String> pathspecs) {
         List<String> marked = unresolvedAmong(root, status, pathspecs);
         if (marked.isEmpty()) {
             return true;
@@ -705,9 +725,10 @@ final class GitCoordinator {
     }
 
     /** The unmerged paths {@code pathspecs} select whose file on disk still contains conflict markers. */
-    static List<String> unresolvedAmong(Path root, GitStatus status, List<String> pathspecs) {
+    static List<String> unresolvedAmong(Path root, @Nullable GitStatus status, List<String> pathspecs) {
         List<String> marked = new ArrayList<>();
-        for (GitStatus.FileEntry entry : GitConflicts.unmerged(status)) {
+        List<GitStatus.FileEntry> unmerged = status == null ? List.of() : GitConflicts.unmerged(status);
+        for (GitStatus.FileEntry entry : unmerged) {
             if (!pathspecs.isEmpty() && pathspecs.stream().noneMatch(spec -> selects(spec, entry.path()))) {
                 continue;
             }
@@ -728,8 +749,9 @@ final class GitCoordinator {
 
     /** {@code git reset -q HEAD} over one or more repo-relative paths; mirrors {@link #gitStagePaths}. */
     void gitUnstagePaths(List<String> paths) {
-        if (!paths.isEmpty() && !reportIfNoRepo()) {
-            unstageIn(repoRoot, lastStatus, paths);
+        Path root = paths.isEmpty() ? null : repoRootOrReport();
+        if (root != null) {
+            unstageIn(root, lastStatus, paths);
         }
     }
 
@@ -770,7 +792,7 @@ final class GitCoordinator {
     }
 
     /** The first unmerged path one of {@code pathspecs} (a file or a folder) selects, or {@code null}. */
-    static String firstUnmergedUnder(GitStatus status, List<String> pathspecs) {
+    static @Nullable String firstUnmergedUnder(GitStatus status, List<String> pathspecs) {
         if (status == null) {
             return null;
         }
@@ -820,7 +842,7 @@ final class GitCoordinator {
         }
     }
 
-    private void discard(Path root, GitStatus status, Discard discard) {
+    private void discard(@Nullable Path root, GitStatus status, Discard discard) {
         // The paths are relative to the repository shown when the user chose them. The modal dialog below
         // runs a nested event loop in which a tab switch or a refresh can move repoRoot to another repository
         // (one worktree per task makes that ordinary), so the root is captured first and passed through.
@@ -962,7 +984,8 @@ final class GitCoordinator {
      * if each had been unstaged by hand (rename sources included; unmerged paths are never touched).
      */
     void gitUnstageAll() {
-        if (reportIfNoRepo()) {
+        Path root = repoRootOrReport();
+        if (root == null) {
             return;
         }
         List<String> staged = lastStatus.files().stream()
@@ -973,7 +996,6 @@ final class GitCoordinator {
             host.setStatus(tr("status.git.nothingStaged"));
             return;
         }
-        Path root = repoRoot;
         gitOpIn(
                 root,
                 tr("status.git.unstagedMany", staged.size()),
@@ -985,7 +1007,11 @@ final class GitCoordinator {
      * back to the index, back to HEAD, or deleted. {@code conflict} names the first unmerged path, which
      * stops the whole thing: a conflict is resolved, not discarded. Pure.
      */
-    record DiscardAll(List<String> worktree, List<String> head, List<String> untracked, String conflict) {
+    record DiscardAll(
+            List<String> worktree,
+            List<String> head,
+            List<String> untracked,
+            @Nullable String conflict) {
         int tracked() {
             return worktree.size() + head.size();
         }
@@ -1015,10 +1041,10 @@ final class GitCoordinator {
      * message. Refused while a file is unmerged.
      */
     void gitDiscardAll() {
-        if (reportIfNoRepo()) {
+        Path root = repoRootOrReport();
+        if (root == null) {
             return;
         }
-        Path root = repoRoot;
         DiscardAll all = DiscardAll.of(lastStatus);
         if (all.conflict() != null) {
             host.setStatus(tr("status.git.discardConflict", all.conflict()));
@@ -1099,15 +1125,15 @@ final class GitCoordinator {
     private void aroundWorkingTreeMutation(
             Consumer<Consumer<ProcessRunner.Result>> operation,
             Consumer<ProcessRunner.Result> report,
-            Runnable afterReload) {
+            @Nullable Runnable afterReload) {
         aroundWorkingTreeMutation(repoRoot, operation, report, afterReload);
     }
 
     void aroundWorkingTreeMutation(
-            Path root,
+            @Nullable Path root,
             Consumer<Consumer<ProcessRunner.Result>> operation,
             Consumer<ProcessRunner.Result> report,
-            Runnable afterReload) {
+            @Nullable Runnable afterReload) {
         invalidatePendingWrites(root, List.of());
         operation.accept(result -> {
             invalidatePendingWrites(root, List.of());
@@ -1133,7 +1159,8 @@ final class GitCoordinator {
      * arguments from. A commit hash listed for one repository must not run in whichever repository is active
      * by the time a confirmation has been answered, so the Git Log passes the root it listed.
      */
-    void mutateWorkingTree(Path root, String successMessage, Runnable afterCompletion, String... args) {
+    void mutateWorkingTree(
+            @Nullable Path root, String successMessage, @Nullable Runnable afterCompletion, String... args) {
         if (root == null) {
             return;
         }
@@ -1190,7 +1217,7 @@ final class GitCoordinator {
      * The operation the three commands act on, or null after saying why there is none: no repository,
      * nothing in progress, or a bisect — which is shown but has no continue, skip or abort here.
      */
-    private GitOperation drivenOperation() {
+    private @Nullable GitOperation drivenOperation() {
         if (reportIfNoRepo()) {
             return null;
         }
@@ -1209,10 +1236,10 @@ final class GitCoordinator {
      */
     void continueOperation() {
         GitOperation op = drivenOperation();
-        if (op == null) {
+        Path root = repoRoot;
+        if (op == null || root == null) {
             return;
         }
-        Path root = repoRoot;
         int conflicts = GitConflicts.unmerged(lastStatus).size();
         if (conflicts > 0) {
             host.setStatus(tr("status.git.cannotContinueConflicts", operationName(op.kind()), conflicts));
@@ -1240,6 +1267,9 @@ final class GitCoordinator {
             return;
         }
         Path root = repoRoot;
+        if (root == null) {
+            return;
+        }
         String name = operationName(op.kind());
         if (confirmDestructive(
                 tr("dialog.skipOperation.title", name),
@@ -1256,10 +1286,10 @@ final class GitCoordinator {
      */
     void abortOperation() {
         GitOperation op = drivenOperation();
-        if (op == null) {
+        Path root = repoRoot;
+        if (op == null || root == null) {
             return;
         }
-        Path root = repoRoot;
         String name = operationName(op.kind());
         String lost = switch (op.kind()) {
             case MERGE -> tr("dialog.abortOperation.merge");
@@ -1296,10 +1326,10 @@ final class GitCoordinator {
      * to those files are dropped, so it is confirmed.
      */
     void acceptConflictSide(List<String> paths, boolean ours) {
-        if (paths.isEmpty() || reportIfNoRepo()) {
+        Path root = paths.isEmpty() ? null : repoRootOrReport();
+        if (root == null) {
             return;
         }
-        Path root = repoRoot;
         List<GitStatus.FileEntry> entries = GitConflicts.unmerged(lastStatus).stream()
                 .filter(entry -> paths.contains(entry.path()))
                 .toList();
@@ -1360,8 +1390,7 @@ final class GitCoordinator {
         }
         String relative = GitService.repoRelative(root, file);
         if (relative == null
-                || GitConflicts.unmerged(lastStatus).stream()
-                        .noneMatch(e -> e.path().equals(relative))
+                || GitConflicts.unmerged(lastStatus).stream().noneMatch(e -> relative.equals(e.path()))
                 || com.editora.diff.ConflictParser.hasConflictMarkers(buffer.getContent())) {
             return;
         }
@@ -1392,10 +1421,10 @@ final class GitCoordinator {
     }
 
     void newBranch() {
-        if (reportIfNoRepo()) {
+        Path root = repoRootOrReport(); // the repository the prompt was opened for, not whichever is active on accept
+        if (root == null) {
             return;
         }
-        Path root = repoRoot; // the repository the prompt was opened for, not whichever is active on accept
         host.promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
             String name = input.strip();
             if (name.isEmpty() || rejectUnsafeRevision(name)) {
@@ -1417,10 +1446,10 @@ final class GitCoordinator {
     }
 
     void gitSync(String label, String... args) {
-        if (reportIfNoRepo()) {
-            return;
+        Path root = repoRootOrReport();
+        if (root != null) {
+            syncIn(root, label, null, args);
         }
-        syncIn(repoRoot, label, null, args);
     }
 
     /**
@@ -1428,7 +1457,10 @@ final class GitCoordinator {
      *     way forward) and nothing more is reported
      */
     private void syncIn(
-            Path root, String label, java.util.function.Predicate<ProcessRunner.Result> onFailure, String... args) {
+            Path root,
+            String label,
+            java.util.function.@Nullable Predicate<ProcessRunner.Result> onFailure,
+            String... args) {
         host.setStatus(tr("status.gitRunning", label));
         boolean changesWorkingTree = args.length > 0 && "pull".equals(args[0]);
         if (changesWorkingTree) {
@@ -1495,15 +1527,17 @@ final class GitCoordinator {
      * the user is offered the two there are — rebase or merge — instead of the error.
      */
     void gitPull() {
-        if (!reportIfNoRepo()) {
-            pullIn(repoRoot, pullMode(), true);
+        Path root = repoRootOrReport();
+        if (root != null) {
+            pullIn(root, pullMode(), true);
         }
     }
 
     /** Pulls in {@code mode} whatever the setting says ({@code git.pullRebase}, {@code git.pullMerge}). */
     void gitPull(GitPullMode mode) {
-        if (!reportIfNoRepo()) {
-            pullIn(repoRoot, mode, false);
+        Path root = repoRootOrReport();
+        if (root != null) {
+            pullIn(root, mode, false);
         }
     }
 
@@ -1526,7 +1560,7 @@ final class GitCoordinator {
     /** Asks how to pull a diverged branch; null = cancel. Replaceable so a test need not show the dialog. */
     java.util.function.Supplier<GitPullMode> divergedPullChooser = this::askDivergedPull;
 
-    private GitPullMode askDivergedPull() {
+    private @Nullable GitPullMode askDivergedPull() {
         ButtonType rebase = new ButtonType(tr("dialog.pullDiverged.rebase"), ButtonBar.ButtonData.OTHER);
         ButtonType merge = new ButtonType(tr("dialog.pullDiverged.merge"), ButtonBar.ButtonData.OTHER);
         Alert ask = new Alert(
@@ -1571,12 +1605,13 @@ final class GitCoordinator {
      * "not a repo" echo) when there's no repo.
      */
     void pushCurrentBranch(Consumer<ProcessRunner.Result> onDone) {
-        if (reportIfNoRepo()) {
+        Path root = repoRootOrReport();
+        if (root == null) {
             return;
         }
         String[] args = GitService.pushArgs(branchName, upstream);
         service.runNetwork(
-                repoRoot,
+                root,
                 running(args, r -> {
                     if (r.ok()) {
                         ops.reloadAllFromDiskSilently();
@@ -1618,7 +1653,7 @@ final class GitCoordinator {
     }
 
     /** The active buffer's file when there is a repository to act in; otherwise reports it and returns null. */
-    private Path activeGitFile() {
+    private @Nullable Path activeGitFile() {
         EditorBuffer b = host.activeBuffer();
         Path file = b == null ? null : b.getPath();
         if (file == null || repoRoot == null) {
@@ -1634,7 +1669,7 @@ final class GitCoordinator {
      * Which repository {@code file} belongs to, relative to the active one; {@link GitPathScope#NONE} when
      * Git is off. The Project tree's menu uses it to decide what it can enable.
      */
-    GitPathScope scopeOf(Path file) {
+    GitPathScope scopeOf(@Nullable Path file) {
         return isEnabled() ? GitPathScope.of(file, repoRoot) : GitPathScope.NONE;
     }
 
@@ -1646,18 +1681,22 @@ final class GitCoordinator {
      * produced either no pathspec at all (the action silently did nothing) or one the outer repository
      * rejects. The active repository is answered at once from the last status; another one is asked for.
      */
-    private void inRepositoryOf(Path file, java.util.function.BiConsumer<Path, GitStatus> action) {
-        switch (GitPathScope.of(file, repoRoot)) {
-            case ACTIVE -> action.accept(repoRoot, lastStatus);
-            case OTHER ->
-                service.status(file, state -> {
-                    if (state.isRepo()) {
-                        action.accept(state.root(), state.status());
-                    } else {
-                        host.setStatus(tr(service.gitAvailable(file) ? "status.notARepo" : "status.gitNotInstalled"));
-                    }
-                });
-            case NONE -> host.setStatus(tr(service.gitAvailable(file) ? "status.notARepo" : "status.gitNotInstalled"));
+    private void inRepositoryOf(@Nullable Path file, java.util.function.BiConsumer<Path, GitStatus> action) {
+        GitPathScope scope = GitPathScope.of(file, repoRoot);
+        Path root = repoRoot;
+        if (scope == GitPathScope.ACTIVE && root != null) { // ACTIVE needs a root, OTHER a file
+            action.accept(root, lastStatus);
+        } else if (scope == GitPathScope.OTHER && file != null) {
+            service.status(file, state -> {
+                Path other = state.root();
+                if (state.isRepo() && other != null) {
+                    action.accept(other, state.status());
+                } else {
+                    host.setStatus(tr(service.gitAvailable(file) ? "status.notARepo" : "status.gitNotInstalled"));
+                }
+            });
+        } else {
+            host.setStatus(tr(service.gitAvailable(file) ? "status.notARepo" : "status.gitNotInstalled"));
         }
     }
 
@@ -1667,7 +1706,7 @@ final class GitCoordinator {
      * duration of {@code action}, which must read it before returning — as those actions do, because the root
      * can change under any callback they register.
      */
-    void withRepositoryOf(Path file, Runnable action) {
+    void withRepositoryOf(@Nullable Path file, Runnable action) {
         ifEnabled(() -> inRepositoryOf(file, (root, status) -> {
             Path activeRoot = repoRoot;
             GitStatus activeStatus = lastStatus;
@@ -1687,11 +1726,12 @@ final class GitCoordinator {
      * Git Log, which lists the active repository). A file of another repository is opened first — the Git UI
      * follows the active tab — and the action runs once that repository's state has been applied.
      */
-    void activatingRepositoryOf(Path file, Runnable action) {
+    void activatingRepositoryOf(@Nullable Path file, Runnable action) {
         ifEnabled(() -> {
             // A path the tree offers history for is a file; a folder here would be opened as one. (On a
             // remote host the check would be an SFTP round trip, so it is left to the tree.)
-            if (GitPathScope.of(file, repoRoot) != GitPathScope.OTHER
+            if (file == null
+                    || GitPathScope.of(file, repoRoot) != GitPathScope.OTHER
                     || (com.editora.vfs.Vfs.isLocal(file) && Files.isDirectory(file))) {
                 action.run();
                 return;
@@ -1699,7 +1739,7 @@ final class GitCoordinator {
             ops.openPath(file);
             // Queued behind the refresh the tab switch started, so normally that has been applied by now.
             service.status(file, state -> {
-                if (state.isRepo() && !state.root().equals(repoRoot)) {
+                if (state.isRepo() && !java.util.Objects.equals(state.root(), repoRoot)) {
                     applyState(state);
                 }
                 action.run();
@@ -1708,15 +1748,15 @@ final class GitCoordinator {
     }
 
     /** The literal pathspec for {@code file} in {@code root} ({@code .} for the root itself), or null. */
-    private static String pathspec(Path root, Path file) {
+    private static @Nullable String pathspec(Path root, @Nullable Path file) {
         // repoRelative symlink-resolves both sides (the root comes from git as a real path, the file is
         // as-opened) and forward-slash-normalizes the result (git treats "\" as an escape on Windows).
-        String relative = GitService.repoRelative(root, file);
+        String relative = file == null ? null : GitService.repoRelative(root, file);
         return relative != null && relative.isEmpty() ? "." : relative;
     }
 
     /** {@code git add -- <path>} for a file or folder (the Project-tree "Stage" action). */
-    void gitStagePath(Path file) {
+    void gitStagePath(@Nullable Path file) {
         inRepositoryOf(file, (root, status) -> {
             String spec = pathspec(root, file);
             if (spec != null) {
@@ -1726,7 +1766,7 @@ final class GitCoordinator {
     }
 
     /** {@code git reset -q HEAD -- <path>} for a file or folder (the Project-tree "Unstage" action). */
-    void gitUnstagePath(Path file) {
+    void gitUnstagePath(@Nullable Path file) {
         inRepositoryOf(file, (root, status) -> {
             String spec = pathspec(root, file);
             if (spec != null) {
@@ -1741,11 +1781,12 @@ final class GitCoordinator {
      * changes are restored from the index, staged ones from the last commit, an unmerged path is refused and
      * a path without changes is reported as such. Confirms first. A folder reverts the tracked changes under it.
      */
-    void gitRevertPath(Path file) {
+    void gitRevertPath(@Nullable Path file) {
         inRepositoryOf(file, (root, status) -> {
             GitDiscardPlan plan = GitDiscardPlan.of(status, pathspec(root, file));
             switch (plan.kind()) {
-                case NOTHING -> host.setStatus(tr("status.git.nothingToDiscard", file.getFileName()));
+                case NOTHING ->
+                    host.setStatus(tr("status.git.nothingToDiscard", file == null ? null : file.getFileName()));
                 case CONFLICT -> host.setStatus(tr("status.git.discardConflict", plan.subject()));
                 case UNTRACKED -> discard(root, status, new Discard(List.of(), List.of(), plan.specs()));
                 case WORKTREE -> discard(root, status, new Discard(plan.specs(), List.of(), List.of()));
@@ -1756,7 +1797,7 @@ final class GitCoordinator {
 
     /** The Git working-tree status of {@code file} (null = clean / not tracked-as-changed), for menu
      *  enable/disable — mirrors the map the Project tree colors from. */
-    com.editora.git.GitFileStatus statusFor(Path file) {
+    com.editora.git.@Nullable GitFileStatus statusFor(@Nullable Path file) {
         return file == null ? null : lastStatusByPath.get(file.toAbsolutePath().normalize());
     }
 
@@ -1765,13 +1806,13 @@ final class GitCoordinator {
      * it if absent — the Project-tree "Add to .gitignore" action. A no-op when the entry is already present.
      * Writes the small file on the FX thread then refreshes so the now-ignored file drops from the tree color.
      */
-    void addToGitignore(Path file) {
+    void addToGitignore(@Nullable Path file) {
         inRepositoryOf(file, (root, status) -> addToGitignore(root, file));
     }
 
-    private void addToGitignore(Path root, Path file) {
-        String rel = GitService.repoRelative(root, file);
-        if (rel == null || rel.isEmpty()) {
+    private void addToGitignore(Path root, @Nullable Path file) {
+        String rel = file == null ? null : GitService.repoRelative(root, file);
+        if (file == null || rel == null || rel.isEmpty()) {
             return;
         }
         String entry = com.editora.git.GitIgnore.entryFor(rel, java.nio.file.Files.isDirectory(file));
@@ -1819,7 +1860,7 @@ final class GitCoordinator {
     }
 
     /** As above, for the repository {@code root} captured when the action began. */
-    private void invalidatePendingWrites(Path root, List<String> pathspecs) {
+    private void invalidatePendingWrites(@Nullable Path root, List<String> pathspecs) {
         if (root == null) {
             return;
         }
@@ -1836,12 +1877,12 @@ final class GitCoordinator {
         ops.invalidatePendingWritesInOtherWindows(root, pathspecs);
     }
 
-    static boolean selects(String pathspec, String relative) {
-        if (".".equals(pathspec) || relative.equals(pathspec)) {
+    static boolean selects(String pathspec, @Nullable String relative) {
+        if (".".equals(pathspec) || pathspec.equals(relative)) {
             return true;
         }
         String directory = pathspec.endsWith("/") ? pathspec : pathspec + "/";
-        return relative.startsWith(directory);
+        return relative != null && relative.startsWith(directory);
     }
 
     /** Stops the running clone, fetch, pull or push (the Git console's Stop button and {@code git.cancel}). */
@@ -1853,7 +1894,7 @@ final class GitCoordinator {
      * Shows a Git command's (often multi-line) error output in a readable, scrollable dialog rather than
      * cramming it into the one-line status bar. The status bar gets a short summary.
      */
-    void gitError(String summary, String detail) {
+    void gitError(String summary, @Nullable String detail) {
         if (ProcessRunner.CANCELLED.equals(detail)) {
             host.setStatus(tr("status.git.cancelled")); // the user stopped it: nothing to explain in a dialog
             return;
@@ -1932,7 +1973,7 @@ final class GitCoordinator {
     }
 
     /** Runs {@code git init} in {@code dir}, a folder; null when what was typed ({@code typed}) is not one. */
-    private void initIn(Path dir, String typed) {
+    private void initIn(@Nullable Path dir, String typed) {
         if (dir == null) {
             host.setError(tr("status.gitInit.notAFolder", typed));
             return;
@@ -2103,11 +2144,14 @@ final class GitCoordinator {
     }
 
     private void startClone(String url, CloneDestination target, GitService.CloneOptions options) {
-        if (!target.ok()) {
-            host.setError(tr(target.errorKey(), target.shown()));
+        Path destination = target.path();
+        String errorKey = target.errorKey();
+        if (destination == null) { // not ok(): errorKey says why
+            if (errorKey != null) {
+                host.setError(tr(errorKey, target.shown()));
+            }
             return;
         }
-        Path destination = target.path();
         host.setStatus(tr("status.cloning", url));
         service.clone(url, destination, options, running(new String[] {"clone"}, r -> {
             if (r.ok()) {
@@ -2182,7 +2226,7 @@ final class GitCoordinator {
         openClonedEntry(dir, clonedEntry(dir));
     }
 
-    private void openClonedEntry(Path dir, Path entry) {
+    private void openClonedEntry(Path dir, @Nullable Path entry) {
         if (entry != null) {
             ops.openPath(entry);
         } else {
@@ -2191,7 +2235,7 @@ final class GitCoordinator {
     }
 
     /** The clone's README, the file it is opened at, or null. */
-    private static Path clonedEntry(Path dir) {
+    private static @Nullable Path clonedEntry(Path dir) {
         for (String candidate : new String[] {"README.md", "README.markdown", "README.rst", "README.txt", "README"}) {
             Path file = dir.resolve(candidate);
             if (Files.isRegularFile(file)) {

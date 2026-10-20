@@ -25,6 +25,7 @@ import javafx.scene.text.Text;
 
 import com.editora.config.PathDisplay;
 import org.fxmisc.richtext.model.StyleSpan;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -38,7 +39,7 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
 
     /** Controller callback to open a file at a 0-based reference position. */
     public interface Actions {
-        void open(Path file, int line, int col);
+        void open(@Nullable Path file, int line, int col);
     }
 
     /**
@@ -46,7 +47,7 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
      * {@code runs} is the same preview cut into syntax-styled pieces (see {@link #previewRuns}); empty when
      * the line's highlighting is unknown, and the preview then shows as plain text.
      */
-    public record Reference(Path file, int line, int col, String preview, List<Run> runs) {
+    public record Reference(@Nullable Path file, int line, int col, String preview, List<Run> runs) {
         public Reference {
             runs = runs == null ? List.of() : List.copyOf(runs);
         }
@@ -60,7 +61,7 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
     public record Run(String text, List<String> styles) {}
 
     /** A tree row: a <b>file header</b> ({@code ref == null}) or a <b>reference</b> ({@code ref != null}). */
-    private record Row(Path file, Reference ref) {}
+    private record Row(Path file, @Nullable Reference ref) {}
 
     private final Actions actions;
     private final Label summary = new Label();
@@ -158,12 +159,13 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
         for (Reference r : refs) {
             byFile.computeIfAbsent(r.file(), k -> new ArrayList<>()).add(r);
         }
-        List<Path> files = new ArrayList<>(byFile.keySet());
-        files.sort(Comparator.comparing(p -> PathDisplay.fileName(p).toLowerCase(Locale.ROOT)));
+        List<Map.Entry<Path, List<Reference>>> files = new ArrayList<>(byFile.entrySet());
+        files.sort(Comparator.comparing(e -> PathDisplay.fileName(e.getKey()).toLowerCase(Locale.ROOT)));
 
         TreeItem<Row> root = new TreeItem<>();
-        for (Path file : files) {
-            List<Reference> list = byFile.get(file);
+        for (Map.Entry<Path, List<Reference>> entry : files) {
+            Path file = entry.getKey();
+            List<Reference> list = entry.getValue();
             list.sort((a, b) ->
                     a.line() != b.line() ? Integer.compare(a.line(), b.line()) : Integer.compare(a.col(), b.col()));
             TreeItem<Row> fileItem = new TreeItem<>(new Row(file, null));

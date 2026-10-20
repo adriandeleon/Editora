@@ -36,7 +36,7 @@ public final class MarkdownEditing {
     private final EditorBuffer buffer;
     private @Nullable Runnable insertTableHandler;
     private @Nullable Runnable editLinkHandler;
-    private java.util.function.@Nullable UnaryOperator<String> wikiResolver;
+    private java.util.function.@Nullable Function<String, @Nullable String> wikiResolver;
     /** Image files a paste or drop into this buffer created in this session (see {@link #sessionImages()}). */
     private final java.util.Set<java.nio.file.Path> sessionImages = new java.util.LinkedHashSet<>();
 
@@ -629,7 +629,7 @@ public final class MarkdownEditing {
     }
 
     /** Maps a wiki link's target to the path a Markdown link to it should carry; null when it cannot tell. */
-    public void setWikiResolver(java.util.function.UnaryOperator<String> resolver) {
+    public void setWikiResolver(java.util.function.Function<String, @Nullable String> resolver) {
         this.wikiResolver = resolver;
     }
 

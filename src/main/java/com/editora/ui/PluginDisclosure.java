@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.plugin.PluginManifest;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -31,6 +32,7 @@ final class PluginDisclosure {
         String display(String chord);
 
         /** The title of the command {@code chord} runs now, or null when it is free. */
+        @Nullable
         String boundTitle(String chord);
 
         /** The title of command {@code id} (a built-in's, a declared one's), or the id when it has none. */
@@ -45,7 +47,7 @@ final class PluginDisclosure {
         }
 
         @Override
-        public String boundTitle(String chord) {
+        public @Nullable String boundTitle(String chord) {
             return null;
         }
 

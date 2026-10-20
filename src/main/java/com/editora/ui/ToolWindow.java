@@ -9,6 +9,8 @@ import javafx.beans.property.StringProperty;
 import javafx.scene.Node;
 import javafx.scene.layout.Region;
 
+import org.jspecify.annotations.Nullable;
+
 /** Metadata + content holder for one IntelliJ-style tool window. */
 public final class ToolWindow {
 
@@ -29,9 +31,9 @@ public final class ToolWindow {
     private final Side side;
     private final Supplier<Node> iconSupplier;
     /** Builds the content on first use; {@code null} once it has (or when the content was handed in built). */
-    private Supplier<? extends Region> contentSupplier;
+    private @Nullable Supplier<? extends Region> contentSupplier;
 
-    private Region content;
+    private @Nullable Region content;
     private final String commandId;
 
     /** The share of the window's height this bottom window takes on its first open (0: its side's default). */
@@ -64,7 +66,7 @@ public final class ToolWindow {
             String title,
             Side side,
             Supplier<Node> iconSupplier,
-            Supplier<? extends Region> content,
+            @Nullable Supplier<? extends Region> content,
             String commandId) {
         this.id = id;
         this.title.set(title);
@@ -106,7 +108,7 @@ public final class ToolWindow {
     }
 
     /** The content node, building it now if this is its first use. */
-    public Region getContent() {
+    public @Nullable Region getContent() {
         if (contentSupplier != null) {
             Supplier<? extends Region> build = contentSupplier;
             contentSupplier = null;
@@ -116,7 +118,7 @@ public final class ToolWindow {
     }
 
     /** The content node if it exists yet, else {@code null} — for a lookup that must not be what builds it. */
-    public Region contentIfBuilt() {
+    public @Nullable Region contentIfBuilt() {
         return contentSupplier == null ? content : null;
     }
 

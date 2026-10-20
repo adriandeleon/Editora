@@ -59,6 +59,7 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.TwoDimensional;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -87,7 +88,11 @@ final class ProjectMapPreview extends StackPane {
      * current text (captured on the FX thread, unsaved changes included); for any other file only the
      * {@code .editorconfig} charset the editor would decode it with.
      */
-    record Content(String text, boolean truncated, boolean open, String editorConfigCharset) {
+    record Content(
+            String text,
+            boolean truncated,
+            boolean open,
+            @Nullable String editorConfigCharset) {
         Content {
             text = text == null ? "" : text;
         }
@@ -98,7 +103,7 @@ final class ProjectMapPreview extends StackPane {
         }
 
         /** A file that is not open: it is read from disk, decoded the way the editor would open it. */
-        static Content closed(String editorConfigCharset) {
+        static Content closed(@Nullable String editorConfigCharset) {
             return new Content("", false, false, editorConfigCharset);
         }
     }
@@ -137,7 +142,12 @@ final class ProjectMapPreview extends StackPane {
     /** What a file looked like when it was read, to tell later whether it changed on disk. */
     private record Stamp(long size, long modifiedMillis) {}
 
-    private record Loaded(String text, Image image, boolean truncated, LoadProblem problem, Stamp stamp) {}
+    private record Loaded(
+            String text,
+            @Nullable Image image,
+            boolean truncated,
+            LoadProblem problem,
+            @Nullable Stamp stamp) {}
 
     private final Consumer<Path> onOpenFile;
     private final BorderPane frame = new BorderPane();
@@ -163,7 +173,7 @@ final class ProjectMapPreview extends StackPane {
             });
     private final AtomicLong generation = new AtomicLong();
 
-    private Path path;
+    private @Nullable Path path;
     private boolean disposed;
     private boolean placed;
     private boolean placementPending;
@@ -181,10 +191,10 @@ final class ProjectMapPreview extends StackPane {
     private boolean loading;
     private boolean statPending;
     private boolean missing;
-    private String editorConfigCharset;
-    private Stamp loadedStamp;
-    private PlacementResolver placementResolver;
-    private MarkerActions markerActions;
+    private @Nullable String editorConfigCharset;
+    private @Nullable Stamp loadedStamp;
+    private @Nullable PlacementResolver placementResolver;
+    private @Nullable MarkerActions markerActions;
     private double preferredWidth = DEFAULT_WIDTH;
     private double preferredHeight = DEFAULT_HEIGHT;
     private double dragScreenX;
@@ -308,7 +318,7 @@ final class ProjectMapPreview extends StackPane {
         }
     }
 
-    void showFile(Path file, Content content, PlacementResolver placementResolver) {
+    void showFile(Path file, @Nullable Content content, PlacementResolver placementResolver) {
         if (disposed || file == null) {
             return;
         }
@@ -342,7 +352,7 @@ final class ProjectMapPreview extends StackPane {
         setVisible(true);
         toFront();
 
-        if (openBuffer) {
+        if (openBuffer && content != null) {
             String text = capText(content.text(), content.truncated());
             boolean truncated =
                     content.truncated() || text.length() < content.text().length();
@@ -353,11 +363,10 @@ final class ProjectMapPreview extends StackPane {
             return;
         }
         ensurePlaced();
-        loadFromDisk(requested);
+        loadFromDisk(requested, path);
     }
 
-    private void loadFromDisk(long requested) {
-        Path requestedPath = path;
+    private void loadFromDisk(long requested, Path requestedPath) {
         String charset = editorConfigCharset;
         loading = true;
         submitLatest(() -> {
@@ -379,7 +388,7 @@ final class ProjectMapPreview extends StackPane {
      * buffer's text replaces only the range that changed; any other file is re-read when its size or
      * modification time differs from what was loaded, and marked when it no longer exists.
      */
-    void refresh(Content content) {
+    void refresh(@Nullable Content content) {
         if (disposed || path == null) {
             return;
         }
@@ -404,7 +413,7 @@ final class ProjectMapPreview extends StackPane {
             // Its tab was closed: what is on disk is the file again (unsaved text went with the tab).
             fromBuffer = false;
             loadedStamp = null;
-            loadFromDisk(generation.incrementAndGet());
+            loadFromDisk(generation.incrementAndGet(), path);
             return;
         }
         if (loading || statPending) {
@@ -424,7 +433,7 @@ final class ProjectMapPreview extends StackPane {
                 if (gone) {
                     setMissing(true);
                 } else if (missing || current != null && !current.equals(loadedStamp)) {
-                    loadFromDisk(generation.incrementAndGet());
+                    loadFromDisk(generation.incrementAndGet(), requestedPath); // equals path
                 }
             });
         });
@@ -470,6 +479,7 @@ final class ProjectMapPreview extends StackPane {
         setVisible(false);
     }
 
+    @Nullable
     Path path() {
         return path;
     }
@@ -478,7 +488,7 @@ final class ProjectMapPreview extends StackPane {
         return editor;
     }
 
-    void setMarkerActions(MarkerActions actions) {
+    void setMarkerActions(@Nullable MarkerActions actions) {
         markerActions = actions;
     }
 
@@ -723,7 +733,7 @@ final class ProjectMapPreview extends StackPane {
         event.consume();
     }
 
-    private static Loaded load(Path requestedPath, String editorConfigCharset) {
+    private static Loaded load(Path requestedPath, @Nullable String editorConfigCharset) {
         Stamp stamp = stamp(requestedPath);
         try (InputStream in = Files.newInputStream(requestedPath)) {
             boolean imageFile = isImage(requestedPath);
@@ -750,7 +760,7 @@ final class ProjectMapPreview extends StackPane {
         }
     }
 
-    private static Stamp stamp(Path file) {
+    private static @Nullable Stamp stamp(@Nullable Path file) {
         try {
             BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class);
             return new Stamp(attributes.size(), attributes.lastModifiedTime().toMillis());
@@ -766,14 +776,14 @@ final class ProjectMapPreview extends StackPane {
      * {@code cut} says the bytes stop at the read cap: a character the cap split is dropped first, or the
      * strict decode would reject the whole file for its last byte.
      */
-    static String decode(byte[] bytes, boolean cut, String editorConfigCharset) {
+    static String decode(byte[] bytes, boolean cut, @Nullable String editorConfigCharset) {
         byte[] source = cut ? trimIncompleteTail(bytes, editorConfigCharset) : bytes;
         return LineEndings.toLf(
                 EditorConfigCharset.decodeLossless(source, editorConfigCharset).text());
     }
 
     /** {@code bytes} without a trailing UTF-8 sequence or UTF-16 unit / surrogate pair cut short. */
-    static byte[] trimIncompleteTail(byte[] bytes, String editorConfigCharset) {
+    static byte[] trimIncompleteTail(byte[] bytes, @Nullable String editorConfigCharset) {
         String declared = EditorConfigCharset.resolveName(bytes, editorConfigCharset);
         int end = bytes.length;
         if (EditorConfigCharset.UTF_8.equals(declared) || EditorConfigCharset.UTF_8_BOM.equals(declared)) {
@@ -817,13 +827,13 @@ final class ProjectMapPreview extends StackPane {
         loader.execute(task);
     }
 
-    private static StyleSpans<Collection<String>> styles(Path requestedPath, String text) {
+    private static @Nullable StyleSpans<Collection<String>> styles(Path requestedPath, String text) {
         if (text.isEmpty() || text.length() > MAX_HIGHLIGHT_CHARS) {
             return null;
         }
         try {
             IGrammar grammar = GrammarRegistry.shared().forFileName(requestedPath.toString());
-            return TextMateHighlighter.compute(text, grammar);
+            return grammar == null ? null : TextMateHighlighter.compute(text, grammar); // no grammar: no colours
         } catch (RuntimeException | LinkageError ignored) {
             return null;
         }
@@ -967,7 +977,11 @@ final class ProjectMapPreview extends StackPane {
     }
 
     private void showStyles(
-            long requested, Path requestedPath, String text, boolean truncated, StyleSpans<Collection<String>> spans) {
+            long requested,
+            Path requestedPath,
+            String text,
+            boolean truncated,
+            @Nullable StyleSpans<Collection<String>> spans) {
         if (disposed || requested != generation.get() || !requestedPath.equals(path) || spans == null) {
             return;
         }

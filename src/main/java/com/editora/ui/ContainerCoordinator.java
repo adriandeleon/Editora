@@ -17,6 +17,7 @@ import javafx.scene.control.ButtonType;
 import com.editora.container.ContainerBindings;
 import com.editora.container.ContainerEngine;
 import com.editora.container.ContainerExecTarget;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -36,11 +37,12 @@ final class ContainerCoordinator {
     /** What the coordinator needs from its window. */
     interface Ops {
         /** This window's project folder, or null. */
+        @Nullable
         Path projectRoot();
 
-        boolean execAllowed(String targetId);
+        boolean execAllowed(@Nullable String targetId);
 
-        void setExecAllowed(String targetId, boolean allowed);
+        void setExecAllowed(@Nullable String targetId, boolean allowed);
 
         /** Where the project's tools run has changed: the features that run tools look again. */
         void execChanged();
@@ -58,9 +60,9 @@ final class ContainerCoordinator {
     /** Containers the user said "not now" to this session. */
     private final Set<String> declined = new HashSet<>();
     /** The target this window's project was last found bound to (its id), or null. */
-    private String boundId;
+    private @Nullable String boundId;
 
-    private Path checkedRoot;
+    private @Nullable Path checkedRoot;
     private long checkedAt;
 
     ContainerCoordinator(CoordinatorHost host, Ops ops) {
@@ -102,7 +104,7 @@ final class ContainerCoordinator {
             // The engine is asked only for a folder that has a dev container configuration, or a container
             // the user picked for it: most projects have neither, and need no `docker ps` when they open.
             ContainerExecTarget target = named != null || hasDevContainerConfig(root)
-                    ? ContainerBindings.shared().bind(root, named, lookup)
+                    ? ContainerBindings.shared().bind(root, named == null ? "" : named, lookup)
                     : null;
             if (target == null) {
                 ContainerBindings.shared().unbind(root);
@@ -128,7 +130,7 @@ final class ContainerCoordinator {
     }
 
     /** Where the project's tools run now that {@code target} (or none) was found for {@code root}. */
-    private void settle(Path root, com.editora.process.ExecTarget target) {
+    private void settle(@Nullable Path root, com.editora.process.@Nullable ExecTarget target) {
         String id = target == null ? null : target.id();
         if (target != null && !ops.execAllowed(id)) {
             if (declined.contains(id) || !consent.test(target)) {
@@ -141,7 +143,7 @@ final class ContainerCoordinator {
         if (!java.util.Objects.equals(id, boundId)) {
             boolean wasBound = boundId != null;
             boundId = id;
-            if (id != null) {
+            if (id != null && target != null) {
                 host.setStatus(
                         target instanceof com.editora.wsl.WslExecTarget wsl
                                 ? tr("status.wsl.bound", wsl.distro())
@@ -245,8 +247,10 @@ final class ContainerCoordinator {
             host.settings().setContainerBindings(bindings);
             host.requestSave();
         }
-        if (com.editora.wsl.WslTargets.isWslPath(root)) {
-            String id = com.editora.wsl.WslTargets.shared().forPath(root).id();
+        com.editora.process.ExecTarget wslTarget =
+                com.editora.wsl.WslTargets.shared().forPath(root);
+        if (wslTarget != null) {
+            String id = wslTarget.id();
             ops.setExecAllowed(id, false);
             declined.add(id); // not asked about its distribution again this session
             settle(root, null);
@@ -262,6 +266,7 @@ final class ContainerCoordinator {
     }
 
     /** The id of the container this window's project's tools run in, or null (tests). */
+    @Nullable
     String boundId() {
         return boundId;
     }

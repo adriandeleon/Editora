@@ -23,6 +23,7 @@ import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
 import com.editora.config.Settings;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -44,7 +45,7 @@ final class ToolWindowsSettingsPane {
             ComboBox<ToolWindow.Side> side,
             Button up,
             Button down,
-            Label disabledNote) {}
+            @Nullable Label disabledNote) {}
 
     private final ToolWindowManager tools;
     private final Supplier<Settings> settings;
@@ -71,12 +72,13 @@ final class ToolWindowsSettingsPane {
     }
 
     /** The row of the window with this id, or null. */
+    @Nullable
     Row row(String id) {
         return rows.get(id);
     }
 
     /** The feature a window needs, or null for one that is always available. */
-    private Predicate<Settings> gate(String id) {
+    private @Nullable Predicate<Settings> gate(String id) {
         return switch (id) {
             case "project" -> Settings::isProjectSupport;
             case "commit" -> Settings::isGitSupport;
@@ -88,7 +90,7 @@ final class ToolWindowsSettingsPane {
     }
 
     /** The "Disabled — turn on …" key for a gated window. */
-    private static String disabledKey(String id) {
+    private static @Nullable String disabledKey(String id) {
         return switch (id) {
             case "project" -> "settings.toolWindows.projectDisabled";
             case "commit" -> "settings.toolWindows.commitDisabled";
@@ -110,7 +112,7 @@ final class ToolWindowsSettingsPane {
             }
 
             @Override
-            public ToolWindow.Side fromString(String s) {
+            public ToolWindow.@Nullable Side fromString(String s) {
                 for (ToolWindow.Side side : ToolWindow.Side.values()) {
                     if (SettingsWindow.sideName(side).equals(s)) {
                         return side;

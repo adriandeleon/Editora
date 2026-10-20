@@ -18,6 +18,8 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * In-memory capture of the app's {@code java.util.logging} output plus uncaught exceptions, so a
  * packaged build (DMG / MSI / DEB) — where stderr and the console aren't visible — can still show a
@@ -41,7 +43,7 @@ public final class DebugLog {
     private static final Deque<String> RECORDS = new ArrayDeque<>();
     private static boolean installed;
     private static boolean captureSuspendedForTest; // guarded by LOCK; see suspendCaptureForTest
-    private static PrintWriter file; // optional mirror to <configDir>/editora-session.log
+    private static @Nullable PrintWriter file; // optional mirror to <configDir>/editora-session.log
 
     private DebugLog() {}
 
@@ -118,7 +120,7 @@ public final class DebugLog {
     }
 
     /** Renders one focused node as {@code  [focus: ListView.git-tree]}; {@code ""} for none. */
-    static String describeFocus(javafx.scene.Node node) {
+    static String describeFocus(javafx.scene.@Nullable Node node) {
         if (node == null) {
             return "";
         }
@@ -177,7 +179,7 @@ public final class DebugLog {
     }
 
     /** The session log file path under {@code configDir}, for display in the viewer. */
-    public static Path sessionFile(Path configDir) {
+    public static @Nullable Path sessionFile(Path configDir) {
         return configDir == null ? null : configDir.resolve("editora-session.log");
     }
 

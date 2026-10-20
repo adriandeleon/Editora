@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The seam by which {@link BuildCoordinator} hands a recognized test run to the Test Results feature
@@ -47,7 +48,7 @@ interface TestRunHook {
      * {@code -json} events back into readable text (or {@code null} to suppress a bookkeeping event). Default:
      * the line verbatim.
      */
-    default String consoleLine(String raw, boolean stderr) {
+    default @Nullable String consoleLine(String raw, boolean stderr) {
         return raw;
     }
 }

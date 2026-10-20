@@ -74,7 +74,7 @@ public final class JdtlsRefactor {
     }
 
     /** The request a command carries, or null when it is not {@link #COMMAND} or has no usable arguments. */
-    public static @Nullable Request parse(String commandId, List<JsonElement> arguments) {
+    public static @Nullable Request parse(@Nullable String commandId, List<JsonElement> arguments) {
         if (!COMMAND.equals(commandId) || arguments == null || arguments.size() < 2) {
             return null;
         }
@@ -153,7 +153,7 @@ public final class JdtlsRefactor {
      * The types a {@code java/searchSymbols} answer lists, without {@code excludeQualifiedName} — the type
      * a member already lives in.
      */
-    public static List<Destination> types(JsonElement response, String excludeQualifiedName) {
+    public static List<Destination> types(JsonElement response, @Nullable String excludeQualifiedName) {
         List<Destination> out = new ArrayList<>();
         if (response == null || !response.isJsonArray()) {
             return out;
@@ -191,7 +191,10 @@ public final class JdtlsRefactor {
      * file move, {@code destination} null when asking for destinations or moving a type to a new file.
      */
     public static JsonObject moveParams(
-            String moveKind, String sourceUri, JsonElement params, JsonElement destination) {
+            String moveKind,
+            @Nullable String sourceUri,
+            @Nullable JsonElement params,
+            @Nullable JsonElement destination) {
         JsonObject out = new JsonObject();
         out.addProperty("moveKind", moveKind);
         JsonArray uris = new JsonArray();
@@ -208,7 +211,7 @@ public final class JdtlsRefactor {
     }
 
     /** The parameter of {@code java/searchSymbols}: every source type of one project. */
-    public static JsonObject searchTypesParams(String projectName) {
+    public static JsonObject searchTypesParams(@Nullable String projectName) {
         JsonObject out = new JsonObject();
         out.addProperty("query", "*");
         if (projectName != null) {
@@ -220,7 +223,11 @@ public final class JdtlsRefactor {
 
     /** The parameter of {@code java/getRefactorEdit}. */
     public static JsonObject refactorEditParams(
-            String command, JsonElement context, int tabSize, boolean insertSpaces, JsonArray commandArguments) {
+            String command,
+            JsonElement context,
+            int tabSize,
+            boolean insertSpaces,
+            @Nullable JsonArray commandArguments) {
         JsonObject options = new JsonObject();
         options.addProperty("tabSize", tabSize);
         options.addProperty("insertSpaces", insertSpaces);

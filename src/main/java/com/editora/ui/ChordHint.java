@@ -3,6 +3,7 @@ package com.editora.ui;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.i18n.Messages;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A status message that mentions how to act on it — "Buffer is read-only — C-x C-q to allow edits" — with the
@@ -22,7 +23,7 @@ final class ChordHint {
         return tr(TextInputKeymap.sharedKeymap(), key, commandId);
     }
 
-    static String tr(KeymapManager keymap, String key, String commandId) {
+    static String tr(@Nullable KeymapManager keymap, String key, String commandId) {
         String chord = keymap == null ? null : keymap.displayChord(commandId);
         return chord == null || chord.isEmpty() ? Messages.tr(key) : Messages.tr(key + ".chord", chord);
     }

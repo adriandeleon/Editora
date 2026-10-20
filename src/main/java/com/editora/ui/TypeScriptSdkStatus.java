@@ -7,6 +7,7 @@ import javafx.application.Platform;
 
 import com.editora.lsp.LspManager;
 import com.editora.lsp.TypeScriptServer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -24,7 +25,7 @@ final class TypeScriptSdkStatus {
     record Shown(boolean found, String tool, String detail) {}
 
     /** The line for a server executable's surroundings. Pure apart from {@code tr}. */
-    static Shown shown(Path tsserver, String tsserverVersion, String packageVersion) {
+    static Shown shown(@Nullable Path tsserver, String tsserverVersion, String packageVersion) {
         if (tsserver != null) {
             String detail = tsserverVersion.isEmpty() ? tsserver.toString() : tsserverVersion + " — " + tsserver;
             return new Shown(true, "TypeScript", detail);
@@ -35,7 +36,7 @@ final class TypeScriptSdkStatus {
     }
 
     /** Probes {@code argv}'s server off the FX thread and shows the result in {@code row}. */
-    static void refresh(ToolStatusRow row, List<String> argv, boolean featureOn) {
+    static void refresh(@Nullable ToolStatusRow row, List<String> argv, boolean featureOn) {
         if (row == null) {
             return;
         }
@@ -46,7 +47,7 @@ final class TypeScriptSdkStatus {
                     Path tsserver = TypeScriptServer.installedTsserver(exe);
                     Shown shown = shown(
                             tsserver,
-                            TypeScriptServer.sdkVersion(tsserver),
+                            tsserver == null ? "" : TypeScriptServer.sdkVersion(tsserver),
                             TypeScriptServer.installedPackageVersion(exe));
                     Platform.runLater(() -> {
                         row.tool(shown.tool());

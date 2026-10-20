@@ -23,6 +23,7 @@ import javafx.scene.text.Text;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -70,7 +71,8 @@ final class MainMenuBar {
 
     /** Items by command id, so {@link #refresh()} can restyle them without rebuilding the bar. */
     /** An item plus, for the in-window rendering, the two labels {@link #refresh} writes into. */
-    private record Row(MenuItem item, Label title, Label chord) {}
+    private record Row(
+            MenuItem item, @Nullable Label title, @Nullable Label chord) {}
 
     private final Map<String, Row> items = new LinkedHashMap<>();
 
@@ -279,7 +281,7 @@ final class MainMenuBar {
      * not reserve a graphic gutter for the ones that do not — so without this the titles of icon-less items
      * would start further left than their neighbours and each menu would read as two ragged columns.
      */
-    private static javafx.scene.layout.StackPane iconColumn(String commandId) {
+    private static javafx.scene.layout.StackPane iconColumn(@Nullable String commandId) {
         javafx.scene.layout.StackPane holder = new javafx.scene.layout.StackPane();
         holder.setMinWidth(ICON_COLUMN);
         holder.setPrefWidth(ICON_COLUMN);
@@ -330,9 +332,11 @@ final class MainMenuBar {
             boolean bound = chord != null && !chord.isBlank();
             // No accelerators (see the class javadoc), so the chord is written by hand — into its own
             // right-aligned label in-window, or appended to the text on the system menu bar.
-            if (row.title() != null) {
-                row.title().setText(title);
-                row.chord().setText(bound ? chord : "");
+            Label titleLabel = row.title();
+            Label chordLabel = row.chord(); // set together with the title
+            if (titleLabel != null && chordLabel != null) {
+                titleLabel.setText(title);
+                chordLabel.setText(bound ? chord : "");
             } else {
                 item.setText(bound ? title + "   " + chord : title);
             }

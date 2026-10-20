@@ -32,6 +32,7 @@ import com.editora.snippet.SnippetManager.Entry;
 import com.editora.snippet.SnippetManager.Problem;
 import com.editora.snippet.SnippetManager.Source;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -55,18 +56,18 @@ final class SnippetsEditor {
             Consumer<CodeArea> editorKeys,
             Predicate<String> confirmDelete) {}
 
-    private final SnippetManager manager;
+    private final @Nullable SnippetManager manager;
     private final Hooks hooks;
     private final ObservableList<Entry> items = FXCollections.observableArrayList();
     private final FilteredList<Entry> shown = new FilteredList<>(items);
     private String language = "global";
     /** Why the language's user file cannot be used at all, or null. While set, nothing here writes it. */
-    private Problem fileProblem;
+    private @Nullable Problem fileProblem;
 
     private boolean loading;
     private Runnable reload = () -> {};
 
-    SnippetsEditor(SnippetManager manager, Hooks hooks) {
+    SnippetsEditor(@Nullable SnippetManager manager, Hooks hooks) {
         this.manager = manager;
         this.hooks = hooks;
     }
@@ -92,7 +93,7 @@ final class SnippetsEditor {
      * The other snippet of {@code all} that shares a trigger with {@code entry}, as {@code {trigger, name}},
      * or null. Disabled snippets expand nothing and so clash with nothing. Pure.
      */
-    static String[] sharedTrigger(Entry entry, List<Entry> all) {
+    static String @Nullable [] sharedTrigger(Entry entry, List<Entry> all) {
         if (entry.disabled()) {
             return null;
         }
@@ -110,12 +111,12 @@ final class SnippetsEditor {
     }
 
     /** The first trigger of {@code entry} with whitespace in it — one Tab can never expand — or null. Pure. */
-    static String spacedTrigger(Entry entry) {
+    static @Nullable String spacedTrigger(Entry entry) {
         return spacedTrigger(entry.prefixes());
     }
 
     /** The first of {@code triggers} with whitespace in it, or null. Pure. */
-    static String spacedTrigger(List<String> triggers) {
+    static @Nullable String spacedTrigger(List<String> triggers) {
         for (String t : triggers) {
             if (t.chars().anyMatch(Character::isWhitespace)) {
                 return t;
@@ -303,12 +304,13 @@ final class SnippetsEditor {
                 return; // only whitespace the commit trims away
             }
             if (cur.source() == Source.USER
+                    && manager != null // a USER row comes from the manager
                     && manager.userEntryHasComments(language, cur.name())
                     && !hooks.confirm().test(tr("settings.snippet.commentsLost", cur.name()))) {
                 return; // comments inside this one entry cannot be kept; the user chose to keep them
             }
             String keep = newName;
-            if (write(() -> manager.saveUserEntry(language, cur.name(), updated))) {
+            if (write(m -> m.saveUserEntry(language, cur.name(), updated))) {
                 reloadKeepingForm(list, keep, filter);
                 showClash.run();
             }
@@ -381,7 +383,7 @@ final class SnippetsEditor {
                 newName = tr("settings.snippet.newName") + " " + n;
             }
             String created = newName;
-            if (write(() -> manager.saveUserEntry(language, null, Entry.user(created, List.of(), "", "")))) {
+            if (write(m -> m.saveUserEntry(language, null, Entry.user(created, List.of(), "", "")))) {
                 filter.clear();
                 load.accept(created);
                 name.requestFocus();
@@ -403,7 +405,7 @@ final class SnippetsEditor {
             if (s != null
                     && s.source() == Source.USER
                     && hooks.confirmDelete().test(s.name())
-                    && write(() -> manager.removeUserEntry(language, s.name()))) {
+                    && write(m -> m.removeUserEntry(language, s.name()))) {
                 load.accept(s.name()); // a removed edit reverts to its bundled snippet
             }
         });
@@ -418,7 +420,7 @@ final class SnippetsEditor {
                         list.getSelectionModel().selectedItemProperty()));
         toggle.setOnAction(e -> {
             Entry s = list.getSelectionModel().getSelectedItem();
-            if (s != null && write(() -> manager.setDisabled(language, s.name(), !s.disabled()))) {
+            if (s != null && write(m -> m.setDisabled(language, s.name(), !s.disabled()))) {
                 load.accept(s.name());
             }
         });
@@ -463,7 +465,7 @@ final class SnippetsEditor {
     private void reloadKeepingForm(ListView<Entry> list, String keep, TextField filter) {
         loading = true;
         try {
-            items.setAll(manager.entries(language));
+            items.setAll(manager == null ? List.of() : manager.entries(language)); // set: a write just succeeded
             if (shown.stream().noneMatch(e -> keep.equals(e.name()))) {
                 filter.clear(); // the edit took the row out of the filter: show it rather than lose it
             }
@@ -483,7 +485,7 @@ final class SnippetsEditor {
     }
 
     private interface Write {
-        void run() throws IOException;
+        void run(SnippetManager manager) throws IOException;
     }
 
     /** Runs one write of the user file; a failure is shown and leaves the page as it was. */
@@ -492,7 +494,7 @@ final class SnippetsEditor {
             return false; // never write back over a file that could not be parsed
         }
         try {
-            action.run();
+            action.run(manager);
             return true;
         } catch (IOException e) {
             hooks.warn().accept(tr("settings.snippet.saveFailed", e.getMessage()));
@@ -501,7 +503,7 @@ final class SnippetsEditor {
     }
 
     /** Marks {@code field} red with {@code why} as its tooltip and accessible help, or clears that when null. */
-    private static void flag(TextField field, String why) {
+    private static void flag(TextField field, @Nullable String why) {
         field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
         field.setTooltip(why == null ? null : new javafx.scene.control.Tooltip(why));
         field.setAccessibleHelp(why);

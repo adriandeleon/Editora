@@ -6,6 +6,7 @@ import java.nio.file.Path;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Writes one value of a project's {@code .editora/settings.json} — what Settings' Project scope does when a row
@@ -35,7 +36,7 @@ public final class ProjectSettingsFile {
      * a String, Boolean, Integer, List of Integers or Map of language → List of Integers — or removes it when
      * {@code value} is null, then writes the file atomically. Creates the file (and {@code .editora/}) when absent.
      */
-    public static void set(Path projectRoot, String section, String key, Object value) throws IOException {
+    public static void set(Path projectRoot, String section, String key, @Nullable Object value) throws IOException {
         Path file = ProjectSettings.migrateLegacyForEditing(projectRoot);
         ObjectNode root = read(file);
         JsonNode v = root.get("version");

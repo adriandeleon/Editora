@@ -26,6 +26,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 
 import com.editora.config.EditorGroupLayout;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The editor area: the region of the window that holds open file tabs, as a single component that
@@ -100,7 +101,7 @@ final class EditorArea {
     private boolean relocating;
 
     /** What the controller is currently dragging, if anything. See {@link #setDraggedTabSource}. */
-    private Supplier<Tab> draggedTab;
+    private @Nullable Supplier<Tab> draggedTab;
 
     /** While >= 0, {@link #add(Tab)} routes to this group index instead of the focused one (session restore). */
     private int restoreTargetGroup = -1;
@@ -124,7 +125,7 @@ final class EditorArea {
     }
 
     /** See {@link #setTabMaterializer}. */
-    private Consumer<Tab> tabMaterializer;
+    private @Nullable Consumer<Tab> tabMaterializer;
 
     EditorArea(TabPane initial) {
         this.primary = initial;
@@ -169,11 +170,11 @@ final class EditorArea {
     }
 
     /** The branch directly holding {@code child}, or {@code null} when {@code child} is the tree root. */
-    private SplitPane parentOf(Node child) {
+    private @Nullable SplitPane parentOf(Node child) {
         return findParent(tree, child);
     }
 
-    private static SplitPane findParent(Node node, Node child) {
+    private static @Nullable SplitPane findParent(Node node, Node child) {
         if (!(node instanceof SplitPane branch)) {
             return null;
         }
@@ -306,7 +307,7 @@ final class EditorArea {
     }
 
     /** The group holding {@code tab}, or {@code null} if it is not open. */
-    private TabPane ownerOf(Tab tab) {
+    private @Nullable TabPane ownerOf(@Nullable Tab tab) {
         for (TabPane g : orderedGroups()) {
             if (g.getTabs().contains(tab)) {
                 return g;
@@ -420,9 +421,10 @@ final class EditorArea {
      *
      * @return whether the tab now sits in the target's group ({@code false}: either tab is not open)
      */
-    boolean moveBeside(Tab dragged, Tab target, boolean after, Predicate<Tab> pinned) {
+    boolean moveBeside(Tab dragged, @Nullable Tab target, boolean after, Predicate<Tab> pinned) {
         TabPane dest = ownerOf(target);
-        if (dragged == target || dest == null || ownerOf(dragged) == null) {
+        TabPane source = ownerOf(dragged);
+        if (dragged == target || dest == null || source == null) {
             return false;
         }
         // Indices are those of the target strip *without* the dragged tab, which is what it will be inserted
@@ -432,7 +434,11 @@ final class EditorArea {
         int boundary = (int) others.stream().filter(pinned).count();
         int index = others.indexOf(target) + (after ? 1 : 0);
         boolean isPinned = pinned.test(dragged);
-        place(dragged, dest, Math.max(isPinned ? 0 : boundary, Math.min(index, isPinned ? boundary : others.size())));
+        place(
+                dragged,
+                source,
+                dest,
+                Math.max(isPinned ? 0 : boundary, Math.min(index, isPinned ? boundary : others.size())));
         return true;
     }
 
@@ -444,7 +450,7 @@ final class EditorArea {
     void moveToPinBoundary(Tab tab, Predicate<Tab> pinned) {
         TabPane owner = ownerOf(tab);
         if (owner != null) {
-            place(tab, owner, (int) owner.getTabs().stream()
+            place(tab, owner, owner, (int) owner.getTabs().stream()
                     .filter(t -> t != tab && pinned.test(t))
                     .count());
         }
@@ -454,9 +460,9 @@ final class EditorArea {
      * Puts the open {@code tab} at {@code index} of {@code dest}, where {@code index} counts that strip
      * without the tab. The tab is never left out of every group: if the insert fails it goes back where it
      * was, because a tab that is in no group has no close prompt and no way to reach its unsaved text.
+     * {@code source} is the group the tab is in now.
      */
-    private void place(Tab tab, TabPane dest, int index) {
-        TabPane source = ownerOf(tab);
+    private void place(Tab tab, TabPane source, TabPane dest, int index) {
         int from = source.getTabs().indexOf(tab);
         if (source != dest || from != index) {
             relocating = true; // a move, not a close: the controller's tab-removed cleanup must sit it out
@@ -536,7 +542,7 @@ final class EditorArea {
     }
 
     /** Selects {@code tab} and focuses the group holding it. */
-    void select(Tab tab) {
+    void select(@Nullable Tab tab) {
         TabPane owner = ownerOf(tab);
         if (owner == null) {
             return;
@@ -733,6 +739,7 @@ final class EditorArea {
      * nothing and an older reader is unaffected. Leaves carry only their selected-tab index; which files sit
      * in which group is recorded per file, so the two halves cannot disagree (see {@link EditorGroupLayout}).
      */
+    @Nullable
     EditorGroupLayout snapshotLayout(Predicate<Tab> persisted) {
         return isSplit() ? describe(tree, persisted) : null;
     }
@@ -788,7 +795,7 @@ final class EditorArea {
      * the right groups; building it afterwards would mean moving every tab a second time, and each move is a
      * remove-then-add that the rest of the UI has to be told to ignore.
      */
-    void restoreLayout(EditorGroupLayout layout) {
+    void restoreLayout(@Nullable EditorGroupLayout layout) {
         unsplit();
         if (layout == null || layout.leafCount() < 2) {
             return;

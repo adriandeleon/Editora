@@ -69,11 +69,11 @@ public final class Filler {
     private final String text;
     private final List<int[]> lines; // each = {start, end} (end excludes the newline)
     private final @Nullable String[] kinds;
-    private final String lineComment;
+    private final @Nullable String lineComment;
     private final Mode mode;
     private final int tabSize;
 
-    private Filler(String text, String lineComment, Mode mode, int tabSize) {
+    private Filler(String text, @Nullable String lineComment, Mode mode, int tabSize) {
         this.text = text;
         this.lines = lineSpans(text);
         this.lineComment = lineComment;
@@ -95,7 +95,7 @@ public final class Filler {
 
     /** As {@link #fillParagraph(String, int, int, String)}, reading the buffer as {@code mode}. */
     public static @Nullable Edit fillParagraph(
-            String text, int caret, int fillColumn, String lineComment, Mode mode, int tabSize) {
+            String text, int caret, int fillColumn, @Nullable String lineComment, Mode mode, int tabSize) {
         return new Filler(text, lineComment, mode, tabSize).paragraph(caret, fillColumn);
     }
 
@@ -110,7 +110,13 @@ public final class Filler {
 
     /** As {@link #fillRegion(String, int, int, int, String)}, reading the buffer as {@code mode}. */
     public static @Nullable Edit fillRegion(
-            String text, int selStart, int selEnd, int fillColumn, String lineComment, Mode mode, int tabSize) {
+            String text,
+            int selStart,
+            int selEnd,
+            int fillColumn,
+            @Nullable String lineComment,
+            Mode mode,
+            int tabSize) {
         return new Filler(text, lineComment, mode, tabSize).region(selStart, selEnd, fillColumn);
     }
 
@@ -371,7 +377,7 @@ public final class Filler {
      * {@code ""} for a plain line. A paragraph never mixes kinds, so a comment that touches code is
      * filled on its own and code is never pulled into it.
      */
-    static @Nullable String kind(String line, String lineComment) {
+    static @Nullable String kind(String line, @Nullable String lineComment) {
         String rest = line.strip();
         if (rest.isEmpty() || rest.startsWith("/*") || rest.startsWith("*/")) {
             return null;
@@ -538,7 +544,7 @@ public final class Filler {
     }
 
     /** Removes {@code prefix} from {@code line} if present, else its own leading whitespace + marker. */
-    private static String stripPrefix(String line, String prefix, String lineComment) {
+    private static String stripPrefix(String line, String prefix, @Nullable String lineComment) {
         if (!prefix.isEmpty() && line.startsWith(prefix)) {
             return line.substring(prefix.length());
         }

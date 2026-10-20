@@ -23,6 +23,7 @@ import javafx.util.Duration;
 import com.editora.dap.DapModels;
 import com.editora.editor.DebugValuePresenter;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -44,7 +45,8 @@ final class DebugValuePopup implements DebugValuePresenter {
          * Children of {@code ref}: {@code filter} null for all of them, {@code "named"} or {@code "indexed"}, and
          * {@code count > 0} one page from {@code start} — the DAP {@code variables} the Variables tree sends.
          */
-        void children(int ref, String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb);
+        void children(
+                int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb);
 
         void addWatch(String expression);
     }
@@ -62,13 +64,13 @@ final class DebugValuePopup implements DebugValuePresenter {
     private final ContextMenu menu = new ContextMenu();
 
     /** The editor the popup was opened for, and the key filter it carries while the popup is keyboard-driven. */
-    private CodeArea owner;
+    private @Nullable CodeArea owner;
 
     private final EventHandler<KeyEvent> keys = this::onKey;
     /** Answers to an older show than this are dropped (the mouse moved on). */
     private int shown;
 
-    private String expression;
+    private @Nullable String expression;
 
     DebugValuePopup(Source source) {
         this.source = source;

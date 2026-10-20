@@ -10,6 +10,7 @@ import com.editora.config.RunConfiguration;
 import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.ProgramArgs;
 import com.editora.run.RunService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -37,7 +38,7 @@ final class BeforeLaunchStep {
         void output(String line, boolean stderr);
 
         /** The step is over: {@code launchError} non-null when it never started, else its exit {@code code}. */
-        void ended(int code, String launchError);
+        void ended(int code, @Nullable String launchError);
     }
 
     private final RunService service;
@@ -90,8 +91,8 @@ final class BeforeLaunchStep {
     void run(
             CoordinatorHost host,
             RunConfiguration cfg,
-            Function<BuildTool, List<String>> executables,
-            Path cwd,
+            Function<BuildTool, @Nullable List<String>> executables,
+            @Nullable Path cwd,
             Map<String, String> environment,
             Console console,
             Runnable then) {
@@ -118,7 +119,8 @@ final class BeforeLaunchStep {
      * command, a build tool's executable + goals for a symbolic step — or null when {@code executables}
      * refused the tool (nothing may run). Pure given {@code executables}.
      */
-    static List<String> argvFor(RunConfiguration cfg, Function<BuildTool, List<String>> executables) {
+    static @Nullable List<String> argvFor(
+            RunConfiguration cfg, Function<BuildTool, @Nullable List<String>> executables) {
         String command = cfg.beforeLaunch();
         if (command == null || command.isBlank()) {
             return List.of();
@@ -166,7 +168,7 @@ final class BeforeLaunchStep {
     void run(
             CoordinatorHost host,
             Command command,
-            Path cwd,
+            @Nullable Path cwd,
             Map<String, String> environment,
             Console console,
             Runnable then) {

@@ -331,7 +331,7 @@ public class ConfigManager {
      * project — bucket chosen by the current session file, exactly like {@link #getBookmarks()}. Persist
      * with {@link #saveHistory()}.
      */
-    public @Nullable Map<String, List<HistoryRevision>> getHistory() {
+    public Map<String, List<HistoryRevision>> getHistory() {
         return shared.historyBucket(currentBookmarkKey());
     }
 

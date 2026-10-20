@@ -7,6 +7,8 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Debug variables-tree helpers: {@link #runs} splits a debugger value string into runs coloured with the
  * editor's syntax token classes, so values read like code in the active editor theme. Adapters render
@@ -100,7 +102,7 @@ final class DebugValues {
     }
 
     /** One piece of a rendered value: its text and the editor token class it is drawn in, or null for plain. */
-    record Run(String text, String token) {}
+    record Run(String text, @Nullable String token) {}
 
     /** At most this many runs per value: the rest of a long {@code [1, 2, 3, …]} is one plain run. */
     static final int MAX_RUNS = 64;
@@ -170,7 +172,7 @@ final class DebugValues {
     private static final java.util.Set<String> CONSTANTS =
             java.util.Set.of("true", "false", "True", "False", "null", "None", "undefined", "nil", "NaN", "Infinity");
 
-    private static String wordToken(String word) {
+    private static @Nullable String wordToken(String word) {
         if (CONSTANTS.contains(word)) {
             return "constant";
         }
@@ -208,7 +210,7 @@ final class DebugValues {
         return s.length();
     }
 
-    private static void add(List<Run> out, String text, String token) {
+    private static void add(List<Run> out, String text, @Nullable String token) {
         if (text.isEmpty()) {
             return;
         }

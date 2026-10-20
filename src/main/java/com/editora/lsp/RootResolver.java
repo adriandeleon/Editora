@@ -24,13 +24,14 @@ public final class RootResolver {
      * The workspace root for {@code filePath}. Uses {@code projectRoot} when non-null; else the nearest
      * marker-bearing ancestor; else the file's parent directory (or the file itself if it has no parent).
      */
-    public static @Nullable Path resolve(Path projectRoot, Path filePath, List<String> markers) {
+    public static @Nullable Path resolve(@Nullable Path projectRoot, Path filePath, List<String> markers) {
         String home = System.getProperty("user.home");
         return resolve(projectRoot, filePath, markers, home == null || home.isBlank() ? null : Path.of(home));
     }
 
     /** {@link #resolve(Path, Path, List)} with the user's home directory supplied (tests). */
-    static @Nullable Path resolve(Path projectRoot, Path filePath, List<String> markers, @Nullable Path home) {
+    static @Nullable Path resolve(
+            @Nullable Path projectRoot, Path filePath, List<String> markers, @Nullable Path home) {
         Path abs = filePath == null ? null : filePath.toAbsolutePath().normalize();
         // Use the active project root only when the file actually lives under it — otherwise a file
         // opened outside the active project (or with the wrong project active) would be misrooted.
@@ -55,14 +56,14 @@ public final class RootResolver {
      * As {@link #resolve(Path, Path, List)} with markers in tiers: the nearest ancestor holding a marker of the
      * first tier wins, else of the second, and so on; then the file's folder.
      */
-    public static @Nullable Path resolveTiered(Path projectRoot, Path filePath, List<List<String>> tiers) {
+    public static @Nullable Path resolveTiered(@Nullable Path projectRoot, Path filePath, List<List<String>> tiers) {
         String home = System.getProperty("user.home");
         return resolveTiered(projectRoot, filePath, tiers, home == null || home.isBlank() ? null : Path.of(home));
     }
 
     /** {@link #resolveTiered(Path, Path, List)} with the user's home directory supplied (tests). */
     static @Nullable Path resolveTiered(
-            Path projectRoot, Path filePath, List<List<String>> tiers, @Nullable Path home) {
+            @Nullable Path projectRoot, Path filePath, List<List<String>> tiers, @Nullable Path home) {
         if (tiers == null || tiers.size() <= 1) {
             return resolve(projectRoot, filePath, tiers == null || tiers.isEmpty() ? List.of() : tiers.get(0), home);
         }
@@ -84,7 +85,7 @@ public final class RootResolver {
      * root — the same "contiguous chain" {@code MavenReactor} uses — and one server serves every module
      * (Maven review C11). {@code root} itself is returned when it has no marker or no marker-bearing parent.
      */
-    public static Path outermostContiguous(Path root, String marker, Path projectRoot) {
+    public static Path outermostContiguous(Path root, String marker, @Nullable Path projectRoot) {
         String home = System.getProperty("user.home");
         return outermostContiguous(root, marker, projectRoot, home == null || home.isBlank() ? null : Path.of(home));
     }
@@ -130,13 +131,13 @@ public final class RootResolver {
      * ancestor short of the home folder or a file-system root holds any of {@code markers}. Such a file is
      * "loose" — the JavaScript/TypeScript server serves all of them from one shared session (Node review B7).
      */
-    public static boolean isLoose(Path projectRoot, Path filePath, List<String> markers) {
+    public static boolean isLoose(@Nullable Path projectRoot, Path filePath, List<String> markers) {
         String home = System.getProperty("user.home");
         return isLoose(projectRoot, filePath, markers, home == null || home.isBlank() ? null : Path.of(home));
     }
 
     /** {@link #isLoose(Path, Path, List)} with the user's home directory supplied (tests). */
-    static boolean isLoose(Path projectRoot, Path filePath, List<String> markers, @Nullable Path home) {
+    static boolean isLoose(@Nullable Path projectRoot, Path filePath, List<String> markers, @Nullable Path home) {
         if (filePath == null) {
             return false;
         }
@@ -263,7 +264,7 @@ public final class RootResolver {
      * is opened. Hidden folders and the usual dependency/output folders are skipped. Pure, bounded, no
      * symlink following.
      */
-    public static List<Path> findMarkerRootsBelow(Path root, List<String> markers, int depth, int maxDirs) {
+    public static List<Path> findMarkerRootsBelow(@Nullable Path root, List<String> markers, int depth, int maxDirs) {
         List<Path> found = new java.util.ArrayList<>();
         if (root == null || markers == null || markers.isEmpty() || !Files.isDirectory(root)) {
             return found;

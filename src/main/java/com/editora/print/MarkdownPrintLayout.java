@@ -350,7 +350,7 @@ public final class MarkdownPrintLayout {
      */
     public static List<Node> paginate(
             org.commonmark.node.Node ast,
-            Path baseDir,
+            @Nullable Path baseDir,
             @Nullable MarkdownPrintAssets assets,
             double pw,
             double ph,

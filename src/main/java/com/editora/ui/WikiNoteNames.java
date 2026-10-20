@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The files of a project by name, for resolving wiki links in the linter: {@code [[note]]} means the file called
@@ -20,19 +21,19 @@ final class WikiNoteNames {
     private static final int MAX_FILES = 20_000;
     private static final long MAX_AGE_MILLIS = 60_000;
 
-    private final Path root;
+    private final @Nullable Path root;
     private final long built = System.currentTimeMillis();
     /** The one resolver every wiki link goes through — the editor's follow and completion use it too. */
     private com.editora.markdown.WikiTargets targets = com.editora.markdown.WikiTargets.EMPTY;
 
-    private WikiNoteNames(Path root) {
+    private WikiNoteNames(@Nullable Path root) {
         this.root = root;
     }
 
-    static WikiNoteNames of(Path root, boolean respectGitignore) {
+    static WikiNoteNames of(@Nullable Path root, boolean respectGitignore) {
         WikiNoteNames names = new WikiNoteNames(root);
         List<Path> files = new ArrayList<>();
-        GitignoreFilter filter = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
+        GitignoreFilter filter = respectGitignore && root != null ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
         ProjectWalk.walk(root, new ProjectWalk.Options(25, MAX_FILES, filter, () -> false), (file, rel, attrs) -> {
             if (!attrs.isRegularFile()) {
                 return ProjectWalk.Verdict.SKIP;
@@ -44,8 +45,8 @@ final class WikiNoteNames {
         return names;
     }
 
-    boolean stale(Path forRoot) {
-        return !root.equals(forRoot) || System.currentTimeMillis() - built > MAX_AGE_MILLIS;
+    boolean stale(@Nullable Path forRoot) {
+        return !java.util.Objects.equals(root, forRoot) || System.currentTimeMillis() - built > MAX_AGE_MILLIS;
     }
 
     /**
@@ -53,6 +54,7 @@ final class WikiNoteNames {
      * target with a folder in it ({@code guides/setup}) is a path: from the document's folder, else from the
      * project root.
      */
+    @Nullable
     Path resolve(Path folder, String target) {
         if (target.isBlank()) {
             return null;

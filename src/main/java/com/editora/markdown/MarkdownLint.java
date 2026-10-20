@@ -286,6 +286,7 @@ public final class MarkdownLint {
         boolean exists(String path);
 
         /** The heading anchors of Markdown file {@code path}, or {@code null} when they cannot be known. */
+        @Nullable
         Set<String> anchors(String path);
 
         /**
@@ -293,7 +294,7 @@ public final class MarkdownLint {
          * a path relative to the document: {@code null} when no file, or more than one, answers to it;
          * {@code ""} when that cannot be told (the default: wiki links are then not judged).
          */
-        default String wikiFile(String target) {
+        default @Nullable String wikiFile(String target) {
             return "";
         }
     }

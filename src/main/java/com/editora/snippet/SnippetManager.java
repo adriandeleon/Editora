@@ -478,7 +478,7 @@ public final class SnippetManager {
      *
      * @throws IOException when the file exists but cannot be parsed (it is left untouched) or cannot be written
      */
-    public synchronized void saveUserEntry(String language, String oldName, Entry e) throws IOException {
+    public synchronized void saveUserEntry(String language, @Nullable String oldName, Entry e) throws IOException {
         if (e == null || e.name() == null || e.name().isBlank()) {
             return;
         }

@@ -26,7 +26,7 @@ public final class RunConfigWorkingDirectory {
      * the same from its gutter ▶ and from its configuration. A Python module ({@code python -m}) has no folder of
      * its own and runs at the project root.
      */
-    public static @Nullable Path resolve(RunConfiguration cfg, Path projectRoot) {
+    public static @Nullable Path resolve(RunConfiguration cfg, @Nullable Path projectRoot) {
         Path scriptFolder = scriptFolder(cfg);
         if (cfg.workingDir().isBlank() && ScriptRunCommand.PYTHON.equals(cfg.type())) {
             Path script = script(cfg, projectRoot, null);
@@ -77,7 +77,7 @@ public final class RunConfigWorkingDirectory {
      * relative to the working directory {@code dir} (how older configurations could be written) still resolves
      * there. With no project, it is relative to {@code dir}. {@code null} for other types or a blank target.
      */
-    public static @Nullable Path script(RunConfiguration cfg, Path projectRoot, @Nullable Path dir) {
+    public static @Nullable Path script(RunConfiguration cfg, @Nullable Path projectRoot, @Nullable Path dir) {
         if (!isFileScript(cfg) || cfg.target().isBlank()) {
             return null;
         }

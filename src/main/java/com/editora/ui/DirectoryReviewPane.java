@@ -25,6 +25,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.diff.DirectoryDiff;
 import com.editora.editor.TabContent;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -80,7 +81,7 @@ final class DirectoryReviewPane implements TabContent {
     private final Button exitDiffUiButton = new Button();
     private final LinkedHashMap<Entry, DiffViewerPane> cache = new LinkedHashMap<>(16, 0.75f, true);
     private long loadGeneration;
-    private DiffViewerPane activePane;
+    private @Nullable DiffViewerPane activePane;
 
     DirectoryReviewPane(String title, List<Entry> entries, String summary, Loader loader) {
         this.title = title;
@@ -156,13 +157,14 @@ final class DirectoryReviewPane implements TabContent {
         return panes;
     }
 
+    @Nullable
     DiffViewerPane activePane() {
         return activePane;
     }
 
-    void setExitDiffUiAction(Runnable action) {
+    void setExitDiffUiAction(@Nullable Runnable action) {
         boolean visible = action != null;
-        exitDiffUiButton.setOnAction(visible ? event -> action.run() : null);
+        exitDiffUiButton.setOnAction(action != null ? event -> action.run() : null);
         exitDiffUiButton.setVisible(visible);
         exitDiffUiButton.setManaged(visible);
     }

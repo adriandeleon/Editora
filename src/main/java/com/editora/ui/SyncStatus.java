@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.LocalTime;
 
 import com.editora.sync.SyncReport;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -58,7 +59,7 @@ final class SyncStatus {
      * The pill for a sync that is {@code connected} (set up and switched on), run by this process when
      * {@code primary}, whose service is in {@code state} (null: no service), at {@code now}.
      */
-    static Pill of(boolean connected, boolean primary, SettingsSync.State state, LocalTime now) {
+    static Pill of(boolean connected, boolean primary, SettingsSync.@Nullable State state, LocalTime now) {
         if (!connected || !primary || state == null || state.phase() == SettingsSync.Phase.OFF) {
             return pill(Level.NOT_CONNECTED, null);
         }
@@ -79,13 +80,13 @@ final class SyncStatus {
         return pill(level, extra);
     }
 
-    private static Pill pill(Level level, String extra) {
+    private static Pill pill(Level level, @Nullable String extra) {
         String text = extra == null ? level.label() : tr("settings.sync.pill.with", level.label(), extra);
         return new Pill(level, text, tr("settings.sync.pill.accessible", text));
     }
 
     /** The state a finished run leaves (null: none has run yet). */
-    static Level levelOf(SyncReport report) {
+    static Level levelOf(@Nullable SyncReport report) {
         if (report == null) {
             return Level.CONNECTED;
         }

@@ -16,6 +16,7 @@ import com.editora.externaltool.ToolContext;
 import com.editora.externaltool.ToolInvocation;
 import com.editora.process.ProcessRunner;
 import com.editora.run.StackTraceLinks;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -31,6 +32,7 @@ final class ExternalToolCoordinator {
     /** Window hooks beyond {@link CoordinatorHost} that this feature needs. */
     interface Ops {
         /** The active window's project root, or {@code null} when no project is open. */
+        @Nullable
         Path projectRoot();
 
         /** Opens (and focuses) the External Tools console tool window. */
@@ -44,15 +46,15 @@ final class ExternalToolCoordinator {
     private final Ops ops;
     private final ExternalToolService service = new ExternalToolService();
     /** The console panel, built on its first use (normally the tool window's first open). */
-    private ExternalToolPanel panel;
+    private @Nullable ExternalToolPanel panel;
     /** The console font to apply when the panel is built (set by every settings apply, panel or not). */
-    private String outputFontFamily;
+    private @Nullable String outputFontFamily;
 
     private int outputFontSize;
-    private CommandRegistry registry;
+    private @Nullable CommandRegistry registry;
     /** The last external tool run, for {@code externalTool.rerunLast}. */
     /** Name of the last tool run — re-resolved on rerun, so a deleted/edited tool can't be re-run stale. */
-    private String lastToolName;
+    private @Nullable String lastToolName;
 
     ExternalToolCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -91,11 +93,11 @@ final class ExternalToolCoordinator {
         registry.register(Command.of("externalTool.run", this::runPicker));
         registry.register(Command.of("externalTool.clearOutput", () -> panel().clearConsole()));
         registry.register(Command.of("externalTool.rerunLast", this::rerunLast));
-        registerToolCommands();
+        registerToolCommands(registry);
     }
 
     /** Registers one {@code externalTool.run.<slug>} command per enabled tool (palette- and key-bindable). */
-    private void registerToolCommands() {
+    private void registerToolCommands(CommandRegistry registry) {
         for (ExternalTool t : enabledTools()) {
             ExternalTool tool = t;
             registry.register(Command.of(ExternalTool.commandIdFor(t.getName()), t.getName(), () -> run(tool)));
@@ -104,6 +106,7 @@ final class ExternalToolCoordinator {
 
     /** Drops stale {@code externalTool.run.*} commands and re-registers the current set (this window). */
     void refreshCommands() {
+        CommandRegistry registry = this.registry;
         if (registry == null) {
             return;
         }
@@ -114,7 +117,7 @@ final class ExternalToolCoordinator {
             }
         }
         stale.forEach(registry::remove);
-        registerToolCommands();
+        registerToolCommands(registry);
     }
 
     /** Right-click "External Tools" submenu for the editor context menu: one item per enabled tool, each
@@ -181,7 +184,7 @@ final class ExternalToolCoordinator {
     }
 
     /** The enabled tool with this name, or null (deleted, disabled, or renamed since it was last run). */
-    private ExternalTool findEnabled(String name) {
+    private @Nullable ExternalTool findEnabled(String name) {
         for (ExternalTool t : enabledTools()) {
             if (t.getName() != null && t.getName().equals(name)) {
                 return t;
@@ -237,8 +240,8 @@ final class ExternalToolCoordinator {
      * it, and replacing the live selection then overwrote the newly selected text with the transform of the
      * old one.
      */
-    record Launch(EditorBuffer target, long version, int selectionStart, int selectionEnd) {
-        static Launch of(EditorBuffer target) {
+    record Launch(@Nullable EditorBuffer target, long version, int selectionStart, int selectionEnd) {
+        static Launch of(@Nullable EditorBuffer target) {
             if (target == null) {
                 return new Launch(null, -1, 0, 0);
             }
@@ -283,7 +286,7 @@ final class ExternalToolCoordinator {
     }
 
     /** Default working dir for a tool with a blank workingDir: the file's parent, else the project root. */
-    private Path defaultDir() {
+    private @Nullable Path defaultDir() {
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.getPath() != null) {
             Path parent = b.getPath().toAbsolutePath().getParent();

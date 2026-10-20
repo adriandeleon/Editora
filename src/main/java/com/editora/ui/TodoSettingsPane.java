@@ -26,6 +26,7 @@ import javafx.scene.paint.Color;
 import com.editora.config.Settings;
 import com.editora.todo.TodoPattern;
 import com.editora.todo.TodoPatterns;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -40,11 +41,11 @@ final class TodoSettingsPane {
     private final Supplier<Settings> settings;
     private final Runnable apply;
     private final VBox patternsBox = new VBox(4);
-    private ColorPicker tagPicker;
-    private ColorPicker criticalPicker;
-    private ColorPicker highPicker;
-    private ColorPicker mediumPicker;
-    private ColorPicker lowPicker;
+    private @Nullable ColorPicker tagPicker;
+    private @Nullable ColorPicker criticalPicker;
+    private @Nullable ColorPicker highPicker;
+    private @Nullable ColorPicker mediumPicker;
+    private @Nullable ColorPicker lowPicker;
     /** True while {@link #syncPartColors} moves the pickers to the stored values, so that is not an edit. */
     private boolean syncing;
 
@@ -183,7 +184,7 @@ final class TodoSettingsPane {
     }
 
     /** Marks {@code field} red with {@code why} as its tooltip, or clears that when {@code why} is null. */
-    private static void flag(TextField field, String why) {
+    private static void flag(TextField field, @Nullable String why) {
         field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
         field.setTooltip(why == null ? null : new Tooltip(why));
         field.setAccessibleHelp(why);
@@ -228,7 +229,7 @@ final class TodoSettingsPane {
         return grid;
     }
 
-    private ColorPicker partColorPicker(String web, Consumer<String> setter) {
+    private ColorPicker partColorPicker(@Nullable String web, Consumer<String> setter) {
         ColorPicker cp = new ColorPicker(parseColor(web));
         cp.setPrefWidth(56);
         cp.valueProperty().addListener((o, a, b) -> {
@@ -263,13 +264,13 @@ final class TodoSettingsPane {
         }
     }
 
-    private static void setPicker(ColorPicker picker, String web) {
+    private static void setPicker(@Nullable ColorPicker picker, @Nullable String web) {
         if (picker != null) {
             picker.setValue(parseColor(web));
         }
     }
 
-    static Color parseColor(String web) {
+    static Color parseColor(@Nullable String web) {
         try {
             return Color.web(web == null || web.isBlank() ? "#E5C07B" : web);
         } catch (RuntimeException e) {

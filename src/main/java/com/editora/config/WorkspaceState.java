@@ -676,7 +676,7 @@ public class WorkspaceState {
         return editorLayout;
     }
 
-    public void setEditorLayout(EditorGroupLayout editorLayout) {
+    public void setEditorLayout(@Nullable EditorGroupLayout editorLayout) {
         this.editorLayout = editorLayout;
     }
 

@@ -83,7 +83,7 @@ public final class HttpVariableIndex {
          * {@link DynamicVars#dotenvValues}, the run's own reader, so a {@code .env} the run refuses (a link out of the
          * folder, not a regular file, too large) lists no keys either.
          */
-        public static Set<String> readDotenvKeys(Path dir) {
+        public static Set<String> readDotenvKeys(@Nullable Path dir) {
             Map<String, String> values = dir == null ? null : DynamicVars.dotenvValues(dir);
             return values == null ? Set.of() : new TreeSet<>(values.keySet());
         }
@@ -171,7 +171,7 @@ public final class HttpVariableIndex {
      * ({@link NodeResponseScripts#MAX_SCRIPT_BYTES}) adds nothing. Reading a file only to find these names runs
      * nothing, so it does not ask for the folder's trust. Reads files: call it off the FX thread.
      */
-    public static Set<String> scriptFileNames(String text, Path dir) {
+    public static Set<String> scriptFileNames(String text, @Nullable Path dir) {
         Set<String> names = new TreeSet<>();
         if (dir == null || text == null || text.isEmpty()) {
             return names;

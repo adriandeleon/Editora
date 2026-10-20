@@ -24,6 +24,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
 import com.editora.search.FuzzyMatch;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A generic fuzzy-filtered picker shown as a popup overlay — the keyboard-first counterpart to a list
@@ -44,9 +45,9 @@ public class QuickOpen<T> {
 
     private final Consumer<T> onChoose;
     /** Optional per-item CSS class applied to the row's title label (e.g. "dirty-name"); null = none. */
-    private Function<T, String> itemStyleClass;
+    private @Nullable Function<T, @Nullable String> itemStyleClass;
 
-    private Function<T, Node> itemIcon;
+    private @Nullable Function<T, Node> itemIcon;
 
     /** Fixed list-cell height; lets the result list hug its row count. */
     private static final double CELL_HEIGHT = 26;
@@ -66,7 +67,7 @@ public class QuickOpen<T> {
     private final Label hint = new Label();
 
     /** Supplies the value currently in force, pre-selected on open (see {@link #setCurrentItem}). */
-    private java.util.function.Supplier<T> currentItem;
+    private java.util.function.@Nullable Supplier<T> currentItem;
 
     private final ObservableList<T> items = FXCollections.observableArrayList();
     private List<T> all = List.of();
@@ -75,14 +76,14 @@ public class QuickOpen<T> {
     private String currentQuery = "";
 
     /** Optional live preview of the highlighted row, plus the undo for it when the picker is cancelled. */
-    private Consumer<T> onPreview;
+    private @Nullable Consumer<T> onPreview;
 
-    private Runnable onPreviewCancelled;
+    private @Nullable Runnable onPreviewCancelled;
     /** Whether this showing ended in a choice — so cancelling restores and choosing does not. */
     private boolean chosen;
 
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
-    private OverlayHost overlayHost;
+    private @Nullable OverlayHost overlayHost;
 
     private VBox content;
     private boolean showing;
@@ -131,7 +132,7 @@ public class QuickOpen<T> {
     }
 
     /** Sets a per-item CSS class applied to the row's title label (e.g. "dirty-name" for unsaved files). */
-    public void setItemStyleClass(Function<T, String> itemStyleClass) {
+    public void setItemStyleClass(Function<T, @Nullable String> itemStyleClass) {
         this.itemStyleClass = itemStyleClass;
     }
 
@@ -364,7 +365,7 @@ public class QuickOpen<T> {
         private final HBox titleBox = new HBox(6, title);
         private final Label sub = new Label();
         private final HBox box = new HBox(10, titleBox, spacer(), sub);
-        private String appliedClass;
+        private @Nullable String appliedClass;
 
         ItemCell() {
             titleBox.setAlignment(Pos.CENTER_LEFT);

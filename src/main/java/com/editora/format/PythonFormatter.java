@@ -32,7 +32,7 @@ public final class PythonFormatter {
     public record Found(String name, String executable, boolean inVenv) {
 
         /** The argv that formats {@code file}'s text read from stdin and writes the result to stdout. */
-        public List<String> argv(Path file) {
+        public List<String> argv(@Nullable Path file) {
             List<String> argv = new ArrayList<>();
             argv.add(executable);
             if ("ruff".equals(name)) {
@@ -66,7 +66,10 @@ public final class PythonFormatter {
      * @param onPath a bare name → its absolute path on PATH
      */
     public static Optional<Found> find(
-            Path venv, boolean windows, Predicate<Path> isExecutable, Function<String, Optional<String>> onPath) {
+            @Nullable Path venv,
+            boolean windows,
+            Predicate<Path> isExecutable,
+            Function<String, Optional<String>> onPath) {
         if (venv != null) {
             for (String name : NAMES) {
                 Path exe = venv.resolve(windows ? "Scripts" : "bin").resolve(windows ? name + ".exe" : name);
@@ -85,7 +88,7 @@ public final class PythonFormatter {
     }
 
     /** {@link #find} on this machine: the real file system and Editora's augmented PATH. */
-    public static Optional<Found> findLocal(Path venv) {
+    public static Optional<Found> findLocal(@Nullable Path venv) {
         boolean windows = com.editora.run.PythonInterpreters.isWindows();
         return find(venv, windows, p -> Files.isRegularFile(p) && Files.isExecutable(p), PythonFormatter::onPath);
     }
@@ -97,7 +100,7 @@ public final class PythonFormatter {
     }
 
     /** Formats {@code text} (the buffer's, unsaved edits included) as {@code file}. Forks: off the FX thread. */
-    public static Outcome run(Found formatter, Path file, String text) {
+    public static Outcome run(Found formatter, @Nullable Path file, String text) {
         Path dir = file == null ? null : file.getParent();
         ProcessRunner.Result r = ProcessRunner.runWithInputInUserLocale(
                 dir,

@@ -105,7 +105,7 @@ public final class PytestReportParser {
      * @param className the report's {@code classname}: the dotted module, plus the class when there is one
      * @param name the test's name, or null for a suite row
      */
-    public static @Nullable String nodeId(String file, String className, String name) {
+    public static @Nullable String nodeId(@Nullable String file, @Nullable String className, @Nullable String name) {
         if (file == null || file.isBlank()) {
             return null;
         }

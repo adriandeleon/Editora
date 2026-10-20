@@ -9,6 +9,7 @@ import javafx.scene.control.Tab;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.git.GitFileStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Tints each editor tab's title by the Git status of its file — modified, added, untracked, renamed,
@@ -25,7 +26,7 @@ final class TabGitStatus {
     private TabGitStatus() {}
 
     /** The style class for {@code file}'s status, or {@code null} for a clean, ignored or pathless file. Pure. */
-    static String classFor(Path file, Map<Path, GitFileStatus> byPath) {
+    static @Nullable String classFor(@Nullable Path file, Map<Path, GitFileStatus> byPath) {
         if (file == null || byPath == null || byPath.isEmpty()) {
             return null;
         }

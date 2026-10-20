@@ -39,6 +39,7 @@ import com.editora.git.GitOperation;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -63,7 +64,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
      * than N of them.
      */
     public interface Actions {
-        void open(String repoRelativePath);
+        void open(@Nullable String repoRelativePath);
 
         void stage(List<String> paths);
 
@@ -126,10 +127,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         void review(boolean staged);
 
         /** Show a diff for the row: {@code staged} → index↔HEAD, else worktree↔index. */
-        void diff(String repoRelativePath, boolean staged);
+        void diff(@Nullable String repoRelativePath, boolean staged);
 
         /** Opens the three-way resolver for a conflicted path. */
-        default void resolve(String repoRelativePath) {}
+        default void resolve(@Nullable String repoRelativePath) {}
 
         /** Resolves conflicted paths by taking one whole side ({@code ours}, else theirs) and staging it. */
         default void acceptSide(List<String> paths, boolean ours) {}
@@ -198,9 +199,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     private final MenuButton historyButton = new MenuButton();
     /** The commit Amend is about to replace; null while Amend is off (or its commit is still being read). */
-    private GitService.HeadCommit amending;
+    private GitService.@Nullable HeadCommit amending;
     /** The message this panel put in the box for an amend, taken out again if Amend is switched off untouched. */
-    private String amendPrefill;
+    private @Nullable String amendPrefill;
     /** The repository's commit template, put in an empty box; see {@link #setCommitTemplate}. */
     private GitService.CommitTemplate template = GitService.CommitTemplate.NONE;
     /** Lines added and deleted per file, when they have been read for the status on show. */
@@ -216,7 +217,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private final MenuItem reviewStagedItem;
     /** The menu currently on screen, hidden before showing the next one (each is built per right-click,
      *  since its contents depend on the live selection). */
-    private ContextMenu openMenu;
+    private @Nullable ContextMenu openMenu;
 
     private Runnable onGenerateCommitMessage = () -> {};
     /** Shown only while {@link #setAiAvailable} says AI Actions is enabled + reachable; sits in its own
@@ -229,7 +230,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     /** The status last pushed by the controller, so a filter change can re-render without a fresh {@code
      *  git status} (filtering is a view, not a refresh). */
-    private GitStatus lastStatus;
+    private @Nullable GitStatus lastStatus;
 
     /** Whether the last status has anything staged — with {@link #committing}, what enables Commit. */
     private boolean hasStaged;
@@ -238,7 +239,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     /** The merge / rebase / cherry-pick / revert the repository is in the middle of. */
     private GitOperation operation = GitOperation.NONE;
     /** The merge message this panel put in the box itself; cleared again if the merge ends with it untouched. */
-    private String prefilledMessage;
+    private @Nullable String prefilledMessage;
 
     private final Label operationLabel = new Label();
     private final Button continueButton = new Button(tr("gitpanel.operation.continue"));
@@ -777,7 +778,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
      * Rebuilds the panel from {@code status}. A {@code null} or non-repo status shows the
      * "Not a Git repository" placeholder and hides the commit UI.
      */
-    public void setStatus(GitStatus status) {
+    public void setStatus(@Nullable GitStatus status) {
         if (status == null || !status.isRepo()) {
             lastStatus = null;
             hasStaged = false;
@@ -885,7 +886,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private static List<FileEntry> matching(Stream<FileEntry> files, String query) {
         List<FileEntry> out = new ArrayList<>();
         files.forEach(f -> {
-            if (query.isEmpty() || f.path().toLowerCase(Locale.ROOT).contains(query)) {
+            String path = f.path();
+            if (query.isEmpty()
+                    || (path != null && path.toLowerCase(Locale.ROOT).contains(query))) {
                 out.add(f);
             }
         });
@@ -946,7 +949,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 && files.isEmpty()
                 && lastStatus != null
                 && tr(group.key).toLowerCase(Locale.ROOT).contains(query)) {
-            files = allIn(group);
+            files = allIn(lastStatus, group);
         }
         if (files.isEmpty()) {
             return;
@@ -967,15 +970,14 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     }
 
     /** Every file of {@code group} in the last status, ignoring the filter (the group-title match). */
-    private List<FileEntry> allIn(Group group) {
+    private static List<FileEntry> allIn(GitStatus status, Group group) {
         return switch (group) {
             case CONFLICTS ->
-                lastStatus.files().stream().filter(FileEntry::unmerged).toList();
-            case STAGED -> lastStatus.files().stream().filter(FileEntry::staged).toList();
-            case MODIFIED ->
-                lastStatus.files().stream().filter(GitPanel::changed).toList();
+                status.files().stream().filter(FileEntry::unmerged).toList();
+            case STAGED -> status.files().stream().filter(FileEntry::staged).toList();
+            case MODIFIED -> status.files().stream().filter(GitPanel::changed).toList();
             case UNTRACKED ->
-                lastStatus.files().stream().filter(FileEntry::untracked).toList();
+                status.files().stream().filter(FileEntry::untracked).toList();
         };
     }
 
@@ -1202,7 +1204,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         if (lastStatus == null || group == Group.CONFLICTS) {
             return menu;
         }
-        List<String> all = allIn(group).stream().map(FileEntry::path).toList();
+        List<String> all =
+                allIn(lastStatus, group).stream().map(FileEntry::path).toList();
         if (all.isEmpty()) {
             return menu;
         }
@@ -1242,7 +1245,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                         .add(file.entry().path());
             } else if (item.getValue() instanceof GroupRow group && group.group() != Group.CONFLICTS) {
                 wholeStagedGroup |= group.group() == Group.STAGED;
-                for (FileEntry entry : allIn(group.group())) {
+                for (FileEntry entry : allIn(lastStatus, group.group())) {
                     (group.group() == Group.STAGED ? unstage : stage).add(entry.path());
                 }
             }
@@ -1491,17 +1494,17 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             }
         }
 
-        private void showCounts(GitNumstat.Counts counts) {
-            boolean lines = counts != null && !counts.binary();
-            addedLabel.setText(lines && counts.added() > 0 ? "+" + counts.added() : "");
-            deletedLabel.setText(lines && counts.deleted() > 0 ? "\u2212" + counts.deleted() : "");
+        private void showCounts(GitNumstat.@Nullable Counts counts) {
+            GitNumstat.Counts lines = counts != null && !counts.binary() ? counts : null;
+            addedLabel.setText(lines != null && lines.added() > 0 ? "+" + lines.added() : "");
+            deletedLabel.setText(lines != null && lines.deleted() > 0 ? "\u2212" + lines.deleted() : "");
             show(addedLabel, !addedLabel.getText().isEmpty());
             show(deletedLabel, !deletedLabel.getText().isEmpty());
         }
     }
 
     /** The line counts of a row: the staged change for a Staged row, the unstaged one for a Changes row. */
-    private GitNumstat.Counts countsOf(FileRow row) {
+    private GitNumstat.@Nullable Counts countsOf(FileRow row) {
         return switch (row.group()) {
             case STAGED -> lineCounts.staged().get(row.entry().path());
             case MODIFIED -> lineCounts.unstaged().get(row.entry().path());

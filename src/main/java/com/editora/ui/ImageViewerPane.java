@@ -21,6 +21,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 
 import com.editora.editor.TabContent;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -58,7 +59,7 @@ public final class ImageViewerPane implements TabContent {
     private final CompletableFuture<Void> loaded = new CompletableFuture<>();
     private volatile boolean disposed;
     private Node toolbar;
-    private Image image;
+    private @Nullable Image image;
     /** The picture's own pixel size — the decoded {@link #image} is smaller when it was reduced. */
     private double naturalWidth;
 
@@ -177,7 +178,7 @@ public final class ImageViewerPane implements TabContent {
     }
 
     /** Worker thread: reads the file and decodes it within the pixel cap; null when it is not a picture. */
-    private Decoded decode() throws Exception {
+    private @Nullable Decoded decode() throws Exception {
         if (Files.size(path) > MAX_BYTES) {
             throw new TooLargeException();
         }
@@ -215,7 +216,7 @@ public final class ImageViewerPane implements TabContent {
         fitToWindow();
     }
 
-    private void showMessage(String message, String styleClass) {
+    private void showMessage(@Nullable String message, String styleClass) {
         Label label = new Label(message);
         label.getStyleClass().add(styleClass);
         label.setWrapText(true);
@@ -277,11 +278,13 @@ public final class ImageViewerPane implements TabContent {
     }
 
     /** The decoded picture for Print and Export to PDF, or null while loading and when it failed to load. */
+    @Nullable
     Image printableImage() {
         return hasImage() ? image : null;
     }
 
     /** The decoded bitmap (smaller than the picture when it was reduced). Test accessor. */
+    @Nullable
     Image imageForTest() {
         return image;
     }

@@ -18,6 +18,8 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -29,35 +31,35 @@ import static com.editora.i18n.Messages.tr;
 public final class DebugLogWindow {
 
     // Built on the first show(): a Stage and a TextArea are not free, and most sessions never open this.
-    private Stage stage;
-    private TextArea area;
-    private Label fileLabel;
-    private Path sessionFile;
-    private boolean built;
+    private @Nullable Stage stage;
+    private @Nullable TextArea area;
+    private @Nullable Label fileLabel;
+    private @Nullable Path sessionFile;
 
     /** The session log file path to show in the footer (from {@code DebugLog.sessionFile(configDir)}). */
-    public void setSessionFile(Path sessionFile) {
+    public void setSessionFile(@Nullable Path sessionFile) {
         this.sessionFile = sessionFile;
     }
 
     public void show(Window owner) {
-        if (!built) {
-            build(owner);
-            built = true;
+        Stage s = stage;
+        if (s == null) {
+            s = build(owner);
         }
         refresh();
-        if (stage.isShowing()) {
-            stage.toFront();
+        if (s.isShowing()) {
+            s.toFront();
         } else {
-            WindowPlacement.centerOnOwner(stage, owner, 900, 600);
-            stage.show();
+            WindowPlacement.centerOnOwner(s, owner, 900, 600);
+            s.show();
         }
     }
 
-    private void build(Window owner) {
-        stage = new Stage();
-        area = new TextArea();
-        fileLabel = new Label();
+    /** Builds the window; its parts are recorded only once it is complete, so a failed build is retried. */
+    private Stage build(Window owner) {
+        Stage stage = new Stage();
+        TextArea area = new TextArea();
+        Label fileLabel = new Label();
         stage.setTitle(tr("debuglog.title"));
         if (owner != null) {
             stage.initOwner(owner);
@@ -108,9 +110,18 @@ public final class DebugLogWindow {
                                 .getResource("/com/editora/styles/syntax.css")
                                 .toExternalForm());
         stage.setScene(scene);
+        this.stage = stage;
+        this.area = area;
+        this.fileLabel = fileLabel;
+        return stage;
     }
 
     private void refresh() {
+        TextArea area = this.area;
+        Label fileLabel = this.fileLabel;
+        if (area == null || fileLabel == null) {
+            return; // not built yet
+        }
         area.setText(DebugLog.snapshot());
         area.positionCaret(area.getLength());
         area.setScrollTop(Double.MAX_VALUE); // keep the newest entries in view
@@ -118,6 +129,11 @@ public final class DebugLogWindow {
     }
 
     private void export() {
+        TextArea area = this.area;
+        Label fileLabel = this.fileLabel;
+        if (area == null || fileLabel == null) {
+            return; // not built yet
+        }
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("debuglog.export"));
         chooser.setInitialFileName("editora-log.txt");

@@ -10,6 +10,7 @@ import javafx.application.Platform;
 import com.editora.build.BuildTool;
 import com.editora.build.NpmProject;
 import com.editora.run.MissingProgram;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -19,7 +20,7 @@ final class NpmRunSupport {
     private NpmRunSupport() {}
 
     /** {@code FORCE_COLOR=1} — the consoles draw colours — unless {@code NO_COLOR} is set. */
-    static Map<String, String> environment(String noColor) {
+    static Map<String, String> environment(@Nullable String noColor) {
         return noColor != null && !noColor.isEmpty() ? Map.of() : Map.of("FORCE_COLOR", "1");
     }
 
@@ -27,7 +28,7 @@ final class NpmRunSupport {
      * What to say when {@code executable} could not start because it is not installed — with why a package
      * manager was chosen ({@code reason}, e.g. {@code pnpm-lock.yaml}) — or null for any other failure.
      */
-    static String missingMessage(String executable, String error, String reason) {
+    static @Nullable String missingMessage(String executable, String error, String reason) {
         if (!MissingProgram.notFound(error)) {
             return null;
         }
@@ -40,7 +41,7 @@ final class NpmRunSupport {
      * declares dependencies but no {@code node_modules} exists in it or above it up to {@code projectRoot}.
      * Local folders only; the checks run off the FX thread.
      */
-    static void whenDependenciesMissing(Path root, Path projectRoot, Consumer<String> onMissing) {
+    static void whenDependenciesMissing(Path root, @Nullable Path projectRoot, Consumer<String> onMissing) {
         if (root == null || root.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
             return;
         }
@@ -53,7 +54,7 @@ final class NpmRunSupport {
     }
 
     /** Whether {@code root}'s package declares dependencies none of which can be installed (no node_modules). */
-    static boolean dependenciesMissing(Path root, Path projectRoot) {
+    static boolean dependenciesMissing(Path root, @Nullable Path projectRoot) {
         try {
             NpmProject p = NpmProject.parse(Files.readString(root.resolve("package.json")));
             if (!p.hasDependencies()) {

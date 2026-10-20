@@ -3,6 +3,8 @@ package com.editora.ui;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Runs a window's shutdown steps so that each one is attempted.
  *
@@ -23,7 +25,7 @@ final class WindowDisposal {
      *
      * @return how many steps failed
      */
-    static int runAll(Runnable... steps) {
+    static int runAll(@Nullable Runnable... steps) {
         int failed = 0;
         for (Runnable step : steps) {
             if (step == null) {

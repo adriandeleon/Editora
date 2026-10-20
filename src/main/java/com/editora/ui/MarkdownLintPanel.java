@@ -24,6 +24,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.editor.MarkdownLintText;
 import com.editora.markdown.MarkdownLint;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -88,13 +89,13 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
     }
 
     private final Actions actions;
-    private final IssueActions issues;
+    private final @Nullable IssueActions issues;
     private final Label fileName = new Label();
     private final Label summary = new Label();
     private final Label configNote = new Label();
     private final ListView<MarkdownLint.Diagnostic> list = new ListView<>();
-    private Button fixBtn;
-    private Path file;
+    private @Nullable Button fixBtn;
+    private @Nullable Path file;
     /** The rows as they came (document order), so the severity sort can be switched off again. */
     private List<MarkdownLint.Diagnostic> unsorted = List.of();
 
@@ -108,7 +109,7 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
         this(null, actions);
     }
 
-    public MarkdownLintPanel(IssueActions issues, Actions actions) {
+    public MarkdownLintPanel(@Nullable IssueActions issues, Actions actions) {
         this.actions = actions;
         this.issues = issues;
         getStyleClass().add("markdown-lint-panel");
@@ -320,7 +321,8 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
      * As {@link #setResults(Path, List)}, naming the buffer the rows belong to ({@code name}: an unsaved buffer
      * has no path) and noting the rules its project config turns off ({@code configNote}, "" for none).
      */
-    public void setResults(Path file, String name, List<MarkdownLint.Diagnostic> diagnostics, String configNote) {
+    public void setResults(
+            @Nullable Path file, String name, List<MarkdownLint.Diagnostic> diagnostics, String configNote) {
         this.file = file;
         project = false;
         fileOf.clear();
@@ -346,7 +348,7 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
     }
 
     /** The active tab is not a lintable Markdown buffer: an empty list that says so, instead of stale rows. */
-    public void showNotLinted(Path file) {
+    public void showNotLinted(@Nullable Path file) {
         setResults(null, file == null ? "" : String.valueOf(file.getFileName()), List.of(), "");
         summary.setText(tr("status.markdownLint.notMarkdown"));
     }

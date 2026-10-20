@@ -26,6 +26,7 @@ import javafx.stage.Window;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -68,12 +69,12 @@ public final class BuildActionsPopup {
     private final ObservableList<Row> items = FXCollections.observableArrayList();
     private List<Row> all = List.of();
 
-    private OverlayHost overlayHost;
+    private @Nullable OverlayHost overlayHost;
     private final VBox content;
     private boolean showing;
     private long lastHiddenAt;
 
-    private BuildActionsProvider provider;
+    private @Nullable BuildActionsProvider provider;
     /** The coordinator's toggle set for the root shown (shared with the tasks tree), or a fresh one. */
     private Set<String> activeToggles = new LinkedHashSet<>();
 
@@ -84,8 +85,8 @@ public final class BuildActionsPopup {
 
     private Runnable onRunCustom = () -> {};
     private RunHandler onRun = (taskArgs, toggleArgs) -> {};
-    private String secondaryLabel;
-    private Runnable secondaryAction;
+    private @Nullable String secondaryLabel;
+    private @Nullable Runnable secondaryAction;
 
     public BuildActionsPopup(Labels labels) {
         this.labels = labels;
@@ -206,6 +207,15 @@ public final class BuildActionsPopup {
         filter("");
     }
 
+    /** The provider the popup was last shown with: rows exist only after {@link #prepare}. */
+    private BuildActionsProvider shownProvider() {
+        BuildActionsProvider p = provider;
+        if (p == null) {
+            throw new IllegalStateException("build actions popup used before it was shown");
+        }
+        return p;
+    }
+
     private void onHidden() {
         showing = false;
         lastHiddenAt = System.currentTimeMillis();
@@ -223,7 +233,7 @@ public final class BuildActionsPopup {
                 rows.add(new ActionRow(text, () -> onRunRecent.accept(text), true));
             }
         }
-        for (BuildAction.Section section : provider.sections(activeToggles)) {
+        for (BuildAction.Section section : shownProvider().sections(activeToggles)) {
             if (section.rows().isEmpty()) {
                 continue;
             }
@@ -258,12 +268,12 @@ public final class BuildActionsPopup {
         reselect(selected);
     }
 
-    private String selectedLabel() {
+    private @Nullable String selectedLabel() {
         Row r = list.getSelectionModel().getSelectedItem();
         return r == null ? null : labelOf(r);
     }
 
-    private void reselect(String label) {
+    private void reselect(@Nullable String label) {
         if (label != null) {
             for (int i = 0; i < items.size(); i++) {
                 if (labelOf(items.get(i)).equals(label)) {
@@ -348,7 +358,7 @@ public final class BuildActionsPopup {
             a.run().run();
         } else if (row instanceof TaskRow t) {
             hide();
-            onRun.run(t.task().args(), provider.toggleArgs(activeToggles));
+            onRun.run(t.task().args(), shownProvider().toggleArgs(activeToggles));
         } else if (row instanceof ToggleRow tg) {
             toggle(tg.toggle()); // composes with a run rather than acting standalone — doesn't close
         }

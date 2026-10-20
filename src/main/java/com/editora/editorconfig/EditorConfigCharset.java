@@ -87,7 +87,7 @@ public final class EditorConfigCharset {
     }
 
     /** The charset name a leading BOM indicates, or {@code null} if the bytes start with no recognized BOM. */
-    public static @Nullable String detectByBom(byte[] bytes) {
+    public static @Nullable String detectByBom(byte @Nullable [] bytes) {
 
         if (bytes == null) {
             return null;
@@ -111,7 +111,7 @@ public final class EditorConfigCharset {
      * is remote / has no rule); else UTF-8. The same resolution the editor uses to read a file — so both sides
      * of a diff agree rather than the HEAD side force-decoding as UTF-8. Pure.
      */
-    public static String resolveName(byte[] bytes, String editorConfigCharset) {
+    public static String resolveName(byte @Nullable [] bytes, @Nullable String editorConfigCharset) {
         String bom = detectByBom(bytes);
         if (bom != null) {
             return bom;
@@ -157,7 +157,7 @@ public final class EditorConfigCharset {
      * five is read as windows-1252, and anything else as ISO-8859-1. The text may display as mojibake for a
      * file that is really in another encoding, but every byte survives an edit and a save.
      */
-    public static Decoded decodeLossless(byte[] bytes, String editorConfigCharset) {
+    public static Decoded decodeLossless(byte[] bytes, @Nullable String editorConfigCharset) {
         String declared = resolveName(bytes, editorConfigCharset);
         try {
             return new Decoded(decodeStrict(bytes, declared), declared, declared, false);

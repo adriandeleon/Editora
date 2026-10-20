@@ -97,7 +97,7 @@ public final class EncryptionState {
      * New recipients (or a switch to a passphrase), applied on the next save; until then
      * {@link #recipientsPending()} is true so the status bar can say "unsaved".
      */
-    public void changeRecipients(Mode newMode, List<Recipient> newRecipients, char[] newPassphrase) {
+    public void changeRecipients(Mode newMode, List<Recipient> newRecipients, char @Nullable [] newPassphrase) {
         this.mode = newMode;
         this.recipients = List.copyOf(newRecipients);
         setPassphrase(newMode == Mode.PASSPHRASE ? newPassphrase : null);
@@ -142,7 +142,7 @@ public final class EncryptionState {
         return signature;
     }
 
-    public void setSignature(String signature) {
+    public void setSignature(@Nullable String signature) {
         this.signature = signature;
     }
 
@@ -160,7 +160,7 @@ public final class EncryptionState {
         return lockDetail;
     }
 
-    public void setLock(Lock lock, String detail) {
+    public void setLock(@Nullable Lock lock, String detail) {
         this.lock = lock;
         this.lockDetail = detail == null ? "" : detail;
     }

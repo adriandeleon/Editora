@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What the Commit tool window's buttons, rows and menus do: each {@link GitPanel.Actions} call is handed to
  * the Git engine ({@link GitCoordinator}), the diff viewer ({@link DiffCoordinator}) or the file workflows.
@@ -22,7 +24,7 @@ final class GitPanelActions implements GitPanel.Actions {
     }
 
     @Override
-    public void open(String path) {
+    public void open(@Nullable String path) {
         if (git.repoRoot() != null) {
             files.openPath(git.repoRoot().resolve(path));
         }
@@ -105,7 +107,7 @@ final class GitPanelActions implements GitPanel.Actions {
     }
 
     @Override
-    public void diff(String path, boolean staged) {
+    public void diff(@Nullable String path, boolean staged) {
         diffs.diffGitPanelFile(path, staged);
     }
 
@@ -114,7 +116,7 @@ final class GitPanelActions implements GitPanel.Actions {
      * its text is in the buffer, {@code merge.resolve} runs on it — the same entry point as the command.
      */
     @Override
-    public void resolve(String path) {
+    public void resolve(@Nullable String path) {
         Path root = git.repoRoot();
         if (root != null) {
             files.openThen(root.resolve(path), diffs::resolveConflicts);

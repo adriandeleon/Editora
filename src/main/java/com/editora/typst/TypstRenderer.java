@@ -117,7 +117,7 @@ public final class TypstRenderer {
      * project root so a multi-file project's up-references resolve. Either may be {@code null} for an
      * untitled/remote buffer (→ isolated temp).
      */
-    public static Pages renderPages(List<String> cmd, String source, Path fileDir, Path root) {
+    public static Pages renderPages(List<String> cmd, String source, @Nullable Path fileDir, @Nullable Path root) {
         return renderPages(cmd, source, fileDir, root, null);
     }
 
@@ -281,7 +281,8 @@ public final class TypstRenderer {
      * file; a PNG/SVG document is one file per page. {@code fileDir}/{@code root} as in {@link #renderPages}.
      * Blocking. The caller must {@link PendingExport#commit()} or {@link PendingExport#close()} the result.
      */
-    public static PendingExport stageExport(List<String> cmd, String source, Path dest, Path fileDir, Path root) {
+    public static PendingExport stageExport(
+            List<String> cmd, String source, Path dest, @Nullable Path fileDir, @Nullable Path root) {
         Prep p = null;
         Path input = null;
         Path staging = null;

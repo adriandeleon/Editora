@@ -30,6 +30,7 @@ import javafx.stage.Window;
 import javafx.util.StringConverter;
 
 import com.editora.externaltool.ExternalTool;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -46,7 +47,7 @@ final class ExternalToolsEditor {
             Consumer<List<ExternalTool>> persist,
             Consumer<String> warn,
             Predicate<String> confirmDelete,
-            Function<String, String> chordFor,
+            Function<String, @Nullable String> chordFor,
             BiConsumer<String, String> rebind,
             Consumer<String> unbind,
             BiConsumer<TextField, Runnable> commitOnClose,
@@ -252,7 +253,7 @@ final class ExternalToolsEditor {
     }
 
     /** True when {@code newName} would give {@code tool} the command id another tool already uses. */
-    private boolean slugTaken(ExternalTool tool, String newName) {
+    private boolean slugTaken(@Nullable ExternalTool tool, String newName) {
         String id = ExternalTool.commandIdFor(newName);
         return items.stream()
                 .anyMatch(
@@ -309,7 +310,7 @@ final class ExternalToolsEditor {
             }
 
             @Override
-            public T fromString(String s) {
+            public @Nullable T fromString(String s) {
                 return null;
             }
         };

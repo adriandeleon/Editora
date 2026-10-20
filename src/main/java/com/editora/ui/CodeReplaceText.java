@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /** Pure: the words Editora uses for a hot code replace (see {@code DebugCoordinator.applyCodeChanges}). */
@@ -42,7 +44,7 @@ final class CodeReplaceText {
      * printed: Editora reports the outcome itself. The one warning java-debug words for its own developers —
      * frames it could not drop still run the replaced methods — is said plainly.
      */
-    static String notice(String changeType, String message) {
+    static @Nullable String notice(String changeType, String message) {
         String text = message == null ? "" : message.strip();
         if (!"ERROR".equals(changeType) && !"WARNING".equals(changeType)) {
             return null;
@@ -58,7 +60,7 @@ final class CodeReplaceText {
      * ({@code noticed}, printed when it arrived): java-debug words both from the same failure, the answer often
      * as "Failed to redefine classes: " plus the event's text. Also true when the answer gives no reason at all.
      */
-    static boolean saidAlready(String reason, String noticed) {
+    static boolean saidAlready(@Nullable String reason, String noticed) {
         String r = reason == null ? "" : reason.strip();
         String n = noticed == null ? "" : noticed.strip();
         return r.isEmpty() || (!n.isEmpty() && r.contains(n));

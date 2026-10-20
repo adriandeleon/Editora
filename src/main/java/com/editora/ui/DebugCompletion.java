@@ -22,6 +22,7 @@ import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
 import com.editora.dap.DapModels;
 import com.editora.editor.CompletionPopup;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -92,7 +93,7 @@ final class DebugCompletion {
     }
 
     /** The completion attached to {@code field}, or null. */
-    static DebugCompletion of(TextField field) {
+    static @Nullable DebugCompletion of(TextField field) {
         return field.getProperties().get(DebugCompletion.class) instanceof DebugCompletion c ? c : null;
     }
 

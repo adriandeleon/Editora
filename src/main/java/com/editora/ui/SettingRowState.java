@@ -14,6 +14,8 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -39,7 +41,7 @@ final class SettingRowState {
     private final Label scopeNote = new Label();
     private final Hyperlink reset = new Hyperlink(tr("settings.row.reset"));
     private final HBox line = new HBox(8, scopeNote, reset);
-    private Runnable resetAction;
+    private @Nullable Runnable resetAction;
 
     private SettingRowState(Node row) {
         this.row = row;
@@ -71,7 +73,7 @@ final class SettingRowState {
     }
 
     /** The state of {@code row} if it has one, else null (it was never marked). */
-    static SettingRowState peek(Node row) {
+    static @Nullable SettingRowState peek(Node row) {
         return row.getProperties().get(KEY) instanceof SettingRowState s ? s : null;
     }
 
@@ -89,7 +91,7 @@ final class SettingRowState {
     }
 
     /** A short note under the row's text, such as "Project"; null or blank for none. */
-    void setScopeNote(String note) {
+    void setScopeNote(@Nullable String note) {
         boolean shown = note != null && !note.isBlank();
         scopeNote.setText(shown ? note : "");
         SettingsSearch.setShown(scopeNote, shown);
@@ -101,13 +103,13 @@ final class SettingRowState {
     }
 
     /** The reset link's text: "Reset to default", or {@code label} (Project scope: "Use my setting"); null = default. */
-    void setResetLabel(String label) {
+    void setResetLabel(@Nullable String label) {
         String text = label == null ? tr("settings.row.reset") : label;
         reset.setText(text);
     }
 
     /** What "Reset to default" does for this row (null: the row cannot be reset); shown while it is modified. */
-    void setResetAction(Runnable action) {
+    void setResetAction(@Nullable Runnable action) {
         this.resetAction = action;
         refresh();
     }

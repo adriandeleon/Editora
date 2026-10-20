@@ -33,6 +33,7 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -196,20 +197,20 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      */
     private java.util.Set<List<String>> expandWanted = java.util.Set.of();
 
-    private List<String> selectWanted;
+    private @Nullable List<String> selectWanted;
     /** Watch expressions (the "Watches" node merged into the variables tree, IntelliJ-style). */
     private final java.util.List<String> watches = new java.util.ArrayList<>();
 
     private Runnable onWatchesChanged = () -> {};
-    private OverlayInput.Prompt prompt;
+    private OverlayInput.@Nullable Prompt prompt;
 
     /** The prompt of Add / Edit Watch: as {@link #prompt}, with completion in its field (null: {@link #prompt}). */
-    private OverlayInput.Prompt expressionPrompt;
+    private OverlayInput.@Nullable Prompt expressionPrompt;
 
     /** Completion in the evaluate field (follow-up 5). */
     private DebugCompletion evalCompletion;
     /** Receives a double-clicked stack-trace location from the console (controller resolves + jumps). */
-    private java.util.function.Consumer<com.editora.run.StackTraceLinks.Link> onLink;
+    private java.util.function.@Nullable Consumer<com.editora.run.StackTraceLinks.Link> onLink;
 
     public void setOnLink(java.util.function.Consumer<com.editora.run.StackTraceLinks.Link> onLink) {
         this.onLink = onLink;
@@ -226,12 +227,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private String stoppedException = "";
 
     /** Why Restart cannot be used for the session there is, else null — see {@link #setRestartBlocked}. */
-    private String restartBlocked;
+    private @Nullable String restartBlocked;
 
     /** Holds the Restart button: a disabled button gets no mouse events, so its reason is shown from here. */
     private final javafx.scene.layout.StackPane restartHolder = new javafx.scene.layout.StackPane();
 
-    private Tooltip restartBlockedTip;
+    private @Nullable Tooltip restartBlockedTip;
 
     /** The "evaluates only while paused" console hint was shown since the program last resumed. */
     private boolean evalHintShown;
@@ -251,10 +252,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private final DebugPanelText.History history = new DebugPanelText.History();
 
     /** The exception of the current exception stop (shown at the top of Variables, review C13), or null. */
-    private DapModels.ExceptionInfo exception;
+    private DapModels.@Nullable ExceptionInfo exception;
 
     /** The exit code of the program of the session that just ended, or null (review C19). */
-    private Integer exitCode;
+    private @Nullable Integer exitCode;
 
     /** Mute Breakpoints is on: the state line says so, or a session that never stops would puzzle. */
     private boolean breakpointsMuted;
@@ -365,7 +366,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             }
 
             @Override
-            public DapModels.ThreadInfo fromString(String s) {
+            public DapModels.@Nullable ThreadInfo fromString(String s) {
                 return null;
             }
         });
@@ -697,8 +698,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** The toolbar tooltips and accessible names, from the keymap (and Start / Continue as the state says). */
     private void refreshTooltips() {
         for (Button b : List.of(start, pause, stop, restart, stepOver, stepInto, stepOut, runToCursor)) {
-            DebugPanelText.Control c =
-                    (DebugPanelText.Control) b.getProperties().get(DebugPanelText.Control.class);
+            if (!(b.getProperties().get(DebugPanelText.Control.class) instanceof DebugPanelText.Control c)) {
+                continue; // every toolbar button is made by btn(), which records its control
+            }
             String id = c == DebugPanelText.Control.START && lastState == DapManager.State.SUSPENDED
                     ? "debug.continue"
                     : c.commandId;
@@ -838,7 +840,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     /** The runtime the session's program runs under, once its probe answers; {@code null} hides the chip. */
-    public void setRuntime(com.editora.run.RuntimeVersion version) {
+    public void setRuntime(com.editora.run.@Nullable RuntimeVersion version) {
         RunPanel.showRuntime(runtime, version);
     }
 
@@ -873,7 +875,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * Restart cannot repeat the session there is (it is attached to a build or test run): the button is
      * disabled and {@code reason} explains it on hover. {@code null} makes Restart follow the session state.
      */
-    public void setRestartBlocked(String reason) {
+    public void setRestartBlocked(@Nullable String reason) {
         String blocked = reason == null || reason.isBlank() ? null : reason;
         if (java.util.Objects.equals(blocked, restartBlocked)) {
             return;
@@ -995,7 +997,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * Why the program is suspended, as the adapter's stop event named it ({@code null} when it is not). Only an
      * exception stop is called out: it otherwise looks exactly like a breakpoint hit on the same line.
      */
-    public void setStopReason(String reason) {
+    public void setStopReason(@Nullable String reason) {
         boolean exception = "exception".equals(reason);
         boolean named = !stoppedException.isEmpty();
         if (!exception) {
@@ -1049,7 +1051,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     /** Whether the scope called {@code name} was expanded in the tree being replaced, or null if not there. */
-    private static Boolean scopeExpanded(TreeItem<VarRow> oldRoot, String name) {
+    private static @Nullable Boolean scopeExpanded(TreeItem<VarRow> oldRoot, String name) {
         if (oldRoot != null) {
             for (int i = 0; i < oldRoot.getChildren().size(); i++) {
                 TreeItem<VarRow> scope = oldRoot.getChildren().get(i);
@@ -1137,7 +1139,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         this.expressionPrompt = prompt;
     }
 
-    private OverlayInput.Prompt watchPrompt() {
+    private OverlayInput.@Nullable Prompt watchPrompt() {
         return expressionPrompt != null ? expressionPrompt : prompt;
     }
 
@@ -1212,7 +1214,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         root.getChildren().set(watchesAt, buildWatchesNode());
     }
 
-    private VarRow selectedRow() {
+    private @Nullable VarRow selectedRow() {
         TreeItem<VarRow> sel = variables.getSelectionModel().getSelectedItem();
         return sel == null ? null : sel.getValue();
     }

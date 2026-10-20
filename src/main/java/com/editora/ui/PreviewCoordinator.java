@@ -13,6 +13,7 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.MarkdownPreviewPane;
 import com.editora.markdown.MarkdownTable;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -47,8 +48,10 @@ final class PreviewCoordinator {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
+        @Nullable
         EditorBuffer bufferOf(Tab tab);
 
         void requestSave();
@@ -64,7 +67,7 @@ final class PreviewCoordinator {
         void openExternalUrl(String url);
 
         /** This window's project root, or null with no project open (bounds the lint-config lookup). */
-        java.nio.file.Path activeProjectRoot();
+        java.nio.file.@Nullable Path activeProjectRoot();
 
         /** The window's status bar (the Markdown-lint issue count lives there). */
         StatusBar statusBar();
@@ -84,7 +87,7 @@ final class PreviewCoordinator {
     final com.editora.editor.MarkdownLintService markdownLintService = new com.editora.editor.MarkdownLintService();
 
     /** Acting on lint issues (fix, disable, rule help, next/previous) and the project's lint config. */
-    private MarkdownLintActions lintActions;
+    private @Nullable MarkdownLintActions lintActions;
 
     MarkdownLintActions lint() {
         if (lintActions == null) {
@@ -130,7 +133,7 @@ final class PreviewCoordinator {
      * Its stripe button is offered on a Markdown buffer; an <em>open</em> window stays open on any other tab —
      * it says the file is not Markdown instead of closing, and fills again on the way back.
      */
-    void activeBufferChanged(EditorBuffer buffer) {
+    void activeBufferChanged(@Nullable EditorBuffer buffer) {
         if (!sidePreviews.isEmpty()) {
             // Not now: a tab on its way to another group is in no group for a moment.
             javafx.application.Platform.runLater(this::sidePreviews);
@@ -490,7 +493,7 @@ final class PreviewCoordinator {
      * Markdown file, or a read-only one (which is not "not a Markdown file"). The commands edit at one caret,
      * so extra carets are dropped first — with a message, rather than silently changing one line of several.
      */
-    private EditorBuffer editableMarkdown() {
+    private @Nullable EditorBuffer editableMarkdown() {
         EditorBuffer b = host.activeBuffer();
         if (b == null || !b.isMarkdown()) {
             host.setStatus(tr("status.notMarkdown"));
@@ -631,8 +634,9 @@ final class PreviewCoordinator {
         org.fxmisc.richtext.CodeArea area = b == null ? null : b.getFocusedArea();
         javafx.geometry.Bounds caret =
                 area == null ? null : area.getCaretBounds().orElse(null);
-        javafx.geometry.Bounds inScene =
-                caret == null || area.getScene() == null ? null : area.localToScene(area.screenToLocal(caret));
+        javafx.geometry.Bounds inScene = caret == null || area == null || area.getScene() == null
+                ? null
+                : area.localToScene(area.screenToLocal(caret));
         if (inScene == null) {
             host.overlayHost().show(card, true, focus, () -> {}); // no caret on screen: centered
         } else {
@@ -867,7 +871,7 @@ final class PreviewCoordinator {
         return sidePreviews;
     }
 
-    private Tab tabOf(Object content) {
+    private @Nullable Tab tabOf(Object content) {
         for (Tab tab : host.editorArea().tabs()) {
             if (tab.getUserData() == content) {
                 return tab;

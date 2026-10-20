@@ -20,6 +20,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.EncryptionState;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -92,7 +93,7 @@ final class EncryptionViews {
     record LockedActions(
             Runnable decrypt,
             Runnable cancel,
-            Runnable showEncryptedText,
+            @Nullable Runnable showEncryptedText,
             Runnable decryptToFile,
             Runnable openDoctor,
             Runnable setGpgPath) {}
@@ -101,7 +102,8 @@ final class EncryptionViews {
      * The tab's content while {@code fileName} is locked: a lock, what happened, who the file is for, and the
      * next step as a button that has the focus (Enter takes it). Never a hex dump or an error dialog.
      */
-    static Node lockedView(String fileName, EncryptionState state, LockedActions actions, String encryptedText) {
+    static Node lockedView(
+            String fileName, EncryptionState state, LockedActions actions, @Nullable String encryptedText) {
         EncryptionState.Lock lock = state.lock() == null ? EncryptionState.Lock.RESTORED : state.lock();
         Node icon = Icons.lock();
         icon.getStyleClass().add("encryption-locked-icon");
@@ -251,7 +253,7 @@ final class EncryptionViews {
         return l;
     }
 
-    private static Button add(HBox row, String label, Runnable action, boolean accent) {
+    private static @Nullable Button add(HBox row, String label, Runnable action, boolean accent) {
         if (action == null) {
             return null;
         }
@@ -304,7 +306,8 @@ final class EncryptionViews {
      * The red "Not saved." banner above the editor: the reason, its actions (the first is primary), a Details
      * link with gpg's own words, and a dismiss button.
      */
-    static Node saveFailedBanner(String reason, List<BannerAction> actions, String detail, Runnable dismiss) {
+    static Node saveFailedBanner(
+            @Nullable String reason, List<BannerAction> actions, @Nullable String detail, Runnable dismiss) {
         Label lead = new Label(tr("encryption.banner.notSaved"));
         lead.getStyleClass().add("encryption-banner-lead");
         lead.setMinWidth(Region.USE_PREF_SIZE); // never "N…": the message wraps instead

@@ -273,7 +273,7 @@ public final class HttpClientService {
     public Handle run(
             HttpFile.Parsed parsed,
             RunEnvironment environment,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             SecretGate gate,
             ResponseScripts scripts,
@@ -342,7 +342,7 @@ public final class HttpClientService {
     public Handle runAll(
             List<HttpFile.Parsed> parsed,
             RunEnvironment environment,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses responses,
             SecretGate gate,
             ResponseScripts scripts,
@@ -392,7 +392,7 @@ public final class HttpClientService {
             Handle handle,
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             Session session,
             SecretApproval.@Nullable Grant approval,
@@ -449,7 +449,7 @@ public final class HttpClientService {
             Handle handle,
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             ResponseScripts scripts) {
         if (request.preScripts().isEmpty()) {
@@ -557,7 +557,7 @@ public final class HttpClientService {
             Handle handle,
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             Session session,
             SecretApproval.@Nullable Grant approval) {
@@ -593,7 +593,7 @@ public final class HttpClientService {
             Handle handle,
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             Session session,
             SecretApproval.@Nullable Grant approval,

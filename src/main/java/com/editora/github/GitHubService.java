@@ -293,7 +293,7 @@ public final class GitHubService {
      * another machine than before, {@link #availability()} becomes that machine's last answer, or null until
      * it is probed. Cheap and without I/O: called on every gating pass.
      */
-    public void setLocation(Path dir) {
+    public void setLocation(@Nullable Path dir) {
         String host = hostOf(dir);
         synchronized (probeLock) {
             location = dir;

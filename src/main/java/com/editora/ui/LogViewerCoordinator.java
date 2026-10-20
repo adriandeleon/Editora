@@ -20,6 +20,7 @@ import com.editora.logviewer.LogNavigation;
 import com.editora.logviewer.LogPatterns;
 import com.editora.logviewer.LogTailService;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -74,13 +75,13 @@ final class LogViewerCoordinator {
         return host.settings().isLogViewer() && !host.simpleModeActive();
     }
 
-    private boolean isLogFile(Path file) {
+    private boolean isLogFile(@Nullable Path file) {
         return file != null
                 && "log".equals(LanguageRegistry.forFileName(file.getFileName().toString()));
     }
 
     /** Whether {@code file} should get log-aware loading (feature on, a local file named as a log). */
-    boolean handlesLogFile(Path file) {
+    boolean handlesLogFile(@Nullable Path file) {
         return isEnabled() && isLogFile(file) && Vfs.isLocal(file);
     }
 
@@ -101,7 +102,7 @@ final class LogViewerCoordinator {
      * Decides from its first lines whether a just-loaded file is a log although its name does not say so
      * ({@code server.out}, an extensionless file in {@code /var/log}), and shows it as one if it is.
      */
-    void sniffLoaded(EditorBuffer buffer, String content) {
+    void sniffLoaded(EditorBuffer buffer, @Nullable String content) {
         Path file = buffer.getPath();
         if (!isEnabled()
                 || content == null
@@ -146,7 +147,7 @@ final class LogViewerCoordinator {
             buffer.setOnLogStateChanged(() -> syncBar(buffer));
             syncBar(buffer);
         } else if (!want && has) {
-            buffer.setOnLogStateChanged(null);
+            buffer.setOnLogStateChanged(() -> {});
             buffer.setLogControl(null);
             logBars.remove(buffer);
             stopFollow(buffer);
@@ -307,7 +308,7 @@ final class LogViewerCoordinator {
      *
      * @param announce say so in the status bar (a command did this, not a keystroke in the pattern field)
      */
-    private void applyFilter(EditorBuffer buffer, LogLevel min, String pattern, boolean announce) {
+    private void applyFilter(EditorBuffer buffer, @Nullable LogLevel min, @Nullable String pattern, boolean announce) {
         String wanted = pattern == null || pattern.isEmpty() ? null : pattern;
         int request = filterRequests.merge(buffer, 1, Integer::sum);
         boolean clearing = min == null && wanted == null;
@@ -316,7 +317,7 @@ final class LogViewerCoordinator {
             return;
         }
         String source = clearing ? null : buffer.logFilterSource();
-        if (clearing || source.length() < ASYNC_FILTER_CHARS) {
+        if (source == null || source.length() < ASYNC_FILTER_CHARS) {
             buffer.applyLogFilter(min, wanted);
             filtered(buffer, clearing, announce);
             return;
@@ -348,10 +349,7 @@ final class LogViewerCoordinator {
     // --- commands (the palette and the control bar share these) ----------------------------------
 
     void toggleFollowCommand() {
-        ifLog(() -> {
-            EditorBuffer b = host.activeBuffer();
-            toggleFollow(b, !b.isLogFollowing());
-        });
+        ifLog(b -> toggleFollow(b, !b.isLogFollowing()));
     }
 
     /** Shows the active file as a log, or stops doing so — for a file whose name does not make it one. */
@@ -375,8 +373,7 @@ final class LogViewerCoordinator {
     }
 
     void setLevelFilter() {
-        ifLog(() -> {
-            EditorBuffer b = host.activeBuffer();
+        ifLog(b -> {
             List<String> labels = LogControlBar.levelLabels();
             QuickOpen<String> picker = new QuickOpen<>(
                     tr("log.level.pick"), tr("log.level.prompt"), () -> labels, s -> s, s -> "", choice -> {
@@ -389,8 +386,7 @@ final class LogViewerCoordinator {
     }
 
     void setRegexFilter() {
-        ifLog(() -> {
-            EditorBuffer b = host.activeBuffer();
+        ifLog(b -> {
             String current = b.getLogPattern() == null ? "" : b.getLogPattern();
             host.promptText(
                     tr("log.filter.title"),
@@ -402,8 +398,8 @@ final class LogViewerCoordinator {
 
     /** Puts the keyboard in the control bar's pattern field. */
     void focusFilter() {
-        ifLog(() -> {
-            LogControlBar bar = logBars.get(host.activeBuffer());
+        ifLog(b -> {
+            LogControlBar bar = logBars.get(b);
             if (bar != null) {
                 bar.focusPattern();
             }
@@ -411,7 +407,7 @@ final class LogViewerCoordinator {
     }
 
     void clearFilter() {
-        ifLog(() -> applyFilter(host.activeBuffer(), null, null, true));
+        ifLog(b -> applyFilter(b, null, null, true));
     }
 
     void jumpToNextError() {
@@ -424,8 +420,7 @@ final class LogViewerCoordinator {
 
     /** Moves the caret to the next/previous line at WARN or higher in the active log (wrapping). */
     private void jumpError(boolean forward) {
-        ifLog(() -> {
-            EditorBuffer b = host.activeBuffer();
+        ifLog(b -> {
             var area = b.getFocusedArea();
             int target = LogNavigation.nextLevelLine(
                     i -> area.getParagraph(i).getText(),
@@ -442,14 +437,14 @@ final class LogViewerCoordinator {
     }
 
     /** Runs {@code action} only when the active buffer is a log buffer and the feature is on. */
-    private void ifLog(Runnable action) {
+    private void ifLog(java.util.function.Consumer<EditorBuffer> action) {
         EditorBuffer b = host.activeBuffer();
         if (!isEnabled()) {
             host.setStatus(tr("status.log.disabled"));
         } else if (b == null || !b.isLog()) {
             host.setStatus(tr("status.log.notLog"));
         } else {
-            action.run();
+            action.accept(b);
         }
     }
 

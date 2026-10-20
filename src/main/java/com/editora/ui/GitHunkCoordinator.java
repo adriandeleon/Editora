@@ -17,6 +17,7 @@ import com.editora.git.GitFileStatus;
 import com.editora.git.GitService;
 import com.editora.git.HunkStaging;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -34,7 +35,7 @@ final class GitHunkCoordinator {
     private final CoordinatorHost host;
     private final GitCoordinator git;
     private final DiffCoordinator diff;
-    private GitHunkPopup popup;
+    private @Nullable GitHunkPopup popup;
 
     GitHunkCoordinator(CoordinatorHost host, GitCoordinator git, DiffCoordinator diff) {
         this.host = host;
@@ -73,7 +74,7 @@ final class GitHunkCoordinator {
     }
 
     /** Moves the caret to the next/previous change; returns the line it landed on, or -1. */
-    private int navigate(EditorBuffer b, boolean forward) {
+    private int navigate(@Nullable EditorBuffer b, boolean forward) {
         if (b == null) {
             return -1;
         }
@@ -182,7 +183,7 @@ final class GitHunkCoordinator {
      * Where the card goes for a change on lines {@code first…last}: {@code {x, belowY, aboveY}} in scene
      * coordinates, from the part of it that is on screen; {@code null} when none of it is.
      */
-    private static double[] anchor(CodeArea area, int first, int last) {
+    private static double @Nullable [] anchor(CodeArea area, int first, int last) {
         try {
             int top = Math.max(first, area.firstVisibleParToAllParIndex());
             int bottom = Math.min(last, area.lastVisibleParToAllParIndex());
@@ -270,7 +271,7 @@ final class GitHunkCoordinator {
         Path file = b.getPath();
         Path root = git.repoRoot();
         String rel = file == null || root == null ? null : GitService.repoRelative(root, file);
-        if (rel == null) {
+        if (file == null || root == null || rel == null) {
             host.setStatus(tr("status.noGitFile"));
             return;
         }
@@ -314,7 +315,7 @@ final class GitHunkCoordinator {
     }
 
     /** The hunk of a fresh diff marked on 0-based file line {@code line}, or {@code null}. */
-    static DiffParser.Hunk hunkOn(List<DiffParser.Hunk> hunks, int line) {
+    static DiffParser.@Nullable Hunk hunkOn(List<DiffParser.Hunk> hunks, int line) {
         for (DiffParser.Hunk h : hunks) {
             if (line >= h.markerLine() && line < h.markerLine() + h.markerCount()) {
                 return h;

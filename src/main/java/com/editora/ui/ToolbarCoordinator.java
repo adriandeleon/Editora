@@ -30,6 +30,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.toolbar.ToolbarCatalog;
 import com.editora.toolbar.ToolbarLayout;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 import static com.editora.toolbar.ToolbarCatalog.SEPARATOR;
@@ -81,11 +82,11 @@ final class ToolbarCoordinator {
     private List<String> currentLayout = new ArrayList<>();
     private final List<Node> customNodes = new ArrayList<>();
 
-    private Node dragSource;
+    private @Nullable Node dragSource;
     private int dragIndex = -1;
 
-    private Scene escScene;
-    private javafx.event.EventHandler<KeyEvent> escFilter;
+    private @Nullable Scene escScene;
+    private javafx.event.@Nullable EventHandler<KeyEvent> escFilter;
 
     /**
      * The one right-click menu, reused across right-clicks: showing it again just moves it. A press anywhere
@@ -143,7 +144,11 @@ final class ToolbarCoordinator {
         if (base != null) {
             return base;
         }
-        return buildExtraButton(ToolbarCatalog.item(token));
+        ToolbarCatalog.Item item = ToolbarCatalog.item(token);
+        if (item == null) {
+            throw new IllegalStateException("not a toolbar item: " + token); // the layout is sanitized to known ids
+        }
+        return buildExtraButton(item);
     }
 
     /** A fresh command button for a catalog extra (not one of the default {@code @FXML} widgets). */
@@ -151,10 +156,15 @@ final class ToolbarCoordinator {
         Button b = new Button();
         b.setGraphic(ToolbarIcons.node(item.iconKey()));
         b.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
-        String base = tr("command." + item.commandId());
-        String chord = keymap.displayChord(item.commandId());
+        String commandId = item.commandId(); // null only for Recent, a base widget that never gets here
+        String base = tr("command." + commandId);
+        String chord = commandId == null ? null : keymap.displayChord(commandId);
         b.setTooltip(new Tooltip(chord == null || chord.isEmpty() ? base : base + " (" + chord + ")"));
-        b.setOnAction(e -> registry.run(item.commandId()));
+        b.setOnAction(e -> {
+            if (commandId != null) {
+                registry.run(commandId);
+            }
+        });
         return b;
     }
 
@@ -399,7 +409,7 @@ final class ToolbarCoordinator {
     // ---- Display helpers shared with the Settings page -----------------------------------------------
 
     /** A fresh icon node for a layout token (null for a separator, which the page renders as a divider). */
-    static Node iconFor(String token) {
+    static @Nullable Node iconFor(String token) {
         if (SEPARATOR.equals(token)) {
             return null;
         }

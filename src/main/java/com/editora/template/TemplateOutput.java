@@ -46,13 +46,13 @@ public final class TemplateOutput {
      */
     public record Request(
             Template template,
-            Path dir,
+            @Nullable Path dir,
             Map<String, String> answers,
             String author,
             String projectName,
-            Path projectRoot,
+            @Nullable Path projectRoot,
             LocalDateTime now,
-            Function<Path, EditorConfigProperties> editorConfig) {}
+            Function<Path, @Nullable EditorConfigProperties> editorConfig) {}
 
     /** One file to create: where, its name relative to the target folder, its text and caret offset. */
     public record Target(Path path, String relative, String text, int caret, boolean hasCursor, boolean exists) {}
@@ -129,7 +129,9 @@ public final class TemplateOutput {
     /** Works out every file the template would create in {@code r.dir()}. Reads the disk, writes nothing. */
     public static Plan plan(Request r) {
         Template t = r.template();
-        Path dir = r.dir().toAbsolutePath().normalize();
+        Path dir = java.util.Objects.requireNonNull(r.dir(), "a plan needs a folder; untitled() has none")
+                .toAbsolutePath()
+                .normalize();
         List<Target> targets = new ArrayList<>();
         if (t.isMultiFile()) {
             TemplateVariableResolver vars = resolver(r, "", null, "");

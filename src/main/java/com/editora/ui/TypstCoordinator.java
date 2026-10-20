@@ -12,6 +12,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.editor.TypstImages;
 import com.editora.process.ProcessRunner;
 import com.editora.typst.TypstService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -35,18 +36,18 @@ final class TypstCoordinator {
 
     /** Whether {@code file} is a local (default-filesystem) path — a remote/SFTP file can't be a working dir
      *  for the local typst process, so it renders in an isolated temp root instead. */
-    private static boolean isLocal(Path file) {
+    private static boolean isLocal(@Nullable Path file) {
         return file != null && file.getFileSystem() == java.nio.file.FileSystems.getDefault();
     }
 
     /** The file's own folder (where the throwaway input is written), or null for a remote/untitled file. */
-    private static Path fileDirOf(Path file) {
-        return isLocal(file) ? file.getParent() : null;
+    private static @Nullable Path fileDirOf(@Nullable Path file) {
+        return file != null && isLocal(file) ? file.getParent() : null;
     }
 
     /** The {@code --root} sandbox for {@code file} (project root for a multi-file doc), or null when remote. */
-    private Path rootOf(Path file) {
-        return isLocal(file) ? rootResolver.apply(file) : null;
+    private @Nullable Path rootOf(@Nullable Path file) {
+        return file != null && isLocal(file) ? rootResolver.apply(file) : null;
     }
 
     /** The underlying service — exposed only for the Settings → Typst detection-status row. */
@@ -67,7 +68,7 @@ final class TypstCoordinator {
     /** Renders a Typst buffer to {@code dest} (format by extension) — the non-interactive path used by the
      *  preview right-click "Export to PDF" (which already chose the file), mirroring
      *  {@code DiagramCoordinator.exportToPath}. */
-    void exportToPath(String source, Path file, Path dest, Consumer<ProcessRunner.Result> onResult) {
+    void exportToPath(String source, @Nullable Path file, Path dest, Consumer<ProcessRunner.Result> onResult) {
         service.export(source, dest, fileDirOf(file), rootOf(file), pending -> {
             ProcessRunner.Result result = pending.result();
             if (result.ok()) {
@@ -172,7 +173,7 @@ final class TypstCoordinator {
     }
 
     /** Renders the document to per-page PNG bytes (empty on failure) — the print path paginates them. */
-    void renderPages(String source, Path file, Consumer<java.util.List<byte[]>> onResult) {
+    void renderPages(String source, @Nullable Path file, Consumer<java.util.List<byte[]>> onResult) {
         service.renderPages(source, fileDirOf(file), rootOf(file), onResult);
     }
 

@@ -47,7 +47,7 @@ public record PythonRunPlan(
      * @param userEnv a run configuration's variables (they win)
      */
     public record Request(
-            Path file,
+            @Nullable Path file,
             @Nullable Path projectRoot,
             String target,
             boolean module,
@@ -66,7 +66,7 @@ public record PythonRunPlan(
 
         /** A plain Run File request: no configuration fields. */
         public static Request file(
-                Path file,
+                @Nullable Path file,
                 @Nullable Path projectRoot,
                 String target,
                 List<String> args,

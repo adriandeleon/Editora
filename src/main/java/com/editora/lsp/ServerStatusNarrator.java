@@ -64,7 +64,7 @@ public final class ServerStatusNarrator {
      * reports (a JDT LS {@code language/status} type, "Progress"/"ProgressEnd", "Message", "Error",
      * "Launching"). Returns the line to show now, or null for none.
      */
-    public @Nullable Line onStatus(String serverId, String type, String message, long now) {
+    public @Nullable Line onStatus(@Nullable String serverId, String type, @Nullable String message, long now) {
         String key = serverId == null ? "" : serverId;
         String t = type == null ? "" : type.toLowerCase(Locale.ROOT);
         String msg = message == null || message.isBlank() ? null : message.strip();
@@ -174,7 +174,7 @@ public final class ServerStatusNarrator {
     }
 
     /** Forgets everything said by {@code serverId}, or by every server when it is null. */
-    public void forget(String serverId) {
+    public void forget(@Nullable String serverId) {
         if (serverId == null) {
             states.clear();
         } else {
@@ -182,7 +182,7 @@ public final class ServerStatusNarrator {
         }
     }
 
-    private static @Nullable Line show(String serverId, State s, @Nullable String msg) {
+    private static @Nullable Line show(@Nullable String serverId, State s, @Nullable String msg) {
         if (msg == null || msg.equals(s.lastShown)) {
             return null;
         }

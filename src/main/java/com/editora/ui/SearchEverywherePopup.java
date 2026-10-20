@@ -27,6 +27,7 @@ import com.editora.search.SearchEverywhere.Group;
 import com.editora.search.SearchEverywhere.Item;
 import com.editora.search.SearchEverywhere.Kind;
 import com.editora.search.SearchEverywhere.Scope;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -71,6 +72,7 @@ final class SearchEverywherePopup {
          * Why {@code item} is listed but cannot be run, or null. Called only for a <em>visible</em>
          * disabled row, so deriving it can be as expensive as the palette's equivalent.
          */
+        @Nullable
         String disabledReason(Item item);
 
         /** Opens {@code item}'s online documentation, if it has any. */
@@ -89,7 +91,7 @@ final class SearchEverywherePopup {
     /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
     private final Label hint = new Label();
     /** The raw chord token that opens the highlighted row's docs, or null if the keymap leaves none free. */
-    private String docsChord;
+    private @Nullable String docsChord;
 
     private final ObservableList<Row> rows = FXCollections.observableArrayList();
     private final Label status = new Label();
@@ -152,9 +154,10 @@ final class SearchEverywherePopup {
     void show(String seed) {
         var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
         docsChord = PickerKeys.freeChord(keymap, "C-h", "f1", "S-f1"); // as the command palette
+        String docs = docsChord;
         hint.setText(PickerKeys.legend(
                 PickerKeys.hint("open", "↵"),
-                PickerKeys.hint("docs", keymap == null ? docsChord : keymap.display(docsChord))));
+                PickerKeys.hint("docs", docs == null || keymap == null ? docs : keymap.display(docs))));
         input.setText(seed == null ? "" : seed);
         showing = true;
         overlayHost.show(
@@ -227,7 +230,7 @@ final class SearchEverywherePopup {
         }
     }
 
-    private void updateDescription(Row row) {
+    private void updateDescription(@Nullable Row row) {
         String d = row instanceof ItemRow r ? r.item().description() : "";
         desc.setText(d == null || d.isEmpty() ? " " : d); // one line tall always, so the card never jitters
     }

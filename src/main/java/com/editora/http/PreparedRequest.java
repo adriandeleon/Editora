@@ -35,7 +35,11 @@ record PreparedRequest(
     record Dry(PreparedRequest prepared, HttpVars.Unresolved sink, HttpVars.Scope scope, ZonedDateTime now) {}
 
     /** The dry resolution of {@code request} (see {@link Dry}). Reads the request's body files: off the FX thread. */
-    static Dry dry(HttpFile.Parsed request, Map<String, String> vars, Path baseDir, CapturedResponses captured) {
+    static Dry dry(
+            HttpFile.Parsed request,
+            Map<String, String> vars,
+            @Nullable Path baseDir,
+            @Nullable CapturedResponses captured) {
         ZonedDateTime now = ZonedDateTime.now();
         HttpVars.Unresolved sink = HttpVars.Unresolved.dry();
         HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir, true);
@@ -49,7 +53,7 @@ record PreparedRequest(
      * so whatever the run reads (the secrets the trust gate asks about) is known before the first byte goes out.
      * {@link #dry} runs exactly this with a dry {@code sub}.
      */
-    static PreparedRequest of(HttpFile.Parsed request, Path baseDir, Function<String, String> sub) {
+    static PreparedRequest of(HttpFile.Parsed request, @Nullable Path baseDir, Function<String, String> sub) {
         String method = request.method().isEmpty() ? "GET" : request.method();
 
         // The URL first, then the headers: the unresolved-variable warnings follow the order of the file.

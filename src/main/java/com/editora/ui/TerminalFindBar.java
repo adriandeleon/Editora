@@ -14,6 +14,7 @@ import javafx.scene.layout.Region;
 
 import com.editora.terminal.TerminalSearch;
 import com.editora.terminal.TerminalView;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -31,7 +32,7 @@ final class TerminalFindBar extends HBox {
     private final TextField query = new TextField();
     private final CheckBox matchCase = new CheckBox("Aa");
     private final Label count = new Label();
-    private TerminalView view;
+    private @Nullable TerminalView view;
     private Runnable onClose = () -> {};
 
     /** How long the query must hold still before it is searched. */

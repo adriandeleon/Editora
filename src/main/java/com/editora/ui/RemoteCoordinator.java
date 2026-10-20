@@ -41,6 +41,7 @@ import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.RemoteFileSystems;
 import com.editora.vfs.SftpUri;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -64,12 +65,13 @@ final class RemoteCoordinator {
         void openPath(Path file);
 
         /** Roots the Project tree at {@code root} (a mounted remote folder, or back to the local project). */
-        void setProjectRoot(Path root);
+        void setProjectRoot(@Nullable Path root);
 
         /** Opens the Project tool window (so the mounted remote folder is visible). */
         void openProjectToolWindow();
 
         /** This window's local project root, or null — used to restore the tree on disconnect. */
+        @Nullable
         Path activeProjectRoot();
 
         /** Shows a scrollable error dialog (reuses the Git error reporter) + a short status summary. */
@@ -85,15 +87,15 @@ final class RemoteCoordinator {
         void removeConnection(String id);
 
         /** Invalidates writes captured against a path that is about to be rebound. */
-        void invalidatePendingWrite(Path path);
+        void invalidatePendingWrite(@Nullable Path path);
 
         /** The project this window edits, or null (the No Project window). */
-        default Project windowProject() {
+        default @Nullable Project windowProject() {
             return null;
         }
 
         /** The shared project list, or null when {@link #projectsEnabled} is false. */
-        default com.editora.config.ProjectManager projects() {
+        default com.editora.config.@Nullable ProjectManager projects() {
             return null;
         }
 
@@ -109,7 +111,10 @@ final class RemoteCoordinator {
          * shows a remote project is the one that must be connected to its host.
          */
         default void openRemoteProject(
-                Project project, RemoteConnection conn, RemoteFileSystems.LiveConnection live, char[] secret) {
+                Project project,
+                RemoteConnection conn,
+                RemoteFileSystems.@Nullable LiveConnection live,
+                char @Nullable [] secret) {
             if (live != null) {
                 live.close();
             }
@@ -119,7 +124,7 @@ final class RemoteCoordinator {
         }
 
         /** The Project panel, or null while it has not been built (it is built on first use). */
-        default ProjectPanel projectPanel() {
+        default @Nullable ProjectPanel projectPanel() {
             return null;
         }
 
@@ -149,29 +154,29 @@ final class RemoteCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     /** The Remote Sites panel, built on its first use (the tool window's first open). */
-    private RemoteConnectionsPanel panel;
+    private @Nullable RemoteConnectionsPanel panel;
 
-    private RemoteFileSystems remoteFs; // lazily created on first remote use
-    private String activeRemoteAuthority; // the connection backing the mounted remote root
+    private @Nullable RemoteFileSystems remoteFs; // lazily created on first remote use
+    private @Nullable String activeRemoteAuthority; // the connection backing the mounted remote root
     /** A connect started for this window's own remote project is under way: do not also ask the user. */
     private boolean connecting;
 
     private boolean listening;
     /** The connection behind the mounted folder (for the question about running commands on its host). */
-    private RemoteConnection activeConnection;
+    private @Nullable RemoteConnection activeConnection;
     /** Hosts the user said "not now" about, so the question is put once per session and not on every connect. */
     private final Set<String> execDeclined = new java.util.HashSet<>();
     /** Asks whether commands may be run on a host; a dialog in the app, replaced in tests. */
     java.util.function.Predicate<RemoteConnection> execConsent = this::askToRunCommands;
     /** The not-connected state of this window's remote project, kept for a Project panel not built yet. */
-    private java.util.function.Consumer<ProjectPanel> disconnectedState;
+    private java.util.function.@Nullable Consumer<ProjectPanel> disconnectedState;
 
     RemoteCoordinator(CoordinatorHost host, Ops ops) {
         this(host, ops, null);
     }
 
     /** Connection-engine injection used by an already-connected host and deterministic integration tests. */
-    RemoteCoordinator(CoordinatorHost host, Ops ops, RemoteFileSystems remoteFs) {
+    RemoteCoordinator(CoordinatorHost host, Ops ops, @Nullable RemoteFileSystems remoteFs) {
         this.host = host;
         this.ops = ops;
         this.remoteFs = remoteFs;
@@ -241,15 +246,15 @@ final class RemoteCoordinator {
     }
 
     /** The host-key or login dialog on screen (FX thread), so a question that times out can close it. */
-    private Dialog<?> askingDialog;
+    private @Nullable Dialog<?> askingDialog;
 
     /**
      * Asks {@code question} on the FX thread and waits for the answer, for at most {@code timeoutMillis}, so an
      * unanswered dialog can't park an SSH I/O thread for the rest of the session. Timing out closes the dialog
      * and returns null; an answer given too late is handed to {@code discard} (a password to wipe), not used.
      */
-    private <T> T askOnFx(Supplier<T> question, long timeoutMillis, Consumer<T> discard) {
-        AtomicReference<T> answer = new AtomicReference<>();
+    private <T> @Nullable T askOnFx(Supplier<T> question, long timeoutMillis, Consumer<T> discard) {
+        AtomicReference<@Nullable T> answer = new AtomicReference<>();
         AtomicBoolean gaveUp = new AtomicBoolean();
         CountDownLatch answered = new CountDownLatch(1);
         Platform.runLater(() -> {
@@ -279,7 +284,7 @@ final class RemoteCoordinator {
         return null;
     }
 
-    private static <T> void discardLate(AtomicReference<T> answer, Consumer<T> discard) {
+    private static <T> void discardLate(AtomicReference<@Nullable T> answer, Consumer<T> discard) {
         T late = answer.getAndSet(null);
         if (late != null) {
             discard.accept(late);
@@ -316,14 +321,17 @@ final class RemoteCoordinator {
      * A login question, asked on an SSH I/O thread and answered on the FX thread, as {@link #confirmHostKey} is.
      * Null — cancelled, or left unanswered too long — cancels that question.
      */
-    private char[][] answerLogin(LoginPrompt.Challenge challenge) {
+    private char @Nullable [][] answerLogin(LoginPrompt.Challenge challenge) {
         if (Platform.isFxApplicationThread()) {
             return askLogin(challenge);
         }
         return askOnFx(() -> askLogin(challenge), loginAnswerTimeoutMillis, RemoteCoordinator::wipe);
     }
 
-    private static void wipe(char[][] answers) {
+    private static void wipe(char @Nullable [][] answers) {
+        if (answers == null) {
+            return;
+        }
         for (char[] a : answers) {
             if (a != null) {
                 java.util.Arrays.fill(a, '\0');
@@ -332,9 +340,9 @@ final class RemoteCoordinator {
     }
 
     /** Asks a login question (FX thread); replaced in tests. */
-    java.util.function.Function<LoginPrompt.Challenge, char[][]> loginDialog = this::showLoginDialog;
+    java.util.function.Function<LoginPrompt.Challenge, char @Nullable [][]> loginDialog = this::showLoginDialog;
 
-    private char[][] askLogin(LoginPrompt.Challenge challenge) {
+    private char @Nullable [][] askLogin(LoginPrompt.Challenge challenge) {
         return loginDialog.apply(challenge);
     }
 
@@ -342,7 +350,7 @@ final class RemoteCoordinator {
      * The login dialog: a password, a passphrase, or the server's own questions, each in its own field — hidden
      * unless the server says the answer may be shown. Cancel cancels.
      */
-    private char[][] showLoginDialog(LoginPrompt.Challenge challenge) {
+    private char @Nullable [][] showLoginDialog(LoginPrompt.Challenge challenge) {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.initOwner(host.window());
         dialog.setTitle(tr("dialog.login.title"));
@@ -410,9 +418,11 @@ final class RemoteCoordinator {
      */
     void reportConnectFailure(RemoteConnection conn, RemoteFileSystems.Result result) {
         String label = conn.displayLabel();
-        ConnectFailure failure = result.failure() != null
-                ? result.failure()
-                : new ConnectFailure(ConnectFailure.Kind.OTHER, result.error());
+        ConnectFailure reported = result.failure();
+        String error = result.error();
+        ConnectFailure failure = reported != null
+                ? reported
+                : new ConnectFailure(ConnectFailure.Kind.OTHER, error == null ? "" : error); // no detail reads as ""
         if (failure.kind() == ConnectFailure.Kind.CANCELLED
                 || failure.kind() == ConnectFailure.Kind.HOST_KEY_DECLINED) {
             host.setStatus(tr("status.remote.cancelled", label));
@@ -476,7 +486,7 @@ final class RemoteCoordinator {
     }
 
     /** Takes the connect-failure dialog's header and body instead of showing it (tests). */
-    java.util.function.BiConsumer<String, String> connectFailureShown;
+    java.util.function.@Nullable BiConsumer<String, String> connectFailureShown;
 
     void connect() {
         connect(null);
@@ -486,7 +496,7 @@ final class RemoteCoordinator {
      * Shows the SFTP connection form (optionally pre-filled from a saved connection); on success, mounts the
      * remote folder in the Project tool window.
      */
-    void connect(RemoteConnection prefill) {
+    void connect(@Nullable RemoteConnection prefill) {
         KeymapManager keymap = ops.keymap();
         TextField hostField = new TextField();
         hostField.setPromptText(tr("remote.hostPrompt"));
@@ -517,7 +527,7 @@ final class RemoteCoordinator {
             }
 
             @Override
-            public RemoteConnection.AuthMethod fromString(String s) {
+            public RemoteConnection.@Nullable AuthMethod fromString(String s) {
                 return null;
             }
         });
@@ -677,8 +687,9 @@ final class RemoteCoordinator {
                     host.setStatus(tr("status.remote.connecting", conn.displayLabel()));
                     // No secret up front: what the login needs is asked for while it runs (answerLogin).
                     remoteFs().connect(conn, null, r -> {
-                        if (r.ok()) {
-                            connected(conn, r.root(), null);
+                        Path root = r.root(); // set whenever r.ok()
+                        if (r.ok() && root != null) {
+                            connected(conn, root, null);
                         } else {
                             reportConnectFailure(conn, r);
                         }
@@ -688,7 +699,7 @@ final class RemoteCoordinator {
                 false);
     }
 
-    private static void wipe(char[] secret) {
+    private static void wipe(char @Nullable [] secret) {
         if (secret != null) {
             java.util.Arrays.fill(secret, '\0');
         }
@@ -701,14 +712,15 @@ final class RemoteCoordinator {
      * login serves it (a second would ask for another password or 2FA code). When this window's tabs still
      * use that connection it stays here, and the project's window logs in for itself.
      */
-    void connected(RemoteConnection conn, Path root, char[] secret) {
-        if (!ops.projectsEnabled()) {
+    void connected(RemoteConnection conn, Path root, char @Nullable [] secret) {
+        com.editora.config.ProjectManager projects = ops.projectsEnabled() ? ops.projects() : null;
+        if (projects == null) { // null only when projects are off
             wipe(secret);
             mount(conn, root);
             return;
         }
-        Project project = ops.projects().createOrGet(projectName(conn, root), root);
-        ops.projects().save();
+        Project project = projects.createOrGet(projectName(conn, root), root);
+        projects.save();
         Project mine = ops.windowProject();
         if (mine != null && mine.id().equals(project.id())) {
             wipe(secret);
@@ -720,9 +732,11 @@ final class RemoteCoordinator {
         ops.putConnection(at);
         refreshPanel();
         RemoteFileSystems.LiveConnection live = null;
-        if (!conn.id().equals(activeRemoteAuthority)
+        RemoteFileSystems fs = remoteFs; // the one that just logged in
+        if (fs != null
+                && !conn.id().equals(activeRemoteAuthority)
                 && buffersOn(Set.of(conn.id()), false).isEmpty()) {
-            live = remoteFs.handOff(conn.id(), root);
+            live = fs.handOff(conn.id(), root);
         }
         if (live != null) {
             wipe(secret); // the window takes over the logged-in session: nothing to log in with again
@@ -737,7 +751,7 @@ final class RemoteCoordinator {
         return name == null || name.toString().isBlank() ? conn.displayLabel() : name.toString();
     }
 
-    private static RemoteConnection withPath(RemoteConnection conn, String path) {
+    private static RemoteConnection withPath(RemoteConnection conn, @Nullable String path) {
         return new RemoteConnection(
                 conn.host(), conn.port(), conn.user(), conn.auth(), conn.keyPath(), conn.label(), path);
     }
@@ -760,7 +774,7 @@ final class RemoteCoordinator {
      * Connects this window to its own remote project's host with credentials another window collected, and
      * mounts the folder. {@code secret} is wiped.
      */
-    void connectForWindowProject(RemoteConnection conn, char[] secret) {
+    void connectForWindowProject(RemoteConnection conn, char @Nullable [] secret) {
         connecting = true;
         host.setStatus(tr("status.remote.connecting", conn.displayLabel()));
         remoteFs().connect(conn, secret, r -> {
@@ -789,7 +803,7 @@ final class RemoteCoordinator {
     }
 
     /** The saved connection for {@code project}'s host, else one built from its address; rooted at the project. */
-    private RemoteConnection connectionFor(Project project) {
+    private @Nullable RemoteConnection connectionFor(Project project) {
         SftpUri location = SftpUri.parse(project.root());
         if (location == null) {
             return null;
@@ -811,7 +825,10 @@ final class RemoteCoordinator {
     /** Shows the not-connected state when this window's project is a remote one; otherwise nothing. */
     private void showDisconnected() {
         Project project = ops.windowProject();
-        SftpUri location = project == null || !project.remote() ? null : SftpUri.parse(project.root());
+        if (project == null || !project.remote()) {
+            return;
+        }
+        SftpUri location = SftpUri.parse(project.root());
         if (location == null) {
             return;
         }
@@ -827,7 +844,7 @@ final class RemoteCoordinator {
     }
 
     /** The Project panel exists now (or still does): give it the not-connected state, if that is the state. */
-    void panelBuilt(ProjectPanel built) {
+    void panelBuilt(@Nullable ProjectPanel built) {
         if (built != null && disconnectedState != null) {
             disconnectedState.accept(built);
         }
@@ -856,7 +873,7 @@ final class RemoteCoordinator {
     }
 
     /** Mounts a connected remote folder as the Project tree root + opens the Project tool window. */
-    private void mount(RemoteConnection conn, Path root) {
+    private void mount(RemoteConnection conn, @Nullable Path root) {
         if (!listening) {
             listening = true;
             remoteFs().addConnectionListener(this::connectionChanged);
@@ -888,9 +905,10 @@ final class RemoteCoordinator {
 
     /** Reconnects open tabs for this authority to the new live SFTP filesystem, retaining their dirty text. */
     private void rebindOpenBuffers(String authority) {
+        RemoteFileSystems fs = remoteFs; // mount made it
         host.forEachBuffer(buffer -> {
             Path old = buffer.getPath();
-            if (!Vfs.isRemote(old)) {
+            if (old == null || !Vfs.isRemote(old)) {
                 return;
             }
             String stored = Vfs.toStorableString(old);
@@ -898,7 +916,7 @@ final class RemoteCoordinator {
             if (location == null || !authority.equals(location.authority())) {
                 return;
             }
-            Path rebound = remoteFs.resolve(stored);
+            Path rebound = fs == null ? null : fs.resolve(stored);
             if (rebound != null) {
                 ops.invalidatePendingWrite(old);
                 buffer.setPath(rebound);
@@ -940,9 +958,13 @@ final class RemoteCoordinator {
     private List<String> buffersOn(Set<String> authorities, boolean unsavedOnly) {
         List<String> names = new ArrayList<>();
         host.forEachBuffer(buffer -> {
-            String authority = Vfs.authorityOf(buffer.getPath());
-            if (authority != null && authorities.contains(authority) && (!unsavedOnly || buffer.isDirty())) {
-                names.add(Vfs.displayLabel(buffer.getPath()));
+            Path path = buffer.getPath();
+            String authority = path == null ? null : Vfs.authorityOf(path);
+            if (path != null
+                    && authority != null
+                    && authorities.contains(authority)
+                    && (!unsavedOnly || buffer.isDirty())) {
+                names.add(Vfs.displayLabel(path));
             }
         });
         return names;
@@ -969,7 +991,8 @@ final class RemoteCoordinator {
      * hosts stay open; when any has unsaved changes the user is asked first.
      */
     void disconnect() {
-        Set<String> connected = remoteFs == null ? Set.of() : remoteFs.connectedAuthorities();
+        RemoteFileSystems fs = remoteFs;
+        Set<String> connected = fs == null ? Set.of() : fs.connectedAuthorities();
         if (activeRemoteAuthority == null && connected.isEmpty()) {
             host.setStatus(tr("status.remote.notConnected"));
             return;
@@ -978,7 +1001,9 @@ final class RemoteCoordinator {
         if (!unsaved.isEmpty() && !confirmDisconnect(unsaved)) {
             return;
         }
-        connected.forEach(remoteFs::disconnect);
+        if (fs != null) {
+            connected.forEach(fs::disconnect);
+        }
         activeRemoteAuthority = null;
         Project project = ops.windowProject();
         if (project != null && project.remote()) {
@@ -1088,7 +1113,7 @@ final class RemoteCoordinator {
     }
 
     /** What {@link #recheckExecution} last saw: the setting, this window's host's agreement and its tools. */
-    private String execSignature;
+    private @Nullable String execSignature;
 
     /**
      * Something that decides what runs on this window's host may have changed — the setting, or the host's

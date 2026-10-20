@@ -60,7 +60,7 @@ public final class TestRunRecognizer {
      * name a filter accepts ({@link TestSourceLocator#filterMethodName}); see {@link #mavenTestFilter} for
      * the reactor flags.
      */
-    public static List<String> singleTestTask(BuildTool tool, String className, String methodName) {
+    public static List<String> singleTestTask(BuildTool tool, String className, @Nullable String methodName) {
         String method = TestSourceLocator.filterMethodName(methodName);
         boolean wholeClass = method == null || method.isEmpty();
         return switch (tool) {

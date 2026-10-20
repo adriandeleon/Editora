@@ -39,6 +39,7 @@ import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -87,15 +88,15 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private final Button saveButton = new Button();
     private final ToggleButton previousButton = new ToggleButton();
     private final ConsoleFindBar findBar = new ConsoleFindBar(this::shownArea);
-    private Consumer<StackTraceLinks.Link> onLink;
-    private Consumer<String> onUrl;
-    private Consumer<GitOutputDiffs.Target> onGitDiff;
+    private @Nullable Consumer<StackTraceLinks.Link> onLink;
+    private @Nullable Consumer<String> onUrl;
+    private @Nullable Consumer<GitOutputDiffs.Target> onGitDiff;
     private boolean gitTranscript;
 
     /** This tool's output style (set per run by {@link #started}). */
     private OutputStyle style = OutputStyle.passthrough();
     /** Stops this tool's running build (set per run by {@link #started}). */
-    private Runnable onStop;
+    private @Nullable Runnable onStop;
 
     private final ConsoleAppender appender = new ConsoleAppender(output, MAX_CHARS);
 
@@ -116,7 +117,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     /** The header of the live run — what {@link #status} shows unless the previous run is up. */
     private String liveStatus = "";
     /** The header the previous run ended with, shown while {@link #previous} is up; null = no previous run. */
-    private String previousStatus;
+    private @Nullable String previousStatus;
 
     private boolean showingPrevious;
 
@@ -282,7 +283,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      * In log mode: a long command (a clone, a fetch) is running and {@code onStop} cancels it, so the Stop
      * button is there for as long as it runs; {@code null} when it has ended.
      */
-    public void setLogStop(Runnable onStop) {
+    public void setLogStop(@Nullable Runnable onStop) {
         this.onStop = onStop;
         logRunning = onStop != null;
         stopButton.setDisable(!logRunning);
@@ -482,7 +483,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      * the same follow/trim behaviour as {@link #appendOutput}. Used by the Git/GitHub command log, whose
      * colouring comes from {@code CommandLogFormat} rather than a build tool's {@link OutputStyle}.
      */
-    public void appendStyled(String line, String styleClass) {
+    public void appendStyled(String line, @Nullable String styleClass) {
         transientTail = false; // anything appended after a progress line leaves it standing
         StyleSpans<Collection<String>> spans = null;
         if (!line.isEmpty()) {
@@ -548,7 +549,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      * overwrites ({@code Receiving objects:  12%}): the next line passed here takes its place, as it would in
      * a terminal, instead of a clone leaving hundreds of percentages behind it.
      */
-    public void appendProgress(String line, String styleClass, boolean transientLine) {
+    public void appendProgress(String line, @Nullable String styleClass, boolean transientLine) {
         if (transientTail) {
             appender.flush();
             int paragraphs = output.getParagraphs().size();
@@ -562,7 +563,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     }
 
     /** The runtime this build's program runs under, once its probe answers; null hides the chip. */
-    public void setRuntime(com.editora.run.RuntimeVersion version) {
+    public void setRuntime(com.editora.run.@Nullable RuntimeVersion version) {
         RunPanel.showRuntime(runtime, version);
     }
 

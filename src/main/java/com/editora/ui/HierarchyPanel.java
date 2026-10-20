@@ -56,7 +56,7 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
     private List<LspManager.HierarchyNode> roots = List.of();
 
     /** A child marker meaning "not fetched yet" — replaced by the real children on first expand. */
-    private static final LspManager.HierarchyNode PENDING = new LspManager.HierarchyNode("…", "", "", null, 0, 0, null);
+    private static final LspManager.HierarchyNode PENDING = new LspManager.HierarchyNode("…", "", "", null, 0, 0, "");
 
     public HierarchyPanel(Loader loader) {
         this.loader = loader;

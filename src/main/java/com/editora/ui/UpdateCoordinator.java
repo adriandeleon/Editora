@@ -9,6 +9,7 @@ import com.editora.AppInfo;
 import com.editora.config.Settings;
 import com.editora.update.ReleaseInfo;
 import com.editora.update.UpdateService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -20,7 +21,7 @@ import static com.editora.i18n.Messages.tr;
 final class UpdateCoordinator {
 
     /** The newest release newer than the running version; null when up to date or not yet checked. */
-    private static volatile ReleaseInfo latestKnownUpdate;
+    private static volatile @Nullable ReleaseInfo latestKnownUpdate;
 
     private final UpdateService service = new UpdateService();
     private final Supplier<Settings> settings;
@@ -48,7 +49,7 @@ final class UpdateCoordinator {
     }
 
     /** The newest known release, for the About dialog's "Update available" row. */
-    static ReleaseInfo latestKnown() {
+    static @Nullable ReleaseInfo latestKnown() {
         return latestKnownUpdate;
     }
 
@@ -75,10 +76,11 @@ final class UpdateCoordinator {
             }
             return;
         }
-        if (outcome.available()) {
-            latestKnownUpdate = outcome.latest();
+        ReleaseInfo latest = outcome.latest(); // set whenever an update is available
+        if (outcome.available() && latest != null) {
+            latestKnownUpdate = latest;
             refreshNotice();
-            setStatus.accept(tr("status.update.available", outcome.latest().version()));
+            setStatus.accept(tr("status.update.available", latest.version()));
         } else {
             latestKnownUpdate = null; // running the latest
             refreshNotice();
@@ -92,7 +94,7 @@ final class UpdateCoordinator {
     void refreshNotice() {
         ReleaseInfo info = latestKnownUpdate;
         boolean show = info != null && !info.version().equals(settings.get().getDismissedUpdateVersion());
-        showNotice.accept(show, show ? info.version() : null);
+        showNotice.accept(show, show && info != null ? info.version() : null);
     }
 
     /** Opens the release page for the known update (else the releases page) and dismisses that version's notice. */

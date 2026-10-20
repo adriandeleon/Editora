@@ -39,6 +39,7 @@ import com.editora.config.RecentFiles;
 import com.editora.editor.TabContent;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -93,15 +94,15 @@ public final class WelcomePane extends Region implements TabContent {
     private final Label commitLabel = new Label();
 
     /** Opens a project's window; null hides the Recent Projects section. */
-    private Consumer<Project> onOpenProject;
+    private @Nullable Consumer<Project> onOpenProject;
     /** Asks before removing a file from the recent list; null hides the menu item. */
-    private Consumer<Path> onRemoveRecent;
+    private @Nullable Consumer<Path> onRemoveRecent;
     /** The active keymap's and app theme's names for the Customize block; null hides it. */
-    private Supplier<String> keymapName;
+    private @Nullable Supplier<String> keymapName;
 
-    private Supplier<String> themeName;
+    private @Nullable Supplier<String> themeName;
     /** The home directory, written as {@code ~} in folder text. */
-    private Path home = homeDirectory();
+    private @Nullable Path home = homeDirectory();
 
     /** Text zoom (1.0 = 100 %); every px size on the page is multiplied by it. */
     private double zoom = 1.0;
@@ -158,7 +159,7 @@ public final class WelcomePane extends Region implements TabContent {
             BooleanSupplier gitEnabled,
             Supplier<List<RemoteConnection>> remoteSites,
             Consumer<RemoteConnection> onConnectRemote,
-            CompletableFuture<String> devCommit) {
+            @Nullable CompletableFuture<String> devCommit) {
         this.registry = registry;
         this.keymap = keymap;
         this.recentFiles = recentFiles;
@@ -242,7 +243,7 @@ public final class WelcomePane extends Region implements TabContent {
 
     /** A small app logo for the Welcome tab header (null if the icon resource is missing). */
     @Override
-    public Node icon() {
+    public @Nullable Node icon() {
         var in = getClass().getResourceAsStream("/com/editora/icons/icon-16.png");
         if (in == null) {
             return null;
@@ -361,7 +362,7 @@ public final class WelcomePane extends Region implements TabContent {
     private static boolean rootExists(Project p) {
         try {
             Path root = p.rootPath();
-            return !Vfs.isLocal(root) || java.nio.file.Files.isDirectory(root);
+            return root != null && (!Vfs.isLocal(root) || java.nio.file.Files.isDirectory(root));
         } catch (RuntimeException e) {
             return false;
         }
@@ -377,9 +378,13 @@ public final class WelcomePane extends Region implements TabContent {
     private Node projectRow(Project project) {
         Hyperlink link = new Hyperlink(project.name());
         link.getStyleClass().add("welcome-link");
-        link.setOnAction(e -> onOpenProject.accept(project));
+        link.setOnAction(e -> {
+            if (onOpenProject != null) { // set, or shownProjects() lists none
+                onOpenProject.accept(project);
+            }
+        });
         Path root = project.rootPath();
-        String rootText = Vfs.displayLabel(root);
+        String rootText = root == null ? "" : Vfs.displayLabel(root);
         HBox row = recentRowBox(link, folderLabel(Vfs.isLocal(root) ? WelcomeText.dirText(root, home) : rootText));
         Tooltip.install(row, new Tooltip(rootText));
         row.setOnContextMenuRequested(e -> {
@@ -429,8 +434,8 @@ public final class WelcomePane extends Region implements TabContent {
             chip = chip(WelcomeText.withoutDefaultPort(Vfs.authorityOf(path))); // a remote file names its host
             chip.setGraphic(scaled(Icons.remote()));
         }
-        Path projectRoot =
-                project == null ? null : project.rootPath().toAbsolutePath().normalize();
+        Path ownerRoot = project == null ? null : project.rootPath(); // containing() only returns one with a root
+        Path projectRoot = ownerRoot == null ? null : ownerRoot.toAbsolutePath().normalize();
         Label where = folderLabel(WelcomeText.folderText(path, projectRoot, local ? home : null));
         HBox row = chip == null ? recentRowBox(link, where) : recentRowBox(link, chip, where);
         String pathText = Vfs.displayLabel(path);
@@ -443,7 +448,7 @@ public final class WelcomePane extends Region implements TabContent {
     }
 
     /** Copy Path, plus Remove from recent files for a recent file. */
-    private ContextMenu menuFor(Path removable, String pathText) {
+    private ContextMenu menuFor(@Nullable Path removable, String pathText) {
         ContextMenu menu = new ContextMenu();
         MenuItem copy = new MenuItem(tr("menu.copyPath"));
         copy.setGraphic(Icons.copy());
@@ -453,10 +458,11 @@ public final class WelcomePane extends Region implements TabContent {
             javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
         });
         menu.getItems().add(copy);
-        if (removable != null && onRemoveRecent != null) {
+        Consumer<Path> remover = onRemoveRecent;
+        if (removable != null && remover != null) {
             MenuItem remove = new MenuItem(tr("tooltip.removeRecent"));
             remove.setGraphic(Icons.trash());
-            remove.setOnAction(e -> onRemoveRecent.accept(removable));
+            remove.setOnAction(e -> remover.accept(removable));
             menu.getItems().add(remove);
         }
         return menu;
@@ -667,7 +673,7 @@ public final class WelcomePane extends Region implements TabContent {
         return box;
     }
 
-    private Node logo() {
+    private @Nullable Node logo() {
         var in = getClass().getResourceAsStream("/com/editora/icons/icon-128.png");
         if (in == null) {
             return null;
@@ -704,7 +710,7 @@ public final class WelcomePane extends Region implements TabContent {
     }
 
     /** {@code commandId} runs on click; its chord is shown, or {@code fallbackChordId}'s when it has none. */
-    private Node action(Node icon, String text, String commandId, String fallbackChordId) {
+    private Node action(Node icon, String text, String commandId, @Nullable String fallbackChordId) {
         // Put the icon in a fixed-width column so every label starts at the same x, regardless of icon width.
         StackPane holder = new StackPane(scaled(icon));
         holder.setMinWidth(26 * zoom);
@@ -740,7 +746,7 @@ public final class WelcomePane extends Region implements TabContent {
     }
 
     /** The configured keybinding for {@code commandId} in the active keymap's notation, or null if unbound. */
-    private String shortcutFor(String commandId) {
+    private @Nullable String shortcutFor(String commandId) {
         return keymap == null ? null : keymap.displayChord(commandId);
     }
 
@@ -790,7 +796,7 @@ public final class WelcomePane extends Region implements TabContent {
         return l;
     }
 
-    private static Path homeDirectory() {
+    private static @Nullable Path homeDirectory() {
         try {
             String h = System.getProperty("user.home");
             return h == null || h.isBlank() ? null : Path.of(h).toAbsolutePath().normalize();

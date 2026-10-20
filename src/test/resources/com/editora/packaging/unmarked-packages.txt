@@ -2,4 +2,4 @@
 # "Null annotations"). This list may only shrink: NullMarkedPackagesTest fails when a package is missing
 # from it and unmarked (a new package starts @NullMarked), and when a package on it is marked or gone
 # (delete its line). One package per line.
-com.editora.ui
+# Empty since 2026-10-20: every package is marked, and it should stay that way.

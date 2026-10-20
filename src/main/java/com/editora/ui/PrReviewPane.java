@@ -22,6 +22,7 @@ import com.editora.editor.TabContent;
 import com.editora.github.PrReviewSummary;
 import com.editora.github.PrReviewSummary.FileRow;
 import com.editora.github.PrViewParser.PrDetail;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -61,7 +62,7 @@ public final class PrReviewPane extends Region implements TabContent {
     private final Runnable onRefresh;
     private final Runnable onSubmitReview;
 
-    private PrDetail detail;
+    private @Nullable PrDetail detail;
     private List<FilePatch> files = List.of();
     /** Shown under the header when non-blank — e.g. that the files come from the fallback listing. */
     private String notice = "";
@@ -149,7 +150,7 @@ public final class PrReviewPane extends Region implements TabContent {
 
     /** The PR description (from {@code gh pr view}), rendered as Markdown, collapsed to a few lines with a Show
      *  more/less toggle when long. {@code null} when there's no description. */
-    private Node descriptionBlock() {
+    private @Nullable Node descriptionBlock() {
         if (detail == null) {
             return null;
         }
@@ -192,7 +193,7 @@ public final class PrReviewPane extends Region implements TabContent {
         return renderMarkdown(markdown, null);
     }
 
-    private static Node renderMarkdown(String markdown, Consumer<String> onOpenUrl) {
+    private static Node renderMarkdown(String markdown, @Nullable Consumer<String> onOpenUrl) {
         try {
             // Links in a description or a comment open through the pane's own opener (the window's link choke
             // point): rendered without one they looked like links and did nothing.
@@ -260,8 +261,9 @@ public final class PrReviewPane extends Region implements TabContent {
         HBox row = new HBox(14);
         row.getStyleClass().add("pr-review-actions");
         row.setAlignment(Pos.CENTER_LEFT);
-        if (detail != null && !detail.url().isBlank()) {
-            row.getChildren().add(link(tr("github.review.openOnGitHub"), () -> onOpenUrl.accept(detail.url())));
+        PrDetail shown = detail; // every update rebuilds this row
+        if (shown != null && !shown.url().isBlank()) {
+            row.getChildren().add(link(tr("github.review.openOnGitHub"), () -> onOpenUrl.accept(shown.url())));
         }
         if (files.size() > 1) {
             row.getChildren().add(link(tr("github.review.openAll", files.size()), onOpenAll));

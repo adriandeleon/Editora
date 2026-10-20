@@ -36,6 +36,7 @@ import javafx.scene.text.Text;
 
 import com.editora.config.Bookmark;
 import com.editora.config.PathDisplay;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -100,14 +101,14 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private String currentKey = "";
 
     /** In-scene single-line prompt (injected by MainController) used to edit a bookmark's note. */
-    private OverlayInput.Prompt prompt;
+    private OverlayInput.@Nullable Prompt prompt;
 
     /** The row to reselect after the next {@link #refresh()} (set just before a reorder). */
-    private Path reselectFile;
+    private @Nullable Path reselectFile;
 
-    private Integer reselectLine; // null = reselect the file header row
+    private @Nullable Integer reselectLine; // null = reselect the file header row
     /** The tree item currently being dragged (for drag-and-drop reordering). */
-    private TreeItem<Row> draggedItem;
+    private @Nullable TreeItem<Row> draggedItem;
 
     public BookmarksPanel(Supplier<Scope> source, Actions actions) {
         this.source = source;
@@ -245,7 +246,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         applyPendingSelection();
     }
 
-    private static boolean hasAnyBookmark(Map<String, List<Bookmark>> bucket) {
+    private static boolean hasAnyBookmark(@Nullable Map<String, List<Bookmark>> bucket) {
         if (bucket == null) {
             return false;
         }
@@ -485,7 +486,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     /** Whether {@code src} may be dropped onto {@code target}: a bookmark onto a sibling, or a file onto a sibling
      *  file — both within the current project's group (the only editable bucket). */
-    private boolean canDrop(TreeItem<Row> src, TreeItem<Row> target) {
+    private boolean canDrop(@Nullable TreeItem<Row> src, TreeItem<Row> target) {
         if (src == null || target == null || src == target || !inCurrentGroup(src) || !inCurrentGroup(target)) {
             return false;
         }
@@ -498,8 +499,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 && src.getParent() == target.getParent();
     }
 
-    private void handleDrop(TreeItem<Row> src, TreeItem<Row> target, boolean after) {
-        if (!canDrop(src, target) || !reorderEnabled()) {
+    private void handleDrop(@Nullable TreeItem<Row> src, TreeItem<Row> target, boolean after) {
+        if (src == null || !canDrop(src, target) || !reorderEnabled()) {
             return;
         }
         if (src.getValue() instanceof MarkRow sm) {

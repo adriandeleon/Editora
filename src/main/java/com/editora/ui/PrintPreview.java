@@ -42,6 +42,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.print.PrintService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -216,7 +217,7 @@ final class PrintPreview {
     private final Label infoLabel = new Label();
     private final Label notice = new Label();
     /** The "no such page" text while it is what {@link #notice} shows; the next page turn takes it away. */
-    private String pageRangeNotice;
+    private @Nullable String pageRangeNotice;
 
     private final Button prev = new Button("◀");
     private final Button next = new Button("▶");
@@ -243,7 +244,7 @@ final class PrintPreview {
     PrintPreview(
             Window owner,
             Job job,
-            PrintService.Paginator paginator,
+            PrintService.@Nullable Paginator paginator,
             Consumer<PrintService.Result> onResult,
             Runnable onPrinting,
             Runnable onCancel,
@@ -251,6 +252,9 @@ final class PrintPreview {
         this.job = job;
         this.memory = memory;
         this.zoomSetting = memory.zoom == null ? PrintZoom.Setting.FIT_PAGE : memory.zoom;
+        if (paginator == null) { // a prepared job that is ok() has one
+            throw new IllegalArgumentException("no paginator to preview");
+        }
         this.paginator = paginator;
         this.onResult = onResult;
         this.onPrinting = onPrinting;

@@ -35,7 +35,7 @@ public final class EditorConfig {
     }
 
     /** The merged EditorConfig properties for {@code file}, or {@link EditorConfigProperties#EMPTY}. */
-    public static EditorConfigProperties resolveFor(Path file) {
+    public static EditorConfigProperties resolveFor(@Nullable Path file) {
         if (file == null) {
             return EditorConfigProperties.EMPTY;
         }

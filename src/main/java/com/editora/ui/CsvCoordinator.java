@@ -11,6 +11,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.csv.CsvCellEdit;
 import com.editora.csv.CsvParser;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * CSV/TSV grid preview: an IntelliJ-style Editor/Split/Preview view of a {@code .csv}/{@code .tsv} buffer,
@@ -81,7 +82,7 @@ final class CsvCoordinator {
     }
 
     /** Re-target on tab switch: just (re)evaluate the active buffer's preview attachment. */
-    void refreshFor(EditorBuffer active) {
+    void refreshFor(@Nullable EditorBuffer active) {
         if (active != null) {
             ensureCsvPreview(active);
         }
@@ -105,7 +106,7 @@ final class CsvCoordinator {
             buffer.setCsvPreviewNode(panel); // makes hasPreview() true → the toggle attaches (controller)
         } else if (!want && has) {
             buffer.setCsvPreviewNode(null); // resets the buffer to EDITOR
-            buffer.setCsvPreviewRefresh(null);
+            buffer.setCsvPreviewRefresh(() -> {});
             panels.remove(buffer);
             delimiters.remove(buffer);
             builtVersion.remove(buffer);
@@ -277,7 +278,7 @@ final class CsvCoordinator {
      * caller then puts out the whole file. The grid is re-parsed first when the text changed since its
      * last (debounced) build, so an edit made a moment ago is not left out.
      */
-    CsvGridPanel.Shown shownFor(EditorBuffer b) {
+    CsvGridPanel.@Nullable Shown shownFor(EditorBuffer b) {
         CsvGridPanel panel = b == null ? null : panels.get(b);
         if (panel == null || !b.isCsv() || b.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.EDITOR) {
             return null;
@@ -299,6 +300,7 @@ final class CsvCoordinator {
     }
 
     /** Exposed for the FX test harness (asserting a per-buffer grid was injected). */
+    @Nullable
     Node gridNodeFor(EditorBuffer buffer) {
         return panels.get(buffer);
     }

@@ -312,7 +312,7 @@ public final class DapManager {
     private @Nullable ProgramTerminal programTerminal;
 
     /** Takes effect at the next launch; see {@link ProgramTerminal}. */
-    public void setProgramTerminal(ProgramTerminal programTerminal) {
+    public void setProgramTerminal(@Nullable ProgramTerminal programTerminal) {
         this.programTerminal = programTerminal;
     }
 
@@ -334,7 +334,7 @@ public final class DapManager {
     }
 
     /** The project root a JavaScript launch resolves its Node.js, package root and workspace folder from. */
-    public void setJsProjectRoot(Path projectRoot) {
+    public void setJsProjectRoot(@Nullable Path projectRoot) {
         this.jsProjectRoot = projectRoot;
     }
 
@@ -685,7 +685,7 @@ public final class DapManager {
      * configuration's folder, or null for the one the tool runs it in —
      * with the arguments and environment set beforehand. Restart repeats it.
      */
-    public void startJvmScript(Path file, String language, Path cwd) {
+    public void startJvmScript(Path file, String language, @Nullable Path cwd) {
         jvmCwd = cwd;
         jvmJar = null;
         startProgram(file, language);
@@ -704,7 +704,7 @@ public final class DapManager {
      * the arguments, VM arguments and environment set beforehand. The debugger's agent goes on that command line.
      * Restart repeats it with the same jar; the coordinator's own restart compiles an edited file again.
      */
-    public void startJvmProgram(Path file, String language, Path cwd, Path jar, String java) {
+    public void startJvmProgram(Path file, String language, @Nullable Path cwd, Path jar, String java) {
         jvmCwd = cwd;
         jvmJar = jar;
         jvmJava = java == null || java.isBlank() ? "java" : java;
@@ -1170,8 +1170,8 @@ public final class DapManager {
     }
 
     /** Attaches to a running JVM at {@code host:port} (the file provides the jdtls session for the adapter). */
-    public void startAttach(Path file, String host, int port) {
-        if (!ready(file)) {
+    public void startAttach(@Nullable Path file, String host, int port) {
+        if (!ready(file) || file == null) { // ready() reports a missing file
             return;
         }
         restartAction = () -> startAttach(file, host, port);
@@ -1211,7 +1211,7 @@ public final class DapManager {
         });
     }
 
-    private boolean ready(Path file) {
+    private boolean ready(@Nullable Path file) {
         if (managerClosed) {
             return false;
         }
@@ -1696,7 +1696,7 @@ public final class DapManager {
     }
 
     private void startDebugSessionAndConnect(
-            Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
+            @Nullable Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
         if (!isCurrent(epoch)) {
             return;
         }
@@ -1710,7 +1710,8 @@ public final class DapManager {
         });
     }
 
-    private void startDebugSession(Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
+    private void startDebugSession(
+            @Nullable Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
         if (!isCurrent(epoch)) {
             return;
         }
@@ -1785,7 +1786,8 @@ public final class DapManager {
      * Connects to the java-debug adapter jdtls opened on {@code port}: on this machine directly, on a remote
      * file's host through a tunnel that closes with the session.
      */
-    private CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connectJava(DapClient c, Path file, int port) {
+    private CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connectJava(
+            DapClient c, @Nullable Path file, int port) {
         if (com.editora.process.ExecTargets.runsHere(file)) {
             return c.connect(port, "java");
         }
@@ -2525,7 +2527,7 @@ public final class DapManager {
     private volatile @Nullable JsProgram jsProgram;
 
     /** Sets {@link #jsProgram}; {@code null} for an ordinary launch of a file. */
-    public void setJsProgram(JsProgram program) {
+    public void setJsProgram(@Nullable JsProgram program) {
         this.jsProgram = program;
     }
 
@@ -2591,7 +2593,7 @@ public final class DapManager {
      * running unless it was waiting for this debugger.
      */
     public void startJsAttach(
-            String host, int port, String name, Path cwd, List<String> skipFiles, boolean continueOnAttach) {
+            String host, int port, String name, @Nullable Path cwd, List<String> skipFiles, boolean continueOnAttach) {
         if (managerClosed) {
             return;
         }
@@ -2978,7 +2980,7 @@ public final class DapManager {
     }
 
     /** Where a debuggee's runtime is asked its version: {@code file}'s folder, so its host; null is here. */
-    private static @Nullable Path runtimeWhere(Path file) {
+    private static @Nullable Path runtimeWhere(@Nullable Path file) {
         return file == null ? null : file.getParent();
     }
 
@@ -3855,7 +3857,7 @@ public final class DapManager {
      * a program on this machine and not on Windows (see {@link JavaExitCodeWrapper}); and only when the launch
      * names its {@code java} — without one java-debug picks its own, which the wrapper cannot know.
      */
-    private void wrapForExitCode(Path file, Map<String, Object> args, long epoch) {
+    private void wrapForExitCode(@Nullable Path file, Map<String, Object> args, long epoch) {
         Object java = args.get("javaExec");
         if (!(java instanceof String real)
                 || real.isBlank()
@@ -4238,7 +4240,7 @@ public final class DapManager {
      * the running program. A build with compile errors replaces nothing. {@code cb} runs on the FX thread,
      * and not at all when the session ended meanwhile.
      */
-    public void applyCodeChanges(Path file, Consumer<CodeReplaceOutcome> cb) {
+    public void applyCodeChanges(@Nullable Path file, Consumer<CodeReplaceOutcome> cb) {
         DapClient c = client;
         if (c == null || !canReplaceCode() || file == null) {
             cb.accept(new CodeReplaceOutcome(CodeReplaceResult.NO_SESSION, List.of(), ""));

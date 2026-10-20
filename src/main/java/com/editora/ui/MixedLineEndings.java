@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.editora.config.PathKeys;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -50,9 +51,15 @@ final class MixedLineEndings {
      * @param binary the text holds NUL characters
      * @param kept the copy of {@link #bytes} made by a normalising save, once there is one
      */
-    record Source(Path file, byte[] bytes, String text, String lineEnding, boolean binary, AtomicReference<Path> kept) {
+    record Source(
+            @Nullable Path file,
+            byte[] bytes,
+            String text,
+            String lineEnding,
+            boolean binary,
+            AtomicReference<Path> kept) {
 
-        Source at(Path newFile) {
+        Source at(@Nullable Path newFile) {
             return new Source(newFile, bytes, text, lineEnding, binary, kept);
         }
     }
@@ -75,7 +82,7 @@ final class MixedLineEndings {
     private MixedLineEndings() {}
 
     /** Records (or clears) what {@code buffer} was just loaded from. Call it after the document is installed. */
-    static void loaded(EditorBuffer buffer, Path file, byte[] bytes, String lineEnding, boolean mixed) {
+    static void loaded(EditorBuffer buffer, Path file, byte @Nullable [] bytes, String lineEnding, boolean mixed) {
         if (!mixed || bytes == null) {
             SOURCES.remove(buffer);
             return;
@@ -85,7 +92,7 @@ final class MixedLineEndings {
                 buffer, new Source(file, bytes, text, lineEnding, text.indexOf('\0') >= 0, new AtomicReference<>()));
     }
 
-    static Source of(EditorBuffer buffer) {
+    static @Nullable Source of(EditorBuffer buffer) {
         return SOURCES.get(buffer);
     }
 
@@ -95,7 +102,7 @@ final class MixedLineEndings {
     }
 
     /** A byte-preserving save put the same bytes at {@code file}: that is where they are now. */
-    static void movedTo(EditorBuffer buffer, Path file) {
+    static void movedTo(EditorBuffer buffer, @Nullable Path file) {
         SOURCES.computeIfPresent(buffer, (ignored, source) -> source.at(file));
     }
 
@@ -114,7 +121,12 @@ final class MixedLineEndings {
      * @param lineEndingForced an {@code end_of_line} rule fixes that ending (so it says nothing about the user)
      * @param target the file being written
      */
-    static Decision decide(Source source, String content, String lineEnding, boolean lineEndingForced, Path target) {
+    static Decision decide(
+            @Nullable Source source,
+            String content,
+            String lineEnding,
+            boolean lineEndingForced,
+            @Nullable Path target) {
         if (source == null) {
             return Decision.NORMAL;
         }
@@ -123,7 +135,9 @@ final class MixedLineEndings {
         if (!converted && source.text().equals(content)) {
             return Decision.KEEP_BYTES;
         }
-        boolean originalStaysOnDisk = target != null && !PathKeys.sameNormalized(target, source.file());
+        Path loadedFrom = source.file();
+        boolean originalStaysOnDisk =
+                target != null && (loadedFrom == null || !PathKeys.sameNormalized(target, loadedFrom));
         return source.binary() && !converted && !originalStaysOnDisk
                 ? Decision.NORMALISE_WITH_CONSENT
                 : Decision.NORMALISE;
@@ -135,13 +149,17 @@ final class MixedLineEndings {
      *
      * @return the copy; the same one when this source was already kept
      */
-    static Path keepOriginal(Path dir, Source source) throws IOException {
+    static Path keepOriginal(Path dir, @Nullable Source source) throws IOException {
+        if (source == null) { // a normalising save always has one: decide() returns NORMAL without it
+            throw new IllegalStateException("no mixed source to keep");
+        }
         Path already = source.kept().get();
         if (already != null && Files.isRegularFile(already)) {
             return already;
         }
         Files.createDirectories(dir);
-        String name = String.valueOf(source.file().getFileName());
+        Path file = source.file();
+        String name = String.valueOf(file == null ? null : file.getFileName());
         Path copy = Files.createTempFile(dir, name.substring(0, Math.min(name.length(), 60)) + ".", ".original");
         Files.write(copy, source.bytes());
         source.kept().set(copy);

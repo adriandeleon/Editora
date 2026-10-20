@@ -93,7 +93,7 @@ public final class JvmScriptRun {
             String language,
             @Nullable String tool,
             String executable,
-            Path file,
+            @Nullable Path file,
             String fileArg,
             List<String> args,
             String vmArgs,
@@ -162,7 +162,7 @@ public final class JvmScriptRun {
     }
 
     /** The first 64 KB of {@code file}, where its shebang, namespace and {@code -main} are; "" when unreadable. */
-    private static String head(Path file) {
+    private static String head(@Nullable Path file) {
         try (var in = Files.newInputStream(file)) {
             return new String(in.readNBytes(64 * 1024), java.nio.charset.StandardCharsets.UTF_8);
         } catch (java.io.IOException | RuntimeException e) {

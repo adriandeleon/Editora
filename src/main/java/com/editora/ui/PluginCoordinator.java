@@ -40,6 +40,7 @@ import com.editora.plugin.ToolWindowSide;
 import com.editora.process.ProcessRunner;
 import com.editora.snippet.SnippetManager;
 import com.editora.template.TemplateRegistry;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -85,12 +86,28 @@ final class PluginCoordinator {
     private final StatusBar statusBar;
     private final SettingsWindow settingsWindow;
     private final ConfigManager config;
-    private final PluginManager pluginManager;
+    private final @Nullable PluginManager pluginManager;
     private final Ops ops;
 
-    private final PluginRegistry pluginRegistry;
-    private final PluginInstaller pluginInstaller;
+    private final @Nullable PluginRegistry pluginRegistry;
+    private final @Nullable PluginInstaller pluginInstaller;
     private final List<Plugin> startedPlugins = new ArrayList<>();
+
+    /** The plugin manager, on paths only reached while plugins exist in this window (install, a plugin's API). */
+    private PluginManager manager() {
+        if (pluginManager == null) {
+            throw new IllegalStateException("plugins are off in this window");
+        }
+        return pluginManager;
+    }
+
+    /** The installer: it and the registry exist exactly when {@link #pluginManager} does. */
+    private PluginInstaller installer() {
+        if (pluginInstaller == null) {
+            throw new IllegalStateException("plugins are off in this window");
+        }
+        return pluginInstaller;
+    }
 
     private final List<EditorMenuContribution> pluginMenuItems = new ArrayList<>();
     private final List<ToolWindow> pluginToolWindows = new ArrayList<>();
@@ -113,7 +130,7 @@ final class PluginCoordinator {
             StatusBar statusBar,
             SettingsWindow settingsWindow,
             ConfigManager config,
-            PluginManager pluginManager,
+            @Nullable PluginManager pluginManager,
             Ops ops) {
         this(
                 host,
@@ -145,10 +162,10 @@ final class PluginCoordinator {
             StatusBar statusBar,
             SettingsWindow settingsWindow,
             ConfigManager config,
-            PluginManager pluginManager,
+            @Nullable PluginManager pluginManager,
             Ops ops,
-            PluginRegistry pluginRegistry,
-            PluginInstaller pluginInstaller) {
+            @Nullable PluginRegistry pluginRegistry,
+            @Nullable PluginInstaller pluginInstaller) {
         this.host = host;
         this.registry = registry;
         this.keymap = keymap;
@@ -492,10 +509,10 @@ final class PluginCoordinator {
     }
 
     /** Shows {@code problem} as an error dialog headed {@code summaryKey} (with the problem's sentence). */
-    private void showProblem(String summaryKey, PluginProblem problem) {
+    private void showProblem(String summaryKey, @Nullable PluginProblem problem) {
         String sentence = PluginProblems.text(problem);
         reportError(tr(summaryKey, sentence));
-        String detail = problem.detail().isBlank() ? sentence : sentence + "\n\n" + problem.detail();
+        String detail = problem == null || problem.detail().isBlank() ? sentence : sentence + "\n\n" + problem.detail();
         ops.showError(tr(summaryKey, sentence), detail);
     }
 
@@ -529,10 +546,11 @@ final class PluginCoordinator {
         report(tr("status.plugins.fetching"));
         boolean requireSig = config.getSettings().isPluginRequireSignature();
         pluginRegistry.fetch(url, r -> {
-            if (!r.ok()) {
+            String error = r.error();
+            if (error != null) { // !r.ok()
                 PluginProblem p = r.problem() != null
                         ? r.problem()
-                        : new PluginProblem(PluginProblem.Kind.FAILED, List.of(), r.error());
+                        : new PluginProblem(PluginProblem.Kind.FAILED, List.of(), error);
                 reportError(tr("status.plugins.fetchFailed", PluginProblems.text(p)));
                 return;
             }
@@ -589,7 +607,7 @@ final class PluginCoordinator {
     }
 
     /** The installed plugin's manifest version, or null when not installed. */
-    private String installedVersion(String id) {
+    private @Nullable String installedVersion(String id) {
         if (pluginManager == null || id == null) {
             return null;
         }
@@ -667,7 +685,7 @@ final class PluginCoordinator {
         }
         installing = true;
         report(tr("status.plugins.installing", name));
-        pluginInstaller.stageFromUrl(e, this::onStaged);
+        installer().stageFromUrl(e, this::onStaged);
     }
 
     /** Install-from-disk: pick a {@code .zip}, then stage it (no checksum — the user chose the file). */
@@ -702,13 +720,13 @@ final class PluginCoordinator {
      */
     private void onStaged(PluginInstaller.Staging s) {
         installing = false;
-        if (!s.ok()) {
+        PluginInstaller.Staged st = s.staged();
+        if (st == null) { // !s.ok()
             showProblem("status.plugins.installFailed", s.problem());
             restoreSettings();
             return;
         }
-        PluginInstaller.Staged st = s.staged();
-        boolean running = pluginManager.running(st.id()) != null;
+        boolean running = manager().running(st.id()) != null;
         if (!confirm.test(consentQuestion(st))) {
             PluginInstaller.discard(st);
             report(
@@ -718,7 +736,7 @@ final class PluginCoordinator {
             restoreSettings();
             return;
         }
-        PluginInstaller.Commit c = pluginInstaller.commit(st, running);
+        PluginInstaller.Commit c = installer().commit(st, running);
         if (!c.ok()) {
             showProblem("status.plugins.installFailed", c.problem());
             restoreSettings();
@@ -726,8 +744,10 @@ final class PluginCoordinator {
         }
         config.getPluginStore().enable(st.id(), st.digest());
         config.savePlugins();
-        pluginRegistry.invalidate(); // status labels (Installed/Update) changed
-        pluginManager.discover(); // the Settings list; what runs waits for the restart
+        if (pluginRegistry != null) { // set whenever the installer is
+            pluginRegistry.invalidate(); // status labels (Installed/Update) changed
+        }
+        manager().discover(); // the Settings list; what runs waits for the restart
         report(
                 c.pending()
                         ? tr("status.plugins.updatePending", st.name(), st.version())
@@ -765,7 +785,7 @@ final class PluginCoordinator {
                                 ? tr("dialog.plugins.downgradeHeader", name, prevVersion, version)
                                 : tr("dialog.plugins.reinstallHeader", name, version);
             }
-            if (pluginManager.running(st.id()) != null) {
+            if (manager().running(st.id()) != null) {
                 intro = intro + "\n\n" + tr("dialog.plugins.afterRestart");
             }
         }
@@ -825,7 +845,7 @@ final class PluginCoordinator {
             }
 
             @Override
-            public String boundTitle(String chord) {
+            public @Nullable String boundTitle(String chord) {
                 String now = keymap.commandFor(chord);
                 return now == null
                         ? null
@@ -847,7 +867,7 @@ final class PluginCoordinator {
     }
 
     /** The descriptor with this {@code id}, or null. Pure. */
-    static PluginDescriptor descriptorFor(List<PluginDescriptor> descriptors, String id) {
+    static @Nullable PluginDescriptor descriptorFor(List<PluginDescriptor> descriptors, String id) {
         for (PluginDescriptor c : descriptors) {
             if (c.id().equals(id)) {
                 return c;
@@ -944,7 +964,7 @@ final class PluginCoordinator {
                         tr("status.plugins.uninstallFailed", name), d.dir().toString());
                 return;
             }
-        } else if (!removeInstalled(d, name)) {
+        } else if (!removeInstalled(pluginManager, d, name)) {
             return;
         }
         config.getPluginStore().forget(d.id());
@@ -958,7 +978,7 @@ final class PluginCoordinator {
      * Deletes the folder of plugin {@code plugin} — the directory it was discovered in, and only when that is a
      * direct child of the plugins folder (see {@link PluginInstaller#removableDir}).
      */
-    private boolean removeInstalled(PluginDescriptor plugin, String name) {
+    private boolean removeInstalled(PluginManager pluginManager, PluginDescriptor plugin, String name) {
         Path dir = PluginInstaller.removableDir(pluginManager.pluginsDir(), plugin);
         if (dir == null) {
             reportError(tr("status.plugins.uninstallFailed", name));
@@ -1040,7 +1060,7 @@ final class PluginCoordinator {
             fx(() -> {
                 String target = target(commandId);
                 bindChord(contributions, chord, target);
-                pluginManager.recordCodeBinding(desc.id(), chord, target); // kept by keymap rebuilds
+                manager().recordCodeBinding(desc.id(), chord, target); // kept by keymap rebuilds
                 reapplyUserBindings();
             });
         }
@@ -1052,7 +1072,7 @@ final class PluginCoordinator {
                 ToolWindowSide side,
                 Region content,
                 String commandId,
-                Supplier<Node> icon,
+                @Nullable Supplier<Node> icon,
                 boolean needsBuffer) {
             if (id == null || id.isBlank()) {
                 return;
@@ -1164,19 +1184,19 @@ final class PluginCoordinator {
      * was opened on). Once that buffer is closed it reads as empty and ignores writes.
      */
     private final class ActiveEditorImpl implements ActiveEditor {
-        private final EditorBuffer bound;
+        private final @Nullable EditorBuffer bound;
 
-        ActiveEditorImpl(EditorBuffer bound) {
+        ActiveEditorImpl(@Nullable EditorBuffer bound) {
             this.bound = bound;
         }
 
         /** The buffer, while it is open; null after it was closed (or when there was none). */
-        private EditorBuffer buf() {
+        private @Nullable EditorBuffer buf() {
             return bound == null || bound.isDisposed() ? null : bound;
         }
 
         @Override
-        public Path filePath() {
+        public @Nullable Path filePath() {
             requireFx("ActiveEditor.filePath()");
             EditorBuffer b = buf();
             return b == null ? null : b.getPath();

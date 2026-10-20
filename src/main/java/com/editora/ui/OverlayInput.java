@@ -15,6 +15,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -103,7 +105,7 @@ public final class OverlayInput {
             Node body,
             Node focus,
             String okLabel,
-            ObservableValue<? extends Boolean> okEnabled,
+            @Nullable ObservableValue<? extends Boolean> okEnabled,
             java.util.function.Consumer<Submission> onSubmit,
             boolean ctrlEnterToSubmit) {
         show(host, title, body, focus, okLabel, okEnabled, null, onSubmit, null, ctrlEnterToSubmit, false);
@@ -129,11 +131,11 @@ public final class OverlayInput {
             OverlayHost host,
             String title,
             Node body,
-            Node focus,
+            @Nullable Node focus,
             String okLabel,
-            ObservableValue<? extends Boolean> okEnabled,
+            @Nullable ObservableValue<? extends Boolean> okEnabled,
             Runnable onAccept,
-            Extra extra,
+            @Nullable Extra extra,
             boolean ctrlEnterToSubmit) {
         show(host, title, body, focus, okLabel, okEnabled, onAccept, extra, ctrlEnterToSubmit, false);
     }
@@ -144,11 +146,11 @@ public final class OverlayInput {
             OverlayHost host,
             String title,
             Node body,
-            Node focus,
+            @Nullable Node focus,
             String okLabel,
-            ObservableValue<? extends Boolean> okEnabled,
+            @Nullable ObservableValue<? extends Boolean> okEnabled,
             Runnable onAccept,
-            Extra extra,
+            @Nullable Extra extra,
             boolean ctrlEnterToSubmit,
             boolean centered) {
         show(host, title, body, focus, okLabel, okEnabled, onAccept, null, extra, ctrlEnterToSubmit, centered);
@@ -159,12 +161,12 @@ public final class OverlayInput {
             OverlayHost host,
             String title,
             Node body,
-            Node focus,
+            @Nullable Node focus,
             String okLabel,
-            ObservableValue<? extends Boolean> okEnabled,
-            Runnable onAccept,
-            java.util.function.Consumer<Submission> onSubmit,
-            Extra extra,
+            @Nullable ObservableValue<? extends Boolean> okEnabled,
+            @Nullable Runnable onAccept,
+            java.util.function.@Nullable Consumer<Submission> onSubmit,
+            @Nullable Extra extra,
             boolean ctrlEnterToSubmit,
             boolean centered) {
         if (host == null) {
@@ -202,7 +204,9 @@ public final class OverlayInput {
             }
             if (onSubmit == null) {
                 host.hide();
-                onAccept.run();
+                if (onAccept != null) { // every caller passes exactly one of onAccept / onSubmit
+                    onAccept.run();
+                }
                 return;
             }
             busy[0] = true;

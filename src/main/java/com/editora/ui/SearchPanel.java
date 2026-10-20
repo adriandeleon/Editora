@@ -28,6 +28,7 @@ import com.editora.search.FileResult;
 import com.editora.search.LineMatch;
 import com.editora.search.SearchQuery;
 import com.editora.search.SearchService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -61,7 +62,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
     }
 
     /** A tree row: a file header ({@code match == null}) or a single match under it. */
-    private record Row(Path file, LineMatch match) {}
+    private record Row(Path file, @Nullable LineMatch match) {}
 
     private final Actions actions;
     private final ComboBox<String> queryCombo = new ComboBox<>();
@@ -228,7 +229,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
 
     /** Sets the displayed search-scope folder. {@code display} is a friendly label (e.g. {@code ~/proj});
      *  {@code fullPath} (nullable) is the hover tooltip with the absolute path. */
-    public void setScope(String display, String fullPath) {
+    public void setScope(String display, @Nullable String fullPath) {
         scopeLabel.setText(display == null ? "" : display);
         scopeLabel.setTooltip(fullPath == null || fullPath.isBlank() ? null : new Tooltip(fullPath));
     }

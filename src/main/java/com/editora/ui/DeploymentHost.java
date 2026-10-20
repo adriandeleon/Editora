@@ -8,6 +8,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Deployment;
 import com.editora.config.RunConfiguration;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -19,7 +20,7 @@ import static com.editora.i18n.Messages.tr;
 final class DeploymentHost implements DeploymentCoordinator.Host {
 
     private final MainController mc;
-    private DeploymentsWindow editor;
+    private @Nullable DeploymentsWindow editor;
 
     DeploymentHost(MainController mc) {
         this.mc = mc;
@@ -32,7 +33,7 @@ final class DeploymentHost implements DeploymentCoordinator.Host {
 
     /** The window's project root when it is a folder of this machine: a remote project needs no deployment. */
     @Override
-    public Path projectRoot() {
+    public @Nullable Path projectRoot() {
         Path root = mc.windowProjectRoot();
         return root != null && root.getFileSystem() == java.nio.file.FileSystems.getDefault() ? root : null;
     }
@@ -58,12 +59,12 @@ final class DeploymentHost implements DeploymentCoordinator.Host {
     }
 
     @Override
-    public EditorBuffer activeBuffer() {
+    public @Nullable EditorBuffer activeBuffer() {
         return mc.activeBuffer();
     }
 
     @Override
-    public RunConfiguration selectedRunConfiguration() {
+    public @Nullable RunConfiguration selectedRunConfiguration() {
         String name = mc.config.getWorkspaceState().getSelectedRunConfig();
         for (RunConfiguration c : mc.config.getWorkspaceState().getRunConfigurations()) {
             if (c.name().equals(name)) {
@@ -74,7 +75,7 @@ final class DeploymentHost implements DeploymentCoordinator.Host {
     }
 
     @Override
-    public void editDeployments(String name) {
+    public void editDeployments(@Nullable String name) {
         if (editor == null) {
             editor = new DeploymentsWindow(mc.config, mc.config::getConnections, mc.deployments::deployNamed, () -> {
                 if (mc.settingsWindow != null) {

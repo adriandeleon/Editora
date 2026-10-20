@@ -170,7 +170,7 @@ public final class ClojureRun {
      * The project is the nearest folder, from the file's own up, holding {@code deps.edn}, {@code project.clj}
      * or {@code bb.edn}. Pure.
      */
-    public static Plan plan(Path file, String text, Predicate<Path> isFile) {
+    public static Plan plan(@Nullable Path file, String text, Predicate<Path> isFile) {
         Path folder = file == null ? null : file.toAbsolutePath().getParent();
         Path project = null;
         for (Path dir = folder; dir != null; dir = dir.getParent()) {

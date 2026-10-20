@@ -29,7 +29,12 @@ public record TodoPartColors(
     }
 
     /** Builds an instance, substituting the built-in default for any {@code null}/blank hex. */
-    public static TodoPartColors of(String tag, String critical, String high, String medium, String low) {
+    public static TodoPartColors of(
+            String tag,
+            @Nullable String critical,
+            @Nullable String high,
+            @Nullable String medium,
+            @Nullable String low) {
         TodoPartColors d = defaults();
         return new TodoPartColors(
                 orDefault(tag, d.tag()),
@@ -39,7 +44,7 @@ public record TodoPartColors(
                 orDefault(low, d.low()));
     }
 
-    private static @Nullable String orDefault(String v, @Nullable String fallback) {
+    private static @Nullable String orDefault(@Nullable String v, @Nullable String fallback) {
         return v == null || v.isBlank() ? fallback : v;
     }
 

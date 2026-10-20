@@ -56,7 +56,7 @@ public final class WorkspaceEditJournal {
      * A journal for one transaction, kept in {@code directory}. Nothing is written until the first move is
      * recorded. With a null directory the journal records nothing.
      */
-    public static WorkspaceEditJournal begin(Path directory) {
+    public static WorkspaceEditJournal begin(@Nullable Path directory) {
         if (directory == null) {
             return new WorkspaceEditJournal(null);
         }
@@ -71,7 +71,7 @@ public final class WorkspaceEditJournal {
     }
 
     /** {@code file} is about to be created; an existing file there is first moved to {@code backup} (or null). */
-    public void creating(Path file, Path backup) {
+    public void creating(Path file, @Nullable Path backup) {
         append("CREATE", file, backup);
     }
 
@@ -115,7 +115,7 @@ public final class WorkspaceEditJournal {
         }
     }
 
-    private synchronized void append(String kind, Path... paths) {
+    private synchronized void append(String kind, @Nullable Path... paths) {
         if (file == null || broken) {
             return;
         }

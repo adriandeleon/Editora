@@ -100,7 +100,7 @@ public final class MavenCoordinates {
      * form shows the folder the project will actually land in, never {@code rel-dir/demo} resolved against
      * whatever the launcher's working directory happened to be. Blank or unparseable is {@code null}.
      */
-    public static @Nullable Path resolveLocation(String text, Path base, String userHome) {
+    public static @Nullable Path resolveLocation(String text, @Nullable Path base, String userHome) {
         return com.editora.config.PathKeys.resolveUserInput(text, base, userHome);
     }
 
@@ -153,7 +153,7 @@ public final class MavenCoordinates {
      * directory is <em>derived</em>, never chosen, which is why the wizard shows it read-only and refuses to
      * proceed when it already exists.
      */
-    public static @Nullable Path projectDir(Path parentDir, String artifactId) {
+    public static @Nullable Path projectDir(@Nullable Path parentDir, String artifactId) {
         return parentDir == null || artifactId == null || artifactId.isBlank()
                 ? null
                 : parentDir.resolve(artifactId.strip()).normalize();

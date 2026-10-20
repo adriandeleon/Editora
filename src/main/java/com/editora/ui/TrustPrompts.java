@@ -10,6 +10,8 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.stage.Window;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -62,8 +64,10 @@ final class TrustPrompts {
      * The prompt for the first build in {@code root}: what it will run (the wrapper if any, the pom's plugins,
      * {@code .mvn/} files, a project.json override — {@link com.editora.build.BuildTrust}), one line each.
      */
-    static Prompt buildProject(Window owner, Path root, com.editora.build.BuildTrust.Summary summary) {
-        Path name = root.getFileName();
+    static Prompt buildProject(Window owner, @Nullable Path root, com.editora.build.BuildTrust.Summary summary) {
+        // root is a folder (the wrapper's, or the project's) at every caller; typed nullable by Path.getParent()
+        Path name = root == null ? null : root.getFileName();
+        String shown = String.valueOf(root);
         ButtonType trust = new ButtonType(tr("dialog.trust.accept"), ButtonBar.ButtonData.OK_DONE);
         StringBuilder items = new StringBuilder();
         for (String item : summary.items()) {
@@ -71,11 +75,11 @@ final class TrustPrompts {
         }
         Alert confirm = new Alert(
                 Alert.AlertType.WARNING,
-                tr("dialog.trust.projectBody", items.toString().strip(), root.toString()),
+                tr("dialog.trust.projectBody", items.toString().strip(), shown),
                 ButtonType.CANCEL,
                 trust);
         confirm.setTitle(tr("dialog.trust.title"));
-        confirm.setHeaderText(tr("dialog.trust.projectHeader", name == null ? root.toString() : name.toString()));
+        confirm.setHeaderText(tr("dialog.trust.projectHeader", name == null ? shown : name.toString()));
         return finish(confirm, owner, trust);
     }
 

@@ -11,6 +11,7 @@ import atlantafx.base.theme.NordLight;
 import atlantafx.base.theme.PrimerDark;
 import atlantafx.base.theme.PrimerLight;
 import atlantafx.base.theme.Theme;
+import org.jspecify.annotations.Nullable;
 
 /** Catalog of AtlantaFX themes available in the Settings window. */
 public final class Themes {
@@ -156,7 +157,7 @@ public final class Themes {
                 : DEFAULT;
     }
 
-    public static String stylesheetFor(String name) {
+    public static @Nullable String stylesheetFor(String name) {
         Theme theme = themeFor(name);
         String sheet = theme.getUserAgentStylesheet();
         if (sheet == null) {
@@ -183,7 +184,7 @@ public final class Themes {
      * finds it by itself when the {@code .css} is named, so this is informational — nothing loads it by
      * this name — and a user theme (a {@code file:} URL) has none.
      */
-    static String binaryStylesheetFor(String cssPath) {
+    static @Nullable String binaryStylesheetFor(String cssPath) {
         if (cssPath == null || !cssPath.endsWith(".css") || hasUrlScheme(cssPath)) {
             return null;
         }
@@ -240,7 +241,7 @@ public final class Themes {
         }
 
         @Override
-        public String getUserAgentStylesheetBSS() {
+        public @Nullable String getUserAgentStylesheetBSS() {
             return binaryStylesheetFor(path);
         }
 

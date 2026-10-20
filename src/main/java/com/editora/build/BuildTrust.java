@@ -7,6 +7,7 @@ import java.util.List;
 
 import com.editora.maven.PomModel;
 import com.editora.maven.PomParser;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -36,14 +37,14 @@ public final class BuildTrust {
      * @param projectOverride a {@code project.json} build-command override, or {@code ""}
      * @param items what will run, one line each, localized — never empty
      */
-    public record Summary(Path root, Path wrapper, String projectOverride, List<String> items) {}
+    public record Summary(Path root, @Nullable Path wrapper, String projectOverride, List<String> items) {}
 
     /** Whether {@code tool}'s builds run repository code and so ask for trust first (Maven and Gradle). */
     public static boolean gates(BuildTool tool) {
         return tool == BuildTool.MAVEN || tool == BuildTool.GRADLE;
     }
 
-    public static Summary describe(BuildTool tool, Path root, Path wrapper, String projectOverride) {
+    public static Summary describe(BuildTool tool, Path root, @Nullable Path wrapper, String projectOverride) {
         List<String> items = new ArrayList<>();
         if (wrapper != null) {
             items.add(tr("trust.item.wrapper", wrapper.getFileName().toString()));

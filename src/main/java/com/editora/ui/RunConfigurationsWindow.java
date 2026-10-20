@@ -31,6 +31,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.RunConfiguration;
 import com.editora.run.RunConfigDefaults;
 import com.editora.run.RunConfigFields;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -46,9 +47,9 @@ public final class RunConfigurationsWindow {
     private final ListView<RunConfiguration> list = new ListView<>(items);
     private final Supplier<String> suggestion;
     /** A Python or shell configuration for the active script, or null — what Add proposes first. */
-    private final Supplier<RunConfiguration> scriptSuggestion;
+    private final @Nullable Supplier<RunConfiguration> scriptSuggestion;
     /** The window's project root (or null): where Browse starts, and what a chosen script is relative to. */
-    private final Supplier<java.nio.file.Path> projectRoot;
+    private final @Nullable Supplier<java.nio.file.Path> projectRoot;
 
     private final Runnable onChanged;
     private boolean built;
@@ -67,7 +68,7 @@ public final class RunConfigurationsWindow {
     private java.util.function.Consumer<String> editDeployments = name -> {};
 
     /** Sets what the Run on row's Deployments… button opens. */
-    public void setEditDeployments(java.util.function.Consumer<String> editDeployments) {
+    public void setEditDeployments(java.util.function.@Nullable Consumer<String> editDeployments) {
         this.editDeployments = editDeployments == null ? name -> {} : editDeployments;
     }
 
@@ -109,8 +110,8 @@ public final class RunConfigurationsWindow {
     public RunConfigurationsWindow(
             ConfigManager config,
             Supplier<String> suggestion,
-            Supplier<RunConfiguration> scriptSuggestion,
-            Supplier<java.nio.file.Path> projectRoot,
+            @Nullable Supplier<RunConfiguration> scriptSuggestion,
+            @Nullable Supplier<java.nio.file.Path> projectRoot,
             Runnable onChanged) {
         this.config = config;
         this.suggestion = suggestion;
@@ -502,7 +503,7 @@ public final class RunConfigurationsWindow {
      * The scripts (name, command) of the {@code package.json} an npm configuration runs in: its working directory
      * (relative to the project root), else the project root. Empty for a remote folder or no readable file.
      */
-    static List<String[]> npmScripts(java.nio.file.Path root, String workingDir) {
+    static List<String[]> npmScripts(java.nio.file.@Nullable Path root, String workingDir) {
         if (root == null || root.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
             return List.of();
         }
@@ -519,7 +520,7 @@ public final class RunConfigurationsWindow {
     }
 
     /** The Script / target text for a file picked with Browse: relative to the project when inside it. */
-    static String chosenTarget(String type, java.nio.file.Path chosen, java.nio.file.Path root) {
+    static String chosenTarget(String type, java.nio.file.Path chosen, java.nio.file.@Nullable Path root) {
         RunConfiguration c = RunConfigDefaults.forScript(type, chosen, root);
         return c == null ? chosen.toString() : c.target();
     }

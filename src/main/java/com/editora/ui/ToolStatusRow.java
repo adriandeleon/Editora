@@ -11,6 +11,8 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -24,8 +26,8 @@ final class ToolStatusRow {
     private String tool;
     private final Label pill = new Label();
     private final HBox node = new HBox(8, pill);
-    private Button install;
-    private Hyperlink missingOnly;
+    private @Nullable Button install;
+    private @Nullable Hyperlink missingOnly;
     private final javafx.scene.control.Tooltip tooltip = new javafx.scene.control.Tooltip();
 
     ToolStatusRow(String tool) {
@@ -82,6 +84,7 @@ final class ToolStatusRow {
     }
 
     /** The Install… button, or null when the row has none. */
+    @Nullable
     Button installButton() {
         return install;
     }

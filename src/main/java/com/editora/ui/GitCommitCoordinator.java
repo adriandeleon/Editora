@@ -10,6 +10,7 @@ import java.util.function.Consumer;
 import com.editora.git.CommitMessages;
 import com.editora.git.GitNumstat;
 import com.editora.git.GitService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -35,10 +36,10 @@ final class GitCommitCoordinator {
     private final CoordinatorHost host;
     private final GitCoordinator git;
     private final GitCoordinator.WindowOps ops;
-    private GitPanel panel;
+    private @Nullable GitPanel panel;
 
     /** The repository whose template the panel holds; null forces the next refresh to read it again. */
-    private Path templateRoot;
+    private @Nullable Path templateRoot;
     /** Whether {@link #templateRoot} has a commit template (its comment lines are then stripped at commit). */
     private boolean templateConfigured;
     /** Raised per status applied: a line-count read for an older status is dropped. */
@@ -55,12 +56,13 @@ final class GitCommitCoordinator {
         panel = commitPanel;
         // Line counts are read only for a list that is on screen; when it comes on screen, read them.
         Runnable shown = () -> {
-            if (panel.isOnScreen()) {
+            GitPanel p = panel;
+            if (p != null && p.isOnScreen()) {
                 refreshLineCounts();
             }
         };
-        panel.sceneProperty().addListener((o, was, now) -> shown.run());
-        panel.visibleProperty().addListener((o, was, now) -> shown.run());
+        commitPanel.sceneProperty().addListener((o, was, now) -> shown.run());
+        commitPanel.visibleProperty().addListener((o, was, now) -> shown.run());
     }
 
     private static Path key(Path root) {
@@ -70,7 +72,7 @@ final class GitCommitCoordinator {
     // --- per refresh ---------------------------------------------------------------------------------
 
     /** A refresh was applied: {@code root} is the active repository now (null outside one). */
-    void repositoryApplied(Path root) {
+    void repositoryApplied(@Nullable Path root) {
         countsGeneration++;
         if (panel == null) {
             return;
@@ -83,9 +85,10 @@ final class GitCommitCoordinator {
             templateRoot = root;
             templateConfigured = false;
             git.service().commitTemplate(root, template -> {
-                if (root.equals(templateRoot) && root.equals(git.repoRoot())) {
+                GitPanel p = panel;
+                if (p != null && root.equals(templateRoot) && root.equals(git.repoRoot())) {
                     templateConfigured = template.configured();
-                    panel.setCommitTemplate(template);
+                    p.setCommitTemplate(template);
                 }
             });
         }
@@ -109,8 +112,9 @@ final class GitCommitCoordinator {
         }
         long generation = countsGeneration;
         git.service().lineCounts(root, counts -> {
-            if (generation == countsGeneration && root.equals(git.repoRoot())) {
-                panel.setLineCounts(counts);
+            GitPanel p = panel;
+            if (p != null && generation == countsGeneration && root.equals(git.repoRoot())) {
+                p.setLineCounts(counts);
             }
         });
     }
@@ -287,7 +291,7 @@ final class GitCommitCoordinator {
     // --- undo last commit ----------------------------------------------------------------------------
 
     /** Why the last commit cannot be undone, or null when it can. Pure. */
-    static String undoRefusal(GitService.HeadCommit head) {
+    static @Nullable String undoRefusal(GitService.HeadCommit head) {
         if (head == null) {
             return "status.git.undoCommit.none";
         }
@@ -305,10 +309,10 @@ final class GitCommitCoordinator {
      * operation is in progress.
      */
     void undoLastCommit() {
-        if (git.reportIfNoRepo()) {
+        Path root = git.repoRootOrReport();
+        if (root == null) {
             return;
         }
-        Path root = git.repoRoot();
         if (git.operation().inProgress()) {
             host.setStatus(tr(
                     "status.git.undoCommit.operation",
