@@ -2158,6 +2158,20 @@
     -fx-font-size: 1em;
 }
 
+/* The New Maven Project form's hint doubles as the reason Create is disabled: red when it is one. */
+.settings-hint.overlay-form-error {
+    -fx-text-fill: -state-red;
+}
+/* Update Versions preview: group headings over the checkbox rows, and the tag on a major jump. */
+.maven-version-group {
+    -fx-font-weight: bold;
+    -fx-padding: 6 0 0 0;
+}
+.maven-version-major {
+    -fx-text-fill: -state-amber;
+    -fx-font-weight: bold;
+}
+
 .tool-window-close,
 .tool-window-float,
 .tool-window-maximize {
