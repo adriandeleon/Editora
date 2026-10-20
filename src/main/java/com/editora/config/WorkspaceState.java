@@ -63,8 +63,11 @@ public class WorkspaceState {
      * <p>v21 → v22 added {@code deployments} (where a project is copied to run on another machine) and a run
      * configuration's {@code deployment} ("Run on"). Additive; absent means none, and every configuration runs
      * here, as before.
+     *
+     * <p>v22 → v23 added {@code buildCustomHistory} (the last freeform build-tool task strings, per tool). Additive;
+     * absent means an empty prompt, as before.
      */
-    public static final int SCHEMA_VERSION = 22;
+    public static final int SCHEMA_VERSION = 23;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -173,6 +176,9 @@ public class WorkspaceState {
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
     private String httpEnvironment = "";
+
+    /** The last "Run custom…" strings per build tool id ({@code maven}, {@code gradle}, …), newest first. */
+    private Map<String, List<String>> buildCustomHistory = new LinkedHashMap<>();
     /**
      * The Python interpreter picked for this project (an absolute path, or one relative to the project root,
      * optionally with arguments), or "" to detect it — see {@code run.PythonInterpreters}. Additive in v18.
@@ -589,6 +595,37 @@ public class WorkspaceState {
 
     public void setHttpEnvironment(String httpEnvironment) {
         this.httpEnvironment = httpEnvironment == null ? "" : httpEnvironment;
+    }
+
+    /** How many custom build strings are kept per tool. */
+    public static final int BUILD_CUSTOM_HISTORY_SIZE = 10;
+
+    public Map<String, List<String>> getBuildCustomHistory() {
+        return buildCustomHistory;
+    }
+
+    public void setBuildCustomHistory(Map<String, List<String>> buildCustomHistory) {
+        this.buildCustomHistory = buildCustomHistory == null ? new LinkedHashMap<>() : buildCustomHistory;
+    }
+
+    /** The remembered custom strings of {@code toolId}, newest first (never null). */
+    public List<String> buildCustomHistory(String toolId) {
+        List<String> list = buildCustomHistory.get(toolId);
+        return list == null ? List.of() : List.copyOf(list);
+    }
+
+    /** Moves {@code text} to the front of {@code toolId}'s history (deduplicated, capped). */
+    public void rememberBuildCustom(String toolId, String text) {
+        if (toolId == null || text == null || text.isBlank()) {
+            return;
+        }
+        List<String> list = new ArrayList<>(buildCustomHistory(toolId));
+        list.remove(text);
+        list.add(0, text);
+        while (list.size() > BUILD_CUSTOM_HISTORY_SIZE) {
+            list.remove(list.size() - 1);
+        }
+        buildCustomHistory.put(toolId, list);
     }
 
     public boolean isZenMode() {

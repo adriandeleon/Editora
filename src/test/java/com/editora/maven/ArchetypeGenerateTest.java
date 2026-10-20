@@ -95,4 +95,27 @@ class ArchetypeGenerateTest {
     void specDerivesTheProjectDirectoryMavenWillCreate() {
         assertEquals(Path.of("/tmp/work/demo"), spec(quickstart()).projectDir());
     }
+
+    @Test
+    void archetypePropertiesAreAppendedAfterTheCoordinates() {
+        java.util.Map<String, String> properties = new java.util.LinkedHashMap<>();
+        properties.put("javafx-version", "21");
+        properties.put("add-debug-configuration", " Y ");
+        properties.put("empty", "");
+        properties.put("package", "org.evil"); // the wizard's own: never overridable from a property row
+        properties.put("interactiveMode", "true"); // nor the batch flag
+        List<String> argv = ArchetypeGenerate.argv(List.of("mvn"), spec(quickstart()), properties);
+        int pkg = argv.indexOf("-Dpackage=com.example.demo");
+        assertTrue(pkg > 0, argv.toString());
+        assertEquals(List.of("-Djavafx-version=21", "-Dadd-debug-configuration=Y"), argv.subList(pkg + 1, argv.size()));
+        assertEquals(1, argv.stream().filter(s -> s.startsWith("-Dpackage=")).count());
+        assertEquals("-DinteractiveMode=false", argv.get(3));
+        assertEquals(
+                ArchetypeGenerate.argv(List.of("mvn"), spec(quickstart())),
+                ArchetypeGenerate.argv(List.of("mvn"), spec(quickstart()), null));
+        List<String> detached =
+                ArchetypeGenerate.detachedArgv(List.of("mvn"), spec(quickstart()), properties, Path.of("/tmp/scratch"));
+        assertEquals("-DoutputDirectory=" + Path.of("/tmp/scratch"), detached.get(detached.size() - 1));
+        assertTrue(detached.contains("-Djavafx-version=21"));
+    }
 }

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
@@ -28,6 +29,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
@@ -44,13 +46,16 @@ import com.editora.lsp.JavaRuntimes;
 import com.editora.maven.ArchetypeCatalog;
 import com.editora.maven.ArchetypeCatalogCache;
 import com.editora.maven.ArchetypeCatalogParser;
+import com.editora.maven.ArchetypeDescriptor;
 import com.editora.maven.ArchetypeGenerate;
 import com.editora.maven.CentralVersions;
 import com.editora.maven.MavenArchetype;
 import com.editora.maven.MavenCoordinates;
+import com.editora.maven.MavenPluginGoals;
 import com.editora.maven.MavenProjectExtras;
 import com.editora.maven.MavenProjectSpec;
 import com.editora.maven.PomEdits;
+import com.editora.maven.PomUpgrades;
 import com.editora.plugin.PluginRegistry;
 
 import static com.editora.i18n.Messages.tr;
@@ -78,6 +83,15 @@ final class MavenProjectCoordinator {
 
     private static final String DEFAULT_VERSION = "1.0-SNAPSHOT";
 
+    /** The answer to the archetype consent prompt. */
+    enum Consent {
+        /** Generate this once; ask again next time. */
+        ONCE,
+        /** Generate, and do not ask again for this archetype while Editora runs. */
+        ALWAYS,
+        CANCEL
+    }
+
     /** Window hooks beyond {@link CoordinatorHost} that this feature needs. */
     interface Ops {
         /** Where the wizard starts when no folder was named (active file's dir → project root → home). */
@@ -103,14 +117,36 @@ final class MavenProjectCoordinator {
          */
         void openProject(Path root, String name, com.editora.maven.GeneratedProject.MainClass main);
 
+        /**
+         * Whether {@link #openProject} opens the project in a window of its own. When it does, the generated
+         * {@code pom.xml} is seeded into <em>that</em> window's session rather than opened here: the pom
+         * used to land as a foreign tab in the window the user started from.
+         */
+        default boolean projectsEnabled() {
+            return false;
+        }
+
+        /** The root of this window's project, or null — so a module generated inside it stays inside it. */
+        default Path currentProjectRoot() {
+            return null;
+        }
+
         /** Opens a file in the current window (used to land on the generated {@code pom.xml}). */
         void openPath(Path file);
+
+        /** Reveals the Output window, so a generation shows its progress rather than a blank editor. */
+        default void openConsole() {}
 
         /** The active keymap, for {@link TextInputKeymap} on the form's fields. */
         KeymapManager keymap();
 
         /** Modal consent for an archetype we did not vet. {@code true} to proceed. */
         boolean confirmArchetype(MavenArchetype archetype);
+
+        /** As {@link #confirmArchetype}, with the "do not ask again" answer; the default cannot say ALWAYS. */
+        default Consent consentFor(MavenArchetype archetype) {
+            return confirmArchetype(archetype) ? Consent.ONCE : Consent.CANCEL;
+        }
 
         /** Re-lists the project tree after files land on disk. */
         void refreshProjectTree();
@@ -135,7 +171,7 @@ final class MavenProjectCoordinator {
     private final Ops ops;
     private final BuildOutputPanel output;
     private final BuildService service = new BuildService();
-    private Runner runner = service::run;
+    private Runner runner = (dir, argv, listener) -> service.run(dir, argv, mavenEnvironment(), listener);
 
     /**
      * The full catalog for this window, once loaded: the parsed rows (a few thousand), not the 18 MB
@@ -145,6 +181,13 @@ final class MavenProjectCoordinator {
     private List<MavenArchetype> fetched;
 
     private ExecutorService fetchExec;
+
+    /**
+     * Archetypes the user chose "Trust and Generate" for, for as long as Editora runs — shared by every
+     * window, since the trust is in the archetype, not the window. Not persisted: the trust store keys
+     * folders, and a durable "trusted archetypes" list is a store field of its own (see the pass notes).
+     */
+    private static final java.util.Set<String> SESSION_TRUSTED = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     MavenProjectCoordinator(CoordinatorHost host, Ops ops, BuildOutputPanel output) {
         this.host = host;
@@ -162,6 +205,18 @@ final class MavenProjectCoordinator {
     }
 
     /**
+     * The environment the wizard's Maven runs in: the Maven JDK from Settings, as {@code BuildCoordinator}
+     * gives a project build. The wizard used to run Maven on whatever {@code java} was on PATH, so a user who
+     * set the Maven JDK precisely because their default was unsuitable got the unsuitable one here.
+     */
+    Map<String, String> mavenEnvironment() {
+        return com.editora.run.JdkToolchain.environment(
+                host.settings().getMavenJdkHome(), com.editora.process.ProcessRunner.augmentedPath());
+    }
+
+    // --- Update Versions ---------------------------------------------------------------------------
+
+    /**
      * Offers to bring the nearest {@code pom.xml}'s dependencies and plugins up to their latest stable
      * versions, <b>showing what would change before anything is written</b>.
      *
@@ -174,6 +229,27 @@ final class MavenProjectCoordinator {
         updateVersions(nearestPom(ops.defaultParentDir()));
     }
 
+    /** The check in flight, so a second invocation cancels it rather than queueing behind it. */
+    private VersionCheck runningCheck;
+
+    private static final class VersionCheck {
+        final AtomicBoolean cancelled = new AtomicBoolean();
+        private final AutoCloseable task;
+        private boolean closed;
+
+        VersionCheck(AutoCloseable task) {
+            this.task = task;
+        }
+
+        /** Closes the background-task handle once, whether the check finished or was cancelled first. */
+        void close() {
+            if (!closed) {
+                closed = true;
+                closeQuietly(task);
+            }
+        }
+    }
+
     /**
      * As {@link #updateVersions()}, for {@code pomFile} — the pom a context menu was opened on. The menu used
      * to call the no-argument form, which checks the <em>active tab's</em> pom: a right-click on
@@ -184,26 +260,119 @@ final class MavenProjectCoordinator {
             host.setError(tr("status.mavenProject.disabled"));
             return;
         }
+        if (runningCheck != null) {
+            cancelCheck();
+            return;
+        }
         if (pomFile == null) {
             host.setError(tr("status.mavenVersions.noPom"));
             return;
         }
         String pom = pomText(pomFile, ops.openBuffer(pomFile));
-        Map<String, String> current = new LinkedHashMap<>();
-        if (pom != null) {
-            current.putAll(PomEdits.dependencyVersions(pom));
-            current.putAll(PomEdits.pluginVersions(pom));
+        PomUpgrades.Plan plan = PomUpgrades.plan(pom == null ? "" : pom);
+        if (!plan.hasLookups()) {
+            nothingToCheck(pomFile, pom, plan);
+            return;
         }
-        if (current.isEmpty()) {
+        host.setStatus(tr("status.mavenVersions.checking", plan.coordinates().size()));
+        VersionCheck check = new VersionCheck(host.startBackgroundTask(
+                tr("status.mavenVersions.checking", plan.coordinates().size())));
+        runningCheck = check;
+        AtomicBoolean unreachable = new AtomicBoolean();
+        fetchExecutor().execute(() -> {
+            Map<String, String> latest = CentralVersions.latest(
+                    plan.coordinates(),
+                    path -> fetchMetadataOrThrow(path, unreachable),
+                    lookupPool(),
+                    check.cancelled::get);
+            Platform.runLater(() -> {
+                check.close();
+                if (runningCheck == check) {
+                    runningCheck = null;
+                }
+                if (check.cancelled.get()) {
+                    return; // cancelCheck already said so
+                }
+                showUpgrades(pomFile, pom, plan, PomUpgrades.rows(plan, latest), unreachable.get());
+            });
+        });
+    }
+
+    /** Stops the check in flight: the lookups still queued are skipped and nothing is shown. */
+    private void cancelCheck() {
+        VersionCheck check = runningCheck;
+        if (check == null) {
+            return;
+        }
+        runningCheck = null;
+        check.cancelled.set(true);
+        check.close();
+        host.setStatus(tr("status.mavenVersions.cancelled"));
+    }
+
+    /**
+     * Nothing in this pom can be looked up. Says why — "3 inherited" is a module of a parent, not a pom with
+     * nothing in it — and, when the parent pom is on disk, offers to check that one instead: it is where
+     * the versions a module inherits are pinned, and the thing a Spring Boot user actually bumps.
+     */
+    private void nothingToCheck(Path pomFile, String pom, PomUpgrades.Plan plan) {
+        if (plan.skipped() == 0) {
             host.setStatus(tr("status.mavenVersions.nothingPinned"));
             return;
         }
-        host.setStatus(tr("status.mavenVersions.checking", current.size()));
-        fetchExecutor().execute(() -> {
-            Map<String, String> upgrades = CentralVersions.upgradesOnly(
-                    current, CentralVersions.latest(current.keySet(), this::fetchMetadata));
-            Platform.runLater(() -> showUpgrades(pomFile, current, upgrades));
-        });
+        String why =
+                tr("status.mavenVersions.nothingPinnedSkipped", plan.skippedPropertyDriven(), plan.skippedInherited());
+        Path parentPom = parentPomOnDisk(pomFile, pom);
+        if (parentPom == null) {
+            host.setStatus(why);
+            return;
+        }
+        host.setStatus(why);
+        Label body = new Label(why + "\n" + tr("dialog.mavenVersions.parentIs", parentPom));
+        body.setWrapText(true);
+        body.setMaxWidth(560);
+        OverlayInput.show(
+                host.overlayHost(),
+                tr("dialog.mavenVersions.title"),
+                body,
+                null,
+                tr("dialog.mavenVersions.checkParent"),
+                new SimpleBooleanProperty(true),
+                () -> updateVersions(parentPom),
+                null,
+                false);
+    }
+
+    /**
+     * The parent pom a module's {@code <parent>} points at, when it exists on disk: {@code <relativePath>}
+     * (a folder means its {@code pom.xml}), else Maven's default {@code ../pom.xml}. Null for a parent that
+     * only lives in a repository (a Spring Boot starter parent, say).
+     */
+    static Path parentPomOnDisk(Path pomFile, String pom) {
+        if (pomFile == null || pom == null || PomEdits.parent(pom) == null) {
+            return null;
+        }
+        String relative = PomEdits.parentRelativePath(pom);
+        if (relative != null && relative.isEmpty()) {
+            return null; // an explicitly empty relativePath says "look it up in the repository only"
+        }
+        Path base = pomFile.toAbsolutePath().normalize().getParent();
+        if (base == null) {
+            return null;
+        }
+        try {
+            Path candidate =
+                    base.resolve(relative == null ? "../pom.xml" : relative).normalize();
+            if (Files.isDirectory(candidate)) {
+                candidate = candidate.resolve("pom.xml");
+            }
+            return Files.isRegularFile(candidate)
+                            && !candidate.equals(pomFile.toAbsolutePath().normalize())
+                    ? candidate
+                    : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** The {@code pom.xml} at or above {@code from}, or null. */
@@ -217,33 +386,127 @@ final class MavenProjectCoordinator {
         return null;
     }
 
-    /** The preview: one row per artifact that has something newer, and nothing written until accepted. */
-    private void showUpgrades(Path pomFile, Map<String, String> current, Map<String, String> upgrades) {
-        if (upgrades.isEmpty()) {
-            host.setStatus(tr("status.mavenVersions.upToDate"));
+    /**
+     * The preview: one checked row per artifact that has something newer, grouped by what it is (a BOM
+     * import re-versions everything it manages; a plugin is not a dependency), a <b>major</b> tag where the
+     * leading number changes, and a line for what was not checked. Nothing is written until accepted, and
+     * only the rows left checked are.
+     */
+    private void showUpgrades(
+            Path pomFile, String pom, PomUpgrades.Plan plan, List<PomUpgrades.Row> rows, boolean unreachable) {
+        if (rows.isEmpty()) {
+            if (unreachable) {
+                host.setError(tr("status.mavenVersions.unreachable"));
+            } else if (plan.skipped() > 0) {
+                // A module whose only lookup was its parent coordinate (a reactor parent is not on Central):
+                // what it inherits is the real question, so offer the parent pom as for a pom with no lookups.
+                nothingToCheck(pomFile, pom, plan);
+            } else {
+                host.setStatus(tr("status.mavenVersions.upToDate"));
+            }
             return;
         }
-        VBox rows = new VBox(4);
-        upgrades.forEach((ga, next) -> {
-            Label row = new Label(ga + "    " + current.get(ga) + "  →  " + next);
-            row.getStyleClass().add("maven-version-row");
-            rows.getChildren().add(row);
-        });
-        ScrollPane scroll = new ScrollPane(rows);
+        host.setStatus(tr("status.mavenVersions.found", rows.size()));
+        VBox list = new VBox(4);
+        List<CheckBox> boxes = new ArrayList<>();
+        List<PomUpgrades.Row> byBox = new ArrayList<>();
+        BooleanProperty anySelected = new SimpleBooleanProperty(true);
+        Runnable sync = () -> anySelected.set(boxes.stream().anyMatch(CheckBox::isSelected));
+        for (PomUpgrades.Kind kind : PomUpgrades.Kind.values()) {
+            List<PomUpgrades.Row> group =
+                    rows.stream().filter(r -> r.kind() == kind).toList();
+            if (group.isEmpty()) {
+                continue;
+            }
+            Label heading =
+                    new Label(tr("dialog.mavenVersions.group." + kind.name().toLowerCase(java.util.Locale.ROOT)));
+            heading.getStyleClass().add("maven-version-group");
+            list.getChildren().add(heading);
+            for (PomUpgrades.Row row : group) {
+                CheckBox box = new CheckBox(rowText(row));
+                box.setSelected(true);
+                box.getStyleClass().add("maven-version-row");
+                box.selectedProperty().addListener((o, a, b) -> sync.run());
+                boxes.add(box);
+                byBox.add(row);
+                if (row.major()) {
+                    Label major = new Label(tr("dialog.mavenVersions.major"));
+                    major.getStyleClass().addAll("settings-hint", "maven-version-major");
+                    list.getChildren().add(new HBox(8, box, major));
+                } else {
+                    list.getChildren().add(box);
+                }
+            }
+        }
+        ScrollPane scroll = new ScrollPane(list);
         scroll.setFitToWidth(true);
-        scroll.setPrefViewportHeight(220);
-        VBox body = new VBox(8, new Label(tr("dialog.mavenVersions.summary", upgrades.size())), scroll);
-
+        scroll.setPrefViewportHeight(260);
+        VBox body = new VBox(8, new Label(tr("dialog.mavenVersions.summary", rows.size())), scroll);
+        if (unreachable) {
+            Label partial = new Label(tr("status.mavenVersions.unreachable"));
+            partial.getStyleClass().add("settings-hint");
+            body.getChildren().add(partial);
+        }
+        if (plan.skipped() > 0) {
+            Label skipped = new Label(tr(
+                    "dialog.mavenVersions.skipped",
+                    plan.skipped(),
+                    plan.skippedPropertyDriven(),
+                    plan.skippedInherited()));
+            skipped.getStyleClass().addAll("settings-hint", "maven-version-skipped");
+            skipped.setWrapText(true);
+            body.getChildren().add(skipped);
+        }
+        boolean[] accepted = {false};
         OverlayInput.show(
                 host.overlayHost(),
                 tr("dialog.mavenVersions.title"),
                 body,
                 null,
                 tr("dialog.mavenVersions.apply"),
-                new SimpleBooleanProperty(true),
-                () -> applyUpgrades(pomFile, upgrades),
+                anySelected,
+                () -> {
+                    accepted[0] = true;
+                    List<PomUpgrades.Row> chosen = new ArrayList<>();
+                    for (int i = 0; i < boxes.size(); i++) {
+                        if (boxes.get(i).isSelected()) {
+                            chosen.add(byBox.get(i));
+                        }
+                    }
+                    applyRows(pomFile, chosen);
+                },
                 null,
                 false);
+        // Cancel (or Escape) leaves the status saying "n updates available" otherwise — which it was, but
+        // the user just declined them; say that instead. Checked a pulse later: the accept path hides the
+        // card first and runs its action second, in the same pulse.
+        onOverlayHidden(() -> Platform.runLater(() -> {
+            if (!accepted[0]) {
+                host.setStatus(tr("status.mavenVersions.cancelled"));
+            }
+        }));
+    }
+
+    /** {@code key    current  →  next} — the key being the coordinates, or the property name. */
+    private static String rowText(PomUpgrades.Row row) {
+        String key = row.kind() == PomUpgrades.Kind.PROPERTY ? "${" + row.key() + "}" : row.key();
+        return key + "    " + row.current() + "  →  " + row.next();
+    }
+
+    /** Runs {@code action} once, the next time the overlay closes (for whatever reason). */
+    private void onOverlayHidden(Runnable action) {
+        OverlayHost overlay = host.overlayHost();
+        if (overlay == null) {
+            return;
+        }
+        javafx.beans.value.ChangeListener<Boolean>[] listener = new javafx.beans.value.ChangeListener[1];
+        listener[0] = (obs, was, now) -> {
+            if (!now) {
+                overlay.showingProperty().removeListener(listener[0]);
+                action.run();
+            }
+        };
+        overlay.showingProperty().addListener(listener[0]);
     }
 
     /** The pom's text as the user has it: the open buffer's, unsaved edits included, else the file's. */
@@ -261,14 +524,25 @@ final class MavenProjectCoordinator {
      * atomically, and only if it still holds the bytes the upgrade was computed from.
      */
     void applyUpgrades(Path pomFile, Map<String, String> upgrades) {
+        applyEdit(
+                pomFile,
+                pom -> PomEdits.setPluginVersions(PomEdits.setDependencyVersions(pom, upgrades), upgrades),
+                upgrades == null ? 0 : upgrades.size());
+    }
+
+    /** As {@link #applyUpgrades}, for the rows the preview left checked (parent and property rows included). */
+    void applyRows(Path pomFile, List<PomUpgrades.Row> rows) {
+        applyEdit(pomFile, pom -> PomUpgrades.apply(pom, rows), rows == null ? 0 : rows.size());
+    }
+
+    private void applyEdit(Path pomFile, java.util.function.UnaryOperator<String> edit, int count) {
         com.editora.editor.EditorBuffer open = ops.openBuffer(pomFile);
         String pom = pomText(pomFile, open);
         if (pom == null) {
             host.setError(tr("status.mavenVersions.noPom"));
             return;
         }
-        String out = PomEdits.setDependencyVersions(pom, upgrades);
-        out = PomEdits.setPluginVersions(out, upgrades);
+        String out = edit.apply(pom);
         if (out.equals(pom)) {
             host.setStatus(tr("status.mavenVersions.upToDate"));
             return;
@@ -297,7 +571,7 @@ final class MavenProjectCoordinator {
                 }
                 ops.openPath(pomFile);
             }
-            host.setStatus(tr("status.mavenVersions.updated", upgrades.size()));
+            host.setStatus(tr("status.mavenVersions.updated", count));
         } catch (Exception e) {
             host.setError(tr("status.mavenProject.pomEditFailed", String.valueOf(e.getMessage())));
         }
@@ -352,9 +626,19 @@ final class MavenProjectCoordinator {
 
     /** Labels reuse the commands' own titles, so the menu and the palette can never say different things. */
     private static javafx.scene.control.MenuItem item(String titleKey, javafx.scene.Node icon, Runnable action) {
-        javafx.scene.control.MenuItem menuItem = new javafx.scene.control.MenuItem(tr(titleKey), icon);
+        javafx.scene.control.MenuItem menuItem = new javafx.scene.control.MenuItem(submenuLabel(tr(titleKey)), icon);
         menuItem.setOnAction(e -> action.run());
         return menuItem;
+    }
+
+    /**
+     * A command title inside the <b>Maven</b> submenu, without the "Maven: " the palette needs: the submenu
+     * already says Maven, so "Maven ▸ Maven: Show Actions" read twice (review B24). The prefix is whatever
+     * precedes the first ": " — the convention every build-tool command title follows in all six catalogs.
+     */
+    static String submenuLabel(String title) {
+        int colon = title.indexOf(": ");
+        return colon > 0 ? title.substring(colon + 2) : title;
     }
 
     /** Entry point for the project-tree folder menu — generate into {@code folder}. */
@@ -388,8 +672,9 @@ final class MavenProjectCoordinator {
                 tr("dialog.mavenProject.location"),
                 base == null ? "" : base.toString(),
                 text -> {
-                    if (text != null && !text.isBlank()) {
-                        newProject(Path.of(text.strip()));
+                    Path typed = MavenCoordinates.resolveLocation(text, base, userHome());
+                    if (typed != null) {
+                        newProject(typed);
                     }
                 });
     }
@@ -617,6 +902,20 @@ final class MavenProjectCoordinator {
         return fetchExec;
     }
 
+    private ExecutorService lookupExec;
+
+    /** A small pool for the per-artifact metadata lookups, so forty coordinates are not forty sequential waits. */
+    private synchronized ExecutorService lookupPool() {
+        if (lookupExec == null) {
+            lookupExec = Executors.newFixedThreadPool(CentralVersions.PARALLELISM, r -> {
+                Thread t = new Thread(r, "maven-central-lookup");
+                t.setDaemon(true);
+                return t;
+            });
+        }
+        return lookupExec;
+    }
+
     private static void closeQuietly(AutoCloseable c) {
         try {
             c.close();
@@ -628,6 +927,15 @@ final class MavenProjectCoordinator {
     // --- Step 2: the coordinates form -------------------------------------------------------------
 
     private void showForm(MavenArchetype archetype, Path parentDir) {
+        showForm(archetype, parentDir, null, null);
+    }
+
+    /**
+     * The form, prefilled from {@code initial}/{@code initialExtras} when it is re-shown — after the consent
+     * prompt was cancelled, so the five fields the user filled in are not lost to a "Cancelled." status.
+     */
+    private void showForm(
+            MavenArchetype archetype, Path parentDir, MavenProjectSpec initial, MavenProjectExtras initialExtras) {
         KeymapManager keymap = ops.keymap();
         TextField nameField = field(keymap, 24);
         TextField locationField = field(keymap, 30);
@@ -641,6 +949,7 @@ final class MavenProjectCoordinator {
 
         Label target = new Label();
         target.getStyleClass().add("settings-hint");
+        target.setWrapText(true);
 
         // Name and groupId drive the package until the user edits it by hand — the cloneRepo idiom.
         boolean[] packageEdited = {false};
@@ -693,21 +1002,53 @@ final class MavenProjectCoordinator {
         GridPane.setHgrow(groupField, Priority.ALWAYS);
         GridPane.setHgrow(packageField, Priority.ALWAYS);
 
+        // What the archetype itself asks for, when its jar is already in the local repository (it is after
+        // the first generation from it). Shown as rows with the defaults batch mode would apply silently;
+        // one without a default blocks Create until filled, instead of failing in Maven's output.
+        ArchetypeDescriptor descriptor = descriptorOf(archetype);
+        Map<String, TextField> propertyFields = new LinkedHashMap<>();
+        for (ArchetypeDescriptor.RequiredProperty property : descriptor.extraProperties()) {
+            TextField f = field(keymap, 24);
+            f.setText(property.defaultValue() == null ? "" : property.defaultValue());
+            propertyFields.put(property.key(), f);
+        }
+
         BooleanProperty valid = new SimpleBooleanProperty(false);
+        Path base = parentDir != null ? parentDir : ops.defaultParentDir();
         Runnable revalidate = () -> {
-            MavenProjectSpec spec =
-                    specFrom(archetype, nameField, locationField, groupField, versionField, packageField);
+            MavenProjectSpec spec = specFrom(
+                    archetype, nameField, locationField, groupField, versionField, packageField, base, userHome());
             Path dir = spec.projectDir();
-            boolean exists = dir != null && Files.exists(dir);
-            // Refusing an existing directory matches writeTemplateFile's no-overwrite stance; Maven would
-            // otherwise generate into a populated folder and half-merge with whatever is already there.
-            valid.set(spec.isValid() && !exists);
-            target.setText(
-                    dir == null
-                            ? ""
-                            : exists
-                                    ? tr("dialog.mavenProject.exists", dir)
-                                    : tr("dialog.mavenProject.willCreate", dir));
+            // An existing folder is refused only when it holds something: Maven would otherwise generate into
+            // a populated folder and half-merge with whatever is already there. An empty one — made ahead of
+            // time, or left by a failed attempt — is exactly where the project should go.
+            boolean occupied = dir != null && Files.exists(dir) && !isEmptyDirectory(dir);
+            String missingProperty = null;
+            for (Map.Entry<String, TextField> e : propertyFields.entrySet()) {
+                if (e.getValue().getText() == null || e.getValue().getText().isBlank()) {
+                    missingProperty = e.getKey();
+                    break;
+                }
+            }
+            String problem = spec.firstProblem();
+            valid.set(problem == null && !occupied && missingProperty == null);
+            target.getStyleClass().remove("overlay-form-error");
+            if (problem != null
+                    && !(problem.equals("artifactId") && spec.artifactId().isEmpty())) {
+                // The reason Create is disabled, not "Will create …" for a name the form refuses.
+                target.setText(tr("status.mavenProject.invalid", fieldLabel(problem)));
+                target.getStyleClass().add("overlay-form-error");
+            } else if (dir == null) {
+                target.setText("");
+            } else if (occupied) {
+                target.setText(tr("dialog.mavenProject.exists", dir));
+                target.getStyleClass().add("overlay-form-error");
+            } else if (missingProperty != null) {
+                target.setText(tr("status.mavenProject.invalid", missingProperty));
+                target.getStyleClass().add("overlay-form-error");
+            } else {
+                target.setText(tr("dialog.mavenProject.willCreate", dir));
+            }
         };
         for (TextField f : List.of(nameField, locationField, groupField, versionField, packageField)) {
             f.textProperty().addListener((o, a, b) -> {
@@ -717,7 +1058,7 @@ final class MavenProjectCoordinator {
                 revalidate.run();
             });
         }
-        revalidate.run();
+        propertyFields.values().forEach(f -> f.textProperty().addListener((o, a, b) -> revalidate.run()));
 
         TextField urlField = field(keymap, 30);
         ComboBox<String> releaseCombo = new ComboBox<>();
@@ -725,9 +1066,10 @@ final class MavenProjectCoordinator {
         releaseCombo.setPrefWidth(120);
         TextInputKeymap.install(releaseCombo.getEditor(), keymap);
         // Empty means "keep whatever the archetype wrote": these values are the archetype's to choose, and
-        // prefilling quickstart's would impose them on archetypes that use neither.
+        // prefilling quickstart's would impose them on archetypes that use neither. The prompt is the
+        // combo's own — the skin binds the editor's prompt to it, so one set on the editor was overwritten.
         urlField.setPromptText("http://www.example.com");
-        releaseCombo.getEditor().setPromptText("17");
+        releaseCombo.setPromptText("17");
         CheckBox updateVersions = new CheckBox(tr("dialog.mavenProject.updateVersions"));
         Label updateHint = new Label(tr("dialog.mavenProject.updateVersionsHint"));
         updateHint.getStyleClass().add("settings-hint");
@@ -742,6 +1084,21 @@ final class MavenProjectCoordinator {
         advancedGrid.add(releaseCombo, 1, 1);
         GridPane.setHgrow(urlField, Priority.ALWAYS);
         VBox advancedBox = new VBox(8, advancedGrid, updateVersions, updateHint);
+        if (!propertyFields.isEmpty()) {
+            GridPane propertyGrid = new GridPane();
+            propertyGrid.setHgap(8);
+            propertyGrid.setVgap(8);
+            propertyGrid.getStyleClass().add("maven-archetype-properties");
+            int r = 0;
+            for (Map.Entry<String, TextField> e : propertyFields.entrySet()) {
+                propertyGrid.add(new Label(e.getKey()), 0, r);
+                propertyGrid.add(e.getValue(), 1, r++);
+                GridPane.setHgrow(e.getValue(), Priority.ALWAYS);
+            }
+            Label propertiesTitle = new Label(tr("dialog.mavenProject.archetypeProperties"));
+            propertiesTitle.getStyleClass().add("settings-hint");
+            advancedBox.getChildren().addAll(propertiesTitle, propertyGrid);
+        }
         TitledPane advanced = new TitledPane(tr("dialog.mavenProject.advanced"), advancedBox);
         // Filled on first expand rather than up front: discovery walks the JDK install roots, and the
         // common path never opens this section at all.
@@ -752,9 +1109,33 @@ final class MavenProjectCoordinator {
                 }
             }
         });
-        advanced.setExpanded(false); // collapsed by default — the common path is the five fields above
+        // Collapsed by default — the common path is the five fields above — unless the archetype asks for
+        // something it has no default for, which the user has to see to fill in.
+        boolean needsInput = descriptor.extraProperties().stream().anyMatch(p -> !p.hasDefault());
+        advanced.setExpanded(needsInput);
         advanced.setAnimated(false);
         advanced.getStyleClass().add("dialog-advanced");
+
+        if (initial != null) {
+            nameField.setText(initial.artifactId());
+            locationField.setText(
+                    initial.parentDir() == null ? "" : initial.parentDir().toString());
+            groupField.setText(initial.groupId());
+            versionField.setText(initial.version());
+            packageField.setText(initial.packageName());
+        }
+        if (initialExtras != null) {
+            urlField.setText(initialExtras.url());
+            releaseCombo.getEditor().setText(initialExtras.javaRelease());
+            updateVersions.setSelected(initialExtras.updateVersions());
+            initialExtras.properties().forEach((k, v) -> {
+                TextField f = propertyFields.get(k);
+                if (f != null) {
+                    f.setText(v);
+                }
+            });
+        }
+        revalidate.run();
 
         VBox body = new VBox(10, grid, advanced);
 
@@ -766,17 +1147,70 @@ final class MavenProjectCoordinator {
                 tr("dialog.mavenProject.create"),
                 valid,
                 () -> {
-                    MavenProjectSpec spec =
-                            specFrom(archetype, nameField, locationField, groupField, versionField, packageField);
-                    generate(
-                            spec,
-                            new MavenProjectExtras(
-                                    urlField.getText(),
-                                    releaseCombo.getEditor().getText(),
-                                    updateVersions.isSelected()));
+                    MavenProjectSpec spec = specFrom(
+                            archetype,
+                            nameField,
+                            locationField,
+                            groupField,
+                            versionField,
+                            packageField,
+                            base,
+                            userHome());
+                    Map<String, String> properties = new LinkedHashMap<>();
+                    propertyFields.forEach((k, f) -> properties.put(k, f.getText()));
+                    MavenProjectExtras extras = new MavenProjectExtras(
+                            urlField.getText(),
+                            releaseCombo.getEditor().getText(),
+                            updateVersions.isSelected(),
+                            properties);
+                    generate(spec, extras, () -> showForm(archetype, parentDir, spec, extras));
                 },
                 null,
                 false);
+    }
+
+    /** The archetype's descriptor from the local repository, or nothing when it is not downloaded yet. */
+    private ArchetypeDescriptor descriptorOf(MavenArchetype archetype) {
+        try {
+            return descriptors.apply(archetype);
+        } catch (RuntimeException e) {
+            return ArchetypeDescriptor.NONE;
+        }
+    }
+
+    /** Where descriptors come from: the user's local repository, unless a test says otherwise. */
+    private java.util.function.Function<MavenArchetype, ArchetypeDescriptor> descriptors =
+            archetype -> ArchetypeDescriptor.readFromLocalRepository(
+                    MavenPluginGoals.localRepository(Path.of(userHome())), archetype);
+
+    /** Test seam: the descriptors the form sees, so a test does not depend on what {@code ~/.m2} holds. */
+    void setDescriptorsForTest(java.util.function.Function<MavenArchetype, ArchetypeDescriptor> descriptors) {
+        this.descriptors = descriptors;
+    }
+
+    private static String userHome() {
+        return System.getProperty("user.home", ".");
+    }
+
+    /** The form's label for a spec problem — "Check the Name field.", never "Check the artifactId field.". */
+    static String fieldLabel(String problem) {
+        return switch (problem == null ? "" : problem) {
+            case "artifactId" -> tr("dialog.mavenProject.name");
+            case "package" -> tr("dialog.mavenProject.packageName");
+            case "groupId", "version", "location", "archetype" -> tr("dialog.mavenProject." + problem);
+            default -> problem;
+        };
+    }
+
+    private static boolean isEmptyDirectory(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return false;
+        }
+        try (java.util.stream.Stream<Path> entries = Files.list(dir)) {
+            return entries.findAny().isEmpty();
+        } catch (Exception e) {
+            return false; // unreadable: treat as occupied, the safe answer
+        }
     }
 
     private TextField field(KeymapManager keymap, int columns) {
@@ -792,9 +1226,12 @@ final class MavenProjectCoordinator {
             TextField location,
             TextField group,
             TextField version,
-            TextField pkg) {
-        String loc = location.getText() == null ? "" : location.getText().strip();
-        Path parent = loc.isEmpty() ? null : Path.of(loc);
+            TextField pkg,
+            Path base,
+            String userHome) {
+        // Absolute, always: a relative location or a ~ is resolved here, so the hint shows the folder the
+        // project will really land in rather than text relative to the launcher's working directory.
+        Path parent = MavenCoordinates.resolveLocation(location.getText(), base, userHome);
         return new MavenProjectSpec(
                 archetype, group.getText(), name.getText(), version.getText(), pkg.getText(), parent);
     }
@@ -807,16 +1244,35 @@ final class MavenProjectCoordinator {
     }
 
     void generate(MavenProjectSpec spec, MavenProjectExtras extras) {
+        generate(spec, extras, null);
+    }
+
+    /**
+     * @param backToForm re-shows the form with its answers when the consent prompt is cancelled, or null to
+     *     report "Cancelled." instead (a caller that had no form)
+     */
+    private void generate(MavenProjectSpec spec, MavenProjectExtras extras, Runnable backToForm) {
         if (!spec.isValid()) {
-            host.setError(tr("status.mavenProject.invalid", spec.firstProblem()));
+            host.setError(tr("status.mavenProject.invalid", fieldLabel(spec.firstProblem())));
             return;
         }
         // A non-curated archetype is third-party code: archetype:generate downloads and runs its plugin.
         // The workspace-trust gate cannot cover this — it only fires when a repo ships an mvnw, and a
         // brand-new empty directory has none.
-        if (!spec.archetype().curated() && !ops.confirmArchetype(spec.archetype())) {
-            host.setStatus(tr("status.mavenProject.cancelled"));
-            return;
+        if (!spec.archetype().curated()
+                && !SESSION_TRUSTED.contains(spec.archetype().gav())) {
+            Consent consent = ops.consentFor(spec.archetype());
+            if (consent == Consent.CANCEL) {
+                if (backToForm != null) {
+                    backToForm.run();
+                } else {
+                    host.setStatus(tr("status.mavenProject.cancelled"));
+                }
+                return;
+            }
+            if (consent == Consent.ALWAYS) {
+                SESSION_TRUSTED.add(spec.archetype().gav());
+            }
         }
         Path parent = spec.parentDir();
         try {
@@ -830,17 +1286,32 @@ final class MavenProjectCoordinator {
         // that one is not packaging=pom. So when the target holds such a project, the run is detached — a
         // pom-less scratch working directory plus -DoutputDirectory — and Maven simply has no current
         // project to register a module with. An aggregator pom is left attached, where the module is wanted.
-        Path scratch = ArchetypeGenerate.detachFromExistingProject(packagingOf(parent)) ? scratchDir() : null;
+        String parentPackaging = packagingOf(parent);
+        Path scratch = ArchetypeGenerate.detachFromExistingProject(parentPackaging) ? scratchDir() : null;
         Path workingDir = scratch != null ? scratch : parent;
         List<String> mvn = mavenExecutable();
+        // An archetype that takes the Java release as a property gets it that way rather than as a pom edit.
+        MavenProjectExtras applied = extras.forArchetype(descriptorOf(spec.archetype()));
         // Generated INSIDE the scratch dir and moved afterwards, rather than generated into `parent` from a
         // scratch working directory: the module check reads the pom in the OUTPUT directory, so pointing
         // outputDirectory at a folder that already holds a project fails exactly as running there did.
         List<String> argv = scratch != null
-                ? ArchetypeGenerate.detachedArgv(mvn, spec, scratch)
-                : ArchetypeGenerate.argv(mvn, spec);
+                ? ArchetypeGenerate.detachedArgv(mvn, spec, applied.properties(), scratch)
+                : ArchetypeGenerate.argv(mvn, spec, applied.properties());
         Path projectDir = spec.projectDir();
+        // A module added to the project this window has open stays in it: no second project, no second
+        // window. "Attached" is the aggregator case above, and only when that aggregator is the open one.
+        Path currentRoot = ops.currentProjectRoot();
+        boolean module = scratch == null
+                && parentPackaging != null
+                && currentRoot != null
+                && projectDir
+                        .toAbsolutePath()
+                        .normalize()
+                        .startsWith(currentRoot.toAbsolutePath().normalize());
         host.setStatus(tr("status.mavenProject.generating", spec.artifactId()));
+        AutoCloseable task = host.startBackgroundTask(tr("status.mavenProject.generating", spec.artifactId()));
+        ops.openConsole();
         output.started(
                 this,
                 tr("dialog.mavenProject.outputTab"),
@@ -860,32 +1331,31 @@ final class MavenProjectCoordinator {
 
             @Override
             public void onExit(int code) {
+                closeQuietly(task);
                 output.finished(MavenProjectCoordinator.this, code);
                 boolean placed = scratch == null || moveIntoPlace(scratch, spec, projectDir);
                 if (code == 0 && placed && Files.isDirectory(projectDir)) {
-                    afterGenerate(projectDir, spec, extras);
+                    afterGenerate(projectDir, spec, applied, module);
                 } else {
-                    host.setError(tr("status.mavenProject.failed", spec.artifactId()));
+                    failed(spec);
                 }
             }
 
             @Override
             public void onError(String message) {
+                closeQuietly(task);
                 output.failed(MavenProjectCoordinator.this, message);
-                host.setError(tr("status.mavenProject.failed", spec.artifactId()));
+                failed(spec);
             }
         });
     }
 
-    /**
-     * Applies the Advanced answers to the freshly generated project, then opens it.
-     *
-     * <p>Ordered so each step sees the last one's work: the pom edits first (so a chosen
-     * {@code maven.compiler.release} is in place before anything reads it), then the dependency update,
-     * then the plugin versions, then the project opens. Every step is best-effort — a failure leaves what
-     * the archetype wrote and says so, because a generated project that exists is worth more than one
-     * abandoned half-way through a nicety.
-     */
+    /** The message points at the Output window, so make sure it is in view. */
+    private void failed(MavenProjectSpec spec) {
+        ops.openConsole();
+        host.setError(tr("status.mavenProject.failed", spec.artifactId()));
+    }
+
     /** The packaging of the pom in {@code dir}, or null when it has none (or one that cannot be read). */
     private String packagingOf(Path dir) {
         Path pom = dir.resolve("pom.xml");
@@ -915,6 +1385,10 @@ final class MavenProjectCoordinator {
         }
         try {
             Files.createDirectories(projectDir.getParent());
+            // An empty target folder is allowed by the form; the rename needs it out of the way.
+            if (Files.isDirectory(projectDir) && isEmptyDirectory(projectDir)) {
+                Files.delete(projectDir);
+            }
             try {
                 Files.move(generated, projectDir);
             } catch (java.nio.file.FileSystemException crossDevice) {
@@ -968,7 +1442,15 @@ final class MavenProjectCoordinator {
         }
     }
 
-    private void afterGenerate(Path projectDir, MavenProjectSpec spec, MavenProjectExtras extras) {
+    /**
+     * Applies the Advanced answers to the freshly generated project, then opens it.
+     *
+     * <p>Ordered so each step sees the last one's work: the pom edits first (so a chosen
+     * {@code maven.compiler.release} is in place before anything reads it), then the version update, then
+     * the project opens. Every step is best-effort — a failure leaves what the archetype wrote and says so,
+     * because a generated project that exists is worth more than one abandoned half-way through a nicety.
+     */
+    private void afterGenerate(Path projectDir, MavenProjectSpec spec, MavenProjectExtras extras, boolean module) {
         if (extras.editsPom()) {
             editPom(projectDir, pom -> {
                 String out = PomEdits.setProjectUrl(pom, extras.url());
@@ -976,10 +1458,10 @@ final class MavenProjectCoordinator {
             });
         }
         if (!extras.updateVersions()) {
-            onGenerated(projectDir, spec.artifactId());
+            onGenerated(projectDir, spec.artifactId(), module);
             return;
         }
-        updateGeneratedVersions(projectDir, spec.artifactId());
+        updateGeneratedVersions(projectDir, spec.artifactId(), module);
     }
 
     /**
@@ -995,23 +1477,27 @@ final class MavenProjectCoordinator {
      * <p>Off the FX thread: one HTTPS GET per artifact. Failures are silent per artifact — see
      * {@link CentralVersions#latest} — and the whole step degrades to leaving the versions the archetype chose.
      */
-    private void updateGeneratedVersions(Path projectDir, String artifactId) {
+    private void updateGeneratedVersions(Path projectDir, String artifactId, boolean module) {
         Path pomFile = projectDir.resolve("pom.xml");
         String pom = read(pomFile);
         Map<String, String> dependencies = pom == null ? Map.of() : PomEdits.dependencyVersions(pom);
         Map<String, String> plugins = pom == null ? Map.of() : PomEdits.pluginVersions(pom);
         if (dependencies.isEmpty() && plugins.isEmpty()) {
-            finishUpdate(projectDir, artifactId, 0, 0);
+            finishUpdate(projectDir, artifactId, 0, 0, module);
             return;
         }
         host.setStatus(tr("status.mavenProject.updatingVersions"));
         output.appendOutput(this, tr("status.mavenVersions.checking", dependencies.size() + plugins.size()), false);
+        AutoCloseable task = host.startBackgroundTask(tr("status.mavenProject.updatingVersions"));
         fetchExecutor().execute(() -> {
-            Map<String, String> dependencyUpgrades = CentralVersions.upgradesOnly(
-                    dependencies, CentralVersions.latest(dependencies.keySet(), this::fetchMetadata));
-            Map<String, String> pluginUpgrades = CentralVersions.upgradesOnly(
-                    plugins, CentralVersions.latest(plugins.keySet(), this::fetchMetadata));
+            List<String> all = new ArrayList<>(dependencies.keySet());
+            all.addAll(plugins.keySet());
+            Map<String, String> latest = CentralVersions.latest(
+                    all, path -> fetchMetadataOrThrow(path, new AtomicBoolean()), lookupPool(), () -> false);
+            Map<String, String> dependencyUpgrades = CentralVersions.upgradesOnly(dependencies, latest);
+            Map<String, String> pluginUpgrades = CentralVersions.upgradesOnly(plugins, latest);
             Platform.runLater(() -> {
+                closeQuietly(task);
                 if (!dependencyUpgrades.isEmpty() || !pluginUpgrades.isEmpty()) {
                     editPom(
                             projectDir,
@@ -1022,18 +1508,24 @@ final class MavenProjectCoordinator {
                     pluginUpgrades.forEach((ga, v) ->
                             output.appendOutput(this, tr("status.mavenProject.pluginUpdated", ga, v), false));
                 }
-                finishUpdate(projectDir, artifactId, dependencyUpgrades.size(), pluginUpgrades.size());
+                finishUpdate(projectDir, artifactId, dependencyUpgrades.size(), pluginUpgrades.size(), module);
             });
         });
     }
 
-    private void finishUpdate(Path projectDir, String artifactId, int dependencyUpdates, int pluginUpdates) {
+    private void finishUpdate(
+            Path projectDir, String artifactId, int dependencyUpdates, int pluginUpdates, boolean module) {
         host.setStatus(tr("status.mavenProject.versionsUpdatedCounts", dependencyUpdates, pluginUpdates));
-        onGenerated(projectDir, artifactId);
+        onGenerated(projectDir, artifactId, module);
     }
 
-    /** One {@code maven-metadata.xml}, or null when it cannot be had. HTTPS only, bounded, with a timeout. */
-    private String fetchMetadata(String repoPath) {
+    /**
+     * One {@code maven-metadata.xml}, or null when it cannot be had — except that the <em>repository</em>
+     * being unreachable (no route, refused, unknown host, a connect timeout) is reported as
+     * {@link CentralVersions.Unreachable}, so a lookup of forty coordinates does not wait out forty connect
+     * timeouts to learn what the first one knew.
+     */
+    private String fetchMetadataOrThrow(String repoPath, AtomicBoolean unreachable) {
         String url = CentralVersions.CENTRAL + repoPath;
         if (!PluginRegistry.isHttps(url)) {
             return null;
@@ -1054,8 +1546,13 @@ final class MavenProjectCoordinator {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return null;
+        } catch (java.net.ConnectException
+                | java.net.http.HttpConnectTimeoutException
+                | java.net.UnknownHostException e) {
+            unreachable.set(true);
+            throw new CentralVersions.Unreachable(String.valueOf(e.getMessage()));
         } catch (Exception e) {
-            return null; // unreachable, refused, malformed — all just "no answer"
+            return null; // refused, malformed, timed out mid-body — all just "no answer" for this artifact
         }
     }
 
@@ -1075,7 +1572,7 @@ final class MavenProjectCoordinator {
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
-    private java.net.http.HttpClient metadataClient;
+    private volatile java.net.http.HttpClient metadataClient;
 
     /** Reads, transforms and writes the pom, doing nothing at all if any part of that fails. */
     private void editPom(Path projectDir, java.util.function.UnaryOperator<String> edit) {
@@ -1103,14 +1600,45 @@ final class MavenProjectCoordinator {
         }
     }
 
-    private void onGenerated(Path projectDir, String name) {
+    /**
+     * The generated project is on disk; now open it.
+     *
+     * <p>Three cases. A module of the project this window has open stays here: the tree is refreshed and
+     * the module's main class (else its pom) opens in this window — it used to be registered as a second,
+     * separate project in a second window. With projects on, the new project opens in a window of its own,
+     * seeded with its pom and main class (the pom used to open here, in the <em>old</em> window, as a
+     * foreign tab). With projects off, the pom opens here, which is all there is.
+     */
+    private void onGenerated(Path projectDir, String name, boolean module) {
         host.setStatus(tr("status.mavenProject.created", name));
         ops.refreshProjectTree();
         // Look at what the archetype actually wrote rather than guessing from the coordinates: quickstart
         // gives <package>.App, a webapp archetype gives no main at all. Null simply means no run
         // configuration is seeded.
-        ops.openProject(projectDir, name, com.editora.maven.GeneratedProject.findMain(projectDir));
+        com.editora.maven.GeneratedProject.MainClass main = com.editora.maven.GeneratedProject.findMain(projectDir);
         Path pom = projectDir.resolve("pom.xml");
+        String goal = com.editora.maven.GeneratedProject.mavenRunGoal(projectDir);
+        if (goal != null) {
+            // A JavaFX archetype's App cannot be launched as a plain main class (no module path), and the
+            // run-configuration model has no "Maven goal" type yet — so say how the project is meant to run.
+            output.appendOutput(this, tr("status.mavenProject.runWithMaven", goal), false);
+        }
+        if (module) {
+            if (main != null) {
+                ops.openPath(main.file());
+            } else if (Files.isRegularFile(pom)) {
+                ops.openPath(pom);
+            }
+            host.setStatus(tr("status.mavenProject.moduleAdded", name));
+            return;
+        }
+        ops.openProject(projectDir, name, main);
+        if (ops.projectsEnabled()) {
+            if (com.editora.maven.GeneratedProject.needsMavenToRun(goal)) {
+                host.setStatus(tr("status.mavenProject.createdRunWith", name, goal));
+            }
+            return; // the new window opens on its own pom and main class
+        }
         if (Files.isRegularFile(pom)) {
             ops.openPath(pom);
         }
@@ -1122,8 +1650,12 @@ final class MavenProjectCoordinator {
 
     void shutdown() {
         service.shutdown();
+        cancelCheck();
         if (fetchExec != null) {
             fetchExec.shutdownNow();
+        }
+        if (lookupExec != null) {
+            lookupExec.shutdownNow();
         }
         if (metadataClient != null) {
             metadataClient.shutdownNow();

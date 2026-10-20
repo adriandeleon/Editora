@@ -92,6 +92,7 @@ public final class TestTreeBuilder {
         node.setDurationMs(test.durationMs());
         node.setClassName(test.className());
         node.setMethodName(test.methodName());
+        node.setRetries(test.retries());
         // Only overwrite optional detail when the delta carries it, so a later RUNNING→PASSED delta that omits
         // the failure text does not wipe an earlier failure captured for the same id.
         if (test.failureType() != null) {

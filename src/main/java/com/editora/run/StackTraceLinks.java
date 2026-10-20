@@ -56,6 +56,15 @@ public final class StackTraceLinks {
     private static final Pattern JAVA_LOCATION =
             Pattern.compile("(?<![^\\s(])((?:[A-Za-z]:)?[^\\s:()]+\\." + JVM_SOURCE + "):(\\d{1,9}):");
     /**
+     * Maven's compiler plugin prints a location as {@code path:[line,col]} —
+     * {@code [ERROR] /src/demo/App.java:[5,18] illegal start of expression}, and a {@code [WARNING] …:[12,5]
+     * [deprecation] …} the same — for Java, Kotlin, Scala and Groovy sources alike. Tried before
+     * {@link #JAVA_LOCATION}, which wants {@code :line:} and found nothing in these (Maven review B4). The
+     * column is kept: javac's is 1-based, as the editor's.
+     */
+    private static final Pattern MAVEN_LOCATION = Pattern.compile(
+            "(?<![^\\s(])((?:[A-Za-z]:)?[^\\s:()\\[]+\\." + JVM_SOURCE + "):\\[(\\d{1,9}),(\\d{1,9})\\]");
+    /**
      * A traceback frame: {@code File "<path>", line N}. Any path — an extensionless script run through its
      * shebang is still Python, and a path may hold a {@code "} (Python prints it unescaped) — but not the
      * pseudo-files {@code <stdin>}, {@code <string>}, {@code <frozen runpy>}.
@@ -240,6 +249,10 @@ public final class StackTraceLinks {
         Matcher m = JAVA.matcher(line);
         if (m.find()) {
             return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
+        }
+        m = MAVEN_LOCATION.matcher(line);
+        if (m.find()) {
+            return new Link(m.group(1), Integer.parseInt(m.group(2)), line, Integer.parseInt(m.group(3)));
         }
         m = JAVA_LOCATION.matcher(line);
         if (m.find()) {

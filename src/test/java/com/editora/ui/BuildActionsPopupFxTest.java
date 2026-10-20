@@ -31,9 +31,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -66,7 +68,7 @@ class BuildActionsPopupFxTest {
             out.add(new BuildAction.Section(
                     "Profiles",
                     List.of(
-                            new BuildAction.Toggle("ci", "ci", " (active by default)"),
+                            new BuildAction.Toggle("ci", "ci", "(active by default)"),
                             new BuildAction.Toggle("release", "release"))));
             if (active.contains("ci")) {
                 out.add(new BuildAction.Section(
@@ -385,5 +387,47 @@ class BuildActionsPopupFxTest {
         });
         assertFalse(detached.isShown());
         assertNull(FxTestSupport.callOnFx(() -> root.lookup(".command-palette")));
+    }
+
+    // --- Maven pass 2 (B8 shared toggles, B20 recent, B29 substring filter) ---
+
+    @Test
+    void aSharedToggleSetSurvivesReopeningAndRecentRowsRunAgain() throws Exception {
+        java.util.Set<String> shared = new java.util.LinkedHashSet<>(List.of("ci"));
+        List<String> reran = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            popup.setRecent(List.of("help:active-profiles -q", "clean verify"), reran::add);
+            popup.show(stage, provider, shared);
+        });
+        List<String> shown = rows();
+        assertEquals("[" + tr("buildpopup.recent") + "]", shown.get(1));
+        assertEquals("help:active-profiles -q", shown.get(2));
+        assertTrue(shown.contains("☑ ci (active by default)"), "opened with the tree's checked profile: " + shown);
+        // The revealed goal sits below the cells the 400px list renders: check the model.
+        javafx.collections.ObservableList<?> items = FxTestSupport.field(popup, "items");
+        assertTrue(
+                FxTestSupport.callOnFx(
+                        () -> items.stream().anyMatch(r -> r.toString().contains("ci:verify"))),
+                "and its revealed rows: " + items);
+
+        select(2);
+        key(KeyCode.ENTER);
+        assertEquals(List.of("help:active-profiles -q"), reran);
+        assertFalse(popup.isShown());
+
+        FxTestSupport.runOnFx(() -> popup.show(stage, provider, shared));
+        assertTrue(rows().contains("☑ ci (active by default)"), "reopening keeps the set");
+        assertSame(shared, popup.activeToggles());
+    }
+
+    @Test
+    void theFilterIsASubstringOfTheLabelOrTheSectionTitle() throws Exception {
+        show();
+        FxTestSupport.runOnFx(() -> search().setText("pkg"));
+        assertEquals(List.of(), rows(), "no fuzzy subsequence match");
+        FxTestSupport.runOnFx(() -> search().setText("ack"));
+        assertEquals(List.of("[Lifecycle]", "package"), rows());
+        FxTestSupport.runOnFx(() -> search().setText("life"));
+        assertEquals(List.of("[Lifecycle]", "clean", "package"), rows(), "a section title keeps the whole section");
     }
 }

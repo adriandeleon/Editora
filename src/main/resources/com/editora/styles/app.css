@@ -1085,6 +1085,13 @@
 .pom-profile-title { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; -fx-padding: 16 0 0 0; }
 .pom-empty { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 .pom-error { -fx-text-fill: -color-danger-fg; }
+.pom-activation { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; -fx-font-style: italic; -fx-padding: 0 0 2 0; }
+.pom-filter { -fx-font-size: 0.95em; -fx-max-width: 320; }
+.pom-tags { -fx-hgap: 4; }
+/* Rows that take the editor to their element: the hand cursor says so, an underline on hover confirms it. */
+.pom-link:hover .pom-artifact, .pom-link:hover .pom-group, .pom-link:hover.pom-name, .pom-link:hover.pom-version,
+.pom-link:hover.pom-version-managed, .pom-link:hover.pom-version-unknown, .pom-link:hover.pom-error,
+.pom-link:hover.pom-profile-title { -fx-underline: true; }
 
 /* Keep the tree token colors stable when a row is selected. The rows are TextFlows of Text runs, whose
    -fx-fill AtlantaFX flips to the selection foreground (-color-cell-fg-selected) on a selected cell — so
@@ -2156,6 +2163,20 @@
    `.text` node, not on `.title`, so that is the node to reset. */
 .dialog-advanced > .title > .text {
     -fx-font-size: 1em;
+}
+
+/* The New Maven Project form's hint doubles as the reason Create is disabled: red when it is one. */
+.settings-hint.overlay-form-error {
+    -fx-text-fill: -state-red;
+}
+/* Update Versions preview: group headings over the checkbox rows, and the tag on a major jump. */
+.maven-version-group {
+    -fx-font-weight: bold;
+    -fx-padding: 6 0 0 0;
+}
+.maven-version-major {
+    -fx-text-fill: -state-amber;
+    -fx-font-weight: bold;
 }
 
 .tool-window-close,
@@ -4339,6 +4360,45 @@
 /* Section headers (Lifecycle / Scripts / Targets / …) read bolder + muted, like an IDE group row. */
 .build-tasks-tree .tree-cell.build-tasks-section {
     -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+}
+/* The header above the tree: the detected build root and its workspace-trust pill, with Revoke. */
+.build-tasks-header {
+    -fx-padding: 0 4 2 4;
+}
+.build-tasks-root {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+.build-tasks-trust {
+    -fx-font-size: 10px;
+    -fx-padding: 1 6 1 6;
+    -fx-background-radius: 8;
+    -fx-background-color: -color-bg-inset;
+    -fx-text-fill: -color-fg-muted;
+}
+.build-tasks-trust.build-tasks-trusted {
+    -fx-background-color: -color-success-subtle;
+    -fx-text-fill: -color-success-fg;
+}
+.build-tasks-trust.build-tasks-untrusted {
+    -fx-background-color: -color-warning-subtle;
+    -fx-text-fill: -color-warning-fg;
+}
+.build-tasks-revoke {
+    -fx-font-size: 11px;
+    -fx-padding: 0;
+}
+/* A build file that did not parse: the reason, with a link to the file, above the (lifecycle-only) tree. */
+.build-tasks-notice {
+    -fx-padding: 2 4 4 4;
+}
+.build-tasks-notice-text {
+    -fx-text-fill: -color-danger-fg;
+    -fx-font-size: 11px;
+}
+/* Rows of the "Projects" section: the build roots found below the open project. */
+.build-tasks-tree .tree-cell.build-tasks-project {
     -fx-text-fill: -color-fg-muted;
 }
 

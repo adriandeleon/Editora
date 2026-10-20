@@ -307,7 +307,10 @@ public enum ConfigSchema {
                     Map.entry(139, (Migration) ConfigMigrations::identity),
                     // v140→141: + buildBeforeRun (on): a Maven/Gradle project is compiled by its build tool before
                     // a main class runs or is debugged. Additive: absent is the default, a stored choice is kept.
-                    Map.entry(140, (Migration) ConfigMigrations::identity)),
+                    Map.entry(140, (Migration) ConfigMigrations::identity),
+                    // v141→142: + mavenPomCentralIndex (off): lemminx-maven may use the Maven Central index for
+                    // pom.xml completion. Additive: absent is the default (local repository only, as before).
+                    Map.entry(141, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -369,7 +372,9 @@ public enum ConfigSchema {
                     Map.entry(20, ConfigMigrations::identity),
                     // v21→22: + deployments and a run configuration's deployment (additive; absent means every
                     // configuration runs on this machine)
-                    Map.entry(21, ConfigMigrations::identity))),
+                    Map.entry(21, ConfigMigrations::identity),
+                    // v22→23: + buildCustomHistory (additive; absent means an empty "Run custom…" prompt)
+                    Map.entry(22, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

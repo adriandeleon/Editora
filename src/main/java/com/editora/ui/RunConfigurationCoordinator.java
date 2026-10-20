@@ -687,11 +687,20 @@ final class RunConfigurationCoordinator {
             return;
         }
         BuildCoordinator maven = detectedBuildCoordinator(BuildTool.MAVEN);
-        if (maven != null
-                && com.editora.build.BuildDebug.isSpringBootMavenPom(readTextOrEmpty(root.resolve("pom.xml")))) {
+        // The Boot plugin is read from the effective build — plugins, pluginManagement, profiles, the parents
+        // on disk — not sniffed from the text (review D11).
+        com.editora.maven.PomBuildConfig pom = maven == null
+                ? com.editora.maven.PomBuildConfig.DEFAULTS
+                : com.editora.build.BuildDebug.springBootConfig(root);
+        if (maven != null && pom.springBoot()) {
             armDebugAttach(maven, routing);
             host.setStatus(tr("status.debug.viaBuildStarting"));
             maven.runTask(com.editora.build.BuildDebug.mavenSpringBootDebugArgs(), List.of());
+            if (pom.springBootJvmArguments() != null) {
+                // An explicit <jvmArguments> in the pom beats the -D the launch passes: the app starts
+                // without the agent. Said after the launch, whose own status would overwrite it (review D14).
+                host.setStatus(tr("status.debug.viaBuildJvmArgsConfigured", pom.springBootJvmArguments()));
+            }
             return;
         }
         host.setStatus(tr("status.debug.viaBuildUnsupported"));
@@ -711,13 +720,28 @@ final class RunConfigurationCoordinator {
     void armDebugAttach(BuildCoordinator c, java.nio.file.Path routing) {
         // Every banner of the run is attached (one at a time — see DebugCoordinator.attachToPort), and Stop on
         // the session ends the run (review A4, D11); the coordinator drops the watcher when the run is over.
+        boolean[] seen = {false};
         c.setOutputWatcher((line, stderr) -> {
             int port = com.editora.test.TestDebug.jdwpPort(line);
             if (port > 0) {
+                seen[0] = true;
                 host.debugCoordinator().attachToPort(routing, "localhost", port, c::stop);
             }
         });
+        // No banner after a while with the build still running: the app most likely started without the
+        // agent (a pom's own <jvmArguments>, a run task that is not the app's). Say so and name the way out.
+        javafx.animation.PauseTransition wait =
+                new javafx.animation.PauseTransition(javafx.util.Duration.seconds(bannerTimeoutSeconds));
+        wait.setOnFinished(e -> {
+            if (!seen[0] && c.isRunning()) {
+                host.setStatus(tr("status.debug.viaBuildNoBanner", bannerTimeoutSeconds));
+            }
+        });
+        wait.play();
     }
+
+    /** How long {@link #armDebugAttach} waits for a banner; a test shortens it. */
+    int bannerTimeoutSeconds = com.editora.build.BuildDebug.BANNER_TIMEOUT_SECONDS;
 
     static String readTextOrEmpty(java.nio.file.Path f) {
         try {

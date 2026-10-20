@@ -425,8 +425,6 @@ public class EditorBuffer implements TabContent {
     private boolean pomPreviewEnabled;
     /** Per-buffer, session-only: this pom is showing the generic XML tree instead of its summary. */
     private boolean pomShowXml;
-    /** How much of an XML file's head is read to decide whether it is a pom (a {@code <project>} preamble). */
-    private static final int POM_SNIFF_CHARS = 4096;
     /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
     private @Nullable StackPane structuredContentHolder;
     /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
@@ -3221,11 +3219,7 @@ public class EditorBuffer implements TabContent {
             return false;
         }
         String fileName = path != null ? path.getFileName().toString() : displayName;
-        if (fileName != null && ("pom.xml".equalsIgnoreCase(fileName) || fileName.endsWith(".pom"))) {
-            return true;
-        }
-        String head = area.getText(0, Math.min(area.getLength(), POM_SNIFF_CHARS));
-        return head.contains("<modelVersion") && head.contains("<project");
+        return PomFiles.isPom(fileName, area.getText(0, Math.min(area.getLength(), PomFiles.SNIFF_CHARS)));
     }
 
     /**
@@ -5661,13 +5655,16 @@ public class EditorBuffer implements TabContent {
             // self-scrolling host. Must precede the XML branch — a pom is XML, and its summary wins unless
             // the user switched this buffer to the generic tree.
             String src = documentTextSnapshot();
+            Path pomPath = path; // a local pom's parent chain and BOMs are read beside it (Maven review C6)
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
                 try {
-                    com.editora.maven.PomSummary parsed = com.editora.maven.PomSummary.parse(src);
+                    com.editora.maven.PomSummary parsed = com.editora.maven.PomSummary.parse(src, pomPath);
                     Platform.runLater(() -> {
                         if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(PomPreview.build(parsed));
+                            structuredContentHolder()
+                                    .getChildren()
+                                    .setAll(PomPreview.build(parsed, line -> jumpToLine(line - 1)));
                         }
                     });
                 } catch (Throwable t) {

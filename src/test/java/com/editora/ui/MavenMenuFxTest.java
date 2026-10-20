@@ -53,8 +53,8 @@ class MavenMenuFxTest {
                 assertEquals(tr("menu.maven"), menu.getText());
                 assertTrue(
                         menu.getItems().stream()
-                                .anyMatch(
-                                        i -> tr("command.maven.updateVersions").equals(i.getText())),
+                                .anyMatch(i -> MavenProjectCoordinator.submenuLabel(tr("command.maven.updateVersions"))
+                                        .equals(i.getText())),
                         "Update Versions is the action this menu exists for");
                 assertTrue(menu.getItems().size() >= 3);
             });

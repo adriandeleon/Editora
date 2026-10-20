@@ -77,6 +77,70 @@ class MavenReactorTest {
                 REPO, MavenReactor.describe(module, REPO, hasPom, p -> ROOT_POM).root());
     }
 
+    /** A {@code modules/} folder without a pom of its own breaks the contiguous chain; the {@code <modules>} walk reaches through it (review D5). */
+    @Test
+    void describeReachesAModuleUnderAFolderWithoutAPom() {
+        Path module = REPO.resolve("modules").resolve("a");
+        Predicate<Path> hasPom = Set.of(REPO, module)::contains; // no pom in /repo/modules
+        String rootPom = "<project><artifactId>root</artifactId><packaging>pom</packaging>"
+                + "<modules><module>modules/a</module><module>modules/b</module></modules></project>";
+        MavenReactor.Reactor r = MavenReactor.describe(module, REPO, hasPom, p -> rootPom);
+        assertEquals(REPO, r.root());
+        assertEquals("modules/a", r.moduleSelector());
+        assertEquals(module, MavenReactor.reactorRoot(module, hasPom), "the plain heuristic still stops at the gap");
+    }
+
+    /** {@code root} lists {@code modules}; {@code modules/pom.xml} lists {@code a}: the topmost aggregator wins. */
+    @Test
+    void describeFollowsAnAggregatorChainToTheTopmostRoot() {
+        Path aggregator = REPO.resolve("modules");
+        Path module = aggregator.resolve("a");
+        Predicate<Path> hasPom = Set.of(REPO, aggregator, module)::contains;
+        java.util.Map<Path, String> poms = java.util.Map.of(
+                REPO.resolve("pom.xml"), "<project><modules><module>modules</module></modules></project>",
+                aggregator.resolve("pom.xml"), "<project><modules><module>a</module></modules></project>",
+                module.resolve("pom.xml"), "<project><artifactId>a</artifactId></project>");
+        MavenReactor.Reactor r = MavenReactor.describe(module, null, hasPom, poms::get);
+        assertEquals(REPO, r.root());
+        assertEquals("modules/a", r.moduleSelector());
+        // The aggregator alone, when the top root does not list it: the aggregator is the reactor.
+        java.util.Map<Path, String> detached = new java.util.HashMap<>(poms);
+        detached.put(REPO.resolve("pom.xml"), "<project><modules><module>other</module></modules></project>");
+        assertEquals(
+                aggregator,
+                MavenReactor.describe(module, null, hasPom, detached::get).root());
+        // A <module> may name the pom file itself.
+        detached.put(aggregator.resolve("pom.xml"), "<project><modules><module>a/pom.xml</module></modules></project>");
+        assertEquals(
+                aggregator,
+                MavenReactor.describe(module, null, hasPom, detached::get).root());
+    }
+
+    @Test
+    void modulesWalksTheReactorAndLocateModuleFindsAConfigurationsModule() {
+        Path a = REPO.resolve("modules").resolve("a");
+        Path b = REPO.resolve("modules").resolve("b");
+        Predicate<Path> hasPom = Set.of(REPO, a, b)::contains;
+        java.util.Map<Path, String> poms = java.util.Map.of(
+                REPO.resolve("pom.xml"),
+                        "<project><artifactId>root</artifactId><modules><module>modules/a</module>"
+                                + "<module>modules/b</module><module>missing</module></modules></project>",
+                a.resolve("pom.xml"), "<project><artifactId>mod-a</artifactId></project>",
+                b.resolve("pom.xml"), "<project><artifactId>mod-b</artifactId></project>");
+        assertEquals(List.of(REPO, a, b), MavenReactor.modules(REPO, hasPom, poms::get));
+        Predicate<Path> exists = Set.of(b.resolve("src/main/java/com/x/BMain.java"))::contains;
+        assertEquals(
+                a, MavenReactor.locateModule(REPO, "mod-a", "com.x.BMain", hasPom, poms::get, exists), "the name wins");
+        assertEquals(
+                b,
+                MavenReactor.locateModule(REPO, "", "com.x.BMain", hasPom, poms::get, exists),
+                "else the source file");
+        assertNull(MavenReactor.locateModule(REPO, "nope", "com.x.Nope", hasPom, poms::get, exists));
+        assertNull(MavenReactor.locateModule(REPO, "", "", hasPom, poms::get, exists));
+        assertTrue(MavenReactor.isNotInReactor("[ERROR] Could not find the selected project in the reactor: demo"));
+        assertFalse(MavenReactor.isNotInReactor("[ERROR] Failed to execute goal"));
+    }
+
     @Test
     void listsModuleAcceptsTheSelectorItsFirstSegmentAndAPrefixAggregator() {
         assertTrue(MavenReactor.listsModule(List.of("core"), "core"));

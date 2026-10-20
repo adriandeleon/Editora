@@ -86,6 +86,11 @@ public final class TestRunRecognizer {
                 "test", "-Dtest=" + selector, "-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false");
     }
 
+    /** Surefire refusing a {@code -Dtest=} that matched nothing (without {@code surefire.failIfNoSpecifiedTests=false}). */
+    public static boolean isNoTestsMatchingLine(String line) {
+        return line != null && line.contains("No tests matching pattern");
+    }
+
     /**
      * Whether a finished JVM test run should show the reports already on disk. Gradle skips an up-to-date
      * {@code test} task: it exits 0 and rewrites nothing, so every report is "a leftover from before the

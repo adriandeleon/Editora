@@ -91,6 +91,26 @@ public final class InstallService {
         this.maxDownloadBytes = maxDownloadBytes;
     }
 
+    /** The JDK home chosen in Settings → Build Tools (blank = none); the JVM servers run and are smoke-tested on it. */
+    private volatile java.util.function.Supplier<String> jdkHome = () -> "";
+
+    /** Wires the Settings → Build Tools JDK: it satisfies the {@link Prereq#JAVA} prerequisite and runs the
+     *  post-install smoke, so a machine with no {@code java} on PATH can still install the Maven server (C4). */
+    public void setJdkHomeSupplier(java.util.function.Supplier<String> jdkHome) {
+        this.jdkHome = jdkHome == null ? () -> "" : jdkHome;
+    }
+
+    /** The configured JDK's {@code java} executable, or {@code ""} when none is set or it has none. */
+    private String jdkJava() {
+        String home;
+        try {
+            home = jdkHome.get();
+        } catch (RuntimeException e) {
+            return "";
+        }
+        return home == null || home.isBlank() ? "" : com.editora.run.JdkToolchain.javaExecutable(home);
+    }
+
     /** Probes which {@link Prereq}s are present on the augmented PATH, off-thread; posts the set on FX. */
     public void detectPrereqs(Consumer<Set<Prereq>> onResult) {
         exec.submit(() -> {
@@ -119,8 +139,8 @@ public final class InstallService {
             if (onPath("composer")) {
                 have.add(Prereq.COMPOSER);
             }
-            if (onPath("java")) {
-                have.add(Prereq.JAVA);
+            if (onPath("java") || !jdkJava().isBlank()) {
+                have.add(Prereq.JAVA); // the Settings → Build Tools JDK counts: the packaged runtime has no java
             }
             Set<Prereq> result = Set.copyOf(have);
             Platform.runLater(() -> onResult.accept(result));
@@ -331,9 +351,13 @@ public final class InstallService {
             }
             // A bundle that starts and says it is ready can still fail every request inside the server (the
             // upstream zip without its `provided` jars did, for a whole release): ask it one before swapping it in.
-            List<String> argv = com.editora.run.ProgramArgs.commandLine(
-                    InstallCatalog.jvmClasspathCommand(staged, InstallCatalog.LEMMINX_MAIN_CLASS));
-            java.util.Optional<String> failed = jvmLspSmoke.check(argv, staged);
+            List<String> argv = new java.util.ArrayList<>(com.editora.run.ProgramArgs.commandLine(
+                    InstallCatalog.jvmClasspathCommand(staged, InstallCatalog.LEMMINX_MAIN_CLASS)));
+            String java = jdkJava();
+            if (!java.isBlank() && !argv.isEmpty() && "java".equals(argv.get(0))) {
+                argv.set(0, java); // the same JDK the coordinator runs the server on (JvmServerCommand.withJdk)
+            }
+            java.util.Optional<String> failed = jvmLspSmoke.check(List.copyOf(argv), staged);
             if (failed.isPresent()) {
                 throw new InstallException(s.id() + ": the server was extracted but could not answer a request ("
                         + failed.get() + ") — not installed");

@@ -545,18 +545,21 @@ class WindowOpsFxTest {
             assertFalse(build.isTrusted(root));
 
             boolean[] answer = new boolean[1];
+            com.editora.build.BuildTrust.Summary summary =
+                    com.editora.build.BuildTrust.describe(com.editora.build.BuildTool.MAVEN, root, wrapper, "");
             List<SettingsRig.Shown> asked = SettingsRig.answering(
-                    ButtonBar.ButtonData.CANCEL_CLOSE, () -> answer[0] = build.confirmTrust(root, wrapper));
+                    ButtonBar.ButtonData.CANCEL_CLOSE, () -> answer[0] = build.confirmTrust(root, summary));
             assertEquals(1, asked.size());
             assertEquals(tr("dialog.trust.title"), asked.get(0).title());
-            assertEquals(tr("dialog.trust.header", "untrusted"), asked.get(0).header());
             assertEquals(
-                    tr("dialog.trust.body", "mvnw", root.toString()),
+                    tr("dialog.trust.projectHeader", "untrusted"), asked.get(0).header());
+            assertEquals(
+                    tr("dialog.trust.projectBody", "• " + tr("trust.item.wrapper", "mvnw"), root.toString()),
                     asked.get(0).content());
             assertFalse(answer[0]);
             assertFalse(build.isTrusted(root), "asking is not trusting");
 
-            SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> answer[0] = build.confirmTrust(root, wrapper));
+            SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> answer[0] = build.confirmTrust(root, summary));
             assertTrue(answer[0]);
             build.trust(root);
             assertTrue(build.isTrusted(root));
@@ -571,7 +574,7 @@ class WindowOpsFxTest {
 
     @Test
     void generatingFromAnArchetypeAsksFirstAndNamesTheArchetype() throws Exception {
-        MavenProjectCoordinator.Ops maven = ops(MavenProjectCoordinator.Ops.class);
+        MavenProjectCoordinator.Ops maven = new MavenProjectWindowOps(controller); // a named class, not an adapter
         MavenArchetype archetype =
                 new MavenArchetype("org.example", "quickstart-archetype", "1.4", "A quick start", "", false);
         Path root = Files.createDirectories(dir.resolve("generated"));
@@ -584,9 +587,10 @@ class WindowOpsFxTest {
             assertEquals(
                     tr("dialog.mavenProject.trustHeader", "quickstart-archetype"),
                     asked.get(0).header());
-            assertEquals(
-                    tr("dialog.mavenProject.trustBody", archetype.gav()),
-                    asked.get(0).content());
+            assertTrue(
+                    asked.get(0).content().startsWith(tr("dialog.mavenProject.trustBody", archetype.gav())),
+                    "the body names the archetype first; a \"Trust and Generate\" sentence follows: "
+                            + asked.get(0).content());
             assertFalse(answer[0]);
             SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> answer[0] = maven.confirmArchetype(archetype));
             assertTrue(answer[0]);

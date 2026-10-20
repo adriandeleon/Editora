@@ -205,6 +205,156 @@ public final class PomEdits {
         return setVersions(pom, versions, "dependency", null);
     }
 
+    // --- the version sites an update has to reason about -----------------------------------------
+
+    /**
+     * One place a pom names a version: a {@code <dependency>} or {@code <plugin>} and what its
+     * {@code <version>} says — a literal, a {@code ${property}} reference, or {@code ""} when the element has
+     * none (the version then comes from a parent or a managed import).
+     *
+     * @param bomImport a {@code <type>pom</type><scope>import</scope>} dependency, whose bump re-versions
+     *     everything it manages
+     */
+    public record VersionSite(String element, String ga, String version, boolean bomImport) {
+        public boolean isPlugin() {
+            return "plugin".equals(element);
+        }
+
+        public boolean isPropertyDriven() {
+            return version.startsWith("${");
+        }
+
+        public boolean isInherited() {
+            return version.isEmpty();
+        }
+
+        /** The property a {@code ${name}} version names, or null when the version is not exactly one reference. */
+        public @Nullable String propertyName() {
+            if (!version.startsWith("${") || !version.endsWith("}") || version.indexOf('}') != version.length() - 1) {
+                return null;
+            }
+            return version.substring(2, version.length() - 1).strip();
+        }
+    }
+
+    /**
+     * Every dependency and plugin in document order, with its version as written — including the ones
+     * {@link #dependencyVersions} and {@link #pluginVersions} leave out, so an update can <em>say</em> what
+     * it skipped instead of silently checking a fraction.
+     */
+    public static java.util.List<VersionSite> versionSites(String pom) {
+        java.util.List<VersionSite> out = new java.util.ArrayList<>();
+        if (blank(pom)) {
+            return out;
+        }
+        java.util.List<int[]> all = new java.util.ArrayList<>(elementsNamed(pom, "dependency"));
+        all.addAll(elementsNamed(pom, "plugin"));
+        all.sort(java.util.Comparator.comparingInt(s -> s[0]));
+        for (int[] span : all) {
+            boolean plugin = nameAt(pom, span[0]).equals("plugin");
+            String ga = coordinateKey(pom, span, plugin ? "org.apache.maven.plugins" : null);
+            if (ga == null) {
+                continue;
+            }
+            String v = childText(pom, span, "version");
+            boolean bom = !plugin
+                    && "pom".equals(childText(pom, span, "type"))
+                    && "import".equals(childText(pom, span, "scope"));
+            out.add(new VersionSite(plugin ? "plugin" : "dependency", ga, v == null ? "" : v, bom));
+        }
+        return out;
+    }
+
+    /** The {@code <parent>} as {@code {groupId, artifactId, version}}, or null when the pom declares none. */
+    public static String @Nullable [] parent(String pom) {
+        if (blank(pom)) {
+            return null;
+        }
+        int[] root = rootChildren(pom);
+        int[] parent = root == null ? null : findChild(pom, root[0], root[1], "parent");
+        if (parent == null) {
+            return null;
+        }
+        String g = childText(pom, parent, "groupId");
+        String a = childText(pom, parent, "artifactId");
+        String v = childText(pom, parent, "version");
+        if (g == null || a == null || g.isEmpty() || a.isEmpty()) {
+            return null;
+        }
+        return new String[] {g, a, v == null ? "" : v};
+    }
+
+    /** The {@code <parent>}'s {@code <relativePath>} as written, or null when it is not declared. */
+    public static @Nullable String parentRelativePath(String pom) {
+        int[] root = blank(pom) ? null : rootChildren(pom);
+        int[] parent = root == null ? null : findChild(pom, root[0], root[1], "parent");
+        return parent == null ? null : childText(pom, parent, "relativePath");
+    }
+
+    /** Rewrites the {@code <parent>}'s {@code <version>}; a pom without one (or without a parent) is left alone. */
+    public static String setParentVersion(String pom, String version) {
+        if (blank(pom) || blank(version)) {
+            return pom;
+        }
+        int[] root = rootChildren(pom);
+        int[] parent = root == null ? null : findChild(pom, root[0], root[1], "parent");
+        int[] existing = parent == null ? null : findChild(pom, parent[1], parent[2], "version");
+        if (existing == null) {
+            return pom;
+        }
+        return pom.substring(0, existing[1]) + escape(version) + pom.substring(existing[2]);
+    }
+
+    /** The top-level {@code <properties>} entries, name → value as written, in document order. */
+    public static Map<String, String> properties(String pom) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (blank(pom)) {
+            return out;
+        }
+        int[] root = rootChildren(pom);
+        int[] props = root == null ? null : findChild(pom, root[0], root[1], "properties");
+        if (props == null) {
+            return out;
+        }
+        int i = props[1];
+        while (i < props[2]) {
+            int lt = pom.indexOf('<', i);
+            if (lt < 0 || lt >= props[2]) {
+                break;
+            }
+            if (skippable(pom, lt)) {
+                i = skipTo(pom, lt);
+                continue;
+            }
+            int[] entry = elementAt(pom, lt);
+            if (entry == null) {
+                break;
+            }
+            out.put(nameAt(pom, lt), pom.substring(entry[1], entry[2]).trim());
+            i = entry[3];
+        }
+        return out;
+    }
+
+    /** How often {@code ${name}} occurs anywhere in the document — the test for "referenced only from versions". */
+    public static int referenceCount(String pom, String name) {
+        if (blank(pom) || blank(name)) {
+            return 0;
+        }
+        String ref = "${" + name + "}";
+        int count = 0;
+        for (int at = pom.indexOf(ref); at >= 0; at = pom.indexOf(ref, at + ref.length())) {
+            count++;
+        }
+        return count;
+    }
+
+    /** The direct child's trimmed text, or null when {@code element} has no such child. */
+    private static @Nullable String childText(String pom, int[] element, String name) {
+        int[] child = findChild(pom, element[1], element[2], name);
+        return child == null ? null : pom.substring(child[1], child[2]).trim();
+    }
+
     /** {@code groupId:artifactId} of a plugin element, defaulting the group as Maven does. */
     private static @Nullable String coordinateKey(String pom, int[] span, @Nullable String groupDefault) {
         int[] artifact = findChild(pom, span[1], span[2], "artifactId");

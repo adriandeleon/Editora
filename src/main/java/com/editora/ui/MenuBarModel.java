@@ -275,8 +275,22 @@ final class MenuBarModel {
                                 "test.run",
                                 "test.rerunFailed",
                                 SEPARATOR,
+                                submenu("menubar.run.build"),
                                 submenu("menubar.run.deploy")),
                         List.of(
+                                // The Maven commands and the two build tool windows had no menu-bar entry
+                                // at all: the stripe icon and the palette were the only ways in (review B23).
+                                new MenuSpec(
+                                        "menubar.run.build",
+                                        List.of(
+                                                "maven.showActions",
+                                                "maven.runCustom",
+                                                "maven.rerunLast",
+                                                "maven.stop",
+                                                "maven.refresh",
+                                                SEPARATOR,
+                                                "tool.maven",
+                                                "tool.buildOutput")),
                                 new MenuSpec(
                                         "menubar.run.breakpoints",
                                         List.of(

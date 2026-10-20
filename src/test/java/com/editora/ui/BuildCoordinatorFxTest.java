@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -52,9 +53,12 @@ class BuildCoordinatorFxTest {
             return simpleMode;
         }
 
+        final List<String> statuses = new java.util.ArrayList<>();
+
         @Override
         public void setStatus(String message) {
             lastStatus = message;
+            statuses.add(message);
         }
 
         /** The file whose project drives detection, when a test needs one below the project root. */
@@ -92,11 +96,20 @@ class BuildCoordinatorFxTest {
             return trusted;
         }
 
+        com.editora.build.BuildTrust.Summary promptedSummary;
+        Path opened;
+
         @Override
-        public boolean confirmTrust(Path root, Path wrapper) {
+        public void openFile(Path file) {
+            opened = file;
+        }
+
+        @Override
+        public boolean confirmTrust(Path root, com.editora.build.BuildTrust.Summary summary) {
             promptCount++;
             promptedRoot = root;
-            promptedWrapper = wrapper;
+            promptedWrapper = summary.wrapper();
+            promptedSummary = summary;
             return promptAnswer;
         }
 
@@ -327,6 +340,7 @@ class BuildCoordinatorFxTest {
         host.settings.setMavenSupport(true);
         host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
         FakeOps ops = new FakeOps();
+        ops.trusted = true; // a Maven folder is gated on its first build (review B10)
         ops.projectRoot = dir;
         Files.writeString(dir.resolve("pom.xml"), VALID_POM);
         BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
@@ -393,13 +407,18 @@ class BuildCoordinatorFxTest {
         return c;
     }
 
+    /**
+     * A Maven root with no wrapper is gated too (review B10): the pom's plugins run on the user's own
+     * {@code mvn} just the same, so the first build asks once, listing them, and remembers the project root.
+     */
     @Test
-    void aRootWithNoWrapperIsNeverPrompted(@TempDir Path dir) throws Exception {
+    void aMavenRootWithNoWrapperAsksOnceListingThePomsPlugins(@TempDir Path dir) throws Exception {
         FakeHost host = new FakeHost();
         host.settings.setMavenSupport(true);
         host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
+        ops.promptAnswer = true;
         Files.writeString(dir.resolve("pom.xml"), VALID_POM); // no mvnw
         BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
 
@@ -407,7 +426,35 @@ class BuildCoordinatorFxTest {
         waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "pom.xml parses");
         FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
 
-        assertEquals(0, ops.promptCount, "argv[0] is the user's own tool — nothing to consent to");
+        assertEquals(1, ops.promptCount, "a pom's plugins are repository code: the first build asks");
+        assertNull(ops.promptedWrapper, "nothing but the pom to name");
+        assertEquals(
+                dir.toAbsolutePath().normalize(),
+                ops.promptedRoot.toAbsolutePath().normalize());
+        assertFalse(ops.promptedSummary.items().isEmpty(), "the prompt says what will run");
+        assertEquals(1, ops.trustCount, "accepting records the folder");
+        assertEquals(1, ops.openConsoleCount, "and the run proceeds");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+        assertEquals(1, ops.promptCount, "trusted now: the second build does not ask again");
+    }
+
+    /** A tool whose builds run nothing of the repository's (npm) is never gated. */
+    @Test
+    void anNpmRootIsNeverPrompted(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setNpmSupport(true);
+        host.settings.setNpmCommand("editora-test-nonexistent-npm-binary-zzz");
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = dir;
+        Files.writeString(dir.resolve("package.json"), "{\"name\": \"demo\", \"scripts\": {\"build\": \"tsc\"}}");
+        BuildCoordinator c = coordinator(BuildTool.NPM, host, ops);
+
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "package.json parses");
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("run", "build"), List.of()));
+
+        assertEquals(0, ops.promptCount, "argv[0] is the user's own tool and the manifest runs nothing itself");
         assertEquals(1, ops.openConsoleCount, "and the run proceeds as before");
     }
 
@@ -583,6 +630,7 @@ class BuildCoordinatorFxTest {
         host.settings.setMavenCommand(
                 script(project.resolve("fakemvn.sh"), "pwd >> '" + cwdLog + "'").toString());
         FakeOps ops = new FakeOps();
+        ops.trusted = true; // a Maven folder is gated on its first build (review B10)
         ops.projectRoot = moduleB; // what the active tab now resolves to
         BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
         FxTestSupport.runOnFx(c::refresh);
@@ -617,6 +665,7 @@ class BuildCoordinatorFxTest {
         host.settings.setMavenCommand(
                 script(project.resolve("fakemvn.sh"), "pwd >> '" + cwdLog + "'").toString());
         FakeOps ops = new FakeOps();
+        ops.trusted = true; // a Maven folder is gated on its first build (review B10)
         ops.projectRoot = moduleB;
         BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
         FxTestSupport.runOnFx(c::refresh);
@@ -668,6 +717,7 @@ class BuildCoordinatorFxTest {
             host.settings.setGradleSupport(true);
             host.settings.setGradleCommand(fake.toString());
             FakeOps ops = new FakeOps();
+            ops.trusted = true; // a Maven folder is gated on its first build (review B10)
             ops.projectRoot = dir;
             BuildCoordinator c = coordinator(BuildTool.GRADLE, host, ops);
             FxTestSupport.runOnFx(c::refresh);
@@ -720,5 +770,188 @@ class BuildCoordinatorFxTest {
 
     private static String tr(String key, Object... args) {
         return com.editora.i18n.Messages.tr(key, args);
+    }
+
+    // --- Maven pass 2: tree group (B8 one toggle set, B11 projects, B14, B15, B21, B32) ---
+
+    private static final String PROFILES_POM = """
+            <project>
+              <groupId>com.example</groupId>
+              <artifactId>profiled</artifactId>
+              <version>1.0.0</version>
+              <profiles>
+                <profile><id>dev</id><activation><activeByDefault>true</activeByDefault></activation></profile>
+                <profile><id>ci</id><activation><property><name>env.CI</name></property></activation></profile>
+              </profiles>
+            </project>
+            """;
+
+    /** The tree and the popup read one toggle set per root, and Run/Debug read its argv through it. */
+    @Test
+    void theTreeAndThePopupShareOneToggleSetPerRoot(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = dir;
+        Files.writeString(dir.resolve("pom.xml"), PROFILES_POM);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "pom.xml parses");
+
+        BuildActionsTree tree = FxTestSupport.callOnFx(c::tasksPanel);
+        FxTestSupport.runOnFx(() -> tree.activeToggles().add("dev"));
+        assertEquals(List.of("-Pdev"), FxTestSupport.callOnFx(c::activeToggleArgs), "the accessor Run and Debug use");
+
+        FxTestSupport.runOnFx(c::showActionsPopup);
+        BuildActionsPopup popup = FxTestSupport.field(c, "popup");
+        assertSame(tree.activeToggles(), popup.activeToggles(), "the popup opens on the same set, not an empty one");
+        FxTestSupport.runOnFx(() -> popup.activeToggles().add("!ci"));
+        assertEquals(List.of("-Pdev,!ci"), FxTestSupport.callOnFx(c::activeToggleArgs), "an explicitly-off profile");
+
+        // Re-detecting the same pom (a save, a tab switch) keeps the set; the tree is handed the same one.
+        FxTestSupport.runOnFx(c::refreshMarker);
+        waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "re-detected");
+        assertEquals(List.of("-Pdev,!ci"), FxTestSupport.callOnFx(c::activeToggleArgs));
+        assertSame(tree.activeToggles(), popup.activeToggles());
+    }
+
+    /** Simple UI mode gets its own message: the Settings toggle is on, so "enable it in Settings" was wrong. */
+    @Test
+    void simpleModeReportsItselfNotTheSettingsToggle() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        host.simpleMode = true;
+        FakeOps ops = new FakeOps();
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::showActionsPopup);
+        assertEquals(tr("status.build.simpleMode", disp(BuildTool.MAVEN)), host.lastStatus);
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("clean"), List.of()));
+        assertEquals(tr("status.build.simpleMode", disp(BuildTool.MAVEN)), host.lastStatus);
+    }
+
+    /** A pom that does not parse still offers the lifecycle (mvn says what is wrong), and the tree shows why. */
+    @Test
+    void aMalformedPomKeepsTheLifecycleAndShowsTheReasonWithALinkToTheFile(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = dir;
+        Files.writeString(dir.resolve("pom.xml"), MALFORMED_POM);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(c::isMalformed, "the broken pom is detected as such");
+        assertNull(c.detectedLabel(), "no artifactId to show");
+
+        BuildActionsTree tree = FxTestSupport.callOnFx(c::tasksPanel);
+        javafx.scene.control.TreeView<?> view = FxTestSupport.field(tree, "tree");
+        assertNotNull(FxTestSupport.callOnFx(view::getRoot), "the lifecycle section is still there");
+        javafx.scene.layout.VBox notice = FxTestSupport.field(tree, "notice");
+        javafx.scene.control.Label text = FxTestSupport.field(tree, "noticeLabel");
+        javafx.scene.control.Hyperlink link = FxTestSupport.field(tree, "noticeLink");
+        assertTrue(FxTestSupport.callOnFx(notice::isVisible), "the reason is shown in the window itself");
+        String prefix = tr("status.build.malformedAt", disp(BuildTool.MAVEN), "");
+        assertTrue(text.getText().startsWith(prefix) && text.getText().length() > prefix.length(), text.getText());
+        assertEquals(tr("buildtree.openBuildFile", "pom.xml"), link.getText());
+        FxTestSupport.runOnFx(link::fire);
+        assertEquals(dir.resolve("pom.xml"), ops.opened, "the link opens the build file");
+
+        Files.writeString(dir.resolve("pom.xml"), VALID_POM);
+        FxTestSupport.runOnFx(c::refreshMarker);
+        waitUntil(() -> c.detectedLabel() != null, "fixed: parses again");
+        assertFalse(c.isMalformed());
+        assertFalse(FxTestSupport.callOnFx(notice::isVisible), "and the notice is gone");
+    }
+
+    /** A workspace whose poms sit below the root lists them; picking one switches the detected root. */
+    @Test
+    void projectsBelowTheRootAreListedAndSelectable(@TempDir Path dir) throws Exception {
+        Path backend = Files.createDirectories(dir.resolve("backend"));
+        Path billing = Files.createDirectories(dir.resolve("services").resolve("billing"));
+        Files.writeString(backend.resolve("pom.xml"), VALID_POM);
+        Files.writeString(billing.resolve("pom.xml"), VALID_POM.replace("demo-app", "billing"));
+        Files.writeString(dir.resolve("notes.txt"), "");
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = dir; // the Welcome tab: nothing active, the project root is the context
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> FxTestSupport.<List<Path>>field(c, "projectRoots").size() == 2, "two roots found below");
+        assertNull(c.markerRoot(), "nothing detected for the root itself");
+
+        BuildActionsTree tree = FxTestSupport.callOnFx(c::tasksPanel);
+        javafx.scene.control.TreeView<?> view = FxTestSupport.field(tree, "tree");
+        assertNotNull(FxTestSupport.callOnFx(view::getRoot), "the Projects section is shown even with no provider");
+        assertEquals(List.of(backend, billing), FxTestSupport.<List<Path>>field(tree, "projects"));
+
+        FxTestSupport.runOnFx(() -> c.selectRoot(billing));
+        waitUntil(
+                () -> billing.equals(c.markerRoot()) && "billing".equals(c.detectedLabel()), "billing is the root now");
+        assertTrue(ops.lastVisible, "and its stripe is up");
+
+        // The active file changing lets the file lead again.
+        Path source = Files.writeString(backend.resolve("App.java"), "class App {}\n");
+        host.active = FxTestSupport.callOnFx(() -> {
+            com.editora.editor.EditorBuffer b = new com.editora.editor.EditorBuffer();
+            b.setPath(source);
+            return b;
+        });
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> backend.equals(c.markerRoot()), "the active file's module");
+    }
+
+    /** The started status always names the folder (Rerun Last may run where no stripe shows). */
+    @Test
+    void theStartedStatusAlwaysNamesTheRoot(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+        FakeOps ops = new FakeOps();
+        ops.trusted = true;
+        ops.projectRoot = dir;
+        Files.writeString(dir.resolve("pom.xml"), VALID_POM);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "pom.xml parses");
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+        // launch() states it before the bogus command's synchronous start failure overwrites it.
+        assertTrue(
+                host.statuses.contains(tr(
+                        "status.build.startedIn",
+                        disp(BuildTool.MAVEN),
+                        "compile",
+                        dir.getFileName().toString())),
+                host.statuses.toString());
+    }
+
+    /** Settings' project row and Doctor show what a build from the detected root runs as. */
+    @Test
+    void theExecutableSummaryNamesTheWrapperAndItsTrust(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        BuildCoordinator c = detectedWithWrapper(host, ops, dir);
+        boolean windows = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
+        String name = windows ? "./mvnw.cmd" : "./mvnw";
+        assertEquals(
+                tr("settings.buildTools.exec.wrapperUntrusted", name), FxTestSupport.callOnFx(c::executableSummary));
+        ops.trusted = true;
+        assertEquals(tr("settings.buildTools.exec.wrapperTrusted", name), FxTestSupport.callOnFx(c::executableSummary));
+
+        FakeHost plain = new FakeHost();
+        plain.settings.setMavenSupport(true);
+        FakeOps plainOps = new FakeOps();
+        Path other = Files.createDirectories(dir.resolve("plain"));
+        plainOps.projectRoot = other;
+        Files.writeString(other.resolve("pom.xml"), VALID_POM);
+        BuildCoordinator p = coordinator(BuildTool.MAVEN, plain, plainOps);
+        FxTestSupport.runOnFx(p::refresh);
+        waitUntil(() -> p.isDetected() && p.detectedLabel() != null, "pom.xml parses");
+        assertEquals(tr("settings.buildTools.exec.onPath", "mvn"), FxTestSupport.callOnFx(p::executableSummary));
+        plain.settings.setMavenCommand("/opt/maven/bin/mvn");
+        assertEquals(
+                tr("settings.buildTools.exec.override", "/opt/maven/bin/mvn"),
+                FxTestSupport.callOnFx(p::executableSummary));
     }
 }

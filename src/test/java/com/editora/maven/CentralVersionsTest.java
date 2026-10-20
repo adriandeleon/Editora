@@ -127,4 +127,50 @@ class CentralVersionsTest {
         assertTrue(CentralVersions.upgradesOnly(Map.of(), Map.of(COMPILER, "3.14.0"))
                 .isEmpty());
     }
+
+    @Test
+    void theParallelLookupAnswersInCoordinateOrderAndStopsAfterTheRepositoryProvesUnreachable() throws Exception {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(3);
+        try {
+            Map<String, String> answers =
+                    CentralVersions.latest(List.of(COMPILER, "nope:nope", SUREFIRE, "bad"), REPO, pool, () -> false);
+            assertEquals(List.of(COMPILER, SUREFIRE), List.copyOf(answers.keySet()));
+            assertEquals("3.14.0", answers.get(COMPILER));
+
+            // The first connect failure stops the rest: nothing after it is asked.
+            java.util.List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+            Function<String, String> down = path -> {
+                asked.add(path);
+                throw new CentralVersions.Unreachable("no route");
+            };
+            java.util.concurrent.ExecutorService one = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                assertTrue(CentralVersions.latest(List.of(COMPILER, SUREFIRE, "g:a", "g:b"), down, one, () -> false)
+                        .isEmpty());
+                assertEquals(1, asked.size(), "one failure is the answer for all: " + asked);
+            } finally {
+                one.shutdownNow();
+            }
+
+            // Cancelled before it ran: no lookups at all, and an empty (not failed) answer.
+            java.util.List<String> askedAfterCancel = new java.util.concurrent.CopyOnWriteArrayList<>();
+            assertTrue(CentralVersions.latest(
+                            List.of(COMPILER, SUREFIRE),
+                            path -> {
+                                askedAfterCancel.add(path);
+                                return REPO.apply(path);
+                            },
+                            pool,
+                            () -> true)
+                    .isEmpty());
+            assertTrue(askedAfterCancel.isEmpty());
+            // No pool: the sequential form.
+            assertEquals(
+                    "3.14.0",
+                    CentralVersions.latest(List.of(COMPILER), REPO, null, () -> false)
+                            .get(COMPILER));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 }

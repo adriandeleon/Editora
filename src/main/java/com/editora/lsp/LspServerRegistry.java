@@ -365,7 +365,31 @@ public final class LspServerRegistry {
                     List.of("settings.gradle.kts", "settings.gradle"),
                     List.of("build.gradle.kts", "build.gradle", "pom.xml"));
         }
+        if (MAVEN_POM_SERVER_ID.equals(serverId)) {
+            // The nearest pom first, then the repository; the coordinator then widens a pom root to the outermost
+            // pom of its contiguous chain (RootResolver.outermostContiguous), so a reactor opened without a
+            // project is one lemminx-maven JVM, not one per module (Maven review C11).
+            return List.of(List.of("pom.xml"), List.of(".git"));
+        }
         return List.of(rootMarkersForServer(serverId));
+    }
+
+    /**
+     * The name a server is shown under — in the status bar, the Settings pill and Doctor — where its program's
+     * basename would be wrong: the native lemminx download is {@code lemminx-linux-x86_64} (and
+     * {@code lemminx-win32-x86_64.exe}), the Maven server runs through {@code java}. Null for every other
+     * server, whose basename ({@code gopls}, {@code rust-analyzer}, {@code clangd}) is the right name.
+     */
+    public static @Nullable String displayNameFor(@Nullable String serverId) {
+        if (serverId == null) {
+            return null;
+        }
+        return switch (serverId) {
+            case "xml" -> "lemminx";
+            case MAVEN_POM_SERVER_ID -> "lemminx-maven";
+            case JAVA_SERVER_ID -> "jdtls";
+            default -> null;
+        };
     }
 
     /** Project-root markers for a <i>server id</i> (empty if unknown). Complements {@link #rootMarkersFor}. */

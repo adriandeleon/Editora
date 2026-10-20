@@ -30,6 +30,31 @@ public final class JdkToolchain {
         return executable.toString();
     }
 
+    /**
+     * The {@code java} a launch uses with no JDK selected (review D18): {@code $JAVA_HOME/bin/java} when
+     * {@code environment} (this process's, which a Maven build inherits and compiles with) names a
+     * {@code JAVA_HOME} whose launcher exists, else blank — PATH's {@code java}, which may be another version
+     * than the one Maven compiled with.
+     */
+    public static String inheritedJavaExecutable(@Nullable Map<String, String> environment) {
+        String home = environment == null ? "" : clean(environment.get("JAVA_HOME"));
+        if (home.isEmpty()) {
+            return "";
+        }
+        try {
+            Path executable = Path.of(home).resolve("bin").resolve(isWindows() ? "java.exe" : "java");
+            return Files.isRegularFile(executable) ? executable.toString() : "";
+        } catch (RuntimeException notAPath) {
+            return "";
+        }
+    }
+
+    /** {@link #javaExecutable} of the selected JDK, else {@link #inheritedJavaExecutable} of this process's environment. */
+    public static String javaExecutableOrInherited(String jdkHome) {
+        String selected = javaExecutable(jdkHome);
+        return selected.isEmpty() ? inheritedJavaExecutable(System.getenv()) : selected;
+    }
+
     /** The compiler alongside a selected Java launcher, or {@code javac} when PATH supplies Java. */
     public static String compilerForJavaExecutable(@Nullable String javaExecutable) {
         if (javaExecutable == null || javaExecutable.isBlank()) {
@@ -69,7 +94,7 @@ public final class JdkToolchain {
         return Files.isRegularFile(bin.resolve(isWindows() ? "javac.exe" : "javac"));
     }
 
-    private static String clean(String value) {
+    private static String clean(@Nullable String value) {
         return value == null ? "" : value.strip();
     }
 
