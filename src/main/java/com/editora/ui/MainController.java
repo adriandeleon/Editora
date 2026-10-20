@@ -2545,6 +2545,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public List<String> buildExecutable(BuildTool tool, Path root) {
+                        return buildExecutableFor(tool, root);
+                    }
+
+                    @Override
                     public void toggleToolWindow() {
                         toolWindows.toggle(debugToolWindow);
                     }
@@ -5674,6 +5679,24 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  active project's marker file, streaming tasks to a per-tool console (see {@link BuildCoordinator}). */
     final List<BuildCoordinator> buildCoordinators = createBuildCoordinators();
 
+    /**
+     * The argv prefix Run and Debug start {@code tool} with from {@code root}: the tool's tasks tree decides
+     * (its wrapper, the override, the PATH command) and asks for trust as it would for its own run; null when
+     * trust was declined. With the tool's support turned off there is no tree — then the user's own command
+     * (the override, else the PATH command), never a repository's wrapper, which nothing has gated.
+     */
+    List<String> buildExecutableFor(BuildTool tool, java.nio.file.Path root) {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.tool() == tool) {
+                return c.trustedExecutable(root);
+            }
+        }
+        return com.editora.build.BuildExecutable.resolve(
+                List.of(),
+                coordinatorHost.projectScope().buildCommand(tool, config.getSettings()),
+                tool.commandExample());
+    }
+
     private List<BuildCoordinator> createBuildCoordinators() {
         List<BuildCoordinator> list = new ArrayList<>();
         for (BuildTool tool : BuildTool.enabled()) {
@@ -6333,14 +6356,30 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void resolveMavenClasspath(
                 java.nio.file.Path root, String jdkHome, java.util.function.Consumer<List<String>> cb) {
+            resolveMavenClasspath(root, jdkHome, List.of("mvn"), com.editora.maven.MavenClasspath.Scope.RUNTIME, cb);
+        }
+
+        @Override
+        public void resolveMavenClasspath(
+                java.nio.file.Path root,
+                String jdkHome,
+                List<String> executable,
+                com.editora.maven.MavenClasspath.Scope scope,
+                java.util.function.Consumer<List<String>> cb) {
             Thread t = new Thread(
                     () -> {
-                        List<String> result = com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome);
+                        List<String> result =
+                                com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome, executable, scope);
                         Platform.runLater(() -> cb.accept(result));
                     },
                     "editora-maven-cp");
             t.setDaemon(true);
             t.start();
+        }
+
+        @Override
+        public List<String> buildExecutable(BuildTool tool, java.nio.file.Path root) {
+            return buildExecutableFor(tool, root);
         }
 
         @Override
@@ -7149,10 +7188,20 @@ public class MainController implements com.editora.mcp.McpBridge {
             // autobuild disabled, so nothing has produced target/classes yet: the resolved classpath is
             // correct and the JVM still dies with ClassNotFoundException on the very first Run. A
             // before-launch step is the mechanism for exactly this — a non-zero exit aborts the launch, so a
-            // failed compile never runs a stale binary. Bare `mvn` rather than a resolved absolute path:
-            // this is persisted, and a path would rot the moment the user changed their Maven install.
+            // failed compile never runs a stale binary. Symbolic (`maven:compile`) rather than a command line:
+            // this is persisted, and Run resolves it through the Maven the tasks tree uses (the project's
+            // wrapper once trusted, the command override, else PATH mvn), so nothing rots when Maven moves.
             state.setRunConfigurations(List.of(new com.editora.config.RunConfiguration(
-                    name, "java", "", main.fqn(), name, "", "", root.toString(), "", "mvn -q compile")));
+                    name,
+                    "java",
+                    "",
+                    main.fqn(),
+                    name,
+                    "",
+                    "",
+                    root.toString(),
+                    "",
+                    com.editora.run.BuildBeforeLaunch.seededStep(BuildTool.MAVEN))));
             state.setSelectedRunConfig(name);
             state.setOpenFiles(List.of(new WorkspaceState.OpenFile(main.file().toString(), 0, false)));
             state.setActiveFile(main.file().toString());

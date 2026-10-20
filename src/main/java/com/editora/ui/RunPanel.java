@@ -339,6 +339,11 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         appender.append(line, spans(line, List.of(), "run-command"));
     }
 
+    /** Appends a muted line of Editora's own (a hint about the output), set apart from the program's. */
+    public void appendNotice(String text) {
+        showCommandLine(text);
+    }
+
     /** Appends one line of program output, applying stderr/log-level colors and clickable URL styling. */
     public void appendOutput(String line, boolean stderr) {
         appendOutput(line, stderr, true);

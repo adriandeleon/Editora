@@ -197,7 +197,10 @@ class MavenProjectWizardFxTest {
             assertEquals("demo", configs.get(0).projectName(), "so the first launch resolves directly");
             // archetype:generate writes sources only and jdtls autobuild is off, so without a compile step
             // the very first Run resolves a correct classpath and then dies with ClassNotFoundException.
-            assertEquals("mvn -q compile", configs.get(0).beforeLaunch(), "the first Run must compile first");
+            assertEquals(
+                    "maven:compile",
+                    configs.get(0).beforeLaunch(),
+                    "the first Run must compile first, with the tree's Maven");
             assertEquals("demo", seeded.getWorkspaceState().getSelectedRunConfig(), "pre-selected");
             // The open file is not cosmetic: a Java launch resolves its classpath through an OPEN Java
             // file, so a window that opens on pom.xml alone reports "open a Java file from the project".
