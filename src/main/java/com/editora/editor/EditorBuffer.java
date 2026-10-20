@@ -254,10 +254,6 @@ public class EditorBuffer implements TabContent {
     private @Nullable String narrowPrefix;
 
     private @Nullable String narrowSuffix;
-    /** 0-based document line the accessible region starts on; 0 when widened. See {@link #narrowFirstLine()}. */
-    private int narrowFirstLine;
-    /** Line breaks in {@link #narrowSuffix}: the lines of the file after the region, for the banner's "of N". */
-    private int narrowSuffixLines;
     /** Fired whenever narrowing turns on or off, from wherever — the UI reconciles off this, not off the
      *  command, so a widen forced by a whole-document write cannot leave a stale indicator or a suspended
      *  language server behind. */
@@ -753,29 +749,8 @@ public class EditorBuffer implements TabContent {
 
     private final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
 
-    {
-        folds.setLineNumbers(this::gutterLineNumberAt, this::gutterLineNumberSpan);
-        // The narrowing banner counts the region's lines; only a changed paragraph count can move it.
-        area.getParagraphs().addListener((javafx.collections.ListChangeListener<Object>) c -> {
-            if (narrowPrefix != null && this.narrowBar != null) { // qualified: the field is declared further down
-                refreshNarrowBarText();
-            }
-        });
-    }
-
-    /**
-     * The gutter's number for {@code paragraph}: while narrowed, the line it is in the <em>whole file</em> — the
-     * region is a window onto the file, so its rows keep the file's numbers rather than restarting at 1 — and
-     * otherwise what the log filter says ({@code -1}: the paragraph's own position).
-     */
-    private int gutterLineNumberAt(int paragraph) {
-        return narrowPrefix != null ? narrowFirstLine + paragraph + 1 : logView.lineNumberAt(paragraph);
-    }
-
-    /** Lines to size the gutter for: the region's last file line while narrowed, else the log filter's answer. */
-    private int gutterLineNumberSpan() {
-        return narrowPrefix != null ? narrowFirstLine + area.getParagraphs().size() : logView.lineNumberSpan();
-    }
+    /** The gutter numbers, {@code narrowed} style and banner of a narrowed buffer (see {@link NarrowPresentation}). */
+    private final NarrowPresentation narrowView = new NarrowPresentation(this, area, logView, folds);
 
     /** Pinned enclosing-scope headers over the top of the code pane; see {@link StickyScroll}. */
     private final StickyScrollBar stickyScroll = new StickyScrollBar();
@@ -8223,7 +8198,7 @@ public class EditorBuffer implements TabContent {
 
     /** Puts the active top bars into {@code outer.setTop}: the install banner above the view-mode banner
      *  (a {@code VBox} when both show), or {@code null} when neither does. */
-    private void refreshTopBars() {
+    void refreshTopBars() {
         java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
         if (encryption.notice() != null) {
             bars.add(encryption.notice());
@@ -8237,9 +8212,7 @@ public class EditorBuffer implements TabContent {
         if (viewModeBarVisible && viewModeBar != null) {
             bars.add(viewModeBar);
         }
-        if (narrowPrefix != null && narrowBar != null) {
-            bars.add(narrowBar); // nearest the text: it describes the text
-        }
+        bars.addAll(narrowView.bars()); // the narrowing banner, nearest the text: it describes the text
         if (logControl != null) {
             bars.add(logControl);
         }
@@ -9576,15 +9549,13 @@ public class EditorBuffer implements TabContent {
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = full.substring(0, s);
         narrowSuffix = full.substring(e);
-        narrowFirstLine = NarrowLines.firstLine(full, s);
-        narrowSuffixLines = NarrowLines.firstLine(narrowSuffix, narrowSuffix.length());
         boolean hadHistory = hasUndoHistory();
         LineMarks.narrow(s, e, () -> area.replaceText(full.substring(s, e)), bookmarks, breakpoints, notes, gitLines);
         forgetHistoryAtNarrowBoundary(hadHistory);
         area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
         area.requestFollowCaret();
         moveSplitCaret(caret2 - s);
-        narrowPresentationChanged();
+        narrowView.narrowed(full, s, e, area2);
         onNarrowChanged.run();
         return true;
     }
@@ -9593,93 +9564,9 @@ public class EditorBuffer implements TabContent {
         this.onNarrowChanged = callback == null ? () -> {} : callback;
     }
 
-    /**
-     * The 0-based line of the whole document that the accessible region starts on — 0 when widened. The gutter,
-     * the status bar's Ln and the Structure rows add it to the area's paragraph index, so a narrowed buffer
-     * keeps the file's line numbers instead of counting from 1 at the top of the region.
-     */
+    /** The 0-based file line the region starts on (0 when widened): a narrowed buffer keeps the file's numbering. */
     public int narrowFirstLine() {
-        return narrowFirstLine;
-    }
-
-    /** The editor's own signs of narrowing: the gutter's numbers, its {@code narrowed} style and the banner. */
-    private void narrowPresentationChanged() {
-        boolean on = narrowPrefix != null;
-        setNarrowedStyle(area, on);
-        if (area2 != null) {
-            setNarrowedStyle(area2, on);
-        }
-        folds.refreshLineNumbers();
-        updateNarrowBar();
-    }
-
-    /** {@code .editor-area.narrowed}: lets the stylesheet tint the gutter of a narrowed view. */
-    private static void setNarrowedStyle(CodeArea a, boolean on) {
-        if (on) {
-            if (!a.getStyleClass().contains("narrowed")) {
-                a.getStyleClass().add("narrowed");
-            }
-        } else {
-            a.getStyleClass().remove("narrowed");
-        }
-    }
-
-    /**
-     * The amber strip over a narrowed editor — which lines of the file are accessible, and a Widen button. The
-     * status bar's pill is easy to miss while the text itself looks like a short, complete file; this sits
-     * where the eye is. Built on first use; {@link #refreshTopBars} shows it only while narrowed.
-     */
-    private @Nullable HBox narrowBar;
-
-    private @Nullable Label narrowBarText;
-    /** The paragraph count the banner text was last computed from (-1: never, or widened since). */
-    private int narrowBarLines = -1;
-    /** What the banner's Widen button does: the controller routes it through the {@code edit.widen} command. */
-    private Runnable onWidenRequested = this::widen;
-
-    /** Lets the controller run the banner's Widen through the command registry (null: widen directly). */
-    public void setOnWidenRequested(@Nullable Runnable action) {
-        this.onWidenRequested = action == null ? this::widen : action;
-    }
-
-    private void updateNarrowBar() {
-        if (narrowPrefix == null) {
-            narrowBarLines = -1;
-            refreshTopBars();
-            return;
-        }
-        if (narrowBar == null) {
-            narrowBarText = new Label();
-            narrowBarText.getStyleClass().add("narrow-bar-text");
-            javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
-            HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-            Button widen = new Button(tr("editor.narrow.widen"));
-            widen.getStyleClass().add("narrow-bar-widen");
-            widen.setFocusTraversable(false);
-            widen.setOnAction(e -> onWidenRequested.run());
-            narrowBar = new HBox(10, narrowBarText, spacer, widen);
-            narrowBar.getStyleClass().add("narrow-bar");
-            narrowBar.setAlignment(Pos.CENTER_LEFT);
-        }
-        refreshNarrowBarText();
-        refreshTopBars();
-    }
-
-    /** "Narrowed to lines A–B of N": A–B the region's place in the file, N the whole file's line count. */
-    private void refreshNarrowBarText() {
-        int lines = area.getParagraphs().size();
-        if (lines == narrowBarLines || narrowBarText == null) {
-            return;
-        }
-        narrowBarLines = lines;
-        int first = narrowFirstLine + 1;
-        int last = narrowFirstLine + lines;
-        narrowBarText.setText(tr("editor.narrow.bar", first, last, last + narrowSuffixLines));
-    }
-
-    /** The narrowing banner's text, or null while widened (tests). */
-    public @Nullable String narrowBarText() {
-        return narrowPrefix != null && narrowBarText != null ? narrowBarText.getText() : null;
+        return narrowView.firstLine();
     }
 
     /** Emacs {@code widen}: restores access to the whole document. No-op when not narrowed. */
@@ -9700,15 +9587,13 @@ public class EditorBuffer implements TabContent {
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = null; // cleared first: replaceText fires the dirty listener, which reads getContent()
         narrowSuffix = null;
-        narrowFirstLine = 0;
-        narrowSuffixLines = 0;
         boolean hadHistory = hasUndoHistory();
         LineMarks.widen(() -> area.replaceText(prefix + visible + suffix), bookmarks, breakpoints, notes, gitLines);
         forgetHistoryAtNarrowBoundary(hadHistory);
         area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
         area.requestFollowCaret();
         moveSplitCaret(prefix.length() + caret2);
-        narrowPresentationChanged();
+        narrowView.widened(area2);
     }
 
     /** Puts the split's second caret back after the document was replaced under it (narrowing, widening). */

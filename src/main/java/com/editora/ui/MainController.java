@@ -8042,7 +8042,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 structurePanel.narrowChanged(buffer); // its Widen / Defun / Fold segments mirror the buffer
             }
         });
-        buffer.setOnWidenRequested(() -> registry.run("edit.widen")); // the editor banner's Widen button
         NoUndoGuard.install(buffer, noUndoGuard);
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);

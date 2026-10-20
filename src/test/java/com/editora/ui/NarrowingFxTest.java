@@ -239,26 +239,32 @@ class NarrowingFxTest {
         assertTrue(FxTestSupport.callOnFx(position::getText).startsWith("Ln 3, Col 1"), "same line once widened");
     }
 
+    /** The narrowing banner's text, or null while it is not shown. */
+    private static String bannerText(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            javafx.scene.Node label = b.getNode().lookup(".narrow-bar-text");
+            return label == null ? null : ((javafx.scene.control.Label) label).getText();
+        });
+    }
+
     @Test
     void aBannerOverTheTextNamesTheRegionAndWidens() throws Exception {
         EditorBuffer b = narrowed();
-        assertEquals(
-                "Narrowed to lines 2–3 of 5 — the rest of the file is out of reach",
-                FxTestSupport.callOnFx(b::narrowBarText));
+        assertEquals("Narrowed to lines 2–3 of 5 — the rest of the file is out of reach", bannerText(b));
         javafx.scene.Node bar = FxTestSupport.callOnFx(() -> b.getNode().lookup(".narrow-bar"));
         assertTrue(bar != null, "the banner is in the editor's top slot");
 
         FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "\n"));
         assertEquals(
                 "Narrowed to lines 2–4 of 6 — the rest of the file is out of reach",
-                FxTestSupport.callOnFx(b::narrowBarText),
+                bannerText(b),
                 "a new line in the region moves the region's end and the file's length");
 
         javafx.scene.control.Button widen = (javafx.scene.control.Button) bar.lookup(".narrow-bar-widen");
         FxTestSupport.runOnFx(widen::fire);
-        assertFalse(FxTestSupport.callOnFx(b::isNarrowed), "the banner's Widen widens (through the command)");
+        assertFalse(FxTestSupport.callOnFx(b::isNarrowed), "the banner's Widen widens");
         assertTrue(FxTestSupport.callOnFx(() -> b.getNode().lookup(".narrow-bar")) == null, "and the banner is gone");
-        assertTrue(FxTestSupport.callOnFx(b::narrowBarText) == null);
+        assertTrue(bannerText(b) == null);
     }
 
     // --- gutter marks across the boundary ---
