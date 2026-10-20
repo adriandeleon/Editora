@@ -198,8 +198,8 @@ and not checked.
 - **Plumbing.** Only NullAway runs (`-XepDisableAllChecks -Xep:NullAway:ERROR`), and only in the main compile,
   not on tests. `.mvn/jvm.config` exports the javac internals that Error Prone needs. JSpecify is a `provided`
   dependency read through `requires static org.jspecify`, so nothing ships. It runs on JDK 25 and JDK 27.
-  Cost on 2026-10-19, with nine packages marked: a clean `mvn -DskipTests compile` took 0.5 to 1.4 s longer
-  than about 9.5 s without the gate (two noisy runs). The cost grows as more packages are marked.
+  Cost on 2026-10-19, with every package but `ui` and `editor` marked: a clean `mvn -DskipTests compile`
+  took about 11.5 s, against 9.5 s with nine packages marked and about 9.5 s with none (two runs each).
 
 ## Worktrees: one per task
 
