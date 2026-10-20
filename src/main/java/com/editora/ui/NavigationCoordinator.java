@@ -223,7 +223,11 @@ final class NavigationCoordinator {
                 tr("nav.snippets.prompt"),
                 () -> {
                     EditorBuffer b = host.activeBuffer();
-                    return new ArrayList<>(host.snippets().forLanguage(b == null ? "global" : b.getLanguage()));
+                    return new ArrayList<>(host.snippets()
+                            .forLanguage(
+                                    b == null
+                                            ? "global"
+                                            : com.editora.editor.PomFiles.snippetLanguage(b, b.getLanguage())));
                 },
                 com.editora.snippet.SnippetPreview::label,
                 com.editora.snippet.SnippetPreview::detail,

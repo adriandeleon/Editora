@@ -1205,7 +1205,25 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (language != null && (language.startsWith("javascript") || language.startsWith("typescript"))) {
             addFoldlessSymbols(rootNodes, symbolByLine, paras);
         }
+        if (buffer.isPom()) {
+            rootNodes = pomLabelled(area, rootNodes);
+        }
         return rootNodes;
+    }
+
+    /** A pom's outline names dependencies/plugins by {@code groupId:artifactId} and profiles by id (C16). */
+    private static List<StructureNode> pomLabelled(CodeArea area, List<StructureNode> nodes) {
+        List<StructureNode> out = new ArrayList<>(nodes.size());
+        int count = area.getParagraphs().size();
+        for (StructureNode n : nodes) {
+            int end = n.region() == null ? -1 : n.region().endLine();
+            String label = PomOutlineLabels.label(
+                    n.label(), n.line(), end, count, i -> area.getParagraph(i).getText());
+            StructureNode copy = new StructureNode(n.region(), label, n.kind(), n.line(), n.detail());
+            copy.children().addAll(pomLabelled(area, n.children()));
+            out.add(copy);
+        }
+        return out;
     }
 
     /**

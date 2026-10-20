@@ -73,6 +73,9 @@ final class InstallCoordinator {
         this.host = host;
         this.ops = ops;
         this.service = service;
+        // The Build Tools JDK satisfies the Java prerequisite and runs the JVM servers' post-install smoke (C4).
+        service.setJdkHomeSupplier(
+                () -> host.settings() == null ? "" : host.settings().getMavenJdkHome());
     }
 
     /** Whether every tool that makes up {@code lang}'s support is already installed/detected. */

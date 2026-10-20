@@ -75,6 +75,38 @@ public final class RootResolver {
     }
 
     /**
+     * The outermost directory of the contiguous chain of {@code marker}-bearing folders that {@code root}
+     * belongs to: while the parent folder also holds {@code marker} (and is neither too broad nor outside
+     * {@code projectRoot}, when given), step up. A Maven reactor's module pom thus resolves to the reactor
+     * root — the same "contiguous chain" {@code MavenReactor} uses — and one server serves every module
+     * (Maven review C11). {@code root} itself is returned when it has no marker or no marker-bearing parent.
+     */
+    public static Path outermostContiguous(Path root, String marker, Path projectRoot) {
+        String home = System.getProperty("user.home");
+        return outermostContiguous(root, marker, projectRoot, home == null || home.isBlank() ? null : Path.of(home));
+    }
+
+    /** {@link #outermostContiguous(Path, String, Path)} with the home directory supplied (tests). */
+    static Path outermostContiguous(Path root, String marker, Path projectRoot, Path home) {
+        if (root == null || marker == null || !Files.isRegularFile(root.resolve(marker))) {
+            return root;
+        }
+        Path pr = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
+        Path current = root.toAbsolutePath().normalize();
+        for (int hops = 0; hops < 32; hops++) {
+            Path parent = current.getParent();
+            if (parent == null
+                    || !Files.isRegularFile(parent.resolve(marker))
+                    || tooBroad(parent, home)
+                    || pr != null && !parent.startsWith(pr)) {
+                return current;
+            }
+            current = parent;
+        }
+        return current;
+    }
+
+    /**
      * Whether {@code file} lies under {@code projectRoot} once symlinks are resolved. A project opened as
      * {@code ~/work/proj} (with {@code work} a symlink) and a location that arrives under its real path are
      * the same project: answering with the project root, in the spelling it was opened with, keeps them on

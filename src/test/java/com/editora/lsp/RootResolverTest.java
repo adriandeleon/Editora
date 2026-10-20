@@ -228,4 +228,33 @@ class RootResolverTest {
                 List.of(dir), RootResolver.findMarkerRootsBelow(dir, List.of("pom.xml"), 2, 1), "the visit cap holds");
         assertEquals(List.of(), RootResolver.findMarkerRootsBelow(dir.resolve("missing"), List.of("pom.xml"), 2, 100));
     }
+
+    @Test
+    void aModulePomWidensToTheOutermostContiguousPomFolder(@TempDir Path tmp) throws IOException {
+        Path repo = Files.createDirectories(tmp.resolve("repo"));
+        Files.createDirectories(repo.resolve(".git"));
+        Path reactor = Files.createDirectories(repo.resolve("reactor"));
+        Files.createFile(reactor.resolve("pom.xml"));
+        Path core = Files.createDirectories(reactor.resolve("core"));
+        Files.createFile(core.resolve("pom.xml"));
+        Path deep = Files.createDirectories(core.resolve("deep"));
+        Files.createFile(deep.resolve("pom.xml"));
+        Path lone = Files.createDirectories(repo.resolve("tools").resolve("lone"));
+        Files.createFile(lone.resolve("pom.xml")); // tools/ has no pom: the chain stops at lone/
+
+        Path norm = reactor.toAbsolutePath().normalize();
+        assertEquals(norm, RootResolver.outermostContiguous(deep, "pom.xml", null, null));
+        assertEquals(norm, RootResolver.outermostContiguous(core, "pom.xml", null, null));
+        assertEquals(norm, RootResolver.outermostContiguous(reactor, "pom.xml", null, null));
+        assertEquals(lone.toAbsolutePath().normalize(), RootResolver.outermostContiguous(lone, "pom.xml", null, null));
+        assertEquals(repo, RootResolver.outermostContiguous(repo, "pom.xml", null, null), "no pom here: unchanged");
+        // A project root bounds the climb: a module opened as its own project stays its own root.
+        assertEquals(core.toAbsolutePath().normalize(), RootResolver.outermostContiguous(deep, "pom.xml", core, null));
+        // The home folder is never a root, so the climb stops below it.
+        Path home = Files.createDirectories(tmp.resolve("home"));
+        Files.createFile(home.resolve("pom.xml"));
+        Path proj = Files.createDirectories(home.resolve("proj"));
+        Files.createFile(proj.resolve("pom.xml"));
+        assertEquals(proj.toAbsolutePath().normalize(), RootResolver.outermostContiguous(proj, "pom.xml", null, home));
+    }
 }

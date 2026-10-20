@@ -83,6 +83,7 @@ public final class SnippetManager {
             "kotlin",
             "lua",
             "markdown",
+            "maven-pom",
             "mermaid",
             "php",
             "powershell",
@@ -99,9 +100,10 @@ public final class SnippetManager {
             "xml",
             "yaml");
 
-    /** A language that also gets another language's snippets (its own win on a clash). */
+    /** A language that also gets another language's snippets (its own win on a clash). A Maven pom is an XML
+     *  file with snippets of its own ({@code maven-pom.json}: dep, plugin, profile…) on top of XML's. */
     private static final Map<String, String> FALLBACK =
-            Map.of("javascriptreact", "javascript", "typescriptreact", "typescript");
+            Map.of("javascriptreact", "javascript", "typescriptreact", "typescript", "maven-pom", "xml");
 
     /** VS Code language ids a {@code scope} may use for a language Editora names differently. */
     private static final Map<String, String> SCOPE_ALIASES = Map.of(
