@@ -451,6 +451,63 @@ class DeploymentFxTest {
     }
 
     @Test
+    void aRunRefusedDuringTheBeforeLaunchStepLeavesTheLaunchOnTheHost() throws Exception {
+        RunCoordinator run = new RunCoordinator(new RunHost(), new RunOps());
+        // The step says it started, then holds the launch long enough for a second Run to arrive.
+        RunConfiguration cfg = new RunConfiguration(
+                        "remote run",
+                        "shell",
+                        "run.sh",
+                        "",
+                        "",
+                        "hello",
+                        "",
+                        "",
+                        "",
+                        "sh -c 'touch started; sleep 2'",
+                        "")
+                .withDeployment("dev");
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        await("the before-launch step is running on the host", () -> Files.exists(served.resolve("started")));
+
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        assertTrue(status.contains(Messages.tr("status.run.busy")), "the second Run is refused: " + status);
+
+        await("the first launch ran: " + status, () -> {
+            try {
+                return console(run).contains(" with hello");
+            } catch (Exception e) {
+                return false;
+            }
+        });
+        assertTrue(
+                console(run).contains("ran in " + served.toRealPath() + " with hello"),
+                "the refused Run left the launch on the host's copy, not the local project: " + console(run));
+    }
+
+    @Test
+    void aRunDuringTheDeployIsRefusedAndStopStillEndsTheDeploy() throws Exception {
+        for (int i = 0; i < 400; i++) { // many small files, so the deploy is still sending
+            write("bulk/f" + i + ".txt", "x".repeat(2000) + i);
+        }
+        RunCoordinator run = new RunCoordinator(new RunHost(), new RunOps());
+        RunConfiguration cfg = new RunConfiguration("remote run", "shell", "run.sh", "", "", "", "", "", "", "", "")
+                .withDeployment("dev");
+        FxTestSupport.runOnFx(() -> {
+            run.runConfig(cfg);
+            run.runConfig(cfg);
+            assertTrue(run.isRunning(), "the second Run did not end the first one's deploy");
+            run.stopRun();
+        });
+        assertTrue(status.contains(Messages.tr("status.run.busy")), "the second Run is refused: " + status);
+        assertFalse(status.contains(Messages.tr("status.deploy.busy")), "no second deploy was tried: " + status);
+        await("the deploy ended", () -> !deployments.isBusy());
+        FxTestSupport.drainFx();
+        assertFalse(FxTestSupport.callOnFx(run::isRunning));
+        assertFalse(console(run).contains("ran in"), "Stop ended the deploy, so nothing ran");
+    }
+
+    @Test
     void stopDuringTheDeployEndsItAndNothingRuns() throws Exception {
         // Many small files, so the deploy is still sending when Stop arrives.
         for (int i = 0; i < 400; i++) {
