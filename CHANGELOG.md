@@ -54,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Scala Run:** a file path ending in `/..`.
   - **Local History:** an iterator `remove()` before `next()` (now the `IllegalStateException` the contract
     names).
+- **Markdown: switching to Preview no longer sometimes opens it at the top.** Switching just after a
+  highlighting pass (soon after opening or editing the file) showed the start of the document, not the line
+  the editor had at its top. That line now carries over every time.
 - **Opening a root as a file no longer throws.** `editora /` (or `editora D:\`), and Remote > Open File on
   `sftp://host` with no path, used to hit a `NullPointerException` in the open path. From the command line that
   stopped the session restore and left an empty window. Now the status bar says the path is a folder, and no tab

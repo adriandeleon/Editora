@@ -314,7 +314,11 @@ public final class PreviewScrollSync {
             carriedLine = doc == null ? -1 : doc.topLine();
         } else {
             // At the very top it is the top that should show (line 0 is also "unknown" for an unlaid editor).
-            carriedLine = editorScrollY() <= 0.5 ? -1 : ScrollAnchor.firstVisibleLine(area);
+            // The first visible line decides, not estimatedScrollY: a highlighting pass restyles the document,
+            // and until the next layout the estimate reads 0 wherever the editor is, so a switch in that
+            // window opened the preview at the top.
+            int first = ScrollAnchor.firstVisibleLine(area);
+            carriedLine = first > 0 || (first == 0 && editorScrollY() > 0.5) ? first : -1;
         }
     }
 

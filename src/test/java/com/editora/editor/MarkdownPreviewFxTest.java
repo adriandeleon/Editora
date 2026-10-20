@@ -422,6 +422,43 @@ class MarkdownPreviewFxTest {
         });
     }
 
+    /** A highlighting pass that lands just before the switch: until the next layout the editor's scroll estimate
+     *  reads 0 wherever it is, and the preview used to come up at the top from that. */
+    @Test
+    void aSwitchRightAfterAHighlightPassStillKeepsTheReadersPlace() throws Exception {
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        EditorFx.onFx(() -> {
+            ref[0] = markdown(sections());
+            stage[0] = EditorFx.show(ref[0], 700, 400);
+        });
+        EditorBuffer buffer = ref[0];
+        int line = EditorFx.callFx(() -> lineOf(buffer, "## Marker 40"));
+        EditorFx.onFx(() -> {
+            buffer.getArea().showParagraphAtTop(line);
+            buffer.getArea().layout();
+        });
+        layout(buffer);
+        EditorFx.awaitChange(() -> pane(buffer).contentProperty(), () -> {
+            org.fxmisc.richtext.CodeArea area = buffer.getArea();
+            // Styles that differ from the ones it has, as the first highlighting pass brings.
+            EditorFx.call(
+                    buffer,
+                    "setStyleSpansPreservingScroll",
+                    new Class<?>[] {int.class, org.fxmisc.richtext.model.StyleSpans.class},
+                    0,
+                    org.fxmisc.richtext.model.StyleSpans.singleton(List.of("text"), area.getLength()));
+            assertTrue(area.estimatedScrollYProperty().getValue() <= 1, "the window this is about");
+            buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW);
+        });
+        layout(buffer);
+        EditorFx.onFx(() -> {
+            assertEquals(line, preview(buffer).topLine(), 0.5, "not the top of the document");
+            stage[0].close();
+            buffer.dispose();
+        });
+    }
+
     // --- double click to the source; the caret's block is marked ----------------------------------------
 
     /** A double click with the shortcut key held: on text, the plain one selects the word (see
