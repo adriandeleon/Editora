@@ -1085,6 +1085,13 @@
 .pom-profile-title { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; -fx-padding: 16 0 0 0; }
 .pom-empty { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 .pom-error { -fx-text-fill: -color-danger-fg; }
+.pom-activation { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; -fx-font-style: italic; -fx-padding: 0 0 2 0; }
+.pom-filter { -fx-font-size: 0.95em; -fx-max-width: 320; }
+.pom-tags { -fx-hgap: 4; }
+/* Rows that take the editor to their element: the hand cursor says so, an underline on hover confirms it. */
+.pom-link:hover .pom-artifact, .pom-link:hover .pom-group, .pom-link:hover.pom-name, .pom-link:hover.pom-version,
+.pom-link:hover.pom-version-managed, .pom-link:hover.pom-version-unknown, .pom-link:hover.pom-error,
+.pom-link:hover.pom-profile-title { -fx-underline: true; }
 
 /* Keep the tree token colors stable when a row is selected. The rows are TextFlows of Text runs, whose
    -fx-fill AtlantaFX flips to the selection foreground (-color-cell-fg-selected) on a selected cell — so

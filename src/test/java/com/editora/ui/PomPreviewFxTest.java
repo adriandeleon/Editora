@@ -17,7 +17,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -187,6 +189,189 @@ class PomPreviewFxTest {
         });
         FxTestSupport.runOnFx(() -> b.setPomPreviewEnabled(true));
         assertTrue(FxTestSupport.callOnFx(b::isPom));
+    }
+
+    private static final String REACTOR_CHILD = """
+            <project>
+              <parent>
+                <groupId>com.example</groupId>
+                <artifactId>reactor-parent</artifactId>
+                <version>2.0.0</version>
+              </parent>
+              <artifactId>core</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>org.slf4j</groupId>
+                  <artifactId>slf4j-api</artifactId>
+                </dependency>
+                <dependency>
+                  <groupId>org.example</groupId>
+                  <artifactId>dangling</artifactId>
+                  <version>${nowhere}</version>
+                </dependency>
+              </dependencies>
+            </project>
+            """;
+
+    private static List<String> texts(Node n) {
+        List<String> out = new ArrayList<>();
+        walk(n, out);
+        return out;
+    }
+
+    private static List<Node> links(Node root) {
+        List<Node> out = new ArrayList<>();
+        collect(root, out, n -> n.getStyleClass().contains("pom-link"));
+        return out;
+    }
+
+    private static void collect(Node node, List<Node> out, java.util.function.Predicate<Node> test) {
+        if (test.test(node)) {
+            out.add(node);
+        }
+        if (node instanceof javafx.scene.control.ScrollPane sp && sp.getContent() != null) {
+            collect(sp.getContent(), out, test); // no skin without a scene: the content is not a child yet
+        }
+        if (node instanceof Parent p) {
+            for (Node child : p.getChildrenUnmodifiable()) {
+                collect(child, out, test);
+            }
+        }
+    }
+
+    private static Node first(Node root, String styleClass) {
+        List<Node> found = new ArrayList<>();
+        collect(root, found, n -> n.getStyleClass().contains(styleClass));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    private static javafx.scene.input.MouseEvent click() {
+        return new javafx.scene.input.MouseEvent(
+                javafx.scene.input.MouseEvent.MOUSE_CLICKED,
+                0,
+                0,
+                0,
+                0,
+                javafx.scene.input.MouseButton.PRIMARY,
+                1,
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                false,
+                true,
+                false,
+                false,
+                null);
+    }
+
+    @Test
+    void labelsSayInheritedUnderAParentAndUnresolvedForADanglingProperty() throws Exception {
+        List<String> texts =
+                FxTestSupport.callOnFx(() -> texts(PomPreview.content(PomSummary.parse(REACTOR_CHILD), 700)));
+        String all = String.join("\n", texts);
+        assertTrue(texts.contains(com.editora.i18n.Messages.tr("pom.inherited")), all);
+        assertTrue(texts.contains(com.editora.i18n.Messages.tr("pom.unresolved")), all);
+        // A parentless pom with a BOM import names the BOM instead of claiming inheritance.
+        String bom = POM.replace(
+                        "<properties>",
+                        "<dependencyManagement><dependencies><dependency><groupId>org.junit</groupId>"
+                                + "<artifactId>junit-bom</artifactId><version>5.11.0</version><type>pom</type>"
+                                + "<scope>import</scope></dependency></dependencies></dependencyManagement><properties>")
+                .replace("<version>${junit.version}</version>", "");
+        List<String> bomTexts = FxTestSupport.callOnFx(() -> texts(PomPreview.content(PomSummary.parse(bom), 700)));
+        String bomAll = String.join("\n", bomTexts);
+        assertFalse(bomTexts.contains(com.editora.i18n.Messages.tr("pom.inherited")), bomAll);
+        assertTrue(
+                bomTexts.contains(com.editora.i18n.Messages.tr("pom.probablyFrom", "junit-bom 5.11.0 (import)")),
+                bomAll);
+    }
+
+    @Test
+    void rowsNavigateToTheirLineAndTheFilterNarrowsThem() throws Exception {
+        List<Integer> navigated = new ArrayList<>();
+        Node preview = FxTestSupport.callOnFx(() -> PomPreview.build(PomSummary.parse(POM), navigated::add));
+        FxTestSupport.runOnFx(() -> {
+            List<Node> links = links(preview);
+            assertFalse(links.isEmpty(), "name and version cells are links");
+            // The junit-jupiter row: its <dependency> starts on line 9 of POM.
+            Node junit = links.stream()
+                    .filter(n -> texts(n).contains("junit-jupiter"))
+                    .findFirst()
+                    .orElseThrow();
+            junit.getOnMouseClicked().handle(click());
+        });
+        assertEquals(List.of(9), navigated);
+
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.TextField filter = (javafx.scene.control.TextField) first(preview, "pom-filter");
+            assertNotNull(filter, "the interactive preview has a filter field");
+            filter.setText("surefire");
+            List<Node> rows = new ArrayList<>();
+            collect(preview, rows, n -> n.getStyleClass().contains("pom-name"));
+            List<String> shown = rows.stream()
+                    .filter(Node::isManaged)
+                    .map(n -> String.join("", texts(n)))
+                    .toList();
+            assertEquals(List.of("org.apache.maven.plugins:maven-surefire-plugin"), shown);
+            filter.setText("");
+            assertTrue(rows.stream().allMatch(Node::isManaged), "an empty filter shows every row again");
+        });
+    }
+
+    @Test
+    void sectionsCollapseOnClickAndALongPropertyListStartsCollapsed() throws Exception {
+        StringBuilder props = new StringBuilder();
+        for (int i = 0; i < PomPreview.PROPERTIES_COLLAPSED_PAST + 1; i++) {
+            props.append("<p").append(i).append(">v</p").append(i).append(">");
+        }
+        String many =
+                POM.replace("<junit.version>5.10.2</junit.version>", "<junit.version>5.10.2</junit.version>" + props);
+        Node preview = FxTestSupport.callOnFx(() -> PomPreview.build(PomSummary.parse(many), line -> {}));
+        FxTestSupport.runOnFx(() -> {
+            List<Node> sections = new ArrayList<>();
+            collect(preview, sections, n -> n.getStyleClass().contains("pom-section"));
+            Label properties = (Label) sections.stream()
+                    .filter(n -> ((Label) n).getText().contains(com.editora.i18n.Messages.tr("pom.properties", 14)))
+                    .findFirst()
+                    .orElseThrow();
+            assertTrue(properties.getText().startsWith("▸"), properties.getText());
+            List<Node> names = new ArrayList<>();
+            collect(preview, names, n -> n.getStyleClass().contains("pom-name") && texts(n).contains("p3"));
+            assertEquals(1, names.size());
+            assertFalse(names.get(0).isManaged(), "collapsed: the property rows are hidden");
+            properties.getOnMouseClicked().handle(click());
+            assertTrue(names.get(0).isManaged(), "a click on the title expands the section");
+            assertTrue(properties.getText().startsWith("▾"), properties.getText());
+            // Dependencies come before Properties now (the long list used to push them below the fold).
+            List<String> order =
+                    sections.stream().map(n -> ((Label) n).getText()).toList();
+            assertTrue(
+                    order.indexOf(properties.getText())
+                            > order.stream()
+                                    .filter(t -> t.contains(com.editora.i18n.Messages.tr("pom.dependencies", 1)))
+                                    .map(order::indexOf)
+                                    .findFirst()
+                                    .orElseThrow(),
+                    order.toString());
+        });
+    }
+
+    @Test
+    void aParseErrorNamesItsLineAndIsALinkToIt() throws Exception {
+        List<Integer> navigated = new ArrayList<>();
+        Node preview = FxTestSupport.callOnFx(() ->
+                PomPreview.build(PomSummary.parse("<project>\n  <artifactId>oops\n</project>\n"), navigated::add));
+        FxTestSupport.runOnFx(() -> {
+            List<Node> links = links(preview);
+            assertEquals(1, links.size());
+            String text = ((Label) links.get(0)).getText();
+            assertFalse(text.contains("Malformed pom.xml"), text);
+            links.get(0).getOnMouseClicked().handle(click());
+        });
+        assertEquals(List.of(3), navigated);
     }
 
     private static void walk(Node node, List<String> out) {
