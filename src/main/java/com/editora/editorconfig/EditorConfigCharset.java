@@ -7,6 +7,8 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Maps EditorConfig {@code charset} names to {@link Charset}s and handles byte-order marks, so files can be
  * decoded on read and encoded on write per {@code .editorconfig}. Names: {@code utf-8}, {@code utf-8-bom},
@@ -27,7 +29,8 @@ public final class EditorConfigCharset {
     public static final String WINDOWS_1252 = "windows-1252";
 
     /** Null where the runtime does not ship the charset (a trimmed native image); ISO-8859-1 is used then. */
-    private static final Charset CP1252 = Charset.isSupported(WINDOWS_1252) ? Charset.forName(WINDOWS_1252) : null;
+    private static final @Nullable Charset CP1252 =
+            Charset.isSupported(WINDOWS_1252) ? Charset.forName(WINDOWS_1252) : null;
 
     private static final byte[] BOM_UTF8 = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
     private static final byte[] BOM_UTF16LE = {(byte) 0xFF, (byte) 0xFE};
@@ -84,7 +87,8 @@ public final class EditorConfigCharset {
     }
 
     /** The charset name a leading BOM indicates, or {@code null} if the bytes start with no recognized BOM. */
-    public static String detectByBom(byte[] bytes) {
+    public static @Nullable String detectByBom(byte[] bytes) {
+
         if (bytes == null) {
             return null;
         }

@@ -3,6 +3,8 @@ package com.editora.crypto;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One OpenPGP key from the user's keyring, as {@code gpg --with-colons} lists it: the primary key's fingerprint
  * and long id, its user ids, the validity gpg computed for it, its capabilities, whether a secret key for it is
@@ -86,7 +88,8 @@ public record GpgKey(
     }
 
     /** Why this key cannot be a recipient, or null when it can. */
-    public Unusable unusable() {
+    public @Nullable Unusable unusable() {
+
         return switch (validity) {
             case 'r' -> Unusable.REVOKED;
             case 'e' -> Unusable.EXPIRED;

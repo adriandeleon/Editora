@@ -59,6 +59,9 @@ worktree so branch switches and commits cannot interfere.
   derived from the active keymap.
 - Check `module-info.java` when reflection, FXML, service loading, or a new dependency crosses JPMS
   boundaries.
+- A new Java package starts `@NullMarked` (its own `package-info.java`). In a marked package, put JSpecify's
+  `@Nullable` on what may be null and fix what NullAway reports rather than suppressing it
+  ([null annotations](docs/conventions.md#null-annotations-jspecify-checked-by-nullaway)).
 - Run `mvn spotless:apply` after Java edits, then the narrow tests for what you changed
   (`mvn -Dtest='Foo*Test' test`). Do not run the whole suite (`mvn verify`) before pushing: CI runs it
   on Linux in about ten minutes, and several sessions share the machine. Label a pull request `full-ci`

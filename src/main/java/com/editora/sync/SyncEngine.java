@@ -20,6 +20,7 @@ import com.editora.git.QuietGit;
 import com.editora.process.ProcessRunner;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One settings sync between this machine's config directory and the user's repository. Blocking and free of
@@ -61,7 +62,7 @@ public final class SyncEngine {
     /** Past the point where this computer's files are written: a cancel no longer stops the run. */
     private boolean committed;
     /** The network command in flight (fetch), which a cancel kills. */
-    private ProcessRunner.Cancellation inFlight;
+    private ProcessRunner.@Nullable Cancellation inFlight;
 
     /**
      * @param git a runner whose directory is {@code clone}
@@ -159,7 +160,7 @@ public final class SyncEngine {
         return committed;
     }
 
-    private ProcessRunner.Result fetch() {
+    private ProcessRunner.@Nullable Result fetch() {
         ProcessRunner.Cancellation c = new ProcessRunner.Cancellation();
         synchronized (this) {
             if (cancelled) {
@@ -242,7 +243,7 @@ public final class SyncEngine {
     }
 
     /** One fetch-merge-push round; null when the push lost a race and the round must be repeated. */
-    private SyncReport cycle(
+    private @Nullable SyncReport cycle(
             Set<SyncCategory> enabled, boolean allowLargeRemoval, boolean previewOnly, List<SyncReport.Change> received)
             throws IOException, GitFailure {
         ProcessRunner.Result fetch = fetch();
@@ -299,7 +300,9 @@ public final class SyncEngine {
         List<SyncReport.Skipped> skipped = new ArrayList<>();
         Map<String, String> liveChanges = new LinkedHashMap<>();
         for (SyncMerge.FileResult r : results) {
-            SyncCategory category = SyncCategory.of(r.path());
+            // Every result came from a path with a category (the loop above), so this finds it again.
+            SyncCategory category = Objects.requireNonNull(SyncCategory.of(r.path()), r.path());
+
             if (r.skipped()) {
                 skipped.add(new SyncReport.Skipped(r.path(), r.skip()));
                 continue;
@@ -381,8 +384,8 @@ public final class SyncEngine {
     }
 
     /** The files of the base commit; empty when this machine has not finished a sync with this repository. */
-    private Map<String, String> baseFiles(Set<SyncCategory> enabled, String remoteRef, Map<String, String> theirs)
-            throws GitFailure {
+    private Map<String, String> baseFiles(
+            Set<SyncCategory> enabled, @Nullable String remoteRef, Map<String, String> theirs) throws GitFailure {
         if (!exists(BASE_REF)) {
             return Map.of();
         }
@@ -422,7 +425,7 @@ public final class SyncEngine {
      * machines never does that; an emptied or damaged file on one of them does, and would otherwise be
      * carried to every other machine.
      */
-    static SyncCategory largeRemoval(List<SyncMerge.FileResult> results) {
+    static @Nullable SyncCategory largeRemoval(List<SyncMerge.FileResult> results) {
         Map<SyncCategory, int[]> counts = new EnumMap<>(SyncCategory.class);
         for (SyncMerge.FileResult r : results) {
             if (r.skipped()) {
