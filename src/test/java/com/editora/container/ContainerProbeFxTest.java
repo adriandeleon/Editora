@@ -186,7 +186,12 @@ class ContainerProbeFxTest {
             assertTrue(((com.editora.terminal.PtyChannel) shell).pid() > 0, "the shell's pid in the container");
 
             shell.resize(120, 40);
-            type(shell, "stty size\n");
+            // The engine applies a resize on its own time: an stty right after it can still see 30 100.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            while (System.nanoTime() < deadline && !seen.toString().contains("40 120")) {
+                type(shell, "stty size\n");
+                Thread.sleep(500);
+            }
             awaitOutput(seen, "40 120");
 
             type(shell, "exec sleep 6009\n");
