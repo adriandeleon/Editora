@@ -714,4 +714,44 @@ class LspManagerTest {
         assertEquals(deleted, LspManager.mergeWatched(changed, deleted));
         assertEquals(changed, LspManager.mergeWatched(changed, changed));
     }
+
+    /**
+     * For the Maven pom.xml server "the executable resolves" is only "java is there": the folder its
+     * {@code -cp "<dir>/*"} names must hold every jar too (Maven review C3). Other servers keep the plain check.
+     */
+    @Test
+    void theMavenServerIsAvailableOnlyWithACompleteInstallFolder(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path javaExe = dir.resolve("java");
+        java.nio.file.Files.writeString(javaExe, "#!/bin/sh\nexit 0\n");
+        org.junit.jupiter.api.Assumptions.assumeTrue(javaExe.toFile().setExecutable(true), "needs an executable bit");
+        java.nio.file.Path maven = java.nio.file.Files.createDirectories(dir.resolve("maven"));
+        java.util.List<String> argv =
+                com.editora.run.ProgramArgs.commandLine(com.editora.install.InstallCatalog.jvmClasspathCommand(
+                        maven, com.editora.install.InstallCatalog.LEMMINX_MAIN_CLASS));
+        argv = new java.util.ArrayList<>(argv);
+        argv.set(0, javaExe.toString());
+
+        assertTrue(LspManager.available(argv), "the plain check: java is there");
+        assertFalse(
+                LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, argv), "an empty folder is not an install");
+        assertTrue(LspManager.available("xml", argv), "another server with the same shape keeps the plain check");
+
+        for (String name : java.util.List.of(
+                "org.eclipse.lemminx-0.30.1.jar",
+                "lemminx-maven-0.12.0.jar",
+                "guava-33.7.2-jre.jar",
+                "commons-lang3-3.21.0.jar")) {
+            java.nio.file.Files.writeString(maven.resolve(name), "");
+        }
+        assertFalse(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, argv), "jsoup still missing");
+        java.nio.file.Files.writeString(maven.resolve("jsoup-1.23.2.jar"), "");
+        assertTrue(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, argv));
+
+        java.util.List<String> script = java.util.List.of(javaExe.toString());
+        assertTrue(
+                LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, script),
+                "a user's own launcher has no folder to check");
+        assertFalse(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, java.util.List.of()));
+    }
 }

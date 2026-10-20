@@ -120,6 +120,10 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public List<Location> declarationResponse = List.of();
     public List<Location> referenceResponse = List.of();
     public List<Either<SymbolInformation, DocumentSymbol>> documentSymbolResponse = List.of();
+
+    /** Answers documentSymbol with lemminx's -32603 "Internal error." + NoClassDefFoundError (Maven review C2). */
+    public boolean documentSymbolFault;
+
     public List<WorkspaceSymbol> workspaceSymbolResponse = List.of();
     public Either3<org.eclipse.lsp4j.Range, PrepareRenameResult, org.eclipse.lsp4j.PrepareRenameDefaultBehavior>
             prepareRenameResponse;
@@ -391,6 +395,13 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
             DocumentSymbolParams params) {
         documentSymbols.add(params);
+        if (documentSymbolFault) {
+            return CompletableFuture.failedFuture(new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                    new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                            org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+                            "Internal error.",
+                            "java.lang.NoClassDefFoundError: com/google/common/cache/CacheBuilder")));
+        }
         return failEverything ? failed() : answer(documentSymbolResponse);
     }
 

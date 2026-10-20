@@ -6926,6 +6926,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public String lspServerFailure(String serverId) {
+                    return lspCoordinator.serverFailure(serverId);
+                }
+
+                @Override
                 public void installServer(String serverId, java.util.function.Consumer<Boolean> onDone) {
                     installCoordinator.installServer(serverId, onDone);
                 }

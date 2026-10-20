@@ -494,6 +494,7 @@ final class LspCoordinator {
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setOnStartRefused(this::onStartRefused);
+        lspManager.setOnRequestError(this::onRequestError);
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
@@ -911,6 +912,50 @@ final class LspCoordinator {
         updateStatusBar();
     }
 
+    /** Servers given up on after failing their requests, by id → why (for the Doctor row); see {@link #onRequestError}. */
+    private final Map<String, String> failingServers = new java.util.HashMap<>();
+
+    /**
+     * A server answered a request with a fault inside itself (Maven review C2). The first fault of each method
+     * is said in the echo area — "lemminx-maven: internal error on hover — see the log" — so a server that
+     * fails everything no longer reads as one with nothing to say. The third fault in a row gives the server
+     * up the way a crash loop does: it is stopped, not restarted until the settings change or Restart Language
+     * Servers, its buffers go unserved, and Doctor's row says why.
+     */
+    void onRequestError(String serverId, Path root, String method, String summary, boolean announce, boolean failing) {
+        if (!ops.lspFeatureEnabled()) {
+            return;
+        }
+        if (failing) {
+            failingServers.put(serverId, summary);
+            startBlocked.add(crashKey(serverId, root));
+            lspManager.shutdownServer(serverId);
+            forEachCrashedBuffer(serverId, root, b -> {
+                b.setLspActive(false);
+                clearDiagnostics(lspPath(b));
+            });
+            onServerStatus(serverId, "Error", summary); // the narrator's failed state, as a failed start leaves it
+            host.setStatus(tr("status.lsp.requestErrors", serverLabel(serverId)));
+            updateStatusBar();
+            return;
+        }
+        if (announce) {
+            host.setStatus(tr("status.lsp.requestError", serverLabel(serverId), methodLabel(method)));
+        }
+    }
+
+    /** Why {@code serverId} was given up on after failing its requests, or null while it is not. Doctor-screen read. */
+    String serverFailure(String serverId) {
+        return failingServers.get(serverId);
+    }
+
+    /** The user-facing name of an LSP request, for the echo line ("internal error on hover"). */
+    static String methodLabel(String method) {
+        String key = "lsp.method." + method;
+        String label = tr(key);
+        return label.equals(key) ? method : label;
+    }
+
     /** Whether two roots identify the same LSP session boundary. Kept pure for crash-routing coverage. */
     static boolean sameLspRoot(Path bufferRoot, Path crashedRoot) {
         return bufferRoot != null
@@ -1200,6 +1245,7 @@ final class LspCoordinator {
      */
     void applySupport() {
         startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
+        failingServers.clear();
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -2869,6 +2915,7 @@ final class LspCoordinator {
     /** Restarts every running server, clears diagnostics, then re-gates each buffer ({@code lsp.restartServers}). */
     void restartServers() {
         startBlocked.clear();
+        failingServers.clear();
         statusNarrator.forget(null);
         lspManager.shutdownAll();
         clearAllDiagnostics();
@@ -4230,20 +4277,30 @@ final class LspCoordinator {
         long version = b.docVersion();
         int caret = area.getCaretPosition();
         Path path = lspPath(b);
-        lspManager.hover(path, area.getCurrentParagraph(), area.getCaretColumn(), text -> {
-            if (b != host.activeBuffer()
-                    || b.isDisposed()
-                    || area != b.getFocusedArea()
-                    || generation != hoverGeneration
-                    || version != b.docVersion()
-                    || caret != area.getCaretPosition()
-                    || !path.equals(lspPath(b))) return;
-            if (text == null || text.isBlank()) {
-                host.setStatus(tr("status.lsp.noHover"));
-            } else {
-                showHoverPopup(area, text);
-            }
-        });
+        java.util.function.BooleanSupplier stale = () -> b != host.activeBuffer()
+                || b.isDisposed()
+                || area != b.getFocusedArea()
+                || generation != hoverGeneration
+                || version != b.docVersion()
+                || caret != area.getCaretPosition()
+                || !path.equals(lspPath(b));
+        lspManager.hover(
+                path,
+                area.getCurrentParagraph(),
+                area.getCaretColumn(),
+                text -> {
+                    if (stale.getAsBoolean()) return;
+                    if (text == null || text.isBlank()) {
+                        host.setStatus(tr("status.lsp.noHover"));
+                    } else {
+                        showHoverPopup(area, text);
+                    }
+                },
+                failure -> {
+                    if (stale.getAsBoolean()) return;
+                    // The server failed, which is not "nothing here": say so (Maven review C2).
+                    host.setStatus(tr("status.lsp.hoverFailed", failure));
+                });
     }
 
     /** The indentation a formatting request describes for {@code buffer} (see {@link com.editora.lsp.FormattingIndent}). */

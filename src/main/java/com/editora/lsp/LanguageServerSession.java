@@ -208,6 +208,28 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
+     * Told how each observed request ended: {@code (method, null)} on an answer, {@code (method, error)} on a
+     * failure — before any mapping of the failure to "nothing" that the request's caller does. How the manager
+     * notices a server that fails every request inside itself (Maven review C2).
+     */
+    private volatile java.util.function.BiConsumer<String, Throwable> onRequestOutcome = (method, error) -> {};
+
+    void setOnRequestOutcome(java.util.function.BiConsumer<String, Throwable> listener) {
+        this.onRequestOutcome = listener == null ? (method, error) -> {} : listener;
+    }
+
+    /** {@link #bounded(CompletableFuture)} whose outcome is reported to {@link #setOnRequestOutcome} as {@code method}. */
+    private <T> CompletableFuture<T> observed(String method, CompletableFuture<T> request) {
+        CompletableFuture<T> bounded = bounded(request);
+        bounded.whenComplete((value, error) -> {
+            if (!(error instanceof java.util.concurrent.CancellationException)) {
+                onRequestOutcome.accept(method, error); // a cancellation is the client's doing, not an outcome
+            }
+        });
+        return bounded;
+    }
+
+    /**
      * Requests on the wire that the server has not answered. A session that dies or is disposed settles
      * them at once: left alone, each would wait for its own timer — 30 s for an ordinary request, ten
      * minutes for a workspace build — and then report a failure against whatever the window was doing by
@@ -1741,7 +1763,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         var params = new CompletionParams(doc(uri), pos);
         params.setContext(context);
-        return bounded(server.getTextDocumentService().completion(params));
+        return observed("completion", server.getTextDocumentService().completion(params));
     }
 
     /** Whole-document formatting ({@code textDocument/formatting}) → the edits to apply, or empty. */
@@ -1782,7 +1804,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        return bounded(server.getTextDocumentService().hover(new HoverParams(doc(uri), pos)));
+        return observed("hover", server.getTextDocumentService().hover(new HoverParams(doc(uri), pos)));
     }
 
     CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
@@ -1790,7 +1812,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
-        return bounded(server.getTextDocumentService().definition(new DefinitionParams(doc(uri), pos)));
+        return observed("definition", server.getTextDocumentService().definition(new DefinitionParams(doc(uri), pos)));
     }
 
     /**
@@ -1815,8 +1837,10 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
-        return bounded(server.getTextDocumentService()
-                .implementation(new org.eclipse.lsp4j.ImplementationParams(doc(uri), pos)));
+        return observed(
+                "implementation",
+                server.getTextDocumentService()
+                        .implementation(new org.eclipse.lsp4j.ImplementationParams(doc(uri), pos)));
     }
 
     /** The declaration of the <em>type</em> of the symbol at a position ({@code textDocument/typeDefinition})
@@ -1826,8 +1850,10 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
-        return bounded(server.getTextDocumentService()
-                .typeDefinition(new org.eclipse.lsp4j.TypeDefinitionParams(doc(uri), pos)));
+        return observed(
+                "typeDefinition",
+                server.getTextDocumentService()
+                        .typeDefinition(new org.eclipse.lsp4j.TypeDefinitionParams(doc(uri), pos)));
     }
 
     /** The declaration of the symbol at a position ({@code textDocument/declaration}); most servers alias
@@ -1837,7 +1863,8 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
-        return bounded(
+        return observed(
+                "declaration",
                 server.getTextDocumentService().declaration(new org.eclipse.lsp4j.DeclarationParams(doc(uri), pos)));
     }
 
@@ -1895,7 +1922,8 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(java.util.List.of());
         }
-        var request = bounded(
+        var request = observed(
+                "documentSymbol",
                 server.getTextDocumentService().documentSymbol(new org.eclipse.lsp4j.DocumentSymbolParams(doc(uri))));
         return cancelling(request, request.exceptionally(t -> java.util.List.of()));
     }

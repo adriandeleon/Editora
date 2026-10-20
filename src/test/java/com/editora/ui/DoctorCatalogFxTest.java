@@ -140,6 +140,13 @@ class DoctorCatalogFxTest {
             return argv.getOrDefault(serverId, List.of());
         }
 
+        final Map<String, String> failures = new HashMap<>();
+
+        @Override
+        public String lspServerFailure(String serverId) {
+            return failures.get(serverId);
+        }
+
         @Override
         public void installServer(String serverId, Consumer<Boolean> onDone) {
             onDone.accept(true);
@@ -726,5 +733,47 @@ class DoctorCatalogFxTest {
         host.settings.setNodePath(dir.resolve("missing/node").toString());
         DoctorCheck missing = spec(specs(host, ops), "run.node").probe().get();
         assertEquals(DoctorStatus.MISSING, missing.status(), "a package.json project needs Node.js");
+    }
+
+    /**
+     * The Maven pom.xml server runs as {@code java -cp "<dir>/*"}: {@code java} found is not "installed". A folder
+     * lacking the jars the upstream bundle leaves out is "incomplete — Install… to repair"; a complete one is OK;
+     * a server that starts but fails its requests (Maven review C1/C2/C3) is a warning that says so.
+     */
+    @Test
+    void theMavenServerRowChecksItsFolderAndReportsAFailingServer(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        Ops ops = new Ops();
+        Path javaExe = executable(dir.resolve("bin/java"), "#!/bin/sh\nexit 0\n");
+        Path maven = Files.createDirectories(dir.resolve("maven"));
+        Files.writeString(maven.resolve("org.eclipse.lemminx-0.30.1.jar"), "");
+        Files.writeString(maven.resolve("lemminx-maven-0.12.0.jar"), "");
+        ops.servers = List.of("maven-pom", "json");
+        ops.argv.put(
+                "maven-pom",
+                List.of(
+                        javaExe.toString(),
+                        "-cp",
+                        maven + java.io.File.separator + "*",
+                        "org.eclipse.lemminx.XMLServerLauncher"));
+        ops.argv.put("json", List.of(javaExe.toString(), "--stdio"));
+        ops.failures.put("json", "Internal error. — java.lang.NoClassDefFoundError: x");
+
+        DoctorCheck incomplete = spec(specs(host, ops), "lsp.maven-pom").probe().get();
+        assertEquals(DoctorStatus.MISSING, incomplete.status());
+        assertEquals("doctor.tip.mavenIncomplete", incomplete.tipKey());
+        assertEquals(List.of("guava-*.jar, commons-lang3-*.jar, jsoup-*.jar"), incomplete.tipArgs());
+        assertEquals(DoctorCheck.Install.SERVER, incomplete.install(), "Install… repairs it");
+
+        for (var jar : InstallCatalog.LEMMINX_MAVEN_EXTRA_JARS) {
+            Files.writeString(maven.resolve(jar.fileName()), "");
+        }
+        DoctorCheck complete = spec(specs(host, ops), "lsp.maven-pom").probe().get();
+        assertEquals(DoctorStatus.OK, complete.status());
+
+        DoctorCheck failing = spec(specs(host, ops), "lsp.json").probe().get();
+        assertEquals(DoctorStatus.WARN, failing.status());
+        assertEquals("doctor.tip.serverFailing", failing.tipKey());
+        assertEquals("Internal error. — java.lang.NoClassDefFoundError: x", failing.detail());
     }
 }
