@@ -94,7 +94,7 @@ public final class ProjectWalk {
     }
 
     /** Walks {@code root}, offering every surviving regular or special file to {@code visitor}. */
-    public static Outcome walk(Path root, Options options, Visitor visitor) {
+    public static Outcome walk(@Nullable Path root, Options options, Visitor visitor) {
         int[] accepted = {0};
         int[] unreadable = {0};
         boolean[] capped = {false};

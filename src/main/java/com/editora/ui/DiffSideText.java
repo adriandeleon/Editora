@@ -4,6 +4,7 @@ import java.nio.charset.CharacterCodingException;
 
 import com.editora.editor.LineEndings;
 import com.editora.editorconfig.EditorConfigCharset;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decodes the bytes of a diff side, a merge stage or a history capture the way the editor reads a file, so
@@ -30,13 +31,14 @@ final class DiffSideText {
      * @param openCharset the effective charset of the file's open buffer, or {@code null} when it is not
      *     open; tried first so a blob and the buffer it is compared with cannot pick different stand-ins
      */
-    static Side decode(byte[] bytes, String editorConfigCharset, String openCharset) {
+    static Side decode(byte[] bytes, @Nullable String editorConfigCharset, @Nullable String openCharset) {
         EditorConfigCharset.Decoded decoded = decodeRaw(bytes, editorConfigCharset, openCharset);
         return new Side(LineEndings.toLf(decoded.text()), decoded.charset());
     }
 
     /** As {@link #decode} but with the bytes' own line terminators left in the text. */
-    static EditorConfigCharset.Decoded decodeRaw(byte[] bytes, String editorConfigCharset, String openCharset) {
+    static EditorConfigCharset.Decoded decodeRaw(
+            byte[] bytes, @Nullable String editorConfigCharset, @Nullable String openCharset) {
         byte[] source = bytes == null ? new byte[0] : bytes;
         if (openCharset != null && EditorConfigCharset.detectByBom(source) == null) {
             try {

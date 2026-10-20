@@ -154,7 +154,7 @@ public final class LspManager {
     }
 
     /** Sets the shared root of loose JavaScript/TypeScript files (see {@link #looseRoot}). */
-    public void setLooseRoot(Path root) {
+    public void setLooseRoot(@Nullable Path root) {
         Path next = root == null ? null : root.toAbsolutePath().normalize();
         if (next != null && !next.equals(looseRoot)) {
             // Made now, not at the first start: a session key names a folder with a trailing slash only once it
@@ -440,7 +440,7 @@ public final class LspManager {
      * two project roots — or a leaked previous run — contend for it, so the server never finishes
      * {@code initialize} (loading bar spins forever, no completion). Injected once at startup.
      */
-    public void setJdtlsWorkspaceBase(Path base) {
+    public void setJdtlsWorkspaceBase(@Nullable Path base) {
         this.jdtlsWorkspaceBase = base;
     }
 
@@ -456,7 +456,8 @@ public final class LspManager {
      * DAP layer to drive jdtls's debug commands. The result (or error) is delivered on the FX thread; a
      * 30 s timeout guards against a server that never answers.
      */
-    public void executeCommand(Path file, String command, List<Object> args, BiConsumer<Object, Throwable> cb) {
+    public void executeCommand(
+            @Nullable Path file, String command, List<Object> args, BiConsumer<Object, Throwable> cb) {
         executeCommand(file, command, args, java.time.Duration.ofSeconds(30), cb);
     }
 
@@ -465,7 +466,7 @@ public final class LspManager {
      * compiles first (Metals' {@code debug-adapter-start} builds the target it debugs) outlasts the usual 30 s.
      */
     public void executeCommand(
-            Path file,
+            @Nullable Path file,
             String command,
             List<Object> args,
             java.time.Duration timeout,
@@ -712,7 +713,7 @@ public final class LspManager {
      * Maven server); the id actually sent to the server in {@code didOpen} is
      * {@link LspServerRegistry#protocolLanguageId} (so a {@code maven-pom} route opens as {@code xml}).
      */
-    public void openDocument(Path file, Path root, String routeLanguageId, String text) {
+    public void openDocument(Path file, @Nullable Path root, String routeLanguageId, String text) {
         if (closed || !enabled || file == null || root == null || !LspServerRegistry.isSupported(routeLanguageId)) {
             return;
         }
@@ -901,7 +902,7 @@ public final class LspManager {
      * closed killed the adapter and the program being debugged. The handle is idempotent; releasing it
      * re-arms the idle timer. A no-op handle is returned when {@code file} has no session.
      */
-    public Runnable retain(Path file) {
+    public Runnable retain(@Nullable Path file) {
         LanguageServerSession session = sessionFor(file);
         if (session == null) {
             return () -> {};
@@ -1028,7 +1029,7 @@ public final class LspManager {
         return sessionsByRoot.containsKey(sessionKey(serverId, root));
     }
 
-    public boolean isManaged(Path file) {
+    public boolean isManaged(@Nullable Path file) {
         // A remote (SFTP) file is never LSP-managed; bail before uri(), whose toUri() throws for such paths.
         return file != null && servable(file) && sessionByDocUri.containsKey(uri(file));
     }
@@ -1845,7 +1846,7 @@ public final class LspManager {
         }
     }
 
-    private @Nullable LanguageServerSession sessionFor(Path file) {
+    private @Nullable LanguageServerSession sessionFor(@Nullable Path file) {
         return file == null ? null : sessionByDocUri.get(uri(file));
     }
 
@@ -1927,8 +1928,8 @@ public final class LspManager {
             int line,
             int character,
             int triggerKind,
-            String triggerCharacter,
-            java.util.function.Function<CompletionItem, Runnable> onAccept,
+            @Nullable String triggerCharacter,
+            java.util.function.Function<CompletionItem, @Nullable Runnable> onAccept,
             Consumer<com.editora.completion.CompletionResult> cb) {
         LanguageServerSession session = sessionFor(file);
         if (session == null) {
@@ -2131,7 +2132,7 @@ public final class LspManager {
             Path file,
             int line,
             int character,
-            String triggerChar,
+            @Nullable String triggerChar,
             boolean retrigger,
             org.eclipse.lsp4j.@Nullable SignatureHelp activeHelp,
             Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
@@ -3448,7 +3449,8 @@ public final class LspManager {
      * but jdtls resolves positions in the jdt documents it has served. {@code anchorFile} is the original
      * workspace file the library source was reached from.
      */
-    public void definitionAt(Path anchorFile, String documentUri, int line, int character, Consumer<List<Target>> cb) {
+    public void definitionAt(
+            Path anchorFile, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
         requestDefinition(sessionFor(anchorFile), documentUri, line, character, cb);
     }
 
@@ -5263,7 +5265,7 @@ public final class LspManager {
         }
     }
 
-    public void classFileContents(Path anchorFile, String jdtUri, Consumer<String> cb) {
+    public void classFileContents(Path anchorFile, @Nullable String jdtUri, Consumer<String> cb) {
         LanguageServerSession s = sessionFor(anchorFile);
         if (s == null || jdtUri == null) {
             Platform.runLater(() -> cb.accept(null));
@@ -5293,7 +5295,7 @@ public final class LspManager {
      * A display title for a {@code jdt://contents/...} URI — its last path segment ({@code String.class}),
      * query dropped. Falls back to the whole URI when it has no path segment.
      */
-    public static String classFileTitle(String jdtUri) {
+    public static String classFileTitle(@Nullable String jdtUri) {
         if (jdtUri == null) {
             return "";
         }

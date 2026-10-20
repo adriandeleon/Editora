@@ -5,6 +5,7 @@ import java.nio.file.Path;
 
 import com.editora.git.GitService;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which repository a path picked in the Project tree belongs to, relative to the window's active one.
@@ -31,7 +32,7 @@ public enum GitPathScope {
     OTHER;
 
     /** The nearest ancestor of {@code path} (or {@code path} itself) holding a {@code .git} entry, or null. */
-    static Path nearestRepository(Path path) {
+    static @Nullable Path nearestRepository(@Nullable Path path) {
         if (path == null) {
             return null;
         }
@@ -105,7 +106,7 @@ public enum GitPathScope {
      * once with {@code force}, else when it has not been asked in the last {@link #RESCAN_AFTER}. A local root,
      * or a host that cannot run commands, is left alone.
      */
-    static void learnRemote(Path root, boolean force) {
+    static void learnRemote(@Nullable Path root, boolean force) {
         if (root == null || Vfs.isLocal(root)) {
             return;
         }
@@ -136,7 +137,7 @@ public enum GitPathScope {
     }
 
     /** The nearest folder at or above remote {@code path} holding a {@code .git}, from what its host said. */
-    private static Path nearestRemoteRepository(Path path) {
+    private static @Nullable Path nearestRemoteRepository(Path path) {
         String name = Vfs.toStorableString(path.toAbsolutePath().normalize());
         for (RemoteRepositories known : REMOTE.values()) {
             String root = known.root();
@@ -162,11 +163,13 @@ public enum GitPathScope {
         return null;
     }
 
-    static GitPathScope of(Path path, Path activeRoot) {
+    static GitPathScope of(@Nullable Path path, @Nullable Path activeRoot) {
         Path nearest = nearestRepository(path);
         if (nearest == null) {
             // No marker found (GIT_DIR, an unusual layout): trust the active repository if the path is in it.
-            return activeRoot != null && GitService.repoRelative(activeRoot, path) != null ? ACTIVE : NONE;
+            return activeRoot != null && path != null && GitService.repoRelative(activeRoot, path) != null
+                    ? ACTIVE
+                    : NONE;
         }
         return activeRoot != null
                         && GitService.repoRelative(activeRoot, nearest) != null

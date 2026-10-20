@@ -47,7 +47,7 @@ import org.jspecify.annotations.Nullable;
 public final class PrintService {
 
     /** Outcome of a print: {@code ok} plus an error {@code message} on failure. */
-    public record Result(boolean ok, String message) {}
+    public record Result(boolean ok, @Nullable String message) {}
 
     /**
      * The pages of one pagination. {@link #get} may build its node on demand, so a long document need not
@@ -240,7 +240,11 @@ public final class PrintService {
 
     /** As {@link #prepareMarkdown(String, Path, Consumer)}; with {@code footer} every page ends in a {@link PageFooter}. */
     public void prepareMarkdown(
-            String markdown, Path baseDir, @Nullable String documentName, boolean footer, Consumer<Prepared> onReady) {
+            String markdown,
+            @Nullable Path baseDir,
+            @Nullable String documentName,
+            boolean footer,
+            Consumer<Prepared> onReady) {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
@@ -263,7 +267,7 @@ public final class PrintService {
     /** As {@link #prepareDocument(org.commonmark.node.Node, Path, Consumer)}; with {@code footer} every page ends in a {@link PageFooter}. */
     public void prepareDocument(
             org.commonmark.node.Node document,
-            Path baseDir,
+            @Nullable Path baseDir,
             @Nullable String documentName,
             boolean footer,
             Consumer<Prepared> onReady) {
@@ -284,14 +288,14 @@ public final class PrintService {
      * arrives, and highlighting applied a pulse later never reaches the printer at all.
      */
     private static Paginator markdownPaginator(
-            org.commonmark.node.Node ast, Path baseDir, @Nullable PageFooter footer) {
+            org.commonmark.node.Node ast, @Nullable Path baseDir, @Nullable PageFooter footer) {
         MarkdownPrintAssets assets = MarkdownPrintAssets.resolve(ast, baseDir);
         return layout -> MarkdownPrintLayout.paginate(
                 ast, baseDir, assets, layout.getPrintableWidth(), layout.getPrintableHeight(), footer);
     }
 
     /** Prepares a standalone Mermaid diagram (rendered to PNG via mmdc, scaled to fit one page). */
-    public void prepareMermaid(String source, List<String> mmdc, boolean dark, Consumer<Prepared> onReady) {
+    public void prepareMermaid(String source, @Nullable List<String> mmdc, boolean dark, Consumer<Prepared> onReady) {
         exec.submit(() -> {
             try {
                 Mermaid.Render r = Mermaid.renderPng(mmdc, source, dark);

@@ -9,6 +9,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What the workspace-edit checks read from disk, captured off the FX thread just before the FX step that
  * reads it.
@@ -25,7 +27,10 @@ import java.util.Map;
 final class WorkspaceFileSnapshot implements LspCoordinator.WorkspaceFileOperations {
 
     private record Entry(
-            boolean exists, boolean directory, boolean regularFile, LspCoordinator.WorkspaceFileIdentity identity) {}
+            boolean exists,
+            boolean directory,
+            boolean regularFile,
+            LspCoordinator.@Nullable WorkspaceFileIdentity identity) {}
 
     private final LspCoordinator.WorkspaceFileOperations live;
     private final Map<Path, Entry> entries;
@@ -65,7 +70,7 @@ final class WorkspaceFileSnapshot implements LspCoordinator.WorkspaceFileOperati
         return path.toAbsolutePath().normalize();
     }
 
-    private Entry entry(Path path) {
+    private @Nullable Entry entry(Path path) {
         return path == null ? null : entries.get(key(path));
     }
 
@@ -96,11 +101,12 @@ final class WorkspaceFileSnapshot implements LspCoordinator.WorkspaceFileOperati
         if (!e.exists()) {
             throw new NoSuchFileException(path.toString());
         }
-        return e.identity().size();
+        LspCoordinator.WorkspaceFileIdentity identity = e.identity(); // read for every file that exists
+        return identity == null ? live.size(path) : identity.size();
     }
 
     @Override
-    public LspCoordinator.WorkspaceFileIdentity identity(Path path) throws IOException {
+    public LspCoordinator.@Nullable WorkspaceFileIdentity identity(Path path) throws IOException {
         Entry e = entry(path);
         if (e == null) {
             return live.identity(path);

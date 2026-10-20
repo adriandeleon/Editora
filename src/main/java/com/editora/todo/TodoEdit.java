@@ -48,7 +48,8 @@ public final class TodoEdit {
     }
 
     /** Sets (or clears, when {@code priority} is null/blank) the {@code (priority)} of the comment. */
-    public static String withPriority(String lineText, int keywordStart, TodoComment parsed, String priority) {
+    public static String withPriority(
+            String lineText, int keywordStart, TodoComment parsed, @Nullable String priority) {
         return rebuild(lineText, keywordStart, parsed.keyword(), parsed.tag(), priority, parsed.description());
     }
 

@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import com.editora.plugin.PluginDescriptor;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -10,7 +11,7 @@ final class PluginLoadProblems {
     private PluginLoadProblems() {}
 
     /** The sentence for {@code d}'s load failure, or null when it loaded. */
-    static String text(PluginDescriptor d) {
+    static @Nullable String text(PluginDescriptor d) {
         PluginDescriptor.LoadProblem p = d.problem();
         if (p == null) {
             return d.loadError(); // a failure recorded without a kind: as it was written
@@ -47,12 +48,12 @@ final class PluginLoadProblems {
     }
 
     /** The underlying (English) message, for a tooltip; null when there is none. */
-    static String detail(PluginDescriptor d) {
+    static @Nullable String detail(PluginDescriptor d) {
         return detail(d.problem());
     }
 
     /** The underlying message of {@code p}, for a tooltip; null when there is none. */
-    static String detail(PluginDescriptor.LoadProblem p) {
+    static @Nullable String detail(PluginDescriptor.@Nullable LoadProblem p) {
         return p == null || p.detail().isBlank() ? null : p.detail();
     }
 }

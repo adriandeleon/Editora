@@ -16,6 +16,7 @@ import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The worker half of showing a response body: the pretty-printed, length-limited text, its highlight spans or the
@@ -45,7 +46,11 @@ final class HttpBodyRendering {
     }
 
     /** A formatted body ready to apply on the FX thread: the view, the text shown, its spans (or null), a picture. */
-    record Rendered(HttpResponseFormat.BodyView view, String text, StyleSpans<Collection<String>> spans, Image image) {}
+    record Rendered(
+            HttpResponseFormat.BodyView view,
+            String text,
+            @Nullable StyleSpans<Collection<String>> spans,
+            @Nullable Image image) {}
 
     /** Worker-thread half: the pretty-printed, length-limited view, its highlight spans, or the picture. */
     static Rendered format(HttpResult r, int maxChars) {
@@ -73,7 +78,7 @@ final class HttpBodyRendering {
     }
 
     /** {@code text}'s highlight spans in the grammar for files ending in {@code .ext}, or null. Worker thread. */
-    static StyleSpans<Collection<String>> highlight(String text, String ext) {
+    static @Nullable StyleSpans<Collection<String>> highlight(String text, String ext) {
         IGrammar grammar = text == null || text.isEmpty() ? null : grammarFor(ext);
         if (grammar == null) {
             return null;
@@ -86,7 +91,7 @@ final class HttpBodyRendering {
     }
 
     /** The decoded picture of an {@code image/*} response (not SVG, which is text), or null. */
-    private static Image imageOf(HttpResult r) {
+    private static @Nullable Image imageOf(HttpResult r) {
         String ct = r.contentType() == null ? "" : r.contentType().toLowerCase(Locale.ROOT);
         if (!ct.startsWith("image/") || ct.contains("svg") || r.rawBody() == null || r.rawBody().length == 0) {
             return null;
@@ -99,7 +104,7 @@ final class HttpBodyRendering {
         }
     }
 
-    private static IGrammar grammarFor(String ext) {
+    private static @Nullable IGrammar grammarFor(@Nullable String ext) {
         if (ext == null) {
             return null;
         }
@@ -110,7 +115,7 @@ final class HttpBodyRendering {
         }
     }
 
-    private static String extFor(String contentType) {
+    private static @Nullable String extFor(String contentType) {
         if (contentType == null) {
             return null;
         }

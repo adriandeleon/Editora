@@ -55,7 +55,7 @@ public final class TestDebug {
     public static List<String> debugTaskArgs(
             BuildTool tool,
             String className,
-            String methodName,
+            @Nullable String methodName,
             java.nio.file.@Nullable Path gradleInitScript,
             int mavenPort) {
         List<String> base = TestRunRecognizer.singleTestTask(tool, className, methodName);

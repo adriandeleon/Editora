@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A {@code .http} request's last result as the editor draws it after the request's method/URL line (U11): the
  * 0-based {@code line} and the text it read ({@code anchor}) when the result was put there, the coloured
@@ -9,7 +11,12 @@ import java.util.List;
  * text and what a click does. Never part of the document. See {@link HttpResultMarks}.
  */
 public record HttpLineResult(
-        int line, String anchor, List<Segment> segments, String glyphClass, String tooltip, Runnable onClick) {
+        int line,
+        String anchor,
+        List<Segment> segments,
+        @Nullable String glyphClass,
+        String tooltip,
+        Runnable onClick) {
 
     /** One run of the text with its style class (every class starts with {@code http-result}). */
     public record Segment(String text, String styleClass) {}

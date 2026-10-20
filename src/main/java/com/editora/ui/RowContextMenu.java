@@ -9,6 +9,8 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.ContextMenuEvent;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Makes a tree or list whose context menus live on its <em>cells</em> reachable from the keyboard.
  *
@@ -93,7 +95,7 @@ final class RowContextMenu {
     }
 
     /** The realized, non-empty cell showing row {@code index}, or null. */
-    private static IndexedCell<?> cellFor(Control control, int index) {
+    private static @Nullable IndexedCell<?> cellFor(Control control, int index) {
         if (index < 0) {
             return null;
         }

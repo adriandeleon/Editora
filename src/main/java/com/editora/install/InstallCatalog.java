@@ -1079,7 +1079,7 @@ public final class InstallCatalog {
     }
 
     /** Editora's own copy of tool {@code id} when it is installed, else null ({@code configDir} may be null). */
-    public static @Nullable String installedToolIfPresent(Path configDir, String id) {
+    public static @Nullable String installedToolIfPresent(@Nullable Path configDir, String id) {
         if (configDir == null) {
             return null;
         }

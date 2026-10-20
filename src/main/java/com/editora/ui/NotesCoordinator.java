@@ -26,6 +26,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.editor.NoteDraft;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -57,9 +58,11 @@ final class NotesCoordinator {
         String noteKey(EditorBuffer buffer);
 
         /** The open buffer for a store key, or {@code null} if that file isn't open. */
+        @Nullable
         EditorBuffer bufferForKey(String fileKey);
 
         /** The open buffer for a concrete path, or {@code null} if that file isn't open. */
+        @Nullable
         EditorBuffer bufferForPath(Path file);
 
         /** Installs the user's configured caret/edit keybindings on a dialog text control. */
@@ -88,7 +91,7 @@ final class NotesCoordinator {
          * the per-project maps of {@link #allNotes}): the other windows re-read them (see
          * {@link NotesCoordinator#storeChangedElsewhere}).
          */
-        default void notesStored(Map<String, ?> bucket, String fileKey) {}
+        default void notesStored(Map<String, ?> bucket, @Nullable String fileKey) {}
     }
 
     /** A note plus the store key (file) it belongs to, for the cross-file pickers. */
@@ -97,7 +100,7 @@ final class NotesCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     /** The Notes panel, built on its first use (the tool window's first open). */
-    private NotesPanel panel;
+    private @Nullable NotesPanel panel;
 
     private final NotesPanel.Actions panelActions;
     private final QuickOpen<NoteEntry> jumpPalette;
@@ -233,7 +236,7 @@ final class NotesCoordinator {
     }
 
     /** Prompts for a note whose precise code anchor came from the read-only Project Map preview. */
-    void addPersonalNote(Path file, NoteDraft draft) {
+    void addPersonalNote(@Nullable Path file, @Nullable NoteDraft draft) {
         ifEnabled(() -> {
             if (file == null) {
                 return;
@@ -246,7 +249,7 @@ final class NotesCoordinator {
         });
     }
 
-    private void addPersonalNote(Path file, NoteDraft requestedDraft, String body) {
+    private void addPersonalNote(Path file, @Nullable NoteDraft requestedDraft, String body) {
         boolean folder = java.nio.file.Files.isDirectory(file);
         EditorBuffer open = ops.bufferForPath(file);
         NoteDraft draft = requestedDraft;
@@ -254,8 +257,11 @@ final class NotesCoordinator {
             if (draft == null) {
                 draft = open.captureLineNoteDraft(0);
             }
-            open.getNoteManager()
-                    .add(PersonalNote.create(open.fileIdentity(), draft.scope(), draft.anchor(), body, List.of()));
+            FileIdentity identity = open.fileIdentity(); // found by its path, so it has one
+            if (identity != null) {
+                open.getNoteManager()
+                        .add(PersonalNote.create(identity, draft.scope(), draft.anchor(), body, List.of()));
+            }
             return;
         }
         String key = noteStoreKey(file);
@@ -272,6 +278,7 @@ final class NotesCoordinator {
         ops.notesStored(ops.notes(), key); // another window may have the file open
     }
 
+    @Nullable
     List<PersonalNote> notesFor(Path file) {
         String literal = file.toString();
         Map<String, List<PersonalNote>> map = ops.notes();
@@ -414,7 +421,7 @@ final class NotesCoordinator {
         }
         String key = ops.noteKey(buffer);
         var map = ops.notes();
-        List<PersonalNote> stored = map.get(key);
+        List<PersonalNote> stored = map.getOrDefault(key, List.of());
         // Not the snapshot alone: a second window on this file has its own copy of the notes, and writing
         // this one as the whole list deleted every note the other had added.
         List<PersonalNote> snap = MarkMerge.withForeign(
@@ -435,7 +442,7 @@ final class NotesCoordinator {
      * buffer of this window on that file shows them now — it would otherwise keep its stale copy and write
      * it back — and the panel, which lists every project's notes, is redrawn.
      */
-    void storeChangedElsewhere(Map<String, ?> bucket, String fileKey) {
+    void storeChangedElsewhere(Map<String, ?> bucket, @Nullable String fileKey) {
         if (isEnabled() && bucket == ops.notes()) {
             host.forEachBuffer(b -> {
                 if (b.getPath() == null || b.isNarrowed()) {
@@ -443,7 +450,7 @@ final class NotesCoordinator {
                 }
                 String key = ops.noteKey(b);
                 if (fileKey == null || fileKey.equals(key)) {
-                    List<PersonalNote> stored = ops.notes().get(key);
+                    List<PersonalNote> stored = ops.notes().getOrDefault(key, List.of());
                     b.applyNotes(stored);
                     seenInStore.put(b, MarkMerge.keys(stored, PersonalNote::id));
                 }
@@ -473,7 +480,7 @@ final class NotesCoordinator {
                 rekeyed = true;
             }
         }
-        boolean moved = buffer.applyNotes(saved);
+        boolean moved = buffer.applyNotes(saved == null ? List.of() : saved);
         seenInStore.put(buffer, MarkMerge.keys(saved, PersonalNote::id));
         if (moved || rekeyed) {
             persistNotes(buffer); // self-heal corrected positions / re-key / orphan status
@@ -500,7 +507,7 @@ final class NotesCoordinator {
      * Save As re-pointed {@code buffer} from {@code oldPath}: its notes are stored under the new path as
      * well, and the file it left keeps its own while it is still on disk (see the bookmarks' twin).
      */
-    void bufferPathChanged(EditorBuffer buffer, Path oldPath) {
+    void bufferPathChanged(EditorBuffer buffer, @Nullable Path oldPath) {
         if (!isEnabled()) {
             return;
         }
@@ -526,7 +533,7 @@ final class NotesCoordinator {
         }
     }
 
-    private static String findNoteKeyByIdentity(
+    private static @Nullable String findNoteKeyByIdentity(
             Map<String, List<PersonalNote>> map, FileIdentity id, java.util.function.Supplier<String> hash) {
         // A content-hash match only means "same bytes" — it is trusted only when the note's own file is gone
         // from disk (a rename). Otherwise opening a copy of an annotated file stole its notes; see PathKeys.
@@ -542,7 +549,7 @@ final class NotesCoordinator {
     // --- add / edit / delete / jump (command + gutter + context-menu entry points) -------------------
 
     /** "Add Personal Note" (context menu / command): captures the selection/caret anchor, prompts for a body. */
-    void addNoteFromContext(EditorBuffer buffer) {
+    void addNoteFromContext(@Nullable EditorBuffer buffer) {
         if (buffer == null || buffer.getPath() == null) {
             host.setStatus(tr("notes.saveFirst"));
             return;
@@ -555,9 +562,11 @@ final class NotesCoordinator {
         showNoteDialog(
                 "",
                 body -> {
-                    buffer.getNoteManager()
-                            .add(PersonalNote.create(
-                                    buffer.fileIdentity(), draft.scope(), draft.anchor(), body, List.of()));
+                    FileIdentity identity = buffer.fileIdentity(); // it had a path when the dialog opened
+                    if (identity != null) {
+                        buffer.getNoteManager()
+                                .add(PersonalNote.create(identity, draft.scope(), draft.anchor(), body, List.of()));
+                    }
                 },
                 null);
     }
@@ -571,7 +580,7 @@ final class NotesCoordinator {
      * {@code onDelete} is non-null an extra Delete button is shown (used when editing an existing note).
      * Enter inserts a newline; Ctrl/Cmd+Enter saves.
      */
-    private void showNoteDialog(String initial, Consumer<String> onAccept, Runnable onDelete) {
+    private void showNoteDialog(String initial, Consumer<String> onAccept, @Nullable Runnable onDelete) {
         TextArea editor = new TextArea(initial == null ? "" : initial);
         editor.setWrapText(true);
         editor.setPrefRowCount(6);
@@ -814,7 +823,7 @@ final class NotesCoordinator {
     }
 
     /** The notes bucket (path → notes) for a project key, or {@code null} if that bucket has no notes. */
-    private Map<String, List<PersonalNote>> bucketFor(String projectKey) {
+    private @Nullable Map<String, List<PersonalNote>> bucketFor(String projectKey) {
         return ops.allNotes().get(projectKey == null ? "" : projectKey);
     }
 

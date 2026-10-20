@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Builds the crumb trail {@link FileBreadcrumb} shows: the cumulative path segments of the active file,
  * with the user's home directory collapsed into a single {@code ~} crumb.
@@ -46,7 +48,7 @@ public final class BreadcrumbTrail {
      *
      * @param projectRoot the open project's root folder, or {@code null} when there is none
      */
-    public static List<Crumb> of(Path file, Path home, Path projectRoot) {
+    public static List<Crumb> of(Path file, @Nullable Path home, @Nullable Path projectRoot) {
         int rootSegments = containingSegmentCount(file, projectRoot);
         if (rootSegments > 0) {
             List<Crumb> out = new ArrayList<>();
@@ -91,12 +93,12 @@ public final class BreadcrumbTrail {
      * belongs to another provider, where the local home directory is meaningless and comparing the two
      * would at best be nonsense and at worst provider-mismatched.
      */
-    private static int homeSegmentCount(Path file, Path home) {
+    private static int homeSegmentCount(Path file, @Nullable Path home) {
         return containingSegmentCount(file, home);
     }
 
     /** How many leading segments of {@code file} the directory {@code home} covers; 0 when it is not inside. */
-    private static int containingSegmentCount(Path file, Path home) {
+    private static int containingSegmentCount(Path file, @Nullable Path home) {
         if (home == null || file == null) {
             return 0;
         }

@@ -27,6 +27,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -78,13 +79,13 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             new javafx.beans.property.SimpleBooleanProperty(false);
 
     private final Button stopButton;
-    private Button secondaryButton;
+    private @Nullable Button secondaryButton;
 
     /** The active toggle ids — the coordinator's set for the detected root (shared with the popup, so a
      *  profile checked here is the one the popup runs with), or this view's own until one is handed in. */
     private Set<String> activeToggles = new LinkedHashSet<>();
 
-    private BuildActionsProvider provider;
+    private @Nullable BuildActionsProvider provider;
 
     // --- header: the detected root + its trust state; the "Projects" section; a parse-error notice ---
     private final Label rootLabel = new Label();
@@ -95,17 +96,17 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     private final Hyperlink noticeLink = new Hyperlink();
     private final VBox notice = new VBox(2, noticeLabel, noticeLink);
     private List<Path> projects = List.of();
-    private Path currentRoot;
-    private Path projectRoot;
+    private @Nullable Path currentRoot;
+    private @Nullable Path projectRoot;
     private Consumer<Path> onSelectProject = p -> {};
     private Runnable onRevokeTrust = () -> {};
     /** Placeholder text for a null provider (null ⇒ the generic "nothing detected"). */
-    private String emptyMessage;
+    private @Nullable String emptyMessage;
 
     /** The sections currently on screen — lets {@link #setProvider} skip a no-op re-root (see its javadoc).
      *  Held <em>unfiltered</em>, with the filter that produced the visible tree beside it, so the skip stays
      *  correct while a filter is active (same tasks + same query ⇒ same tree). */
-    private List<BuildAction.Section> rendered;
+    private @Nullable List<BuildAction.Section> rendered;
 
     private String renderedFilter = "";
 
@@ -229,7 +230,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
      * name shown is the root relative to {@code project} when it is inside it ("." for the project itself),
      * with the full path in the tooltip.
      */
-    public void setHeader(Path root, Path project, TrustState trust) {
+    public void setHeader(@Nullable Path root, @Nullable Path project, TrustState trust) {
         currentRoot = root;
         projectRoot = project;
         if (root == null) {
@@ -270,7 +271,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     }
 
     /** The reason the build file could not be parsed, with a link that opens it; {@code null} clears it. */
-    public void setNotice(String message, String linkText, Runnable onLink) {
+    public void setNotice(@Nullable String message, @Nullable String linkText, @Nullable Runnable onLink) {
         if (message == null || message.isBlank()) {
             notice.setVisible(false);
             return;
@@ -288,7 +289,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     }
 
     /** A root's name for the header and the Projects rows: relative to the project when inside it. */
-    static String displayName(Path root, Path project) {
+    static String displayName(Path root, @Nullable Path project) {
         Path r = root.toAbsolutePath().normalize();
         if (project != null) {
             Path p = project.toAbsolutePath().normalize();
@@ -356,7 +357,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
      *       position, so a background re-detect would silently deselect the task the user just clicked.</li>
      * </ul>
      */
-    public void setProvider(BuildActionsProvider provider) {
+    public void setProvider(@Nullable BuildActionsProvider provider) {
         setProvider(provider, null);
     }
 
@@ -366,7 +367,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
      * to say "No build tool detected" for both, which is actively wrong for the second: the stripe is only
      * visible *because* a marker was found.
      */
-    public void setProvider(BuildActionsProvider provider, String emptyMessage) {
+    public void setProvider(@Nullable BuildActionsProvider provider, @Nullable String emptyMessage) {
         this.provider = provider;
         this.emptyMessage = emptyMessage;
         if (provider == null) {
@@ -416,10 +417,12 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         rebuild(provider == null ? null : provider.sections(activeToggles));
     }
 
-    private void rebuild(List<BuildAction.Section> sections) {
+    private void rebuild(@Nullable List<BuildAction.Section> sections) {
         String query = filterQuery();
         boolean detected = provider != null && sections != null;
-        List<BuildAction.Section> visible = !detected || query.isEmpty() ? sections : filtered(sections, query);
+        List<BuildAction.Section> visible = provider == null || sections == null
+                ? List.of()
+                : query.isEmpty() ? sections : filtered(sections, query);
         boolean hasProjects = !projects.isEmpty() && query.isEmpty();
         boolean has = (detected && !visible.isEmpty()) || hasProjects;
         // "No matching tasks" only when a filter is what emptied the tree — otherwise the marker-absent /
@@ -453,7 +456,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             }
             root.getChildren().add(projectsItem);
         }
-        for (BuildAction.Section section : detected ? visible : List.<BuildAction.Section>of()) {
+        for (BuildAction.Section section : visible) {
             TreeItem<Item> sectionItem = new TreeItem<>(new SectionItem(section.title(), section.tooltip()));
             // A collapsed-by-default group (Maven's per-plugin goal lists) still expands while a filter is
             // active — a match the user just typed for must not stay hidden inside a folded node.

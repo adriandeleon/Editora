@@ -4,6 +4,8 @@ import java.util.List;
 
 import javafx.geometry.Rectangle2D;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure decisions behind floating a tool window into its own stage: how its bounds are stored, and whether
  * stored bounds are still usable.
@@ -36,7 +38,7 @@ final class ToolWindowFloat {
      * <p>Defensive because these are the one piece of tool-window state that can be made nonsense by
      * something outside the app: a stage dragged mostly off a screen, or a session file hand-edited.
      */
-    static Bounds fromList(List<Double> stored) {
+    static @Nullable Bounds fromList(@Nullable List<Double> stored) {
         if (stored == null || stored.size() != 4) {
             return null;
         }

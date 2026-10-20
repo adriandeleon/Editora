@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The window's register of long-running background work, so the status bar can say what is happening (#770).
  *
@@ -20,7 +22,7 @@ import java.util.Map;
 final class BackgroundTasks {
 
     /** One running operation. {@code cancel} is null when the work cannot be stopped. */
-    record Task(long id, String label, Runnable cancel) {
+    record Task(long id, String label, @Nullable Runnable cancel) {
         boolean cancellable() {
             return cancel != null;
         }
@@ -57,7 +59,7 @@ final class BackgroundTasks {
      * @param label what to show the user, e.g. "Searching…"
      * @param cancel how to stop it, or null when it cannot be stopped
      */
-    Handle start(String label, Runnable cancel) {
+    Handle start(String label, @Nullable Runnable cancel) {
         long id = nextId++;
         running.put(id, new Task(id, label == null ? "" : label, cancel));
         notifyListeners();
@@ -85,6 +87,7 @@ final class BackgroundTasks {
     }
 
     /** The oldest running task, or null when idle — what the status bar names. */
+    @Nullable
     Task current() {
         for (Task t : running.values()) {
             return t;
@@ -95,8 +98,9 @@ final class BackgroundTasks {
     /** Cancels every cancellable task. The rest keep running and stay listed. */
     void cancelAll() {
         for (Task t : List.copyOf(running.values())) {
-            if (t.cancellable()) {
-                t.cancel().run();
+            Runnable cancel = t.cancel();
+            if (cancel != null) {
+                cancel.run();
             }
         }
     }

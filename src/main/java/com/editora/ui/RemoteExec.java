@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Path;
 
 import com.editora.process.ExecTargets;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The gate for a feature that runs a tool where a file is: open for a file whose tools run on this machine,
@@ -14,7 +15,7 @@ final class RemoteExec {
     private RemoteExec() {}
 
     /** Whether a tool can be run for {@code path} right now. No I/O: safe on the FX thread. */
-    static boolean runsFor(Path path) {
+    static boolean runsFor(@Nullable Path path) {
         return ExecTargets.forPath(path).isAvailable();
     }
 }

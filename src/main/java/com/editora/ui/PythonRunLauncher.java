@@ -8,6 +8,7 @@ import javafx.application.Platform;
 import com.editora.config.Settings;
 import com.editora.process.ExecTargets;
 import com.editora.run.PythonRunPlan;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Plans a Python launch ({@link PythonRunPlan}) for {@code RunCoordinator} and the pytest runner on the machine
@@ -24,7 +25,7 @@ final class PythonRunLauncher {
      * setting; elsewhere the host's {@code python} tool, else the global setting only when it is a bare command
      * name (a path names a file on this machine), else nothing (that host's own {@code python3}).
      */
-    static String setting(Path where, Settings settings) {
+    static String setting(@Nullable Path where, @Nullable Settings settings) {
         String global = settings == null ? "" : settings.getPythonDebugCommand().strip();
         if (where == null || ExecTargets.runsHere(where)) {
             return global;
@@ -40,7 +41,7 @@ final class PythonRunLauncher {
     }
 
     /** The machine a program run in {@code where} runs on. */
-    static PythonRunPlan.Host hostFor(Path where) {
+    static PythonRunPlan.Host hostFor(@Nullable Path where) {
         if (where == null || ExecTargets.runsHere(where)) {
             return PythonRunPlan.Host.here();
         }
@@ -53,7 +54,7 @@ final class PythonRunLauncher {
      * thread: at once on this machine, after the lookups elsewhere. {@code firstLine} is read by the plan
      * thread when the request has none and the file is remote (a network round trip).
      */
-    static void plan(PythonRunPlan.Request request, Path where, Consumer<PythonRunPlan> onPlan) {
+    static void plan(PythonRunPlan.Request request, @Nullable Path where, Consumer<PythonRunPlan> onPlan) {
         PythonRunPlan.Host host = hostFor(where);
         if (host.local()) {
             onPlan.accept(PythonRunPlan.plan(request, host));

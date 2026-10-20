@@ -11,6 +11,7 @@ import com.editora.config.Settings;
 import com.editora.editor.BufferSpell;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.SpellDictionaries;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -62,7 +63,7 @@ final class SpellCoordinator {
     }
 
     /** The buffer's own dictionary — remembered per file, or in memory for a buffer with no file — or null. */
-    private String override(EditorBuffer buffer) {
+    private @Nullable String override(EditorBuffer buffer) {
         Path p = buffer.getPath();
         String own = p == null
                 ? buffer.spell().getLanguageOverride()
@@ -146,7 +147,7 @@ final class SpellCoordinator {
     }
 
     /** Gives {@code buffer} its own dictionary, or with a null {@code langId} returns it to the default. */
-    void setLanguage(EditorBuffer buffer, String langId) {
+    void setLanguage(EditorBuffer buffer, @Nullable String langId) {
         Path p = buffer.getPath();
         if (p == null) {
             buffer.spell().setLanguageOverride(langId); // kept for as long as the buffer is open
@@ -191,7 +192,7 @@ final class SpellCoordinator {
     // --- commands on misspelled words -----------------------------------------------------------------
 
     /** The active buffer if it is being spell-checked; otherwise says why not and returns null. */
-    private EditorBuffer checkedBuffer() {
+    private @Nullable EditorBuffer checkedBuffer() {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null) {
             host.setStatus(tr("status.noFileOpen"));
@@ -205,7 +206,7 @@ final class SpellCoordinator {
     }
 
     /** The misspelled word at the caret of a checked buffer; otherwise says there is none and returns null. */
-    private BufferSpell.Hit hitAtCaret(EditorBuffer buffer) {
+    private BufferSpell.@Nullable Hit hitAtCaret(EditorBuffer buffer) {
         BufferSpell.Hit hit = buffer.spell().hitAtCaret();
         if (hit == null) {
             host.setStatus(tr("status.spell.noWordAtCaret"));
@@ -237,7 +238,7 @@ final class SpellCoordinator {
     void correctWord() {
         EditorBuffer buffer = checkedBuffer();
         BufferSpell.Hit hit = buffer == null ? null : hitAtCaret(buffer);
-        if (hit == null) {
+        if (buffer == null || hit == null) {
             return;
         }
         if (!buffer.isEditable()) {
@@ -268,7 +269,7 @@ final class SpellCoordinator {
     void addWordToDictionary() {
         EditorBuffer buffer = checkedBuffer();
         BufferSpell.Hit hit = buffer == null ? null : hitAtCaret(buffer);
-        if (hit != null) {
+        if (buffer != null && hit != null) {
             buffer.spell().addToDictionary(hit.word());
             host.setStatus(tr("status.spell.added", hit.word()));
         }
@@ -277,7 +278,7 @@ final class SpellCoordinator {
     void ignoreWord() {
         EditorBuffer buffer = checkedBuffer();
         BufferSpell.Hit hit = buffer == null ? null : hitAtCaret(buffer);
-        if (hit != null) {
+        if (buffer != null && hit != null) {
             buffer.spell().ignore(hit.word());
             host.setStatus(tr("status.spell.ignored", hit.word()));
         }
@@ -299,8 +300,9 @@ final class SpellCoordinator {
      * setting (#443). Mirrors broadcastSettingsApplied/broadcastMacrosChanged.
      */
     private void refreshEveryWindow() {
-        if (host.windowManager() != null) {
-            host.windowManager().broadcastUserDictionaryChanged();
+        WindowManager wm = host.windowManager();
+        if (wm != null) {
+            wm.broadcastUserDictionaryChanged();
         } else {
             host.refreshSpellAllTabs();
         }

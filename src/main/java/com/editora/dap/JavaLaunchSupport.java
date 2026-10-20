@@ -110,7 +110,7 @@ final class JavaLaunchSupport {
     }
 
     /** {@link #typeNamePosition(List)} for a file on disk (one bounded read); null when unreadable. */
-    static int @Nullable [] typeNamePosition(Path file) {
+    static int @Nullable [] typeNamePosition(@Nullable Path file) {
         try (java.util.stream.Stream<String> s = Files.lines(file)) {
             return typeNamePosition(s.limit(500).toList());
         } catch (IOException | RuntimeException e) {

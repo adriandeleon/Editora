@@ -59,7 +59,8 @@ public final class OdtWriter {
      * What the content walk carries: the pictures collected for {@code Pictures/}, where relative image
      * paths resolve, and the heading anchors ({@code bookmarks} is their set, for link targets).
      */
-    private record Pictures(List<Embedded> list, Path baseDir, Map<Heading, String> anchors, Set<String> bookmarks) {}
+    private record Pictures(
+            List<Embedded> list, @Nullable Path baseDir, Map<Heading, String> anchors, Set<String> bookmarks) {}
 
     /** {@code meta.xml}: the document's title and the application that wrote it. */
     static String metaXml(@Nullable String title) {
@@ -72,7 +73,8 @@ public final class OdtWriter {
                 + "</office:meta></office:document-meta>";
     }
 
-    public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
+    public static void write(String markdown, @Nullable Path baseDir, @Nullable List<String> mmdc, Path out)
+            throws IOException {
         List<Embedded> images = new ArrayList<>();
         String content = contentXml(markdown, baseDir, mmdc, images);
         String title = MarkdownDocInfo.title(MarkdownRenderer.parseForRender(markdown), DocxWriter.fileTitle(out));
@@ -91,7 +93,8 @@ public final class OdtWriter {
 
     // ---- content.xml (pure, unit-tested) ----
 
-    static String contentXml(String markdown, Path baseDir, List<String> mmdc, List<Embedded> imageList) {
+    static String contentXml(
+            String markdown, @Nullable Path baseDir, @Nullable List<String> mmdc, List<Embedded> imageList) {
         Node ast = com.editora.markdown.MarkdownExportTree.lower(
                 MarkdownRenderer.parseForRender(markdown), com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
         Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
@@ -108,7 +111,8 @@ public final class OdtWriter {
         return b.toString();
     }
 
-    private static void block(StringBuilder b, Node n, Path baseDir, List<String> mmdc, Pictures images) {
+    private static void block(
+            StringBuilder b, Node n, @Nullable Path baseDir, @Nullable List<String> mmdc, Pictures images) {
         if (n instanceof Heading h) {
             int lvl = Math.min(6, h.getLevel());
             b.append("<text:h text:style-name=\"Heading_20_")
@@ -213,7 +217,11 @@ public final class OdtWriter {
 
     /** A footnote definition: its {@code [label]} marker leading the first paragraph, then any further blocks. */
     private static void footnote(
-            StringBuilder b, FootnoteDefinition def, Path baseDir, List<String> mmdc, Pictures images) {
+            StringBuilder b,
+            FootnoteDefinition def,
+            @Nullable Path baseDir,
+            @Nullable List<String> mmdc,
+            Pictures images) {
         List<InlineRun> marker = List.of(InlineRun.plain(InlineRun.footnoteMarker(def.getLabel()) + " "));
         boolean first = true;
         for (Node c = def.getFirstChild(); c != null; c = c.getNext()) {
@@ -278,7 +286,12 @@ public final class OdtWriter {
     }
 
     private static void listXml(
-            StringBuilder b, Node listNode, boolean ordered, Path baseDir, List<String> mmdc, Pictures images) {
+            StringBuilder b,
+            Node listNode,
+            boolean ordered,
+            @Nullable Path baseDir,
+            @Nullable List<String> mmdc,
+            Pictures images) {
         b.append("<text:list text:style-name=\"").append(ordered ? "L2" : "L1").append("\">");
         for (Node item = listNode.getFirstChild(); item != null; item = item.getNext()) {
             if (!(item instanceof ListItem)) {
@@ -471,7 +484,7 @@ public final class OdtWriter {
         }
     }
 
-    private static void imageFrame(StringBuilder b, Image img, Path baseDir, Pictures images) {
+    private static void imageFrame(StringBuilder b, Image img, @Nullable Path baseDir, Pictures images) {
         byte[] bytes = OfficeImages.load(img.getDestination(), baseDir);
         if (!imageFrameBytes(b, bytes, images)) {
             String alt = InlineRun.textOf(img);

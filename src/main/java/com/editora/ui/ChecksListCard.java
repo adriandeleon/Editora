@@ -20,6 +20,7 @@ import com.editora.github.ChecksParser;
 import com.editora.github.ChecksParser.CheckRun;
 import com.editora.github.ChecksPoll;
 import com.editora.github.GitHubService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -85,7 +86,7 @@ final class ChecksListCard extends VBox {
     }
 
     /** Shows {@code checks} (a poll updates the open card in place); {@code null} empties the list. */
-    void update(GitHubService.BranchChecks checks) {
+    void update(GitHubService.@Nullable BranchChecks checks) {
         rows.getChildren().clear();
         if (checks == null || checks.pr() == null) {
             title.setText(tr("github.checks.none"));

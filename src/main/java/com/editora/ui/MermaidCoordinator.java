@@ -13,6 +13,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.editor.MermaidImages;
 import com.editora.mermaid.MermaidService;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -113,6 +114,7 @@ final class MermaidCoordinator {
     }
 
     /** The mmdc command for rendering a diagram in a PDF/print, or {@code null} when the feature is off. */
+    @Nullable
     List<String> mmdcCommandOrNull() {
         return isEnabled() ? service.mmdcCommand() : null;
     }

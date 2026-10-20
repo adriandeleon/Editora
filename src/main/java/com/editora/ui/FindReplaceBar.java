@@ -26,6 +26,7 @@ import com.editora.editor.NoteAnchors;
 import com.editora.editor.SearchMatcher;
 import com.editora.editor.SearchMatches;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 import org.reactfx.Subscription;
 
 import static com.editora.i18n.Messages.tr;
@@ -54,7 +55,7 @@ public class FindReplaceBar extends HBox {
      *  debounce so an edit re-highlights without moving the caret/selection). */
     private final PauseTransition editDebounce = new PauseTransition(Duration.millis(150));
     /** Subscription to the searched buffer's text changes (live while the bar is shown); null when hidden. */
-    private Subscription textSub;
+    private @Nullable Subscription textSub;
 
     /**
      * The matches being shown: all of them for an ordinary result, else the page around the active one (see
@@ -65,7 +66,7 @@ public class FindReplaceBar extends HBox {
 
     private int activeIndex = -1;
     /** The document version and query {@link #matches} were found for; null when there are none. */
-    private SearchKey matchesKey;
+    private @Nullable SearchKey matchesKey;
 
     private record SearchKey(long version, SearchMatcher.Query query) {}
 
@@ -89,7 +90,7 @@ public class FindReplaceBar extends HBox {
     private int pageSize = SearchMatcher.DEFAULT_PAGE;
     private LatestOnly searcher = new LatestOnly(SEARCH_POOL, Platform::runLater);
     /** The buffer {@link #matches}, the edit subscription and the scope belong to; null while hidden. */
-    private EditorBuffer boundBuffer;
+    private @Nullable EditorBuffer boundBuffer;
     /** True when the last search was abandoned part-way (time budget or regex stack depth). */
     private boolean searchIncomplete;
     /** True while {@link #resetScope} switches "Sel" off, so its listener does not re-search. */
@@ -97,7 +98,7 @@ public class FindReplaceBar extends HBox {
 
     private int searchAnchor; // caret offset when the search started — incremental jumps anchor here
     /** Invoked on Alt+Enter in the find field to turn all matches into carets (wired by MainController). */
-    private Runnable onSelectAllMatches;
+    private @Nullable Runnable onSelectAllMatches;
 
     /**
      * Find-in-selection scope as {@code [scopeStart, scopeEnd)}, or -1/-1 for the whole document. Kept
@@ -281,7 +282,7 @@ public class FindReplaceBar extends HBox {
      * matching the VS Code / browser convention of opening Find on the selected text. A multi-line
      * selection is left alone (it isn't a sensible find term), keeping whatever query was already there.
      */
-    private void seedFromSelection(CodeArea area) {
+    private void seedFromSelection(@Nullable CodeArea area) {
         if (area == null) {
             return;
         }
@@ -301,7 +302,7 @@ public class FindReplaceBar extends HBox {
      * rather than when the toggle is clicked is what makes the scope useful at all — by the time the user
      * could click it, {@code recompute()} has already replaced their selection with the first match.
      */
-    private void captureScope(CodeArea area) {
+    private void captureScope(@Nullable CodeArea area) {
         clearScope();
         if (area == null) {
             return;
@@ -442,7 +443,7 @@ public class FindReplaceBar extends HBox {
      * synchronously for <em>every</em> edit, ours included, so one place keeps the range correct and there
      * is no way to double-apply it.
      */
-    private void subscribeToEdits(CodeArea area) {
+    private void subscribeToEdits(@Nullable CodeArea area) {
         unsubscribeFromEdits();
         if (area != null) {
             textSub = area.plainTextChanges().subscribe(c -> {
@@ -496,7 +497,7 @@ public class FindReplaceBar extends HBox {
         this.onSelectAllMatches = action;
     }
 
-    private CodeArea area() {
+    private @Nullable CodeArea area() {
         EditorBuffer buffer = activeBuffer.get();
         return buffer == null ? null : buffer.getFocusedArea();
     }
@@ -708,7 +709,7 @@ public class FindReplaceBar extends HBox {
     }
 
     /** The preview search to use for {@code buffer}: only while its preview is all that is showing. */
-    private static com.editora.editor.PreviewFind previewOf(EditorBuffer buffer) {
+    private static com.editora.editor.@Nullable PreviewFind previewOf(EditorBuffer buffer) {
         return buffer != null && buffer.isPreviewOnly() ? buffer.previewFind() : null;
     }
 

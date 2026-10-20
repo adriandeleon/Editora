@@ -12,6 +12,7 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.snippet.SnippetManager;
 import com.editora.snippet.SnippetManager.Problem;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -37,6 +38,7 @@ final class SnippetCoordinator {
         void showPicker();
 
         /** The active project's root, or null. */
+        @Nullable
         Path projectRoot();
 
         /** Tells the other windows a user snippet file changed. */
@@ -64,7 +66,7 @@ final class SnippetCoordinator {
     private final Ops ops;
     private final SnippetManager manager;
     /** The buffer whose session the status bar is showing, or null. */
-    private EditorBuffer shown;
+    private @Nullable EditorBuffer shown;
 
     SnippetCoordinator(ConfigManager config, CoordinatorHost host, Ops ops) {
         this.host = host;

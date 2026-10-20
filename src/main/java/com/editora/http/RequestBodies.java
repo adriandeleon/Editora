@@ -102,7 +102,7 @@ final class RequestBodies {
      */
     static Content resolve(
             HttpFile.Parsed request,
-            Path baseDir,
+            @Nullable Path baseDir,
             Function<String, String> sub,
             String contentType,
             List<String[]> headers,

@@ -287,7 +287,10 @@ public final class ProcessRunner {
      * flagged {@link Result#outTruncated()}.
      */
     public static Result runLines(
-            Path workingDir, Duration timeout, List<String> command, java.util.function.Predicate<String> stopAfter) {
+            @Nullable Path workingDir,
+            Duration timeout,
+            List<String> command,
+            java.util.function.Predicate<String> stopAfter) {
         return decoded(runRaw(workingDir, timeout, command, Map.of(), null, false, false, stopAfter));
     }
 

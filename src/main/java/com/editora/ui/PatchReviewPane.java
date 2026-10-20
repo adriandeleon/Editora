@@ -19,13 +19,14 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.TabContent;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
 /** A single review tab for every file section in a unified patch. */
 final class PatchReviewPane implements TabContent {
 
-    record Entry(String label, String status, int additions, int deletions, DiffViewerPane pane) {
+    record Entry(@Nullable String label, String status, int additions, int deletions, DiffViewerPane pane) {
         Entry(String label, int additions, int deletions, DiffViewerPane pane) {
             this(label, "", additions, deletions, pane);
         }
@@ -38,7 +39,7 @@ final class PatchReviewPane implements TabContent {
     private final StackPane content = new StackPane();
     private final ListView<Entry> files = new ListView<>();
     private final Label position = new Label();
-    private HBox applyBar;
+    private @Nullable HBox applyBar;
 
     PatchReviewPane(String title, List<Entry> entries) {
         this.title = title;
@@ -98,6 +99,7 @@ final class PatchReviewPane implements TabContent {
         return entries.stream().map(Entry::pane).toList();
     }
 
+    @Nullable
     DiffViewerPane activePane() {
         int selected = files.getSelectionModel().getSelectedIndex();
         return selected >= 0 && selected < entries.size()

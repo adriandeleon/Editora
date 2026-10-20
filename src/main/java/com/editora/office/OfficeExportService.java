@@ -7,6 +7,8 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Exports the Markdown preview to MS Word ({@code .docx}, via {@link DocxWriter}) and OpenDocument Text
  * ({@code .odt}, via {@link OdtWriter}) off the JavaFX thread — the {@code PdfExportService} idiom: a single
@@ -29,13 +31,21 @@ public final class OfficeExportService {
      * {@code mmdcCommand} (or null) renders ```mermaid blocks as diagrams.
      */
     public void exportDocx(
-            String markdown, Path baseDir, java.util.List<String> mmdcCommand, Path out, Consumer<Result> onResult) {
+            String markdown,
+            @Nullable Path baseDir,
+            java.util.@Nullable List<String> mmdcCommand,
+            Path out,
+            Consumer<Result> onResult) {
         run(() -> DocxWriter.write(markdown, baseDir, mmdcCommand, out), onResult);
     }
 
     /** Exports {@code markdown} to a {@code .odt}; see {@link #exportDocx} for {@code baseDir}/{@code mmdcCommand}. */
     public void exportOdt(
-            String markdown, Path baseDir, java.util.List<String> mmdcCommand, Path out, Consumer<Result> onResult) {
+            String markdown,
+            @Nullable Path baseDir,
+            java.util.@Nullable List<String> mmdcCommand,
+            Path out,
+            Consumer<Result> onResult) {
         run(() -> OdtWriter.write(markdown, baseDir, mmdcCommand, out), onResult);
     }
 

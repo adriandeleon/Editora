@@ -28,6 +28,7 @@ import com.editora.process.ElevatedSave;
 import com.editora.run.RunService;
 import com.editora.search.Ripgrep;
 import com.editora.web.Browsers;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -78,7 +79,7 @@ final class DoctorCoordinator {
         List<String> lspServerArgv(String serverId);
 
         /** Why the server was given up on after failing its requests (Maven review C2), or null while it is not. */
-        default String lspServerFailure(String serverId) {
+        default @Nullable String lspServerFailure(String serverId) {
             return null;
         }
 
@@ -105,22 +106,22 @@ final class DoctorCoordinator {
         void openSettingsFor(String settingsKey);
 
         /** The shared plugin manager (the Plugins section), or null when there is none. */
-        default com.editora.plugin.PluginManager plugins() {
+        default com.editora.plugin.@Nullable PluginManager plugins() {
             return null;
         }
 
         /** This window's project root (where Python's venv is looked for), or null. */
-        default java.nio.file.Path projectRoot() {
+        default java.nio.file.@Nullable Path projectRoot() {
             return null;
         }
 
         /** Where {@code tool}'s build file was detected for the active module, or null (review B32). */
-        default java.nio.file.Path buildRoot(com.editora.build.BuildTool tool) {
+        default java.nio.file.@Nullable Path buildRoot(com.editora.build.BuildTool tool) {
             return null;
         }
 
         /** What a build from the detected root runs as ("./mvnw (trusted)", "mvn on PATH"), or null. */
-        default String buildExecutableSummary(com.editora.build.BuildTool tool) {
+        default @Nullable String buildExecutableSummary(com.editora.build.BuildTool tool) {
             return null;
         }
 
@@ -133,7 +134,8 @@ final class DoctorCoordinator {
          * Resolves the window's Python interpreter — what Pyright is told and the formatter is looked for beside
          * — or null when the window cannot say. Called on the FX thread; the returned supplier runs off it.
          */
-        default java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter> pythonInterpreter() {
+        default java.util.function.@Nullable Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
+                pythonInterpreter() {
             return null;
         }
 
@@ -160,6 +162,7 @@ final class DoctorCoordinator {
     private final DoctorPane pane;
 
     /** Test seam: when set, probes resolve synchronously through this — no subprocess ever spawns. */
+    @Nullable
     Function<DoctorService.CheckSpec, DoctorCheck> probeOverrideForTest;
 
     DoctorCoordinator(CoordinatorHost host, Ops ops) {
@@ -232,7 +235,7 @@ final class DoctorCoordinator {
      * The machine this window's project runs its tools on, when that is not this one (an SSH host, WSL, a
      * container) — the header then says the rows describe this computer (review D2) — else null.
      */
-    private String remoteTarget() {
+    private @Nullable String remoteTarget() {
         Path root = ops.projectRoot();
         if (root == null) {
             return null;
@@ -350,7 +353,7 @@ final class DoctorCoordinator {
     }
 
     /** The names of the files directly in {@code root} (its markers); empty when it cannot be listed. Blocking. */
-    static List<String> rootFileNames(Path root) {
+    static List<String> rootFileNames(@Nullable Path root) {
         try (var stream = java.nio.file.Files.list(root)) {
             return stream.limit(2_000).map(p -> p.getFileName().toString()).toList();
         } catch (java.io.IOException | RuntimeException e) {
@@ -360,16 +363,16 @@ final class DoctorCoordinator {
 
     private static <T> Supplier<T> memoize(Supplier<T> source) {
         return new Supplier<>() {
-            private T value;
-            private boolean done;
+            private @Nullable T value;
 
             @Override
             public synchronized T get() {
-                if (!done) {
-                    value = source.get();
-                    done = true;
+                T v = value;
+                if (v == null) {
+                    v = source.get();
+                    value = v;
                 }
-                return value;
+                return v;
             }
         };
     }
@@ -570,7 +573,8 @@ final class DoctorCoordinator {
                     // debugpy, with any located bundle on PYTHONPATH (finding the bundle alone isn't enough).
                     Path dir = DebugAdapterLocator.locateDebugpy("", home).orElse(null);
                     boolean importable = DoctorProbes.succeeds(
-                            withArgs(py, "-c", "import debugpy"), DoctorProbes.pythonPathWith(dir));
+                            withArgs(py, "-c", "import debugpy"),
+                            dir == null ? Map.of() : DoctorProbes.pythonPathWith(dir));
                     boolean interpreterRuns =
                             importable || DoctorProbes.version(py).present();
                     String blocker = DoctorRules.debugpyBlocker(importable, interpreterRuns, py.get(0));
@@ -785,7 +789,7 @@ final class DoctorCoordinator {
      * started slowly, or changed since it was enabled — what used to show nowhere but the log. No "Turn on":
      * enabling plugins is a security decision made on the Settings page. Pure over the manager's state.
      */
-    static List<DoctorService.CheckSpec> pluginRows(Settings s, com.editora.plugin.PluginManager plugins) {
+    static List<DoctorService.CheckSpec> pluginRows(Settings s, com.editora.plugin.@Nullable PluginManager plugins) {
         List<DoctorService.CheckSpec> rows = new ArrayList<>();
         if (plugins == null) {
             return rows;
@@ -816,6 +820,7 @@ final class DoctorCoordinator {
             DoctorCheck row = DoctorCheck.checking("plugin:" + d.id(), "plugins", d.displayName(), d.id())
                     .withSettings("plugins");
             boolean slow = d.loadError() == null
+                    && runtime != null
                     && runtime.kind() == com.editora.plugin.PluginDescriptor.LoadProblem.Kind.SLOW_START;
             rows.add(terminal(slow ? row.warn(problem, "") : row.missing("doctor.tip.pluginProblem", problem)));
         }
@@ -998,7 +1003,7 @@ final class DoctorCoordinator {
         return probe(row, base -> {
             boolean project = detected != null || (root != null && needs.rootHasAny(tool.markers()));
             List<String> argv = configured;
-            if (project) {
+            if (project && root != null) { // project implies root: detected, or checked above
                 try {
                     argv = tool.executable(root, projectRoot != null ? projectRoot : root, windows, override);
                 } catch (RuntimeException e) {
@@ -1117,7 +1122,7 @@ final class DoctorCoordinator {
 
     /** A Run-section interpreter row: absent, it is only "not installed" (needed just for that file type). */
     private static DoctorService.CheckSpec optionalRunTool(
-            String id, String label, List<String> cmd, List<String> fallback, String fileKind) {
+            String id, String label, List<String> cmd, @Nullable List<String> fallback, String fileKind) {
         DoctorCheck row = DoctorCheck.checking(id, "run", label, cmd.get(0));
         return probe(row, base -> {
             String path = DoctorProbes.resolvedPath(cmd);
@@ -1129,7 +1134,7 @@ final class DoctorCoordinator {
     }
 
     private static void prereq(
-            List<String> found, List<String> missing, String name, List<String> cmd, List<String> fallback) {
+            List<String> found, List<String> missing, String name, List<String> cmd, @Nullable List<String> fallback) {
         boolean present = DoctorProbes.onPath(cmd) || (fallback != null && DoctorProbes.onPath(fallback));
         (present ? found : missing).add(name);
     }
@@ -1165,7 +1170,7 @@ final class DoctorCoordinator {
      * integration uses, so the row cannot disagree with it: being offline is "could not check", not "not
      * signed in", and a gh too old for the CI-checks indicator is named as such. Pure.
      */
-    static DoctorCheck ghCheck(DoctorCheck base, String executable, GitHubService.Availability a) {
+    static DoctorCheck ghCheck(DoctorCheck base, String executable, GitHubService.@Nullable Availability a) {
         if (a == null || !a.found()) {
             return base.missing("doctor.tip.missing", executable);
         }

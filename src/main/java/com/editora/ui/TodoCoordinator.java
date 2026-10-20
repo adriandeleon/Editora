@@ -19,6 +19,7 @@ import com.editora.todo.TodoPattern;
 import com.editora.todo.TodoPatterns;
 import com.editora.todo.TodoScanner;
 import com.editora.todo.TodoService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -34,6 +35,7 @@ final class TodoCoordinator {
     /** Window hooks beyond {@link CoordinatorHost} (project root, open-in-editor, the TODO tool window). */
     interface Ops {
         /** This window's project root, or {@code null} for the no-project window (scan the active tab only). */
+        @Nullable
         Path projectRoot();
 
         /** Opens {@code file} and jumps to {@code line}/{@code col} (a clicked TODO result). */
@@ -58,15 +60,15 @@ final class TodoCoordinator {
     private final Ops ops;
     private final TodoService service = new TodoService();
     /** The TODO panel, built on its first use (the tool window's first open, or a scan). */
-    private TodoPanel panel;
+    private @Nullable TodoPanel panel;
 
     private final TodoPanel.Actions panelActions;
     /** State pushed to the panel while it did not exist, replayed when it is built. */
-    private Path activeFile;
+    private @Nullable Path activeFile;
 
     private List<String> keywords = List.of();
 
-    private CommandRegistry registry;
+    private @Nullable CommandRegistry registry;
     private TodoMatcher matcher = text -> List.of();
     /** Effective highlight on/off (Settings.todoHighlight). */
     private boolean highlightOn;
@@ -86,30 +88,39 @@ final class TodoCoordinator {
             }
 
             @Override
-            public void setPriority(Path file, TodoMatch m, String priority) {
-                applyEdit(
-                        file,
-                        m,
-                        com.editora.todo.TodoEdit.withPriority(m.lineText(), m.col() - 1, m.parsed(), priority));
+            public void setPriority(Path file, TodoMatch m, @Nullable String priority) {
+                com.editora.todo.TodoComment parsed = m.parsed(); // the panel's edit menu needs one
+                if (parsed != null) {
+                    applyEdit(
+                            file,
+                            m,
+                            com.editora.todo.TodoEdit.withPriority(m.lineText(), m.col() - 1, parsed, priority));
+                }
             }
 
             @Override
             public void setKeyword(Path file, TodoMatch m, String keyword) {
-                applyEdit(
-                        file, m, com.editora.todo.TodoEdit.withKeyword(m.lineText(), m.col() - 1, m.parsed(), keyword));
+                com.editora.todo.TodoComment parsed = m.parsed();
+                if (parsed != null) {
+                    applyEdit(
+                            file, m, com.editora.todo.TodoEdit.withKeyword(m.lineText(), m.col() - 1, parsed, keyword));
+                }
             }
 
             @Override
             public void editDescription(Path file, TodoMatch m) {
+                com.editora.todo.TodoComment parsed = m.parsed();
+                if (parsed == null) {
+                    return;
+                }
                 host.promptText(
                         tr("todo.editDescription.title"),
                         tr("todo.editDescription.label"),
-                        m.parsed().description(),
+                        parsed.description(),
                         text -> applyEdit(
                                 file,
                                 m,
-                                com.editora.todo.TodoEdit.withDescription(
-                                        m.lineText(), m.col() - 1, m.parsed(), text)));
+                                com.editora.todo.TodoEdit.withDescription(m.lineText(), m.col() - 1, parsed, text)));
             }
         };
     }
@@ -126,12 +137,12 @@ final class TodoCoordinator {
         }
         groupByRestored = true;
         if (panel != null) {
-            applyGroupBy(); // else when the panel is built
+            applyGroupBy(panel); // else when the panel is built
         }
     }
 
     /** Sets the panel's group-by from the persisted setting without re-saving it. */
-    private void applyGroupBy() {
+    private void applyGroupBy(TodoPanel panel) {
         restoringGroupBy = true;
         panel.setGroupBy(parseGroupBy(host.settings().getTodoGroupBy()));
         restoringGroupBy = false;
@@ -168,7 +179,7 @@ final class TodoCoordinator {
                 host.requestSave();
             });
             if (groupByRestored) {
-                applyGroupBy();
+                applyGroupBy(panel);
             }
             panel.setKeywords(keywords);
             panel.setActiveFile(activeFile);
@@ -179,7 +190,7 @@ final class TodoCoordinator {
 
     /** Sorts the TODO tree so the active file's group is on top (pass the normalized path; on tab switch).
      *  In the no-project window the panel shows only the active tab, so a switch re-scans it instead. */
-    void setActiveFile(java.nio.file.Path normalizedActive) {
+    void setActiveFile(java.nio.file.@Nullable Path normalizedActive) {
         activeFile = normalizedActive;
         if (panel != null) {
             panel.setActiveFile(normalizedActive);
@@ -201,7 +212,7 @@ final class TodoCoordinator {
      * window; in the no-project window only for a saved buffer whose own TODO highlight found something
      * (the panel's scan skips untitled buffers, so offering one would open an empty window).
      */
-    boolean availableFor(EditorBuffer b) {
+    boolean availableFor(@Nullable EditorBuffer b) {
         if (b == null) {
             return false;
         }
@@ -210,9 +221,9 @@ final class TodoCoordinator {
 
     /** The active tab's TODO lines (line + text) at the panel's last scan in the no-project window, so a
      *  debounced edit that leaves them alone (typing elsewhere) does not rebuild the panel. */
-    private List<String> lastActiveTabKey;
+    private @Nullable List<String> lastActiveTabKey;
 
-    private static List<String> todoLinesKey(EditorBuffer b) {
+    private static List<String> todoLinesKey(@Nullable EditorBuffer b) {
         if (b == null) {
             return List.of();
         }
@@ -334,6 +345,7 @@ final class TodoCoordinator {
             int tagEnd = p.hasTag() ? lineStart + p.tagEnd() : -1;
             int priStart = p.hasPriority() ? lineStart + p.priorityStart() : -1;
             int priEnd = p.hasPriority() ? lineStart + p.priorityEnd() : -1;
+            String priority = p.priority();
             out.add(new TodoMark(
                     m.start(),
                     m.end(),
@@ -345,7 +357,7 @@ final class TodoCoordinator {
                     p.hasTag() ? partColors.tag() : null,
                     priStart,
                     priEnd,
-                    partColors.priorityColor(p.priority())));
+                    priority == null ? null : partColors.priorityColor(priority)));
         }
         return out;
     }

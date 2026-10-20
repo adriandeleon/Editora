@@ -12,6 +12,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.run.PythonInterpreters;
 import com.editora.run.PythonInterpreters.PythonInterpreter;
 import com.editora.run.PythonRunPlan;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -30,13 +31,14 @@ final class PythonInterpreterCoordinator {
     /** What this coordinator needs from its window. */
     interface Host {
         /** The window's project root, or null without a project. */
+        @Nullable
         Path projectRoot();
 
         /** The window's configuration (settings + workspace state). */
-        com.editora.config.ConfigManager config();
+        com.editora.config.@Nullable ConfigManager config();
 
         /** Shows or hides the status-bar item ({@code text == null} hides it). */
-        void setStatusItem(String text, String tooltip);
+        void setStatusItem(@Nullable String text, @Nullable String tooltip);
 
         /** Called after the pick changed, so servers (and anything else) follow it. */
         void interpreterChanged();
@@ -54,7 +56,8 @@ final class PythonInterpreterCoordinator {
     private final Map<String, String> versions = new ConcurrentHashMap<>();
 
     /** The values a resolution reads, captured on the FX thread so a background thread can use them. */
-    private record Snapshot(Path projectRoot, String choice, com.editora.config.Settings settings) {}
+    private record Snapshot(
+            @Nullable Path projectRoot, String choice, com.editora.config.@Nullable Settings settings) {}
 
     private volatile Snapshot snapshot = new Snapshot(null, "", null);
 
@@ -78,7 +81,7 @@ final class PythonInterpreterCoordinator {
      * there, through Run's own planning ({@link PythonRunLauncher}, {@link PythonRunPlan}); a lookup over a
      * dropped connection falls back to that host's own {@code python3}, as Run does.
      */
-    PythonInterpreter resolve(Path file) {
+    PythonInterpreter resolve(@Nullable Path file) {
         Snapshot s = snapshot;
         Path where = file != null ? file : s.projectRoot();
         String setting = PythonRunLauncher.setting(where, s.settings());
@@ -96,7 +99,7 @@ final class PythonInterpreterCoordinator {
     }
 
     /** Whether {@code file} (or the project, for null) runs its tools on another machine. */
-    boolean elsewhere(Path file) {
+    boolean elsewhere(@Nullable Path file) {
         Path where = file != null ? file : snapshot.projectRoot();
         return where != null && !com.editora.process.ExecTargets.runsHere(where);
     }
@@ -105,6 +108,7 @@ final class PythonInterpreterCoordinator {
      * The interpreter a Python language server rooted at {@code root} analyses with: an absolute executable,
      * or null to let the server look for one. Off the FX thread (the {@code LspManager} start executor).
      */
+    @Nullable
     String pythonPathForServerRoot(Path root) {
         if (root == null) {
             return null;
@@ -114,14 +118,13 @@ final class PythonInterpreterCoordinator {
     }
 
     /** Updates the status-bar item for the active buffer: shown on Python files, local or remote (FX thread). */
-    void refreshStatus(EditorBuffer buffer) {
+    void refreshStatus(@Nullable EditorBuffer buffer) {
         int gen = ++statusGen;
-        boolean python = buffer != null && buffer.isPython();
-        Path path = python ? buffer.getPath() : null;
-        if (!python) {
+        if (buffer == null || !buffer.isPython()) {
             host.setStatusItem(null, null);
             return;
         }
+        Path path = buffer.getPath();
         captureSnapshot();
         boolean remote = elsewhere(path);
         Thread.ofVirtual().name("python-interpreter-status").start(() -> {
@@ -147,7 +150,7 @@ final class PythonInterpreterCoordinator {
     }
 
     /** {@code python.selectInterpreter}: lists the choices (found off the FX thread), then shows the picker. */
-    void selectInterpreter(EditorBuffer buffer) {
+    void selectInterpreter(@Nullable EditorBuffer buffer) {
         captureSnapshot();
         Path file = buffer == null ? null : buffer.getPath();
         Path root = snapshot.projectRoot() != null ? snapshot.projectRoot() : file == null ? null : file.getParent();
@@ -177,7 +180,7 @@ final class PythonInterpreterCoordinator {
         });
     }
 
-    private void showPicker(List<PythonInterpreterView.Choice> choices, Path root) {
+    private void showPicker(List<PythonInterpreterView.Choice> choices, @Nullable Path root) {
         QuickOpen<PythonInterpreterView.Choice> picker = new QuickOpen<>(
                 tr("python.interpreter.pick.title"),
                 tr("python.interpreter.pick.prompt"),
@@ -198,7 +201,7 @@ final class PythonInterpreterCoordinator {
     }
 
     /** Applies a picker row (FX thread). */
-    void choose(PythonInterpreterView.Choice choice, Path browseFrom) {
+    void choose(PythonInterpreterView.Choice choice, @Nullable Path browseFrom) {
         switch (choice.kind()) {
             case AUTO -> store("");
             case BROWSE -> browse(browseFrom);
@@ -206,7 +209,7 @@ final class PythonInterpreterCoordinator {
         }
     }
 
-    private void browse(Path from) {
+    private void browse(@Nullable Path from) {
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
         chooser.setTitle(tr("python.interpreter.pick.browseTitle"));
         if (from != null && Files.isDirectory(from)) {

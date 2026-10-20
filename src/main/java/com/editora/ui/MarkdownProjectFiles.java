@@ -10,6 +10,7 @@ import java.util.function.BooleanSupplier;
 import com.editora.editor.LanguageRegistry;
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The Markdown files of a project, for the features that look across them (link updates on rename, Go to
@@ -58,7 +59,7 @@ final class MarkdownProjectFiles {
     }
 
     /** The file's text as UTF-8, or null when it cannot be read as such (it is then left alone). */
-    static String read(Path file) {
+    static @Nullable String read(Path file) {
         try {
             return Files.size(file) > MAX_BYTES ? null : Files.readString(file);
         } catch (IOException | RuntimeException e) {

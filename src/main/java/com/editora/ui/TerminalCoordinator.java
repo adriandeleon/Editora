@@ -29,6 +29,7 @@ import com.editora.terminal.TerminalConnector;
 import com.editora.terminal.TerminalCursor;
 import com.editora.terminal.TerminalPalettes;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -48,6 +49,7 @@ final class TerminalCoordinator {
     /** Window hooks beyond {@link CoordinatorHost}. */
     interface Ops {
         /** Where a new shell starts: the project's folder (on its host for a remote project), or null for home. */
+        @Nullable
         Path workingDirectory();
 
         boolean isToolWindowOpen();
@@ -73,7 +75,7 @@ final class TerminalCoordinator {
 
     private final CoordinatorHost host;
     private final Ops ops;
-    private TerminalPanel panel;
+    private @Nullable TerminalPanel panel;
 
     TerminalCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -83,15 +85,16 @@ final class TerminalCoordinator {
     /** The tool window's content, built on first use. */
     TerminalPanel panel() {
         if (panel == null) {
-            panel = new TerminalPanel(this::shellFor, this::confirmClose, ops::workingDirectory);
-            panel.setTargetLabel(TerminalCoordinator::targetLabel);
-            panel.setShellPaths(TerminalCoordinator::shellPathsFor);
-            panel.setRemotePrograms(TerminalCoordinator::remotePrograms);
-            panel.setMenuExtras(() -> {
+            TerminalPanel p = new TerminalPanel(this::shellFor, this::confirmClose, ops::workingDirectory);
+            panel = p;
+            p.setTargetLabel(TerminalCoordinator::targetLabel);
+            p.setShellPaths(TerminalCoordinator::shellPathsFor);
+            p.setRemotePrograms(TerminalCoordinator::remotePrograms);
+            p.setMenuExtras(() -> {
                 MenuItem here = new MenuItem(tr("terminal.newHere"));
-                here.setOnAction(e -> panel.newTerminalHere());
+                here.setOnAction(e -> p.newTerminalHere());
                 MenuItem find = new MenuItem(tr("terminal.menu.find"));
-                find.setOnAction(e -> panel.find());
+                find.setOnAction(e -> p.find());
                 find.setAccelerator(com.editora.terminal.TerminalView.chord(
                         System.getProperty("os.name", "")
                                         .toLowerCase(java.util.Locale.ROOT)
@@ -100,17 +103,17 @@ final class TerminalCoordinator {
                                 : "Ctrl+Shift+F"));
                 return List.of(here, find);
             });
-            panel.setOnError(host::setError);
-            panel.setPasteGuard(this::confirmMultilinePaste);
-            panel.setRenamer((current, onName) ->
+            p.setOnError(host::setError);
+            p.setPasteGuard(this::confirmMultilinePaste);
+            p.setRenamer((current, onName) ->
                     host.promptText(tr("terminal.tab.rename.title"), tr("terminal.tab.rename.label"), current, onName));
             // The last shell gone, the window goes too (as in IntelliJ and VS Code), and the editor has the keys.
-            panel.setOnLastClosed(() -> {
+            p.setOnLastClosed(() -> {
                 if (ops.isToolWindowOpen()) {
                     ops.hideToolWindow();
                 }
             });
-            panel.setLinkActions(new LinkActions() {
+            p.setLinkActions(new LinkActions() {
                 @Override
                 public void openUrl(String url) {
                     host.openExternalUrl(url);
@@ -121,20 +124,20 @@ final class TerminalCoordinator {
                     ops.openLink(file, line, column);
                 }
             });
-            panel.apply(config(host.settings()));
+            p.apply(config(host.settings()));
             // Each time the panel reaches a scene the theme can be read, and with no shell one is started: opening
             // the window from its stripe should give a prompt, not a "New Terminal" button.
-            panel.sceneProperty().addListener((o, was, scene) -> {
+            p.sceneProperty().addListener((o, was, scene) -> {
                 if (scene != null) {
                     applyTheme();
-                    if (!panel.hasTerminals()) {
+                    if (!p.hasTerminals()) {
                         // Without the keyboard: this is also how a terminal left open comes back at startup, and
                         // the editor keeps it then. Every path that shows the window on purpose focuses it itself.
                         // A pulse later, so a window being restored has its files back and the shell starts where
                         // the active one is rather than in the home folder.
                         Platform.runLater(() -> {
-                            if (!panel.hasTerminals()) {
-                                panel.newTerminalQuietly();
+                            if (!p.hasTerminals()) {
+                                p.newTerminalQuietly();
                             }
                         });
                     }
@@ -203,7 +206,7 @@ final class TerminalCoordinator {
      * "Open in Terminal": a new tab with a shell in {@code dir}. The first shell the tool window would start on
      * its own is skipped, so the window does not open with a second tab in the project folder.
      */
-    void openAt(Path dir) {
+    void openAt(@Nullable Path dir) {
         ops.showToolWindow();
         panel().newTerminal(dir);
     }
@@ -309,7 +312,7 @@ final class TerminalCoordinator {
      * A shell for a tab in {@code directory}: on the host of a remote folder (its target's login shell; the local
      * shell setting names a program on this machine, so it is never sent there), else on this machine.
      */
-    private TerminalConnector.Factory shellFor(Path directory, String shell) {
+    private TerminalConnector.Factory shellFor(@Nullable Path directory, String shell) {
         if (directory != null && !Vfs.isLocal(directory)) {
             return remoteShell(directory, this::integrationOn);
         }
@@ -327,7 +330,7 @@ final class TerminalCoordinator {
 
     /** As above, with the shell-integration folder {@code integration} finds on the target (null for none). */
     static TerminalConnector.Factory remoteShell(
-            Path directory, java.util.function.Function<ExecTarget, String> integration) {
+            Path directory, java.util.function.Function<ExecTarget, @Nullable String> integration) {
         // Opened off the FX thread by the panel: a channel open on the host, and the first time the integration
         // scripts written there.
         return TerminalConnector.Factory.slow((columns, rows) -> {
@@ -341,10 +344,10 @@ final class TerminalCoordinator {
     /** Integration folders already installed, by target id: installing asks the target, so it is asked once. */
     private final java.util.Map<String, String> installed = new java.util.concurrent.ConcurrentHashMap<>();
 
-    private Path localIntegration;
+    private @Nullable Path localIntegration;
 
     /** The shell-integration folder on {@code target}, installed there on first use; null when off or not possible. */
-    private String integrationOn(ExecTarget target) {
+    private @Nullable String integrationOn(ExecTarget target) {
         if (!host.settings().isTerminalShellIntegration()) {
             return null;
         }
@@ -364,7 +367,7 @@ final class TerminalCoordinator {
     }
 
     /** The shell-integration folder on this machine, installed on first use; null when off or not possible. */
-    private Path localIntegration() {
+    private @Nullable Path localIntegration() {
         if (!host.settings().isTerminalShellIntegration()) {
             return null;
         }
@@ -382,7 +385,7 @@ final class TerminalCoordinator {
      * How the paths a shell in {@code directory} prints map to paths here: null for a shell on this machine, else
      * its target's own mapping (the host's file over SFTP, the folder a container mounts, the WSL share).
      */
-    static java.util.function.Function<String, Path> shellPathsFor(Path directory) {
+    static java.util.function.@Nullable Function<String, Path> shellPathsFor(@Nullable Path directory) {
         if (directory == null) {
             return null;
         }
@@ -430,7 +433,7 @@ final class TerminalCoordinator {
     }
 
     /** What a tab's chip says: "Local", the host of a remote folder, or the container or WSL distribution. */
-    static String targetLabel(Path directory) {
+    static String targetLabel(@Nullable Path directory) {
         String authority = directory == null ? null : Vfs.authorityOf(directory);
         if (authority != null) {
             return hostOf(authority);
@@ -460,7 +463,7 @@ final class TerminalCoordinator {
      * A shell on this machine, tracked so it ends with Editora even when Editora does not end cleanly. Started off
      * the FX thread: the fork, and the first time loading pty4j's native library, held it for up to half a second.
      */
-    private TerminalConnector.Factory localShell(Path directory, String shell) {
+    private TerminalConnector.Factory localShell(@Nullable Path directory, String shell) {
         return TerminalConnector.Factory.background((columns, rows) -> {
             List<String> command = shell == null || shell.isBlank() ? List.of() : LocalShell.shellCommand(shell);
             String problem = LocalShell.overrideProblem(shell);
@@ -468,7 +471,7 @@ final class TerminalCoordinator {
                 Platform.runLater(() -> host.setStatus(tr("terminal.shellNotFound", problem)));
             }
             LocalPtyConnector connector = LocalShell.start(
-                    command, directory == null ? null : directory.toString(), columns, rows, localIntegration());
+                    command, directory == null ? "" : directory.toString(), columns, rows, localIntegration());
             try {
                 ProcessRegistry.track(connector.trackableProcess());
             } catch (RuntimeException e) {
@@ -488,7 +491,7 @@ final class TerminalCoordinator {
      */
     com.editora.terminal.ProgramRun runProgram(
             String title,
-            Path directory,
+            @Nullable Path directory,
             List<String> argv,
             java.util.Map<String, String> env,
             java.util.function.IntConsumer onExit)
@@ -503,9 +506,9 @@ final class TerminalCoordinator {
      * thread: an SSH channel waits on the host (and on a free long-lived slot), which froze the editor.
      */
     static TerminalConnector.Factory programConnector(
-            Path directory, List<String> argv, java.util.Map<String, String> env) {
+            @Nullable Path directory, List<String> argv, java.util.Map<String, String> env) {
         ExecTarget remote = directory == null ? null : ExecTargets.forPath(directory);
-        if (remote != null && !remote.isLocal()) {
+        if (directory != null && remote != null && !remote.isLocal()) {
             return TerminalConnector.Factory.slow((columns, rows) -> {
                 TerminalChannel channel =
                         remote.startTerminal(TerminalSpec.program(directory, columns, rows, argv, env));
@@ -514,7 +517,7 @@ final class TerminalCoordinator {
         }
         return (columns, rows) -> {
             LocalPtyConnector connector =
-                    LocalShell.startProgram(argv, directory == null ? null : directory.toString(), columns, rows, env);
+                    LocalShell.startProgram(argv, directory == null ? "" : directory.toString(), columns, rows, env);
             try {
                 ProcessRegistry.track(connector.trackableProcess());
             } catch (RuntimeException e) {

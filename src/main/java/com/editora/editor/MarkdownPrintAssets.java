@@ -50,11 +50,11 @@ public final class MarkdownPrintAssets {
      * Loads every image, renders every Mermaid fence (light theme) and tokenises every code fence of
      * {@code ast}. Blocks on file, network and process I/O, so it must run <b>off</b> the FX thread.
      */
-    public static MarkdownPrintAssets resolve(org.commonmark.node.Node ast, Path baseDir) {
+    public static MarkdownPrintAssets resolve(org.commonmark.node.Node ast, @Nullable Path baseDir) {
         return resolve(ast, baseDir, IMAGE_TIMEOUT_MS);
     }
 
-    static MarkdownPrintAssets resolve(org.commonmark.node.Node ast, Path baseDir, long imageTimeoutMs) {
+    static MarkdownPrintAssets resolve(org.commonmark.node.Node ast, @Nullable Path baseDir, long imageTimeoutMs) {
         Set<String> urls = new LinkedHashSet<>();
         Set<String> mermaid = new LinkedHashSet<>();
         Map<String, List<MarkdownRenderer.Run>> code = new HashMap<>();

@@ -71,7 +71,7 @@ public final class CodeHtml {
      * page that has both a light and a dark scheme: {@link #classCss} is the stylesheet that colours them
      * in each. A token colour the table does not know keeps an inline colour.
      */
-    public static String toClassHtml(String text, StyleSpans<Collection<String>> spans, int tabSize) {
+    public static String toClassHtml(String text, @Nullable StyleSpans<Collection<String>> spans, int tabSize) {
         List<List<PdfText.Run>> lines = PdfText.splitIntoLineRuns(text == null ? "" : text, spans, tabSize);
         StringBuilder sb = new StringBuilder(256).append("<pre class=\"md-highlight\"><code>");
         for (int i = 0; i < lines.size(); i++) {

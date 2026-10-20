@@ -2530,7 +2530,7 @@ public class EditorBuffer implements TabContent {
      * <p>Hints are <em>decorations, not text</em>: they never enter the document, never shift an offset, and
      * never appear in a selection or a copy. See {@code org.fxmisc.richtext.Inlay}.
      */
-    public void setInlayHints(java.util.List<InlayHint> hints) {
+    public void setInlayHints(java.util.@Nullable List<InlayHint> hints) {
         if (largeFile || hints == null || hints.isEmpty()) {
             if (!inlayHintsByLine.isEmpty()) {
                 inlayHintsByLine = java.util.Map.of();
@@ -2605,7 +2605,7 @@ public class EditorBuffer implements TabContent {
      * hints (so it is not part of the document either). Several lenses on one line are joined. Null or
      * empty clears them.
      */
-    public void setCodeLenses(java.util.List<CodeLens> lenses) {
+    public void setCodeLenses(java.util.@Nullable List<CodeLens> lenses) {
         java.util.Map<Integer, java.util.List<CodeLens>> byLine = CodeLensShift.byLine(lenses, CodeLens::line);
         if (byLine.equals(codeLensByLine)) {
             return;
@@ -4366,7 +4366,7 @@ public class EditorBuffer implements TabContent {
 
     /** While suspended: the frame's variable name → value map painted as grey end-of-line annotations on the
      *  visible lines of the function stopped at {@code frameLine}; null/empty clears (resume/terminate). */
-    public void setInlineValues(java.util.Map<String, String> values, int frameLine) {
+    public void setInlineValues(java.util.@Nullable Map<String, String> values, int frameLine) {
         java.util.Map<String, String> shown = hugeFile ? null : values;
         if ((shown != null && !shown.isEmpty()) || inlineValues != null) {
             // In a .http file only its script lines are the script's; a request body's "user" is not that variable.
@@ -4379,7 +4379,7 @@ public class EditorBuffer implements TabContent {
      *  Already formatted + localized by the controller (author/date/tooltip/heatmap), so {@code editor}
      *  stays git-free. Off on huge files. Computes the fixed column width from the widest author+date, then
      *  rebuilds the gutter so the column appears/disappears. */
-    public void setBlame(java.util.List<BlameInfo> lines) {
+    public void setBlame(java.util.@Nullable List<BlameInfo> lines) {
         if (!gitLines.setBlame(hugeFile ? null : lines)) {
             return; // every git refresh comes through here, mostly with nothing: no gutter rebuild for that
         }
@@ -4458,7 +4458,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Overlays the Editor/Split/Preview control top-right of this buffer's view; {@code null} removes it. */
-    public void setViewModeControl(Node control) {
+    public void setViewModeControl(@Nullable Node control) {
         this.viewModeControl = control;
         rebuildViewHost();
     }
@@ -4469,7 +4469,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Overlays the HTML "open in browser" control top-right of the code pane; {@code null} removes it. */
-    public void setHtmlPreviewControl(Node control) {
+    public void setHtmlPreviewControl(@Nullable Node control) {
         if (htmlPreviewControl != null && htmlPreviewControl != control) {
             removeCornerControl(htmlPreviewControl);
         }
@@ -4486,7 +4486,7 @@ public class EditorBuffer implements TabContent {
      * Overlays a {@code .http} file's environment pill beside the Editor/Split/Preview toggle — on the code pane in
      * Editor mode, over the response view in Split and Preview, so it is there in every mode; {@code null} removes it.
      */
-    public void setHttpEnvControl(Node control) {
+    public void setHttpEnvControl(@Nullable Node control) {
         if (httpEnvControl == control) {
             return;
         }
@@ -4505,7 +4505,7 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the CSV grid preview node (a ui-layer {@code CsvGridPanel}); {@code null} removes it. Non-null
      *  makes the buffer previewable ({@link #hasPreview()}), so the Editor/Split/Preview toggle attaches. */
-    public void setCsvPreviewNode(Node node) {
+    public void setCsvPreviewNode(@Nullable Node node) {
         if (this.csvPreviewNode == node) {
             return;
         }
@@ -4526,7 +4526,7 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the HTTP response panel (a ui-layer {@code HttpClientPanel}); {@code null} removes it. Non-null
      *  makes the buffer previewable ({@link #hasPreview()}), so the Editor/Split/Preview toggle attaches. */
-    public void setHttpPreviewNode(Node node) {
+    public void setHttpPreviewNode(@Nullable Node node) {
         if (this.httpPreviewNode == node) {
             return;
         }
@@ -4577,7 +4577,7 @@ public class EditorBuffer implements TabContent {
      * its own rather than a control floating in the corner: log lines are the longest lines the editor shows,
      * and a floating control sat on top of the end of the first two.
      */
-    public void setLogControl(Node control) {
+    public void setLogControl(@Nullable Node control) {
         this.logControl = control;
         refreshTopBars();
     }
@@ -4899,13 +4899,13 @@ public class EditorBuffer implements TabContent {
      * regular expression, or plain text when it is not a valid one); {@code null}/{@code null} clears the
      * filter. {@link #getContent()} stays the whole log throughout.
      */
-    public void applyLogFilter(LogLevel minLevel, String pattern) {
+    public void applyLogFilter(@Nullable LogLevel minLevel, @Nullable String pattern) {
         widen(); // the filter is derived from the area, which must therefore be the whole document
         logView.applyFilter(minLevel, pattern);
     }
 
     /** Whether {@code minLevel}/{@code pattern} is the filter already showing. */
-    public boolean showsLogFilter(LogLevel minLevel, String pattern) {
+    public boolean showsLogFilter(@Nullable LogLevel minLevel, @Nullable String pattern) {
         return logView.showsFilter(minLevel, pattern);
     }
 
@@ -4925,7 +4925,7 @@ public class EditorBuffer implements TabContent {
 
     /** Shows a filter computed from {@link #logFilterSource()}; false (and no change) when it is stale. */
     public boolean installLogFilter(
-            com.editora.logviewer.LogFilter.Run run, int epoch, LogLevel minLevel, String pattern) {
+            com.editora.logviewer.LogFilter.Run run, int epoch, @Nullable LogLevel minLevel, @Nullable String pattern) {
         return logView.install(run, epoch, minLevel, pattern);
     }
 
@@ -6320,7 +6320,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Restores a remembered zoom and divider (no change notification); {@code onChange} hears later ones. */
-    public void restorePreviewLayout(PreviewLayout layout, Runnable onChange) {
+    public void restorePreviewLayout(@Nullable PreviewLayout layout, Runnable onChange) {
         this.onPreviewLayoutChanged = onChange == null ? () -> {} : onChange;
         if (layout != null) {
             previewFontScale = layout.zoom();
@@ -6471,7 +6471,7 @@ public class EditorBuffer implements TabContent {
      * controller moves the one shared button as the active tab changes, so inactive buffers retain no
      * overlay node.
      */
-    public void setExpertExitControl(Node control) {
+    public void setExpertExitControl(@Nullable Node control) {
         if (expertExitControl != control) {
             removeCornerControl(expertExitControl);
         }
@@ -6642,7 +6642,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Notified after a checkpoint is recorded, so the Undo History panel can refresh (active buffer only). */
-    public void setOnUndoHistoryChanged(Runnable r) {
+    public void setOnUndoHistoryChanged(@Nullable Runnable r) {
         this.onUndoHistoryChanged = r;
     }
 
@@ -6858,13 +6858,13 @@ public class EditorBuffer implements TabContent {
     /** Sets the Git change bars (0-based on-disk line → CSS class); {@code null} = not tracked, no slot.
      *  Toggling tracking rebuilds the gutter factory; otherwise only the changed lines repaint. Off in
      *  large-file mode (the gutter is minimal there). */
-    public void setChangeBars(java.util.Map<Integer, String> lineClasses) {
+    public void setChangeBars(java.util.@Nullable Map<Integer, String> lineClasses) {
         setChangeBars(lineClasses, null);
     }
 
     /** As {@link #setChangeBars(java.util.Map)} plus a per-line hunk-text map for the change-bar tooltip. */
     public void setChangeBars(
-            java.util.Map<Integer, String> lineClasses, java.util.@Nullable Map<Integer, String> hunkText) {
+            java.util.@Nullable Map<Integer, String> lineClasses, java.util.@Nullable Map<Integer, String> hunkText) {
         // Never tracked in large/huge-file mode. A null answer = the reserved slot appeared or disappeared.
         java.util.Set<Integer> repaint = gitLines.setBars(largeFile ? null : lineClasses, hunkText);
         if (repaint == null) {
@@ -7674,7 +7674,7 @@ public class EditorBuffer implements TabContent {
         }
 
         /** Compares exact bytes when both snapshots have them, otherwise falls back to metadata. */
-        public boolean differsFrom(long currentModifiedMillis, long currentSize, String currentFingerprint) {
+        public boolean differsFrom(long currentModifiedMillis, long currentSize, @Nullable String currentFingerprint) {
             if (fingerprint != null && currentFingerprint != null) {
                 return !fingerprint.equals(currentFingerprint);
             }
@@ -7687,7 +7687,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Associates this buffer with a file and selects the grammar and fold language from its extension. */
-    public void setPath(Path path) {
+    public void setPath(@Nullable Path path) {
         this.path = path;
         writableOnDisk =
                 path == null || path.getFileSystem() != java.nio.file.FileSystems.getDefault() ? writableOnDisk : null;
@@ -7743,7 +7743,7 @@ public class EditorBuffer implements TabContent {
      * grammar/fold language by extension, while {@link #path} stays null so the first Save prompts for a
      * location (Save-As). No-op once the buffer has a real path.
      */
-    public void setDisplayName(String name) {
+    public void setDisplayName(@Nullable String name) {
         this.displayName = name == null || name.isBlank() ? null : name;
         if (path == null && displayName != null) {
             applyLanguageFor(LanguageRegistry.forFileName(displayName), displayName);
@@ -7883,13 +7883,13 @@ public class EditorBuffer implements TabContent {
     // --- EditorConfig overrides ------------------------------------------------------------------
 
     /** Forces the indent unit (EditorConfig {@code indent_style}/{@code indent_size}); null = auto-detect. */
-    public void setIndentOverride(Boolean insertSpaces, Integer size) {
+    public void setIndentOverride(@Nullable Boolean insertSpaces, @Nullable Integer size) {
         this.indentInsertSpacesOverride = insertSpaces;
         this.indentSizeOverride = size;
     }
 
     /** The EditorConfig line ending to write ({@code "LF"}/{@code "CRLF"}/{@code "CR"}); null = no override. */
-    public void setEolOverride(String eol) {
+    public void setEolOverride(@Nullable String eol) {
         this.eolOverride = LineEndings.isLabel(eol) ? eol : null;
     }
 
@@ -7918,7 +7918,7 @@ public class EditorBuffer implements TabContent {
         return detectedCharset;
     }
 
-    public void setCharsetOverride(String charset) {
+    public void setCharsetOverride(@Nullable String charset) {
         this.charsetOverride = charset;
     }
 
@@ -7948,7 +7948,7 @@ public class EditorBuffer implements TabContent {
      * Chooses the encoding this buffer is written in, whatever EditorConfig says; null returns it to the rules.
      * A choice other than the encoding on disk is an unsaved change, like a line-ending conversion.
      */
-    public void setUserCharset(String charset) {
+    public void setUserCharset(@Nullable String charset) {
         this.userCharset = charset;
         dirty.set(differsFromSaved());
     }
@@ -8159,7 +8159,7 @@ public class EditorBuffer implements TabContent {
      * Whether the file's permissions allow writing it, from the layer that can tell: {@code Files.isWritable}
      * answers yes for any existing SFTP file. {@code null} (the default) asks the file system directly.
      */
-    public void setWritableOnDisk(Boolean writable) {
+    public void setWritableOnDisk(@Nullable Boolean writable) {
         writableOnDisk = writable;
         updateViewModeBar();
     }

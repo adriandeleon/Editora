@@ -51,6 +51,7 @@ import com.editora.git.GitLog;
 import com.editora.git.GitLog.Entry;
 import com.editora.git.GitService.CommitFile;
 import com.editora.git.RelativeTime;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -88,7 +89,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         void selected(String hash);
 
         /** Diff a commit's file against its parent; {@code origRepoRelativePath} is the pre-rename path (or null). */
-        void openFileDiff(String hash, String repoRelativePath, String origRepoRelativePath);
+        void openFileDiff(String hash, String repoRelativePath, @Nullable String origRepoRelativePath);
 
         /** Compare a commit's file with its working-tree copy so selected changes can be applied locally. */
         void compareFileWithWorking(String hash, String repoRelativePath);
@@ -150,7 +151,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
      * the history of that file. {@code search} is the active history search ("" for none). {@code graph}:
      * the rows are a plain walk of the history, so a graph can be drawn for them.
      */
-    public record View(String fileName, String branch, boolean allBranches, String search, boolean graph) {
+    public record View(@Nullable String fileName, String branch, boolean allBranches, String search, boolean graph) {
         public View {
             fileName = fileName == null || fileName.isBlank() ? null : fileName;
             branch = branch == null ? "" : branch;
@@ -211,7 +212,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private boolean hasMore;
     private boolean loadingMore;
     /** The lane layout of {@link #allCommits}, row for row; null when the listing has no graph. */
-    private GitGraph graph;
+    private @Nullable GitGraph graph;
 
     private final List<GitGraph.Row> graphRows = new ArrayList<>();
     /** How many lanes the graph column is wide (0: no graph column). The same for every row. */
@@ -219,7 +220,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     /** In a file history: the file as each loaded commit knew it (its path there), by commit hash. */
     private final Map<String, CommitFile> followed = new HashMap<>();
     /** The commit menu now showing, hidden before another opens. */
-    private ContextMenu openMenu;
+    private @Nullable ContextMenu openMenu;
 
     private final Label detailsHash = new Label();
     private final HBox detailsParents = new HBox(6);
@@ -234,7 +235,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private final VBox details = new VBox(2);
     private final ScrollPane detailsScroll = new ScrollPane(details);
     /** The commit {@link #details} describes. */
-    private String detailsOf;
+    private @Nullable String detailsOf;
 
     private final ListView<CommitFile> files = new ListView<>();
     private final SplitPane split = new SplitPane();
@@ -598,12 +599,12 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     /** The branch's history (or a file's) with no search, as most callers and tests have it. */
-    public void setLog(GitLog.Page page, String fileName, String branch) {
+    public void setLog(GitLog.Page page, @Nullable String fileName, String branch) {
         setLog(page, new View(fileName, branch, false, "", false));
     }
 
     /** Whole-branch log without a truncation notice — the shape most callers and tests have. */
-    public void setLog(List<Entry> log, String fileName) {
+    public void setLog(List<Entry> log, @Nullable String fileName) {
         setLog(new GitLog.Page(log, false), fileName, "");
     }
 
@@ -613,7 +614,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     /** The hash of the last loaded commit — where the next page continues — or null when none is loaded. */
-    public String lastLoadedHash() {
+    public @Nullable String lastLoadedHash() {
         return allCommits.isEmpty()
                 ? null
                 : allCommits.get(allCommits.size() - 1).hash();
@@ -625,7 +626,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     /** The loaded commit {@code hash}, or null. */
-    public Entry entry(String hash) {
+    public @Nullable Entry entry(String hash) {
         for (Entry c : allCommits) {
             if (c.hash().equals(hash)) {
                 return c;
@@ -635,7 +636,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     /** In a file history: the file's path in commit {@code hash} (it may have been renamed since), or null. */
-    public String followedPath(String hash) {
+    public @Nullable String followedPath(@Nullable String hash) {
         CommitFile file = followed.get(hash);
         return file == null ? null : file.path();
     }
@@ -644,7 +645,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
      * In a file history: the path the file was renamed from in commit {@code hash}, when
      * {@code repoRelativePath} is that file there and the commit renamed it; else null.
      */
-    public String followedOrigPath(String hash, String repoRelativePath) {
+    public @Nullable String followedOrigPath(String hash, String repoRelativePath) {
         CommitFile file = followed.get(hash);
         return file != null && file.path().equals(repoRelativePath) ? file.origPath() : null;
     }
@@ -710,7 +711,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     /** Selects the commit {@code hash} again after the list was replaced, or nothing when it is gone. */
-    private void reselect(String hash) {
+    private void reselect(@Nullable String hash) {
         if (hash != null) {
             for (int i = 0; i < filteredCommits.size(); i++) {
                 if (hash.equals(filteredCommits.get(i).hash())) {
@@ -869,7 +870,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     /** The hash of the currently-selected commit, or {@code null} when none is selected (backs the palette commands). */
-    public String selectedHash() {
+    public @Nullable String selectedHash() {
         Entry c = commits.getSelectionModel().getSelectedItem();
         return c == null ? null : c.hash();
     }
@@ -1035,7 +1036,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private final class GraphStrip extends Region {
         private final Canvas canvas = new Canvas();
         private final ListCell<?> cell;
-        private GitGraph.Row row;
+        private GitGraph.@Nullable Row row;
         private boolean merge;
 
         GraphStrip(ListCell<?> cell) {
@@ -1318,7 +1319,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private static MenuItem item(String label, javafx.scene.Node icon, Runnable run) {
+    private static MenuItem item(String label, javafx.scene.@Nullable Node icon, Runnable run) {
         MenuItem m = new MenuItem(label);
         if (icon != null) {
             m.setGraphic(icon);

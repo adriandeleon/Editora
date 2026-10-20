@@ -15,6 +15,7 @@ import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.config.WorkspaceState;
 import com.editora.maven.GeneratedProject;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -33,10 +34,10 @@ final class NewMavenProjectSession {
     static void open(
             ProjectManager projects,
             ConfigManager config,
-            WindowManager windows,
+            @Nullable WindowManager windows,
             java.nio.file.Path root,
             String name,
-            GeneratedProject.MainClass main) {
+            GeneratedProject.@Nullable MainClass main) {
         Project project = projects.createOrGet(name, root);
         projects.save();
         seed(projects, config, project, root, name, main);
@@ -78,8 +79,10 @@ final class NewMavenProjectSession {
             Project project,
             java.nio.file.Path root,
             String name,
-            GeneratedProject.MainClass main) {
-        boolean runnable = main != null && main.fqn() != null && !main.fqn().isBlank();
+            GeneratedProject.@Nullable MainClass main) {
+        GeneratedProject.MainClass launch =
+                main != null && main.fqn() != null && !main.fqn().isBlank() ? main : null;
+        boolean runnable = launch != null;
         java.nio.file.Path pom = root.resolve("pom.xml");
         boolean hasPom = java.nio.file.Files.isRegularFile(pom);
         if (!runnable && !hasPom) {
@@ -92,7 +95,7 @@ final class NewMavenProjectSession {
             }
             ConfigManager seeded = new ConfigManager(config.shared(), stateFile);
             WorkspaceState state = seeded.getWorkspaceState(); // fresh defaults; see the note above
-            if (runnable && !GeneratedProject.needsMavenToRun(GeneratedProject.mavenRunGoal(root))) {
+            if (launch != null && !GeneratedProject.needsMavenToRun(GeneratedProject.mavenRunGoal(root))) {
                 // workingDir = blank, which already means the project root (RunConfigWorkingDirectory), so the
                 // configuration survives the folder being moved or renamed; a relative path in the program
                 // behaves as it would from a terminal at the root (review D20).
@@ -111,7 +114,7 @@ final class NewMavenProjectSession {
                         name,
                         "java",
                         "",
-                        main.fqn(),
+                        launch.fqn(),
                         name,
                         "",
                         "",
@@ -121,8 +124,8 @@ final class NewMavenProjectSession {
                 state.setSelectedRunConfig(name);
             }
             List<WorkspaceState.OpenFile> open = new ArrayList<>();
-            if (runnable) {
-                open.add(new WorkspaceState.OpenFile(main.file().toString(), 0, false));
+            if (launch != null) {
+                open.add(new WorkspaceState.OpenFile(launch.file().toString(), 0, false));
             }
             if (hasPom) {
                 open.add(new WorkspaceState.OpenFile(pom.toString(), 0, false));

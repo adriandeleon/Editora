@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import javafx.scene.Node;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Maps a symbol kind (the lowercased LSP {@code SymbolKind} id, e.g. {@code class}/{@code method}/{@code
  * field}) to a small category glyph for the Structure tool window rows. Rendered via {@link Icons#of} so the
@@ -25,12 +27,12 @@ final class StructureIcons {
     private static final String REQUEST = "M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"; // a sent message (.http request)
 
     /** A fresh glyph Node for {@code kind} (the lowercased SymbolKind id). */
-    static Node forKind(String kind) {
+    static Node forKind(@Nullable String kind) {
         return Icons.of(pathFor(kind));
     }
 
     /** The SVG path for {@code kind}'s category (package-visible for unit testing). */
-    static String pathFor(String kind) {
+    static String pathFor(@Nullable String kind) {
         return switch (kind == null ? "" : kind) {
             case "class", "struct", "object", "typeparameter" -> CLASS;
             case "interface" -> INTERFACE;

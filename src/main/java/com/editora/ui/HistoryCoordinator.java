@@ -35,6 +35,7 @@ import com.editora.history.HistoryService;
 import com.editora.io.AtomicFileWrite;
 import com.editora.io.DocumentWriteSequencer;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -56,7 +57,7 @@ final class HistoryCoordinator {
 
     @FunctionalInterface
     interface RestoreWriter {
-        boolean write(Path file, byte[] expectedBytes, byte[] replacementBytes, BooleanSupplier current)
+        boolean write(Path file, byte @Nullable [] expectedBytes, byte[] replacementBytes, BooleanSupplier current)
                 throws IOException;
     }
 
@@ -64,7 +65,7 @@ final class HistoryCoordinator {
     record RestoreSupport(
             RevisionContentLoader contentLoader,
             RestoreWriter writer,
-            Predicate<Path> confirmOverwrite,
+            @Nullable Predicate<Path> confirmOverwrite,
             Function<Path, DocumentWriteSequencer.Ticket> beginDocumentWrite) {
 
         RestoreSupport {
@@ -94,7 +95,7 @@ final class HistoryCoordinator {
      * — "could not read the snapshot" — sent the user looking for a damaged history when the snapshot had
      * been read and the file was read-only, or had changed while it was being restored.
      */
-    static String restoreMessageKey(RestoreResult result) {
+    static @Nullable String restoreMessageKey(RestoreResult result) {
         return switch (result) {
             case RESTORED -> "status.history.restored";
             case CANCELLED, INVALID_REQUEST -> null;
@@ -118,13 +119,13 @@ final class HistoryCoordinator {
         }
     }
 
-    record DeleteCapture(boolean durable, byte[] expectedBytes) {
+    record DeleteCapture(boolean durable, byte @Nullable [] expectedBytes) {
         DeleteCapture {
             expectedBytes = expectedBytes == null ? null : expectedBytes.clone();
         }
     }
 
-    private record TargetState(boolean existed, byte[] expectedBytes) {}
+    private record TargetState(boolean existed, byte @Nullable [] expectedBytes) {}
 
     /** Window hooks beyond {@link CoordinatorHost} that the history flows need. */
     interface Ops {
@@ -162,7 +163,7 @@ final class HistoryCoordinator {
         String currentTextOf(Path file);
 
         /** The buffer this window has open for {@code file}, or {@code null}. */
-        default EditorBuffer openBufferFor(Path file) {
+        default @Nullable EditorBuffer openBufferFor(Path file) {
             return null;
         }
 
@@ -170,7 +171,7 @@ final class HistoryCoordinator {
         default void historyChanged() {}
 
         /** The window's project root, for showing a path relative to it; {@code null} without a project. */
-        default Path projectRoot() {
+        default @Nullable Path projectRoot() {
             return null;
         }
 
@@ -197,7 +198,7 @@ final class HistoryCoordinator {
     private final RestoreSupport restoreSupport;
     private final ExecutorService restoreExecutor;
     /** The File History panel, built on its first use (the tool window's first open, or a jump into it). */
-    private FileHistoryPanel panel;
+    private @Nullable FileHistoryPanel panel;
 
     HistoryCoordinator(CoordinatorHost host, DiffCoordinator diff, Ops ops) {
         this(host, diff, ops, new HistoryService(new com.editora.history.HistoryBlobStore(ops.blobsDir())), true, null);
@@ -241,7 +242,7 @@ final class HistoryCoordinator {
             Ops ops,
             HistoryService historyService,
             boolean ownsHistoryService,
-            RestoreSupport restoreSupport) {
+            @Nullable RestoreSupport restoreSupport) {
         this.host = host;
         this.diff = diff;
         this.ops = ops;
@@ -297,7 +298,7 @@ final class HistoryCoordinator {
 
             @Override
             public void applyToLocalIfUnchanged(
-                    Path target, String expectedText, String newText, Consumer<Boolean> done) {
+                    Path target, @Nullable String expectedText, String newText, Consumer<Boolean> done) {
                 diff.applyToLocalIfUnchangedAsync(target, expectedText, newText, applied -> {
                     if (!applied) {
                         host.setStatus(tr("status.diff.localStale"));
@@ -333,10 +334,11 @@ final class HistoryCoordinator {
     }
 
     /** Test seam: answers the "replace unsaved edits?" question instead of the dialog. */
+    @Nullable
     Predicate<Path> confirmUnsavedRestore;
 
-    private EditorBuffer watchedBuffer; // the buffer whose edits are forwarded to the panel
-    private org.reactfx.Subscription watchedText;
+    private @Nullable EditorBuffer watchedBuffer; // the buffer whose edits are forwarded to the panel
+    private org.reactfx.@Nullable Subscription watchedText;
 
     /** The File History tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
     FileHistoryPanel panel() {
@@ -388,6 +390,7 @@ final class HistoryCoordinator {
             new java.util.WeakHashMap<>();
 
     /** Test seam: answers the held-back-limits confirmation instead of the dialog. */
+    @Nullable
     Predicate<HistoryRetention.Impact> confirmPendingLimits;
 
     /**
@@ -467,8 +470,10 @@ final class HistoryCoordinator {
      */
     private HistoryRetention.RetentionPolicy retentionPolicy() {
         var s = host.settings();
-        return historyService.effectivePolicy(
-                policyOf(s.getHistoryMaxPerFile(), s.getHistoryMaxAgeDays(), s.getHistoryMaxTotalMb()));
+        HistoryRetention.RetentionPolicy configured =
+                policyOf(s.getHistoryMaxPerFile(), s.getHistoryMaxAgeDays(), s.getHistoryMaxTotalMb());
+        HistoryRetention.RetentionPolicy effective = historyService.effectivePolicy(configured);
+        return effective != null ? effective : configured; // null only for a null configured policy
     }
 
     private static HistoryRetention.RetentionPolicy policyOf(int maxPerFile, int maxAgeDays, int maxTotalMb) {
@@ -677,6 +682,7 @@ final class HistoryCoordinator {
     }
 
     /** Test seam: answers the purge confirmation (given its text) instead of the dialog. */
+    @Nullable
     Predicate<String> confirmPurgeAnswer;
 
     /** How many <em>other</em> files, in any project, have a revision with a body one of {@code key}'s has. */
@@ -751,9 +757,11 @@ final class HistoryCoordinator {
     /** Sets the history tool window's availability (local file + feature on) and reloads its list. */
     void refresh() {
         EditorBuffer b = host.activeBuffer();
-        boolean available = isEnabled() && b != null && b.getPath() != null && host.isLocalBuffer(b);
-        Path folder = isEnabled() && panel != null ? panel.folderShown() : null;
-        if (folder != null) {
+        Path activeFile = b == null ? null : b.getPath();
+        boolean available = isEnabled() && b != null && activeFile != null && host.isLocalBuffer(b);
+        FileHistoryPanel shownPanel = panel;
+        Path folder = isEnabled() && shownPanel != null ? shownPanel.folderShown() : null;
+        if (shownPanel != null && folder != null) {
             // The folder view is not "the active file's history": restoring one deleted file opens it, a save
             // is recorded, a tab is clicked — and the listing the user was working through must still be
             // there, with what just changed in it. It is left with the panel's back button.
@@ -763,7 +771,7 @@ final class HistoryCoordinator {
                 watchEditorText(available ? b : null);
                 if (!groups.equals(folderGroupsShown)) {
                     folderGroupsShown = groups;
-                    panel.setFolderHistory(folder, groups);
+                    shownPanel.setFolderHistory(folder, groups);
                 }
                 return;
             }
@@ -774,18 +782,18 @@ final class HistoryCoordinator {
         if (panel == null) {
             return; // nothing to fill yet; panel() refreshes when it builds
         }
-        if (available) {
+        if (available && activeFile != null) {
             panel.setRevisions(
-                    revisionsOf(historyKey(b.getPath())),
-                    b.getPath().getFileName().toString(),
-                    b.getPath());
+                    revisionsOf(historyKey(activeFile)),
+                    activeFile.getFileName().toString(),
+                    activeFile);
         } else {
             panel.setRevisions(List.of(), null, null);
         }
     }
 
     /** What the folder view lists now; a refresh that finds the same leaves the tree (and its selection) alone. */
-    private List<FileHistoryPanel.FileGroup> folderGroupsShown;
+    private @Nullable List<FileHistoryPanel.FileGroup> folderGroupsShown;
 
     /** This window's bucket first, then every other project's: the order in which they are read and merged. */
     private List<Map<String, List<HistoryRevision>>> everyBucket() {
@@ -873,12 +881,13 @@ final class HistoryCoordinator {
     }
 
     /** Records caller-captured content, used before a closed-file bulk replacement rewrites the file. */
-    void record(Path file, String content, String reason) {
+    void record(@Nullable Path file, String content, String reason) {
         recordFor(file, content, reason, "", false, null);
     }
 
     /** Records and waits for the index snapshot to become durable before acknowledging the caller. */
-    void recordDurably(Path file, String content, String reason, java.util.function.Consumer<Boolean> completion) {
+    void recordDurably(
+            Path file, @Nullable String content, String reason, java.util.function.Consumer<Boolean> completion) {
         recordFor(file, content, reason, "", false, completion);
     }
 
@@ -936,12 +945,12 @@ final class HistoryCoordinator {
     }
 
     private void recordFor(
-            Path file,
-            String content,
+            @Nullable Path file,
+            @Nullable String content,
             String reason,
             String label,
             boolean force,
-            java.util.function.Consumer<Boolean> durableCompletion) {
+            java.util.function.@Nullable Consumer<Boolean> durableCompletion) {
         recordFor(file, content, reason, label, force, null, false, durableCompletion);
     }
 
@@ -966,14 +975,14 @@ final class HistoryCoordinator {
     }
 
     private void recordFor(
-            Path file,
-            String content,
+            @Nullable Path file,
+            @Nullable String content,
             String reason,
             String label,
             boolean force,
-            Encoding encoding,
+            @Nullable Encoding encoding,
             boolean evenWhenOff,
-            java.util.function.Consumer<Boolean> durableCompletion) {
+            java.util.function.@Nullable Consumer<Boolean> durableCompletion) {
         // An encrypted file has no Local History (ADR 0017): its revisions would be its text, unencrypted.
         if (file == null
                 || content == null
@@ -1046,7 +1055,7 @@ final class HistoryCoordinator {
         ops.historyChanged();
     }
 
-    private void publish(java.util.function.Consumer<Boolean> completion) {
+    private void publish(java.util.function.@Nullable Consumer<Boolean> completion) {
         if (completion == null) {
             publish();
             return;
@@ -1099,7 +1108,7 @@ final class HistoryCoordinator {
      *
      * <p>The bytes were already read by the save for its conflict check: nothing is read from disk here.
      */
-    void saveReplaced(Path target, byte[] replaced, byte[] written) {
+    void saveReplaced(@Nullable Path target, byte @Nullable [] replaced, byte[] written) {
         if (target == null || written == null || !Vfs.isLocal(target)) {
             return;
         }
@@ -1139,7 +1148,7 @@ final class HistoryCoordinator {
     }
 
     /** {@code text} as the editor holds it: line feeds only, without a leading byte-order mark. */
-    static String editorForm(String text) {
+    static @Nullable String editorForm(String text) {
         if (text == null) {
             return null;
         }
@@ -1148,7 +1157,7 @@ final class HistoryCoordinator {
     }
 
     /** A NUL byte marks a binary file — except in UTF-16 text, where every ASCII character has one. */
-    private static boolean isBinary(byte[] bytes, String charsetRule) {
+    private static boolean isBinary(byte[] bytes, @Nullable String charsetRule) {
         if (EditorConfigCharset.resolveName(bytes, charsetRule).startsWith("utf-16")) {
             return false;
         }
@@ -1206,7 +1215,7 @@ final class HistoryCoordinator {
      * (its first recorded save), it is given the history of the file it was saved from, which keeps its
      * own. A Save As that is rolled back re-points the buffer to where it was, and nothing is copied.
      */
-    void bufferPathChanged(EditorBuffer buffer, Path oldPath) {
+    void bufferPathChanged(EditorBuffer buffer, @Nullable Path oldPath) {
         Path now = buffer.getPath();
         if (oldPath == null || now == null || !Vfs.isLocal(oldPath) || !Vfs.isLocal(now)) {
             return;
@@ -1235,7 +1244,7 @@ final class HistoryCoordinator {
             HistoryRevision rev,
             HistoryRetention.RetentionPolicy policy,
             long now,
-            java.util.function.Consumer<Boolean> durableCompletion) {
+            java.util.function.@Nullable Consumer<Boolean> durableCompletion) {
         Map<String, List<HistoryRevision>> bucket = ops.historyMap();
         List<HistoryRevision> current = bucket.getOrDefault(key, List.of());
         // The worker compared the content with the newest row as it was when the record was submitted. Two
@@ -1334,7 +1343,7 @@ final class HistoryCoordinator {
      * undo and restores rather than waiting for the next save. One subscription, moved with the active
      * buffer; the panel waits for a pause before it re-reads anything.
      */
-    private void watchEditorText(EditorBuffer buffer) {
+    private void watchEditorText(@Nullable EditorBuffer buffer) {
         if (buffer == watchedBuffer) {
             return;
         }
@@ -1409,7 +1418,7 @@ final class HistoryCoordinator {
      * Project-tree "Show Local History": for a file, opens it (the tool window is keyed to the active buffer)
      * then shows its history; for a folder, shows the folder-history view (files under it + deleted files).
      */
-    void showForPath(Path file) {
+    void showForPath(@Nullable Path file) {
         if (!isEnabled()) {
             host.setStatus(disabledStatus());
             return;
@@ -1637,7 +1646,7 @@ final class HistoryCoordinator {
     }
 
     /** The {@code .editorconfig} charset the editor would use for {@code file}, or {@code null}. */
-    private String charsetRuleFor(Path file) {
+    private @Nullable String charsetRuleFor(Path file) {
         return diff == null ? null : diff.editorConfigCharset(file);
     }
 
@@ -1653,7 +1662,7 @@ final class HistoryCoordinator {
      *
      * @param existing the bytes currently at the path, or {@code null} when the file no longer exists
      */
-    static byte[] restoredBytes(String text, byte[] existing, String editorConfigCharset) {
+    static byte[] restoredBytes(String text, byte @Nullable [] existing, @Nullable String editorConfigCharset) {
         String name = EditorConfigCharset.resolveName(existing, editorConfigCharset);
         String body = text;
         if (existing != null) {
@@ -1678,7 +1687,8 @@ final class HistoryCoordinator {
      * its own form left ({@code \n} only). A revision without the metadata, a file that still exists (its
      * bytes are the better witness) and text the recorded charset cannot hold all fall back to the rule above.
      */
-    static byte[] restoredBytes(HistoryRevision recorded, String text, byte[] existing, String editorConfigCharset) {
+    static byte[] restoredBytes(
+            HistoryRevision recorded, String text, byte @Nullable [] existing, @Nullable String editorConfigCharset) {
         if (existing != null || recorded == null || !recorded.hasEncoding()) {
             return restoredBytes(text, existing, editorConfigCharset);
         }
@@ -1717,7 +1727,7 @@ final class HistoryCoordinator {
      * every non-ASCII character in what may be the only copy left. Line terminators are kept as they were:
      * nothing else records them once the file is gone.
      */
-    static String decodeCaptured(byte[] bytes, String editorConfigCharset) {
+    static String decodeCaptured(byte[] bytes, @Nullable String editorConfigCharset) {
         return DiffSideText.decodeRaw(bytes, editorConfigCharset, null).text();
     }
 
@@ -1734,7 +1744,8 @@ final class HistoryCoordinator {
     }
 
     static boolean writeRestoredContent(
-            Path file, byte[] expectedBytes, byte[] replacementBytes, BooleanSupplier current) throws IOException {
+            Path file, byte @Nullable [] expectedBytes, byte[] replacementBytes, BooleanSupplier current)
+            throws IOException {
         if (!current.getAsBoolean()) {
             return false;
         }
@@ -1806,7 +1817,7 @@ final class HistoryCoordinator {
      * {@code recorded} when its content is now a durable history revision, and the exact bytes that were read
      * (null when the file is too large to hold) so the caller can replace only an unchanged file.
      */
-    record OverwriteCapture(boolean safe, boolean recorded, byte[] expectedBytes) {
+    record OverwriteCapture(boolean safe, boolean recorded, byte @Nullable [] expectedBytes) {
         OverwriteCapture {
             expectedBytes = expectedBytes == null ? null : expectedBytes.clone();
         }
@@ -1903,7 +1914,8 @@ final class HistoryCoordinator {
         return asked == null ? confirmRestoreOverUnsaved(file) : asked.test(file);
     }
 
-    private void restoreInto(EditorBuffer b, HistoryRevision revision, CompletableFuture<RestoreResult> completion) {
+    private void restoreInto(
+            @Nullable EditorBuffer b, HistoryRevision revision, CompletableFuture<RestoreResult> completion) {
         if (b == null || b.getPath() == null || revision == null) {
             completion.complete(RestoreResult.INVALID_REQUEST);
             return;
@@ -2057,7 +2069,7 @@ final class HistoryCoordinator {
      * a bare file name does not tell two {@code index.ts} apart — else its whole path; followed by
      * {@code deletedTag} for a file that is no longer there.
      */
-    static String recentDetail(String path, Path projectRoot, String deletedTag) {
+    static String recentDetail(String path, @Nullable Path projectRoot, @Nullable String deletedTag) {
         String shown = path;
         try {
             Path file = Path.of(path);

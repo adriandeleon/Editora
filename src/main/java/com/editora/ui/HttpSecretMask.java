@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.editora.config.HttpResponseHistory;
 import com.editora.http.SecretMask;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Masks the values a run read from {@code $processEnv}/{@code $env}/{@code $dotenv} in what the HTTP Client keeps:
@@ -21,7 +22,7 @@ final class HttpSecretMask {
     private HttpSecretMask() {}
 
     /** {@code text} with every form of each of {@code secrets} masked; {@code text} itself when there is nothing to do. */
-    static String mask(String text, List<String> secrets) {
+    static @Nullable String mask(@Nullable String text, List<String> secrets) {
         return SecretMask.mask(text, secrets);
     }
 

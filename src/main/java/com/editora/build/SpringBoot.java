@@ -1,5 +1,7 @@
 package com.editora.build;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Detects a Spring Boot Gradle project from its build script, so the no-jdtls Gradle Run fallback can run
  * {@code bootRun} (the Spring Boot plugin's task) instead of {@code run} (the {@code application} plugin's,
@@ -19,7 +21,7 @@ public final class SpringBoot {
      * The Gradle build script at {@code root} ({@code build.gradle}, else {@code build.gradle.kts}) as text, for
      * the Spring Boot sniff and the application-plugin main class; {@code ""} when neither is readable.
      */
-    public static String readGradleBuildFile(java.nio.file.Path root) {
+    public static String readGradleBuildFile(java.nio.file.@Nullable Path root) {
         if (root == null) {
             return "";
         }

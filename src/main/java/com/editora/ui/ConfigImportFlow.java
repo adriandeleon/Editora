@@ -30,6 +30,7 @@ import javafx.stage.Window;
 import com.editora.config.ConfigImport;
 import com.editora.config.ConfigImport.Part;
 import com.editora.config.SharedConfig;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -55,7 +56,7 @@ final class ConfigImportFlow {
     /** Says how it went; {@code restart} is offered when parts need one. Replaceable by tests. */
     static Consumer<Outcome> tell = ConfigImportFlow::tellDialog;
     /** Restarts Editora (null: not available, so the last dialog only says to restart). */
-    static Runnable restart; // set by WindowCommandHost.importConfig to the app.restart command
+    static @Nullable Runnable restart; // set by WindowCommandHost.importConfig to the app.restart command
 
     /** Puts the real chooser and dialogs back after a test replaced them. */
     static void resetSeams() {
@@ -68,7 +69,12 @@ final class ConfigImportFlow {
     record Question(Window owner, String zipName, List<ConfigImport.Summary> parts, int leftOut) {}
 
     /** How an import ended: the parts applied, those that wait for a restart, the backup; or why it failed. */
-    record Outcome(Window owner, Set<Part> applied, Set<Part> needRestart, Path backup, String failure) {}
+    record Outcome(
+            Window owner,
+            Set<Part> applied,
+            Set<Part> needRestart,
+            @Nullable Path backup,
+            @Nullable String failure) {}
 
     ConfigImportFlow(
             Window owner, SharedConfig shared, WindowManager windows, Consumer<String> status, BackgroundTasks tasks) {
@@ -167,7 +173,7 @@ final class ConfigImportFlow {
 
     // --- the dialogs -----------------------------------------------------------------------------------------
 
-    private static Path chooseZip(Window owner, Path start) {
+    private static @Nullable Path chooseZip(Window owner, Path start) {
         FileChooser fc = new FileChooser();
         fc.setTitle(tr("dialog.importConfig.title"));
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("dialog.importConfig.zipFilter"), "*.zip"));
@@ -277,7 +283,7 @@ final class ConfigImportFlow {
             return;
         }
         StringBuilder body =
-                new StringBuilder(tr("dialog.importConfig.backup", o.backup().toString()));
+                new StringBuilder(tr("dialog.importConfig.backup", String.valueOf(o.backup()))); // set when not failed
         if (!o.needRestart().isEmpty()) {
             List<String> names = new ArrayList<>();
             o.needRestart().forEach(p -> names.add(tr("dialog.importConfig.part." + p.name())));

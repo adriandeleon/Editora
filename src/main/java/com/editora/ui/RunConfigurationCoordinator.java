@@ -13,6 +13,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.config.ConfigManager;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -53,21 +54,24 @@ final class RunConfigurationCoordinator {
 
         void setError(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         boolean save(EditorBuffer buffer);
 
         void requestSave();
 
-        String programArgsFor(Path path);
+        String programArgsFor(@Nullable Path path);
 
+        @Nullable
         String suggestedMainClass();
 
         /** A configuration for the active Python or shell script, or null. */
-        default com.editora.config.RunConfiguration suggestedScriptConfiguration() {
+        default com.editora.config.@Nullable RunConfiguration suggestedScriptConfiguration() {
             return null;
         }
 
+        @Nullable
         Path windowProjectRoot();
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
@@ -142,6 +146,7 @@ final class RunConfigurationCoordinator {
     }
 
     /** Project root the makefile probe last ran for, so it runs once per root rather than per refresh. */
+    @Nullable
     Path makefileProbedRoot;
 
     /** Whether {@link #makefileProbedRoot} holds a makefile — the cached answer for that root. */
@@ -249,7 +254,7 @@ final class RunConfigurationCoordinator {
             }
 
             @Override
-            public com.editora.config.RunConfiguration fromString(String s) {
+            public com.editora.config.@Nullable RunConfiguration fromString(String s) {
                 return null; // not editable
             }
         });
@@ -474,7 +479,7 @@ final class RunConfigurationCoordinator {
     }
 
     /** The configuration the toolbar's Run/Debug buttons act on, or null with nothing selected. */
-    com.editora.config.RunConfiguration selectedRunConfig() {
+    com.editora.config.@Nullable RunConfiguration selectedRunConfig() {
         return host.runConfigCombo() == null ? null : host.runConfigCombo().getValue();
     }
 
@@ -506,7 +511,7 @@ final class RunConfigurationCoordinator {
         EditorBuffer b = host.activeBuffer();
         // A Python or shell script saves as a script configuration (it used to say "Open a Java file").
         com.editora.config.RunConfiguration script = host.suggestedScriptConfiguration();
-        if (script != null) {
+        if (script != null && b != null) { // a suggestion is only made for the active buffer's file
             String args = host.programArgsFor(b.getPath());
             host.promptText(tr("run.config.saveTitle"), tr("run.config.saveName"), script.name(), name -> {
                 if (name == null || name.isBlank()) {
@@ -683,7 +688,11 @@ final class RunConfigurationCoordinator {
             java.nio.file.Path init = com.editora.process.ExecTargets.runsHere(root)
                     ? com.editora.build.GradleDebugInit.write(List.of(task))
                     : null;
-            gradle.runTask(com.editora.build.BuildDebug.gradleDebugArgs(task, init), List.of());
+            gradle.runTask(
+                    init == null
+                            ? com.editora.build.BuildDebug.gradleDebugArgs(task)
+                            : com.editora.build.BuildDebug.gradleDebugArgs(task, init),
+                    List.of());
             return;
         }
         BuildCoordinator maven = detectedBuildCoordinator(BuildTool.MAVEN);
@@ -707,6 +716,7 @@ final class RunConfigurationCoordinator {
     }
 
     /** The enabled+detected build coordinator for {@code tool}, or null. */
+    @Nullable
     BuildCoordinator detectedBuildCoordinator(BuildTool tool) {
         for (BuildCoordinator c : host.buildCoordinators()) {
             if (c.tool() == tool && c.isEnabled() && c.isDetected()) {

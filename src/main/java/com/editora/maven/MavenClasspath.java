@@ -52,7 +52,7 @@ public final class MavenClasspath {
          * The scope of a launch of a class declared in {@code source} of the module {@code root}: {@link #TEST}
          * when the file sits under the module's {@code src/test} tree, else {@link #RUNTIME}. Pure.
          */
-        public static Scope forSource(Path source, Path root) {
+        public static Scope forSource(@Nullable Path source, Path root) {
             if (source == null || root == null) {
                 return RUNTIME;
             }

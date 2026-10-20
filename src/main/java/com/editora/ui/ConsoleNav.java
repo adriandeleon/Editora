@@ -11,6 +11,7 @@ import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Brings the user's configured keybindings to a read-only console {@link CodeArea} — the Output,
@@ -74,7 +75,7 @@ public final class ConsoleNav {
     }
 
     /** Installs {@code keymap}'s console navigation on {@code console}. */
-    public static void install(CodeArea console, KeymapManager keymap) {
+    public static void install(CodeArea console, @Nullable KeymapManager keymap) {
         if (console == null || keymap == null) {
             return;
         }

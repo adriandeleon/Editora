@@ -136,7 +136,7 @@ public final class MarkdownPreviewPane implements TabContent {
      * buffer as its new source; a locked one, or any other kind of tab, leaves it where it is — but a source
      * whose tab has been closed is let go either way.
      */
-    public void follow(EditorBuffer buffer) {
+    public void follow(@Nullable EditorBuffer buffer) {
         if (source != null && source.isDisposed()) {
             setSource(null);
         }

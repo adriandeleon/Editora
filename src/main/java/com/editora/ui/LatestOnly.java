@@ -5,6 +5,8 @@ import java.util.concurrent.FutureTask;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Runs work off the calling thread and hands back the result of the <em>latest</em> request only — the
  * generation guard of {@code docs/performance.md}, as an object.
@@ -21,7 +23,7 @@ final class LatestOnly {
     private final Executor worker;
     private final Executor deliver;
     private long generation;
-    private FutureTask<Void> running;
+    private @Nullable FutureTask<Void> running;
 
     /**
      * @param worker runs the work

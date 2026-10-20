@@ -10,6 +10,7 @@ import com.editora.editops.Registers;
 import com.editora.editor.EditorBuffer;
 import com.editora.vfs.Vfs;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 import org.reactfx.Subscription;
 
 import static com.editora.i18n.Messages.tr;
@@ -26,6 +27,7 @@ import static com.editora.i18n.Messages.tr;
 final class RegisterCommands {
 
     interface Host {
+        @Nullable
         EditorBuffer activeBuffer();
 
         void setStatus(String message);
@@ -34,6 +36,7 @@ final class RegisterCommands {
         boolean activeEditable();
 
         /** The {@code C-u} argument the command was run with, or null. */
+        @Nullable
         Integer prefixArgument();
 
         /** Opens {@code file} (or selects its tab) and runs {@code then} once its text is in. */
@@ -111,16 +114,17 @@ final class RegisterCommands {
     void pointToRegister() {
         EditorBuffer buffer = host.activeBuffer();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        if (area == null) {
+        if (buffer == null || area == null) {
             return;
         }
-        if (buffer.getPath() == null) {
+        Path path = buffer.getPath();
+        if (path == null) {
             host.setStatus(tr("status.register.untitled"));
             return;
         }
         int caret = area.getCaretPosition();
         ask(area, "status.register.point", name -> {
-            String file = Vfs.toStorableString(buffer.getPath());
+            String file = Vfs.toStorableString(path);
             registers.put(name, new Registers.Position(file, caret));
             track(buffer);
             host.setStatus(tr("status.register.pointSaved", String.valueOf(name)));

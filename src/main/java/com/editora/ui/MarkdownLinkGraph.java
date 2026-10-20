@@ -26,6 +26,7 @@ import com.editora.markdown.WikiTargets;
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The project's Markdown link index, kept for as long as the project is open: which document links to
@@ -63,7 +64,7 @@ final class MarkdownLinkGraph {
     });
 
     // --- worker-confined ---
-    private MarkdownLinkIndex index;
+    private @Nullable MarkdownLinkIndex index;
     private boolean stale;
 
     // --- read from any thread ---
@@ -92,7 +93,7 @@ final class MarkdownLinkGraph {
      * covers the same files but answers for a different set of names. It used to be whichever window had
      * been opened first.
      */
-    static MarkdownLinkGraph forDocument(Path document) {
+    static @Nullable MarkdownLinkGraph forDocument(Path document) {
         if (document == null || !Vfs.isLocal(document)) {
             return null;
         }
@@ -133,6 +134,7 @@ final class MarkdownLinkGraph {
         return out;
     }
 
+    @Nullable
     Path rootOrNull() {
         try {
             Path root = projectRoot.get();
@@ -220,7 +222,7 @@ final class MarkdownLinkGraph {
     }
 
     /** Worker: the index for {@code root}, walking the project when it has to. */
-    private MarkdownLinkIndex ensure(Path root, boolean ignore, boolean wiki, long at) {
+    private @Nullable MarkdownLinkIndex ensure(@Nullable Path root, boolean ignore, boolean wiki, long at) {
         if (root == null) {
             index = null;
             return null;

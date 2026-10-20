@@ -38,6 +38,7 @@ import com.editora.test.TestRun;
 import com.editora.test.TestStatus;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -83,18 +84,18 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     /** Same-instance {@link TestNode} → its tree item, so live updates never rebuild or duplicate the tree. */
     private final Map<TestNode, TreeItem<TestNode>> items = new IdentityHashMap<>();
 
-    private TestNode lastRoot;
-    private TestRun lastRun; // for the no-selection run summary in the detail pane
+    private @Nullable TestNode lastRoot;
+    private @Nullable TestRun lastRun; // for the no-selection run summary in the detail pane
     private TestCounts lastCounts = TestCounts.ZERO; // drives the chip-visibility rule on a filter change
     private String runLabel = "";
     private Runnable onRerun;
-    private Runnable onRerunFailed;
-    private Runnable onStop;
-    private Consumer<TestNode> onActivate;
-    private Consumer<TestNode> onRerunOne;
-    private Consumer<TestNode> onDebugOne;
+    private @Nullable Runnable onRerunFailed;
+    private @Nullable Runnable onStop;
+    private @Nullable Consumer<TestNode> onActivate;
+    private @Nullable Consumer<TestNode> onRerunOne;
+    private @Nullable Consumer<TestNode> onDebugOne;
     private java.util.function.BooleanSupplier debugAvailable = () -> false;
-    private Consumer<StackTraceLinks.Link> onLink;
+    private @Nullable Consumer<StackTraceLinks.Link> onLink;
 
     TestRunnerPanel() {
         getStyleClass().add("test-runner");
@@ -273,7 +274,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     }
 
     /** A run started: reset the tree/detail/counts and show the running state. */
-    void startRun(String label) {
+    void startRun(@Nullable String label) {
         items.clear();
         rootItem.getChildren().clear();
         lastRoot = null;
@@ -310,7 +311,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
      * frontier). While the run is live and "track running test" is on, it is scrolled into view so the user
      * watches progress in real time.
      */
-    void update(TestRun run, TestNode follow) {
+    void update(TestRun run, @Nullable TestNode follow) {
         update0(run);
         revealFollow(run, follow);
     }
@@ -333,7 +334,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
      * fully visible, so a steady run doesn't jitter). No-op once the run finishes, when the user turned
      * tracking off, or when the row is filtered out by "show passed".
      */
-    private void revealFollow(TestRun run, TestNode follow) {
+    private void revealFollow(TestRun run, @Nullable TestNode follow) {
         if (follow == null || !followToggle.isSelected() || !run.isRunning()) {
             return;
         }
@@ -545,7 +546,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     // --- detail ------------------------------------------------------------------------------------
 
-    private void showDetail(TestNode node) {
+    private void showDetail(@Nullable TestNode node) {
         if (node == null) {
             showRunSummary();
             return;
@@ -603,11 +604,11 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         detail.moveTo(0);
     }
 
-    private static boolean hasText(String s) {
+    private static boolean hasText(@Nullable String s) {
         return s != null && !s.isBlank();
     }
 
-    private static void appendSection(StringBuilder sb, String title, String body) {
+    private static void appendSection(StringBuilder sb, String title, @Nullable String body) {
         if (body != null && !body.isBlank()) {
             sb.append("\n--- ").append(title).append(" ---\n").append(body).append("\n");
         }
@@ -690,7 +691,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         return r;
     }
 
-    private void run(Runnable r) {
+    private void run(@Nullable Runnable r) {
         if (r != null) {
             r.run();
         }

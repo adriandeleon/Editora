@@ -27,10 +27,11 @@ final class RecentProject {
                 continue;
             }
             try {
-                if (!project.contains(absoluteFile)) {
+                Path rootPath = project.rootPath();
+                if (rootPath == null || !project.contains(absoluteFile)) { // contains() is false without a root
                     continue;
                 }
-                Path root = project.rootPath().toAbsolutePath().normalize();
+                Path root = rootPath.toAbsolutePath().normalize();
                 if (root.getNameCount() > bestDepth) {
                     best = project;
                     bestDepth = root.getNameCount();

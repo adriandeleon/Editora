@@ -95,7 +95,7 @@ public final class JdtlsGenerate {
     }
 
     /** The {@link Kind} for a code action's command id, or null when it isn't one of these prompts. */
-    public static @Nullable Kind forCommand(String command) {
+    public static @Nullable Kind forCommand(@Nullable String command) {
         if (command == null) {
             return null;
         }
@@ -246,7 +246,8 @@ public final class JdtlsGenerate {
     }
 
     /** The parameter of {@code java/generateDelegateMethods}: one entry per chosen method of {@code field}. */
-    public static JsonObject delegateParams(JsonElement actionParams, DelegateField field, List<Candidate> chosen) {
+    public static JsonObject delegateParams(
+            @Nullable JsonElement actionParams, DelegateField field, List<Candidate> chosen) {
         JsonArray entries = new JsonArray();
         for (Candidate c : chosen) {
             JsonObject entry = new JsonObject();
@@ -273,7 +274,7 @@ public final class JdtlsGenerate {
      * the first one pre-selected. Each selected one yields one generated constructor, so with several on
      * offer (an exception subclass has five) the user has to choose — sending them all back generated five.
      */
-    public static List<Candidate> constructorCandidates(JsonElement checkResponse) {
+    public static List<Candidate> constructorCandidates(@Nullable JsonElement checkResponse) {
         List<Candidate> out = new ArrayList<>();
         if (checkResponse == null || !checkResponse.isJsonObject()) {
             return out;

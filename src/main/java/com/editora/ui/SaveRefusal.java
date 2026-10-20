@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Why a buffer must not be written to its file. Each of these states means the buffer's text is <em>not the
  * document</em>, so saving it would replace the file with less than it holds. Pure, so the precedence is
@@ -19,13 +21,14 @@ enum SaveRefusal {
     /** An encrypted file that is not decrypted yet: the buffer is empty, the file is not. */
     LOCKED("status.encryption.lockedNoSave");
 
-    private final String messageKey;
+    private final @Nullable String messageKey;
 
-    SaveRefusal(String messageKey) {
+    SaveRefusal(@Nullable String messageKey) {
         this.messageKey = messageKey;
     }
 
     /** The status-bar message for this refusal ({@code {0}} = the tab title), or null when there is none. */
+    @Nullable
     String messageKey() {
         return messageKey;
     }

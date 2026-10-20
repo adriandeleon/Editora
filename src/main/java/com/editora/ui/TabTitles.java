@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Tab titles that tell same-named files apart: when two open files share a name, each tab shows the nearest
  * folder that distinguishes it — {@code pom.xml · core}, {@code pom.xml · app} — as IntelliJ and VS Code do
@@ -67,7 +69,7 @@ final class TabTitles {
     }
 
     /** The last {@code depth} segments of {@code dir} joined with {@code /}; null when it has fewer. */
-    private static String trailing(Path dir, int depth) {
+    private static @Nullable String trailing(@Nullable Path dir, int depth) {
         if (dir == null || dir.getNameCount() < depth) {
             return null;
         }

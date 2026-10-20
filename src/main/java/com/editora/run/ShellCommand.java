@@ -68,11 +68,11 @@ public final class ShellCommand {
      * @throws ProgramArgs.UnclosedQuoteException when the options have an unclosed quote
      */
     public static Launch launch(
-            String firstLine,
+            @Nullable String firstLine,
             String fileName,
             String interpreterOverride,
             String interpreterOptions,
-            Predicate<String> existsHere) {
+            @Nullable Predicate<String> existsHere) {
         Map<String, String> env = new LinkedHashMap<>();
         @Nullable String[] chdir = new @Nullable String[1];
         List<String> fromShebang = shebang(firstLine, env, chdir);
@@ -263,7 +263,7 @@ public final class ShellCommand {
         return out;
     }
 
-    private static String localize(String interpreter, Predicate<String> existsHere) {
+    private static String localize(String interpreter, @Nullable Predicate<String> existsHere) {
         if (existsHere == null || !interpreter.startsWith("/") || existsHere.test(interpreter)) {
             return interpreter;
         }

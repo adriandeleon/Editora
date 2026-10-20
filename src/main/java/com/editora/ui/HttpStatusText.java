@@ -7,6 +7,7 @@ import java.util.Map;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpResult;
 import com.editora.http.HttpTests;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -148,7 +149,7 @@ final class HttpStatusText {
      * The Tests tab's count: passed of total ({@code 2/3}); "✗" when no test ran but a script stopped with an error;
      * null when there is nothing to count (no tests, or only a script's log).
      */
-    static String testsCount(HttpTests t) {
+    static @Nullable String testsCount(HttpTests t) {
         if (t == null || t.isEmpty()) {
             return null;
         }
@@ -181,7 +182,7 @@ final class HttpStatusText {
      * The response view's line for a finished Run All: "Run All: 3 of 13 failed" or "Run All: all 13 succeeded";
      * null for a single run.
      */
-    static String runAllSummary(List<HttpExchange> exchanges) {
+    static @Nullable String runAllSummary(List<HttpExchange> exchanges) {
         if (exchanges == null || exchanges.size() < 2) {
             return null;
         }
@@ -243,7 +244,7 @@ final class HttpStatusText {
     }
 
     /** The tests badge as one text ("✓ 3 passed · ✗ 1 failed", or "✓3 ✗1" compact), or null when there is none. */
-    static String testsBadge(HttpTests t, boolean compact, boolean preRequest) {
+    static @Nullable String testsBadge(HttpTests t, boolean compact, boolean preRequest) {
         List<BadgePart> parts = testsBadgeParts(t, compact, preRequest);
         if (parts.isEmpty()) {
             return null;
@@ -334,12 +335,12 @@ final class HttpStatusText {
         return r != null && r.tests().error() != null && notSent(r);
     }
 
-    static boolean notSent(HttpResult r) {
+    static boolean notSent(@Nullable HttpResult r) {
         return r != null && r.failed() && notSentReason(r.error()) != null;
     }
 
     /** {@code error} without its leading "Not sent:" prefix, or null when it has none. Pure. */
-    static String notSentReason(String error) {
+    static @Nullable String notSentReason(@Nullable String error) {
         if (error == null) {
             return null;
         }
@@ -403,7 +404,7 @@ final class HttpStatusText {
         return e.endsWith(suffix) ? e.substring(0, e.length() - suffix.length()).strip() : error;
     }
 
-    private static String firstLine(String s) {
+    private static String firstLine(@Nullable String s) {
         if (s == null) {
             return "";
         }

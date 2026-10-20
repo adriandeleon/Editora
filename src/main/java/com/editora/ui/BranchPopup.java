@@ -23,6 +23,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
 import com.editora.search.FuzzyMatch;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -118,7 +119,7 @@ public final class BranchPopup {
     private String query = "";
 
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
-    private OverlayHost overlayHost;
+    private @Nullable OverlayHost overlayHost;
 
     private VBox content;
     private boolean showing;
@@ -127,7 +128,7 @@ public final class BranchPopup {
     private java.util.function.Function<BranchRef, List<RowAction>> rowActions = branch -> List.of();
 
     /** The secondary menu that is up, so a second request (or hiding the dropdown) can take it down. */
-    private javafx.scene.control.ContextMenu rowMenu;
+    private javafx.scene.control.@Nullable ContextMenu rowMenu;
 
     public BranchPopup() {
         search.setPromptText(tr("branchpopup.searchPrompt"));
@@ -672,7 +673,7 @@ public final class BranchPopup {
          * branches: JavaFX reserves no icon gutter of its own, so a column only some rows carry would start
          * each label at a different x and read as two ragged lists.
          */
-        private javafx.scene.layout.StackPane iconColumn(Node glyph) {
+        private javafx.scene.layout.StackPane iconColumn(@Nullable Node glyph) {
             javafx.scene.layout.StackPane holder = new javafx.scene.layout.StackPane();
             holder.setMinWidth(ICON_COLUMN);
             holder.setPrefWidth(ICON_COLUMN);

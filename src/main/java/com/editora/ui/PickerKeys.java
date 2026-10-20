@@ -10,6 +10,7 @@ import javafx.scene.input.KeyEvent;
 import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -58,7 +59,7 @@ final class PickerKeys {
      * The action for a key press under {@code keymap} (null = the fixed keys only). {@code queryField} says
      * whether a text field has the focus: then plain Home/End stay with its caret.
      */
-    static Action action(KeyEvent e, KeymapManager keymap, boolean queryField) {
+    static Action action(KeyEvent e, @Nullable KeymapManager keymap, boolean queryField) {
         String token = KeyDispatcher.chord(e);
         if (token == null) {
             return Action.NONE;
@@ -71,7 +72,7 @@ final class PickerKeys {
      * caret-movement commands a picker borrows. Plain Home/End move the query field's caret when there is
      * one (as in every search box); Ctrl/Cmd+Home/End always jump to the first/last row.
      */
-    static Action resolve(String token, String commandId, boolean queryField) {
+    static Action resolve(String token, @Nullable String commandId, boolean queryField) {
         switch (token) {
             case "down":
                 return Action.DOWN;
@@ -209,7 +210,7 @@ final class PickerKeys {
      * One legend entry: the localized {@code pickerKeys.<what>} pattern filled with the keys that trigger
      * it, or null when there are none (the entry is then left out of the legend).
      */
-    static String hint(String what, String keys) {
+    static @Nullable String hint(String what, @Nullable String keys) {
         return keys == null || keys.isBlank() ? null : tr("pickerKeys." + what, keys);
     }
 
@@ -217,11 +218,11 @@ final class PickerKeys {
      * The picker legend for the app-wide keymap: "move", the picker's own entries (nulls skipped), "cancel".
      * Built when the card is shown, so it follows a live keymap switch.
      */
-    static String legend(String... entries) {
+    static String legend(@Nullable String... entries) {
         return legend(TextInputKeymap.sharedKeymap(), entries);
     }
 
-    static String legend(KeymapManager keymap, String... entries) {
+    static String legend(@Nullable KeymapManager keymap, @Nullable String... entries) {
         List<String> parts = new ArrayList<>();
         parts.add(hint("move", withChords("↑↓", keymap, "nav.lineDown", "nav.lineUp")));
         for (String entry : entries) {
@@ -234,13 +235,13 @@ final class PickerKeys {
     }
 
     /** {@code fixed}, followed by {@code " / "} and the keymap's chords for {@code commandIds} when all are bound. */
-    static String withChords(String fixed, KeymapManager keymap, String... commandIds) {
+    static String withChords(String fixed, @Nullable KeymapManager keymap, String... commandIds) {
         String chords = chords(keymap, commandIds);
         return chords == null ? fixed : fixed + " / " + chords;
     }
 
     /** The formatted chords for {@code commandIds}, space-separated, or null unless every one is bound. */
-    static String chords(KeymapManager keymap, String... commandIds) {
+    static @Nullable String chords(@Nullable KeymapManager keymap, String... commandIds) {
         if (keymap == null) {
             return null;
         }
@@ -263,7 +264,7 @@ final class PickerKeys {
      * so a picker-local key (the palette's "docs") is one that actually reaches the picker. Null when every
      * candidate is taken; with no keymap, the first candidate.
      */
-    static String freeChord(KeymapManager keymap, String... candidates) {
+    static @Nullable String freeChord(@Nullable KeymapManager keymap, String... candidates) {
         for (String candidate : candidates) {
             if (keymap == null || (keymap.commandFor(candidate) == null && !keymap.isPrefix(candidate))) {
                 return candidate;

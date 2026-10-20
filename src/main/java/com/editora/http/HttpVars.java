@@ -341,7 +341,12 @@ public final class HttpVars {
      * {@code unresolved} (when non-null) with the reason. Values are inserted as is, never re-scanned.
      */
     public static String substitute(
-            String text, Scope scope, ZonedDateTime now, CapturedResponses captured, Path dir, Unresolved unresolved) {
+            String text,
+            Scope scope,
+            ZonedDateTime now,
+            @Nullable CapturedResponses captured,
+            @Nullable Path dir,
+            Unresolved unresolved) {
         Scope s = scope == null ? Scope.of(Map.of()) : scope;
         return expand(text, s::has, s::value, now, captured, dir, unresolved);
     }

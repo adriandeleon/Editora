@@ -29,6 +29,7 @@ import javafx.scene.layout.VBox;
 import com.editora.config.PathDisplay;
 import com.editora.editor.LanguageRegistry;
 import com.editora.editor.LspDiagnostic;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -56,7 +57,10 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
      * A tree row, one of three kinds: a <b>language header</b> ({@code language != null}, no file/diag),
      * a <b>file header</b> ({@code file != null}, no diag), or a <b>diagnostic</b> ({@code diag != null}).
      */
-    private record Row(String language, Path file, LspDiagnostic diag) {}
+    private record Row(
+            @Nullable String language,
+            @Nullable Path file,
+            @Nullable LspDiagnostic diag) {}
 
     private final Actions actions;
     private final Label summary = new Label();
@@ -69,7 +73,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
     private boolean syncingScope;
 
     private Map<Path, List<LspDiagnostic>> lastByFile = Map.of();
-    private Path activeFile;
+    private @Nullable Path activeFile;
 
     public ProblemsPanel(Actions actions) {
         this.actions = actions;
@@ -192,7 +196,9 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         }
         Row row = item.getValue();
         if (row.diag() != null) {
-            actions.open(row.file(), row.diag().startLine(), row.diag().startCol());
+            if (row.file() != null) { // a diagnostic row always carries its file
+                actions.open(row.file(), row.diag().startLine(), row.diag().startCol());
+            }
         } else {
             item.setExpanded(!item.isExpanded()); // language or file header
         }
@@ -217,7 +223,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
     }
 
     /** A copy of what the tree shows (callers hand in their live map, so it cannot be compared to itself). */
-    private Map<Path, List<LspDiagnostic>> rendered;
+    private @Nullable Map<Path, List<LspDiagnostic>> rendered;
 
     private int rebuilds;
 
@@ -231,7 +237,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
      * IDE convention of surfacing the file you're looking at first. Pass the <b>canonical</b> path (it must
      * match the LSP diagnostic keys). Re-sorts the existing tree without needing fresh diagnostics.
      */
-    public void setActiveFile(Path canonicalActive) {
+    public void setActiveFile(@Nullable Path canonicalActive) {
         if (com.editora.config.PathKeys.samePath(activeFile, canonicalActive)) {
             return;
         }
@@ -276,6 +282,9 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
             TreeItem<Row> langItem = new TreeItem<>(new Row(language, null, null));
             langItem.setExpanded(true);
             List<Path> paths = byLanguage.get(language);
+            if (paths == null) {
+                continue; // langOrder holds byLanguage's own keys
+            }
             // Active file first, then alphabetical by name.
             paths.sort(ActiveFileOrder.activeFirst(
                     p -> p,
@@ -332,18 +341,21 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
      * The context menu of a diagnostic row: "Open Rule Documentation" when the server linked the rule (ShellCheck
      * links every SC code to its wiki page), and "Copy Code" when it has one.
      */
+    @Nullable
     ContextMenu contextMenuFor(LspDiagnostic d) {
         ContextMenu menu = new ContextMenu();
-        if (d.href() != null) {
+        String href = d.href();
+        if (href != null) {
             MenuItem docs = new MenuItem(tr("problems.menu.openRuleDocs"));
-            docs.setOnAction(e -> actions.openUrl(d.href()));
+            docs.setOnAction(e -> actions.openUrl(href));
             menu.getItems().add(docs);
         }
-        if (d.code() != null && !d.code().isBlank()) {
+        String code = d.code();
+        if (code != null && !code.isBlank()) {
             MenuItem copy = new MenuItem(tr("problems.menu.copyCode"));
             copy.setOnAction(e -> {
                 ClipboardContent content = new ClipboardContent();
-                content.putString(d.code().strip());
+                content.putString(code.strip());
                 Clipboard.getSystemClipboard().setContent(content);
             });
             menu.getItems().add(copy);

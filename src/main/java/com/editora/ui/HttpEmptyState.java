@@ -21,6 +21,8 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -91,7 +93,7 @@ final class HttpEmptyState extends VBox {
     }
 
     /** Shows the run chord ({@code null}: the command is unbound — the line goes). */
-    void setChord(String text) {
+    void setChord(@Nullable String text) {
         boolean on = text != null && !text.isEmpty();
         chord.setText(on ? text : "");
         chordHint.setVisible(on);
@@ -129,7 +131,7 @@ final class HttpEmptyState extends VBox {
         rowsScroll.setManaged(any);
     }
 
-    private void showTitle(String request) {
+    private void showTitle(@Nullable String request) {
         if (request == null) {
             Text t = new Text(tr("httppanel.empty.noRequest"));
             t.getStyleClass().add("http-empty-lead");
@@ -213,6 +215,7 @@ final class HttpEmptyState extends VBox {
     }
 
     /** The chord shown, or null when the line is hidden. Test accessor. */
+    @Nullable
     String chordForTest() {
         return chordHint.isVisible() ? chord.getText() : null;
     }

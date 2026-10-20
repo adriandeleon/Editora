@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 
 import com.editora.io.Trash;
 import com.editora.markdown.MarkdownImagePaste;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -44,13 +45,16 @@ final class PastedImageCleanup {
      * The files among {@code created} that {@code text} — the document — does not mention, and no other open
      * document does either ({@code usedElsewhere}). No file I/O: for the FX thread.
      */
-    static List<Path> candidates(Path document, String text, Collection<Path> created, Predicate<Path> usedElsewhere) {
-        if (created.isEmpty() || document == null) {
+    static List<Path> candidates(
+            @Nullable Path document, String text, Collection<Path> created, Predicate<Path> usedElsewhere) {
+        Path dir = created.isEmpty() || document == null
+                ? null
+                : document.toAbsolutePath().getParent();
+        if (dir == null) { // a saved file's absolute path always has a folder
             return List.of();
         }
         List<Path> out = new ArrayList<>();
-        for (Path file :
-                MarkdownImagePaste.unreferenced(text, document.toAbsolutePath().getParent(), created)) {
+        for (Path file : MarkdownImagePaste.unreferenced(text, dir, created)) {
             if (!usedElsewhere.test(file)) {
                 out.add(file);
             }
@@ -64,7 +68,7 @@ final class PastedImageCleanup {
      * in some other folder is a different picture). An unsaved document has no folder to measure from, so
      * there the bare file name counts.
      */
-    static boolean mentions(Path otherDocument, String otherText, Path file) {
+    static boolean mentions(@Nullable Path otherDocument, String otherText, Path file) {
         if (otherDocument == null || otherDocument.toAbsolutePath().getParent() == null) {
             return otherText.contains(file.getFileName().toString());
         }
@@ -80,8 +84,8 @@ final class PastedImageCleanup {
      * Reads those documents (bounded): background thread. Empty when the folder cannot be read — then nothing
      * is known to be unused — and when {@code cancelled}.
      */
-    static List<Path> unusedOnDisk(Path document, List<Path> candidates, BooleanSupplier cancelled) {
-        if (candidates.isEmpty()) {
+    static List<Path> unusedOnDisk(@Nullable Path document, List<Path> candidates, BooleanSupplier cancelled) {
+        if (candidates.isEmpty() || document == null) { // no document: candidates() found none
             return List.of();
         }
         String siblings = siblingText(document.toAbsolutePath().getParent(), document, cancelled);
@@ -135,7 +139,7 @@ final class PastedImageCleanup {
     }
 
     /** The text of the other Markdown / Typst documents in {@code dir} (bounded); null when it cannot be read. */
-    private static String siblingText(Path dir, Path self, BooleanSupplier cancelled) {
+    private static @Nullable String siblingText(@Nullable Path dir, Path self, BooleanSupplier cancelled) {
         StringBuilder all = new StringBuilder();
         int read = 0;
         try (Stream<Path> files = Files.list(dir)) {

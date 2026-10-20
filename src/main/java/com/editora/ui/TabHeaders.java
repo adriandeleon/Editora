@@ -20,6 +20,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The graphic header of an editor tab — icon, title, state markers and the drag handle that reorders the
@@ -33,13 +34,14 @@ final class TabHeaders {
     private final Predicate<Tab> pinned;
 
     /** The tab whose header is being dragged, for drops on a group body ({@link EditorArea}). */
-    private Tab draggedTab;
+    private @Nullable Tab draggedTab;
 
     TabHeaders(Supplier<EditorArea> editorArea, Predicate<Tab> pinned) {
         this.editorArea = editorArea;
         this.pinned = pinned;
     }
 
+    @Nullable
     Tab draggedTab() {
         return draggedTab;
     }
@@ -120,9 +122,9 @@ final class TabHeaders {
         toggleClass(tab, "read-only", !buffer.isEditable());
         toggleClass(tab, "remote", remote);
         Tooltip tip = tooltip(p);
-        if (encrypted) {
-            tip.setText(EncryptionViews.tabTooltip(
-                    tip.getText(), buffer.encryption().state()));
+        com.editora.editor.EncryptionState state = buffer.encryption().state();
+        if (encrypted && state != null) {
+            tip.setText(EncryptionViews.tabTooltip(tip.getText(), state));
         }
         tab.setTooltip(tip);
     }
@@ -210,7 +212,7 @@ final class TabHeaders {
     }
 
     /** The full-path tooltip of a file tab ("untitled" for none; a remote file shows its display label). */
-    static Tooltip tooltip(Path p) {
+    static Tooltip tooltip(@Nullable Path p) {
         return new Tooltip(
                 p == null
                         ? "untitled"
@@ -220,7 +222,7 @@ final class TabHeaders {
     }
 
     /** Wires drag-and-drop on a tab's header so the user can reorder the strip with the mouse. */
-    private void enableTabDrag(Node header, Tab tab) {
+    private void enableTabDrag(Node header, @Nullable Tab tab) {
         header.setOnDragDetected(e -> {
             Dragboard db = header.startDragAndDrop(TransferMode.MOVE);
             ClipboardContent content = new ClipboardContent();

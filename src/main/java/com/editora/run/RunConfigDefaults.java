@@ -30,7 +30,7 @@ public final class RunConfigDefaults {
      * @param fallbackName the localized "New Configuration", used when there is nothing to name it after
      */
     public static com.editora.config.RunConfiguration newConfiguration(
-            String suggestedMainClass, Collection<String> existingNames, String fallbackName) {
+            @Nullable String suggestedMainClass, Collection<String> existingNames, String fallbackName) {
         String name = uniqueName(nameFor(suggestedMainClass, fallbackName), existingNames);
         return new com.editora.config.RunConfiguration(
                 name, suggestedMainClass == null ? "" : suggestedMainClass.strip(), "", "", "", "");
@@ -47,7 +47,7 @@ public final class RunConfigDefaults {
      * that means something else. Blank when that folder is the project root (blank means the root).
      */
     public static com.editora.config.@Nullable RunConfiguration forScript(
-            String type, java.nio.file.Path script, java.nio.file.Path projectRoot) {
+            String type, java.nio.file.Path script, java.nio.file.@Nullable Path projectRoot) {
         if (script == null
                 || !(ScriptRunCommand.PYTHON.equals(type)
                         || ScriptRunCommand.SHELL.equals(type)
@@ -136,7 +136,7 @@ public final class RunConfigDefaults {
      * <p>Named after the class rather than left as "New configuration" for the same reason IDEs do it: the
      * list is read at a glance, and three entries all reading "New configuration" tell you nothing.
      */
-    public static String nameFor(String mainClass, String fallback) {
+    public static String nameFor(@Nullable String mainClass, String fallback) {
         if (mainClass == null || mainClass.isBlank()) {
             return fallback;
         }

@@ -108,8 +108,9 @@ public class HistoryStore {
     }
 
     /** The history map for one project key, creating an empty bucket if absent. */
-    public @Nullable Map<String, List<HistoryRevision>> bucket(String projectKey) {
-        return byProject.computeIfAbsent(projectKey == null ? "" : projectKey, k -> new LinkedHashMap<>());
+    public Map<String, List<HistoryRevision>> bucket(String projectKey) {
+        return java.util.Objects.requireNonNull( // the mapping never answers null
+                byProject.computeIfAbsent(projectKey == null ? "" : projectKey, k -> new LinkedHashMap<>()));
     }
 
     /** The body hashes this index refers to, kept current as it changes. */

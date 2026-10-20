@@ -61,7 +61,7 @@ public record HttpHooks(
             Runnable cancel,
             Supplier<@Nullable String> runTooltip,
             BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> variableLint,
-            Supplier<HttpVariableIndex.Context> variableContext) {
+            @Nullable Supplier<HttpVariableIndex.Context> variableContext) {
         this(run, runAll, cancel, runTooltip, variableLint, variableContext, marks -> List.of());
     }
 

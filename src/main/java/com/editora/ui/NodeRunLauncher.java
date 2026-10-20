@@ -14,6 +14,7 @@ import com.editora.process.ProcessRunner;
 import com.editora.run.NodeRunPlan;
 import com.editora.run.NodeRuntimes;
 import com.editora.run.ProgramArgs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Plans a Node.js launch ({@link NodeRunPlan}) for {@code RunCoordinator}: Run File, a {@code node} run
@@ -40,17 +41,17 @@ final class NodeRunLauncher {
      */
     record Spec(
             Path file,
-            Path projectRoot,
+            @Nullable Path projectRoot,
             String configured,
             String setting,
             List<String> args,
             List<String> nodeOptions,
             boolean test,
             Map<String, String> userEnv,
-            Path workingDir) {}
+            @Nullable Path workingDir) {}
 
     /** A ready launch: the plan and the folder it runs in. */
-    record Ready(NodeRunPlan plan, Path dir) {}
+    record Ready(NodeRunPlan plan, @Nullable Path dir) {}
 
     private static final Duration VERSION_TIMEOUT = Duration.ofSeconds(10);
 
@@ -96,7 +97,7 @@ final class NodeRunLauncher {
     }
 
     /** A host's Node: the configuration's Interpreter, else the host's {@code node} tool, else its own node. */
-    private static NodeRuntimes.NodeRuntime remoteRuntime(Path file, String configured) {
+    private static NodeRuntimes.NodeRuntime remoteRuntime(@Nullable Path file, String configured) {
         String command =
                 configured != null && !configured.isBlank() ? configured : ExecTargets.remoteTool(file, "node");
         List<String> tokens = command == null || command.isBlank() ? List.of() : ProgramArgs.tokenize(command.strip());
@@ -109,7 +110,7 @@ final class NodeRunLauncher {
     }
 
     /** What {@code runtime --version} prints, or null when it cannot say. */
-    private static String version(NodeRuntimes.NodeRuntime runtime, Path dir) {
+    private static @Nullable String version(NodeRuntimes.NodeRuntime runtime, @Nullable Path dir) {
         try {
             ProcessRunner.Result r = ProcessRunner.run(dir, VERSION_TIMEOUT, runtime.argv(List.of("--version")));
             return r == null ? null : (r.out() + "\n" + r.err()).strip();

@@ -7,6 +7,7 @@ import com.editora.process.OutputBatch;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The write side of a console {@link CodeArea} (Run, the build tabs, Debug): appends styled text, trims to
@@ -40,7 +41,7 @@ final class ConsoleAppender {
      * Appends {@code appended}. {@code style} styles its first {@code style.length()} characters — a line
      * without its newline, say — and may be null for text in the default foreground.
      */
-    void append(String appended, StyleSpans<Collection<String>> style) {
+    void append(String appended, @Nullable StyleSpans<Collection<String>> style) {
         if (appended.isEmpty()) {
             return;
         }

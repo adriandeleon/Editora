@@ -245,7 +245,11 @@ public final class Multipart {
      * empty, so the caller can refuse to send a form whose upload would silently be empty.
      */
     public static Body assemble(
-            List<Part> parts, String boundary, Path baseDir, Function<String, String> subst, List<String> problems) {
+            List<Part> parts,
+            String boundary,
+            @Nullable Path baseDir,
+            Function<String, String> subst,
+            List<String> problems) {
         Function<String, String> sub = subst == null ? Function.identity() : subst;
         List<Object> pieces = new ArrayList<>();
         List<Resolved> resolved = new ArrayList<>();

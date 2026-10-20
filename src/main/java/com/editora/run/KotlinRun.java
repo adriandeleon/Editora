@@ -129,7 +129,7 @@ public final class KotlinRun {
      * Where the compiled jars are kept: {@code <config>/cache/kotlin-run}, else (no config folder, as in a
      * test) {@code kotlin-run} under {@code tmp}.
      */
-    public static Path cacheDir(Path configDir, Path tmp) {
+    public static Path cacheDir(@Nullable Path configDir, Path tmp) {
         return configDir != null ? configDir.resolve("cache").resolve("kotlin-run") : tmp.resolve("editora-kotlin-run");
     }
 

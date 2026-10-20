@@ -16,6 +16,7 @@ import com.editora.process.ExecSpec;
 import com.editora.process.ExecTarget;
 import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRegistry;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Watches a folder on a remote host for changes made by something other than Editora (a {@code git pull} in a
@@ -73,7 +74,7 @@ final class RemoteWatcher {
      * Starts watching {@code root} on its host, handing each batch to {@code onChanges} on the reader thread.
      * Null when the host cannot run commands now (the watch is then simply absent, as before).
      */
-    static RemoteWatcher start(Path root, Consumer<List<ProjectPanel.FsChange>> onChanges) {
+    static @Nullable RemoteWatcher start(Path root, Consumer<List<ProjectPanel.FsChange>> onChanges) {
         ExecTarget target = ExecTargets.forPath(root);
         if (target.isLocal() || !target.isAvailable()) {
             return null;
@@ -138,14 +139,14 @@ final class RemoteWatcher {
         }
     }
 
-    private static void add(List<ProjectPanel.FsChange> batch, ProjectPanel.FsChange change) {
+    private static void add(List<ProjectPanel.FsChange> batch, ProjectPanel.@Nullable FsChange change) {
         if (change != null) {
             batch.add(change);
         }
     }
 
     /** One line of the host's report as a change, or null for a line that is not one. Pure. */
-    static ProjectPanel.FsChange parse(ExecTarget target, String line) {
+    static ProjectPanel.@Nullable FsChange parse(ExecTarget target, String line) {
         int bar = line.indexOf('|');
         if (bar <= 0 || bar == line.length() - 1) {
             return null;

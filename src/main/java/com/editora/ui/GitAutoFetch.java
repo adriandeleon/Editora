@@ -11,6 +11,7 @@ import javafx.animation.Timeline;
 import javafx.util.Duration;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -33,14 +34,14 @@ final class GitAutoFetch {
     private final CoordinatorHost host;
     private final GitCoordinator git;
 
-    private Timeline timer;
-    private Duration period;
+    private @Nullable Timeline timer;
+    private @Nullable Duration period;
     /** Folders the user trusts (the workspace-trust store); the registrar installs it. */
     private Predicate<Path> trusted = root -> false;
     /** Whether this window was recently in use; replaceable so a headless test need not own the focus. */
     private BooleanSupplier recentlyActive = this::windowRecentlyFocused;
     /** Overrides the interval from the settings (tests). */
-    private Duration periodOverride;
+    private @Nullable Duration periodOverride;
     /** Repositories whose failure has already been mentioned: once per session is enough. */
     private final Set<Path> failureMentioned = new HashSet<>();
     /** When the window was last seen focused ({@link System#nanoTime()}). */
@@ -107,7 +108,7 @@ final class GitAutoFetch {
      * Whether an automatic fetch may run in {@code root}: the folder is trusted, or the user has run a
      * network command there themselves this session.
      */
-    boolean allowedIn(Path root) {
+    boolean allowedIn(@Nullable Path root) {
         return root != null && (trusted.test(root) || git.service().userRanNetworkCommandIn(root));
     }
 
@@ -123,7 +124,8 @@ final class GitAutoFetch {
 
     private void tick() {
         Path root = git.repoRoot();
-        if (!git.isAvailable()
+        if (root == null // isAvailable() says the same
+                || !git.isAvailable()
                 || !allowedIn(root)
                 || !recentlyActive.getAsBoolean()
                 || git.service().networkBusy()) {

@@ -28,7 +28,7 @@ public class CommandRegistry {
     private int runDepth;
 
     /** Brackets each outermost run; see {@link #setRunScope}. Null = none. */
-    private @Nullable Function<String, Runnable> runScope;
+    private @Nullable Function<String, @Nullable Runnable> runScope;
 
     public void register(Command command) {
         commands.put(command.id(), command);
@@ -75,7 +75,7 @@ public class CommandRegistry {
      * it is where "an edit command reveals the caret" lives, rather than in each handler. The follow-up does
      * not run when the command throws.
      */
-    public void setRunScope(Function<String, Runnable> scope) {
+    public void setRunScope(Function<String, @Nullable Runnable> scope) {
         this.runScope = scope;
     }
 

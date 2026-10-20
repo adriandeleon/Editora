@@ -73,7 +73,7 @@ public record NodeRunPlan(
      * or anything under a {@code test/}, {@code tests/} or {@code __tests__/} folder below {@code root} (its
      * package root, else its project; null = only the name counts).
      */
-    public static boolean isTestFile(Path file, Path root) {
+    public static boolean isTestFile(Path file, @Nullable Path root) {
         if (file == null || file.getFileName() == null) {
             return false;
         }
@@ -122,15 +122,15 @@ public record NodeRunPlan(
             String target,
             String fileName,
             List<String> args,
-            String firstLine,
+            @Nullable String firstLine,
             NodeRuntimes.NodeRuntime runtime,
             boolean fromConfiguration,
-            String version,
+            @Nullable String version,
             List<String> nodeOptions,
             boolean test,
             boolean noColor,
             Map<String, String> userEnv,
-            Predicate<String> existsHere) {
+            @Nullable Predicate<String> existsHere) {
         public Request {
             args = args == null ? List.of() : List.copyOf(args);
             nodeOptions = nodeOptions == null ? List.of() : List.copyOf(nodeOptions);

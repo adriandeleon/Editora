@@ -7,6 +7,7 @@ import java.util.List;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure: the style spans of a chunk of Debug console output — its category's colour ({@code run-stderr},
@@ -22,7 +23,7 @@ final class DebugConsoleStyle {
 
     private DebugConsoleStyle() {}
 
-    static StyleSpans<Collection<String>> spans(String text, String baseStyle) {
+    static @Nullable StyleSpans<Collection<String>> spans(String text, @Nullable String baseStyle) {
         if (text == null || text.isEmpty()) {
             return null;
         }

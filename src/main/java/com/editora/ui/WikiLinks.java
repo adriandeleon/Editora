@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.editora.markdown.WikiTargets;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Resolving a wiki link ({@code [[note]]}) to a file, for everything that follows or draws one: the editor's
@@ -53,7 +54,7 @@ final class WikiLinks {
      * The file {@code target} names when written in {@code document}, or null: unknown, ambiguous, wiki
      * links switched off, or a document that has no file yet.
      */
-    static Path resolve(Path document, String target) {
+    static @Nullable Path resolve(@Nullable Path document, String target) {
         if (!enabled || document == null || target == null || !Vfs.isLocal(document)) {
             return null;
         }
@@ -70,25 +71,22 @@ final class WikiLinks {
      * The path a Markdown link written in {@code document} should carry for wiki {@code target}: relative to
      * the document's folder, with forward slashes; null when the target does not resolve.
      */
-    static String relativePath(Path document, String target) {
+    static @Nullable String relativePath(@Nullable Path document, String target) {
         Path file = resolve(document, target);
-        if (file == null || document == null || document.toAbsolutePath().getParent() == null) {
+        Path dir =
+                document == null ? null : document.toAbsolutePath().normalize().getParent();
+        if (file == null || dir == null) {
             return null;
         }
         try {
-            return document.toAbsolutePath()
-                    .normalize()
-                    .getParent()
-                    .relativize(file)
-                    .toString()
-                    .replace('\\', '/');
+            return dir.relativize(file).toString().replace('\\', '/');
         } catch (IllegalArgumentException e) {
             return null;
         }
     }
 
     /** Without an index: the file of that name beside the document, a Markdown extension being optional. */
-    private static Path inFolder(Path doc, String target) {
+    private static @Nullable Path inFolder(Path doc, String target) {
         Path folder = doc.getParent();
         if (target.isEmpty()) {
             return doc;

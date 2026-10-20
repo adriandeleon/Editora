@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure decisions behind "maximize a tool window" (IntelliJ's Maximize Tool Window neighbourhood).
  *
@@ -47,7 +49,7 @@ final class ToolWindowMaximize {
      *
      * @return the target, or {@code null} when the caller should report that there is nothing to maximize
      */
-    static <T> T pick(T active, List<T> open) {
+    static <T> @Nullable T pick(@Nullable T active, List<T> open) {
         if (active != null) {
             return active;
         }

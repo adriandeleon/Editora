@@ -63,7 +63,8 @@ public final class TypstService {
     /** Renders {@code source} to per-page PNG bytes off-thread (empty list on failure); posts on the FX thread.
      *  Used by the print path, which paginates the images. {@code fileDir}/{@code root} as in
      *  {@link TypstRenderer#renderPages}. */
-    public void renderPages(String source, Path fileDir, Path root, Consumer<List<byte[]>> onResult) {
+    public void renderPages(
+            String source, @Nullable Path fileDir, @Nullable Path root, Consumer<List<byte[]>> onResult) {
         exec.submit(() -> {
             TypstRenderer.Pages r = TypstRenderer.renderPages(command(), source, fileDir, root);
             List<byte[]> pages = r.ok() ? r.pages() : List.of();
@@ -78,7 +79,11 @@ public final class TypstService {
      * {@code close()} it.
      */
     public void export(
-            String source, Path dest, Path fileDir, Path root, Consumer<TypstRenderer.PendingExport> onStaged) {
+            String source,
+            Path dest,
+            @Nullable Path fileDir,
+            @Nullable Path root,
+            Consumer<TypstRenderer.PendingExport> onStaged) {
         exec.submit(() -> {
             TypstRenderer.PendingExport pending = TypstRenderer.stageExport(command(), source, dest, fileDir, root);
             Platform.runLater(() -> {

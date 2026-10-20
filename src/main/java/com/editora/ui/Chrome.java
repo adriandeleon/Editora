@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested decision logic for window chrome — extracted from {@link MainController} so it can be
  * tested without the JavaFX toolkit. Two concerns:
@@ -234,14 +236,14 @@ final class Chrome {
      * @param commandArg a command id whose <em>localized title</em> fills the message's {@code {0}} (the
      *     toggle that would re-enable the feature), or null for a message with no argument
      */
-    record DisabledReason(String messageKey, String commandArg) {}
+    record DisabledReason(String messageKey, @Nullable String commandArg) {}
 
     /**
      * Which feature gate — if any — currently covers {@code id}, along with why. Null when no gate applies.
      * Both {@link #paletteVisible} and the tooltip read this, so a rule can never gray a command without
      * also being able to explain it.
      */
-    private static DisabledReason featureReason(String id, PaletteGates g) {
+    private static @Nullable DisabledReason featureReason(String id, PaletteGates g) {
         for (FeatureRule r : FEATURE_RULES) {
             if (!r.enabled().test(g) && r.covers(id)) {
                 // Pointing at the feature's own toggle would be a dead end while Simple UI mode is forcing
@@ -481,7 +483,7 @@ final class Chrome {
      * list is short and conservative. {@link #contextEnabled} is derived from this, so a command can never
      * be grayed for a reason the tooltip can't state.
      */
-    private static DisabledReason contextReason(String id, PaletteContext c) {
+    private static @Nullable DisabledReason contextReason(String id, PaletteContext c) {
         // File-type families: every member edits or exports the active buffer of that type.
         if (id.startsWith("markdown.")) {
             // The Markdown editing commands serve Typst buffers too.
@@ -574,7 +576,7 @@ final class Chrome {
      * preference to the context: a switched-off feature is the more fundamental reason, and telling someone
      * to open a Markdown file when the Markdown-lint feature is off would send them nowhere.
      */
-    static DisabledReason disabledReason(String id, PaletteGates g, PaletteContext c) {
+    static @Nullable DisabledReason disabledReason(String id, PaletteGates g, PaletteContext c) {
         DisabledReason feature = featureReason(id, g);
         return feature != null ? feature : contextReason(id, c);
     }

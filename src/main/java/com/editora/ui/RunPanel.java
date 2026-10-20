@@ -28,6 +28,7 @@ import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -63,13 +64,13 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     /** Closes the program's standard input (end of file), as Ctrl+D does in a terminal. */
     private final Button endInputButton = new Button();
     /** Receives a line typed into the stdin field (controller → process stdin). */
-    private Consumer<String> onInput;
+    private @Nullable Consumer<String> onInput;
     /** Ends the program's input (controller → close the process's stdin). */
-    private Runnable onEndInput;
+    private @Nullable Runnable onEndInput;
     /** Receives a double-clicked stack-trace location (controller resolves + jumps). */
-    private Consumer<StackTraceLinks.Link> onLink;
+    private @Nullable Consumer<StackTraceLinks.Link> onLink;
     /** Receives a clicked HTTP(S) URL (controller opens it in the system browser). */
-    private Consumer<String> onUrl;
+    private @Nullable Consumer<String> onUrl;
 
     private final OutputStyle lineStyle = OutputStyle.console();
     private final ConsoleAppender appender = new ConsoleAppender(output, MAX_CHARS);
@@ -268,12 +269,14 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     }
 
     /** Shows {@code version} in a {@link #runtimeChip}, its banner on hover; {@code null} hides the chip. */
-    static void showRuntime(Label chip, com.editora.run.RuntimeVersion version) {
+    static void showRuntime(Label chip, com.editora.run.@Nullable RuntimeVersion version) {
         boolean shown = version != null;
-        chip.setText(shown ? version.label() : "");
+        chip.setText(version != null ? version.label() : "");
         chip.setTooltip(
-                shown && !version.detail().isBlank() ? new javafx.scene.control.Tooltip(version.detail()) : null);
-        chip.setAccessibleText(shown ? tr("run.runtime", version.label()) : null);
+                version != null && !version.detail().isBlank()
+                        ? new javafx.scene.control.Tooltip(version.detail())
+                        : null);
+        chip.setAccessibleText(version != null ? tr("run.runtime", version.label()) : null);
         chip.setVisible(shown);
         chip.setManaged(shown);
     }
@@ -309,7 +312,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
      * The runtime this run's program runs under, once its probe answers; {@code null} hides the chip. Kept
      * after the program exits — it still says what the output came from — and cleared by the next run.
      */
-    public void setRuntime(com.editora.run.RuntimeVersion version) {
+    public void setRuntime(com.editora.run.@Nullable RuntimeVersion version) {
         showRuntime(runtime, version);
     }
 
@@ -319,7 +322,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     }
 
     /** A run started: clears the console, shows the command, enables Stop + the stdin field. */
-    public void started(String commandLine) {
+    public void started(@Nullable String commandLine) {
         clearConsole();
         stdoutAnsi = new AnsiText.Parser();
         stderrAnsi = new AnsiText.Parser();
@@ -388,7 +391,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     }
 
     /** Writes {@code text[from, to)} with its colours, replacing the current line after a carriage return. */
-    private void write(String text, int from, int to, List<AnsiText.Run> runs, String base) {
+    private void write(String text, int from, int to, List<AnsiText.Run> runs, @Nullable String base) {
         if (from >= to) {
             return;
         }
@@ -422,7 +425,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
      * The styles of one piece of output: its line class ({@code base}: stderr, or a log level), the program's
      * own colours from {@code runs}, and the URL links found in its text.
      */
-    static StyleSpans<Collection<String>> spans(String piece, List<AnsiText.Run> runs, String base) {
+    static StyleSpans<Collection<String>> spans(String piece, List<AnsiText.Run> runs, @Nullable String base) {
         java.util.TreeSet<Integer> cuts = new java.util.TreeSet<>(List.of(0, piece.length()));
         int pos = 0;
         for (AnsiText.Run r : runs) {

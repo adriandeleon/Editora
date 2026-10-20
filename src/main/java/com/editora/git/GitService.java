@@ -574,7 +574,7 @@ public final class GitService {
      * @param contextPath a file or directory used to locate the repo (may be {@code null})
      * @param diffFile    the file whose HEAD diff feeds the gutter (may be {@code null} to skip)
      */
-    public void refresh(Path contextPath, Path diffFile, Consumer<RepoState> onResult) {
+    public void refresh(Path contextPath, @Nullable Path diffFile, Consumer<RepoState> onResult) {
         long gen = refreshGen.incrementAndGet();
         submit(exec, () -> {
             if (gen != refreshGen.get()) {
@@ -900,7 +900,7 @@ public final class GitService {
      * Lists up to {@code max} commits touching {@code file} (most recent first) via one {@code git log},
      * tab-separated fields parsed by the pure {@link #parseLog}. Posts on the FX thread.
      */
-    public void log(Path root, Path file, int max, Consumer<List<Commit>> onResult) {
+    public void log(Path root, @Nullable Path file, int max, Consumer<List<Commit>> onResult) {
         submit(exec, () -> {
             List<Commit> commits = List.of();
             if (gitAvailable(root) && root != null) {

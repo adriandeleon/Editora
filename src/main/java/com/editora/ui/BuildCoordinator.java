@@ -24,6 +24,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.lsp.RootResolver;
 import com.editora.run.ProgramArgs;
 import com.editora.test.TestRunRecognizer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -44,6 +45,7 @@ final class BuildCoordinator {
     /** Window hooks beyond {@link CoordinatorHost} that this feature needs. */
     interface Ops {
         /** The active window's project root, or {@code null} when no project is open. */
+        @Nullable
         Path projectRoot();
 
         /** Opens (and focuses) this tool's tasks-tree tool window. */
@@ -56,20 +58,20 @@ final class BuildCoordinator {
         void setToolWindowsAvailable(boolean available);
 
         /** Whether {@code root} is a trusted workspace (it, or an ancestor, was granted trust). */
-        boolean isTrusted(Path root);
+        boolean isTrusted(@Nullable Path root);
 
         /**
          * Asks the user whether to trust {@code root}, whose build would run what {@code summary} lists (the
          * wrapper if any, the pom's plugins, {@code .mvn/} files, a project.json override). Blocking (a
          * security decision must not be dismissible by clicking past it). Returns true to grant trust.
          */
-        boolean confirmTrust(Path root, BuildTrust.Summary summary);
+        boolean confirmTrust(@Nullable Path root, BuildTrust.Summary summary);
 
         /** Records {@code root} as trusted and persists it. */
-        void trust(Path root);
+        void trust(@Nullable Path root);
 
         /** Drops {@code root}'s own trust entry (the tasks window's Revoke); inherited trust stays. */
-        default void revokeTrust(Path root) {}
+        default void revokeTrust(@Nullable Path root) {}
 
         /** Opens {@code file} in the editor (the broken-pom notice's link). */
         default void openFile(Path file) {}
@@ -89,20 +91,20 @@ final class BuildCoordinator {
     private final BuildService service = new BuildService();
     private final BuildOutputPanel panel; // the shared tabbed "Output" window (this tool gets its own tab)
     /** The tasks-tree tool window content, built on its first open; see {@link #tasksPanel()}. */
-    private BuildActionsTree tree;
+    private @Nullable BuildActionsTree tree;
 
     private final BuildActionsPopup popup;
 
     /** The nearest detected marker-file directory for the current context, or {@code null}. */
-    private Path markerRoot;
+    private @Nullable Path markerRoot;
     /** Gradle's on-demand task list + the root it was enumerated for, so a re-detect can restore it. */
-    private Path loadedTasksRoot;
+    private @Nullable Path loadedTasksRoot;
 
     private List<String> loadedTasks = List.of();
     /** The provider built from the parsed marker file, or {@code null} (absent/malformed). */
-    private BuildActionsProvider provider;
+    private @Nullable BuildActionsProvider provider;
     /** A short label for the detected project (Maven artifactId / npm name), or {@code null}. */
-    private String detectedLabel;
+    private @Nullable String detectedLabel;
 
     private int detectGeneration;
 
@@ -111,15 +113,15 @@ final class BuildCoordinator {
      * applied yet, the tool was off, an explicit refresh, or a build just ran — a run can download the plugins
      * a Maven goal list is read from). FX thread only; a worker compares against the copy it was handed.
      */
-    private BuildDetection.Stamp appliedStamp;
+    private BuildDetection.@Nullable Stamp appliedStamp;
 
     /** The most recent launch, for {@code <tool>.rerunLast}. */
-    private Path lastRoot;
+    private @Nullable Path lastRoot;
 
     /** The root the open popup acts on when it is not the active tab's ({@link #showActionsAt}); null = that one. */
-    private Path popupRoot;
+    private @Nullable Path popupRoot;
 
-    private List<String> lastTaskArgs;
+    private @Nullable List<String> lastTaskArgs;
     private List<String> lastToggleArgs = List.of();
 
     /**
@@ -133,28 +135,28 @@ final class BuildCoordinator {
     private static final int MAX_TOGGLE_ROOTS = 16;
 
     /** The last string typed into "Run custom…" this session (prefills the next prompt). */
-    private String lastCustomText;
+    private @Nullable String lastCustomText;
 
     /** The build roots found below the open project (the tree's "Projects" section) and the project they
      *  were scanned for. */
     private List<Path> projectRoots = List.of();
 
-    private Path scannedProject;
+    private @Nullable Path scannedProject;
 
     /**
      * A root picked in the tree's "Projects" section: it drives detection instead of the active file until
      * the active file changes ({@link #pinnedContext} is what it was when the pick was made).
      */
-    private Path pinnedRoot;
+    private @Nullable Path pinnedRoot;
 
-    private Path pinnedContext;
+    private @Nullable Path pinnedContext;
 
     /** When set, a recognized test run is forwarded here (the Test Results window); null = feature absent. */
-    private TestRunHook testRunHook;
+    private @Nullable TestRunHook testRunHook;
 
     /** A one-shot per-line output observer for the next run (the "Debug via build tool" flow watches the
      *  streamed output for the JDWP banner). Cleared when the run ends. */
-    private java.util.function.BiConsumer<String, Boolean> outputWatcher;
+    private java.util.function.@Nullable BiConsumer<String, Boolean> outputWatcher;
 
     BuildCoordinator(BuildTool tool, CoordinatorHost host, Ops ops, BuildOutputPanel sharedConsole) {
         this.tool = tool;
@@ -180,6 +182,7 @@ final class BuildCoordinator {
      * to trust the project's wrapper, in which case the gate has said so and nothing may run. For Run and
      * Debug's build before a launch and the Maven classpath fallback (reviews D2, D3).
      */
+    @Nullable
     List<String> trustedExecutable(Path root) {
         return allowRun(root) ? executable(root) : null;
     }
@@ -191,16 +194,17 @@ final class BuildCoordinator {
      */
     BuildActionsTree tasksPanel() {
         if (tree == null) {
-            tree = new BuildActionsTree();
-            tree.setOnRun(this::runTask);
-            tree.setOnRefresh(this::refreshMarker);
-            tree.setOnRunCustom(this::runCustom);
-            tree.setOnStop(this::stop);
-            tree.setOnSelectProject(this::selectRoot);
-            tree.setOnRevokeTrust(this::revokeTrust);
-            tool.taskLoadLabel().ifPresent(key -> tree.setSecondaryAction(tr(key), this::loadAllTasks));
+            BuildActionsTree t = new BuildActionsTree();
+            tree = t;
+            t.setOnRun(this::runTask);
+            t.setOnRefresh(this::refreshMarker);
+            t.setOnRunCustom(this::runCustom);
+            t.setOnStop(this::stop);
+            t.setOnSelectProject(this::selectRoot);
+            t.setOnRevokeTrust(this::revokeTrust);
+            tool.taskLoadLabel().ifPresent(key -> t.setSecondaryAction(tr(key), this::loadAllTasks));
             showDetectedInTree();
-            tree.setRunning(service.isRunning());
+            t.setRunning(service.isRunning());
         }
         return tree;
     }
@@ -231,7 +235,7 @@ final class BuildCoordinator {
     }
 
     /** The toggle set of {@code root} (created on first use); a throwaway set for no root. */
-    private Set<String> togglesFor(Path root) {
+    private Set<String> togglesFor(@Nullable Path root) {
         if (root == null) {
             return new LinkedHashSet<>();
         }
@@ -257,12 +261,12 @@ final class BuildCoordinator {
     }
 
     /** The folder whose trust a build from {@code root} needs: the wrapper's, else the project (or root). */
-    private Path trustRoot(Path root) {
+    private @Nullable Path trustRoot(Path root) {
         Path wrapper = tool.repoWrapper(root, wrapperBoundary(root), isWindows());
         return wrapper != null ? wrapper.getParent() : wrapperBoundary(root);
     }
 
-    private BuildActionsTree.TrustState trustState(Path root) {
+    private BuildActionsTree.TrustState trustState(@Nullable Path root) {
         if (root == null || !BuildTrust.gates(tool)) {
             return BuildActionsTree.TrustState.NOT_GATED;
         }
@@ -298,6 +302,7 @@ final class BuildCoordinator {
      * trust state ({@code ./mvnw (trusted)}), the command override, or the tool on PATH. Null when nothing
      * is detected.
      */
+    @Nullable
     String executableSummary() {
         if (markerRoot == null) {
             return null;
@@ -350,23 +355,25 @@ final class BuildCoordinator {
     }
 
     /** Where the detected marker file lives, or null when none was found. */
+    @Nullable
     Path markerRoot() {
         return markerRoot;
     }
 
     /** A short label for the detected project (artifactId/package name), or {@code null} when absent/malformed. */
+    @Nullable
     String detectedLabel() {
         return detectedLabel;
     }
 
     /** Why the build file could not be parsed (with its line and column), or null. */
-    private String parseError;
+    private @Nullable String parseError;
 
     /** For npm: the package manager the detected project uses and what said so; null otherwise. */
-    private com.editora.build.NpmPackageManager.Detection detectedManager;
+    private com.editora.build.NpmPackageManager.@Nullable Detection detectedManager;
 
     /** For npm: {@code pnpm (pnpm-lock.yaml)} for the detected project, or null (Settings shows it). */
-    com.editora.build.NpmPackageManager.Detection detectedManager() {
+    com.editora.build.NpmPackageManager.@Nullable Detection detectedManager() {
         return markerRoot == null ? null : detectedManager;
     }
 
@@ -376,6 +383,7 @@ final class BuildCoordinator {
     }
 
     /** The path whose project drives this tool's UI: the active local file, else the active project root. */
+    @Nullable
     Path contextPath() {
         EditorBuffer b = host.activeBuffer();
         Path file = b == null ? null : b.getPath();
@@ -499,7 +507,7 @@ final class BuildCoordinator {
         ops.setToolWindowsAvailable(isEnabled() && markerRoot != null);
     }
 
-    private void applyDetected(Path root, BuildActionsProvider parsed, String label) {
+    private void applyDetected(@Nullable Path root, @Nullable BuildActionsProvider parsed, @Nullable String label) {
         this.markerRoot = root;
         this.provider = parsed;
         this.detectedLabel = label;
@@ -558,7 +566,7 @@ final class BuildCoordinator {
      * tasks then run <em>there</em>. A right-click on {@code moduleB/pom.xml} used to open the popup of the
      * module the editor was in, so every task ran in the wrong place.
      */
-    void showActionsAt(Path root) {
+    void showActionsAt(@Nullable Path root) {
         if (root == null || (markerRoot != null && markerRoot.equals(root))) {
             showActionsPopup();
             return;
@@ -599,17 +607,18 @@ final class BuildCoordinator {
 
     /** Runs a selected task with its args + the active toggles' args (the popup's callback). */
     void runTask(List<String> taskArgs, List<String> toggleArgs) {
-        if (!isAvailable()) {
+        Path root = markerRoot;
+        if (root == null || !isAvailable()) {
             host.setStatus(isEnabled() ? tr("status.build.notDetected", tool.displayName()) : disabledMessage());
             return;
         }
         if (busy(String.join(" ", taskArgs), () -> runTask(taskArgs, toggleArgs))) {
             return;
         }
-        List<String> argv = new ArrayList<>(executable(markerRoot));
+        List<String> argv = new ArrayList<>(executable(root));
         argv.addAll(taskArgs);
         argv.addAll(toggleArgs);
-        launch(markerRoot, argv, taskArgs, toggleArgs);
+        launch(root, argv, taskArgs, toggleArgs);
     }
 
     /**
@@ -618,7 +627,7 @@ final class BuildCoordinator {
      * happen where the original did. {@link #markerRoot} follows the active tab, so after opening a file of
      * another module the rerun ran that module's build: a filter matching nothing there, reported as passed.
      */
-    void runTaskAt(Path root, List<String> taskArgs, List<String> toggleArgs) {
+    void runTaskAt(@Nullable Path root, List<String> taskArgs, List<String> toggleArgs) {
         if (root == null) {
             runTask(taskArgs, toggleArgs);
             return;
@@ -650,7 +659,7 @@ final class BuildCoordinator {
      * As {@link #runCustom}, in {@code root} — the Maven submenu's "Run custom" on a {@code pom.xml} row runs
      * in that pom's folder, not the active tab's. {@code null} means the active tab's module.
      */
-    void runCustomAt(Path root) {
+    void runCustomAt(@Nullable Path root) {
         if (root == null ? !isAvailable() : !isEnabled()) {
             host.setStatus(isEnabled() ? tr("status.build.notDetected", tool.displayName()) : disabledMessage());
             return;
@@ -689,7 +698,7 @@ final class BuildCoordinator {
 
     /** Runs the custom string {@code text} verbatim in {@code root} and remembers it (the prompt's accept, a
      *  "Recent" row of the popup). */
-    void runCustomText(Path root, String text) {
+    void runCustomText(@Nullable Path root, String text) {
         List<String> tokens = ProgramArgs.tokenize(text);
         if (tokens.isEmpty()) {
             return;
@@ -769,9 +778,6 @@ final class BuildCoordinator {
      * Maven classpath fallback ({@link #trustedExecutable}).
      */
     private boolean allowRun(Path root) {
-        if (root == null) {
-            return false;
-        }
         if (!BuildTrust.gates(tool)) {
             return true;
         }
@@ -806,9 +812,11 @@ final class BuildCoordinator {
         // same process runs, and its stream is forwarded to the hook. The hook may decline (feature off), in
         // which case the run proceeds unchanged — and, crucially, Go's argv is only augmented with -json when
         // the test window will actually consume it (else the console would show raw JSON for nothing).
-        boolean recognized = testRunHook != null && TestRunRecognizer.isTestRun(tool, taskArgs);
+        TestRunHook hook = testRunHook;
+        boolean recognized = hook != null && TestRunRecognizer.isTestRun(tool, taskArgs);
         List<String> augmented = recognized ? TestRunRecognizer.augmentArgv(tool, argv) : argv;
-        boolean claimed = recognized && testRunHook.onTestRunStart(tool, root, taskArgs, toggleArgs, augmented);
+        boolean claimed =
+                hook != null && recognized && hook.onTestRunStart(tool, root, taskArgs, toggleArgs, augmented);
         List<String> runArgv = claimed ? augmented : argv;
 
         // A claimed test run shows the Test Results window (the hook already opened it); opening the shared
@@ -866,9 +874,9 @@ final class BuildCoordinator {
                 if (outputWatcher != null) {
                     outputWatcher.accept(line, stderr); // e.g. the Debug-via-build JDWP-banner watcher
                 }
-                if (claimed) {
-                    testRunHook.onTestOutput(line, stderr);
-                    String shown = testRunHook.consoleLine(line, stderr);
+                if (claimed && hook != null) {
+                    hook.onTestOutput(line, stderr);
+                    String shown = hook.consoleLine(line, stderr);
                     if (shown != null) {
                         panel.appendOutput(BuildCoordinator.this, shown, stderr);
                     }
@@ -893,11 +901,11 @@ final class BuildCoordinator {
                 if (tree != null) {
                     tree.setRunning(false);
                 }
-                if (claimed) {
+                if (claimed && hook != null) {
                     if (stopped) {
-                        testRunHook.onTestStopped(code);
+                        hook.onTestStopped(code);
                     } else {
-                        testRunHook.onTestExit(code);
+                        hook.onTestExit(code);
                     }
                 }
                 host.setStatus(
@@ -927,8 +935,8 @@ final class BuildCoordinator {
                 if (tree != null) {
                     tree.setRunning(false);
                 }
-                if (claimed) {
-                    testRunHook.onTestError(message);
+                if (claimed && hook != null) {
+                    hook.onTestError(message);
                 }
                 runtimeGeneration++; // nothing ran: drop the runtime chip and any late probe answer
                 panel.setRuntime(BuildCoordinator.this, null);
@@ -978,13 +986,13 @@ final class BuildCoordinator {
      * A run the user asked to start while another was in progress, accepted through {@link #busy}'s
      * "Stop and run" prompt; started by the running build's exit, once the service can take it.
      */
-    private Runnable afterStop;
+    private @Nullable Runnable afterStop;
 
     /**
      * What {@link #busy} asks: (tool name, the task about to run) → whether to stop the running build for it.
      * Null = the modal {@link #confirmStopAndRun} dialog; a test installs an answer instead.
      */
-    private java.util.function.BiPredicate<String, String> stopAndRunPrompt;
+    private java.util.function.@Nullable BiPredicate<String, String> stopAndRunPrompt;
 
     /** For tests: answers the "Stop and run" question without a dialog ({@code null} restores the dialog). */
     void setStopAndRunPrompt(java.util.function.BiPredicate<String, String> prompt) {

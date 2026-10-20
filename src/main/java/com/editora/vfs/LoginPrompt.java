@@ -2,6 +2,8 @@ package com.editora.vfs;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Asks the person at the screen for what a login needs, while the login runs, the way {@code ssh} asks at the
  * terminal: a password, a key's passphrase, or the questions a server puts through keyboard-interactive (a 2FA
@@ -38,5 +40,5 @@ public interface LoginPrompt {
     }
 
     /** The answers, one per question in order, or {@code null} to cancel. The caller wipes them. */
-    char[][] answer(Challenge challenge);
+    char @Nullable [][] answer(Challenge challenge);
 }

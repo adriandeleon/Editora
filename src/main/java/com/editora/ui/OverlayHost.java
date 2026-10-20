@@ -12,6 +12,8 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A single, shared in-scene overlay host that shows one "card" node at a time, centered near the top of
  * the main window over a dim, click-to-dismiss backdrop. This replaces the per-component
@@ -47,8 +49,8 @@ public final class OverlayHost {
         }
     };
 
-    private Node previousFocus;
-    private Runnable onHidden;
+    private @Nullable Node previousFocus;
+    private @Nullable Runnable onHidden;
     private long lastHiddenAt;
 
     public OverlayHost() {
@@ -119,7 +121,7 @@ public final class OverlayHost {
     }
 
     /** The first (or, with {@code last}, the last) control in {@code node}'s subtree that Tab would stop on. */
-    static Node edgeFocusable(Node node, boolean last) {
+    static @Nullable Node edgeFocusable(Node node, boolean last) {
         if (!node.isVisible() || node.isDisabled()) {
             return null;
         }
@@ -179,7 +181,8 @@ public final class OverlayHost {
      * above (default) or, when {@code below} is set, just below that node; otherwise it is centered near
      * the top like the command palette, or in the vertical middle when {@code centered}.
      */
-    private void show(Node content, Node anchor, boolean centered, boolean below, Runnable onShown, Runnable onHidden) {
+    private void show(
+            Node content, @Nullable Node anchor, boolean centered, boolean below, Runnable onShown, Runnable onHidden) {
         Runnable position = anchor == null
                 ? null
                 : below ? () -> positionBelow(content, anchor) : () -> positionAbove(content, anchor);
@@ -221,7 +224,8 @@ public final class OverlayHost {
         return belowY + height <= overlayHeight - edge || aboveY - height < edge;
     }
 
-    private void show(Node content, Runnable position, boolean centered, Runnable onShown, Runnable onHidden) {
+    private void show(
+            Node content, @Nullable Runnable position, boolean centered, Runnable onShown, Runnable onHidden) {
         // Replacing one overlay with another (e.g. palette → file finder): clear the previous component's
         // flag, but keep the original focus owner so dismissal returns to the editor, not the prior card.
         if (showing.get()) {

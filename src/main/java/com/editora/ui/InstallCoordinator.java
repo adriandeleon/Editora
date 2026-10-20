@@ -15,6 +15,7 @@ import com.editora.install.InstallCatalog.Lang;
 import com.editora.install.InstallCatalog.Prereq;
 import com.editora.install.InstallCatalog.Step;
 import com.editora.install.InstallService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -409,7 +410,7 @@ final class InstallCoordinator {
         return tr("install.prereq." + p.name().toLowerCase(Locale.ROOT));
     }
 
-    private void alert(Alert.AlertType type, String message) {
+    private void alert(Alert.AlertType type, @Nullable String message) {
         alert.accept(type, message);
     }
 

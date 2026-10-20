@@ -21,6 +21,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.text.Text;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The response view's tab strip: Body · Headers · Tests · Request · Notes, each with a count where it has one, and
  * the panel's action icons at its right end. Tab focuses the selected tab only; the arrow keys, Home and End move
@@ -142,9 +144,9 @@ final class HttpTabStrip extends HBox {
         }
         e.consume();
         if (to != selected()) {
-            tabs.get(to).fire(); // a pick by the user, like a click
+            buttonOf(to).fire(); // a pick by the user, like a click
         }
-        tabs.get(to).requestFocus();
+        buttonOf(to).requestFocus();
     }
 
     /** The selected tab. */
@@ -183,11 +185,11 @@ final class HttpTabStrip extends HBox {
      * Sets {@code tab}'s count ({@code null} hides it), its colour, and the {@code detail} the tooltip and a screen
      * reader give with the tab's name ("6 headers", "✓ 2 passed · ✗ 1 failed").
      */
-    void setCount(HttpResponseTab tab, String count, CountStyle style, String detail) {
-        Label l = counts.get(tab);
+    void setCount(HttpResponseTab tab, @Nullable String count, @Nullable CountStyle style, @Nullable String detail) {
+        Label l = countOf(tab);
         boolean on = count != null && !count.isEmpty();
         l.setText(on ? count : "");
-        ToggleButton b = tabs.get(tab);
+        ToggleButton b = buttonOf(tab);
         if (b.getGraphic() != (on ? l : null)) {
             b.setGraphic(on ? l : null);
         }
@@ -202,26 +204,28 @@ final class HttpTabStrip extends HBox {
         requestLayout();
     }
 
-    private void describe(HttpResponseTab tab, String detail) {
+    private void describe(HttpResponseTab tab, @Nullable String detail) {
         String name = names.get(tab);
         String text = detail == null || detail.isBlank() ? name : name + " — " + detail;
-        ToggleButton b = tabs.get(tab);
+        ToggleButton b = buttonOf(tab);
         b.setAccessibleText(text);
         b.setTooltip(new Tooltip(text));
     }
 
     /** The tab's button. */
+    @Nullable
     ToggleButton button(HttpResponseTab tab) {
         return tabs.get(tab);
     }
 
     /** What the tab shows: its name and count ("Tests 2/3"), only the count when narrow, null when hidden. */
+    @Nullable
     String shownTextForTest(HttpResponseTab tab) {
-        ToggleButton b = tabs.get(tab);
+        ToggleButton b = buttonOf(tab);
         if (!b.isVisible()) {
             return null;
         }
-        String count = hasCount(tab) ? counts.get(tab).getText() : "";
+        String count = hasCount(tab) ? countOf(tab).getText() : "";
         if (b.getContentDisplay() == ContentDisplay.GRAPHIC_ONLY) {
             return count;
         }
@@ -229,11 +233,12 @@ final class HttpTabStrip extends HBox {
     }
 
     /** The count's colour, or null when it has none. Test accessor. */
+    @Nullable
     CountStyle countStyleForTest(HttpResponseTab tab) {
         if (!hasCount(tab)) {
             return null;
         }
-        Label c = counts.get(tab);
+        Label c = countOf(tab);
         if (c.getStyleClass().contains("http-count-failed")) {
             return CountStyle.FAILED;
         }
@@ -271,8 +276,8 @@ final class HttpTabStrip extends HBox {
             if (!available.contains(t)) {
                 continue;
             }
-            ToggleButton b = tabs.get(t);
-            Label c = counts.get(t);
+            ToggleButton b = buttonOf(t);
+            Label c = countOf(t);
             fullPad = Math.max(fullPad, b.snappedLeftInset() + b.snappedRightInset());
             double pad = fullPad;
             probe.setFont(b.getFont());
@@ -299,8 +304,9 @@ final class HttpTabStrip extends HBox {
         for (HttpResponseTab t : HttpResponseTab.values()) {
             boolean countOnly = now == HttpPanelLayout.StripFit.COUNTS && hasCount(t);
             ContentDisplay want = countOnly ? ContentDisplay.GRAPHIC_ONLY : ContentDisplay.RIGHT;
-            if (tabs.get(t).getContentDisplay() != want) {
-                tabs.get(t).setContentDisplay(want);
+            ToggleButton b = buttonOf(t);
+            if (b.getContentDisplay() != want) {
+                b.setContentDisplay(want);
             }
         }
         boolean compact = now == HttpPanelLayout.StripFit.COUNTS;
@@ -316,7 +322,25 @@ final class HttpTabStrip extends HBox {
     }
 
     private boolean hasCount(HttpResponseTab tab) {
-        return tabs.get(tab).getGraphic() != null;
+        return buttonOf(tab).getGraphic() != null;
+    }
+
+    /** {@code tab}'s button; the constructor makes one for every tab. */
+    private ToggleButton buttonOf(HttpResponseTab tab) {
+        ToggleButton b = tabs.get(tab);
+        if (b == null) {
+            throw new IllegalStateException("no button for " + tab);
+        }
+        return b;
+    }
+
+    /** {@code tab}'s count label; the constructor makes one for every tab. */
+    private Label countOf(HttpResponseTab tab) {
+        Label c = counts.get(tab);
+        if (c == null) {
+            throw new IllegalStateException("no count for " + tab);
+        }
+        return c;
     }
 
     private static void setShown(Node n, boolean on) {

@@ -548,10 +548,11 @@
                                 <arg>--add-exports</arg>
                                 <arg>javafx.graphics/com.sun.glass.ui=com.editora</arg>
                                 <!-- NullAway only: every other Error Prone check is off. OnlyNullMarked leaves a
-                                     package unchecked until its package-info.java says @NullMarked. -->
+                                     package unchecked until its package-info.java says @NullMarked. Fields FXMLLoader
+                                     injects (@FXML) are not checked for initialization. -->
                                 <arg>-XDcompilePolicy=simple</arg>
                                 <arg>--should-stop=ifError=FLOW</arg>
-                                <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:JSpecifyMode=true</arg>
+                                <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:JSpecifyMode=true -XepOpt:NullAway:ExcludedFieldAnnotations=javafx.fxml.FXML</arg>
                             </compilerArgs>
                             <annotationProcessorPaths>
                                 <path>

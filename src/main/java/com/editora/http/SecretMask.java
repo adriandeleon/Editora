@@ -8,6 +8,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Masks the values a run read from {@code $processEnv}/{@code $env}/{@code $dotenv} wherever they would leave the
  * run: the saved history and the History label (adl, 2026-10-15), and the request a response handler script is shown.
@@ -26,7 +28,7 @@ public final class SecretMask {
     private SecretMask() {}
 
     /** {@code text} with every form of each of {@code secrets} masked; {@code text} itself when there is nothing to do. */
-    public static String mask(String text, List<String> secrets) {
+    public static @Nullable String mask(@Nullable String text, List<String> secrets) {
         if (text == null || text.isEmpty() || secrets == null || secrets.isEmpty()) {
             return text;
         }

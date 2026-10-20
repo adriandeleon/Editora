@@ -34,6 +34,7 @@ import com.editora.github.PrReviewArgs;
 import com.editora.github.PrViewParser;
 import com.editora.github.RunListParser;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -74,7 +75,7 @@ final class GitHubCoordinator {
         void toggleGitHubWindow();
 
         /** (Slice 3) Pushes the active PR's CI-check roll-up to the status bar (null = hide). */
-        void setStatusBarChecks(com.editora.github.ChecksParser.ChecksSummary summary);
+        void setStatusBarChecks(com.editora.github.ChecksParser.@Nullable ChecksSummary summary);
 
         /** Opens the PR review overview as a selected editor tab. */
         void addReviewTab(com.editora.editor.TabContent pane);
@@ -107,7 +108,7 @@ final class GitHubCoordinator {
     private final GitHubService service = new GitHubService();
 
     /** The repo root whose remotes have been read (so the async check runs once per root). */
-    private Path remoteCheckedRoot;
+    private @Nullable Path remoteCheckedRoot;
     /**
      * The URLs of <em>all</em> of {@link #remoteCheckedRoot}'s remotes. Whether one of them is a GitHub host
      * (which drives the always-on surfaces) is decided against the hosts {@code gh} is signed in to, so it is
@@ -116,7 +117,7 @@ final class GitHubCoordinator {
     private List<String> remoteUrls = List.of();
 
     /** The repo root whose open-PR/issue activity has been probed (so the async check runs once per root). */
-    private Path activityCheckedRoot;
+    private @Nullable Path activityCheckedRoot;
     /** Whether {@link #activityCheckedRoot} has at least one open PR or issue (gates the tool-window stripe). */
     private boolean hasActivity;
     /** An activity probe is running: do not start another for the same root. */
@@ -152,13 +153,13 @@ final class GitHubCoordinator {
      * The repository the tool window's rows were listed from. A row carries only a PR number / run id, so its
      * actions must run there — not in whichever repository happens to be active when the row is clicked.
      */
-    private Path panelDir;
+    private @Nullable Path panelDir;
 
     /** Bumped per picker request, so only the latest picker opens (pickers are not generation-guarded by the service). */
     private long pickGen;
 
     /** The repository + branch the Git state was last seen with (see {@link #repositoryChanged}). */
-    private Path seenRoot;
+    private @Nullable Path seenRoot;
 
     private String seenBranch = "";
     /** Whether the user has asked for the CI-checks roll-up (so a branch switch re-derives it). */
@@ -206,7 +207,7 @@ final class GitHubCoordinator {
      * the tool window never appears and no command has a repository. Said in so many words, with the command
      * that turns Git on, instead of "open a file inside a GitHub repository".
      */
-    private String disabledReason() {
+    private @Nullable String disabledReason() {
         if (!isEnabled()) {
             return tr("statusbar.tip.githubDisabled");
         }
@@ -390,7 +391,7 @@ final class GitHubCoordinator {
      * without {@code github.refresh}. An unverified sign-in (GitHub was unreachable when probed) lets the
      * command run — if GitHub still cannot be reached, gh says exactly that.
      */
-    private String readyIn(Path captured, Consumer<Path> then) {
+    private @Nullable String readyIn(@Nullable Path captured, Consumer<Path> then) {
         String reason = disabledReason();
         Path dir = null;
         service.setLocation(captured != null ? captured : contextDir());
@@ -447,7 +448,7 @@ final class GitHubCoordinator {
     }
 
     /** The working directory for {@code gh}: the git repo root, else the active file's folder, else null. */
-    private Path contextDir() {
+    private @Nullable Path contextDir() {
         Path root = git.repoRoot();
         if (root != null) {
             return root;
@@ -531,7 +532,7 @@ final class GitHubCoordinator {
 
     /** Picks an open PR and checks it out ({@code gh pr checkout}); refreshes Git + reloads changed buffers. */
     void checkoutPr() {
-        ready(dir -> pickPr(tr("github.picker.checkoutTitle"), pr -> doCheckout(dir, pr.number())));
+        ready(dir -> pickPr(dir, tr("github.picker.checkoutTitle"), pr -> doCheckout(dir, pr.number())));
     }
 
     /** Checks out a specific PR by number (the panel's row action). */
@@ -568,7 +569,7 @@ final class GitHubCoordinator {
      * it was captured from a listing (a repository root), and the active repository only when {@code dir} lies
      * inside it (the palette flow, where {@code dir} may be the active file's folder). Pure.
      */
-    static Path mutationRoot(Path dir, Path activeRoot) {
+    static Path mutationRoot(Path dir, @Nullable Path activeRoot) {
         return activeRoot != null && dir != null && dir.startsWith(activeRoot) ? activeRoot : dir;
     }
 
@@ -576,7 +577,7 @@ final class GitHubCoordinator {
 
     /** Picks an open PR and opens its changed files in a review tab (GitHub "Files changed" style). */
     void viewPrDiff() {
-        ready(dir -> pickPr(tr("github.picker.diffTitle"), pr -> doPrDiff(dir, pr.number())));
+        ready(dir -> pickPr(dir, tr("github.picker.diffTitle"), pr -> doPrDiff(dir, pr.number())));
     }
 
     /** Opens a specific PR's review tab by number (the panel's row action / double-click). */
@@ -773,12 +774,12 @@ final class GitHubCoordinator {
             };
 
     /** Where the tool window's context row is told what to show (see {@link #panelContext}). */
-    private Consumer<GitHubPanel.Context> contextSink;
+    private @Nullable Consumer<GitHubPanel.Context> contextSink;
 
     /** The branch last seen checked out in {@link #panelBranchDir} — kept while another repository is active. */
     private String panelBranch = "";
 
-    private Path panelBranchDir;
+    private @Nullable Path panelBranchDir;
 
     /**
      * Tells {@code sink} what the tool window's rows belong to: the repository {@code gh} resolved (its
@@ -846,7 +847,7 @@ final class GitHubCoordinator {
     private long ciLogGen;
 
     /** The log fetch in flight: Stop, or asking for another log, kills its {@code gh} rather than abandon it. */
-    private com.editora.process.ProcessRunner.Cancellation ciLogCall;
+    private com.editora.process.ProcessRunner.@Nullable Cancellation ciLogCall;
 
     private void cancelCiLogFetch() {
         ciLogGen++;
@@ -865,7 +866,7 @@ final class GitHubCoordinator {
         viewRunLog(panelDir, runId, workflowName);
     }
 
-    private void viewRunLog(Path listedIn, long runId, String workflowName) {
+    private void viewRunLog(@Nullable Path listedIn, long runId, String workflowName) {
         readyIn(listedIn, dir -> {
             cancelCiLogFetch(); // a log still downloading is superseded: stop its gh
             long gen = ciLogGen;
@@ -983,7 +984,7 @@ final class GitHubCoordinator {
     private record ChecksKey(Path root, String branch) {}
 
     /** The key of the fetch in flight, or of the last one made. */
-    private ChecksKey checksAsked;
+    private @Nullable ChecksKey checksAsked;
 
     private boolean checksInFlight;
     /**
@@ -993,13 +994,13 @@ final class GitHubCoordinator {
      */
     private final java.util.Map<ChecksKey, GitHubService.BranchChecks> checksCache = new java.util.HashMap<>();
     /** The roll-up on screen and the directory {@code gh} answered in ({@code null}: none shown). */
-    private GitHubService.BranchChecks shownChecks;
+    private GitHubService.@Nullable BranchChecks shownChecks;
 
-    private Path shownChecksDir;
+    private @Nullable Path shownChecksDir;
     /** Polls made since the last manual / automatic fetch (drives the back-off and the cap). */
     private int pollAttempt;
 
-    private javafx.animation.PauseTransition pollTimer;
+    private javafx.animation.@Nullable PauseTransition pollTimer;
     /** A poll came due while the window was not focused; it runs when the focus returns. */
     private boolean pollDeferred;
 
@@ -1007,7 +1008,7 @@ final class GitHubCoordinator {
     /** Test seam: the wait before a poll, in milliseconds, instead of {@link ChecksPoll#delaySeconds}. */
     long pollDelayMillisForTest = -1;
     /** Test seam: whether the window counts as focused, instead of asking the window (a headless stage never is). */
-    java.util.function.BooleanSupplier windowFocusedForTest;
+    java.util.function.@Nullable BooleanSupplier windowFocusedForTest;
 
     private boolean windowFocused() {
         if (windowFocusedForTest != null) {
@@ -1061,7 +1062,7 @@ final class GitHubCoordinator {
      * Drops the roll-up on screen when its repository or branch is left (the caller clears the status bar).
      * {@code switchedIn} is the repository whose branch changed, or {@code null} for a change of repository.
      */
-    private void forgetChecks(Path switchedIn) {
+    private void forgetChecks(@Nullable Path switchedIn) {
         stopPolling();
         checksInFlight = false;
         shownChecks = null;
@@ -1080,12 +1081,12 @@ final class GitHubCoordinator {
     }
 
     /** Fetches the current branch's PR checks and pushes the roll-up to the status bar (null hides it). */
-    private void refreshChecks(Path dir) {
+    private void refreshChecks(@Nullable Path dir) {
         pollAttempt = 0;
         fetchChecks(dir);
     }
 
-    private void fetchChecks(Path dir) {
+    private void fetchChecks(@Nullable Path dir) {
         long gen = ++checksGen;
         stopPolling();
         checksInFlight = false;
@@ -1197,7 +1198,7 @@ final class GitHubCoordinator {
     }
 
     /** The open checks list ({@code null} when closed), kept so a poll updates it in place. */
-    private ChecksListCard checksCard;
+    private @Nullable ChecksListCard checksCard;
 
     /** {@code github.showChecks} was run with no roll-up on screen: report the answer of the fetch it started. */
     private boolean checksAnnounce;
@@ -1308,7 +1309,7 @@ final class GitHubCoordinator {
         ready(dir -> {
             EditorBuffer b = host.activeBuffer();
             Path file = b == null ? null : b.getPath();
-            if (file == null || !RemoteExec.runsFor(file)) {
+            if (b == null || file == null || !RemoteExec.runsFor(file)) {
                 host.setStatus(tr("status.github.noFile"));
                 return;
             }
@@ -1561,7 +1562,7 @@ final class GitHubCoordinator {
 
     /** Picks a PR then opens the submit-review form (the {@code github.submitReview} palette command). */
     void submitReviewPicked() {
-        ready(dir -> pickPr(tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number())));
+        ready(dir -> pickPr(dir, tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number())));
     }
 
     private void submitReviewForm(Path dir, int number) {
@@ -1583,7 +1584,7 @@ final class GitHubCoordinator {
             }
 
             @Override
-            public PrReviewArgs.ReviewAction fromString(String s) {
+            public PrReviewArgs.@Nullable ReviewAction fromString(String s) {
                 return null;
             }
         });
@@ -1639,11 +1640,11 @@ final class GitHubCoordinator {
     // --- shared helpers --------------------------------------------------------------------------
 
     /** Fetches open PRs and shows a picker; reports the failure / empty cases distinctly. */
-    private void pickPr(String title, Consumer<PrListParser.PullRequest> onPick) {
+    private void pickPr(Path dir, String title, Consumer<PrListParser.PullRequest> onPick) {
         host.setStatus(tr("status.github.loadingPrs"));
         long pick = ++pickGen;
         GitHubListQuery query = GitHubListQuery.open(GitHubListQuery.PICKER_LIMIT);
-        service.listPrsOnce(contextDir(), query, res -> {
+        service.listPrsOnce(dir, query, res -> {
             if (pick != pickGen) {
                 return; // a newer picker was asked for
             }

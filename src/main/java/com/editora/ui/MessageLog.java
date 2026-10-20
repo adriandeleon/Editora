@@ -6,6 +6,8 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * An in-memory, session-only history of the status-bar echo-area messages. Not persisted — it exists
  * only for the running session so the user can click the status message and review what scrolled past.
@@ -54,7 +56,7 @@ public final class MessageLog {
     }
 
     /** Records {@code message} with an explicit severity. */
-    public void add(String message, Severity severity, long epochMillis) {
+    public void add(@Nullable String message, Severity severity, long epochMillis) {
         if (message == null || message.isBlank()) {
             return;
         }

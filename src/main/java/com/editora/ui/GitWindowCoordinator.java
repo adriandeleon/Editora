@@ -10,6 +10,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -42,12 +43,14 @@ final class GitWindowCoordinator {
 
         GitHubCoordinator github();
 
+        @Nullable
         EditorBuffer openBufferFor(Path target);
 
         void reloadAllFromDiskSilently();
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
@@ -64,6 +67,7 @@ final class GitWindowCoordinator {
     }
 
     /** The path the Git Log is currently filtered to (file history), or null for the whole repo. */
+    @Nullable
     Path gitLogFilter;
 
     /**
@@ -72,7 +76,7 @@ final class GitWindowCoordinator {
      * commit hashes are shared between the worktrees and clones of a project, so a reset or checkout chosen
      * from one repository's history would otherwise succeed in another.
      */
-    private Path gitLogRoot;
+    private @Nullable Path gitLogRoot;
 
     private String gitLogBranch = "";
     /** Bumped per load and per repository change; a log result for an earlier request is dropped. */
@@ -94,7 +98,7 @@ final class GitWindowCoordinator {
     private boolean gitLogLoading;
 
     /** What the rows on screen were listed for: a reload of the same listing keeps the depth loaded so far. */
-    private Object gitLogListing;
+    private @Nullable Object gitLogListing;
 
     /**
      * Asks which parent a merge is reverted against: given the merge and its parents, the 1-based mainline,
@@ -138,7 +142,7 @@ final class GitWindowCoordinator {
     }
 
     /** The active buffer's file, or null (after reporting it) when the active tab has none. */
-    private Path activeFileOrReport() {
+    private @Nullable Path activeFileOrReport() {
         EditorBuffer b = host.activeBuffer();
         Path file = b == null ? null : b.getPath();
         if (file == null) {
@@ -244,7 +248,7 @@ final class GitWindowCoordinator {
      * is one ({@code git checkout --track origin/x} fails with "a branch named 'x' already exists"), else
      * create the tracking branch. Returns the local branch to switch to, or {@code null} to create one.
      */
-    static String existingLocalFor(String remoteBranch, List<com.editora.git.GitService.BranchInfo> local) {
+    static @Nullable String existingLocalFor(String remoteBranch, List<com.editora.git.GitService.BranchInfo> local) {
         String name = localNameOf(remoteBranch);
         if (name.isEmpty()) {
             return null;
@@ -442,7 +446,8 @@ final class GitWindowCoordinator {
      * in the selected commit. That row is the history file under its old name — it is compared with the file
      * as it is called now, not with a path that no longer exists.
      */
-    static Path historyWorkingFile(Path root, Path historyFile, String repoRel, String pathInCommit) {
+    static Path historyWorkingFile(
+            Path root, @Nullable Path historyFile, String repoRel, @Nullable String pathInCommit) {
         if (historyFile != null
                 && !Files.isDirectory(historyFile)
                 && (repoRel.equals(pathInCommit)
@@ -483,7 +488,7 @@ final class GitWindowCoordinator {
             }
 
             @Override
-            public void openFileDiff(String hash, String repoRel, String origRepoRel) {
+            public void openFileDiff(String hash, String repoRel, @Nullable String origRepoRel) {
                 host.diffCoordinator().diffCommitFile(gitLogRoot, hash, repoRel, origRepoRel);
             }
 
@@ -649,7 +654,7 @@ final class GitWindowCoordinator {
      * closed Git Log still remembers its last selection, so running then would revert or reset to a commit
      * the user cannot see — it never runs on a hidden selection.
      */
-    static LogCommand logCommand(boolean logOpen, String selectedHash) {
+    static LogCommand logCommand(boolean logOpen, @Nullable String selectedHash) {
         if (!logOpen) {
             return LogCommand.OPEN_AND_ASK;
         }
@@ -702,7 +707,7 @@ final class GitWindowCoordinator {
      * uncommitted work and the commits that will be lost and the repository and branch they are lost from;
      * Soft and Mixed are confirmed when commits would be left on no other branch or tag.
      */
-    private void resetIn(Path root, String branch, String hash, String mode) {
+    private void resetIn(@Nullable Path root, String branch, String hash, String mode) {
         if (root == null) {
             host.git().reportIfNoRepo();
             return;
@@ -725,7 +730,7 @@ final class GitWindowCoordinator {
      * {@code git checkout <hash>} in {@code root}: HEAD becomes detached, which the result says. Leaving a
      * detached HEAD that has commits no branch or tag reaches abandons them, so that is confirmed first.
      */
-    private void checkoutCommitIn(Path root, String hash) {
+    private void checkoutCommitIn(@Nullable Path root, String hash) {
         if (root == null) {
             host.git().reportIfNoRepo();
             return;
@@ -749,7 +754,7 @@ final class GitWindowCoordinator {
      * load via the tool-window state listener; if the window is already open (no state change, so no
      * listener), the log is refreshed explicitly — so opening always shows current history.
      */
-    void openGitLog(Path filter) {
+    void openGitLog(@Nullable Path filter) {
         gitLogFilter = filter;
         boolean wasOpen = host.toolWindows().isOpen(host.gitLogToolWindow());
         host.toolWindows().open(host.gitLogToolWindow());
@@ -779,7 +784,7 @@ final class GitWindowCoordinator {
      * already on screen (after a Git command) asks again for as many commits as were loaded, so the list
      * keeps its depth, selection and scroll position.
      */
-    void loadGitLog(Path file) {
+    void loadGitLog(@Nullable Path file) {
         gitLogFilter = file;
         Path root = host.git().repoRoot();
         long generation = ++gitLogGeneration;
@@ -1009,7 +1014,7 @@ final class GitWindowCoordinator {
     // --- whole-commit review and two-commit compare ------------------------------------------------
 
     /** Opens every file {@code hash} changed against its first parent as one multi-file review tab. */
-    void reviewCommitIn(Path root, String hash) {
+    void reviewCommitIn(@Nullable Path root, String hash) {
         if (root == null) {
             host.git().reportIfNoRepo();
             return;
@@ -1036,7 +1041,7 @@ final class GitWindowCoordinator {
     }
 
     /** Opens the files that differ between two commits (older on the left) as one review tab. */
-    void compareCommitsIn(Path root, String olderHash, String newerHash) {
+    void compareCommitsIn(@Nullable Path root, String olderHash, String newerHash) {
         if (root == null) {
             host.git().reportIfNoRepo();
             return;
@@ -1090,7 +1095,7 @@ final class GitWindowCoordinator {
     }
 
     /** Reverts {@code hash} in {@code root}; for a merge commit the mainline parent is asked for first. */
-    void revertIn(Path root, String hash) {
+    void revertIn(@Nullable Path root, String hash) {
         if (root == null) {
             host.git().reportIfNoRepo();
             return;
@@ -1125,7 +1130,7 @@ final class GitWindowCoordinator {
     }
 
     /** The mainline dialog: one choice per parent, named by its short hash and, when loaded, its subject. */
-    private Integer chooseMainline(String hash, List<String> parents) {
+    private @Nullable Integer chooseMainline(String hash, List<String> parents) {
         List<String> choices = new java.util.ArrayList<>();
         for (int i = 0; i < parents.size(); i++) {
             com.editora.git.GitLog.Entry parent = host.gitLogPanel().entry(parents.get(i));
@@ -1151,7 +1156,7 @@ final class GitWindowCoordinator {
      * annotated when a message is given. The name has passed {@link com.editora.git.GitRefNames#isValidTag}, so
      * it cannot be an option; the message follows {@code -m} as its value whatever it begins with.
      */
-    static String[] tagArgs(String name, String message, String revision) {
+    static String[] tagArgs(String name, String message, @Nullable String revision) {
         List<String> args = new java.util.ArrayList<>(List.of("tag"));
         if (message != null && !message.isBlank()) {
             args.addAll(List.of("-a", "-m", message.strip()));
@@ -1174,7 +1179,7 @@ final class GitWindowCoordinator {
     }
 
     /** Asks for a tag name, then a message (blank: a lightweight tag), and creates the tag at {@code hash}. */
-    void createTagIn(Path root, String hash) {
+    void createTagIn(@Nullable Path root, @Nullable String hash) {
         if (root == null) {
             host.git().reportIfNoRepo();
             return;
@@ -1199,7 +1204,7 @@ final class GitWindowCoordinator {
     }
 
     /** Creates the tag (validated here too: this is the one place the name reaches a command line). */
-    void createTag(Path root, String name, String message, String hash) {
+    void createTag(Path root, String name, String message, @Nullable String hash) {
         if (!com.editora.git.GitRefNames.isValidTag(name)
                 || (hash != null && !com.editora.git.GitSafety.isSafeRevision(hash))) {
             host.setStatus(tr("status.git.tag.invalidName", name));
@@ -1209,14 +1214,14 @@ final class GitWindowCoordinator {
     }
 
     /** Checks out a tag (detached HEAD). {@code refs/tags/…} so a branch of the same name is not meant. */
-    void checkoutTagIn(Path root, String tag) {
+    void checkoutTagIn(@Nullable Path root, String tag) {
         if (validTag(tag)) {
             gitMutateIn(root, tr("status.git.checkedOut", tag), "checkout", "refs/tags/" + tag);
         }
     }
 
     /** Deletes a local tag after confirmation; the tag on a remote is not touched. */
-    void deleteTagIn(Path root, String tag) {
+    void deleteTagIn(@Nullable Path root, String tag) {
         if (root != null && validTag(tag) && tagDeleteConfirmer.test(tag, root.toString())) {
             gitMutateIn(root, tr("status.git.tag.deleted", tag), "tag", "-d", tag);
         }
@@ -1226,7 +1231,7 @@ final class GitWindowCoordinator {
      * Pushes one tag to the branch's push remote. A push runs in the active repository, so it is refused
      * when that is no longer the one the tag was listed in.
      */
-    void pushTagIn(Path root, String tag) {
+    void pushTagIn(@Nullable Path root, String tag) {
         if (root == null || !validTag(tag)) {
             return;
         }
@@ -1252,10 +1257,10 @@ final class GitWindowCoordinator {
 
     /** {@code git.tag.delete} / {@code git.tag.push} / {@code git.tag.checkout}: pick a tag, then act on it. */
     void pickTagThen(String titleKey, java.util.function.BiConsumer<Path, String> action) {
-        if (host.git().reportIfNoRepo()) {
+        Path root = host.git().repoRootOrReport(); // the repository the picker lists, not whichever is active on choose
+        if (root == null) {
             return;
         }
-        Path root = host.git().repoRoot(); // the repository the picker lists, not whichever is active on choose
         host.diffCoordinator().pickTag(root, tr(titleKey), tag -> action.accept(root, tag));
     }
 
@@ -1308,7 +1313,7 @@ final class GitWindowCoordinator {
      * Runs the mutation in {@code root}, reports and refreshes. The log reloads through {@link #gitMutated},
      * as it does after every other Git command.
      */
-    private void gitMutateIn(Path root, String successMessage, String... args) {
+    private void gitMutateIn(@Nullable Path root, String successMessage, String... args) {
         if (root == null) {
             host.git().reportIfNoRepo();
             return;
@@ -1317,7 +1322,7 @@ final class GitWindowCoordinator {
     }
 
     /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */
-    void gitFileHistoryForPath(Path file) {
+    void gitFileHistoryForPath(@Nullable Path file) {
         if (file == null || Files.isDirectory(file)) {
             host.setStatus(tr("status.git.history.noFile"));
             return;

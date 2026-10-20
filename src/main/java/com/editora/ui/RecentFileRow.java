@@ -7,6 +7,8 @@ import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.Region;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One row of the toolbar's Recent Files dropdown: file name, project pill, remove button.
  *
@@ -51,11 +53,11 @@ final class RecentFileRow extends Region {
 
     private final Columns columns;
     private final Label name;
-    private final Label pill;
+    private final @Nullable Label pill;
     private final Node remove;
 
     /** {@code pill} is null for a file outside every known project. */
-    RecentFileRow(Columns columns, Label name, Label pill, Node remove) {
+    RecentFileRow(Columns columns, Label name, @Nullable Label pill, Node remove) {
         this.columns = columns;
         this.name = name;
         this.pill = pill;

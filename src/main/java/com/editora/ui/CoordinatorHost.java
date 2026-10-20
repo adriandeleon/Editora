@@ -7,6 +7,7 @@ import javafx.stage.Window;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The window services a {@link LogViewerCoordinator}-style feature coordinator may need, in one shared
@@ -27,7 +28,7 @@ interface CoordinatorHost {
     }
 
     /** Editora's configuration folder, where its caches live; null for a host that has none (a test's). */
-    default java.nio.file.Path configDir() {
+    default java.nio.file.@Nullable Path configDir() {
         return null;
     }
 
@@ -40,15 +41,16 @@ interface CoordinatorHost {
     void forEachBuffer(Consumer<EditorBuffer> action);
 
     /** The active editor buffer, or {@code null} for a non-buffer tab. */
+    @Nullable
     EditorBuffer activeBuffer();
 
     /** Whether {@code buffer} is a local-filesystem file (some features can't serve a remote file). */
     boolean isLocalBuffer(EditorBuffer buffer);
 
-    void setStatus(String message);
+    void setStatus(@Nullable String message);
 
     /** Reports a failure: coloured in the echo line and flagged unread until the message log is opened. */
-    void setError(String message);
+    void setError(@Nullable String message);
 
     /**
      * Registers long-running work so the status bar can show it; close the handle when the work ends.

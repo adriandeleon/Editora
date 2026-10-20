@@ -11,6 +11,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -24,6 +25,7 @@ final class TestNavigationCoordinator {
 
         ProjectManager projects();
 
+        @Nullable
         Project windowProject();
 
         ToolWindowManager toolWindows();
@@ -45,7 +47,7 @@ final class TestNavigationCoordinator {
         RunCoordinator runCoordinator();
 
         /** The window's debugger (Debug Test on a Python test). */
-        default DebugCoordinator debugCoordinator() {
+        default @Nullable DebugCoordinator debugCoordinator() {
             return null;
         }
 
@@ -61,13 +63,17 @@ final class TestNavigationCoordinator {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
-        EditorBuffer bufferOf(Tab tab);
+        @Nullable
+        EditorBuffer bufferOf(@Nullable Tab tab);
 
         /** {@link #bufferOf}, building the editor of a restored tab the session restore has not reached yet. */
-        EditorBuffer ensureBuffer(Tab tab);
+        @Nullable
+        EditorBuffer ensureBuffer(@Nullable Tab tab);
 
+        @Nullable
         Tab tabForPath(Path file);
     }
 
@@ -87,7 +93,7 @@ final class TestNavigationCoordinator {
             }
 
             @Override
-            public Path projectRoot() {
+            public @Nullable Path projectRoot() {
                 return TestNavigationCoordinator.this.projectRoot();
             }
 
@@ -112,14 +118,14 @@ final class TestNavigationCoordinator {
             }
 
             @Override
-            public boolean canDebug(Path where) {
+            public boolean canDebug(@Nullable Path where) {
                 return host.debugCoordinator() != null
                         && host.debugCoordinator().debugEffectiveFor("python", where);
             }
 
             @Override
             public void debugTests(
-                    Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, String label) {
+                    Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, @Nullable String label) {
                 if (host.debugCoordinator() != null) {
                     host.debugCoordinator().debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
                 }
@@ -154,7 +160,7 @@ final class TestNavigationCoordinator {
         }
 
         @Override
-        public Path projectRoot() {
+        public @Nullable Path projectRoot() {
             return TestNavigationCoordinator.this.projectRoot();
         }
 
@@ -203,7 +209,7 @@ final class TestNavigationCoordinator {
     }
 
     /** Whether {@code root} looks like a Python project (for {@code test.run} with no Python file in front). */
-    static boolean looksLikePythonProject(Path root) {
+    static boolean looksLikePythonProject(@Nullable Path root) {
         if (root == null || com.editora.vfs.Vfs.isRemote(root)) {
             return false;
         }
@@ -225,7 +231,7 @@ final class TestNavigationCoordinator {
     }
 
     /** As above; {@code onUnresolved} runs instead of the "file not found" status when nothing resolves. */
-    void openRunLink(com.editora.run.StackTraceLinks.Link link, Runnable onUnresolved) {
+    void openRunLink(com.editora.run.StackTraceLinks.Link link, @Nullable Runnable onUnresolved) {
         // Ask the Java server first when one is running (#744): it resolves the frame against the real
         // classpath, so it can place a frame inside a dependency or the JDK — which the local
         // regex + filesystem walk below can never do, because there is no such file in the project.
@@ -243,13 +249,16 @@ final class TestNavigationCoordinator {
 
     /** The file whose session answers stack-trace resolution: the active buffer if the Java server serves
      *  it, else null (which keeps the local heuristic as the only path — e.g. a Python traceback). */
+    @Nullable
     Path lspStackTraceAnchor() {
         if (!host.lspEnabled()) {
             return null;
         }
         EditorBuffer b = host.activeBuffer();
         Path path = b == null ? null : b.getPath();
-        return path != null && host.lspManager().isManaged(path) && "java".equals(b.getLanguage()) ? path : null;
+        return b != null && path != null && host.lspManager().isManaged(path) && "java".equals(b.getLanguage())
+                ? path
+                : null;
     }
 
     /** Opens a server-resolved frame URI; false when it names something we can't open, so the caller falls
@@ -283,7 +292,7 @@ final class TestNavigationCoordinator {
      * {@code com/foo/Bar.java} is looked up under the project's source roots off the FX thread; the old
      * bare-name heuristics remain as the fallback for everything that is not such a frame.
      */
-    void openRunLinkLocally(com.editora.run.StackTraceLinks.Link link, Runnable onUnresolved) {
+    void openRunLinkLocally(com.editora.run.StackTraceLinks.Link link, @Nullable Runnable onUnresolved) {
         String sourcePath = com.editora.run.StackTraceLinks.javaSourcePath(link);
         Path open = sourcePath == null ? null : openFileEndingWith(sourcePath);
         if (sourcePath == null || open != null) {
@@ -296,7 +305,8 @@ final class TestNavigationCoordinator {
                 found -> finishRunLink(link, found != null ? found : resolveRunLinkFile(link.file()), onUnresolved));
     }
 
-    private void finishRunLink(com.editora.run.StackTraceLinks.Link link, Path resolved, Runnable onUnresolved) {
+    private void finishRunLink(
+            com.editora.run.StackTraceLinks.Link link, @Nullable Path resolved, @Nullable Runnable onUnresolved) {
         if (resolved != null) {
             host.openAndGoto(resolved, link.line() - 1, Math.max(0, link.column() - 1)); // both printed 1-based
         } else if (onUnresolved != null) {
@@ -307,7 +317,7 @@ final class TestNavigationCoordinator {
     }
 
     /** An open file whose path ends with {@code relPath} ('/'-separated) — the same class, not merely the same name. */
-    private Path openFileEndingWith(String relPath) {
+    private @Nullable Path openFileEndingWith(String relPath) {
         for (Tab t : host.editorArea().tabs()) {
             EditorBuffer b = host.bufferOf(t);
             Path path = b == null ? null : b.getPath();
@@ -328,7 +338,7 @@ final class TestNavigationCoordinator {
      * The folder source lookups search: this window's project. It used to fall back to the {@code ProjectManager}'s
      * active project (the window opened last), so a window without a project resolved a trace into another one's.
      */
-    private Path projectRoot() {
+    private @Nullable Path projectRoot() {
         Project project = host.windowProject();
         return project == null ? null : project.rootPath();
     }
@@ -366,6 +376,7 @@ final class TestNavigationCoordinator {
         });
     }
 
+    @Nullable
     Path resolveRunLinkFile(String fileToken) {
         try {
             Path p = Path.of(fileToken);
@@ -513,7 +524,7 @@ final class TestNavigationCoordinator {
     }
 
     /** As above, for a ▶ in {@code buffer}: a Python test runs through pytest (else unittest). */
-    void runSingleTest(EditorBuffer buffer, com.editora.test.JavaTestScanner.TestTarget target) {
+    void runSingleTest(@Nullable EditorBuffer buffer, com.editora.test.JavaTestScanner.TestTarget target) {
         if (buffer != null && buffer.isPython() && buffer.getPath() != null) {
             pythonTests.run(buffer.getPath(), buffer.getContent(), target);
             return;
@@ -590,7 +601,7 @@ final class TestNavigationCoordinator {
      * name-based lookup every passing test gets is used instead; a failed test used to stop at "file not
      * found" there.
      */
-    void jumpToTestSource(com.editora.test.TestNode node, BuildTool tool) {
+    void jumpToTestSource(com.editora.test.TestNode node, @Nullable BuildTool tool) {
         com.editora.run.StackTraceLinks.Link frame = node.stackTrace() == null
                 ? null
                 : TestRunCoordinator.firstFrame(node.stackTrace(), node.sourceFileHint());
@@ -602,8 +613,10 @@ final class TestNavigationCoordinator {
     }
 
     /** Opens the test's source file (found by its class name) and jumps to the method once it has loaded. */
-    private void jumpToTestByName(com.editora.test.TestNode node, BuildTool tool) {
-        String hint = com.editora.test.TestSourceLocator.pathHint(node.className(), tool);
+    private void jumpToTestByName(com.editora.test.TestNode node, @Nullable BuildTool tool) {
+        String className = node.className();
+        String hint =
+                className == null || tool == null ? null : com.editora.test.TestSourceLocator.pathHint(className, tool);
         if (hint == null) {
             host.setStatus(tr("status.testrunner.noSource", node.displayName()));
             return;
@@ -658,12 +671,15 @@ final class TestNavigationCoordinator {
 
     /** Moves the caret to a test method's declaration in an already-open file (text search; strips param/
      *  parameterized/subtest suffixes). Best-effort — leaves the caret at the top if not found. */
-    void jumpToTestMethod(Path file, String methodName) {
+    void jumpToTestMethod(Path file, @Nullable String methodName) {
         EditorBuffer buffer = host.ensureBuffer(host.tabForPath(file)); // a restored tab not built yet: build it
         if (buffer == null || methodName == null || methodName.isBlank()) {
             return;
         }
         String name = com.editora.test.TestSourceLocator.filterMethodName(methodName);
+        if (name == null) {
+            return; // not reached: a method name stays one when filtered
+        }
         for (char sep : new char[] {'/', ' '}) { // a Go subtest path, a display name
             int cut = name.indexOf(sep);
             if (cut > 0) {

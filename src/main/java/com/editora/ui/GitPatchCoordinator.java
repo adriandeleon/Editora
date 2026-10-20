@@ -29,6 +29,7 @@ import com.editora.git.GitFormat;
 import com.editora.git.GitService;
 import com.editora.git.PatchOutcome;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -62,7 +63,7 @@ final class GitPatchCoordinator {
 
     private final CoordinatorHost host;
     private final GitCoordinator git;
-    private Consumer<EditorBuffer> openTab;
+    private @Nullable Consumer<EditorBuffer> openTab;
 
     /** Asks whether to retry a rejected patch as a three-way merge, given git's reason. Replaced by tests. */
     Predicate<String> confirmThreeWay = this::askThreeWay;
@@ -71,7 +72,7 @@ final class GitPatchCoordinator {
     Supplier<Path> choosePatchFile = this::askPatchFile;
 
     /** Picks where to save a created patch, given a suggested name, or {@code null}. Replaced by tests. */
-    Function<String, Path> chooseSaveFile = this::askSaveFile;
+    Function<String, @Nullable Path> chooseSaveFile = this::askSaveFile;
 
     GitPatchCoordinator(CoordinatorHost host, GitCoordinator git) {
         this.host = host;
@@ -160,7 +161,7 @@ final class GitPatchCoordinator {
      * the active tab a window without a project has no repository of its own, so the tab carries the one it
      * was opened in.
      */
-    void apply(Path root, byte[] patch, boolean cached) {
+    void apply(@Nullable Path root, byte[] patch, boolean cached) {
         if (root != null) {
             run(root, patch, cached, false);
         }
@@ -223,7 +224,7 @@ final class GitPatchCoordinator {
         return alert.showAndWait().orElse(ButtonType.CANCEL) == retry;
     }
 
-    private Path askPatchFile() {
+    private @Nullable Path askPatchFile() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("git.applyPatch.title"));
         chooser.getExtensionFilters()
@@ -287,10 +288,10 @@ final class GitPatchCoordinator {
 
     /** {@code git.createPatch}: pick what the patch holds, then where it goes. */
     void createPatchCommand() {
-        if (git.reportIfNoRepo()) {
+        Path root = git.repoRootOrReport();
+        if (root == null) {
             return;
         }
-        Path root = git.repoRoot();
         record Choice(String label, Source source) {}
         List<Choice> choices = List.of(
                 new Choice(tr("git.createPatch.staged"), Source.STAGED),
@@ -335,7 +336,7 @@ final class GitPatchCoordinator {
     }
 
     /** As above, in the repository the commit was listed from. */
-    void createCommitPatch(Path root, String hash) {
+    void createCommitPatch(@Nullable Path root, String hash) {
         chooseDestination(destination -> create(root, Source.COMMIT, hash, destination));
     }
 
@@ -359,7 +360,7 @@ final class GitPatchCoordinator {
      * Reads the patch for {@code source} ({@code hash} for a commit) from the repository at {@code root} and
      * delivers it to {@code destination}: a file the user names, or a new untitled buffer.
      */
-    void create(Path root, Source source, String hash, Destination destination) {
+    void create(@Nullable Path root, Source source, @Nullable String hash, Destination destination) {
         if (root == null) {
             return;
         }
@@ -380,15 +381,19 @@ final class GitPatchCoordinator {
         switch (source) {
             case STAGED -> git.service().diffPatch(root, true, deliver);
             case UNSTAGED -> git.service().diffPatch(root, false, deliver);
-            case COMMIT -> git.service().commitPatch(root, hash, deliver);
+            case COMMIT -> {
+                if (hash != null) { // a commit patch is always asked for with its commit
+                    git.service().commitPatch(root, hash, deliver);
+                }
+            }
         }
     }
 
-    static String suggestedName(Source source, String hash) {
+    static String suggestedName(Source source, @Nullable String hash) {
         return switch (source) {
             case STAGED -> "staged.patch";
             case UNSTAGED -> "changes.patch";
-            case COMMIT -> GitFormat.shortHash(hash) + ".patch";
+            case COMMIT -> (hash == null ? "" : GitFormat.shortHash(hash)) + ".patch";
         };
     }
 
@@ -427,7 +432,7 @@ final class GitPatchCoordinator {
         writer.start();
     }
 
-    private Path askSaveFile(String name) {
+    private @Nullable Path askSaveFile(String name) {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("git.createPatch.title"));
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Patch (*.patch)", "*.patch"));

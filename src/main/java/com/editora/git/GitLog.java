@@ -164,7 +164,8 @@ public final class GitLog {
      * literal repository-relative paths ({@code paths}, without rename following — how a file history is
      * searched, see {@link #followedPaths}); and the window {@code skip … skip + max}.
      */
-    public record Request(boolean allBranches, Path file, GitLogQuery query, List<String> paths, int skip, int max) {
+    public record Request(
+            boolean allBranches, @Nullable Path file, GitLogQuery query, List<String> paths, int skip, int max) {
         public Request {
             query = query == null ? GitLogQuery.NONE : query;
             paths = paths == null ? List.of() : List.copyOf(paths);
@@ -172,7 +173,7 @@ public final class GitLog {
             max = Math.max(1, max);
         }
 
-        public Request(boolean allBranches, Path file, GitLogQuery query, int skip, int max) {
+        public Request(boolean allBranches, @Nullable Path file, GitLogQuery query, int skip, int max) {
             this(allBranches, file, query, List.of(), skip, max);
         }
 

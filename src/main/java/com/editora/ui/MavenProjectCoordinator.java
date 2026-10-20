@@ -57,6 +57,7 @@ import com.editora.maven.MavenProjectSpec;
 import com.editora.maven.PomEdits;
 import com.editora.maven.PomUpgrades;
 import com.editora.plugin.PluginRegistry;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -95,6 +96,7 @@ final class MavenProjectCoordinator {
     /** Window hooks beyond {@link CoordinatorHost} that this feature needs. */
     interface Ops {
         /** Where the wizard starts when no folder was named (active file's dir → project root → home). */
+        @Nullable
         Path defaultParentDir();
 
         /**
@@ -106,7 +108,7 @@ final class MavenProjectCoordinator {
          * the change arrive through the external-change prompt, where the editor's undo history knows
          * nothing about it and there is no way back short of git.
          */
-        com.editora.editor.EditorBuffer openBuffer(Path file);
+        com.editora.editor.@Nullable EditorBuffer openBuffer(Path file);
 
         /**
          * Registers {@code root} as a project and opens it in its own window.
@@ -115,7 +117,7 @@ final class MavenProjectCoordinator {
          *     window is seeded with a ready-to-run configuration named after the project, and opens on the
          *     class that will run (jdtls needs it open to resolve a classpath)
          */
-        void openProject(Path root, String name, com.editora.maven.GeneratedProject.MainClass main);
+        void openProject(Path root, String name, com.editora.maven.GeneratedProject.@Nullable MainClass main);
 
         /**
          * Whether {@link #openProject} opens the project in a window of its own. When it does, the generated
@@ -127,7 +129,7 @@ final class MavenProjectCoordinator {
         }
 
         /** The root of this window's project, or null — so a module generated inside it stays inside it. */
-        default Path currentProjectRoot() {
+        default @Nullable Path currentProjectRoot() {
             return null;
         }
 
@@ -152,10 +154,10 @@ final class MavenProjectCoordinator {
         void refreshProjectTree();
 
         /** Opens the Maven actions popup for the project whose {@code pom.xml} folder is {@code root}. */
-        default void showActionsAt(Path root) {}
+        default void showActionsAt(@Nullable Path root) {}
 
         /** Prompts for a custom Maven task and runs it in {@code root}. */
-        default void runCustomAt(Path root) {}
+        default void runCustomAt(@Nullable Path root) {}
     }
 
     /**
@@ -164,7 +166,7 @@ final class MavenProjectCoordinator {
      */
     @FunctionalInterface
     interface Runner {
-        void run(Path workingDir, List<String> argv, BuildService.Listener listener);
+        void run(@Nullable Path workingDir, List<String> argv, BuildService.Listener listener);
     }
 
     private final CoordinatorHost host;
@@ -178,9 +180,9 @@ final class MavenProjectCoordinator {
      * download, which {@link ArchetypeCatalogCache} keeps on disk so other windows and later sessions start
      * from it and re-fetch at most once a day — conditionally, so an unchanged file costs one round trip.
      */
-    private List<MavenArchetype> fetched;
+    private @Nullable List<MavenArchetype> fetched;
 
-    private ExecutorService fetchExec;
+    private @Nullable ExecutorService fetchExec;
 
     /**
      * Archetypes the user chose "Trust and Generate" for, for as long as Editora runs — shared by every
@@ -195,7 +197,7 @@ final class MavenProjectCoordinator {
         this.output = output;
     }
 
-    private CommandRegistry registry;
+    private @Nullable CommandRegistry registry;
 
     void registerCommands(CommandRegistry registry) {
         this.registry = registry;
@@ -230,7 +232,7 @@ final class MavenProjectCoordinator {
     }
 
     /** The check in flight, so a second invocation cancels it rather than queueing behind it. */
-    private VersionCheck runningCheck;
+    private @Nullable VersionCheck runningCheck;
 
     private static final class VersionCheck {
         final AtomicBoolean cancelled = new AtomicBoolean();
@@ -255,7 +257,7 @@ final class MavenProjectCoordinator {
      * to call the no-argument form, which checks the <em>active tab's</em> pom: a right-click on
      * {@code moduleB/pom.xml} while editing a file of module A offered to rewrite module A's pom.
      */
-    void updateVersions(Path pomFile) {
+    void updateVersions(@Nullable Path pomFile) {
         if (!host.settings().isMavenSupport()) {
             host.setError(tr("status.mavenProject.disabled"));
             return;
@@ -315,7 +317,7 @@ final class MavenProjectCoordinator {
      * nothing in it — and, when the parent pom is on disk, offers to check that one instead: it is where
      * the versions a module inherits are pinned, and the thing a Spring Boot user actually bumps.
      */
-    private void nothingToCheck(Path pomFile, String pom, PomUpgrades.Plan plan) {
+    private void nothingToCheck(Path pomFile, @Nullable String pom, PomUpgrades.Plan plan) {
         if (plan.skipped() == 0) {
             host.setStatus(tr("status.mavenVersions.nothingPinned"));
             return;
@@ -348,7 +350,7 @@ final class MavenProjectCoordinator {
      * (a folder means its {@code pom.xml}), else Maven's default {@code ../pom.xml}. Null for a parent that
      * only lives in a repository (a Spring Boot starter parent, say).
      */
-    static Path parentPomOnDisk(Path pomFile, String pom) {
+    static @Nullable Path parentPomOnDisk(Path pomFile, @Nullable String pom) {
         if (pomFile == null || pom == null || PomEdits.parent(pom) == null) {
             return null;
         }
@@ -376,7 +378,7 @@ final class MavenProjectCoordinator {
     }
 
     /** The {@code pom.xml} at or above {@code from}, or null. */
-    private static Path nearestPom(Path from) {
+    private static @Nullable Path nearestPom(@Nullable Path from) {
         for (Path dir = from; dir != null; dir = dir.getParent()) {
             Path pom = dir.resolve("pom.xml");
             if (Files.isRegularFile(pom)) {
@@ -393,7 +395,11 @@ final class MavenProjectCoordinator {
      * only the rows left checked are.
      */
     private void showUpgrades(
-            Path pomFile, String pom, PomUpgrades.Plan plan, List<PomUpgrades.Row> rows, boolean unreachable) {
+            Path pomFile,
+            @Nullable String pom,
+            PomUpgrades.Plan plan,
+            List<PomUpgrades.Row> rows,
+            boolean unreachable) {
         if (rows.isEmpty()) {
             if (unreachable) {
                 host.setError(tr("status.mavenVersions.unreachable"));
@@ -510,7 +516,7 @@ final class MavenProjectCoordinator {
     }
 
     /** The pom's text as the user has it: the open buffer's, unsaved edits included, else the file's. */
-    private String pomText(Path pomFile, com.editora.editor.EditorBuffer open) {
+    private @Nullable String pomText(Path pomFile, com.editora.editor.@Nullable EditorBuffer open) {
         return open != null ? open.getContent() : read(pomFile);
     }
 
@@ -592,7 +598,7 @@ final class MavenProjectCoordinator {
      * {@code mvn} will run against; an {@code effective-pom.xml} beside a real one would otherwise offer a
      * menu that silently acts on its neighbour.
      */
-    javafx.scene.control.Menu mavenMenu(Path context) {
+    javafx.scene.control.@Nullable Menu mavenMenu(@Nullable Path context) {
         if (!host.settings().isMavenSupport() || context == null) {
             return null;
         }
@@ -642,7 +648,7 @@ final class MavenProjectCoordinator {
     }
 
     /** Entry point for the project-tree folder menu — generate into {@code folder}. */
-    void newProject(Path parentDir) {
+    void newProject(@Nullable Path parentDir) {
         // The palette gates maven.* off Settings.mavenSupport for free (Chrome's build-tool prefix rule),
         // but the project-tree context menu does not go through the palette — so re-check here rather than
         // let the tree offer an action that would silently do nothing.
@@ -661,7 +667,7 @@ final class MavenProjectCoordinator {
             host.setError(tr("status.mavenProject.noMaven"));
             return;
         }
-        chooseArchetype(base, ArchetypeCatalog.merge(fetched));
+        chooseArchetype(base, ArchetypeCatalog.merge(fetched == null ? List.of() : fetched));
     }
 
     /** Palette variant: asks for the folder first (the tree menu supplies one directly). */
@@ -795,9 +801,10 @@ final class MavenProjectCoordinator {
         }
         host.setStatus(tr("status.mavenProject.loadingCatalog"));
         AutoCloseable task = host.startBackgroundTask(tr("status.mavenProject.loadingCatalog"));
-        Path cacheFile = ArchetypeCatalogCache.file(host.configDir());
+        Path configDir = host.configDir();
+        Path cacheFile = configDir == null ? null : ArchetypeCatalogCache.file(configDir); // a test host has none
         fetchExecutor().execute(() -> {
-            ArchetypeCatalogCache.Entry cached = ArchetypeCatalogCache.read(cacheFile);
+            ArchetypeCatalogCache.Entry cached = cacheFile == null ? null : ArchetypeCatalogCache.read(cacheFile);
             long now = System.currentTimeMillis();
             String error = null;
             List<MavenArchetype> parsed = null;
@@ -824,11 +831,11 @@ final class MavenProjectCoordinator {
                 }
                 if (err != null) {
                     host.setError(tr("status.mavenProject.catalogFailed", err));
-                } else {
+                } else if (result != null) { // no error: a catalog was read
                     host.setStatus(tr("status.mavenProject.catalogLoaded", result.size()));
                 }
                 // Still let the user proceed with what there is rather than dead-ending.
-                chooseArchetype(parentDir, ArchetypeCatalog.merge(fetched));
+                chooseArchetype(parentDir, ArchetypeCatalog.merge(fetched == null ? List.of() : fetched));
             });
         });
     }
@@ -839,7 +846,7 @@ final class MavenProjectCoordinator {
      *
      * @return the parsed rows with the response's validators, or {@code cached} revalidated on a {@code 304}
      */
-    private ArchetypeCatalogCache.Entry fetchCatalog(String url, ArchetypeCatalogCache.Entry cached, long now)
+    private ArchetypeCatalogCache.Entry fetchCatalog(String url, ArchetypeCatalogCache.@Nullable Entry cached, long now)
             throws Exception {
         HttpClient client = httpClients.apply(Duration.ofSeconds(15));
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url))
@@ -879,7 +886,7 @@ final class MavenProjectCoordinator {
     }
 
     /** Best effort: a cache that cannot be written only means the next load downloads again. */
-    private static void storeCatalog(Path cacheFile, ArchetypeCatalogCache.Entry entry) {
+    private static void storeCatalog(@Nullable Path cacheFile, ArchetypeCatalogCache.Entry entry) {
         if (cacheFile == null) {
             return;
         }
@@ -902,7 +909,7 @@ final class MavenProjectCoordinator {
         return fetchExec;
     }
 
-    private ExecutorService lookupExec;
+    private @Nullable ExecutorService lookupExec;
 
     /** A small pool for the per-artifact metadata lookups, so forty coordinates are not forty sequential waits. */
     private synchronized ExecutorService lookupPool() {
@@ -935,7 +942,10 @@ final class MavenProjectCoordinator {
      * prompt was cancelled, so the five fields the user filled in are not lost to a "Cancelled." status.
      */
     private void showForm(
-            MavenArchetype archetype, Path parentDir, MavenProjectSpec initial, MavenProjectExtras initialExtras) {
+            MavenArchetype archetype,
+            Path parentDir,
+            @Nullable MavenProjectSpec initial,
+            @Nullable MavenProjectExtras initialExtras) {
         KeymapManager keymap = ops.keymap();
         TextField nameField = field(keymap, 24);
         TextField locationField = field(keymap, 30);
@@ -1193,7 +1203,7 @@ final class MavenProjectCoordinator {
     }
 
     /** The form's label for a spec problem — "Check the Name field.", never "Check the artifactId field.". */
-    static String fieldLabel(String problem) {
+    static @Nullable String fieldLabel(@Nullable String problem) {
         return switch (problem == null ? "" : problem) {
             case "artifactId" -> tr("dialog.mavenProject.name");
             case "package" -> tr("dialog.mavenProject.packageName");
@@ -1227,7 +1237,7 @@ final class MavenProjectCoordinator {
             TextField group,
             TextField version,
             TextField pkg,
-            Path base,
+            @Nullable Path base,
             String userHome) {
         // Absolute, always: a relative location or a ~ is resolved here, so the hint shows the folder the
         // project will really land in rather than text relative to the launcher's working directory.
@@ -1251,8 +1261,9 @@ final class MavenProjectCoordinator {
      * @param backToForm re-shows the form with its answers when the consent prompt is cancelled, or null to
      *     report "Cancelled." instead (a caller that had no form)
      */
-    private void generate(MavenProjectSpec spec, MavenProjectExtras extras, Runnable backToForm) {
-        if (!spec.isValid()) {
+    private void generate(MavenProjectSpec spec, MavenProjectExtras extras, @Nullable Runnable backToForm) {
+        Path projectDir = spec.projectDir(); // set for every valid spec: it has a location and an artifactId
+        if (!spec.isValid() || projectDir == null) {
             host.setError(tr("status.mavenProject.invalid", fieldLabel(spec.firstProblem())));
             return;
         }
@@ -1274,8 +1285,9 @@ final class MavenProjectCoordinator {
                 SESSION_TRUSTED.add(spec.archetype().gav());
             }
         }
-        Path parent = spec.parentDir();
+        Path parent;
         try {
+            parent = java.util.Objects.requireNonNull(spec.parentDir(), "a valid spec has a folder");
             Files.createDirectories(parent);
         } catch (Exception e) {
             host.setError(tr("status.mavenProject.mkdirFailed", String.valueOf(e.getMessage())));
@@ -1287,7 +1299,9 @@ final class MavenProjectCoordinator {
         // pom-less scratch working directory plus -DoutputDirectory — and Maven simply has no current
         // project to register a module with. An aggregator pom is left attached, where the module is wanted.
         String parentPackaging = packagingOf(parent);
-        Path scratch = ArchetypeGenerate.detachFromExistingProject(parentPackaging) ? scratchDir() : null;
+        Path scratch = parentPackaging != null && ArchetypeGenerate.detachFromExistingProject(parentPackaging)
+                ? scratchDir()
+                : null;
         Path workingDir = scratch != null ? scratch : parent;
         List<String> mvn = mavenExecutable();
         // An archetype that takes the Java release as a property gets it that way rather than as a pom edit.
@@ -1298,7 +1312,6 @@ final class MavenProjectCoordinator {
         List<String> argv = scratch != null
                 ? ArchetypeGenerate.detachedArgv(mvn, spec, applied.properties(), scratch)
                 : ArchetypeGenerate.argv(mvn, spec, applied.properties());
-        Path projectDir = spec.projectDir();
         // A module added to the project this window has open stays in it: no second project, no second
         // window. "Attached" is the aggregator case above, and only when that aggregator is the open one.
         Path currentRoot = ops.currentProjectRoot();
@@ -1357,7 +1370,7 @@ final class MavenProjectCoordinator {
     }
 
     /** The packaging of the pom in {@code dir}, or null when it has none (or one that cannot be read). */
-    private String packagingOf(Path dir) {
+    private @Nullable String packagingOf(Path dir) {
         Path pom = dir.resolve("pom.xml");
         if (!Files.isRegularFile(pom)) {
             return null;
@@ -1432,7 +1445,7 @@ final class MavenProjectCoordinator {
     }
 
     /** A throwaway pom-less directory to run Maven from, or null if one cannot be made. */
-    private Path scratchDir() {
+    private @Nullable Path scratchDir() {
         try {
             Path dir = Files.createTempDirectory("editora-archetype");
             dir.toFile().deleteOnExit();
@@ -1525,7 +1538,7 @@ final class MavenProjectCoordinator {
      * {@link CentralVersions.Unreachable}, so a lookup of forty coordinates does not wait out forty connect
      * timeouts to learn what the first one knew.
      */
-    private String fetchMetadataOrThrow(String repoPath, AtomicBoolean unreachable) {
+    private @Nullable String fetchMetadataOrThrow(String repoPath, AtomicBoolean unreachable) {
         String url = CentralVersions.CENTRAL + repoPath;
         if (!PluginRegistry.isHttps(url)) {
             return null;
@@ -1572,7 +1585,7 @@ final class MavenProjectCoordinator {
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
-    private volatile java.net.http.HttpClient metadataClient;
+    private volatile java.net.http.@Nullable HttpClient metadataClient;
 
     /** Reads, transforms and writes the pom, doing nothing at all if any part of that fails. */
     private void editPom(Path projectDir, java.util.function.UnaryOperator<String> edit) {
@@ -1592,7 +1605,7 @@ final class MavenProjectCoordinator {
         }
     }
 
-    private String read(Path file) {
+    private @Nullable String read(Path file) {
         try {
             return Files.isRegularFile(file) ? Files.readString(file, StandardCharsets.UTF_8) : null;
         } catch (Exception e) {

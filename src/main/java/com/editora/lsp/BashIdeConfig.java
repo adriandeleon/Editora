@@ -143,7 +143,7 @@ public record BashIdeConfig(
      * This configuration with blank ShellCheck/shfmt paths filled in from the copies Editora installed
      * ({@code null} = none installed). A path the user set is kept.
      */
-    public BashIdeConfig withInstalledTools(String installedShellcheck, String installedShfmt) {
+    public BashIdeConfig withInstalledTools(@Nullable String installedShellcheck, @Nullable String installedShfmt) {
         return new BashIdeConfig(
                 shellcheckPath.isEmpty() && installedShellcheck != null ? installedShellcheck : shellcheckPath,
                 shellcheckArguments,

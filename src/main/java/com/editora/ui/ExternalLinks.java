@@ -11,6 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.editora.io.PathContainment;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -53,7 +54,7 @@ final class ExternalLinks {
      * when {@code file} is null, in the document the link was clicked in. Only {@link #classify(String, Path,
      * Path, boolean)} with {@code anchors} set produces it.
      */
-    record InDocument(Path file, String fragment) implements Target {}
+    record InDocument(@Nullable Path file, String fragment) implements Target {}
 
     /** Do nothing but say why: {@code messageKey} is a catalog key taking {@code detail} as its argument. */
     record Refused(String messageKey, String detail) implements Target {}
@@ -90,7 +91,7 @@ final class ExternalLinks {
      * itself has passed the same checks as any relative link. Without {@code anchors} a bare fragment is
      * refused and a file's fragment is dropped, as before.
      */
-    static Target classify(String link, Path documentFile, Path projectRoot, boolean anchors) {
+    static Target classify(String link, @Nullable Path documentFile, @Nullable Path projectRoot, boolean anchors) {
         Target target = classify0(link, documentFile, projectRoot, anchors);
         if (anchors && target instanceof InEditor(Path file)) {
             String fragment = fragmentOf(link.strip());
@@ -110,7 +111,8 @@ final class ExternalLinks {
         return hash < 0 ? "" : percentDecode(link.substring(hash + 1)).strip();
     }
 
-    private static Target classify0(String link, Path documentFile, Path projectRoot, boolean anchors) {
+    private static Target classify0(
+            String link, @Nullable Path documentFile, @Nullable Path projectRoot, boolean anchors) {
         if (link == null || link.isBlank()) {
             return new Refused(KEY_INVALID, "");
         }
@@ -151,7 +153,7 @@ final class ExternalLinks {
      * The local path a {@code file:} URL names (percent-decoded), or null when it is not a plain local file
      * reference: an authority ({@code file://host/share} — a UNC/SMB path on Windows) or an unparseable URL.
      */
-    private static String filePath(String url) {
+    private static @Nullable String filePath(String url) {
         try {
             URI uri = new URI(url);
             if (uri.getRawAuthority() != null && !uri.getRawAuthority().isEmpty()) {
@@ -173,7 +175,8 @@ final class ExternalLinks {
      * {@code %20} escapes) or the path of a {@code file:} URL ({@code decoded} true): a file to open in the
      * editor, if it is ours to open.
      */
-    private static Target local(String original, String rawPath, boolean decoded, Path documentFile, Path projectRoot) {
+    private static Target local(
+            String original, String rawPath, boolean decoded, @Nullable Path documentFile, @Nullable Path projectRoot) {
         String path = rawPath;
         if (!decoded) {
             int cut = indexOfAny(path, '#', '?');
@@ -194,7 +197,7 @@ final class ExternalLinks {
             if (!p.isAbsolute() && docDir == null) {
                 return new Refused(KEY_INVALID, detail(original)); // nothing to resolve against; never the cwd
             }
-            target = (p.isAbsolute() ? p : docDir.resolve(p)).normalize();
+            target = (p.isAbsolute() || docDir == null ? p : docDir.resolve(p)).normalize();
             // "/docs/guide.md" in a repository's README means "from the repository root" (forge convention).
             if (!allowed(target, docDir, projectRoot) && projectRoot != null && path.startsWith("/")) {
                 Path fromRoot = projectRoot.resolve(path.substring(1)).normalize();
@@ -212,8 +215,9 @@ final class ExternalLinks {
     }
 
     /** Canonically under the project root or the document's own folder (symlinks resolved). */
-    private static boolean allowed(Path target, Path docDir, Path projectRoot) {
-        return PathContainment.isWithin(projectRoot, target) || PathContainment.isWithin(docDir, target);
+    private static boolean allowed(Path target, @Nullable Path docDir, @Nullable Path projectRoot) {
+        return (projectRoot != null && PathContainment.isWithin(projectRoot, target))
+                || (docDir != null && PathContainment.isWithin(docDir, target));
     }
 
     private static boolean isUncLike(String path) {
@@ -258,9 +262,9 @@ final class ExternalLinks {
      */
     static void open(
             String link,
-            Path documentFile,
-            Path projectRoot,
-            Consumer<String> browser,
+            @Nullable Path documentFile,
+            @Nullable Path projectRoot,
+            @Nullable Consumer<String> browser,
             Consumer<Path> editor,
             Consumer<String> status) {
         open(link, documentFile, projectRoot, browser, editor, null, status);
@@ -273,17 +277,21 @@ final class ExternalLinks {
      */
     static void open(
             String link,
-            Path documentFile,
-            Path projectRoot,
-            Consumer<String> browser,
+            @Nullable Path documentFile,
+            @Nullable Path projectRoot,
+            @Nullable Consumer<String> browser,
             Consumer<Path> editor,
-            java.util.function.BiConsumer<Path, String> anchor,
+            java.util.function.@Nullable BiConsumer<Path, String> anchor,
             Consumer<String> status) {
         if (link == null) {
             return; // nothing was asked for (an item with no URL) — not a refusal worth reporting
         }
         switch (classify(link, documentFile, projectRoot, anchor != null)) {
-            case InDocument d -> anchor.accept(d.file(), d.fragment());
+            case InDocument d -> { // only classified when anchor != null
+                if (anchor != null) {
+                    anchor.accept(d.file(), d.fragment());
+                }
+            }
             case Browser b -> {
                 if (browser != null) {
                     browser.accept(b.url());
@@ -297,9 +305,9 @@ final class ExternalLinks {
     /** {@link #open} with the JavaFX {@code HostServices} as the OS opener (it may be null before startup). */
     static void open(
             String link,
-            Path documentFile,
-            Path projectRoot,
-            javafx.application.HostServices hostServices,
+            @Nullable Path documentFile,
+            @Nullable Path projectRoot,
+            javafx.application.@Nullable HostServices hostServices,
             Consumer<Path> editor,
             Consumer<String> status) {
         open(link, documentFile, projectRoot, hostServices == null ? null : hostServices::showDocument, editor, status);
@@ -308,9 +316,9 @@ final class ExternalLinks {
     /** {@link #open(String, Path, Path, Consumer, Consumer, java.util.function.BiConsumer, Consumer)} with the JavaFX {@code HostServices}. */
     static void open(
             String link,
-            Path documentFile,
-            Path projectRoot,
-            javafx.application.HostServices hostServices,
+            @Nullable Path documentFile,
+            @Nullable Path projectRoot,
+            javafx.application.@Nullable HostServices hostServices,
             Consumer<Path> editor,
             java.util.function.BiConsumer<Path, String> anchor,
             Consumer<String> status) {

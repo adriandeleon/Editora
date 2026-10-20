@@ -9,6 +9,7 @@ import java.util.function.Consumer;
 import javafx.application.Platform;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Asks a launch's runtime for its version ({@link RuntimeVersion}) off the FX thread, beside the launch rather
@@ -29,7 +30,7 @@ public final class RuntimeProbe {
      * thread. Delivers {@code null} at once (on the caller's thread) for a launch whose runtime is unknown.
      */
     public static void probe(
-            List<String> launch, Path where, Map<String, String> env, Consumer<RuntimeVersion> onResult) {
+            List<String> launch, @Nullable Path where, Map<String, String> env, Consumer<RuntimeVersion> onResult) {
         RuntimeVersion.Probe probe = RuntimeVersion.probeFor(launch);
         if (probe == null) {
             onResult.accept(null);

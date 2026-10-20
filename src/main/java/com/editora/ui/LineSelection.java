@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A selection widened to whole lines, for printing or exporting just that part of a file: the range
  * {@code [start, end)} of the text (from the start of its first line to the end of its last, without that
@@ -12,7 +14,7 @@ record LineSelection(int start, int end, int firstLine, int lastLine) {
      * is empty or lies outside the text. A selection that ends at the very start of a line — the usual
      * result of selecting lines downwards — does not take that line in.
      */
-    static LineSelection of(String text, int selStart, int selEnd) {
+    static @Nullable LineSelection of(String text, int selStart, int selEnd) {
         if (text == null || selStart < 0 || selEnd > text.length() || selEnd <= selStart) {
             return null;
         }

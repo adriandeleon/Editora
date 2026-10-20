@@ -35,7 +35,7 @@ public final class CentralVersions {
      * @param coordinates {@code groupId:artifactId} strings
      * @param fetch repository-relative path → file contents, or null when unavailable
      */
-    public static Map<String, String> latest(Iterable<String> coordinates, Function<String, String> fetch) {
+    public static Map<String, String> latest(Iterable<String> coordinates, Function<String, @Nullable String> fetch) {
         Map<String, String> out = new LinkedHashMap<>();
         if (coordinates == null || fetch == null) {
             return out;
@@ -86,7 +86,7 @@ public final class CentralVersions {
      */
     public static Map<String, String> latest(
             Iterable<String> coordinates,
-            Function<String, String> fetch,
+            Function<String, @Nullable String> fetch,
             java.util.concurrent.ExecutorService pool,
             java.util.function.BooleanSupplier cancelled) {
         Map<String, String> out = new LinkedHashMap<>();

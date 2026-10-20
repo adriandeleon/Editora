@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The menu bar's contents, as data: which commands appear under which menu, in what order (#763).
  *
@@ -36,7 +38,7 @@ final class MenuBarModel {
     }
 
     /** The submenu title key an entry places inline, or null when it is a command id or a separator. */
-    static String inlineSubmenu(String entry) {
+    static @Nullable String inlineSubmenu(String entry) {
         return entry.startsWith(SUBMENU) ? entry.substring(SUBMENU.length()) : null;
     }
 

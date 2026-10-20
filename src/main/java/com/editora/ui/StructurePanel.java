@@ -43,6 +43,7 @@ import com.editora.editor.TextMateHighlighter.Symbol;
 import com.editora.lsp.SymbolNode;
 import com.editora.search.FuzzyMatch;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -102,9 +103,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     private final ComboBox<SortMode> sortCombo = new ComboBox<>();
     private final MenuButton kindFilter = new MenuButton();
 
-    private EditorBuffer buffer;
-    private MarkerActions markerActions;
-    private NarrowActions narrowActions;
+    private @Nullable EditorBuffer buffer;
+    private @Nullable MarkerActions markerActions;
+    private @Nullable NarrowActions narrowActions;
     /** The attached buffer's narrowing mode; {@link #narrowModes} remembers the others' across tab switches. */
     private NarrowMode narrowMode = NarrowMode.OFF;
 
@@ -121,7 +122,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      * The LSP document-symbol outline for the active buffer, or {@code null} to use the TextMate/fold
      * heuristic. {@link #setLspSymbols} pushes it (an empty list means "LSP served, but no symbols").
      */
-    private List<SymbolNode> lspSymbols;
+    private @Nullable List<SymbolNode> lspSymbols;
 
     private SortMode sortMode = SortMode.POSITION;
     /** Symbol kinds toggled off in the kind filter (session-only). */
@@ -159,9 +160,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     // The server outline is only fetched while something shows it. With the window closed the coordinator
     // reports each skipped refresh here (lspSymbolsStale); the outline is asked for again when the window
     // opens or the Jump to Structure picker reads it.
-    private java.util.function.Consumer<EditorBuffer> lspSymbolsRequester;
+    private java.util.function.@Nullable Consumer<EditorBuffer> lspSymbolsRequester;
     private boolean lspSymbolsStale;
-    private Runnable onHiddenOutlineChanged;
+    private @Nullable Runnable onHiddenOutlineChanged;
 
     /** Sets how a stale server outline is re-requested (for the attached buffer). */
     void setLspSymbolsRequester(java.util.function.Consumer<EditorBuffer> requester) {
@@ -306,7 +307,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** A flat structure entry for the keyboard "Jump to Structure" picker. */
-    public record Outline(String label, String kind, int line) {}
+    public record Outline(String label, @Nullable String kind, int line) {}
 
     /** The current structure as a flat, document-order list (for the Jump-to-Structure picker). */
     public List<Outline> outline() {
@@ -325,7 +326,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return new ArrayList<>(); // mutable: sortNodes sorts roots in place (a diff/Welcome tab has no buffer)
         }
         // LSP-served file: precise hierarchy + kinds; fallback: fold-region nesting + TextMate-scope names.
-        return lspSymbols != null ? fromLsp(lspSymbols) : buildNodes();
+        return lspSymbols != null ? fromLsp(lspSymbols) : buildNodes(buffer);
     }
 
     private static void collectOutline(List<StructureNode> nodes, List<Outline> out) {
@@ -338,10 +339,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** Attaches to a buffer (or {@code null}), rebuilding the tree and watching it for region changes. */
-    public void attach(EditorBuffer buffer) {
+    public void attach(@Nullable EditorBuffer buffer) {
         if (this.buffer != null) {
-            this.buffer.getFoldManager().setOnRegionsChanged(null);
-            this.buffer.setOnSymbolsChanged(null);
+            this.buffer.getFoldManager().setOnRegionsChanged(() -> {});
+            this.buffer.setOnSymbolsChanged(() -> {});
         }
         this.buffer = buffer;
         this.lspSymbols = null; // start with the heuristic; MainController pushes LSP symbols if available
@@ -402,20 +403,29 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         };
     }
 
-    private ContextMenu markerMenu(StructureNode node) {
-        if (markerActions == null || buffer == null || buffer.getPath() == null || node == null || node.line() < 0) {
+    private @Nullable ContextMenu markerMenu(StructureNode node) {
+        MarkerActions actions = markerActions;
+        if (actions == null || buffer == null || buffer.getPath() == null || node == null || node.line() < 0) {
             return null;
         }
         MenuItem bookmark = new MenuItem(tr("editmenu.addBookmark"));
         bookmark.setGraphic(Icons.bookmark());
-        bookmark.setOnAction(e -> markerActions.addBookmark(buffer, node.line()));
+        bookmark.setOnAction(e -> {
+            if (buffer != null) {
+                actions.addBookmark(buffer, node.line());
+            }
+        });
 
         MenuItem note = new MenuItem(tr("editmenu.addNote"));
         note.setGraphic(Icons.notes());
-        note.setDisable(!markerActions.personalNotesEnabled());
-        note.setOnAction(e -> markerActions.addPersonalNote(buffer, node.line()));
+        note.setDisable(!actions.personalNotesEnabled());
+        note.setOnAction(e -> {
+            if (buffer != null) {
+                actions.addPersonalNote(buffer, node.line());
+            }
+        });
         ContextMenu menu = new ContextMenu(bookmark, note);
-        menu.setOnShowing(e -> note.setDisable(!markerActions.personalNotesEnabled()));
+        menu.setOnShowing(e -> note.setDisable(!actions.personalNotesEnabled()));
         return menu;
     }
 
@@ -506,7 +516,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private VirtualFlow<?> virtualFlow() {
+    private @Nullable VirtualFlow<?> virtualFlow() {
         Node node = tree.lookup(".virtual-flow");
         return node instanceof VirtualFlow<?> flow ? flow : null;
     }
@@ -616,7 +626,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                                 && selected.getValue().line() >= 0
                         ? selected.getValue().line()
                         : buffer.getArea().getCurrentParagraph();
-                if (!narrowWith(mode, line)) { // nothing to narrow to (the status bar said why): no mode either
+                if (!narrowWith(
+                        buffer,
+                        narrowActions,
+                        mode,
+                        line)) { // nothing to narrow to (the status bar said why): no mode either
                     narrowMode = NarrowMode.OFF;
                     narrowModes.remove(buffer);
                 }
@@ -625,14 +639,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         syncNarrowToggle(); // a re-click deselects a ToggleGroup's button: put the state back
     }
 
-    private boolean narrowWith(NarrowMode mode, int line) {
+    private static boolean narrowWith(EditorBuffer buffer, NarrowActions actions, NarrowMode mode, int line) {
         CodeArea area = buffer.getArea();
         if (line < 0 || line >= area.getParagraphs().size()) {
             return false;
         }
         return switch (mode) {
-            case DEFUN -> narrowActions.narrowToDefun(buffer, line);
-            case FOLD -> narrowActions.narrowToFoldRegion(buffer, line);
+            case DEFUN -> actions.narrowToDefun(buffer, line);
+            case FOLD -> actions.narrowToFoldRegion(buffer, line);
             default -> false;
         };
     }
@@ -649,7 +663,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return false;
         }
         buffer.getArea().moveTo(node.line(), 0); // narrowing keeps the caret: it lands on the symbol
-        return narrowWith(narrowMode, node.line());
+        return narrowWith(buffer, narrowActions, narrowMode, node.line());
     }
 
     /** The buffer narrowed or widened, by this panel or by anything else: the segments follow the buffer. */
@@ -791,14 +805,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** The {@link StructureNode} currently selected in the tree (a real symbol with a line), or {@code null}. */
-    private StructureNode selectedNodeValue() {
+    private @Nullable StructureNode selectedNodeValue() {
         TreeItem<StructureNode> sel = tree.getSelectionModel().getSelectedItem();
         StructureNode v = sel == null ? null : sel.getValue();
         return v != null && v.line() >= 0 ? v : null;
     }
 
     /** Re-selects the tree row matching {@code target} (by line + label) after a rebuild; no-op if absent. */
-    private void reselect(StructureNode target) {
+    private void reselect(@Nullable StructureNode target) {
         if (target == null || tree.getRoot() == null) {
             return;
         }
@@ -808,7 +822,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private static TreeItem<StructureNode> findItem(TreeItem<StructureNode> node, StructureNode target) {
+    private static @Nullable TreeItem<StructureNode> findItem(TreeItem<StructureNode> node, StructureNode target) {
         StructureNode v = node.getValue();
         if (v != null && v.line() == target.line() && java.util.Objects.equals(v.label(), target.label())) {
             return node;
@@ -826,7 +840,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      * Pushes the LSP document-symbol outline for {@code forBuffer} (or {@code null} to use the heuristic). A
      * no-op if the active buffer changed since the request was issued (a stale async result).
      */
-    public void setLspSymbols(EditorBuffer forBuffer, List<SymbolNode> symbols) {
+    public void setLspSymbols(EditorBuffer forBuffer, @Nullable List<SymbolNode> symbols) {
         if (forBuffer != buffer) {
             return;
         }
@@ -946,14 +960,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return signature > 0 ? value.substring(0, signature).strip() : value;
     }
 
-    private static SyntaxRun fallbackRun(String text, String kind) {
+    private static SyntaxRun fallbackRun(String text, @Nullable String kind) {
         String fallback = syntaxStyleForKind(kind);
         return new SyntaxRun(text, fallback == null ? List.of() : List.of(fallback));
     }
 
     /** Maps the server's compact label back onto source tokens so every run keeps its own syntax classes. */
     private static List<SyntaxRun> styledDisplayRuns(
-            CodeArea area, int line, String display, String sourceLine, int sourceStart, String kind) {
+            CodeArea area, int line, String display, String sourceLine, int sourceStart, @Nullable String kind) {
         List<SyntaxRun> runs = new ArrayList<>();
         int displayAt = 0;
         int sourceAt = sourceStart;
@@ -1035,7 +1049,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** Finds a Java/C-family prefix return type, or a Kotlin/TypeScript/Rust suffix return type. */
-    private static SourceSlice returnTypeSource(String sourceLine, int nameColumn, String kind) {
+    private static @Nullable SourceSlice returnTypeSource(String sourceLine, int nameColumn, @Nullable String kind) {
         if (!StructureCell.isCallable(kind) || "constructor".equals(kind)) {
             return null;
         }
@@ -1222,7 +1236,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** Syntax-token fallback for an LSP/TextMate outline kind when no styled source character is available. */
-    static String syntaxStyleForKind(String kind) {
+    static @Nullable String syntaxStyleForKind(@Nullable String kind) {
         return switch (kind == null ? "" : kind) {
             case "class",
                     "enum",
@@ -1312,7 +1326,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return Character.toUpperCase(kind.charAt(0)) + kind.substring(1);
     }
 
-    private List<StructureNode> buildNodes() {
+    private List<StructureNode> buildNodes(EditorBuffer buffer) {
         CodeArea area = buffer.getArea();
         if (buffer.isMarkdown()) {
             return markdownHeadingNodes(area.getText());
@@ -1397,8 +1411,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         int count = area.getParagraphs().size();
         for (StructureNode n : nodes) {
             int end = n.region() == null ? -1 : n.region().endLine();
-            String label = PomOutlineLabels.label(
+            String pom = PomOutlineLabels.label(
                     n.label(), n.line(), end, count, i -> area.getParagraph(i).getText());
+            String label = pom == null ? n.label() : pom; // null only for a null element name
             StructureNode copy = new StructureNode(n.region(), label, n.kind(), n.line(), n.detail());
             copy.children().addAll(pomLabelled(area, n.children()));
             out.add(copy);
@@ -1466,7 +1481,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      * {@code null} when no symbol is found and a grammar is active (declutter). Without symbols (no
      * grammar) it falls back to the header-line text, keeping every region.
      */
-    private StructureNode nodeFor(
+    private @Nullable StructureNode nodeFor(
             CodeArea area, Region r, Map<Integer, Symbol> symbolByLine, boolean haveSymbols, boolean brace) {
         int start = r.startLine();
         if (haveSymbols) {
@@ -1561,6 +1576,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 continue;
             }
             Symbol symbol = symbolByLine.get(line);
+            if (symbol == null) {
+                continue; // a key of the map itself: never null
+            }
             String text = area.getParagraph(line).getText();
             int indent = text.length() - text.stripLeading().length();
             while (!indents.isEmpty() && indents.peek() >= indent) {
@@ -1777,8 +1795,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         };
     }
 
-    private static boolean contains(Region outer, Region inner) {
-        return outer.startLine() <= inner.startLine() && outer.endLine() >= inner.endLine();
+    private static boolean contains(@Nullable Region outer, Region inner) {
+        return outer != null && outer.startLine() <= inner.startLine() && outer.endLine() >= inner.endLine();
     }
 
     private void applyFilter(String query) {
@@ -1803,7 +1821,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** Builds a tree item for {@code node}, keeping it if it matches the query or has a matching descendant. */
-    private TreeItem<StructureNode> toItem(StructureNode node, String q) {
+    private @Nullable TreeItem<StructureNode> toItem(StructureNode node, String q) {
         List<TreeItem<StructureNode>> childItems = new ArrayList<>();
         for (StructureNode child : node.children()) {
             TreeItem<StructureNode> ci = toItem(child, q);
@@ -1922,7 +1940,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return d.startsWith("(") ? d : "(" + d + ")";
         }
 
-        private static boolean isCallable(String kind) {
+        private static boolean isCallable(@Nullable String kind) {
             return "method".equals(kind) || "function".equals(kind) || "constructor".equals(kind);
         }
     }
@@ -1931,9 +1949,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      *  optional detail (the LSP signature, e.g. {@code (String x) : void}), syntax-styled label and return
      *  runs, an optional doc comment (the cleaned leading comment above the declaration), and children. */
     private static final class StructureNode {
-        private final Region region;
+        private final @Nullable Region region;
         private final String label;
-        private final String kind;
+        private final @Nullable String kind;
         private final int line;
         private final String detail;
         private List<SyntaxRun> nameRuns = List.of();
@@ -1941,11 +1959,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         private String doc = ""; // filled by attachDocs() from the buffer text; "" when none
         private final List<StructureNode> children = new ArrayList<>();
 
-        StructureNode(Region region, String label, String kind, int line) {
+        StructureNode(@Nullable Region region, String label, @Nullable String kind, int line) {
             this(region, label, kind, line, "");
         }
 
-        StructureNode(Region region, String label, String kind, int line, String detail) {
+        StructureNode(@Nullable Region region, String label, @Nullable String kind, int line, String detail) {
             this.region = region;
             this.label = label;
             this.kind = kind;
@@ -1953,6 +1971,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             this.detail = detail == null ? "" : detail;
         }
 
+        @Nullable
         Region region() {
             return region;
         }
@@ -1961,6 +1980,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return label;
         }
 
+        @Nullable
         String kind() {
             return kind;
         }

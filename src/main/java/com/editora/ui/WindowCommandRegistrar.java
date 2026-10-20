@@ -19,6 +19,7 @@ import com.editora.editor.TextNav;
 import com.editora.markdown.MarkdownTable;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -69,6 +70,7 @@ final class WindowCommandRegistrar {
          *  Project tool window builds it. */
         ProjectPanel projectPanel();
 
+        @Nullable
         WindowManager windowManager();
 
         QuickOpen<Project> projectPicker();
@@ -269,6 +271,7 @@ final class WindowCommandRegistrar {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         void onNew();
@@ -287,7 +290,7 @@ final class WindowCommandRegistrar {
 
         void applyAdminSaveSupport();
 
-        void saveAsPrompt(EditorBuffer buffer);
+        void saveAsPrompt(@Nullable EditorBuffer buffer);
 
         void applyAutoSave();
 
@@ -325,7 +328,7 @@ final class WindowCommandRegistrar {
 
         void closeTabsToRight(Tab pivot);
 
-        void copyPath(EditorBuffer buffer);
+        void copyPath(@Nullable EditorBuffer buffer);
 
         void revealActiveBuffer();
 
@@ -333,7 +336,7 @@ final class WindowCommandRegistrar {
 
         void togglePin(Tab tab);
 
-        void renameFile(EditorBuffer buffer, Tab tab);
+        void renameFile(@Nullable EditorBuffer buffer, Tab tab);
 
         /** Quits after the usual questions; false when the user cancelled. */
         boolean onQuit();
@@ -350,7 +353,7 @@ final class WindowCommandRegistrar {
 
         void updateBufferToolWindows();
 
-        void maybeOfferInstall(EditorBuffer buffer);
+        void maybeOfferInstall(@Nullable EditorBuffer buffer);
 
         void onPalette();
 
@@ -430,8 +433,9 @@ final class WindowCommandRegistrar {
                 .registerCommands(host.registry()); // externalTool.run/clearOutput/rerunLast + per-tool run.<slug>
         // Project commands no-op when project support is disabled (fully gated).
         host.registry().register(Command.of("project.open", () -> {
-            if (host.projectsEnabled()) {
-                host.navigation().folderFinder.show(host.stage());
+            FileFinder folderFinder = host.navigation().folderFinder;
+            if (host.projectsEnabled() && folderFinder != null) {
+                folderFinder.show(host.stage());
             }
         }));
         host.registry().register(Command.of("project.switch", () -> {
@@ -3207,14 +3211,18 @@ final class WindowCommandRegistrar {
     private void registerGitBranchCommands() {
         GitBranchCoordinator branches = host.gitWindows().branches;
         // A work tree opens as a project in its own window, like any other folder.
-        branches.setWindowOpener(folder -> host.windowManager()
-                .openOrFocus(host.config()
+        branches.setWindowOpener(folder -> {
+            WindowManager windows = host.windowManager(); // null only before the window is placed
+            if (windows != null) {
+                windows.openOrFocus(host.config()
                         .projects()
                         .createOrGet(
                                 folder.getFileName() == null
                                         ? folder.toString()
                                         : folder.getFileName().toString(),
-                                folder)));
+                                folder));
+            }
+        });
         java.util.Map<String, Runnable> commands = new java.util.LinkedHashMap<>();
         commands.put("git.newBranchFrom", branches::newBranchFrom);
         commands.put("git.checkoutRevision", branches::checkoutRevision);
