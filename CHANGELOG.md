@@ -15,12 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   worker threads, in a recursive pattern-matching `switch`, plus set-value on a static field and a method to
   change under hot code replace. `samples/README.md` lists each spot.
 
+### Changed
+
+- **Null checking in the build.** NullAway, an Error Prone plugin, now checks every package marked
+  `@NullMarked` (JSpecify) during compile and fails the build on a null that is not declared. Nine packages
+  start marked: the JVM debug adapter, EditorConfig, single-instance launch, the OS secret stores, GnuPG
+  encryption, the MCP server, the agent client, settings sync and crash recovery. A new package must start
+  marked, and the list of packages written before the rule may only shrink (docs/conventions.md, "Null
+  annotations"). There is no change in behaviour.
+
 ### Fixed
 
 - **Opening a root as a file no longer throws.** `editora /` (or `editora D:\`), and Remote > Open File on
   `sftp://host` with no path, used to hit a `NullPointerException` in the open path. From the command line that
   stopped the session restore and left an empty window. Now the status bar says the path is a folder, and no tab
   opens. A session entry that names a root is dropped instead of restored.
+- **Remote: a 2FA code asked after the password no longer says "That was not accepted. Try again."** A server
+  that asks in rounds (a password, then a code) had each round counted as another try; only the same question
+  asked again is a retry now.
+- **Remote: a login or host-key question left unanswered for two minutes closes its dialog.** The login gave up
+  but the dialog stayed on screen, and an answer typed into it went nowhere.
 
 ## [0.23.0] - 2026-10-19
 

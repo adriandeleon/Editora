@@ -10,6 +10,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Resolves the effective {@link EditorConfigProperties} for a file by walking up its directory tree, reading
  * each {@code .editorconfig} (parsed by {@link EditorConfigParser}, cached by modified-time), matching its
@@ -70,7 +72,7 @@ public final class EditorConfig {
      * tree, stopping at the first {@code root = true}), or {@code null} when none applies. Used by the status-bar
      * indicator to open the active config.
      */
-    public static Path nearestFile(Path file) {
+    public static @Nullable Path nearestFile(Path file) {
         if (file == null) {
             return null;
         }
@@ -93,7 +95,8 @@ public final class EditorConfig {
         return null;
     }
 
-    private static EditorConfigParser.Parsed readParsed(Path ecFile) {
+    private static EditorConfigParser.@Nullable Parsed readParsed(Path ecFile) {
+
         try {
             if (!Files.isRegularFile(ecFile)) {
                 return null;

@@ -8504,6 +8504,11 @@ public class SettingsWindow {
     private LspCoordinator projectLsp;
 
     /** Injected by MainController: the window's language-server coordinator, which owns its project scope. */
+    /** How the User / Project bar names the window's project: the name the main window's title shows. */
+    void setProjectName(java.util.function.Supplier<String> projectName) {
+        scopeUi.setProjectName(projectName);
+    }
+
     void setProjectLsp(LspCoordinator lsp) {
         this.projectLsp = lsp;
         this.lspProjectNotes = lsp::projectOverrideNote;

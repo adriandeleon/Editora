@@ -34,7 +34,9 @@ class NoticeCoverageTest {
 
     /**
      * Every dependency declared in {@code pom.xml} that ships — main build and profiles (the {@code native}
-     * profile adds the static JavaFX libraries), anything but {@code test} scope — as {@code groupId:artifactId}.
+     * profile adds the static JavaFX libraries), anything but {@code test} or {@code provided} scope — as
+     * {@code groupId:artifactId}. A {@code provided} dependency is on the compile path only: {@code -Pdist}
+     * copies {@code runtime} scope and the fat jar's shade leaves it out (JSpecify's annotations, for NullAway).
      */
     private static List<String> shippedDependencies() throws Exception {
         Document pom = DocumentBuilderFactory.newInstance()
@@ -49,7 +51,9 @@ class NoticeCoverageTest {
             if (!"project".equals(owner.getNodeName()) && !"profile".equals(owner.getNodeName())) {
                 continue;
             }
-            if ("test".equals(child(dependency, "scope"))) {
+            String scope = child(dependency, "scope");
+            if ("test".equals(scope) || "provided".equals(scope)) {
+
                 continue;
             }
             out.add(child(dependency, "groupId") + ":" + child(dependency, "artifactId"));

@@ -83,6 +83,16 @@ built-in platform is officially a *prototype* in 26, but the harness only boots 
 never drives the robot or renders/snapshots, so the prototype's limitations don't apply. It's
 test-scope only and never on the runtime path. See [testing.md](testing.md).
 
+## Null checking — Error Prone, NullAway, JSpecify (build only)
+
+`error_prone_core` and `nullaway` are javac plugins on the main compile's `annotationProcessorPaths`, not
+dependencies. JSpecify (`org.jspecify:jspecify`) is `provided` scope behind `requires static org.jspecify`.
+Its annotations are kept in the class files, but reflection ignores an annotation whose class is missing,
+so nothing ships in the jar, the fat jar or the jlink image. Error Prone reaches into javac internals,
+which `.mvn/jvm.config` exports to Maven's JVM (the compile runs in-process). When bumping Error Prone, check
+that it still runs on both JDK 25 and the newest JDK the build is tried on. Rules for contributors are in
+[conventions.md](conventions.md#null-annotations-jspecify-checked-by-nullaway).
+
 ## Automatic modules + moditect (general)
 
 Several real dependencies are automatic modules that `jlink` can't link, so the main build's

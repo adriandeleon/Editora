@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which passphrase dialog gpg-agent would show, and whether it can show one to an app with no terminal. A
@@ -92,7 +93,8 @@ public final class Pinentry {
         return !(n.contains("curses") || n.contains("tty"));
     }
 
-    private static Path realPath(String program) {
+    private static @Nullable Path realPath(String program) {
+
         try {
             Path p = Path.of(program);
             if (!p.isAbsolute() || !Files.exists(p)) {

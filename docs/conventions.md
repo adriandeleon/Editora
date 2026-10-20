@@ -146,6 +146,56 @@ All Java is auto-formatted with [Palantir Java Format](https://github.com/palant
   [#1799](https://github.com/palantir/palantir-java-format/issues/1799) (JDK 27 also breaks formatting
   local `var` declarations).
 
+## Null annotations: JSpecify, checked by NullAway
+
+Packages opt in one at a time. A package whose `package-info.java` says `@NullMarked` is checked by
+[NullAway](https://github.com/uber/NullAway) (an Error Prone plugin) during the main compile. `mvn compile`
+then fails on any null that can reach a type not marked nullable. Unmarked packages and libraries are trusted
+and not checked.
+
+- **A new package starts `@NullMarked`.** Give it a `package-info.java`:
+
+  ```java
+  @NullMarked
+  package com.editora.example;
+
+  import org.jspecify.annotations.NullMarked;
+  ```
+
+  `NullMarkedPackagesTest` fails for a package that is neither marked nor listed in
+  `src/test/resources/com/editora/packaging/unmarked-packages.txt`. That list holds the packages written
+  before the rule. It may only shrink: the test also fails when a listed package is marked or deleted and its
+  line is still there.
+- **In a marked package everything is non-null unless it says `@Nullable`** (`org.jspecify.annotations`).
+  Mark what really may be null: a field set later, a parameter callers pass null to, a "not found" return.
+  JSpecify annotations are type-use, so they go next to the type: `private @Nullable Foo foo`,
+  `Outer.@Nullable Inner`, `byte @Nullable []` (the array may be null), `List<@Nullable String>`
+  (its elements may be).
+- **Prefer a shape that is not null over `@Nullable`** when the null is an accident of the code, not
+  part of its meaning. Pass a value as a parameter instead of re-reading a nullable field
+  (`SingleInstance.startAcceptLoop`). Narrow a type with `instanceof` (`JvmDebugAdapter.variable`). For state
+  that must exist by the time it is used, write an accessor that fails with a clear message
+  (`JvmDebugAdapter.vm()`).
+- **NullAway does not follow a boolean that holds a null check.** After
+  `boolean kotlin = name != null && name.endsWith(".kt"); if (kotlin) …`, `name` still counts as nullable.
+  Write the check inline.
+- **To mark an existing package:** add its `package-info.java`, delete its line from the list, run
+  `mvn -q -DskipTests compile` and fix what NullAway reports. javac stops at 100 errors, so run it again
+  until it is clean. Behaviour must not change. A real bug found on the way gets its own fix and test.
+  Prefer small packages and the boundaries where nulls arrive from outside (JSON, protocols, files).
+- **Native bindings are `@NullUnmarked`.** A JNA `Library` interface or `Structure` follows the C API's
+  nullness, so mark the binding type `@NullUnmarked` instead of annotating every pointer
+  (`secrets.LinuxSecretServiceStore`). The Java field that holds a library that may not have loaded is
+  `@Nullable`. A `loaded()` accessor that throws hands each method a non-null local.
+- **Suppress rarely.** Put `@SuppressWarnings("NullAway")` on the narrowest element, with a comment saying
+  why. Usually that is a one-line helper rather than a whole method: `RecoveryCodec.written` keeps a null
+  from a hand-edited header, because refusing the record would lose its text.
+- **Plumbing.** Only NullAway runs (`-XepDisableAllChecks -Xep:NullAway:ERROR`), and only in the main compile,
+  not on tests. `.mvn/jvm.config` exports the javac internals that Error Prone needs. JSpecify is a `provided`
+  dependency read through `requires static org.jspecify`, so nothing ships. It runs on JDK 25 and JDK 27.
+  Cost on 2026-10-19, with nine packages marked: a clean `mvn -DskipTests compile` took 0.5 to 1.4 s longer
+  than about 9.5 s without the gate (two noisy runs). The cost grows as more packages are marked.
+
 ## Worktrees: one per task
 
 This repo is worked on by multiple sessions in parallel. **Each task gets its own

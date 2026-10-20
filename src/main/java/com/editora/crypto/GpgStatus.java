@@ -3,6 +3,8 @@ package com.editora.crypto;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The machine-readable lines GnuPG writes to {@code --status-fd} ({@code [GNUPG:] KEYWORD args…}), parsed out of
  * its stderr. These keywords are stable across versions and locales, so every decision Editora makes about a gpg
@@ -64,7 +66,7 @@ public final class GpgStatus {
     }
 
     /** The first line with {@code keyword}, or null. */
-    public Line first(String keyword) {
+    public @Nullable Line first(String keyword) {
         for (Line l : lines) {
             if (l.keyword().equals(keyword)) {
                 return l;
@@ -122,7 +124,7 @@ public final class GpgStatus {
      * from {@code GOODSIG}/{@code BADSIG}/{@code EXPSIG}/{@code EXPKEYSIG}/{@code REVKEYSIG}/{@code ERRSIG}, and
      * {@code VALIDSIG} for the signing key's fingerprint.
      */
-    public Signature signature() {
+    public @Nullable Signature signature() {
         for (Line l : lines) {
             Signature.State state = switch (l.keyword()) {
                 case "GOODSIG" -> Signature.State.GOOD;
@@ -179,7 +181,8 @@ public final class GpgStatus {
         return bytes.toString(java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    private Line firstOf(String... keywords) {
+    private @Nullable Line firstOf(String... keywords) {
+
         for (Line l : lines) {
             for (String k : keywords) {
                 if (l.keyword().equals(k)) {

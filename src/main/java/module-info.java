@@ -1,4 +1,6 @@
 module com.editora {
+    // Null annotations, compile time only (NullAway; see docs/conventions.md).
+    requires static org.jspecify;
     requires javafx.controls;
     requires javafx.fxml;
     requires org.fxmisc.richtext;

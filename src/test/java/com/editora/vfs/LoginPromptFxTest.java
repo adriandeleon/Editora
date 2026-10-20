@@ -10,14 +10,20 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
+import org.apache.sshd.common.SshConstants;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.config.keys.writer.openssh.OpenSSHKeyEncryptionContext;
 import org.apache.sshd.common.config.keys.writer.openssh.OpenSSHKeyPairResourceWriter;
 import org.apache.sshd.common.keyprovider.KeyPairProvider;
+import org.apache.sshd.common.util.buffer.Buffer;
 import org.apache.sshd.server.SshServer;
+import org.apache.sshd.server.auth.AbstractUserAuth;
+import org.apache.sshd.server.auth.AbstractUserAuthFactory;
+import org.apache.sshd.server.auth.UserAuth;
 import org.apache.sshd.server.auth.keyboard.InteractiveChallenge;
 import org.apache.sshd.server.auth.keyboard.KeyboardInteractiveAuthenticator;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
@@ -180,6 +186,98 @@ class LoginPromptFxTest {
         assertEquals(
                 List.of(1, 2),
                 login.asked.stream().map(LoginPrompt.Challenge::attempt).toList());
+    }
+
+    /**
+     * A server that asks in two rounds, as PAM with a second factor does: "Password: ", then, once that is right,
+     * "Verification code: ". It wants "secret" and "123456"; a wrong answer fails the method, as PAM does.
+     */
+    private void startTwoRoundServer() throws Exception {
+        server = baseServer();
+        server.setUserAuthFactories(List.of(new AbstractUserAuthFactory("keyboard-interactive") {
+            @Override
+            public UserAuth createUserAuth(ServerSession session) {
+                return new TwoRoundAuth();
+            }
+        }));
+        server.start();
+    }
+
+    private static final class TwoRoundAuth extends AbstractUserAuth {
+        private int round;
+
+        TwoRoundAuth() {
+            super("keyboard-interactive");
+        }
+
+        @Override
+        protected Boolean doAuth(Buffer buffer, boolean init) throws Exception {
+            if (init) {
+                ask("Password: ", false);
+                return null;
+            }
+            if (buffer.getUByte() != SshConstants.SSH_MSG_USERAUTH_INFO_RESPONSE || buffer.getInt() != 1) {
+                return false;
+            }
+            String answer = buffer.getString();
+            if (round == 1) {
+                if (!answer.equals("secret")) {
+                    return false;
+                }
+                ask("Verification code: ", true);
+                return null;
+            }
+            return answer.equals("123456");
+        }
+
+        private void ask(String question, boolean echo) throws Exception {
+            round++;
+            Buffer request = getServerSession().createBuffer(SshConstants.SSH_MSG_USERAUTH_INFO_REQUEST);
+            request.putString("");
+            request.putString("");
+            request.putString("");
+            request.putInt(1);
+            request.putString(question);
+            request.putBoolean(echo);
+            getServerSession().writePacket(request);
+        }
+    }
+
+    @Test
+    void aSecondRoundIsNotTakenForARetry() throws Exception {
+        startTwoRoundServer();
+        Recorder login = new Recorder(
+                c -> c.questions().getFirst().text().startsWith("Password") ? answers("secret") : answers("123456"));
+
+        RemoteFileSystems.Result r =
+                connect(engine(login, Duration.ofSeconds(20)), conn(RemoteConnection.AuthMethod.PASSWORD, ""), null);
+
+        assertTrue(r.ok(), r.error());
+        assertEquals(
+                List.of("Password: ", "Verification code: "),
+                login.asked.stream().map(c -> c.questions().getFirst().text()).toList());
+        assertEquals(
+                List.of(1, 1),
+                login.asked.stream().map(LoginPrompt.Challenge::attempt).toList(),
+                "the code is a new question, not the password asked again");
+    }
+
+    @Test
+    void aQuestionAskedAgainAfterAWrongAnswerIsARetry() throws Exception {
+        startTwoRoundServer();
+        AtomicInteger codes = new AtomicInteger();
+        Recorder login = new Recorder(c -> c.questions().getFirst().text().startsWith("Password")
+                ? answers("secret")
+                : answers(codes.incrementAndGet() == 1 ? "000000" : "123456"));
+
+        RemoteFileSystems.Result r =
+                connect(engine(login, Duration.ofSeconds(20)), conn(RemoteConnection.AuthMethod.PASSWORD, ""), null);
+
+        assertTrue(r.ok(), r.error());
+        assertEquals(
+                List.of(1, 1, 2, 2),
+                login.asked.stream().map(LoginPrompt.Challenge::attempt).toList(),
+                "after the wrong code the server starts over: both questions are asked again, as retries");
     }
 
     @Test

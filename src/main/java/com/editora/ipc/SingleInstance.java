@@ -23,6 +23,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.editora.config.ConfigWriter;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Routes a second launch into the already-running Editora instead of starting a second editor.
@@ -87,19 +88,19 @@ public final class SingleInstance implements AutoCloseable {
 
     private final Path endpoint;
     /** The endpoint {@link #start} found and judged dead, or null. The only one {@link #claim} may remove. */
-    private final Endpoint stale;
+    private final @Nullable Endpoint stale;
 
     private final List<List<String>> pending = new ArrayList<>();
-    private Listener listener;
+    private @Nullable Listener listener;
     private volatile boolean closed;
     /** Set by {@link #claimAsync}'s thread once the port is bound; null until then, and if the claim lost. */
-    private volatile ServerSocket server;
+    private volatile @Nullable ServerSocket server;
 
-    private volatile String token;
+    private volatile @Nullable String token;
     /** Counted down when the claim has finished, either way — so a test can wait for it deterministically. */
     private final java.util.concurrent.CountDownLatch claimed = new java.util.concurrent.CountDownLatch(1);
 
-    private SingleInstance(Path endpoint, Endpoint stale) {
+    private SingleInstance(Path endpoint, @Nullable Endpoint stale) {
         this.endpoint = endpoint;
         this.stale = stale;
     }
@@ -136,7 +137,7 @@ public final class SingleInstance implements AutoCloseable {
     }
 
     /** The outcome of {@link #start}: a role, plus the live instance when this process became PRIMARY. */
-    public record Result(Role role, SingleInstance instance) {
+    public record Result(Role role, @Nullable SingleInstance instance) {
         public boolean forwarded() {
             return role == Role.FORWARDED;
         }
@@ -246,7 +247,7 @@ public final class SingleInstance implements AutoCloseable {
             }
             this.token = newToken;
             this.server = socket;
-            startAcceptLoop();
+            startAcceptLoop(socket);
         } catch (FileAlreadyExistsException raced) {
             // Another launch claimed in the same instant. It serves from now on; this process simply runs
             // without receiving forwards, which is exactly the behaviour before this feature existed.
@@ -260,8 +261,7 @@ public final class SingleInstance implements AutoCloseable {
         }
     }
 
-    private void startAcceptLoop() {
-        ServerSocket bound = server;
+    private void startAcceptLoop(ServerSocket bound) {
         Thread t = new Thread(
                 () -> {
                     while (!closed) {
@@ -335,7 +335,7 @@ public final class SingleInstance implements AutoCloseable {
      * non-UTF-8-safe byte sequence survives the round trip intact — a filename is user data and must not be
      * re-split on the far side.
      */
-    static List<String> parseRequest(String line, String expectedToken) {
+    static @Nullable List<String> parseRequest(@Nullable String line, @Nullable String expectedToken) {
         if (line == null || expectedToken == null || expectedToken.isBlank()) {
             return null;
         }
@@ -405,7 +405,7 @@ public final class SingleInstance implements AutoCloseable {
      * the platform separator ({@code \r\n} on Windows — every reply then failed the {@link #ACK_OK} check, so
      * no launch was ever forwarded there) must still be understood.
      */
-    static String readBounded(BufferedReader in) throws IOException {
+    static @Nullable String readBounded(BufferedReader in) throws IOException {
         StringBuilder sb = new StringBuilder();
         int c;
         while ((c = in.read()) != -1) {
@@ -426,7 +426,7 @@ public final class SingleInstance implements AutoCloseable {
     /** The endpoint file's contents; {@code null} from {@link #read} when absent or unusable. */
     private record Endpoint(int port, String token, boolean acceptsAnyLaunch) {}
 
-    private static Endpoint read(Path file) {
+    private static @Nullable Endpoint read(Path file) {
         if (!Files.isRegularFile(file)) {
             return null;
         }
@@ -466,7 +466,8 @@ public final class SingleInstance implements AutoCloseable {
         }
     }
 
-    private static void closeQuietly(ServerSocket socket) {
+    private static void closeQuietly(@Nullable ServerSocket socket) {
+
         if (socket != null) {
             try {
                 socket.close();
@@ -502,7 +503,8 @@ public final class SingleInstance implements AutoCloseable {
      * long enough, another launch will have judged us dead and published its own endpoint under the same
      * name; removing that on our way out would leave a live editor unreachable.
      */
-    private void deleteIfOwned(String ownToken) {
+    private void deleteIfOwned(@Nullable String ownToken) {
+
         Endpoint current = read(endpoint);
         if (current != null && ownToken != null && current.token.equals(ownToken)) {
             deleteQuietly(endpoint);

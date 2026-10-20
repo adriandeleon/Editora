@@ -9,6 +9,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
@@ -210,8 +212,8 @@ final class RemoteCoordinator {
         }
     }
 
-    /** How long a host-key question may sit unanswered before the connection is refused. */
-    private static final long HOST_KEY_ANSWER_TIMEOUT_SECONDS = 120;
+    /** How long a host-key question may sit unanswered before the connection is refused; shortened in tests. */
+    long hostKeyAnswerTimeoutMillis = TimeUnit.SECONDS.toMillis(120);
 
     private RemoteFileSystems remoteFs() {
         if (remoteFs == null) {
@@ -232,26 +234,56 @@ final class RemoteCoordinator {
         if (Platform.isFxApplicationThread()) {
             return askHostKey(host, port, keyType, fingerprint); // already on FX — asking directly can't deadlock
         }
-        AtomicBoolean accepted = new AtomicBoolean(false);
+        // Timing out means "not confirmed" — it fails closed.
+        Boolean accepted =
+                askOnFx(() -> askHostKey(host, port, keyType, fingerprint), hostKeyAnswerTimeoutMillis, answer -> {});
+        return Boolean.TRUE.equals(accepted);
+    }
+
+    /** The host-key or login dialog on screen (FX thread), so a question that times out can close it. */
+    private Dialog<?> askingDialog;
+
+    /**
+     * Asks {@code question} on the FX thread and waits for the answer, for at most {@code timeoutMillis}, so an
+     * unanswered dialog can't park an SSH I/O thread for the rest of the session. Timing out closes the dialog
+     * and returns null; an answer given too late is handed to {@code discard} (a password to wipe), not used.
+     */
+    private <T> T askOnFx(Supplier<T> question, long timeoutMillis, Consumer<T> discard) {
+        AtomicReference<T> answer = new AtomicReference<>();
+        AtomicBoolean gaveUp = new AtomicBoolean();
         CountDownLatch answered = new CountDownLatch(1);
         Platform.runLater(() -> {
             try {
-                accepted.set(askHostKey(host, port, keyType, fingerprint));
+                answer.set(question.get());
+                if (gaveUp.get()) {
+                    discardLate(answer, discard);
+                }
             } finally {
                 answered.countDown();
             }
         });
         try {
-            // Bounded, so an unanswered dialog can't park an SSH I/O thread for the rest of the session.
-            // Timing out means "not confirmed" — it fails closed.
-            if (!answered.await(HOST_KEY_ANSWER_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                return false;
+            if (answered.await(timeoutMillis, TimeUnit.MILLISECONDS)) {
+                return answer.get();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return false;
         }
-        return accepted.get();
+        gaveUp.set(true);
+        discardLate(answer, discard);
+        Platform.runLater(() -> {
+            if (askingDialog != null) {
+                askingDialog.close(); // its Cancel: the question ends as it would had the person cancelled
+            }
+        });
+        return null;
+    }
+
+    private static <T> void discardLate(AtomicReference<T> answer, Consumer<T> discard) {
+        T late = answer.getAndSet(null);
+        if (late != null) {
+            discard.accept(late);
+        }
     }
 
     /** The question itself (FX thread) — the same one {@code ssh} asks at the terminal. */
@@ -266,11 +298,19 @@ final class RemoteCoordinator {
         alert.setTitle(tr("dialog.hostKey.title"));
         alert.setHeaderText(tr("dialog.hostKey.header", host));
         alert.getDialogPane().setMinWidth(560);
-        return alert.showAndWait().orElse(ButtonType.CANCEL) == connect;
+        askingDialog = alert;
+        try {
+            return alert.showAndWait().orElse(ButtonType.CANCEL) == connect;
+        } finally {
+            askingDialog = null;
+        }
     }
 
-    /** How long a login question (a password, a 2FA code) may sit unanswered before the login is cancelled. */
-    private static final long LOGIN_ANSWER_TIMEOUT_SECONDS = 120;
+    /**
+     * How long a login question (a password, a 2FA code) may sit unanswered before the login is cancelled;
+     * shortened in tests.
+     */
+    long loginAnswerTimeoutMillis = TimeUnit.SECONDS.toMillis(120);
 
     /**
      * A login question, asked on an SSH I/O thread and answered on the FX thread, as {@link #confirmHostKey} is.
@@ -280,24 +320,15 @@ final class RemoteCoordinator {
         if (Platform.isFxApplicationThread()) {
             return askLogin(challenge);
         }
-        AtomicReference<char[][]> answers = new AtomicReference<>();
-        CountDownLatch answered = new CountDownLatch(1);
-        Platform.runLater(() -> {
-            try {
-                answers.set(askLogin(challenge));
-            } finally {
-                answered.countDown();
+        return askOnFx(() -> askLogin(challenge), loginAnswerTimeoutMillis, RemoteCoordinator::wipe);
+    }
+
+    private static void wipe(char[][] answers) {
+        for (char[] a : answers) {
+            if (a != null) {
+                java.util.Arrays.fill(a, '\0');
             }
-        });
-        try {
-            if (!answered.await(LOGIN_ANSWER_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                return null;
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return null;
         }
-        return answers.get();
     }
 
     /** Asks a login question (FX thread); replaced in tests. */
@@ -356,8 +387,13 @@ final class RemoteCoordinator {
         if (!fields.isEmpty()) {
             Platform.runLater(fields.getFirst()::requestFocus);
         }
-        if (dialog.showAndWait().orElse(ButtonType.CANCEL) != logIn) {
-            return null;
+        askingDialog = dialog;
+        try {
+            if (dialog.showAndWait().orElse(ButtonType.CANCEL) != logIn) {
+                return null;
+            }
+        } finally {
+            askingDialog = null;
         }
         char[][] answers = new char[fields.size()][];
         for (int i = 0; i < fields.size(); i++) {

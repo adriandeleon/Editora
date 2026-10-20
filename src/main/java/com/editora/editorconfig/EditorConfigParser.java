@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure parser for a single {@code .editorconfig} file's text. Splits it into the preamble {@code root} flag
  * and an ordered list of {@code [glob]} sections (each a key→value map, keys/values lowercased per the spec;
@@ -130,7 +132,7 @@ public final class EditorConfigParser {
                 maxLineLength(raw.get("max_line_length")));
     }
 
-    private static Boolean insertSpaces(String v) {
+    private static @Nullable Boolean insertSpaces(@Nullable String v) {
         if ("space".equals(v)) {
             return Boolean.TRUE;
         }
@@ -141,25 +143,25 @@ public final class EditorConfigParser {
     }
 
     /** {@code indent_size}: a positive int, or {@code tab} (→ null, deferring to {@code tab_width}). */
-    private static Integer indentSize(String v) {
+    private static @Nullable Integer indentSize(@Nullable String v) {
         if (v == null || v.equals("tab")) {
             return null;
         }
         return positiveInt(v);
     }
 
-    private static String endOfLine(String v) {
+    private static @Nullable String endOfLine(@Nullable String v) {
         return "lf".equals(v) || "crlf".equals(v) || "cr".equals(v) ? v : null;
     }
 
-    private static String charset(String v) {
+    private static @Nullable String charset(@Nullable String v) {
         return switch (v == null ? "" : v) {
             case "utf-8", "utf-8-bom", "latin1", "utf-16le", "utf-16be" -> v;
             default -> null;
         };
     }
 
-    private static Boolean bool(String v) {
+    private static @Nullable Boolean bool(@Nullable String v) {
         if ("true".equals(v)) {
             return Boolean.TRUE;
         }
@@ -169,14 +171,15 @@ public final class EditorConfigParser {
         return null;
     }
 
-    private static Integer maxLineLength(String v) {
+    private static @Nullable Integer maxLineLength(@Nullable String v) {
         if ("off".equals(v)) {
             return EditorConfigProperties.OFF;
         }
         return positiveInt(v);
     }
 
-    private static Integer positiveInt(String v) {
+    private static @Nullable Integer positiveInt(@Nullable String v) {
+
         if (v == null) {
             return null;
         }

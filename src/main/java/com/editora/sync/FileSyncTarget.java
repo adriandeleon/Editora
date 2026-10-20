@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import com.editora.io.AtomicFileWrite;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The synced files of a config directory, read and written as plain files. Before it overwrites or deletes
@@ -100,7 +101,8 @@ public class FileSyncTarget implements SyncTarget {
     }
 
     /** Writes {@code text} to {@code file} through a temporary file, or deletes it when {@code text} is null. */
-    static void writeOrDelete(Path file, String text) throws IOException {
+    static void writeOrDelete(Path file, @Nullable String text) throws IOException {
+
         if (text == null) {
             Files.deleteIfExists(file);
             return;

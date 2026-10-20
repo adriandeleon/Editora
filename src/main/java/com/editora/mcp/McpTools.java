@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The MCP tool set: schemas for {@code tools/list} and dispatch for {@code tools/call}. Bridge result
@@ -226,7 +227,7 @@ final class McpTools {
         return textResult(arr);
     }
 
-    private ObjectNode readBufferResult(String path) {
+    private ObjectNode readBufferResult(@Nullable String path) {
         McpBridge.BufferContent b = bridge.readBuffer(path);
         if (b == null) {
             return errorResult(path == null ? "No active buffer." : "No open buffer for: " + path);
@@ -240,7 +241,7 @@ final class McpTools {
         return textResult(o);
     }
 
-    private ObjectNode diagnosticsResult(String path) {
+    private ObjectNode diagnosticsResult(@Nullable String path) {
         ArrayNode arr = m.createArrayNode();
         for (McpBridge.Diagnostic d : bridge.getDiagnostics(path)) {
             ObjectNode o = m.createObjectNode();
@@ -285,7 +286,7 @@ final class McpTools {
         return textResult(arr);
     }
 
-    private ObjectNode executeResult(String id) {
+    private ObjectNode executeResult(@Nullable String id) {
         if (id == null || id.isEmpty()) {
             return errorResult("execute_command requires an 'id'.");
         }
@@ -338,7 +339,7 @@ final class McpTools {
         return error == null ? textResult(m.createObjectNode().put("applied", true)) : errorResult(error);
     }
 
-    private ObjectNode saveBufferResult(String path) {
+    private ObjectNode saveBufferResult(@Nullable String path) {
         String error = bridge.saveBuffer(path);
         return error == null ? textResult(m.createObjectNode().put("saved", true)) : errorResult(error);
     }
@@ -361,7 +362,8 @@ final class McpTools {
         return textResult(o);
     }
 
-    private ObjectNode symbolsResult(String path) {
+    private ObjectNode symbolsResult(@Nullable String path) {
+
         return textResult(symbolArray(bridge.documentSymbols(path)));
     }
 
@@ -422,7 +424,7 @@ final class McpTools {
      * {@code save_buffer} wrote it. Anything the published schema does not describe is therefore rejected by
      * name, and a {@code path} that is given must name something.
      */
-    private String argumentError(String tool, JsonNode args) {
+    private @Nullable String argumentError(String tool, JsonNode args) {
         JsonNode schema = argumentSchemas.get(tool);
         if (schema == null || args == null || args.isNull()) {
             return null; // unknown tool: reported by the dispatcher; no arguments: nothing to check
@@ -463,7 +465,7 @@ final class McpTools {
     }
 
     /** Why {@code path} does not name a file, or {@code null}. Pure. */
-    static String pathProblem(String path) {
+    static @Nullable String pathProblem(String path) {
         if (path.isBlank()) {
             return "'path' is empty. Pass the absolute path of the file, or leave 'path' out altogether to mean"
                     + " the active buffer.";
@@ -571,7 +573,8 @@ final class McpTools {
         return m.createObjectNode().put("type", "integer").put("description", description);
     }
 
-    private static String text(JsonNode args, String field) {
+    private static @Nullable String text(JsonNode args, String field) {
+
         if (args == null || !args.hasNonNull(field)) {
             return null;
         }

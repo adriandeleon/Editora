@@ -3252,6 +3252,13 @@
     -fx-font-weight: bold;
     -fx-padding: 0 4 0 4;
 }
+/* The User / Project bar at the top of Settings while it edits the project: a visible mode, not only a note. */
+.settings-scope-bar:project {
+    -fx-background-color: -color-accent-subtle;
+}
+.settings-scope-bar:project .settings-hint {
+    -fx-text-fill: -color-fg-default;
+}
 .settings-row-state .settings-scope-note {
     -fx-text-fill: -color-fg-muted;
     -fx-background-color: -color-bg-subtle;

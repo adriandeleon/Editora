@@ -20,6 +20,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Three-way merge of one synced file: what this machine last synced ({@code base}), what it holds now
@@ -60,7 +61,7 @@ public final class SyncMerge {
      */
     public record FileResult(
             String path,
-            String text,
+            @Nullable String text,
             List<String> received,
             List<String> sent,
             List<String> conflicts,
@@ -79,7 +80,10 @@ public final class SyncMerge {
             MAPPER.writer(new DefaultPrettyPrinter().withObjectIndenter(new DefaultIndenter("  ", "\n")));
 
     /** A file's text in repository form with its entries; {@code tree} only for the abbreviation store. */
-    private record Parsed(String text, Map<String, String> entries, JsonNode tree) {
+    private record Parsed(
+            @Nullable String text,
+            Map<String, String> entries,
+            @Nullable JsonNode tree) {
         static final Parsed ABSENT = new Parsed(null, Map.of(), null);
     }
 
@@ -93,7 +97,7 @@ public final class SyncMerge {
      * data is the same bytes on every operating system. Null when the file is absent, blank where a blank
      * file means "nothing", or unreadable.
      */
-    public static String normalize(SyncCategory category, String raw) {
+    public static @Nullable String normalize(SyncCategory category, @Nullable String raw) {
         try {
             return parse(category, raw).text();
         } catch (IOException e) {
@@ -101,7 +105,8 @@ public final class SyncMerge {
         }
     }
 
-    public static FileResult merge(SyncCategory category, String path, String base, String mine, String theirs) {
+    public static FileResult merge(
+            SyncCategory category, String path, @Nullable String base, @Nullable String mine, @Nullable String theirs) {
         Parsed m;
         Parsed t;
         try {
@@ -191,7 +196,7 @@ public final class SyncMerge {
     }
 
     /** This machine's file with the repository's own changes written into it. */
-    private static String assemble(
+    private static @Nullable String assemble(
             SyncCategory category, Parsed base, Parsed mine, Parsed theirs, Map<String, String> fromTheirs)
             throws IOException {
         switch (category) {
@@ -220,7 +225,8 @@ public final class SyncMerge {
         }
     }
 
-    private static Parsed parse(SyncCategory category, String raw) throws IOException {
+    private static Parsed parse(SyncCategory category, @Nullable String raw) throws IOException {
+
         if (raw == null) {
             return Parsed.ABSENT;
         }

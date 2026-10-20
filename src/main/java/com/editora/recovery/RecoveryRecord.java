@@ -1,5 +1,7 @@
 package com.editora.recovery;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Everything needed to bring one unsaved buffer back after the process died: where it belongs, how it would
  * have been saved, what on disk the edits were made against, and the text itself.
@@ -23,37 +25,37 @@ package com.editora.recovery;
  */
 public record RecoveryRecord(
         String bufferId,
-        String path,
+        @Nullable String path,
         String title,
-        String displayName,
+        @Nullable String displayName,
         String charset,
         boolean bom,
         String lineEnding,
         long baseModifiedMillis,
         long baseSize,
-        String baseFingerprint,
+        @Nullable String baseFingerprint,
         long savedAtMillis,
         int caret,
         String windowKey,
-        String text,
+        @Nullable String text,
         boolean charsetChosen) {
 
     /** A record whose charset was not chosen by the user. */
     public RecoveryRecord(
             String bufferId,
-            String path,
+            @Nullable String path,
             String title,
-            String displayName,
+            @Nullable String displayName,
             String charset,
             boolean bom,
             String lineEnding,
             long baseModifiedMillis,
             long baseSize,
-            String baseFingerprint,
+            @Nullable String baseFingerprint,
             long savedAtMillis,
             int caret,
             String windowKey,
-            String text) {
+            @Nullable String text) {
         this(
                 bufferId,
                 path,

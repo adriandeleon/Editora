@@ -41,7 +41,7 @@ final class LoginInteraction implements UserInteraction {
                 name == null ? "" : name,
                 instruction == null ? "" : instruction,
                 questions,
-                LoginQuestions.next(session, LoginQuestions.ROUNDS));
+                LoginQuestions.round(session, questions));
         char[][] answers = LoginQuestions.of(session).ask(session, challenge);
         if (answers == null) {
             LoginQuestions.cancel(session);
