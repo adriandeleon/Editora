@@ -382,6 +382,12 @@ final class DebugCoordinator {
             ops.setStatusDebugLoading(false);
             host.setStatus(tr("status.debug.launchCancelled"));
             updateDebugAvailability();
+        } else if (pendingAttachStop != null && !dapManager.isActive()) {
+            // Debug Test waiting for its suspended JVM: there is no session yet, so Stop ends the build that
+            // would fork it (review D1) — as it ends the run of an attached session below.
+            Runnable cancel = pendingAttachStop;
+            setPendingAttach(null);
+            cancel.run();
         } else {
             Runnable owner = relaunch == ONE_SHOT_ATTACH ? ownerStop : null;
             ownerStop = null;
@@ -391,6 +397,27 @@ final class DebugCoordinator {
                 owner.run();
             }
         }
+    }
+
+    /** What Debug ▸ Stop runs while a test run waits for its JVM to attach (no session yet). */
+    private Runnable pendingAttachStop;
+
+    /**
+     * A Debug Test run is waiting for its suspended JVM ({@code cancel} ends that build), or no longer is
+     * ({@code null}): the window opens with Stop usable and its spinner on, like a before-launch build.
+     */
+    void setPendingAttach(Runnable cancel) {
+        boolean was = pendingAttachStop != null;
+        pendingAttachStop = cancel;
+        if (cancel != null && !was) {
+            ops.openToolWindow();
+        }
+        // A session being debugged keeps its own buttons (Continue, Stop through ownerStop): the waiting state
+        // shows once it ends, when the run's next fork is what Stop would end (see the state listener).
+        if (!beforeLaunch.isActive() && pendingBuild == null && !dapManager.isActive()) {
+            panel().setPreparing(cancel != null);
+        }
+        updateDebugAvailability();
     }
 
     /**
@@ -461,7 +488,10 @@ final class DebugCoordinator {
 
     /** A session is starting, running, paused or being built for — the states Stop / Restart act on. */
     boolean sessionLive() {
-        return dapManager.state() != DapManager.State.INACTIVE || beforeLaunch.isActive() || pendingBuild != null;
+        return dapManager.state() != DapManager.State.INACTIVE
+                || beforeLaunch.isActive()
+                || pendingBuild != null
+                || pendingAttachStop != null;
     }
 
     /** Names the session being launched in the panel; survives the end of the session it replaces. */
@@ -1191,6 +1221,10 @@ final class DebugCoordinator {
                 }
                 if (state == DapManager.State.INACTIVE && relaunch == ONE_SHOT_ATTACH && !queuedAttaches.isEmpty()) {
                     Platform.runLater(queuedAttaches.poll()); // the next JVM of the same run is waiting
+                } else if (state == DapManager.State.INACTIVE
+                        && pendingAttachStop != null
+                        && !beforeLaunch.isActive()) {
+                    panel().setPreparing(true); // a Debug Test run still waits for its next fork: Stop ends it
                 }
                 boolean starting = state == DapManager.State.STARTING;
                 ops.setStatusDebugLoading(starting);
@@ -2669,6 +2703,9 @@ final class DebugCoordinator {
             queuedAttaches.add(() -> attachToPort(anchorFile, attachHost, port, stopOwner));
             host.setStatus(tr("status.debug.attachQueued", port));
             return;
+        }
+        if (pendingAttachStop != null) {
+            setPendingAttach(null); // the wait is over: from here Stop goes through the session (ownerStop)
         }
         ownerStop = stopOwner;
         String jvmLanguage = jvmAdapterLanguage(anchorFile);
