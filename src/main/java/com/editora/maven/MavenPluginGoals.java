@@ -62,8 +62,22 @@ public final class MavenPluginGoals {
     /**
      * A plugin's descriptor slice: the {@code <goalPrefix>} the CLI uses ({@code javafx}, {@code spotless})
      * and the goals it declares, in descriptor order.
+     *
+     * @param version the plugin version the descriptor was read from ({@code ""} for a parsed-only slice)
+     * @param newestLocal whether that version was <em>guessed</em> as the newest one installed, because the pom
+     *     leaves the version to a parent or a property this reader could not resolve — the group's tooltip
+     *     then says so, since such a descriptor can list a goal the version the build runs does not have
      */
-    public record Descriptor(String goalPrefix, List<Goal> goals) {}
+    public record Descriptor(String goalPrefix, List<Goal> goals, String version, boolean newestLocal) {
+        public Descriptor(String goalPrefix, List<Goal> goals) {
+            this(goalPrefix, goals, "", false);
+        }
+
+        /** The same slice, labelled with where its version came from. */
+        Descriptor at(String version, boolean newestLocal) {
+            return new Descriptor(goalPrefix, goals, version, newestLocal);
+        }
+    }
 
     // --- descriptor parsing (pure) ---------------------------------------------------------------
 
@@ -106,12 +120,27 @@ public final class MavenPluginGoals {
         return goals.isEmpty() ? null : new Descriptor(prefix, List.copyOf(goals));
     }
 
-    /** Collapses a descriptor's (often multi-line, HTML-ish) prose into one capped tooltip line. */
+    /**
+     * Collapses a descriptor's (often multi-line, HTML-ish) prose into one capped tooltip line. The prose is
+     * the mojo's Javadoc as the plugin tooling serialized it: HTML tags, entity-escaped angle brackets
+     * ({@code -Dgoal=&lt;goal-name&gt;}) and inline tags ({@code {@code package}}, {@code {@link MavenProject}})
+     * — all of which read as source code in a tooltip, so they are unescaped and unwrapped here.
+     */
     static String shortDescription(String raw) {
         if (raw == null) {
             return "";
         }
-        String text = raw.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ").strip();
+        String text = raw.replaceAll("<[^>]*>", " ")
+                .replaceAll("\\{@(?:code|link|linkplain|literal|value)\\s+([^}]*)\\}", "$1")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&apos;", "'")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replaceAll("\\s+", " ")
+                .strip();
         if (text.length() <= MAX_DESCRIPTION_CHARS) {
             return text;
         }
@@ -142,6 +171,46 @@ public final class MavenPluginGoals {
         }
         value = value.replace("${user.home}", userHome == null ? "" : userHome);
         return value.contains("${") ? null : value;
+    }
+
+    /**
+     * The profile ids a {@code settings.xml} activates for every build ({@code <activeProfiles>}), in
+     * document order; empty when it declares none or does not parse. Such a profile is on whether or not the
+     * tasks tree passes {@code -P}, so the tree shows it checked and locked rather than as a toggle.
+     */
+    public static List<String> activeProfilesFromSettings(String settingsXml) {
+        if (settingsXml == null || settingsXml.isBlank()) {
+            return List.of();
+        }
+        Element root;
+        try {
+            root = PomParser.parseDocument(settingsXml).getDocumentElement();
+        } catch (PomParseException e) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        Element active = PomParser.firstChildElement(root, "activeProfiles");
+        for (Element profile : PomParser.childElements(active, "activeProfile")) {
+            String id = PomParser.strip(PomParser.text(profile));
+            if (!id.isEmpty() && !out.contains(id)) {
+                out.add(id);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /** {@link #activeProfilesFromSettings} for {@code <userHome>/.m2/settings.xml}; empty when there is none. */
+    public static List<String> activeProfiles(Path userHome) {
+        Path settings = userHome.resolve(".m2").resolve("settings.xml");
+        if (!Files.isRegularFile(settings)) {
+            return List.of();
+        }
+        try {
+            return activeProfilesFromSettings(Files.readString(settings, StandardCharsets.UTF_8));
+        } catch (IOException | RuntimeException e) {
+            LOG.log(Level.FINE, "Unreadable settings.xml, assuming no active profiles", e);
+            return List.of();
+        }
     }
 
     /** The local repository directory: {@code settings.xml}'s override, else {@code <userHome>/.m2/repository}. */
@@ -200,12 +269,40 @@ public final class MavenPluginGoals {
     /**
      * Every declared plugin's descriptor, in pom order, skipping the ones not resolvable locally. Reads
      * {@link PomModel#plugins()} only — a profile's plugins are contributed by that profile and are not
-     * necessarily active.
+     * necessarily active; {@link #readManaged} covers {@code <pluginManagement>}.
      */
     public static List<Descriptor> readAll(PomModel model, Path localRepo) {
-        List<Descriptor> out = new ArrayList<>();
-        Set<String> prefixes = new LinkedHashSet<>();
+        return readAll(model.plugins(), localRepo, Set.of());
+    }
+
+    /**
+     * The descriptors of the {@code <pluginManagement>}-only plugins (those not also declared in
+     * {@code <plugins>}), in pom order. A managed plugin binds nothing, but {@code mvn enforcer:enforce} runs
+     * wherever the plugin is managed — the recommended layout for a parent that manages {@code jacoco},
+     * {@code enforcer} or {@code versions} — so the tree lists its goals as a "managed" group.
+     */
+    public static List<Descriptor> readManaged(PomModel model, Path localRepo) {
+        Set<String> declared = new LinkedHashSet<>();
         for (PomModel.Plugin plugin : model.plugins()) {
+            declared.add(plugin.key());
+        }
+        List<PomModel.Plugin> only = new ArrayList<>();
+        for (PomModel.Plugin plugin : model.managedPlugins()) {
+            if (!declared.contains(plugin.key())) {
+                only.add(plugin);
+            }
+        }
+        Set<String> prefixes = new LinkedHashSet<>();
+        for (Descriptor d : readAll(model.plugins(), localRepo, Set.of())) {
+            prefixes.add(d.goalPrefix());
+        }
+        return readAll(only, localRepo, prefixes);
+    }
+
+    private static List<Descriptor> readAll(List<PomModel.Plugin> plugins, Path localRepo, Set<String> taken) {
+        List<Descriptor> out = new ArrayList<>();
+        Set<String> prefixes = new LinkedHashSet<>(taken);
+        for (PomModel.Plugin plugin : plugins) {
             Descriptor d = read(plugin, localRepo);
             if (d != null && prefixes.add(d.goalPrefix())) {
                 out.add(d);
@@ -220,6 +317,11 @@ public final class MavenPluginGoals {
         if (version == null) {
             return null;
         }
+        Descriptor d = readAt(plugin, version, localRepo);
+        return d == null ? null : d.at(version, !version.equals(PomParser.strip(plugin.version())));
+    }
+
+    private static Descriptor readAt(PomModel.Plugin plugin, String version, Path localRepo) {
         Path jar = jarPath(localRepo, plugin.groupId(), plugin.artifactId(), version);
         if (jar == null || !Files.isRegularFile(jar)) {
             return null;
@@ -245,10 +347,12 @@ public final class MavenPluginGoals {
     }
 
     /**
-     * The version to look up: the declared one, or — when the pom leaves it to a parent / {@code
-     * <pluginManagement>} / a property we cannot resolve — the newest version present locally. Guessing the
-     * newest local version is safe here because the descriptor is only used to <em>name</em> goals; the build
-     * itself still runs through Maven, which resolves the real version.
+     * The version to look up: the declared one (a {@code ${property}} was already expanded by
+     * {@link PomInheritance} when the pom chain defines it), or — when the pom leaves it to a parent we could
+     * not read, a repository-only {@code <pluginManagement>}, or an unresolvable property — the newest version
+     * present locally. Guessing the newest local version is tolerable here because the descriptor is only
+     * used to <em>name</em> goals; the build itself still runs through Maven, which resolves the real version
+     * — and {@link Descriptor#newestLocal()} lets the tree say the list was guessed.
      */
     private static String resolveVersion(PomModel.Plugin plugin, Path localRepo) {
         String declared = PomParser.strip(plugin.version());
