@@ -552,7 +552,7 @@ public final class LspManager {
         }
         List<String> command = LspServerRegistry.commandFor(serverId, commands);
         detectExec.submit(() -> {
-            boolean ok = available(command);
+            boolean ok = available(serverId, command);
             availableCache.put(serverId, ok);
             Platform.runLater(() -> {
                 if (!closed) {
@@ -576,7 +576,7 @@ public final class LspManager {
         one.put(serverId, command);
         List<String> argv = LspServerRegistry.commandFor(serverId, one);
         detectExec.submit(() -> {
-            boolean ok = available(argv);
+            boolean ok = available(serverId, argv);
             Platform.runLater(() -> {
                 if (!closed) {
                     onResult.accept(ok);
@@ -651,6 +651,23 @@ public final class LspManager {
                 }
             });
         });
+    }
+
+    /**
+     * Whether {@code serverId} can be started by {@code command}: its executable resolves, and — for the Maven
+     * pom.xml server, whose executable is just {@code java} — the install folder the command names holds every
+     * jar the server needs ({@link com.editora.install.MavenServerInstall}). An emptied folder, or the upstream
+     * bundle without the jars it leaves out, used to read "found" while the server could not answer a request
+     * (Maven review C1/C3); now such a pom.xml falls back to the XML server and Settings/Doctor say "incomplete".
+     */
+    static boolean available(String serverId, List<String> command) {
+        if (!available(command)) {
+            return false;
+        }
+        if (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
+            return com.editora.install.MavenServerInstall.missingJars(command).isEmpty();
+        }
+        return true;
     }
 
     /** True if the command's executable resolves (an absolute path that exists, or found on the PATH). */
@@ -940,6 +957,7 @@ public final class LspManager {
      * before starting ({@link #awaitPriorExit}), instead of launching into a locked workspace.
      */
     private void disposeDeliberately(String key, LanguageServerSession session) {
+        requestErrors.forget(key);
         session.dispose();
         String workspace = jdtlsWorkspaceBySession.remove(session);
         CompletableFuture<Void> gone =
@@ -1241,6 +1259,7 @@ public final class LspManager {
                     }
                 }));
         diagnosticSource[0] = session;
+        session.setOnRequestOutcome((method, error) -> noteRequestOutcome(session, method, error));
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         session.setBashIde(bashIde);
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
@@ -1590,6 +1609,7 @@ public final class LspManager {
 
     /** Removes a session that can no longer serve requests, so the next open starts a fresh one. */
     private void dropSession(String key, LanguageServerSession session) {
+        requestErrors.forget(key);
         sessionsByRoot.remove(key, session);
         sessionByDocUri.values().removeIf(s -> s == session);
         pendingApplyExpected.remove(session);
@@ -1802,6 +1822,64 @@ public final class LspManager {
 
     private LanguageServerSession sessionFor(Path file) {
         return file == null ? null : sessionByDocUri.get(uri(file));
+    }
+
+    // --- Request errors (a broken server must not look like a quiet one; Maven review C2) ---------
+
+    /** Told, on the FX thread, when a server answers a request with a fault inside itself. */
+    @FunctionalInterface
+    public interface RequestErrorHandler {
+        /**
+         * {@code method} on {@code serverId} (session root {@code root}) failed with {@code summary} (the server's
+         * message and the first line of its data). {@code failing}: this was the {@value RequestErrorTracker#CONSECUTIVE_LIMIT}th
+         * fault in a row with no successful answer in between — the server should be given up on.
+         * {@code announce}: the first fault of this method on this server since it started.
+         */
+        void onRequestError(
+                String serverId, Path root, String method, String summary, boolean announce, boolean failing);
+    }
+
+    private final RequestErrorTracker requestErrors = new RequestErrorTracker();
+
+    private volatile RequestErrorHandler onRequestError = (id, root, method, summary, announce, failing) -> {};
+
+    public void setOnRequestError(RequestErrorHandler handler) {
+        this.onRequestError = handler == null ? (id, root, method, summary, announce, failing) -> {} : handler;
+    }
+
+    /**
+     * Records how {@code method} on {@code s} ended. A server fault ({@link RequestErrorTracker#serverFault}) is
+     * logged at WARNING with the server's {@code data} — lemminx's is the stack trace that names the missing
+     * class — and reported to {@link #setOnRequestError}; any other error (a cancellation, a transport failure,
+     * a refusal) is the caller's business as before. A success ends the server's run of faults.
+     */
+    void noteRequestOutcome(LanguageServerSession s, String method, Throwable error) {
+        if (s == null) {
+            return;
+        }
+        String key = sessionKey(s.serverId(), s.root());
+        if (error == null) {
+            requestErrors.onSuccess(key);
+            return;
+        }
+        var response = RequestErrorTracker.responseError(error);
+        if (response == null || !RequestErrorTracker.serverFault(response.getCode())) {
+            return;
+        }
+        String summary = RequestErrorTracker.describe(response);
+        LOG.warning(() -> s.serverId() + ": " + method + " failed inside the server with " + response.getCode() + " "
+                + summary + (response.getData() == null ? "" : "\n" + response.getData()));
+        RequestErrorTracker.Verdict verdict = requestErrors.onError(key, method);
+        if (verdict.announce() || verdict.markFailing()) {
+            String serverId = s.serverId();
+            Path root = s.root();
+            Platform.runLater(() -> {
+                if (!closed) {
+                    onRequestError.onRequestError(
+                            serverId, root, method, summary, verdict.announce(), verdict.markFailing());
+                }
+            });
+        }
     }
 
     // --- Requests (results marshaled to the FX thread) -----------------------------------------
@@ -3298,12 +3376,27 @@ public final class LspManager {
     }
 
     public void hover(Path file, int line, int character, Consumer<String> cb) {
+        hover(file, line, character, cb, failure -> cb.accept(""));
+    }
+
+    /**
+     * As {@link #hover(Path, int, int, Consumer)}, but a request the server answered with a fault reaches
+     * {@code onFailure} (with the server's message) instead of reading as "no documentation" — the one place
+     * a user looks when hover does nothing (Maven review C2). Both callbacks run on the FX thread.
+     */
+    public void hover(Path file, int line, int character, Consumer<String> cb, Consumer<String> onFailure) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             cb.accept("");
             return;
         }
         s.hover(uri(file), new Position(line, character)).whenComplete((hover, error) -> {
+            var fault = error == null ? null : RequestErrorTracker.responseError(error);
+            if (fault != null && RequestErrorTracker.serverFault(fault.getCode())) {
+                String why = RequestErrorTracker.describe(fault);
+                Platform.runLater(() -> onFailure.accept(why));
+                return;
+            }
             String text = error == null ? hoverText(hover) : "";
             Platform.runLater(() -> cb.accept(text));
         });

@@ -365,6 +365,7 @@ class InstallCatalogTest {
         assertTrue(InstallCatalog.installableServerIds().contains("maven-pom"));
         Step s = InstallCatalog.serverInstall("maven-pom").orElseThrow().get(0);
         assertEquals(Kind.JVM_LSP_ZIP, s.kind());
+        assertEquals(InstallCatalog.LEMMINX_MAVEN_STEP, s.id());
         assertEquals(java.util.Set.of(Prereq.JAVA), s.prereqs());
         assertEquals(InstallCatalog.LEMMINX_MAVEN_ZIP_URL, s.directUrl());
         assertEquals("plugins/lsp/maven", s.destSubpath());
@@ -614,5 +615,34 @@ class InstallCatalogTest {
         org.junit.jupiter.api.Assertions.assertEquals(
                 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
                 InstallCatalog.sha256Hex(new byte[0]));
+    }
+
+    /**
+     * The three jars the lemminx-maven bundle leaves out (Maven review C1): pinned by version and SHA-256, on
+     * Maven Central (a trusted download host), named like the jars they are, and only for that step.
+     */
+    @Test
+    void theLemminxMavenExtraJarsArePinnedOnCentral() {
+        List<InstallCatalog.JvmLspJar> jars = InstallCatalog.LEMMINX_MAVEN_EXTRA_JARS;
+        assertEquals(
+                List.of("guava-33.7.2-jre.jar", "commons-lang3-3.21.0.jar", "jsoup-1.23.2.jar"),
+                jars.stream().map(InstallCatalog.JvmLspJar::fileName).toList());
+        for (InstallCatalog.JvmLspJar jar : jars) {
+            assertTrue(InstallCatalog.isTrustedDownloadUrl(jar.url()), jar.url());
+            assertTrue(jar.url().startsWith(InstallCatalog.MAVEN_CENTRAL), jar.url());
+            assertTrue(jar.url().endsWith("/" + jar.fileName()), jar.url());
+            assertTrue(jar.sha256().matches("[0-9a-f]{64}"), jar.sha256());
+        }
+        assertEquals(
+                "https://repo1.maven.org/maven2/com/google/guava/guava/33.7.2-jre/guava-33.7.2-jre.jar",
+                jars.get(0).url());
+        assertEquals(jars, InstallCatalog.jvmLspExtraJars(InstallCatalog.LEMMINX_MAVEN_STEP));
+        assertEquals(List.of(), InstallCatalog.jvmLspExtraJars("gls"));
+        assertEquals(List.of(), InstallCatalog.jvmLspExtraJars(null));
+        // Every required-jar prefix detection checks for is either in the bundle or one of these.
+        for (String prefix : MavenServerInstall.REQUIRED_JAR_PREFIXES) {
+            boolean inBundle = prefix.equals("org.eclipse.lemminx-") || prefix.equals("lemminx-maven-");
+            assertTrue(inBundle || jars.stream().anyMatch(j -> j.fileName().startsWith(prefix)), prefix);
+        }
     }
 }

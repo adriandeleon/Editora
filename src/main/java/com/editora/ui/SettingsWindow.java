@@ -7771,14 +7771,28 @@ public class SettingsWindow {
             List<String> argv = lspArgv(srv.id());
             status.tool(lspToolName(srv.id(), argv));
             status.checking();
-            lspManager.detectCommand(
-                    srv.id(),
-                    shown.get(srv.id()),
-                    found -> status.show(
-                            found,
-                            found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "",
-                            lspCheck.isSelected()));
+            lspManager.detectCommand(srv.id(), shown.get(srv.id()), found -> {
+                if (!found && MAVEN_POM.equals(srv.id()) && mavenInstallIncomplete(argv)) {
+                    // The folder is there but lacks jars (the upstream bundle without the ones it leaves out, or
+                    // a wiped install): not "not found" — "incomplete", with Install… to repair (Maven review C3).
+                    status.showProblem(
+                            tr("settings.lsp.mavenIncomplete", lspToolName(srv.id(), argv)), lspCheck.isSelected());
+                    return;
+                }
+                status.show(
+                        found,
+                        found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "",
+                        lspCheck.isSelected());
+            });
         }
+    }
+
+    /** Whether the Maven server's {@code java -cp "<dir>/*"} folder exists but lacks required jars. Pure (file lookups). */
+    static boolean mavenInstallIncomplete(List<String> argv) {
+        return com.editora.install.MavenServerInstall.classpathDir(argv)
+                .filter(java.nio.file.Files::isDirectory)
+                .map(dir -> !com.editora.install.MavenServerInstall.complete(dir))
+                .orElse(false);
     }
 
     private static final String MAVEN_POM = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;

@@ -71,7 +71,10 @@ not new logic:
    `settings-controls.properties` rows, a schema bump with an additive migration, and the i18n keys in
    all six catalogs.
 5. An installer, if it has one: `InstallCatalog.serverInstall` (`ARCHIVE` for a per-OS binary,
-   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle,
+   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle — plus any
+   pinned jars the bundle leaves out (`InstallCatalog.jvmLspExtraJars`, SHA-256 checked) and a
+   post-install request through `JvmLspSmoke` so a server that starts but cannot answer is not installed;
+   its detection (`LspManager.available(serverId, command)`) then checks the folder, not just `java` —
    `PINNED_SERVER` for a pinned per-platform distribution too big to hold in memory — streamed to disk,
    hash-checked, unpacked by `tar`, and announced with its size before it starts — `PINNED_TOOL` with a
    `pinnedTool` recipe for a per-OS binary pinned by SHA-256, as clojure-lsp is, `COURSIER_LSP` for a server

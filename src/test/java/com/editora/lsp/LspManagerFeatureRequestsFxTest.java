@@ -791,6 +791,97 @@ class LspManagerFeatureRequestsFxTest {
         assertEquals("", direct.get(), "no server answers at once, with nothing");
     }
 
+    /** lemminx's answer to every request while its bundle lacked guava: the shape Maven review C2 is about. */
+    private static java.util.concurrent.CompletableFuture<Hover> serverFault() {
+        return java.util.concurrent.CompletableFuture.failedFuture(new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                        org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+                        "Internal error.",
+                        "java.lang.NoClassDefFoundError: com/google/common/cache/CacheBuilder\n\tat x.y(Z.java:1)\n")));
+    }
+
+    /** One reported request error: what {@link LspManager.RequestErrorHandler} is told. */
+    private record Reported(String serverId, String method, String summary, boolean announce, boolean failing) {}
+
+    @Test
+    void hoverSaysWhenTheServerFailedInsteadOfReadingAsNoDocumentation() throws Exception {
+        var fake = open();
+        fake.hoverFuture = serverFault();
+
+        var failure = new AtomicReference<String>();
+        var text = new AtomicReference<String>("unset");
+        var latch = new CountDownLatch(1);
+        manager.hover(file, 0, 2, text::set, why -> {
+            failure.set(why);
+            latch.countDown();
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertEquals(
+                "Internal error. — java.lang.NoClassDefFoundError: com/google/common/cache/CacheBuilder",
+                failure.get());
+        assertEquals("unset", text.get(), "a fault is not a blank hover");
+
+        // The old entry point keeps its contract for callers that only want text.
+        assertEquals("", this.<String>await(cb -> manager.hover(file, 0, 2, cb)));
+
+        // A transport failure is not the server's fault: blank as before, nothing reported.
+        fake.hoverFuture = java.util.concurrent.CompletableFuture.failedFuture(new IllegalStateException("transport"));
+        var transport = new AtomicReference<String>("unset");
+        assertEquals("", this.<String>await(cb -> manager.hover(file, 0, 2, cb, transport::set)));
+        assertEquals("unset", transport.get());
+    }
+
+    @Test
+    void serverFaultsAreReportedOncePerMethodAndTheThirdInARowMarksTheServerFailing() throws Exception {
+        var reported = new CopyOnWriteArrayList<Reported>();
+        manager.setOnRequestError((serverId, root, method, summary, announce, failing) ->
+                reported.add(new Reported(serverId, method, summary, announce, failing)));
+        capabilities.setDocumentSymbolProvider(true);
+        var fake = open();
+        fake.hoverFuture = serverFault();
+
+        this.<String>await(cb -> manager.hover(file, 0, 2, cb));
+        this.<String>await(cb -> manager.hover(file, 0, 2, cb));
+        drainFx();
+        assertEquals(
+                List.of(new Reported(
+                        "java",
+                        "hover",
+                        "Internal error. — java.lang.NoClassDefFoundError: com/google/common/cache/CacheBuilder",
+                        true,
+                        false)),
+                reported,
+                "the first hover fault is announced; the second is neither new nor the third");
+
+        fake.hoverFuture = null;
+        fake.hoverResponse = new Hover(new MarkupContent("plaintext", "ok"));
+        assertEquals("ok", this.<String>await(cb -> manager.hover(file, 0, 2, cb)));
+
+        fake.hoverFuture = serverFault();
+        fake.failEverything = false;
+        this.<String>await(cb -> manager.hover(file, 0, 2, cb));
+        this.<String>await(cb -> manager.hover(file, 0, 2, cb));
+        drainFx();
+        assertEquals(
+                1, reported.size(), "a success ended the run: two faults are not three, and hover was already said");
+
+        fake.documentSymbolResponse = null;
+        fake.documentSymbolFault = true;
+        this.<List<SymbolNode>>await(cb -> manager.documentSymbols(file, cb));
+        drainFx();
+        assertEquals(2, reported.size());
+        Reported third = reported.get(1);
+        assertEquals("documentSymbol", third.method());
+        assertTrue(third.announce(), "a new method is announced");
+        assertTrue(third.failing(), "the third fault in a row gives the server up");
+    }
+
+    private static void drainFx() throws Exception {
+        var latch = new CountDownLatch(1);
+        Platform.runLater(latch::countDown);
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+    }
+
     @Test
     void documentHighlightsFlagWrites() throws Exception {
         capabilities.setDocumentHighlightProvider(true);
