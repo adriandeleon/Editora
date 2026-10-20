@@ -31,8 +31,16 @@ final class MermaidLintHover {
 
     static void install(CodeArea area, Supplier<@Nullable MermaidLintOverlay> overlay) {
         MermaidLintHover hover = new MermaidLintHover(area, overlay);
+        area.getProperties().put(MermaidLintHover.class, hover);
         area.addEventHandler(MouseEvent.MOUSE_MOVED, hover::onMove);
         area.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hover.hide());
+    }
+
+    /** Test seam: the tooltip of the hover installed on {@code area}, or null before its first hit. */
+    static @Nullable Tooltip tooltipOf(CodeArea area) {
+        return area.getProperties().get(MermaidLintHover.class) instanceof MermaidLintHover hover
+                ? hover.tooltip
+                : null;
     }
 
     private void onMove(MouseEvent e) {
