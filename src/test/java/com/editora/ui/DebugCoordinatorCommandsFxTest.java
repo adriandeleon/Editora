@@ -1564,7 +1564,7 @@ class DebugCoordinatorCommandsFxTest {
                     "the same rejection is not repeated for every answer: " + log);
         }
         assertEquals(
-                com.editora.editor.BreakpointManager.LiveState.VERIFIED,
+                com.editora.editor.debug.BreakpointManager.LiveState.VERIFIED,
                 FxTestSupport.callOnFx(() -> b.getBreakpointManager().live(4).state()));
     }
 
@@ -1596,7 +1596,7 @@ class DebugCoordinatorCommandsFxTest {
         session.userNotification("WARNING", "Cannot format the log message 'b is {b +}'");
         awaitStatus(tr("status.debug.error", "Cannot format the log message 'b is {b +}'"));
 
-        List<com.editora.editor.BreakpointManager.LiveState> states = FxTestSupport.callOnFx(() -> List.of(
+        List<com.editora.editor.debug.BreakpointManager.LiveState> states = FxTestSupport.callOnFx(() -> List.of(
                 b.getBreakpointManager().live(2).state(),
                 b.getBreakpointManager().live(3).state(),
                 b.getBreakpointManager().live(4).state()));

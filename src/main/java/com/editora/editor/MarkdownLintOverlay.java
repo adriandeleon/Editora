@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
  * {@link MermaidLintOverlay}: a mouse-transparent {@link Canvas} sized to the viewport, redrawn
  * coalesced (one per pulse) on scroll / edit / resize, only for the currently visible paragraphs.
  */
-final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final double AMP = 1.6;
@@ -40,7 +40,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private @Nullable MarkdownLintOverlay follower;
 
-    MarkdownLintOverlay(CodeArea area) {
+    public MarkdownLintOverlay(CodeArea area) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -75,7 +75,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
         return second;
     }
 
-    void setActive(boolean active) {
+    public void setActive(boolean active) {
         if (follower != null) {
             follower.setActive(active);
         }
@@ -93,7 +93,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
         }
     }
 
-    void setDiagnostics(List<MarkdownLint.Diagnostic> diagnostics) {
+    public void setDiagnostics(List<MarkdownLint.Diagnostic> diagnostics) {
         if (follower != null) {
             follower.setDiagnostics(diagnostics);
         }
@@ -107,7 +107,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
         scheduleRedraw();
     }
 
-    List<MarkdownLint.Diagnostic> diagnostics() {
+    public List<MarkdownLint.Diagnostic> diagnostics() {
         return diagnostics;
     }
 
@@ -262,7 +262,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
     }
 
     /** The diagnostics whose span covers the character at {@code (paragraph, column)} (for hover tooltips). */
-    List<MarkdownLint.Diagnostic> at(int paragraph, int column) {
+    public List<MarkdownLint.Diagnostic> at(int paragraph, int column) {
         List<MarkdownLint.Diagnostic> hits = new ArrayList<>();
         for (MarkdownLint.Diagnostic d : diagnostics) {
             if (d.line() - 1 == paragraph) {

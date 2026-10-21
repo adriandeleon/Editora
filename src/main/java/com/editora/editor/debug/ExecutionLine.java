@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.debug;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -10,6 +10,8 @@ import java.util.function.Supplier;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 
+import com.editora.editor.FoldManager;
+import com.editora.editor.StickyScroll;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -28,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  * line looked like any caret line (review C1). While the caret is on the marked line the current-line
  * highlight is therefore made transparent, and restored as soon as the caret leaves it.
  */
-final class ExecutionLine {
+public final class ExecutionLine {
 
     static final String STYLE = "exec-line";
 
@@ -56,7 +58,8 @@ final class ExecutionLine {
      * (the arrow), for the line marked before and the one marked now; {@code lineFill} is the editor's own
      * current-line colour.
      */
-    boolean set(CodeArea area, FoldManager folds, int target, Supplier<? extends Paint> lineFill, IntConsumer repaint) {
+    public boolean set(
+            CodeArea area, FoldManager folds, int target, Supplier<? extends Paint> lineFill, IntConsumer repaint) {
         int before = markedLine(area);
         clear(area);
         if (target < 0 || target >= area.getParagraphs().size()) {
@@ -105,7 +108,7 @@ final class ExecutionLine {
     }
 
     /** As {@link #clear(CodeArea)}, rebuilding the gutter of the line that carried the arrow. */
-    void clear(CodeArea area, IntConsumer repaint) {
+    public void clear(CodeArea area, IntConsumer repaint) {
         int before = markedLine(area);
         clear(area);
         if (before >= 0) {
@@ -114,7 +117,7 @@ final class ExecutionLine {
     }
 
     /** Whether paragraph {@code index} is the execution point now (the gutter draws its arrow from this). */
-    boolean isMarked(CodeArea area, int index) {
+    public boolean isMarked(CodeArea area, int index) {
         return line >= 0
                 && index >= 0
                 && index < area.getParagraphs().size()
@@ -156,7 +159,7 @@ final class ExecutionLine {
      * through a loop must not scroll on every step — and one out of view (or under a pinned header, review B6)
      * gets a third of the screen of context above it, as IntelliJ centres it.
      */
-    static int revealTop(int target, int first, int last, int pinned, IntUnaryOperator clearTop) {
+    public static int revealTop(int target, int first, int last, int pinned, IntUnaryOperator clearTop) {
         if (first >= 0 && last > first && target >= first + pinned && target < last) {
             return -1;
         }
@@ -166,8 +169,28 @@ final class ExecutionLine {
         return Math.min(target, clearTop.applyAsInt(top));
     }
 
+    /**
+     * Scrolls so that {@code line} is in view clear of {@code pinned} sticky-scroll headers, as {@link #revealTop}
+     * decides from the lines {@code area} shows now (none when it is not laid out yet); a line already in view
+     * stays where it is.
+     */
+    public void reveal(CodeArea area, int line, int pinned, IntUnaryOperator clearTop) {
+        int first;
+        int last;
+        try {
+            first = area.firstVisibleParToAllParIndex();
+            last = area.lastVisibleParToAllParIndex();
+        } catch (RuntimeException notLaidOut) {
+            first = last = -1;
+        }
+        int top = revealTop(line, first, last, pinned, clearTop);
+        if (top >= 0) {
+            area.showParagraphAtTop(top);
+        }
+    }
+
     /** Marks the execution line as an exception stop (red) or a plain one; nothing when no line is marked. */
-    void setException(CodeArea area, boolean exception) {
+    public void setException(CodeArea area, boolean exception) {
         int at = markedLine(area);
         if (at < 0 || styleOf(area, at).contains(EXCEPTION_STYLE) == exception) {
             return;

@@ -1,9 +1,10 @@
-package com.editora.editor;
+package com.editora.editor.http;
 
 import java.util.List;
 import java.util.Map;
 
 import com.editora.completion.Completion;
+import com.editora.editor.MarkdownCompletions;
 import com.editora.http.HttpVariableIndex;
 import com.editora.i18n.Messages;
 import org.junit.jupiter.api.BeforeAll;

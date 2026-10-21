@@ -9,8 +9,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.editora.config.Bookmark;
 import com.editora.config.Breakpoint;
-import com.editora.editor.BreakpointManager.Live;
-import com.editora.editor.BreakpointManager.LiveState;
+import com.editora.editor.debug.BreakpointManager;
+import com.editora.editor.debug.BreakpointManager.Live;
+import com.editora.editor.debug.BreakpointManager.LiveState;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.http;
 
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -6,6 +6,8 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.MarkdownLintOverlay;
 import com.editora.markdown.MarkdownLint;
 import org.jspecify.annotations.Nullable;
 
@@ -16,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  * overlay. It reuses the Markdown-lint overlay and hover: a buffer is one language, so the two never share it.
  * Runs on the settled-edit pause, never per keystroke.
  */
-final class HttpVariableMarks {
+public final class HttpVariableMarks {
 
     private final Supplier<MarkdownLintOverlay> overlay;
     private final Supplier<String> text;
@@ -37,7 +39,7 @@ final class HttpVariableMarks {
      * @param eligible whether the buffer is an {@code .http} file with the HTTP Client on (and not a huge file)
      * @param sharedUse whether Markdown lint is using the same overlay (it is left on for it when the marks go off)
      */
-    HttpVariableMarks(
+    public HttpVariableMarks(
             Supplier<MarkdownLintOverlay> overlay,
             Supplier<String> text,
             BooleanSupplier eligible,
@@ -49,13 +51,13 @@ final class HttpVariableMarks {
     }
 
     /** Injects the analysis ({@code accept(text, diagnostics -> …)}); null turns the marks off. */
-    void setValidator(@Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> validator) {
+    public void setValidator(@Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> validator) {
         this.validator = validator;
         update();
     }
 
     /** Re-evaluates whether the marks are on (language, feature switch, validator) and checks again if so. */
-    void update() {
+    public void update() {
         boolean on = validator != null && eligible.getAsBoolean();
         if (on != enabled) {
             enabled = on;
@@ -79,12 +81,12 @@ final class HttpVariableMarks {
         schedule();
     }
 
-    boolean enabled() {
+    public boolean enabled() {
         return enabled;
     }
 
     /** Checks the document again (an edit settled, or the environment / env files changed). */
-    void schedule() {
+    public void schedule() {
         if (!enabled || validator == null) {
             return;
         }
@@ -103,7 +105,7 @@ final class HttpVariableMarks {
     }
 
     /** The marks currently shown (empty while off). */
-    List<MarkdownLint.Diagnostic> diagnostics() {
+    public List<MarkdownLint.Diagnostic> diagnostics() {
         return enabled ? overlay.get().diagnostics() : List.of();
     }
 }

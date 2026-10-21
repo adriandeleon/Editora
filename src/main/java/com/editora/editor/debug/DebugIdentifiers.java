@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.debug;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
  * letter/underscore/dollar start followed by letter/digit/underscore/dollar — the common ground of
  * Java, Python, and JavaScript names.
  */
-final class DebugIdentifiers {
+public final class DebugIdentifiers {
 
     private DebugIdentifiers() {}
 

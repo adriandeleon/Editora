@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.debug;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -7,6 +7,9 @@ import java.util.NavigableSet;
 import java.util.TreeMap;
 
 import com.editora.config.Breakpoint;
+import com.editora.editor.BookmarkManager;
+import com.editora.editor.LineMarkTracker;
+import com.editora.editor.LineMarks;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;

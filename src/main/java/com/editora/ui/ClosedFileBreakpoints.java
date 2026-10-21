@@ -11,7 +11,7 @@ import java.util.function.Predicate;
 
 import com.editora.config.Breakpoint;
 import com.editora.dap.DapModels;
-import com.editora.editor.BreakpointManager;
+import com.editora.editor.debug.BreakpointManager;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
 

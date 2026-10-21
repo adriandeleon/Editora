@@ -14,8 +14,8 @@ import javafx.scene.input.KeyCombination;
 import com.editora.config.Breakpoint;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
-import com.editora.editor.BreakpointDescription;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.debug.BreakpointDescription;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
 

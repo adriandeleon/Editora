@@ -21,7 +21,7 @@ import org.jspecify.annotations.Nullable;
  * including the mid-tone ones, without a per-theme table. Resolved when the editor background changes
  * (a theme switch), never per paint.
  */
-final class OverlayPalette {
+public final class OverlayPalette {
 
     /** Contrast a faint, decorative marker must reach to be visible at all without competing with text. */
     static final double SUBTLE = 3.0;
@@ -33,7 +33,7 @@ final class OverlayPalette {
     static final double TEXT = 4.5;
 
     /** One resolved set of overlay colours. */
-    record Colors(
+    public record Colors(
             Color whitespace,
             Color inlineValue,
             Color error,
@@ -51,7 +51,7 @@ final class OverlayPalette {
     private OverlayPalette() {}
 
     /** The overlay colours for an editor painted on {@code background}. Pure. */
-    static Colors of(Color background) {
+    public static Colors of(Color background) {
         Color ground = background == null
                 ? Color.WHITE
                 : Color.color(background.getRed(), background.getGreen(), background.getBlue());
@@ -120,7 +120,7 @@ final class OverlayPalette {
      * Feeds {@code sink} the colours for {@code area}'s current background, and again whenever the editor
      * theme repaints it. The listener is on the area itself, which the overlay already lives and dies with.
      */
-    static void track(Region area, Consumer<Colors> sink) {
+    public static void track(Region area, Consumer<Colors> sink) {
         sink.accept(forRegion(area));
         area.backgroundProperty().addListener((obs, was, now) -> sink.accept(forRegion(area)));
     }

@@ -5,7 +5,7 @@ package com.editora.editor;
  * time on screen: retained VRAM would otherwise grow with the number of open files. {@code EditorBuffer}
  * tells every such child of its code pane when the tab is shown or goes to the background.
  */
-interface TabSurface {
+public interface TabSurface {
 
     /** {@code false} releases the texture; {@code true} lets the surface size itself and repaint again. */
     void setRenderingActive(boolean active);

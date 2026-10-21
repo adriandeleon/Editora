@@ -1,6 +1,8 @@
-package com.editora.editor;
+package com.editora.editor.debug;
 
 import javafx.scene.input.ContextMenuEvent;
+
+import com.editora.editor.EditorBuffer;
 
 /** What a right-click on a breakpoint glyph in the gutter does (the window shows Edit / Disable / Remove). */
 @FunctionalInterface

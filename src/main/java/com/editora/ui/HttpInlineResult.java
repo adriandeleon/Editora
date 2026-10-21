@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.editora.editor.HttpLineResult;
+import com.editora.editor.http.HttpLineResult;
 import com.editora.http.HttpClientService;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpResult;

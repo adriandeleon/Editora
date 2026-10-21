@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
  * a debounce and a round trip away. Without this a new line above a method leaves its "3 references" on
  * whatever line now has the old number.
  */
-final class CodeLensShift {
+public final class CodeLensShift {
 
     private CodeLensShift() {}
 
@@ -33,7 +33,7 @@ final class CodeLensShift {
      * The lenses after {@code changes} to {@code area}'s text, or {@code null} when nothing moves: a change
      * that adds or removes lines moves the lenses below it and drops those inside the removed text.
      */
-    static <V> @Nullable Map<Integer, V> afterChanges(
+    public static <V> @Nullable Map<Integer, V> afterChanges(
             Map<Integer, V> lenses,
             java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes,
             org.fxmisc.richtext.CodeArea area) {

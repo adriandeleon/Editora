@@ -1218,14 +1218,14 @@ final class HttpClientCoordinator {
         String[] lines = text.split("\n", -1);
         long now = System.currentTimeMillis();
         java.time.ZoneId zone = java.time.ZoneId.systemDefault();
-        List<com.editora.editor.HttpLineResult> results = new ArrayList<>();
+        List<com.editora.editor.http.HttpLineResult> results = new ArrayList<>();
         HttpInlineResult.newestPerRequest(requests, entries).forEach((index, entry) -> {
             int line = requests.get(index).startLine();
             if (line < 0 || line >= lines.length) {
                 return;
             }
             HttpResult r = entry.result();
-            results.add(new com.editora.editor.HttpLineResult(
+            results.add(new com.editora.editor.http.HttpLineResult(
                     line,
                     lines[line],
                     HttpInlineResult.segments(r),

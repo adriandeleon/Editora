@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.http;
 
 import java.util.List;
 import java.util.function.IntFunction;
@@ -11,7 +11,7 @@ import org.jspecify.annotations.Nullable;
  * to where the mark was. Without this an edit during a run removed the ■ — and with it the click that cancels —
  * while the request kept running. Pure.
  */
-final class HttpRunMark {
+public final class HttpRunMark {
 
     private HttpRunMark() {}
 

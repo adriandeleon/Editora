@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.debug;
 
 import java.util.List;
 import java.util.Map;
@@ -13,6 +13,11 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontPosture;
 import javafx.scene.text.TextAlignment;
 
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.OverlayPalette;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -21,11 +26,11 @@ import org.jspecify.annotations.Nullable;
  * {@code name: value} annotations are painted after the text of each visible line that mentions a
  * variable of the suspended frame — in code (not in a comment or a string literal), and within the function
  * the frame is stopped in ({@link InlineValueScope}): the same name elsewhere is another variable. A mouse-transparent {@link Canvas} mirroring
- * {@link WhitespaceOverlay}: only visible paragraphs are scanned (via the pure
+ * {@code WhitespaceOverlay}: only visible paragraphs are scanned (via the pure
  * {@link DebugIdentifiers#matchesIn}), redraws coalesce to one per pulse, and when no values are set
  * the canvas is 1×1 and invisible — zero cost outside a paused debug session.
  */
-final class InlineValuesOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class InlineValuesOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final int MAX_PER_LINE = 3;
@@ -50,7 +55,7 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
 
     private Font font = Font.font("monospace", FontPosture.ITALIC, 14);
 
-    InlineValuesOverlay(CodeArea area) {
+    public InlineValuesOverlay(CodeArea area) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -119,7 +124,8 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
      */
     private java.util.function.@Nullable IntPredicate lineFilter;
 
-    void setValues(@Nullable Map<String, String> v, int frameLine, java.util.function.@Nullable IntPredicate lines) {
+    public void setValues(
+            @Nullable Map<String, String> v, int frameLine, java.util.function.@Nullable IntPredicate lines) {
         this.lineFilter = lines;
         setValues(v, frameLine);
     }
@@ -141,7 +147,7 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
     }
 
     /** Keeps the annotation font in step with the editor font (italic variant). */
-    void setFont(String family, int size) {
+    public void setFont(String family, int size) {
         if (follower != null) {
             follower.setFont(family, size);
         }

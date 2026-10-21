@@ -8115,12 +8115,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAdminEditAvailable(
                 fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file
         // .http: the request ▶, the editor menu's Run All Requests (active buffer), the running request's ■
-        buffer.setHttpHooks(new com.editora.editor.HttpHooks(
+        buffer.setHttpHooks(new com.editora.editor.http.HttpHooks(
                 line -> httpClient.runRequest(buffer, line),
                 httpClient::runFile,
                 () -> httpClient.cancelRun(buffer),
                 () -> httpRunTooltip(keymap),
-                com.editora.editor.HttpHooks.NO_LINT,
+                com.editora.editor.http.HttpHooks.NO_LINT,
                 null));
         buffer.setHttpDebugHandler(line -> httpClient.debugRequest(buffer, line)); // editor menu → Debug Request
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)

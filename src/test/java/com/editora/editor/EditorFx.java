@@ -32,7 +32,7 @@ import org.testfx.api.FxToolkit;
  * work on the FX thread, waits for an observable to change (never for wall-clock time), and reads private
  * state by reflection. The {@code ui} package has its own, package-private, {@code FxTestSupport}.
  */
-final class EditorFx {
+public final class EditorFx {
 
     private static final long TIMEOUT_SECONDS = 60;
 
@@ -41,7 +41,7 @@ final class EditorFx {
     private EditorFx() {}
 
     /** Idempotently starts the Headless toolkit and loads the English message catalog. */
-    static synchronized void boot() throws Exception {
+    public static synchronized void boot() throws Exception {
         if (booted) {
             return;
         }
@@ -54,7 +54,7 @@ final class EditorFx {
     }
 
     /** Runs {@code task} on the FX thread and waits for it, rethrowing an assertion failure as itself. */
-    static void onFx(Runnable task) throws Exception {
+    public static void onFx(Runnable task) throws Exception {
         if (Platform.isFxApplicationThread()) {
             task.run();
             return;
@@ -184,7 +184,7 @@ final class EditorFx {
     }
 
     /** Shows {@code buffer} in its own stage (so hit-testing, popups and focus have a window). FX thread. */
-    static Stage show(EditorBuffer buffer, double width, double height) {
+    public static Stage show(EditorBuffer buffer, double width, double height) {
         Stage stage = new Stage();
         stage.setX(120);
         stage.setY(90);
@@ -196,7 +196,7 @@ final class EditorFx {
     }
 
     @SuppressWarnings("unchecked")
-    static <T> T field(Object target, String name) {
+    public static <T> T field(Object target, String name) {
         for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {
             try {
                 Field f = c.getDeclaredField(name);
@@ -418,7 +418,7 @@ final class EditorFx {
     }
 
     /** {@link #mouse} holding the platform's shortcut key: Command on macOS, Ctrl everywhere else. */
-    static javafx.scene.input.MouseEvent mouseWithShortcut(
+    public static javafx.scene.input.MouseEvent mouseWithShortcut(
             javafx.event.EventType<javafx.scene.input.MouseEvent> type,
             double x,
             double y,

@@ -1,7 +1,7 @@
 package com.editora.ui;
 
 import com.editora.dap.DapModels;
-import com.editora.editor.BreakpointManager;
+import com.editora.editor.debug.BreakpointManager;
 import org.jspecify.annotations.Nullable;
 
 /**

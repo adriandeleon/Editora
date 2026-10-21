@@ -1,8 +1,8 @@
 package com.editora.ui;
 
 import com.editora.dap.DapModels;
-import com.editora.editor.BreakpointManager;
-import com.editora.editor.BreakpointManager.LiveState;
+import com.editora.editor.debug.BreakpointManager;
+import com.editora.editor.debug.BreakpointManager.LiveState;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

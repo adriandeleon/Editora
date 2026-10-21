@@ -19,6 +19,7 @@ import com.editora.completion.CompletionSession;
 import com.editora.completion.CompletionSource;
 import com.editora.completion.CompletionTrace;
 import com.editora.editor.EditorBuffer.AiCompletionProvider;
+import com.editora.editor.http.HttpCompletions;
 import com.editora.snippet.Snippet;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
