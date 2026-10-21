@@ -28,8 +28,8 @@ import com.editora.config.RunConfiguration;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
-import com.editora.editor.BreakpointManager;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.debug.BreakpointManager;
 import com.editora.lsp.LspManager;
 import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.ProgramArgs;
@@ -3826,7 +3826,7 @@ final class DebugCoordinator {
             String selected = area.getSelectedText();
             String expression = selected != null && !selected.isBlank() && !selected.contains("\n")
                     ? selected.strip()
-                    : com.editora.editor.DebugExpressions.atCaret(area);
+                    : com.editora.editor.debug.DebugExpressions.atCaret(area);
             if (expression != null) {
                 javafx.scene.control.MenuItem watch =
                         new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));

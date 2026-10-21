@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>One per overlay; FX thread only. The listener is on the scene only while a paint or a check is due.
  */
-final class AfterLayoutPaint {
+public final class AfterLayoutPaint {
 
     /** How many pulses after a paint the text's position is checked. */
     static final int CHECKS_AFTER_PAINT = 3;
@@ -50,7 +50,7 @@ final class AfterLayoutPaint {
      * @param paint the overlay's repaint
      * @param drawable whether the overlay has anything to draw: the checks after a paint stop when it has not
      */
-    AfterLayoutPaint(Node owner, CodeArea area, Runnable paint, BooleanSupplier drawable) {
+    public AfterLayoutPaint(Node owner, CodeArea area, Runnable paint, BooleanSupplier drawable) {
         this.owner = owner;
         this.area = area;
         this.paint = paint;
@@ -58,7 +58,7 @@ final class AfterLayoutPaint {
     }
 
     /** Asks for {@code paint} after the next layout pass (several requests before it are one paint). */
-    void request() {
+    public void request() {
         pending = true;
         arm();
     }

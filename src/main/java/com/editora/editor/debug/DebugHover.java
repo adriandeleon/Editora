@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.debug;
 
 import java.util.Collection;
 import java.util.function.BiConsumer;
@@ -40,7 +40,7 @@ public final class DebugHover {
     /** Shows the value as an expandable popup (follow-up 6); null: the one-line tooltip. */
     private @Nullable DebugValuePresenter presenter;
 
-    void setPresenter(DebugValuePresenter presenter) {
+    public void setPresenter(DebugValuePresenter presenter) {
         this.presenter = presenter;
     }
 
@@ -49,19 +49,19 @@ public final class DebugHover {
         debounce = rest == null ? Duration.millis(250) : rest;
     }
 
-    void setEvaluator(BiConsumer<String, Consumer<String>> evaluator) {
+    public void setEvaluator(BiConsumer<String, Consumer<String>> evaluator) {
         this.evaluator = evaluator;
     }
 
     /** On while paused, so hovering costs nothing outside a pause; off hides the popup. */
-    void setActive(boolean on) {
+    public void setActive(boolean on) {
         active = on;
         if (!on) {
             hide();
         }
     }
 
-    void install(CodeArea a) {
+    public void install(CodeArea a) {
         a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
             if (!active || evaluator == null) {
                 return;
@@ -94,7 +94,7 @@ public final class DebugHover {
      * Show Value at Caret: evaluates the expression at the caret of {@code a} and shows its value under it. False
      * (nothing done) when not paused or the caret is not on a name in code.
      */
-    boolean showAtCaret(@Nullable CodeArea a) {
+    public boolean showAtCaret(@Nullable CodeArea a) {
         if (!active || evaluator == null) {
             return false;
         }
@@ -207,7 +207,7 @@ public final class DebugHover {
 
     /** The popup (null until first shown) — for tests. */
     @Nullable
-    Tooltip tooltip() {
+    public Tooltip tooltip() {
         return tooltip;
     }
 }

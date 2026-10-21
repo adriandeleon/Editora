@@ -5,6 +5,7 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.function.IntFunction;
 
+import com.editora.editor.debug.BreakpointManager;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
@@ -20,12 +21,12 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * Resolving such a position against the final document gives the wrong line whenever another replacement of
  * the batch changed the text above it, so each one is first translated (see {@link #settle}).
  */
-final class LineMarkTracker {
+public final class LineMarkTracker {
 
     private LineMarkTracker() {}
 
     /** The marks after a batch, and what kind of difference there is to the marks before it. */
-    record Result<T>(NavigableMap<Integer, T> marks, boolean moved, boolean retexted) {}
+    public record Result<T>(NavigableMap<Integer, T> marks, boolean moved, boolean retexted) {}
 
     /**
      * Where the {@code i}-th replacement of a batch sits in the final document.
@@ -59,7 +60,7 @@ final class LineMarkTracker {
         return new Settled(Math.max(0, offset), above, later);
     }
 
-    static <T> Result<T> apply(
+    public static <T> Result<T> apply(
             NavigableMap<Integer, T> marks, LineMarks.Kind<T> kind, List<PlainTextChange> changes, CodeArea area) {
         if (marks.isEmpty()) {
             // Nothing to carry — the usual case — so a large batch (a formatter's edit set, a multi-caret

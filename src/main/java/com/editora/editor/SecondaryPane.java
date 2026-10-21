@@ -16,13 +16,13 @@ import org.fxmisc.richtext.CodeArea;
  * The container of a split's second view: its scroll pane, its minimap, and a twin of everything the
  * primary pane draws over or beside its text (see {@link Followed}).
  */
-final class SecondaryPane {
+public final class SecondaryPane {
 
     /**
      * Something the primary pane draws for its view (an overlay over the text, a stripe beside it) that can
      * draw the same for a split's second view.
      */
-    interface Followed {
+    public interface Followed {
         /**
          * A twin bound to {@code view}. From then on the original hands it every setting and all data it is
          * given itself, so the two panes cannot drift apart; the twin repaints on its own view's scrolling.

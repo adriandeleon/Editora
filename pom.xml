@@ -757,6 +757,7 @@
                                     <element>PACKAGE</element>
                                     <includes>
                                         <include>com.editora.editor</include>
+                                        <include>com.editora.editor.*</include>
                                         <include>com.editora.editorconfig</include>
                                         <include>com.editora.http</include>
                                         <include>com.editora.index</include>

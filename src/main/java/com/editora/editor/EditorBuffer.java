@@ -47,6 +47,18 @@ import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
 import com.editora.editops.MultiTab;
+import com.editora.editor.debug.BreakpointGutterMenu;
+import com.editora.editor.debug.BreakpointManager;
+import com.editora.editor.debug.DebugHover;
+import com.editora.editor.debug.DebugValuePresenter;
+import com.editora.editor.debug.ExecutionLine;
+import com.editora.editor.debug.InlineValuesOverlay;
+import com.editora.editor.http.HttpGutter;
+import com.editora.editor.http.HttpHooks;
+import com.editora.editor.http.HttpLineResult;
+import com.editora.editor.http.HttpResultMarks;
+import com.editora.editor.http.HttpVariableFixes;
+import com.editora.editor.http.HttpVariableMarks;
 import com.editora.logviewer.LogLevel;
 import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLint;
@@ -3586,10 +3598,6 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
     }
 
-    /**
-     * Injects what this {@code .http} buffer asks of the window ({@link HttpHooks}): running, Run All, cancel, the ▶
-     * tooltip, the {@code {{variable}}} check and the {@code {{} completion context. Null clears them.
-     */
     /** Debug Request for the request at a 0-based line (the editor menu); null when there is none to offer. */
     private java.util.function.@Nullable IntConsumer httpDebugHandler;
 
@@ -3598,6 +3606,10 @@ public class EditorBuffer implements TabContent {
         this.httpDebugHandler = handler;
     }
 
+    /**
+     * Injects what this {@code .http} buffer asks of the window ({@link HttpHooks}): running, Run All, cancel, the ▶
+     * tooltip, the {@code {{variable}}} check and the {@code {{} completion context. Null clears them.
+     */
     public void setHttpHooks(HttpHooks hooks) {
         httpGutter.setHooks(hooks);
         HttpHooks set = httpGutter.hooks();
@@ -3640,15 +3652,7 @@ public class EditorBuffer implements TabContent {
      * Cleared by the caller when the run ends, and here when the requests move (the mark would be stale).
      */
     public void setHttpRunning(int index) {
-        for (int line : httpGutter.setRunning(index, this::paragraphTextOrNull)) {
-            if (line >= 0) {
-                refreshGutterLine(line);
-                int shown = HttpGutter.glyphLine(line, this::isFoldedLine); // a folded request's ■ is on its ### line
-                if (shown != line) {
-                    refreshGutterLine(shown);
-                }
-            }
-        }
+        httpGutter.setRunning(index, this::paragraphTextOrNull, this::isFoldedLine, this::refreshGutterLine);
     }
 
     /**
@@ -6994,23 +6998,11 @@ public class EditorBuffer implements TabContent {
         if (executionLine.set(area, folds, line, () -> lineHighlightColor, this::refreshGutterLine)) {
             area.moveTo(line, 0);
             area.requestFocus();
-            int first;
-            int last;
-            try {
-                first = area.firstVisibleParToAllParIndex();
-                last = area.lastVisibleParToAllParIndex();
-            } catch (RuntimeException notLaidOut) {
-                first = last = -1;
-            }
-            int top = ExecutionLine.revealTop(
+            executionLine.reveal(
+                    area,
                     line,
-                    first,
-                    last,
                     stickyScrollEnabled ? stickyLines.size() : 0,
                     t -> stickyScrollEnabled ? StickyScroll.navigationFirstVisible(folds.regions(), t) : t);
-            if (top >= 0) {
-                area.showParagraphAtTop(top);
-            }
         }
     }
 

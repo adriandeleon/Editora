@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.http;
 
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -7,6 +7,8 @@ import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 
+import com.editora.editor.CodeAction;
+import com.editora.editor.EditorBuffer;
 import com.editora.http.HttpVariableIndex;
 import com.editora.markdown.MarkdownLint;
 import org.jspecify.annotations.Nullable;

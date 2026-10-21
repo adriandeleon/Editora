@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.debug;
 
 import java.util.Set;
 import java.util.function.IntFunction;
@@ -16,7 +16,7 @@ import java.util.function.IntFunction;
  * heuristic and errs towards fewer annotations, never towards a value on a line it does not belong to.
  * Pure — unit-tested.
  */
-final class InlineValueScope {
+public final class InlineValueScope {
 
     /** No enclosing header: top-level code. */
     static final int TOP_LEVEL = -1;

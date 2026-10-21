@@ -21,7 +21,7 @@ import javafx.scene.layout.StackPane;
 import javafx.util.Duration;
 
 import com.editora.dap.DapModels;
-import com.editora.editor.DebugValuePresenter;
+import com.editora.editor.debug.DebugValuePresenter;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.http;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -18,6 +18,7 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 
+import com.editora.editor.CodeLensShift;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.Inlay;
 import org.fxmisc.richtext.model.PlainTextChange;
@@ -40,7 +41,7 @@ import org.jspecify.annotations.Nullable;
  * <p>A click on the text runs the result's action; the labels are mouse-transparent, so it is found by its bounds,
  * as a code lens is. Allocates only when results exist: no work at all for a buffer without any. FX thread only.
  */
-final class HttpResultMarks {
+public final class HttpResultMarks {
 
     /** Every segment's class starts with this. */
     static final String STYLE_PREFIX = "http-result";
@@ -57,12 +58,12 @@ final class HttpResultMarks {
     private final List<Node> hovered = new ArrayList<>(3);
     private @Nullable Cursor cursorBefore;
 
-    boolean isEmpty() {
+    public boolean isEmpty() {
         return byLine.isEmpty();
     }
 
     /** The results, by line, as drawn now. */
-    List<HttpLineResult> all() {
+    public List<HttpLineResult> all() {
         List<HttpLineResult> out = new ArrayList<>();
         byLine.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(e -> {
             int line = e.getKey();
@@ -82,7 +83,7 @@ final class HttpResultMarks {
      * changed (to repaint their gutter rows), or null when nothing that is drawn changed.
      */
     @Nullable
-    Set<Integer> set(List<HttpLineResult> results, IntFunction<String> textOf) {
+    public Set<Integer> set(List<HttpLineResult> results, IntFunction<String> textOf) {
         Map<Integer, HttpLineResult> next = new HashMap<>();
         if (results != null) {
             for (HttpLineResult r : results) {
@@ -111,7 +112,7 @@ final class HttpResultMarks {
     }
 
     /** Moves the results with an edit that added or removed lines; true when any moved or went. */
-    boolean shift(List<PlainTextChange> changes, CodeArea area) {
+    public boolean shift(List<PlainTextChange> changes, CodeArea area) {
         if (byLine.isEmpty()) {
             return false;
         }
@@ -137,7 +138,7 @@ final class HttpResultMarks {
      * Returns the lines whose look changed, or null.
      */
     @Nullable
-    Set<Integer> reanchor(List<Integer> requestLines, IntFunction<String> textOf) {
+    public Set<Integer> reanchor(List<Integer> requestLines, IntFunction<String> textOf) {
         if (byLine.isEmpty()) {
             lost = false;
             return null;
@@ -199,7 +200,7 @@ final class HttpResultMarks {
 
     /** The class {@code line}'s ▶ takes, or null. */
     @Nullable
-    String glyphClass(int line) {
+    public String glyphClass(int line) {
         HttpLineResult r = byLine.isEmpty() ? null : byLine.get(line);
         return r == null ? null : r.glyphClass();
     }
@@ -209,7 +210,7 @@ final class HttpResultMarks {
      * the line. {@code base} itself when the line has none.
      */
     @Nullable
-    List<Inlay> inlays(int line, @Nullable List<Inlay> base, int column) {
+    public List<Inlay> inlays(int line, @Nullable List<Inlay> base, int column) {
         HttpLineResult r = byLine.isEmpty() ? null : byLine.get(line);
         if (r == null) {
             return base;
@@ -228,7 +229,7 @@ final class HttpResultMarks {
     // --- the pointer -------------------------------------------------------------------------------------------
 
     /** A click on a result runs its action; hovering one lights it, shows the hand and the tooltip. */
-    void install(CodeArea a) {
+    public void install(CodeArea a) {
         a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
             if (e.getButton() != MouseButton.PRIMARY || !e.isStillSincePress() || byLine.isEmpty()) {
                 return;
@@ -253,7 +254,7 @@ final class HttpResultMarks {
     }
 
     /** Runs the action of {@code line}'s result, as a click on it does; false when it has none. */
-    boolean activate(int line) {
+    public boolean activate(int line) {
         HttpLineResult r = byLine.get(line);
         if (r == null) {
             return false;

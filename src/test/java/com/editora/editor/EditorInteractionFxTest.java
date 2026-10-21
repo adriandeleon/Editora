@@ -19,6 +19,8 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseEvent;
 import javafx.stage.Stage;
 
+import com.editora.editor.debug.DebugHover;
+import com.editora.editor.http.HttpHooks;
 import com.editora.i18n.Messages;
 import com.editora.markdown.MarkdownLint;
 import com.editora.mermaid.MaidOutput;

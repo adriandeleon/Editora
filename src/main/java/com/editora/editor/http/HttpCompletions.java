@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.http;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -8,6 +8,7 @@ import java.util.Set;
 
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
+import com.editora.editor.MarkdownCompletions;
 import com.editora.http.HttpVariableIndex;
 import org.jspecify.annotations.Nullable;
 
@@ -20,7 +21,7 @@ import static com.editora.i18n.Messages.tr;
  * {@code name.response.}, its {@code body}, {@code headers.} and {@code status}. The names come from
  * {@link HttpVariableIndex}, the same index that marks unresolved references. Runs on the typing pause.
  */
-final class HttpCompletions {
+public final class HttpCompletions {
 
     /** Most rows one offer holds. */
     static final int MAX_ITEMS = 80;
@@ -33,7 +34,7 @@ final class HttpCompletions {
      * The offer for the caret at {@code column} of {@code line}, or null when the caret is not inside an open
      * {@code {{}. {@code after} is the rest of the caret's line (a {@code }}} already there is not repeated).
      */
-    static MarkdownCompletions.@Nullable Offer offer(
+    public static MarkdownCompletions.@Nullable Offer offer(
             String document, int line, String before, String after, HttpVariableIndex.@Nullable Context ctx) {
         int open = before.lastIndexOf("{{");
         if (open < 0 || before.indexOf("}}", open) >= 0) {

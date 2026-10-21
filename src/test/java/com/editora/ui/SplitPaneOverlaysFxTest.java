@@ -347,10 +347,10 @@ class SplitPaneOverlaysFxTest {
                 sink.accept("42");
             });
             b.setDebugHoverActive(true);
-            com.editora.editor.DebugHover.setDebounceForTest(javafx.util.Duration.ZERO);
+            com.editora.editor.debug.DebugHover.setDebounceForTest(javafx.util.Duration.ZERO);
         });
         moveOver(second, 4, 9);
-        com.editora.editor.DebugHover.setDebounceForTest(null);
+        com.editora.editor.debug.DebugHover.setDebounceForTest(null);
         assertEquals("total", asked[0]);
         javafx.scene.control.Tooltip value =
                 FxTestSupport.callOnFx(() -> FxTestSupport.field(FxTestSupport.field(b, "debugHover"), "tooltip"));
@@ -362,7 +362,7 @@ class SplitPaneOverlaysFxTest {
         // The expandable popup (follow-up 6) is opened for the pane the pointer is in, too.
         CodeArea[] shownFor = new CodeArea[1];
         FxTestSupport.runOnFx(() -> {
-            b.setDebugValuePresenter(new com.editora.editor.DebugValuePresenter() {
+            b.setDebugValuePresenter(new com.editora.editor.debug.DebugValuePresenter() {
                 @Override
                 public void show(CodeArea area, String expression, double x, double y, boolean keyboard) {
                     shownFor[0] = area;
@@ -385,11 +385,11 @@ class SplitPaneOverlaysFxTest {
                 }
             });
             b.setDebugHoverActive(true);
-            com.editora.editor.DebugHover.setDebounceForTest(javafx.util.Duration.ZERO);
+            com.editora.editor.debug.DebugHover.setDebounceForTest(javafx.util.Duration.ZERO);
         });
         moveOver(second, 3, 9);
         moveOver(second, 4, 9);
-        com.editora.editor.DebugHover.setDebounceForTest(null);
+        com.editora.editor.debug.DebugHover.setDebounceForTest(null);
         assertEquals(second, shownFor[0]);
         FxTestSupport.runOnFx(() -> b.setDebugHoverActive(false));
     }

@@ -5,7 +5,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
-import com.editora.editor.HttpLineResult;
+import com.editora.editor.http.HttpLineResult;
 import com.editora.http.HttpClientService;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;

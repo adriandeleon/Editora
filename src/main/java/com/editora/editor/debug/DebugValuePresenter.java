@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.debug;
 
 import org.fxmisc.richtext.CodeArea;
 
