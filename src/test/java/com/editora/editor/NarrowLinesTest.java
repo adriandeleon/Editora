@@ -29,4 +29,15 @@ class NarrowLinesTest {
         assertEquals(-1, NarrowLines.toRegionLine(19, 6, 25));
         assertEquals(-1, NarrowLines.toRegionLine(19, 6, 300));
     }
+
+    @Test
+    void aLineStartsWhereItsNumberSays() {
+        String doc = "ab\ncd\n\nef";
+        assertEquals(0, NarrowLines.offsetOfLine(doc, 0));
+        assertEquals(3, NarrowLines.offsetOfLine(doc, 1));
+        assertEquals(6, NarrowLines.offsetOfLine(doc, 2), "an empty line");
+        assertEquals(7, NarrowLines.offsetOfLine(doc, 3));
+        assertEquals(doc.length(), NarrowLines.offsetOfLine(doc, 9), "past the last line: the end");
+        assertEquals(3, NarrowLines.firstLine(doc, NarrowLines.offsetOfLine(doc, 3)), "the inverse of firstLine");
+    }
 }

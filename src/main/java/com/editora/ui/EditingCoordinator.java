@@ -1594,20 +1594,24 @@ final class EditingCoordinator {
         if (buffer == null) {
             return;
         }
-        CodeArea area = buffer.getFocusedArea();
-        narrowToDefunAt(buffer, area, area.getCaretPosition());
+        narrowToDefunAt(buffer, buffer.getFocusedArea().getCaretPosition() + buffer.narrowStart());
     }
 
-    /** Narrows {@code buffer} to the top-level definition around area offset {@code pos}; false when there is none. */
-    boolean narrowToDefunAt(EditorBuffer buffer, CodeArea area, int pos) {
-        String text = area.getText();
-        int start = com.editora.editops.SexpNav.beginningOfDefun(text, pos);
-        int end = com.editora.editops.SexpNav.endOfDefun(text, pos);
-        if (start >= end) {
+    /**
+     * Narrows {@code buffer} to the top-level definition around document offset {@code pos}; false when there is
+     * none. Looked for in the whole document, as Emacs does ({@code narrow-to-defun} widens before it looks): a
+     * narrowed buffer's own text hides the definition enclosing the region, so Defun could only ever shrink it.
+     */
+    boolean narrowToDefunAt(EditorBuffer buffer, int pos) {
+        String text = buffer.getContent();
+        int at = Math.max(0, Math.min(pos, text.length()));
+        int start = com.editora.editops.SexpNav.beginningOfDefun(text, at);
+        int end = com.editora.editops.SexpNav.endOfDefun(text, at);
+        if (start >= end || !com.editora.editops.SexpNav.isDefunStart(text, start)) {
             host.setStatus(tr("status.narrow.noDefun"));
             return false;
         }
-        return applyNarrow(buffer, start, end);
+        return applyNarrowDocument(buffer, start, end);
     }
 
     /** Narrow to the innermost foldable region around the caret — the fold machinery already knows it. */
@@ -1617,45 +1621,66 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        narrowToFoldRegionAt(buffer, area, area.getCurrentParagraph());
+        narrowToFoldRegionAt(buffer, area.getCurrentParagraph() + buffer.narrowFirstLine(), null);
     }
 
-    /** Narrows {@code buffer} to the innermost foldable region holding area line {@code line}; false when none. */
-    boolean narrowToFoldRegionAt(EditorBuffer buffer, CodeArea area, int line) {
-        com.editora.editor.FoldRegions.Region best = null;
-        for (var r : buffer.getFoldManager().regions()) {
-            if (r.startLine() <= line && line <= r.endLine() && (best == null || r.startLine() > best.startLine())) {
-                best = r; // innermost containing region
+    /**
+     * Narrows {@code buffer} to {@code block} when it holds document line {@code line} (a Structure row's own
+     * block), else to the innermost foldable region of the whole document holding the line; false when there is
+     * none. The whole document's regions: while narrowed the fold manager only knows the region's own.
+     */
+    boolean narrowToFoldRegionAt(EditorBuffer buffer, int line, com.editora.editor.FoldRegions.@Nullable Region block) {
+        com.editora.editor.FoldRegions.Region best =
+                block != null && block.startLine() <= line && line <= block.endLine() ? block : null;
+        if (best == null) {
+            for (var r : documentFoldRegions(buffer)) {
+                if (r.startLine() <= line
+                        && line <= r.endLine()
+                        && (best == null || r.startLine() > best.startLine())) {
+                    best = r;
+                }
             }
         }
         if (best == null) {
             host.setStatus(tr("status.narrow.noFoldRegion"));
             return false;
         }
-        int start = area.getAbsolutePosition(best.startLine(), 0);
-        int end = area.getAbsolutePosition(best.endLine(), area.getParagraphLength(best.endLine()));
-        return applyNarrow(buffer, start, end);
+        String text = buffer.getContent();
+        int start = com.editora.editor.NarrowLines.offsetOfLine(text, best.startLine());
+        int lastLineStart = com.editora.editor.NarrowLines.offsetOfLine(text, best.endLine());
+        int lineEnd = text.indexOf('\n', lastLineStart);
+        return applyNarrowDocument(buffer, start, lineEnd < 0 ? text.length() : lineEnd);
+    }
+
+    /** The whole document's fold regions: the manager's while the buffer is whole, detected afresh while narrowed. */
+    static java.util.List<com.editora.editor.FoldRegions.Region> documentFoldRegions(EditorBuffer buffer) {
+        if (!buffer.isNarrowed()) {
+            return buffer.getFoldManager().regions();
+        }
+        return com.editora.editor.FoldManager.detectRegions(
+                buffer.getContent(), buffer.getLanguage(), null, java.util.List.of(), true);
     }
 
     /**
-     * The Structure panel's narrowing segments. A symbol row names a line of the editor; the defun around it is
-     * found from just inside that line (from its very start {@code beginning-of-defun} would walk to the
-     * <em>previous</em> definition, as in Emacs), and the fold region is the innermost one holding the line —
-     * for a symbol that is itself a region header, its own block. Widening a buffer that is not narrowed is
-     * silent: the panel's segment is a state, not a command that can be wrong.
+     * The Structure panel's narrowing segments. A row names a document line; the defun around it is found from
+     * just inside that line (from its very start {@code beginning-of-defun} would walk to the <em>previous</em>
+     * definition, as in Emacs), and Fold takes the row's own block when the outline knows it. Widening a buffer
+     * that is not narrowed is silent: the panel's segment is a state, not a command that can be wrong.
      */
     StructurePanel.NarrowActions structureNarrowActions() {
         return new StructurePanel.NarrowActions() {
             @Override
             public boolean narrowToDefun(EditorBuffer buffer, int line) {
-                CodeArea area = buffer.getArea();
-                int pos = area.getAbsolutePosition(line, Math.min(1, area.getParagraphLength(line)));
-                return narrowToDefunAt(buffer, area, pos);
+                String text = buffer.getContent();
+                int at = com.editora.editor.NarrowLines.offsetOfLine(text, line);
+                int pos = at < text.length() && text.charAt(at) != '\n' ? at + 1 : at;
+                return narrowToDefunAt(buffer, pos);
             }
 
             @Override
-            public boolean narrowToFoldRegion(EditorBuffer buffer, int line) {
-                return narrowToFoldRegionAt(buffer, buffer.getArea(), line);
+            public boolean narrowToFoldRegion(
+                    EditorBuffer buffer, int line, com.editora.editor.FoldRegions.@Nullable Region block) {
+                return narrowToFoldRegionAt(buffer, line, block);
             }
 
             @Override
@@ -1680,6 +1705,12 @@ final class EditingCoordinator {
         }
         buffer.widen(); // the narrow-changed hook reconciles the UI
         host.setStatus(tr("status.narrow.widened"));
+    }
+
+    /** {@link #applyNarrow} for document offsets: the buffer takes area offsets, which differ while narrowed. */
+    boolean applyNarrowDocument(EditorBuffer buffer, int start, int end) {
+        int base = buffer.narrowStart();
+        return applyNarrow(buffer, start - base, end - base);
     }
 
     boolean applyNarrow(EditorBuffer buffer, int start, int end) {

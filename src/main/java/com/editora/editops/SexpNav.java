@@ -191,7 +191,7 @@ public final class SexpNav {
     }
 
     /** Whether the line starting at {@code ls} begins a defun (heuristic; see the class doc). */
-    static boolean isDefunStart(String text, int ls) {
+    public static boolean isDefunStart(String text, int ls) {
         if (ls >= text.length()) {
             return false;
         }

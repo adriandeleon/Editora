@@ -61,6 +61,10 @@ final class WindowChromeCoordinator {
 
         StatusBar statusBar();
 
+        /** The Structure panel when it has been built (its narrowing segments hide in Simple mode), else null. */
+        @Nullable
+        StructurePanel structurePanelIfBuilt();
+
         FileBreadcrumb breadcrumb();
 
         SettingsWindow settingsWindow();
@@ -262,6 +266,10 @@ final class WindowChromeCoordinator {
         // this is the one place the effective state is computed (the setting OR the --simple session flag).
         host.simpleModeButton().pseudoClassStateChanged(host.OPEN(), simple);
         host.statusBar().setSimpleMode(simple);
+        StructurePanel structure = host.structurePanelIfBuilt();
+        if (structure != null) {
+            structure.refreshChrome(); // its narrowing segments hide in Simple mode
+        }
     }
 
     /**

@@ -9569,6 +9569,11 @@ public class EditorBuffer implements TabContent {
         return narrowView.firstLine();
     }
 
+    /** Whether {@link #narrowTo} can take effect here: not a large, huge or filtered view, and editable or view-only. */
+    public boolean canNarrow() {
+        return !largeFile && !hugeFile && !logView.filtered() && (isEditable() || isViewMode());
+    }
+
     /** Emacs {@code widen}: restores access to the whole document. No-op when not narrowed. */
     public void widen() {
         String prefix = narrowPrefix;

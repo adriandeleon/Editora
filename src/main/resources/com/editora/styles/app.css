@@ -2827,7 +2827,9 @@
 .editor-area.narrowed .lineno { -fx-text-fill: -state-amber; }
 
 /* Structure panel: the Widen | Defun | Fold segments. A lit Defun or Fold reads amber like the narrowing
-   indicators; a lit Widen (the normal state) stays quiet. */
+   indicators; a lit Widen (the normal state) stays quiet but visibly lit (an outline, the accent on the glyph).
+   Narrowed by a chord (C-x n n) no segment is lit: the group's amber border says it instead. The segments are
+   of one width whatever their glyph's. */
 .structure-narrow-toggle {
     -fx-border-color: -color-border-muted;
     -fx-border-radius: 6;
@@ -2835,13 +2837,27 @@
     -fx-padding: 1;
     -fx-spacing: 1;
 }
-.structure-narrow-segment { -fx-padding: 2 6 2 6; -fx-background-radius: 5; }
+.structure-narrow-toggle:narrowed-elsewhere { -fx-border-color: -state-amber; }
+.structure-narrow-segment {
+    -fx-padding: 2 0 2 0;
+    -fx-pref-width: 30;
+    -fx-alignment: center;
+    -fx-background-radius: 5;
+    -fx-border-radius: 5;
+    -fx-border-width: 1;
+    -fx-border-color: transparent;
+}
 .structure-narrow-segment .icon-line { -fx-stroke: -color-fg-muted; }
 .structure-narrow-segment:hover .icon-line { -fx-stroke: -color-fg-default; }
-.structure-narrow-segment:selected { -fx-background-color: -state-sel; }
-.structure-narrow-segment:selected .icon-line { -fx-stroke: -color-fg-default; }
-.structure-narrow-segment.structure-narrow-on:selected { -fx-background-color: -state-amber-bg; }
+.structure-narrow-segment:selected { -fx-background-color: -state-sel; -fx-border-color: -color-border-default; }
+.structure-narrow-segment:selected .icon-line { -fx-stroke: -color-accent-fg; }
+.structure-narrow-segment.structure-narrow-on:selected {
+    -fx-background-color: -state-amber-bg;
+    -fx-border-color: -state-amber;
+}
 .structure-narrow-segment.structure-narrow-on:selected .icon-line { -fx-stroke: -state-amber; }
+/* Rows outside the narrowed region stay listed (in a mode a click narrows to them), muted. */
+.structure-tree .tree-cell:out-of-reach { -fx-opacity: 0.55; }
 
 /* MCP server segment: a green "running" pill, deliberately noticeable (a local agent endpoint is live). */
 .status-bar .status-mcp {

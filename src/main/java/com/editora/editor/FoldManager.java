@@ -460,7 +460,12 @@ public final class FoldManager {
         });
     }
 
-    private static List<Region> detectRegions(
+    /**
+     * The regions {@code text} folds into, as this manager would detect them: the structure view computes a
+     * whole-file outline from here while the buffer is narrowed (the manager's own regions then describe the
+     * region the area holds). Pure; safe off the FX thread.
+     */
+    public static List<Region> detectRegions(
             String text,
             String language,
             @Nullable List<Region> serverRegions,
