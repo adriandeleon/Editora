@@ -118,6 +118,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public StructurePanel structurePanel() {
+        return mc.structurePanel();
+    }
+
+    @Override
     public ToolWindow bookmarksToolWindow() {
         return mc.bookmarksToolWindow;
     }

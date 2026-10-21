@@ -1351,10 +1351,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The Structure panel, built on its first use; it attaches the active buffer as it is built. */
-    private StructurePanel structurePanel() {
+    StructurePanel structurePanel() {
         if (structurePanel == null) {
             structurePanel = new StructurePanel(bookmarkCoordinator, notesCoordinator);
             structurePanel.setNarrowActions(editing.structureNarrowActions());
+            structurePanel.setSimpleMode(chrome::simpleModeActive);
+            structurePanel.setChordLookup(id -> keymap == null ? null : keymap.displayChord(id));
             EditorBuffer active = activeBuffer();
             structurePanel.attach(active);
             lspCoordinator.requestStructureSymbols(active); // the LSP outline, when the server offers one
@@ -4228,6 +4230,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public StatusBar statusBar() {
             return statusBar;
+        }
+
+        @Override
+        public @Nullable StructurePanel structurePanelIfBuilt() {
+            return structurePanel;
         }
 
         @Override

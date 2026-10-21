@@ -21,6 +21,28 @@ public final class NarrowLines {
         return line;
     }
 
+    /** The offset where 0-based {@code line} starts in {@code document}; the document's length past its last line. */
+    public static int offsetOfLine(CharSequence document, int line) {
+        int offset = 0;
+        for (int l = 0; l < line; l++) {
+            int next = indexOf(document, offset);
+            if (next < 0) {
+                return document.length();
+            }
+            offset = next + 1;
+        }
+        return offset;
+    }
+
+    private static int indexOf(CharSequence document, int from) {
+        for (int i = from; i < document.length(); i++) {
+            if (document.charAt(i) == '\n') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /**
      * The region-relative line for 0-based {@code documentLine}, or -1 when that line is outside the region
      * (the caller widens, as Emacs does for a jump from outside, rather than landing on unrelated text).

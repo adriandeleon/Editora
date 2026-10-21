@@ -81,6 +81,9 @@ final class WindowCommandRegistrar {
 
         ToolWindow structureToolWindow();
 
+        /** The Structure panel, built on first use (its narrowing commands act on the attached buffer). */
+        StructurePanel structurePanel();
+
         ToolWindow bookmarksToolWindow();
 
         ToolWindow notesToolWindow();
@@ -2749,6 +2752,17 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("edit.narrowToDefun", host.editing()::narrowToDefun));
         host.registry().register(Command.of("edit.narrowToFoldRegion", host.editing()::narrowToFoldRegion));
         host.registry().register(Command.of("edit.widen", host.editing()::widenBuffer));
+        // The Structure window's segments as commands, so every keymap can bind them (the window's own keys
+        // are d / f / w while its tree has focus; the Emacs chords above act at the caret instead).
+        host.registry()
+                .register(Command.of(
+                        "structure.narrowDefun", () -> host.structurePanel().narrowToDefunCommand()));
+        host.registry()
+                .register(Command.of(
+                        "structure.narrowFold", () -> host.structurePanel().narrowToFoldCommand()));
+        host.registry()
+                .register(Command.of(
+                        "structure.widen", () -> host.structurePanel().widenCommand()));
         host.registry().register(Command.of("edit.queryReplace", host.editing()::queryReplace));
         host.registry().register(Command.of("edit.queryReplaceRegexp", host.editing()::queryReplaceRegexp));
         host.registry().register(Command.of("edit.undo", host.editing()::onUndo));
