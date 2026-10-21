@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import java.util.List;
 
+import com.editora.editor.lsp.LspEditShift;
+import com.editora.editor.lsp.LspTextEdit;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

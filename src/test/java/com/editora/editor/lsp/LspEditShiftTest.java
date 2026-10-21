@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
 
 import java.util.List;
 

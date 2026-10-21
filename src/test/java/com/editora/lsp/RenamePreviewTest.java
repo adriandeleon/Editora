@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 
-import com.editora.editor.LspTextEdit;
+import com.editora.editor.lsp.LspTextEdit;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

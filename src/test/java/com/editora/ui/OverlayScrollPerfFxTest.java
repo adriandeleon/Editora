@@ -21,7 +21,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnostic;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -210,7 +210,7 @@ class OverlayScrollPerfFxTest {
                 // The four overlays that are TabSurface since M4: a find, a word highlight, a suspended
                 // debug session and a jump each hold a full-viewport texture only while their tab is shown.
                 b.setSearchMatches(com.editora.editor.SearchMatches.of(0, 3), 0);
-                b.setOccurrenceSpans(List.of(new com.editora.editor.OccurrenceSpan(0, 0, 0, 3, false)));
+                b.setOccurrenceSpans(List.of(new com.editora.editor.lsp.OccurrenceSpan(0, 0, 0, 3, false)));
                 b.setInlineValues(Map.of("value", "1", "text", "2"), 0);
                 b.startAceJump();
                 Object md = FxTestSupport.call(b, "mdLintOverlay", new Class[] {}); // attached on first use

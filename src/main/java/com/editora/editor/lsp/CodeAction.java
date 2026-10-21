@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
 
 /**
  * One offered quick fix or refactoring, in terms this package can hold.

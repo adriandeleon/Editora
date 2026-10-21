@@ -1,4 +1,6 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
+
+import com.editora.editor.EditorBuffer;
 
 /**
  * A language-server text edit reduced to an editor-agnostic form (0-based line/character range +

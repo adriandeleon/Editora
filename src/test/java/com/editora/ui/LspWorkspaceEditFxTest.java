@@ -17,7 +17,7 @@ import java.util.function.Consumer;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspTextEdit;
+import com.editora.editor.lsp.LspTextEdit;
 import com.editora.io.DocumentWriteSequencer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
@@ -371,7 +371,7 @@ class LspWorkspaceEditFxTest {
         var mapped = new WorkspaceEditMapper.Mapped(
                 List.of(new WorkspaceEditMapper.FileEdit(
                         a.getPath(),
-                        List.of(new com.editora.editor.LspTextEdit(0, 6, 0, 7, "B")),
+                        List.of(new com.editora.editor.lsp.LspTextEdit(0, 6, 0, 7, "B")),
                         null,
                         "class A {}\n")),
                 List.of());

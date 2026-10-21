@@ -20,8 +20,8 @@ import javafx.stage.Popup;
 
 import com.editora.config.PathDisplay;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspDiagnostic;
 import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.lsp.LspDiagnostic;
 import com.editora.lsp.InlayHintFilter;
 import com.editora.lsp.JdtlsGenerate;
 import com.editora.lsp.JdtlsRefactor;
@@ -4539,7 +4539,8 @@ final class LspCoordinator {
             // visible at the spot the fix will land while the list is open.
             b.showCodeActions(
                     items.stream()
-                            .map(i -> new com.editora.editor.CodeAction(i.title(), i.kind(), i.preferred(), i.raw()))
+                            .map(i ->
+                                    new com.editora.editor.lsp.CodeAction(i.title(), i.kind(), i.preferred(), i.raw()))
                             .toList(),
                     chosen -> applyChosenAction(path, items, chosen));
         });
@@ -4548,12 +4549,12 @@ final class LspCoordinator {
     /**
      * Applies the action the user picked from the caret popup.
      *
-     * <p>The popup deals in the neutral {@link com.editora.editor.CodeAction} — {@code editor} must not see
+     * <p>The popup deals in the neutral {@link com.editora.editor.lsp.CodeAction} — {@code editor} must not see
      * lsp4j — so the server's own object rides across as an opaque token and is matched back by identity
      * here. The lists are a handful of entries, so a scan is cheaper than building a map.
      */
     private void applyChosenAction(
-            Path path, List<LspManager.CodeActionItem> items, com.editora.editor.CodeAction chosen) {
+            Path path, List<LspManager.CodeActionItem> items, com.editora.editor.lsp.CodeAction chosen) {
         if (chosen == null) {
             return;
         }

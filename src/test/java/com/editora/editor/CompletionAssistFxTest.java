@@ -10,6 +10,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.stage.Stage;
 
 import com.editora.completion.Completion;
+import com.editora.editor.lsp.CodeAction;
 import com.editora.snippet.Snippet;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;

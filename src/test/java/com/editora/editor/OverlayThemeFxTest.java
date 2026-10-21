@@ -13,6 +13,7 @@ import javafx.scene.layout.CornerRadii;
 import javafx.scene.paint.Color;
 
 import com.editora.editor.debug.InlineValuesOverlay;
+import com.editora.editor.lsp.LspDiagnosticOverlay;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

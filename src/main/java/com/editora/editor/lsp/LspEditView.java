@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
 
 import java.util.List;
 
@@ -13,7 +13,7 @@ import org.fxmisc.richtext.CodeArea;
  * the selection dropped, so the next keystroke typed there — and a whole-document or every-line result reset
  * the viewport to line 1.
  */
-final class LspEditView {
+public final class LspEditView {
 
     private LspEditView() {}
 

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,17 +9,22 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.OverlayPalette;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Draws severity-colored wavy underlines beneath LSP diagnostics on top of the editor, without touching
- * the document or its style spans. Mirrors {@link MermaidLintOverlay} (mouse-transparent {@link Canvas}
+ * the document or its style spans. Mirrors {@code MermaidLintOverlay} (mouse-transparent {@link Canvas}
  * sized to the viewport, coalesced redraw on scroll/edit/resize, visible paragraphs only) but handles
  * multi-line ranges and per-severity colors. Diagnostics use 0-based line/character (LSP convention) and
- * are pushed in by {@link EditorBuffer}; this class only renders them.
+ * are pushed in by {@code EditorBuffer}; this class only renders them.
  */
-final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final double AMP = 1.6;
@@ -37,7 +42,7 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private @Nullable LspDiagnosticOverlay follower;
 
-    LspDiagnosticOverlay(CodeArea area) {
+    public LspDiagnosticOverlay(CodeArea area) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -74,7 +79,7 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
         return second;
     }
 
-    void setActive(boolean active) {
+    public void setActive(boolean active) {
         if (follower != null) {
             follower.setActive(active);
         }
@@ -92,7 +97,7 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
         }
     }
 
-    void setDiagnostics(List<LspDiagnostic> diagnostics) {
+    public void setDiagnostics(List<LspDiagnostic> diagnostics) {
         if (follower != null) {
             follower.setDiagnostics(diagnostics);
         }
@@ -106,7 +111,7 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
         scheduleRedraw();
     }
 
-    List<LspDiagnostic> diagnostics() {
+    public List<LspDiagnostic> diagnostics() {
         return diagnostics;
     }
 
@@ -252,7 +257,7 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
     }
 
     /** Diagnostics whose range covers (paragraph, column) — for hover tooltips. */
-    List<LspDiagnostic> at(int paragraph, int column) {
+    public List<LspDiagnostic> at(int paragraph, int column) {
         List<LspDiagnostic> hits = new ArrayList<>();
         for (LspDiagnostic d : diagnostics) {
             if (paragraph < d.startLine() || paragraph > d.endLine()) {

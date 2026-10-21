@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.editora.editor.lsp.LspEditShift;
+import com.editora.editor.lsp.LspTextEdit;
 import org.jspecify.annotations.Nullable;
 
 /** Bounded transform history for delayed import edits; conflicting edits invalidate the whole batch. */

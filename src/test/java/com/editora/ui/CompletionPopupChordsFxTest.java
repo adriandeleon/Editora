@@ -14,8 +14,8 @@ import javafx.scene.input.KeyEvent;
 import javafx.stage.Popup;
 
 import com.editora.command.CommandRegistry;
-import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.lsp.CodeAction;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

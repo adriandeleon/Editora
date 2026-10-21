@@ -17,8 +17,8 @@ import javafx.stage.Stage;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspDiagnostic;
-import com.editora.editor.OccurrenceSpan;
+import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.editor.lsp.OccurrenceSpan;
 import com.editora.markdown.MarkdownLint;
 import com.editora.mermaid.MaidOutput;
 import org.fxmisc.richtext.CodeArea;

@@ -11,7 +11,7 @@ import javafx.scene.input.KeyEvent;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspTextEdit;
+import com.editora.editor.lsp.LspTextEdit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

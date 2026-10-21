@@ -1,5 +1,6 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
 
+import com.editora.editor.OverlayPalette;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

@@ -1,10 +1,11 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
 
+import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
 /** Resolves LSP text edits to document ranges and applies them; the pure-ish half of {@link EditorBuffer}'s LSP edits. */
-final class LspEditPlacement {
+public final class LspEditPlacement {
     private LspEditPlacement() {}
 
     /** Edits resolved to absolute, ascending, non-overlapping {@code {start, end}} ranges and their texts. */
@@ -15,7 +16,7 @@ final class LspEditPlacement {
      * an edit that cannot be placed is left out. Strict: one such edit makes the whole set unplaceable and
      * the result is {@code null}.
      */
-    static @Nullable Placement place(CodeArea a, java.util.List<LspTextEdit> edits, boolean strict) {
+    public static @Nullable Placement place(CodeArea a, java.util.List<LspTextEdit> edits, boolean strict) {
         int len = a.getLength();
         int lineCount = a.getParagraphs().size();
         java.util.List<int[]> ranges = new java.util.ArrayList<>(); // {start, end}
@@ -64,7 +65,7 @@ final class LspEditPlacement {
     }
 
     /** Places and applies {@code edits} as one undo unit; returns whether they were placed. */
-    static boolean apply(CodeArea a, java.util.List<LspTextEdit> edits, boolean preserveCaret, boolean strict) {
+    public static boolean apply(CodeArea a, java.util.List<LspTextEdit> edits, boolean preserveCaret, boolean strict) {
         int caretBefore = a.getCaretPosition();
         int anchorBefore = a.getAnchor();
         LspEditView.Before view = preserveCaret ? null : LspEditView.capture(a);
@@ -133,7 +134,7 @@ final class LspEditPlacement {
      * the last one is the document <em>end</em> (as in {@code LspPositions.offset}), not the start of the
      * last line: {@code (lineCount, 0)} is how a server addresses "after everything".
      */
-    static int offset(CodeArea a, int line, int col) {
+    public static int offset(CodeArea a, int line, int col) {
         if (line >= a.getParagraphs().size()) {
             return a.getLength();
         }
@@ -156,7 +157,7 @@ final class LspEditPlacement {
      * clamped to the document. {@code Backward} bias so an offset at a line's end reads as that line's last
      * column rather than the next line's column 0 — the two ends of the accept's change must agree.
      */
-    static int[] position(CodeArea a, int offset) {
+    public static int[] position(CodeArea a, int offset) {
         int clamped = Math.max(0, Math.min(offset, a.getLength()));
         var pos = a.offsetToPosition(clamped, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
         return new int[] {pos.getMajor(), pos.getMinor()};

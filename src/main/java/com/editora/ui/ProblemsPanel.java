@@ -28,7 +28,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.config.PathDisplay;
 import com.editora.editor.LanguageRegistry;
-import com.editora.editor.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnostic;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

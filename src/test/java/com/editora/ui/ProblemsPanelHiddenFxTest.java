@@ -8,7 +8,7 @@ import java.util.Map;
 import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
 
-import com.editora.editor.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnostic;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

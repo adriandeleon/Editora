@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -15,6 +15,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 import javafx.stage.Window;
+
+import com.editora.editor.CompletionPopup;
 
 /**
  * The quick-fix / refactoring list, anchored <b>at the caret</b> — IntelliJ's Alt+Enter intention popup and

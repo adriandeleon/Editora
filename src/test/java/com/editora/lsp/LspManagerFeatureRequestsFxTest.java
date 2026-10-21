@@ -13,9 +13,9 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
-import com.editora.editor.LspTextEdit;
-import com.editora.editor.OccurrenceSpan;
-import com.editora.editor.SemanticToken;
+import com.editora.editor.lsp.LspTextEdit;
+import com.editora.editor.lsp.OccurrenceSpan;
+import com.editora.editor.lsp.SemanticToken;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;

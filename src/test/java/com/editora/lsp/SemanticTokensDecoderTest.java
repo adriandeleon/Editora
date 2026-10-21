@@ -2,7 +2,7 @@ package com.editora.lsp;
 
 import java.util.List;
 
-import com.editora.editor.SemanticToken;
+import com.editora.editor.lsp.SemanticToken;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

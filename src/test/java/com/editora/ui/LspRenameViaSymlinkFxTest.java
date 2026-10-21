@@ -7,7 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspTextEdit;
+import com.editora.editor.lsp.LspTextEdit;
 import com.editora.lsp.WorkspaceEditMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

@@ -19,6 +19,7 @@ import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
 import com.editora.editor.EditorBuffer.Split;
+import com.editora.editor.lsp.SemanticToken;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

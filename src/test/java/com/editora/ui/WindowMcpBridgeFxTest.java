@@ -14,7 +14,7 @@ import javafx.scene.control.ButtonBar;
 import com.editora.config.ConfigManager;
 import com.editora.config.Project;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnostic;
 import com.editora.mcp.McpBridge;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;

@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import com.editora.editor.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnostic;
 import org.jspecify.annotations.Nullable;
 
 /**

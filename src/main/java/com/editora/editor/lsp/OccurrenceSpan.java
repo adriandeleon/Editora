@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
 
 /**
  * One occurrence of the symbol under the caret, as reported by the language server's

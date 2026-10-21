@@ -14,6 +14,7 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.lsp.LspDiagnostic;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;

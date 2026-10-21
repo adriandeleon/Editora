@@ -6,8 +6,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
-import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.lsp.CodeAction;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -213,9 +213,9 @@ class CodeActionPopupFxTest {
             var cell = new javafx.scene.control.ListCell<String>();
             var inside = new javafx.scene.control.Label("row");
             cell.setGraphic(inside);
-            assertFalse(com.editora.editor.CodeActionPopup.onRow(new javafx.scene.control.ScrollBar()));
-            assertFalse(com.editora.editor.CodeActionPopup.onRow(cell), "an empty filler row is not an action");
-            assertFalse(com.editora.editor.CodeActionPopup.onRow(null));
+            assertFalse(com.editora.editor.lsp.CodeActionPopup.onRow(new javafx.scene.control.ScrollBar()));
+            assertFalse(com.editora.editor.lsp.CodeActionPopup.onRow(cell), "an empty filler row is not an action");
+            assertFalse(com.editora.editor.lsp.CodeActionPopup.onRow(null));
         });
     }
 

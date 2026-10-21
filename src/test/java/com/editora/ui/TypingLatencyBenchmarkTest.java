@@ -133,8 +133,8 @@ class TypingLatencyBenchmarkTest {
                 FxTestSupport.runOnFx(() -> {});
                 Thread.sleep(20);
             }
-            List<com.editora.editor.CodeAction> actions =
-                    List.of(new com.editora.editor.CodeAction("Fix it", "quickfix", true, null));
+            List<com.editora.editor.lsp.CodeAction> actions =
+                    List.of(new com.editora.editor.lsp.CodeAction("Fix it", "quickfix", true, null));
 
             // Open once before the baseline: the first open builds the popup and its cells, whose own
             // one-off nodes would otherwise be counted as a leak.

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.lsp;
 
 import java.util.List;
 
@@ -8,6 +8,10 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
 import org.jspecify.annotations.Nullable;
@@ -17,12 +21,12 @@ import org.jspecify.annotations.Nullable;
  * #675) — Read occurrences in a neutral tint, Write occurrences (assignments) warmer with a thin border —
  * behind the text, never touching the style spans.
  *
- * <p>A structural clone of {@link SearchHighlightOverlay} (itself modeled on {@link SpellCheckOverlay}):
+ * <p>A structural clone of {@code SearchHighlightOverlay} (itself modeled on {@code SpellCheckOverlay}):
  * mouse-transparent {@link Canvas} sized to the viewport, redraws coalesced to one per pulse on
  * scroll/edit/resize, visible paragraphs only, released to a 1×1 texture while empty (the common case —
  * the caret is rarely resting on a highlightable symbol).
  */
-final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private static final Color READ = Color.web("#90a4ae", 0.28); // neutral blue-gray wash
     private static final Color WRITE = Color.web("#ffb74d", 0.32); // warmer — the symbol is assigned here
@@ -42,7 +46,7 @@ final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.F
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private @Nullable OccurrenceHighlightOverlay follower;
 
-    OccurrenceHighlightOverlay(CodeArea area) {
+    public OccurrenceHighlightOverlay(CodeArea area) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -99,7 +103,7 @@ final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.F
     }
 
     /** Sets the occurrence spans (offset triples) to wash; empty hides + releases the texture. */
-    void setSpans(List<int[]> spans) {
+    public void setSpans(List<int[]> spans) {
         if (follower != null) {
             follower.setSpans(spans);
         }

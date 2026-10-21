@@ -23,8 +23,8 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
-import com.editora.editor.LspDiagnostic;
-import com.editora.editor.LspDiagnostic.Severity;
+import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnostic.Severity;
 import com.editora.markdown.MarkdownLint;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
