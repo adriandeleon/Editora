@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.logviewer;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;

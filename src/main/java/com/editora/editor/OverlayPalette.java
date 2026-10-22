@@ -139,7 +139,7 @@ public final class OverlayPalette {
      * Six levels need to stay apart, so they differ in more than hue — FATAL is the error colour at full
      * strength with the heaviest wash, DEBUG and TRACE are two steps of the neutral.
      */
-    record LogTints(
+    public record LogTints(
             Color fatal,
             Color error,
             Color warn,
@@ -151,7 +151,7 @@ public final class OverlayPalette {
             Color warnWash) {}
 
     /** The log tints for an editor painted on {@code background}. Pure. */
-    static LogTints logTints(Color background) {
+    public static LogTints logTints(Color background) {
         Color ground = background == null
                 ? Color.WHITE
                 : Color.color(background.getRed(), background.getGreen(), background.getBlue());
@@ -174,7 +174,7 @@ public final class OverlayPalette {
     }
 
     /** {@link #logTints(Color)} for {@code area}'s current background. */
-    static LogTints logTints(Region area) {
+    public static LogTints logTints(Region area) {
         return logTints(backgroundOf(area));
     }
 

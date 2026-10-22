@@ -1,9 +1,10 @@
-package com.editora.editor;
+package com.editora.editor.logviewer;
 
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
+import com.editora.editor.EditorBuffer;
 import com.editora.logviewer.LogFilter;
 import com.editora.logviewer.LogLevel;
 import com.editora.logviewer.LogRecordFilter;
@@ -35,10 +36,10 @@ import org.jspecify.annotations.Nullable;
  * what it held when following started. Once that has happened the buffer is no longer the whole file
  * ({@link #trimmed()}) and must not be saved over it.
  */
-final class LogView {
+public final class LogView {
 
     /** Max characters a following log buffer may grow by before the oldest lines are trimmed (bounds memory). */
-    static final int FOLLOW_CAP = 12 * 1024 * 1024;
+    public static final int FOLLOW_CAP = 12 * 1024 * 1024;
 
     private static final LogLevel[] LEVELS = LogLevel.values();
 
@@ -99,28 +100,28 @@ final class LogView {
      *  that is never filtered (every non-log buffer) holds no document subscription for this. */
     private boolean countingEdits;
 
-    LogView(CodeArea area, Runnable onFilterChanged) {
+    public LogView(CodeArea area, Runnable onFilterChanged) {
         this(area, onFilterChanged, FOLLOW_CAP, FOLLOW_CAP / 8);
     }
 
-    LogView(CodeArea area, Runnable onFilterChanged, int cap, int slack) {
+    public LogView(CodeArea area, Runnable onFilterChanged, int cap, int slack) {
         this.area = area;
         this.onFilterChanged = onFilterChanged;
         this.cap = cap;
         this.slack = slack;
     }
 
-    void setOnStateChanged(Runnable listener) {
+    public void setOnStateChanged(Runnable listener) {
         onStateChanged = listener == null ? () -> {} : listener;
     }
 
     /** Whether a level/pattern filter is narrowing the visible lines. The area then holds a subset. */
-    boolean filtered() {
+    public boolean filtered() {
         return full != null;
     }
 
     /** The complete text behind an active filter. Only valid while {@link #filtered()}. */
-    String fullText() {
+    public String fullText() {
         String snapshot = fullSnapshot;
         if (snapshot == null) {
             snapshot = activeFull().toString();
@@ -130,7 +131,7 @@ final class LogView {
     }
 
     /** Length of {@link #fullText()} without building it. */
-    int fullLength() {
+    public int fullLength() {
         return activeFull().length();
     }
 
@@ -152,11 +153,11 @@ final class LogView {
         return f;
     }
 
-    boolean following() {
+    public boolean following() {
         return following;
     }
 
-    void setFollowing(boolean following) {
+    public void setFollowing(boolean following) {
         boolean changed = this.following != following;
         this.following = following;
         if (following) {
@@ -170,33 +171,33 @@ final class LogView {
 
     /** The level floor of the active filter (null when unfiltered or no floor). */
     @Nullable
-    LogLevel minLevel() {
+    public LogLevel minLevel() {
         return minLevel;
     }
 
     /** The pattern of the active filter as it was typed (null when unfiltered or no pattern). */
     @Nullable
-    String query() {
+    public String query() {
         return query;
     }
 
     /** True once follow mode has dropped lines: the buffer is a tail of its file, not the file. */
-    boolean trimmed() {
+    public boolean trimmed() {
         return trimmed;
     }
 
     /** True while this class is rewriting the area — a view change, not a user edit. */
-    boolean adjusting() {
+    public boolean adjusting() {
         return adjusting;
     }
 
     /** Lines the filter is showing. Only meaningful while {@link #filtered()}. */
-    int visibleLines() {
+    public int visibleLines() {
         return visibleCount;
     }
 
     /** Lines in the complete text (an unfinished last line included). Only meaningful while {@link #filtered()}. */
-    int totalLines() {
+    public int totalLines() {
         return nextLine - droppedLines + (consumed < activeFull().length() ? 1 : 0);
     }
 
@@ -204,7 +205,7 @@ final class LogView {
      * The 1-based line number, in the complete text, of visible paragraph {@code paragraph}: {@code -1} when
      * unfiltered (the paragraph index is the line), {@code 0} for the empty row past the last line.
      */
-    int lineNumberAt(int paragraph) {
+    public int lineNumberAt(int paragraph) {
         if (full == null) {
             return -1;
         }
@@ -212,7 +213,7 @@ final class LogView {
     }
 
     /** Lines to size the gutter for: {@code -1} when unfiltered (the paragraph count). */
-    int lineNumberSpan() {
+    public int lineNumberSpan() {
         return full == null ? -1 : totalLines();
     }
 
@@ -221,7 +222,7 @@ final class LogView {
      * {@link #filtered()}; null for a line with no level, or past the last line.
      */
     @Nullable
-    LogLevel levelAt(int paragraph) {
+    public LogLevel levelAt(int paragraph) {
         if (full == null || paragraph < 0 || paragraph >= visibleCount || visibleLevel[paragraph] < 0) {
             return null;
         }
@@ -231,14 +232,14 @@ final class LogView {
     // --- filtering -------------------------------------------------------------------------------
 
     /** The text a filter is computed from. */
-    String filterSource() {
+    public String filterSource() {
         return full != null ? fullText() : area.getText();
     }
 
     /** See {@link #epoch}: a {@link LogFilter.Run} is installable only under the epoch its source was read at.
      *  The first read starts the count; an epoch is only ever compared with one read later, so nothing
      *  before that first read can be stale. */
-    int epoch() {
+    public int epoch() {
         if (!countingEdits) {
             countingEdits = true;
             area.plainTextChanges().filter(c -> !adjusting).subscribe(c -> epoch++); // a user edit
@@ -247,7 +248,7 @@ final class LogView {
     }
 
     /** Whether {@code min}/{@code pattern} is the filter already showing (so applying it again is no work). */
-    boolean showsFilter(@Nullable LogLevel min, @Nullable String pattern) {
+    public boolean showsFilter(@Nullable LogLevel min, @Nullable String pattern) {
         String wanted = pattern == null || pattern.isEmpty() ? null : pattern;
         return min == minLevel && Objects.equals(wanted, query) && (full != null || (min == null && wanted == null));
     }
@@ -257,7 +258,7 @@ final class LogView {
      * {@code pattern}; {@code null}/{@code null} clears the filter and restores the full text. The caret stays
      * on the line it was on, or the nearest one still visible.
      */
-    void applyFilter(@Nullable LogLevel min, @Nullable String pattern) {
+    public void applyFilter(@Nullable LogLevel min, @Nullable String pattern) {
         if (showsFilter(min, pattern)) {
             return;
         }
@@ -275,7 +276,7 @@ final class LogView {
      * {@code atEpoch}. Returns false, changing nothing, when the text has since changed in any way other than
      * growing at its end — the caller computes again. Lines appended in the meantime are filtered here.
      */
-    boolean install(LogFilter.Run run, int atEpoch, @Nullable LogLevel min, @Nullable String pattern) {
+    public boolean install(LogFilter.Run run, int atEpoch, @Nullable LogLevel min, @Nullable String pattern) {
         if (atEpoch != epoch) {
             return false;
         }
@@ -367,7 +368,7 @@ final class LogView {
      * lines are shown. Neither the caret nor the selection moves, and the view scrolls only if it was already
      * showing the end — reading older lines of a busy log must not be a fight with every new one.
      */
-    void append(String text) {
+    public void append(String text) {
         if (text == null || text.isEmpty()) {
             return;
         }
@@ -389,7 +390,7 @@ final class LogView {
     }
 
     /** Replaces the whole log with {@code fullText} (e.g. on rotation), keeping any active filter. */
-    void reset(String fullText) {
+    public void reset(String fullText) {
         String text = fullText == null ? "" : fullText;
         trimmed = false;
         heldAtFollowStart = 0;
@@ -414,7 +415,7 @@ final class LogView {
      *
      * @param freshLoad the replacement is the file as read from disk, not text computed from this buffer
      */
-    Runnable suspendFilter(boolean freshLoad) {
+    public Runnable suspendFilter(boolean freshLoad) {
         epoch++;
         if (freshLoad) {
             trimmed = false; // the buffer is about to hold the whole file again

@@ -61,6 +61,8 @@ import com.editora.editor.http.HttpLineResult;
 import com.editora.editor.http.HttpResultMarks;
 import com.editora.editor.http.HttpVariableFixes;
 import com.editora.editor.http.HttpVariableMarks;
+import com.editora.editor.logviewer.LogHighlightOverlay;
+import com.editora.editor.logviewer.LogView;
 import com.editora.editor.lsp.CodeAction;
 import com.editora.editor.lsp.LspDiagnostic;
 import com.editora.editor.lsp.LspDiagnosticOverlay;

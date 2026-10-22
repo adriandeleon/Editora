@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.logviewer;
 
 import java.util.Map;
 
@@ -8,6 +8,11 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.OverlayPalette;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
 import com.editora.logviewer.LogLevel;
 import com.editora.logviewer.LogPatterns;
 import org.fxmisc.richtext.CodeArea;
@@ -25,10 +30,10 @@ import org.jspecify.annotations.Nullable;
  * record's level, so an exception's whole trace tints red. Per-line level detection is cached by line
  * text (pure) so a scroll pulse re-tints without re-scanning.
  */
-final class LogHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class LogHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     /** Where a filtered view's levels come from; see {@link #LogHighlightOverlay(CodeArea, LevelSource)}. */
-    interface LevelSource {
+    public interface LevelSource {
         /** Whether the view is a filtered subset, so a line's level cannot be read off the lines above it. */
         boolean filtered();
 
@@ -80,7 +85,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
      * @param levels the levels of a filtered view. There a stack-trace line sits under whatever line the filter
      *     left above it, so inheriting from the visible text tinted the trace of an ERROR as the WARN before it.
      */
-    LogHighlightOverlay(CodeArea area, LevelSource levels) {
+    public LogHighlightOverlay(CodeArea area, LevelSource levels) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -118,7 +123,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         return second;
     }
 
-    void setActive(boolean active) {
+    public void setActive(boolean active) {
         if (follower != null) {
             follower.setActive(active);
         }
