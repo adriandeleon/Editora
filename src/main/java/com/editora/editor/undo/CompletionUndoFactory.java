@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.undo;
 
 import java.time.Duration;
 import java.util.*;
@@ -15,14 +15,14 @@ import org.jspecify.annotations.Nullable;
 import org.reactfx.EventStream;
 
 /** Keeps UndoFX's replay/merge/mark machinery, with a bounded queue able to rebase delayed imports. */
-final class CompletionUndoFactory implements UndoManagerFactory {
+public final class CompletionUndoFactory implements UndoManagerFactory {
     /**
      * Most text (removed plus inserted characters) the undo queue of one document retains — and, through
      * {@link UndoQueueBudget#APP}, the queues of all documents together. The entry count alone bounds nothing:
      * one entry can hold a rewrite of a multi-megabyte document. 64 M characters is at most 128 MB of UTF-16
      * text, and far beyond any history made of ordinary edits.
      */
-    static final long RETAINED_CHARS = 64L << 20;
+    public static final long RETAINED_CHARS = 64L << 20;
 
     private final int capacity;
 
@@ -53,7 +53,7 @@ final class CompletionUndoFactory implements UndoManagerFactory {
      * <p>{@code pause} is UndoFX's preventMergeDelay: edits further apart than that start a new undo group
      * (the idle break of {@link UndoMerge}).
      */
-    static UndoManager<?> forDocument(CodeArea view, Supplier<CodeArea> target, int capacity, Duration pause) {
+    public static UndoManager<?> forDocument(CodeArea view, Supplier<CodeArea> target, int capacity, Duration pause) {
         return forDocument(view, target, capacity, pause, () -> false);
     }
 
@@ -63,7 +63,7 @@ final class CompletionUndoFactory implements UndoManagerFactory {
      * the newest lines of the log back out and mark the file modified. The owner of such a change keeps the
      * history consistent — a change that moves earlier text must forget it.
      */
-    static UndoManager<?> forDocument(
+    public static UndoManager<?> forDocument(
             CodeArea view,
             Supplier<CodeArea> target,
             int capacity,

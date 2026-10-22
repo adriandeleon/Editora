@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.undo;
 
 import java.time.Duration;
 import java.util.*;

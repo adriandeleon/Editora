@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.undo;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -14,7 +14,7 @@ import org.reactfx.Subscription;
 import org.reactfx.value.Val;
 
 /** Groups a completion and safely rebased imports without folding intervening typing into undo. */
-final class CompletionUndoManager<C> implements UndoManager<C> {
+public final class CompletionUndoManager<C> implements UndoManager<C> {
     private static final int MAX_GROUPS = 32;
     private static final int MAX_STEPS = 32;
     private final UndoManager<C> delegate;
@@ -42,7 +42,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
         };
     }
 
-    static Runnable beginSpan(CodeArea first, @Nullable CodeArea second) {
+    public static Runnable beginSpan(CodeArea first, @Nullable CodeArea second) {
         var ends = new ArrayList<Runnable>();
         for (CodeArea area : views(first, second)) {
             if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) ends.add(manager.beginSpan());
@@ -61,12 +61,12 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
     }
 
     /** Undo and redo entries the queue holds (tests of its bounds). */
-    int historyEntries() {
+    public int historyEntries() {
         return queue.size();
     }
 
     /** Removed plus inserted characters those entries retain (tests of its bounds). */
-    long historyChars() {
+    public long historyChars() {
         return queue.retained();
     }
 
@@ -115,7 +115,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
      * last — for an edit that follows from the user's own and cannot merge with it because it is elsewhere
      * in the document (a snippet field's mirrors). A no-op inside a completion, which is grouped already.
      */
-    static Runnable joinLast(CodeArea area) {
+    public static Runnable joinLast(CodeArea area) {
         return area.getUndoManager() instanceof CompletionUndoManager<?> manager ? manager.beginJoined() : () -> {};
     }
 
@@ -199,7 +199,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
      * just committed — a follow-up that belongs to the user's keystroke (the paired-tag rename) must not
      * be a separate undo step, or one undo leaves the document in a state the user never made.
      */
-    static void joinLastEdit(@Nullable CodeArea first, @Nullable CodeArea second, Runnable action) {
+    public static void joinLastEdit(@Nullable CodeArea first, @Nullable CodeArea second, Runnable action) {
         Runnable run = action;
         for (CodeArea area : views(first, second)) {
             if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) {
@@ -220,7 +220,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
                 : List.of(first, second);
     }
 
-    static Runnable begin(CodeArea first, @Nullable CodeArea second) {
+    public static Runnable begin(CodeArea first, @Nullable CodeArea second) {
         var ends = new ArrayList<Runnable>();
         for (CodeArea area : views(first, second)) {
             if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) ends.add(manager.beginCompletion());
@@ -228,7 +228,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
         return () -> ends.forEach(Runnable::run);
     }
 
-    static Consumer<Runnable> captureAdditionalEdits(CodeArea first, @Nullable CodeArea second) {
+    public static Consumer<Runnable> captureAdditionalEdits(CodeArea first, @Nullable CodeArea second) {
         Consumer<Runnable> apply = Runnable::run;
         for (CodeArea area : views(first, second)) {
             if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) {

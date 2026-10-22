@@ -5,6 +5,7 @@ import java.util.function.BiFunction;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 
+import com.editora.editor.undo.CompletionUndoManager;
 import com.editora.markdown.BlockInsert;
 import com.editora.markdown.HtmlToMarkdown;
 import com.editora.markdown.MarkdownEdit;

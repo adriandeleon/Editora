@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.undo;
 
 import org.fxmisc.undo.impl.ChangeQueue.QueuePosition;
 import org.junit.jupiter.api.Test;

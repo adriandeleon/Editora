@@ -82,9 +82,9 @@ final class NavigationCoordinator {
         @Nullable
         EditorBuffer activeBuffer();
 
-        java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints();
+        java.util.List<com.editora.editor.undo.UndoHistory.Checkpoint> undoHistoryCheckpoints();
 
-        void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c);
+        void restoreUndoCheckpoint(com.editora.editor.undo.UndoHistory.Checkpoint c);
 
         @Nullable
         CodeArea activeArea();
@@ -134,7 +134,7 @@ final class NavigationCoordinator {
 
     QuickOpen<ToolWindow> splitToolWindowPalette;
 
-    QuickOpen<com.editora.editor.UndoHistory.Checkpoint> undoHistoryPalette;
+    QuickOpen<com.editora.editor.undo.UndoHistory.Checkpoint> undoHistoryPalette;
 
     QuickOpen<NavigationHistory.Location> recentLocationsPalette;
 
@@ -841,7 +841,7 @@ final class NavigationCoordinator {
     }
 
     /** The checkpoint's capture time as {@code HH:mm:ss} for the popup's detail column. */
-    static String undoCheckpointTime(com.editora.editor.UndoHistory.Checkpoint c) {
+    static String undoCheckpointTime(com.editora.editor.undo.UndoHistory.Checkpoint c) {
         return UNDO_TIME.format(java.time.Instant.ofEpochMilli(c.epochMillis()));
     }
 

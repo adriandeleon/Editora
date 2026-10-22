@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.undo;
 
 import java.util.ArrayList;
 import java.util.function.ToLongFunction;

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.undo;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -81,7 +81,7 @@ public final class UndoHistory {
     }
 
     /** Number of checkpoints held. */
-    int size() {
+    public int size() {
         return entries.size();
     }
 

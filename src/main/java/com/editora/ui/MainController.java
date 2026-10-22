@@ -3883,12 +3883,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
+        public java.util.List<com.editora.editor.undo.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
             return MainController.this.undoHistoryCheckpoints();
         }
 
         @Override
-        public void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c) {
+        public void restoreUndoCheckpoint(com.editora.editor.undo.UndoHistory.Checkpoint c) {
             MainController.this.restoreUndoCheckpoint(c);
         }
 
@@ -7944,7 +7944,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     // --- Undo History popup (the QuickOpen mirror of the Undo History tool window) ---
 
     /** Checkpoints of the active buffer, newest-first, seeding a baseline when empty (like the panel). */
-    private java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
+    private java.util.List<com.editora.editor.undo.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
         EditorBuffer b = activeBuffer();
         if (b == null) {
             return java.util.List.of();
@@ -7955,7 +7955,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return b.getUndoHistory().entriesNewestFirst();
     }
 
-    private void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c) {
+    private void restoreUndoCheckpoint(com.editora.editor.undo.UndoHistory.Checkpoint c) {
         EditorBuffer b = activeBuffer();
         if (b != null) {
             b.restoreUndoCheckpoint(c);
