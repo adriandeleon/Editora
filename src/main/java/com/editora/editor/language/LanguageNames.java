@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.language;
 
 import java.util.Locale;
 

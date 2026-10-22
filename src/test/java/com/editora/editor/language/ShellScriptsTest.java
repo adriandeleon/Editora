@@ -1,6 +1,6 @@
-package com.editora.editor;
+package com.editora.editor.language;
 
-import com.editora.editor.ShellScripts.Problem;
+import com.editora.editor.language.ShellScripts.Problem;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

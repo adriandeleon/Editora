@@ -9,7 +9,7 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 
-import com.editora.editor.LanguageRegistry;
+import com.editora.editor.language.LanguageRegistry;
 import org.jspecify.annotations.Nullable;
 
 /**

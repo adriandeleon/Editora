@@ -2539,7 +2539,7 @@ final class DebugCoordinator {
         if (file == null || file.getFileName() == null) {
             return null;
         }
-        String language = com.editora.editor.LanguageRegistry.forFileName(
+        String language = com.editora.editor.language.LanguageRegistry.forFileName(
                 file.getFileName().toString());
         DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor(language);
         return spec != null && spec.kind() == DapServerRegistry.Kind.JVM ? language : null;

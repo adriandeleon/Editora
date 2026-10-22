@@ -14,7 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LanguageRegistry;
+import com.editora.editor.language.LanguageRegistry;
 import com.editora.search.GitignoreFilter;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;

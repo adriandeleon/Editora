@@ -7,8 +7,8 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LanguageRegistry;
 import com.editora.editor.WikiLinkTargets;
+import com.editora.editor.language.LanguageRegistry;
 import com.editora.markdown.MarkdownAnchors;
 import org.jspecify.annotations.Nullable;
 

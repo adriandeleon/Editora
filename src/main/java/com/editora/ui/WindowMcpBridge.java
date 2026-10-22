@@ -120,7 +120,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                         out.add(new OpenFile(
                                 placeholder.path().toString(),
                                 placeholder.title(),
-                                com.editora.editor.LanguageRegistry.forFileName(
+                                com.editora.editor.language.LanguageRegistry.forFileName(
                                         placeholder.path().toString()),
                                 false,
                                 false));

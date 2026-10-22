@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
-import com.editora.editor.LanguageRegistry;
+import com.editora.editor.language.LanguageRegistry;
 import com.editora.search.FuzzyMatch;
 import org.jspecify.annotations.Nullable;
 

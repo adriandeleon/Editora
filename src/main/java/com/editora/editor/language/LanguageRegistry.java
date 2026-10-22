@@ -1,8 +1,10 @@
-package com.editora.editor;
+package com.editora.editor.language;
 
 import java.util.Locale;
 import java.util.Map;
 
+import com.editora.editor.FoldRegions;
+import com.editora.editor.GrammarRegistry;
 import com.editora.editor.crypto.EncryptedNames;
 
 /**
@@ -230,7 +232,7 @@ public final class LanguageRegistry {
     }
 
     /** Every extension mapped to a language (lower case, no dot), the shell ones included. */
-    static java.util.Set<String> extensions() {
+    public static java.util.Set<String> extensions() {
         java.util.Set<String> all = new java.util.TreeSet<>(BY_EXTENSION.keySet());
         all.addAll(ShellFiles.EXTENSIONS);
         return all;

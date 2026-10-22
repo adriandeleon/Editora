@@ -16,6 +16,7 @@ import java.util.function.Supplier;
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
 import com.editora.completion.CompletionProvider;
+import com.editora.editor.language.LanguageRegistry;
 import com.editora.markdown.MarkdownAnchors;
 import com.editora.markdown.MarkdownBlocks;
 import com.editora.markdown.MarkdownCompletionContext;

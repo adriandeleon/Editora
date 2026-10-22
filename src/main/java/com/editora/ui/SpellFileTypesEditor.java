@@ -18,7 +18,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.config.Settings;
 import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LanguageRegistry;
+import com.editora.editor.language.LanguageRegistry;
 
 import static com.editora.i18n.Messages.tr;
 

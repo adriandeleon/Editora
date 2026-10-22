@@ -7,8 +7,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LanguageRegistry;
 import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.language.LanguageRegistry;
 import com.editora.editor.lsp.SemanticToken;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpan;

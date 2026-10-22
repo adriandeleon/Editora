@@ -11,7 +11,7 @@ import javafx.util.Duration;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LanguageRegistry;
+import com.editora.editor.language.LanguageRegistry;
 import com.editora.markdown.WordCount;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;

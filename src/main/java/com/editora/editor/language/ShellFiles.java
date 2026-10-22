@@ -1,9 +1,10 @@
-package com.editora.editor;
+package com.editora.editor.language;
 
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import com.editora.editor.GrammarRegistry;
 import org.jspecify.annotations.Nullable;
 
 /**

@@ -1237,7 +1237,10 @@ final class FileWorkflowCoordinator {
             return declared;
         }
         String head = new String(bytes, 0, Math.min(bytes.length, 256), java.nio.charset.StandardCharsets.ISO_8859_1);
-        return com.editora.editor.ShellScripts.isShellScript(file.getFileName().toString(), head) ? null : declared;
+        return com.editora.editor.language.ShellScripts.isShellScript(
+                        file.getFileName().toString(), head)
+                ? null
+                : declared;
     }
 
     /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
@@ -1357,7 +1360,7 @@ final class FileWorkflowCoordinator {
         }
         if (load.heavy()
                 && com.editora.lsp.LspServerRegistry.lspAllowedForSize(
-                        com.editora.editor.LanguageRegistry.forFileName(
+                        com.editora.editor.language.LanguageRegistry.forFileName(
                                 String.valueOf(load.file().getFileName())),
                         true,
                         load.lines())) {

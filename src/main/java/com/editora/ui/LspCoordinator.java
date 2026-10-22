@@ -2644,7 +2644,9 @@ final class LspCoordinator {
         }
         // zsh startup files (.zshrc, /etc/zsh/zshenv, …) say nothing about being zsh, so bash-language-server would
         // lint them as bash and mark valid zsh as parse errors. A *.zsh script it recognizes and skips itself.
-        if ("bash".equals(base) && fileName != null && com.editora.editor.ShellFiles.isZshStartupFile(fileName)) {
+        if ("bash".equals(base)
+                && fileName != null
+                && com.editora.editor.language.ShellFiles.isZshStartupFile(fileName)) {
             return null;
         }
         return base;
@@ -3918,7 +3920,7 @@ final class LspCoordinator {
             peekPopup = new PeekPopup(host.overlayHost());
         }
         String name = PathDisplay.fileName(file);
-        String language = com.editora.editor.LanguageRegistry.forFileName(name);
+        String language = com.editora.editor.language.LanguageRegistry.forFileName(name);
         String title = tr("lsp.peek.title", name, t.line() + 1);
         // The editor's own font, so the peeked lines wrap and align the way the file does.
         peekPopup.show(
