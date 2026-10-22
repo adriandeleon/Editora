@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.structured;
 
 import java.time.LocalDate;
 import java.time.YearMonth;

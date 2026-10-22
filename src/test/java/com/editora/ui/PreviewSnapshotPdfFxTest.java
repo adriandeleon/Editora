@@ -8,7 +8,7 @@ import java.util.List;
 import javax.imageio.ImageIO;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.PreviewSnapshots;
+import com.editora.editor.structured.PreviewSnapshots;
 import com.editora.pdf.ImagePaging;
 import com.editora.pdf.ImagePdfWriter;
 import com.editora.pdf.PageImage;

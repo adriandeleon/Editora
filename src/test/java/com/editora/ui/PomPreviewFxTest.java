@@ -11,7 +11,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.PomPreview;
+import com.editora.editor.structured.PomPreview;
 import com.editora.maven.PomSummary;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

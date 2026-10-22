@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.structured;
 
 import java.time.LocalDate;
 import java.time.format.TextStyle;
@@ -15,6 +15,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 
+import com.editora.editor.MarkdownRenderer;
 import com.editora.i18n.Messages;
 import com.editora.markwhen.MwNode;
 import com.editora.markwhen.Timeline;

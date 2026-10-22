@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.structured;
 
 import javafx.scene.Node;
 import javafx.scene.control.TreeCell;

@@ -80,6 +80,19 @@ import com.editora.editor.search.SearchMatcher;
 import com.editora.editor.search.SearchMatches;
 import com.editora.editor.spell.BufferSpell;
 import com.editora.editor.spell.SpellCheckOverlay;
+import com.editora.editor.structured.CrontabPreview;
+import com.editora.editor.structured.DockerfilePreview;
+import com.editora.editor.structured.FstabPreview;
+import com.editora.editor.structured.GithubActionsPreview;
+import com.editora.editor.structured.MarkwhenCalendar;
+import com.editora.editor.structured.MarkwhenTimeline;
+import com.editora.editor.structured.OpenApiDoc;
+import com.editora.editor.structured.PomPreview;
+import com.editora.editor.structured.PreviewSnapshots;
+import com.editora.editor.structured.SshConfigPreview;
+import com.editora.editor.structured.StructuredTree;
+import com.editora.editor.structured.SystemdPreview;
+import com.editora.editor.structured.XmlTree;
 import com.editora.editor.todo.TodoHighlightOverlay;
 import com.editora.editor.todo.TodoMark;
 import com.editora.editor.todo.TodoMatcher;
@@ -6220,7 +6233,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Whether an OpenAPI document shows its docs view (the default) rather than the tree behind it. */
-    boolean showsApiDocs() {
+    public boolean showsApiDocs() {
         return structuredShowApiDocs == null || structuredShowApiDocs;
     }
 

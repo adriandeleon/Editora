@@ -3,8 +3,8 @@ package com.editora.ui;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 
-import com.editora.editor.MarkwhenCalendar;
-import com.editora.editor.MarkwhenTimeline;
+import com.editora.editor.structured.MarkwhenCalendar;
+import com.editora.editor.structured.MarkwhenTimeline;
 import com.editora.markwhen.MarkwhenParser;
 import com.editora.markwhen.Timeline;
 import org.junit.jupiter.api.BeforeAll;

@@ -8,7 +8,7 @@ import javafx.scene.Parent;
 import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
 
-import com.editora.editor.FstabPreview;
+import com.editora.editor.structured.FstabPreview;
 import com.editora.fstab.Fstab;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

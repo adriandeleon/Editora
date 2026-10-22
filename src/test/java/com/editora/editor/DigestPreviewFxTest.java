@@ -2,6 +2,9 @@ package com.editora.editor;
 
 import javafx.scene.Node;
 
+import com.editora.editor.structured.GithubActionsPreview;
+import com.editora.editor.structured.OpenApiDoc;
+import com.editora.editor.structured.PomPreview;
 import com.editora.ghactions.Workflow;
 import com.editora.i18n.Messages;
 import com.editora.maven.PomSummary;

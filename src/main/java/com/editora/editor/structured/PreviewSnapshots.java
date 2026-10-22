@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.structured;
 
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
@@ -23,6 +23,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.scene.transform.Transform;
 
+import com.editora.editor.EditorBuffer;
 import com.editora.structured.StructuredParser;
 import com.editora.structured.XmlParser;
 import org.jspecify.annotations.Nullable;
@@ -116,7 +117,8 @@ public final class PreviewSnapshots {
      * instead), does not parse, or failed to render. Call on the FX thread; {@code progress} (chunks done,
      * chunks in all) and {@code done} are called on it too, {@code done} always later than this call.
      */
-    static void capture(EditorBuffer b, String lightUa, BiConsumer<Integer, Integer> progress, Consumer<Result> done) {
+    public static void capture(
+            EditorBuffer b, String lightUa, BiConsumer<Integer, Integer> progress, Consumer<Result> done) {
         Plan plan;
         Scene scene;
         try {
