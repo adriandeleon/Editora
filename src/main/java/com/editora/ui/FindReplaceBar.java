@@ -22,9 +22,9 @@ import javafx.util.Duration;
 
 import com.editora.editops.PreserveCase;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.NoteAnchors;
 import com.editora.editor.SearchMatcher;
 import com.editora.editor.SearchMatches;
+import com.editora.editor.notes.NoteAnchors;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 import org.reactfx.Subscription;

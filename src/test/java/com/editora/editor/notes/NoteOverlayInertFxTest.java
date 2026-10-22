@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.notes;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -18,6 +18,7 @@ import com.editora.config.FileIdentity;
 import com.editora.config.NoteScope;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
+import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -114,11 +115,11 @@ class NoteOverlayInertFxTest {
                 buffer.getNode().layout();
                 CodeArea area = buffer.getArea();
                 Bounds box = area.getCharacterBoundsOnScreen(6, 7).orElseThrow();
-                EditorBuffer.NOTE_HOVER_HITS_FOR_TEST.set(0);
+                NoteHover.HITS_FOR_TEST.set(0);
                 for (int i = 0; i < 20; i++) {
                     area.fireEvent(moved(box.getCenterX() + i, box.getCenterY()));
                 }
-                assertEquals(0, EditorBuffer.NOTE_HOVER_HITS_FOR_TEST.get(), "no note: no hit-test");
+                assertEquals(0, NoteHover.HITS_FOR_TEST.get(), "no note: no hit-test");
 
                 buffer.getNoteManager()
                         .add(PersonalNote.create(
@@ -128,7 +129,7 @@ class NoteOverlayInertFxTest {
                                 "a note",
                                 List.of()));
                 area.fireEvent(moved(box.getCenterX(), box.getCenterY()));
-                assertEquals(1, EditorBuffer.NOTE_HOVER_HITS_FOR_TEST.get(), "with one, the pointer is hit-tested");
+                assertEquals(1, NoteHover.HITS_FOR_TEST.get(), "with one, the pointer is hit-tested");
             } finally {
                 stage.close();
                 buffer.dispose();

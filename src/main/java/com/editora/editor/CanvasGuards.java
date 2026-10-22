@@ -51,11 +51,11 @@ public final class CanvasGuards {
         return Math.min(v, maxLogicalDimension);
     }
 
-    static double clampWidth(Node owner, double width) {
+    public static double clampWidth(Node owner, double width) {
         return clampDim(width, outputScale(owner, true));
     }
 
-    static double clampHeight(Node owner, double height) {
+    public static double clampHeight(Node owner, double height) {
         return clampDim(height, outputScale(owner, false));
     }
 

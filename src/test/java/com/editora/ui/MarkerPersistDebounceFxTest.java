@@ -16,7 +16,7 @@ import com.editora.config.PersonalNote;
 import com.editora.config.Settings;
 import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.NoteDraft;
+import com.editora.editor.notes.NoteDraft;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

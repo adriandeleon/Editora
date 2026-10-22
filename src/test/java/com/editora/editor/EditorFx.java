@@ -82,7 +82,7 @@ public final class EditorFx {
         }
     }
 
-    static <T> T callFx(Callable<T> task) throws Exception {
+    public static <T> T callFx(Callable<T> task) throws Exception {
         AtomicReference<T> result = new AtomicReference<>();
         onFx(() -> {
             try {
@@ -97,7 +97,7 @@ public final class EditorFx {
     }
 
     /** Waits until every FX task queued before this call (and the tasks those queued, two deep) has run. */
-    static void drain() throws Exception {
+    public static void drain() throws Exception {
         for (int i = 0; i < 3; i++) {
             CountDownLatch done = new CountDownLatch(1);
             Platform.runLater(done::countDown);

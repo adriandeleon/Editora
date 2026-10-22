@@ -51,7 +51,7 @@ import com.editora.config.FileIdentity;
 import com.editora.config.NoteScope;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
-import com.editora.editor.NoteDraft;
+import com.editora.editor.notes.NoteDraft;
 import com.editora.pdf.PdfExportService;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;

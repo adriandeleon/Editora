@@ -52,8 +52,8 @@ import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
 import com.editora.config.PersonalNote;
-import com.editora.editor.NoteDraft;
-import com.editora.editor.PersonalNoteTooltip;
+import com.editora.editor.notes.NoteDraft;
+import com.editora.editor.notes.PersonalNoteTooltip;
 import com.editora.search.FuzzyMatch;
 import org.jspecify.annotations.Nullable;
 

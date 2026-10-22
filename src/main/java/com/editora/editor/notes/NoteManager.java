@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.notes;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -12,6 +12,8 @@ import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
+import com.editora.editor.BookmarkManager;
+import com.editora.editor.LineMarks;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;

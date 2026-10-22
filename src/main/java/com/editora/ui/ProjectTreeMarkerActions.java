@@ -5,7 +5,7 @@ import java.util.Collection;
 import java.util.List;
 
 import com.editora.config.PersonalNote;
-import com.editora.editor.NoteDraft;
+import com.editora.editor.notes.NoteDraft;
 
 /**
  * The Project tree's bookmark and personal-note marks: what a file has, and the context-menu actions that add

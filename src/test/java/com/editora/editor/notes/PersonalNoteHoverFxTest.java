@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.notes;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -17,6 +17,7 @@ import javafx.stage.Stage;
 import com.editora.config.NoteScope;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
+import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.testfx.api.FxToolkit;
@@ -88,8 +89,8 @@ class PersonalNoteHoverFxTest {
                     null);
             bufferRef.get().getArea().fireEvent(moved);
 
-            assertEquals(noteRef.get().id(), field(bufferRef.get(), "hoverNoteId"));
-            Tooltip tooltip = field(bufferRef.get(), "noteTip");
+            assertEquals(noteRef.get().id(), field(field(bufferRef.get(), "noteHover"), "shownId"));
+            Tooltip tooltip = field(field(bufferRef.get(), "noteHover"), "tip");
             assertTrue(tooltip.isShowing(), "hovering the annotated text must show its tooltip");
             assertNotNull(tooltip.getGraphic(), "the note body is rendered into the tooltip");
             assertTrue(tooltip.getStyleClass().contains("personal-note-tooltip"));

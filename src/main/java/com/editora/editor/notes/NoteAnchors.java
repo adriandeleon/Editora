@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.notes;
 
 import java.util.ArrayList;
 import java.util.List;

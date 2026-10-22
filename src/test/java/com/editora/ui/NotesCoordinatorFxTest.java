@@ -26,7 +26,7 @@ import com.editora.config.PersonalNote;
 import com.editora.config.Settings;
 import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.NoteDraft;
+import com.editora.editor.notes.NoteDraft;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;

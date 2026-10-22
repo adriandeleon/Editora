@@ -52,8 +52,7 @@ class LazyOverlayFxTest {
             "diagnosticStripe",
             "mdLintStripe",
             "todoStripe",
-            "contextMenu",
-            "noteTip");
+            "contextMenu");
 
     @BeforeAll
     void setUp() throws Exception {
@@ -98,6 +97,9 @@ class LazyOverlayFxTest {
         assertNull(
                 FxTestSupport.field(b.getFoldManager(), "linePreview"),
                 "the fold preview popup is built on the first hover over a collapsed line");
+        assertNull(
+                FxTestSupport.field(FxTestSupport.field(b, "noteHover"), "tip"),
+                "the note popup is built on the first hover over a note");
         // What the pane holds for a plain buffer: the text, the two on-by-default overlays, the minimap and
         // the ruler (a Line) — nothing that holds a viewport texture for a feature that is off.
         assertEquals(

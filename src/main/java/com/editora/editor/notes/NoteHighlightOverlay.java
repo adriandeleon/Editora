@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.notes;
 
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -10,13 +10,17 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
 import org.jspecify.annotations.Nullable;
 
 /**
  * A transparent overlay that paints a soft highlight behind each Personal Note's anchored span, on top of
- * the editor without touching the document or its style spans. Modeled on {@link SpellCheckOverlay}: a
+ * the editor without touching the document or its style spans. Modeled on {@code SpellCheckOverlay}: a
  * mouse-transparent {@link Canvas} sized to the viewport, redrawn coalesced (one per pulse, after that pulse's
  * layout — see {@link #scheduleRedraw}) on scroll/edit/resize/fold, only for visible spans. Each visual row of a
  * span is painted on its own, folded lines are skipped, and nothing is painted over the gutter when the text is
@@ -24,7 +28,7 @@ import org.jspecify.annotations.Nullable;
  * while the buffer has no positioned note; it stays on in large-file mode, where it costs nothing until a note
  * is on screen and the notes are the user's own.
  */
-final class NoteHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class NoteHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     // A soft amber wash painted like a text selection: a flat, contiguous fill (no per-line outline or
     // rounded corners) so a multi-line note traces the same shape as the editor's selection.
@@ -42,7 +46,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
      * active for every buffer (the feature is on by default) but almost no buffer has a note: without this
      * gate each edit, scroll and layout queued a runLater that did the visible-paragraph lookups only to
      * find the span list empty. With it the overlay is inert — no runLater, no viewport call — until the
-     * note manager positions a note, the way {@link TodoHighlightOverlay} is off until it has marks.
+     * note manager positions a note, the way {@code TodoHighlightOverlay} is off until it has marks.
      */
     private BooleanSupplier hasSpans = () -> true;
 
@@ -68,7 +72,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     // texture (the convention the other overlays follow). layoutChildren re-grows only while this is set.
     private boolean hasContent;
 
-    NoteHighlightOverlay(CodeArea area) {
+    public NoteHighlightOverlay(CodeArea area) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -99,12 +103,12 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
         return second;
     }
 
-    void setSpans(Supplier<List<int[]>> spans) {
+    public void setSpans(Supplier<List<int[]>> spans) {
         setSpans(spans, () -> true);
     }
 
     /** As {@link #setSpans(Supplier)}, with a cheap "is there anything" test asked before any redraw is queued. */
-    void setSpans(Supplier<List<int[]>> spans, BooleanSupplier hasSpans) {
+    public void setSpans(Supplier<List<int[]>> spans, BooleanSupplier hasSpans) {
         if (follower != null) {
             follower.setSpans(spans, hasSpans);
         }
@@ -113,7 +117,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
         scheduleRedraw();
     }
 
-    void setActive(boolean active) {
+    public void setActive(boolean active) {
         if (follower != null) {
             follower.setActive(active);
         }
@@ -129,7 +133,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
         }
     }
 
-    void refresh() {
+    public void refresh() {
         if (follower != null) {
             follower.refresh();
         }

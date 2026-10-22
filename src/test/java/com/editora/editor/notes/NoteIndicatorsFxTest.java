@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.notes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +18,9 @@ import javafx.stage.Stage;
 import com.editora.config.NoteScope;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.EditorFx;
+import com.editora.editor.FrameWatch;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
 import org.junit.jupiter.api.BeforeAll;

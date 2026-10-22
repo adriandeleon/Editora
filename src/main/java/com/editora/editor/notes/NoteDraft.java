@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.notes;
 
 import com.editora.config.NoteScope;
 import com.editora.config.TextAnchor;
