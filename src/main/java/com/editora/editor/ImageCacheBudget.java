@@ -21,7 +21,7 @@ import javafx.scene.image.Image;
  * <p>Budgets are per cache and deliberately loose: they must never bind in ordinary use (a preview full of
  * badges is a few MB), only stop one pathological document from filling VRAM.
  */
-final class ImageCacheBudget {
+public final class ImageCacheBudget {
 
     /** Preview images are user content of arbitrary size — the one cache that really needs this. */
     static final long PREVIEW_BUDGET_BYTES = 192L * 1024 * 1024;
@@ -39,10 +39,10 @@ final class ImageCacheBudget {
     static final long MATH_BUDGET_BYTES = 32L * 1024 * 1024;
 
     /**
-     * Content pixels of hidden tabs' minimaps ({@link MinimapRetention}): CPU-side only, a few hundred KB
+     * Content pixels of hidden tabs' minimaps ({@code MinimapRetention}): CPU-side only, a few hundred KB
      * per tab at a 90 px column, so this binds only on a very tall screen with many tabs.
      */
-    static final long MINIMAP_BUDGET_BYTES = 16L * 1024 * 1024;
+    public static final long MINIMAP_BUDGET_BYTES = 16L * 1024 * 1024;
 
     /** Parsed SVG documents ({@link SvgImages}): plain heap, weighed by {@link #svgFootprint}. */
     static final long SVG_BUDGET_BYTES = 32L * 1024 * 1024;
@@ -87,7 +87,7 @@ final class ImageCacheBudget {
      * The most recent entry is never evicted even if it alone exceeds the budget: it is what the caller
      * just rendered and is about to display, and dropping it would re-render forever.
      */
-    static <K, V> long trim(Map<K, V> cache, ToLongFunction<V> weigh, long budget) {
+    public static <K, V> long trim(Map<K, V> cache, ToLongFunction<V> weigh, long budget) {
         long total = 0;
         for (V v : cache.values()) {
             total += weigh.applyAsLong(v);

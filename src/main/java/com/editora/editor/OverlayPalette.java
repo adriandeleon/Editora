@@ -28,7 +28,7 @@ public final class OverlayPalette {
     /** Contrast of a structural hint drawn across many lines (indent guides): there, but well behind text. */
     static final double GUIDE = 1.45;
     /** Contrast of a non-text indicator (squiggle, match border). */
-    static final double INDICATOR = 3.0;
+    public static final double INDICATOR = 3.0;
     /** Contrast of text the user reads (inline debug values). */
     static final double TEXT = 4.5;
 
@@ -71,7 +71,7 @@ public final class OverlayPalette {
     }
 
     /** Whether light ink reads better than dark ink on {@code ground}. Pure. */
-    static boolean isDark(Color ground) {
+    public static boolean isDark(Color ground) {
         return contrast(Color.WHITE, ground) >= contrast(Color.BLACK, ground);
     }
 
@@ -83,7 +83,7 @@ public final class OverlayPalette {
      * {@code base}, moved toward the ground's ink by the smallest step that reaches {@code ratio}
      * against {@code ground}; unchanged when it already does. Pure.
      */
-    static Color reach(Color base, Color ground, double ratio) {
+    public static Color reach(Color base, Color ground, double ratio) {
         if (contrast(base, ground) >= ratio) {
             return base;
         }
@@ -182,7 +182,7 @@ public final class OverlayPalette {
         return Color.color(c.getRed(), c.getGreen(), c.getBlue(), Math.min(1, opacity));
     }
 
-    static Color backgroundOf(Region area) {
+    public static Color backgroundOf(Region area) {
         Background background = area.getBackground();
         if (background != null && !background.getFills().isEmpty()) {
             Paint fill = background.getFills().get(0).getFill();

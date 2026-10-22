@@ -1,9 +1,10 @@
-package com.editora.editor;
+package com.editora.editor.minimap;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.editora.editor.ImageCacheBudget;
 import org.jspecify.annotations.Nullable;
 
 /**

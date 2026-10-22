@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.minimap;
 
 import java.time.Duration;
 
@@ -14,6 +14,8 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.OverlayPalette;
 import com.editora.editor.git.GitGutterLines;
 import com.editora.editor.git.GitHunk;
 import com.editora.editor.lsp.LspDiagnostic;
@@ -42,7 +44,7 @@ import org.jspecify.annotations.Nullable;
 public final class Minimap extends Region {
 
     /** Fixed width of the minimap column, in pixels. */
-    static final double WIDTH = 90;
+    public static final double WIDTH = 90;
 
     /** Horizontal scale: assume ~110 columns map across the full width. */
     private static final double CHAR_SCALE = WIDTH / 110.0;
@@ -164,7 +166,7 @@ public final class Minimap extends Region {
     private @Nullable Minimap follower;
 
     /** A minimap for a split's second {@code view}, kept in step with this one. */
-    Minimap follower(CodeArea view) {
+    public Minimap follower(CodeArea view) {
         Minimap second = new Minimap(view);
         second.tabSize = tabSize;
         second.textColor = textColor;
@@ -182,7 +184,7 @@ public final class Minimap extends Region {
         return second;
     }
 
-    Minimap(CodeArea area) {
+    public Minimap(CodeArea area) {
         this.area = area;
         getStyleClass().add("minimap");
         getChildren().add(canvas);
@@ -212,7 +214,7 @@ public final class Minimap extends Region {
     }
 
     /** Releases what this minimap holds outside itself: its retained pixels and its timers. */
-    void dispose() {
+    public void dispose() {
         if (follower != null) {
             follower.dispose();
         }
@@ -281,7 +283,7 @@ public final class Minimap extends Region {
     }
 
     /** Sets the visual tab width (columns) and re-renders if it changed. */
-    void setTabSize(int tabSize) {
+    public void setTabSize(int tabSize) {
         if (follower != null) {
             follower.setTabSize(tabSize);
         }
@@ -292,7 +294,7 @@ public final class Minimap extends Region {
     }
 
     /** Sets the document-block and viewport-overlay colors (theme-aware) and re-renders. */
-    void setColors(Color text, Color viewport) {
+    public void setColors(Color text, Color viewport) {
         if (follower != null) {
             follower.setColors(text, viewport);
         }
@@ -303,7 +305,7 @@ public final class Minimap extends Region {
 
     /** Forces a re-render (e.g. after layout/theme settle at startup, when the first render may have
      *  run before the canvas was sized). */
-    void refresh() {
+    public void refresh() {
         if (follower != null) {
             follower.refresh();
         }
@@ -311,7 +313,7 @@ public final class Minimap extends Region {
     }
 
     /** Sets the LSP diagnostics drawn as right-edge severity stripes; a cheap stripe-only repaint. */
-    void setDiagnostics(java.util.List<LspDiagnostic> diagnostics) {
+    public void setDiagnostics(java.util.List<LspDiagnostic> diagnostics) {
         if (follower != null) {
             follower.setDiagnostics(diagnostics);
         }
@@ -324,7 +326,7 @@ public final class Minimap extends Region {
     }
 
     /** Enables/disables the diagnostic stripes (driven by LSP-active for this buffer); a cheap repaint. */
-    void setDiagnosticsEnabled(boolean enabled) {
+    public void setDiagnosticsEnabled(boolean enabled) {
         if (follower != null) {
             follower.setDiagnosticsEnabled(enabled);
         }
@@ -336,7 +338,7 @@ public final class Minimap extends Region {
     }
 
     /** Sets the TODO/highlight matches drawn as left-edge stripes; a cheap stripe-only repaint. */
-    void setTodoMarks(java.util.List<TodoMark> marks) {
+    public void setTodoMarks(java.util.List<TodoMark> marks) {
         if (follower != null) {
             follower.setTodoMarks(marks);
         }
@@ -349,7 +351,7 @@ public final class Minimap extends Region {
     }
 
     /** Enables/disables the TODO stripes (driven by TODO-highlight-on for this buffer); a cheap repaint. */
-    void setTodoEnabled(boolean enabled) {
+    public void setTodoEnabled(boolean enabled) {
         if (follower != null) {
             follower.setTodoEnabled(enabled);
         }
@@ -361,7 +363,7 @@ public final class Minimap extends Region {
     }
 
     /** Sets the Markdown-lint warnings drawn as right-edge stripes; a cheap stripe-only repaint. */
-    void setLintMarks(java.util.List<MarkdownLint.Diagnostic> marks) {
+    public void setLintMarks(java.util.List<MarkdownLint.Diagnostic> marks) {
         if (follower != null) {
             follower.setLintMarks(marks);
         }
@@ -374,7 +376,7 @@ public final class Minimap extends Region {
     }
 
     /** Enables/disables the lint stripes (driven by Markdown-lint-on for this buffer); a cheap repaint. */
-    void setLintEnabled(boolean enabled) {
+    public void setLintEnabled(boolean enabled) {
         if (follower != null) {
             follower.setLintEnabled(enabled);
         }
@@ -410,7 +412,7 @@ public final class Minimap extends Region {
      * another size, in which case it renders as before. A full render was the largest app frame of a tab
      * switch; the pixels are a few hundred KB.
      */
-    void setRenderingActive(boolean active) {
+    public void setRenderingActive(boolean active) {
         if (follower != null) {
             follower.setRenderingActive(active);
         }

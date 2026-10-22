@@ -70,6 +70,7 @@ import com.editora.editor.lsp.LspTextEdit;
 import com.editora.editor.lsp.OccurrenceHighlightOverlay;
 import com.editora.editor.lsp.OccurrenceSpan;
 import com.editora.editor.lsp.SemanticToken;
+import com.editora.editor.minimap.Minimap;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.editor.notes.NoteHighlightOverlay;
 import com.editora.editor.notes.NoteHover;

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.minimap;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;

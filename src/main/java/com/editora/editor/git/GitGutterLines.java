@@ -13,7 +13,7 @@ import javafx.beans.property.ReadOnlyBooleanProperty;
 import com.editora.editor.FoldManager;
 import com.editora.editor.LineMarkTracker;
 import com.editora.editor.LineMarks;
-import com.editora.editor.Minimap;
+import com.editora.editor.minimap.Minimap;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;

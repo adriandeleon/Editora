@@ -510,8 +510,8 @@ class OverlayScrollPerfFxTest {
         });
         settle();
 
-        AtomicInteger renders = staticCounter("com.editora.editor.Minimap", "RENDERS_FOR_TEST");
-        AtomicInteger unchanged = staticCounter("com.editora.editor.Minimap", "UNCHANGED_FOR_TEST");
+        AtomicInteger renders = staticCounter("com.editora.editor.minimap.Minimap", "RENDERS_FOR_TEST");
+        AtomicInteger unchanged = staticCounter("com.editora.editor.minimap.Minimap", "UNCHANGED_FOR_TEST");
 
         // Hidden, the first tab holds no image (its texture is released) but keeps the pixels.
         assertNull(

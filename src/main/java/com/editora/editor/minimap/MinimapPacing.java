@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.minimap;
 
 /**
  * Pure pacing for the {@link Minimap}'s edit-driven re-render: the longer the document, the longer two
