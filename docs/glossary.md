@@ -20,8 +20,8 @@ search-highlight, TODO, Markdown-lint, LSP diagnostics, …): a mouse-transparen
 the viewport, [coalesced](#debounce--coalesce) redraw, drawing only the [visible paragraphs](#hot-path),
 clamped via [`CanvasGuards`](../src/main/java/com/editora/editor/CanvasGuards.java) and released to
 a 1×1 backing texture when inactive. References:
-[`SpellCheckOverlay`](../src/main/java/com/editora/editor/SpellCheckOverlay.java),
-[`MarkdownLintOverlay`](../src/main/java/com/editora/editor/MarkdownLintOverlay.java); recipe in
+[`SpellCheckOverlay`](../src/main/java/com/editora/editor/spell/SpellCheckOverlay.java),
+[`MarkdownLintOverlay`](../src/main/java/com/editora/editor/markdown/MarkdownLintOverlay.java); recipe in
 [extending.md](extending.md#add-a-canvas-overlay).
 
 ### chord

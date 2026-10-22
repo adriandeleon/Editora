@@ -25,7 +25,7 @@ were considered and rejected. This document describes what is in the tree.
   one picker over commands, files and symbols.
 - [`ui/NavigationHistory.java`](../../src/main/java/com/editora/ui/NavigationHistory.java) —
   back/forward and the recent-locations trail.
-- [`editor/StickyScroll.java`](../../src/main/java/com/editora/editor/StickyScroll.java) +
+- [`editor/fold/StickyScroll.java`](../../src/main/java/com/editora/editor/fold/StickyScroll.java) +
   `StickyScrollBar` — the enclosing scope pinned above the viewport.
 - [`search/RelatedFiles.java`](../../src/main/java/com/editora/search/RelatedFiles.java) — the
   counterpart-file rules behind `nav.relatedFile`.

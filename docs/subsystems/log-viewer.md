@@ -14,9 +14,9 @@ Level tints, tail-follow and filtering for log files. Back to [the docs index](.
   - `LogRecordFilter` / `LogFilter` — the filter. Stateful, fed one complete line at a time.
   - `LogTail` / `LogTailService` — reading what a file gained, and the poll that does it.
   - `LogNavigation` — next/previous line at a level.
-- [`editor/LogView`](../../src/main/java/com/editora/editor/LogView.java) — one buffer's filter and
+- [`editor/LogView`](../../src/main/java/com/editora/editor/logviewer/LogView.java) — one buffer's filter and
   follow state, and the full text a filter hides.
-- [`editor/LogHighlightOverlay`](../../src/main/java/com/editora/editor/LogHighlightOverlay.java) —
+- [`editor/LogHighlightOverlay`](../../src/main/java/com/editora/editor/logviewer/LogHighlightOverlay.java) —
   the gutter bar and row wash, painted on a canvas over the visible lines only.
 - [`ui/LogControlBar`](../../src/main/java/com/editora/ui/LogControlBar.java) and
   [`ui/LogViewerCoordinator`](../../src/main/java/com/editora/ui/LogViewerCoordinator.java) — the bar
