@@ -21,7 +21,7 @@ import javafx.util.Duration;
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
 import com.editora.dap.DapModels;
-import com.editora.editor.CompletionPopup;
+import com.editora.editor.completion.CompletionPopup;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

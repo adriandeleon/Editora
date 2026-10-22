@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.completion;
 
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
@@ -6,6 +6,11 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.OverlayPalette;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
 import com.editora.snippet.SnippetSession;
 import com.editora.snippet.SnippetSessions;
 import org.fxmisc.richtext.CodeArea;
@@ -23,7 +28,7 @@ import org.jspecify.annotations.Nullable;
  * when the first session starts. The ranges are read from the session at paint time; an edit costs this
  * class one flag check.
  */
-final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private final CodeArea area;
     private final SnippetSessions sessions;
@@ -37,7 +42,7 @@ final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed
 
     private @Nullable SnippetFieldOverlay follower;
 
-    SnippetFieldOverlay(CodeArea area, SnippetSessions sessions) {
+    public SnippetFieldOverlay(CodeArea area, SnippetSessions sessions) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -76,7 +81,7 @@ final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed
     }
 
     /** Called when the session's ranges, active field or life may have changed. */
-    void refresh() {
+    public void refresh() {
         if (follower != null) {
             follower.refresh();
         }

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.completion;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -8,19 +8,19 @@ import com.editora.editor.lsp.LspTextEdit;
 import org.jspecify.annotations.Nullable;
 
 /** Bounded transform history for delayed import edits; conflicting edits invalidate the whole batch. */
-final class CompletionEditTracker {
+public final class CompletionEditTracker {
     private final List<LspEditShift.Change> changes = new ArrayList<>();
     private int nameStart;
     private int nameEnd;
     private boolean valid = true;
 
-    CompletionEditTracker(LspEditShift.@Nullable Change acceptance, int nameStart, int nameEnd) {
+    public CompletionEditTracker(LspEditShift.@Nullable Change acceptance, int nameStart, int nameEnd) {
         if (acceptance != null) changes.add(acceptance);
         this.nameStart = nameStart;
         this.nameEnd = nameEnd;
     }
 
-    void changed(int offset, int removedLength, int insertedLength, LspEditShift.Change change) {
+    public void changed(int offset, int removedLength, int insertedLength, LspEditShift.Change change) {
         if (!valid) return;
         if (changes.size() >= 128
                 || (offset < nameEnd && offset + removedLength > nameStart)
@@ -36,7 +36,7 @@ final class CompletionEditTracker {
         changes.add(change);
     }
 
-    List<LspTextEdit> translate(List<LspTextEdit> edits) {
+    public List<LspTextEdit> translate(List<LspTextEdit> edits) {
         if (!valid || edits == null) return List.of();
         List<LspTextEdit> result = edits;
         for (var change : changes) {

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.completion;
 
 import javafx.geometry.Bounds;
 import javafx.geometry.Rectangle2D;
@@ -11,6 +11,7 @@ import javafx.stage.Popup;
 import javafx.stage.Screen;
 import javafx.stage.Window;
 
+import com.editora.editor.MarkdownRenderer;
 import org.jspecify.annotations.Nullable;
 
 /**

@@ -1,10 +1,12 @@
-package com.editora.editor;
+package com.editora.editor.completion;
 
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.function.BiFunction;
 
 import com.editora.editops.Commenter;
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.LineEndings;
 import com.editora.editor.language.ShellScripts;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.TabExpansion;
@@ -16,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  * What {@link EditorBuffer} reads off a view to expand a snippet there: the trigger before the caret, and
  * the variables of the place it expands at. Kept out of the buffer class; both are short, bounded reads.
  */
-final class SnippetTyping {
+public final class SnippetTyping {
 
     private SnippetTyping() {}
 
@@ -25,7 +27,7 @@ final class SnippetTyping {
      * offset — or null when there is none or Tab may not expand here (see {@link TabExpansion#allowed}).
      * Looks at the caret's line only, and at no more of it than the completion prefix does.
      */
-    static TabExpansion.@Nullable Match triggerAtCaret(
+    public static TabExpansion.@Nullable Match triggerAtCaret(
             CodeArea a, String language, boolean prose, BiFunction<String, String, Snippet> provider) {
         return triggerAtCaret(a, language, prose, provider, false);
     }
@@ -35,7 +37,7 @@ final class SnippetTyping {
      * they would expand — there an inline word trigger is offered in the middle of a sentence too; a bare Tab
      * expands it only when the word is alone on its line.
      */
-    static TabExpansion.@Nullable Match triggerAtCaret(
+    public static TabExpansion.@Nullable Match triggerAtCaret(
             CodeArea a, String language, boolean prose, BiFunction<String, String, Snippet> provider, boolean offered) {
         int caret = a.getCaretPosition();
         int base =
@@ -97,7 +99,7 @@ final class SnippetTyping {
     }
 
     /** Parses {@code snippet} for expansion over {@code [from, to)}: its {@link #body} with {@link #variables}. */
-    static com.editora.snippet.ParsedSnippet parse(
+    public static com.editora.snippet.ParsedSnippet parse(
             com.editora.snippet.Snippet snippet,
             CodeArea a,
             int from,
@@ -120,7 +122,7 @@ final class SnippetTyping {
         return ShellScripts.snippetBody(snippet.body(), a.getParagraph(0).getText());
     }
 
-    static int lineOf(CodeArea a, int offset) {
+    public static int lineOf(CodeArea a, int offset) {
         return a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                 .getMajor();
     }

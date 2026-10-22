@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.completion;
 
 import java.util.List;
 
@@ -19,6 +19,8 @@ import com.editora.completion.CompletionSession;
 import com.editora.completion.CompletionSource;
 import com.editora.completion.CompletionTrace;
 import com.editora.editor.EditorBuffer.AiCompletionProvider;
+import com.editora.editor.MarkdownCompletions;
+import com.editora.editor.MarkdownRenderer;
 import com.editora.editor.http.HttpCompletions;
 import com.editora.editor.lsp.CodeAction;
 import com.editora.editor.lsp.CodeActionPopup;
@@ -28,8 +30,8 @@ import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
 /** Owns a buffer's completion, code-action and documentation popups and ghost-text state. */
-final class BufferCompletion {
-    interface Host {
+public final class BufferCompletion {
+    public interface Host {
         CodeArea area();
 
         AnchorPane root();
@@ -117,7 +119,7 @@ final class BufferCompletion {
 
     private final Host host;
 
-    BufferCompletion(Host host) {
+    public BufferCompletion(Host host) {
         this.host = host;
     }
 
@@ -258,7 +260,7 @@ final class BufferCompletion {
     }
 
     /** Leading whitespace (spaces/tabs) of a line, used to indent a snippet's continuation lines. */
-    static String leadingIndent(String line) {
+    public static String leadingIndent(String line) {
         int i = 0;
         while (i < line.length() && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) {
             i++;
@@ -275,7 +277,7 @@ final class BufferCompletion {
      * {@code else} de-indent. Accepting a row that only repeats the typed word adds nothing else worth a
      * keystroke; Tab still accepts it (and expands a snippet).
      */
-    static boolean enterEndsTheLine(String language, String label, String lineBeforeCaret) {
+    public static boolean enterEndsTheLine(String language, String label, String lineBeforeCaret) {
         if (!("shell".equals(language) || "python".equals(language)) || label == null || label.isEmpty()) {
             return false;
         }
@@ -454,7 +456,7 @@ final class BufferCompletion {
     /** Opens a link clicked in a completion's documentation: the window's own link opener. */
     private java.util.function.@Nullable Consumer<String> linkOpener;
 
-    void setLinkOpener(java.util.function.Consumer<String> opener) {
+    public void setLinkOpener(java.util.function.Consumer<String> opener) {
         this.linkOpener = opener;
     }
 
@@ -610,7 +612,7 @@ final class BufferCompletion {
         }
     }
 
-    void installCommitCharacters(CodeArea a) {
+    public void installCommitCharacters(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
             if (e.isConsumed()
                     || e.getCharacter().length() != 1
@@ -651,7 +653,7 @@ final class BufferCompletion {
         });
     }
 
-    void addCompletionKeys(CodeArea a) {
+    public void addCompletionKeys(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.isConsumed()) return;
             if (host.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
@@ -811,7 +813,7 @@ final class BufferCompletion {
 
     /** Installs the immediate completion/signature lifecycle hooks for one view. Settled completion and
      *  AI requests are shared by the document-level dispatcher, including when this is the split view. */
-    void installCompletionTrigger(CodeArea a) {
+    public void installCompletionTrigger(CodeArea a) {
         // Signature help fires IMMEDIATELY on a typed trigger char ('(' / ','), not on the 280 ms pause —
         // the overload popup must appear as the call is opened. Guarded to three cheap checks per edit
         // when off; the request itself is deferred a pulse so the triggering insertion's caret settles
@@ -931,7 +933,7 @@ final class BufferCompletion {
 
     /** Recomputes the word at the caret and shows/refreshes/hides the popup. {@code manual} lowers the
      *  minimum prefix length so an explicit invoke works on a single character. */
-    void updateCompletion(CodeArea a, boolean manual) {
+    public void updateCompletion(CodeArea a, boolean manual) {
         if (!autocompleteEnabled
                 || host.largeFile() // off in large-file mode: a.getText() below would allocate the whole document
                 // per trigger (the same per-keystroke cost brace matching is gated to avoid), and there is
@@ -1103,11 +1105,51 @@ final class BufferCompletion {
         return true;
     }
 
+    /** Whether autocomplete is on (the master Settings toggle). */
+    public boolean autocompleteEnabled() {
+        return autocompleteEnabled;
+    }
+
+    /** Whether AI inline completion is on for this buffer. */
+    public boolean aiCompletionEnabled() {
+        return aiCompletionEnabled;
+    }
+
+    /** No automatic completion for the edit that produces document version {@code version} (an edit of ours). */
+    public void suppressCompletionAt(long version) {
+        suppressCompletionAtVersion = version;
+    }
+
+    /** How the last accepted completion moved the text below it, for its late {@code additionalTextEdits}. */
+    public LspEditShift.@Nullable Change pendingCompletionShift() {
+        return pendingCompletionShift;
+    }
+
+    /** The snippet the ghost offers, or null. */
+    public @Nullable Snippet ghostSnippet() {
+        return ghostSnippet;
+    }
+
+    /** The abbreviation the ghost previews, or null. */
+    public com.editora.editops.Abbrev.@Nullable Edit ghostAbbrev() {
+        return ghostAbbrev;
+    }
+
+    /** The two document offsets carrying the {@code brace-match} style, or null. */
+    public int @Nullable [] braceMatch() {
+        return braceMatch;
+    }
+
+    /** Records the offsets now carrying the {@code brace-match} style (null: none). */
+    public void setBraceMatch(int @Nullable [] pair) {
+        braceMatch = pair;
+    }
+
     /** Longest expansion the abbreviation ghost shows before it is cut short. */
-    static final int ABBREV_GHOST_MAX = 72;
+    public static final int ABBREV_GHOST_MAX = 72;
 
     /** What the ghost shows for an abbreviation: an arrow and its expansion, on one short line. Pure. */
-    static String abbrevGhostText(String expansion) {
+    public static String abbrevGhostText(String expansion) {
         String line = expansion == null ? "" : expansion.strip().replaceAll("\\s+", " ");
         if (line.length() > ABBREV_GHOST_MAX) {
             line = line.substring(0, ABBREV_GHOST_MAX - 1) + "\u2026";
@@ -1278,7 +1320,7 @@ final class BufferCompletion {
      * following text) and no completion popup open. The async result shows as ghost text (Tab accepts)
      * only if the caret hasn't moved and no newer request superseded it.
      */
-    void maybeRequestAiCompletion(CodeArea a) {
+    public void maybeRequestAiCompletion(CodeArea a) {
         if (!aiCompletionEnabled
                 || aiCompletionProvider == null
                 || host.largeFile()
@@ -1339,7 +1381,7 @@ final class BufferCompletion {
         return " \u2192 " + (what == null ? "" : what.strip());
     }
 
-    Label ghostLabel() {
+    public Label ghostLabel() {
         if (ghostLabel == null) {
             ghostLabel = new Label();
             ghostLabel.getStyleClass().add("completion-ghost");
@@ -1352,7 +1394,7 @@ final class BufferCompletion {
         return ghostLabel;
     }
 
-    boolean ghostVisible() {
+    public boolean ghostVisible() {
         return ghostLabel != null && ghostLabel.isVisible();
     }
 
@@ -1400,7 +1442,7 @@ final class BufferCompletion {
     }
 
     /** Inserts the pending ghost suffix at the caret (the Tab-accept path for inline completion). */
-    void acceptGhost() {
+    public void acceptGhost() {
         if (ghostSuffix == null || ghostArea == null) {
             return;
         }
@@ -1497,7 +1539,7 @@ final class BufferCompletion {
     }
 
     /** Called once per shared-document change, after the version advances, before the caret settles. */
-    void documentChanged(org.fxmisc.richtext.model.PlainTextChange change) {
+    public void documentChanged(org.fxmisc.richtext.model.PlainTextChange change) {
         if (codeActionsShowing()) hideCodeActions(); // computed for the text as it was
         queueLocalSync();
         if (!autocompleteEnabled || !host.lspActive()) return;
@@ -1633,7 +1675,7 @@ final class BufferCompletion {
     }
 
     /** Whether the completion popup is currently open (an in-progress LSP/local completion session). */
-    boolean completionPopupShowing() {
+    public boolean completionPopupShowing() {
         return completionPopup != null && completionPopup.isShowing();
     }
 
@@ -1681,7 +1723,7 @@ final class BufferCompletion {
      * first, replacing {@code range}. A row the list already had for it is moved rather than repeated.
      * Pure.
      */
-    static java.util.List<Completion> withTypedTrigger(
+    public static java.util.List<Completion> withTypedTrigger(
             java.util.List<Completion> items, Snippet typed, Completion.ReplaceRange range) {
         var out = new java.util.ArrayList<Completion>(items.size() + 1);
         out.add(Completion.ofSnippet(typed).withReplaceRange(range));
@@ -1697,7 +1739,7 @@ final class BufferCompletion {
      * Preserves server overloads; removes duplicate local snippets and the server templates a local snippet
      * shadows, and caps the displayed list.
      */
-    static java.util.List<Completion> mergeCompletions(
+    public static java.util.List<Completion> mergeCompletions(
             java.util.List<Completion> lsp, java.util.List<Completion> local) {
         // Same inserted text can mean different overloads or imports. Never deduplicate server identities —
         // except a server template (jdtls's sysout, fori, try_catch…) named like a local snippet: Tab expands

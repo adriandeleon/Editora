@@ -16,7 +16,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 import javafx.stage.Window;
 
-import com.editora.editor.CompletionPopup;
+import com.editora.editor.completion.CompletionPopup;
 
 /**
  * The quick-fix / refactoring list, anchored <b>at the caret</b> — IntelliJ's Alt+Enter intention popup and

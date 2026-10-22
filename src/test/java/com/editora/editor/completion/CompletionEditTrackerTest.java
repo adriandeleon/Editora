@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.completion;
 
 import java.util.List;
 

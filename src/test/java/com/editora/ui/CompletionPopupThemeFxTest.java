@@ -12,7 +12,7 @@ import javafx.stage.Popup;
 import javafx.stage.Stage;
 
 import com.editora.completion.Completion;
-import com.editora.editor.CompletionPopup;
+import com.editora.editor.completion.CompletionPopup;
 import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;

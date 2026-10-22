@@ -47,6 +47,10 @@ import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
 import com.editora.editops.MultiTab;
+import com.editora.editor.completion.BufferCompletion;
+import com.editora.editor.completion.CompletionEditTracker;
+import com.editora.editor.completion.SnippetFieldOverlay;
+import com.editora.editor.completion.SnippetTyping;
 import com.editora.editor.crypto.BufferEncryption;
 import com.editora.editor.debug.BreakpointGutterMenu;
 import com.editora.editor.debug.BreakpointManager;
@@ -1194,7 +1198,7 @@ public class EditorBuffer implements TabContent {
                 }
                 // The matched pair moves with the text, so the next re-match clears it where it now is: a
                 // pass no longer restyles everything below an edit, which used to hide a stale position.
-                int[] pair = completionActions.braceMatch;
+                int[] pair = completionActions.braceMatch();
                 if (pair != null) {
                     pair[0] = HighlightDirty.moved(pair[0], change.getPosition(), removed, inserted);
                     pair[1] = HighlightDirty.moved(pair[1], change.getPosition(), removed, inserted);
@@ -1283,14 +1287,14 @@ public class EditorBuffer implements TabContent {
         settledEdits.at(
                 Duration.ofMillis(90),
                 () -> lspActive
-                        && completionActions.autocompleteEnabled
+                        && completionActions.autocompleteEnabled()
                         && focusedArea != null
                         && focusedArea.isFocused(),
                 () -> completionActions.updateCompletion(focusedArea, false));
         settledEdits.at(
                 Duration.ofMillis(280),
                 () -> !lspActive
-                        && completionActions.autocompleteEnabled
+                        && completionActions.autocompleteEnabled()
                         && focusedArea != null
                         && focusedArea.isFocused(),
                 () -> completionActions.updateCompletion(focusedArea, false));
@@ -1323,7 +1327,7 @@ public class EditorBuffer implements TabContent {
                 });
         settledEdits.at(
                 Duration.ofMillis(600),
-                () -> completionActions.aiCompletionEnabled && focusedArea != null && focusedArea.isFocused(),
+                () -> completionActions.aiCompletionEnabled() && focusedArea != null && focusedArea.isFocused(),
                 () -> completionActions.maybeRequestAiCompletion(focusedArea));
     }
 
@@ -8436,7 +8440,7 @@ public class EditorBuffer implements TabContent {
         newCaret = Math.max(lineStart, Math.min(newCaret, a.getLength()));
         a.moveTo(newCaret);
         // Re-indenting isn't the user typing a word — don't let the edit we just made pop the completion.
-        completionActions.suppressCompletionAtVersion = docVersion;
+        completionActions.suppressCompletionAt(docVersion);
     }
 
     /**
@@ -8960,15 +8964,15 @@ public class EditorBuffer implements TabContent {
         if (m != null) {
             addBraceClass(m[0] + winStart);
             addBraceClass(m[1] + winStart);
-            completionActions.braceMatch = new int[] {m[0] + winStart, m[1] + winStart};
+            completionActions.setBraceMatch(new int[] {m[0] + winStart, m[1] + winStart});
         }
     }
 
     private void clearBraceMatch() {
-        if (completionActions.braceMatch != null) {
-            removeBraceClass(completionActions.braceMatch[0]);
-            removeBraceClass(completionActions.braceMatch[1]);
-            completionActions.braceMatch = null;
+        if (completionActions.braceMatch() != null) {
+            removeBraceClass(completionActions.braceMatch()[0]);
+            removeBraceClass(completionActions.braceMatch()[1]);
+            completionActions.setBraceMatch(null);
         }
     }
 
@@ -9140,7 +9144,7 @@ public class EditorBuffer implements TabContent {
 
     /** Capture the acceptance independently of future completions and track safe typing until resolve lands. */
     public java.util.function.Consumer<java.util.List<LspTextEdit>> trackCompletionAdditionalEdits() {
-        var shift = completionActions.pendingCompletionShift;
+        var shift = completionActions.pendingCompletionShift();
         int start = shift == null
                 ? area.getCaretPosition()
                 : LspEditPlacement.offset(area, shift.startLine(), shift.startCol());
@@ -9159,7 +9163,7 @@ public class EditorBuffer implements TabContent {
             boolean tracked = completionEditTrackers.remove(tracker);
             if (tracked && !disposed) {
                 undo.accept(() -> applyLspEdits(tracker.translate(edits), true));
-                completionActions.suppressCompletionAtVersion = docVersion;
+                completionActions.suppressCompletionAt(docVersion);
             }
         };
     }
@@ -9174,7 +9178,7 @@ public class EditorBuffer implements TabContent {
         // Keep the caret where the accept left it. The import lands *above* the caret, and both apply paths
         // (replaceText, and MultiChangeBuilder.commit) leave the caret at the end of what they inserted — so
         // without this, accepting `List<Item` threw the caret onto the newly inserted `import` line (#834).
-        applyLspEdits(LspEditShift.shift(edits, completionActions.pendingCompletionShift), true);
+        applyLspEdits(LspEditShift.shift(edits, completionActions.pendingCompletionShift()), true);
     }
 
     /**
@@ -9830,7 +9834,7 @@ public class EditorBuffer implements TabContent {
             int length = area.getLength();
             int from = styled ? 0 : highlightDirty.isClean() ? length : Math.min(highlightDirty.start(), length);
             int to = styled ? length : Math.min(highlightDirty.end(), length);
-            int[] matched = styled ? null : completionActions.braceMatch; // the live pair is not a leftover
+            int[] matched = styled ? null : completionActions.braceMatch(); // the live pair is not a leftover
             if (styled) {
                 styled = false;
                 highlightGen++; // a pass still in flight must not style the document after this
