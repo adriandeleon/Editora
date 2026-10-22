@@ -1,6 +1,8 @@
-package com.editora.editor;
+package com.editora.editor.todo;
 
 import java.util.List;
+
+import com.editora.editor.EditorBuffer;
 
 /**
  * Injected by {@code MainController} to find the highlight spans in a buffer's text, without the

@@ -1,10 +1,10 @@
-package com.editora.editor;
+package com.editora.editor.todo;
 
 import org.jspecify.annotations.Nullable;
 
 /**
  * A neutral in-editor TODO/highlight match for {@link TodoHighlightOverlay} (which uses the absolute
- * {@code [start,end)} offsets) and the {@link TodoStripe}/{@link Minimap} overview stripes (which use the
+ * {@code [start,end)} offsets) and the {@link TodoStripe}/{@code Minimap} overview stripes (which use the
  * 0-based {@code line} + {@code lineText} for the hover tooltip). {@code colorWeb} is the keyword's web hex
  * (e.g. {@code #E5C07B}).
  *

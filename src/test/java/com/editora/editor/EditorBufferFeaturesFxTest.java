@@ -20,6 +20,8 @@ import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
 import com.editora.editor.EditorBuffer.Split;
 import com.editora.editor.lsp.SemanticToken;
+import com.editora.editor.todo.TodoMark;
+import com.editora.editor.todo.TodoMatcher;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

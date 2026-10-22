@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.todo;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,6 +9,10 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
 import org.jspecify.annotations.Nullable;
@@ -19,11 +23,11 @@ import org.jspecify.annotations.Nullable;
  * part of the {@code KEYWORD [tag] (priority) description} comment: the keyword in its pattern color, the
  * {@code [tag]} in the tag color (with an underline), and the {@code (priority)} in its level color; the
  * description keeps the normal text color. A mouse-transparent {@link Canvas} modeled on
- * {@link SearchHighlightOverlay}: sized to the viewport, redrawn coalesced (one per pulse) on scroll / edit /
+ * {@code SearchHighlightOverlay}: sized to the viewport, redrawn coalesced (one per pulse) on scroll / edit /
  * resize / fold, only for the visible paragraphs, and dropped to 1x1 (no GPU texture) when there are no
  * matches. Driven by {@link #setMarks}.
  */
-final class TodoHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class TodoHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     /** Opacity of the highlight wash drawn over each part (the part color provides the hue). */
     private static final double WASH_ALPHA = 0.30;
@@ -48,7 +52,7 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private @Nullable TodoHighlightOverlay follower;
 
-    TodoHighlightOverlay(CodeArea area) {
+    public TodoHighlightOverlay(CodeArea area) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -79,7 +83,7 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
     }
 
     /** Sets the highlight marks (null/empty clears and releases the canvas). */
-    void setMarks(List<TodoMark> newMarks) {
+    public void setMarks(List<TodoMark> newMarks) {
         if (follower != null) {
             follower.setMarks(newMarks);
         }

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.todo;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,18 +13,20 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.SecondaryPane;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
 /**
  * A thin TODO/highlight stripe docked over the editor's vertical scrollbar (beside the LSP
- * {@link DiagnosticStripe}), mapping the <em>whole document</em> to its height so a glance shows where
+ * {@code DiagnosticStripe}), mapping the <em>whole document</em> to its height so a glance shows where
  * the TODO/FIXME matches are — IntelliJ-style. Each mark is drawn in its pattern's color; hovering shows
  * the line's text and clicking jumps the caret there (via an injected {@code onActivate}). Coalesced
  * redraw + a 1×1 backing texture while inactive — the same {@link CanvasGuards}/overlay discipline as
- * {@link DiagnosticStripe}, but generic (per-mark color, no severities). 0-based lines.
+ * {@code DiagnosticStripe}, but generic (per-mark color, no severities). 0-based lines.
  */
-final class TodoStripe extends Region implements SecondaryPane.Followed {
+public final class TodoStripe extends Region implements SecondaryPane.Followed {
 
     static final double WIDTH = 6;
     private static final double HIT_PAD = 3;
@@ -42,7 +44,7 @@ final class TodoStripe extends Region implements SecondaryPane.Followed {
     private @Nullable String shownText;
     private IntConsumer onActivate = line -> {};
 
-    TodoStripe(CodeArea area) {
+    public TodoStripe(CodeArea area) {
         this.area = area;
         getStyleClass().add("todo-stripe");
         setMouseTransparent(true);
@@ -69,7 +71,7 @@ final class TodoStripe extends Region implements SecondaryPane.Followed {
     }
 
     /** Shows/hides the stripe (driven by TODO-highlight-on for this buffer). */
-    void setActive(boolean active) {
+    public void setActive(boolean active) {
         if (follower != null) {
             follower.setActive(active);
         }
@@ -89,7 +91,7 @@ final class TodoStripe extends Region implements SecondaryPane.Followed {
         }
     }
 
-    void setMarks(List<TodoMark> marks) {
+    public void setMarks(List<TodoMark> marks) {
         if (follower != null) {
             follower.setMarks(marks);
         }
@@ -111,7 +113,7 @@ final class TodoStripe extends Region implements SecondaryPane.Followed {
         scheduleRedraw();
     }
 
-    void setOnActivate(IntConsumer onActivate) {
+    public void setOnActivate(IntConsumer onActivate) {
         this.onActivate = onActivate == null ? line -> {} : onActivate;
     }
 

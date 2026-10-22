@@ -114,7 +114,7 @@ public final class SecondaryPane {
     }
 
     /** Moves {@code view}'s caret to the start of {@code line} (0-based), scrolls there and focuses it. */
-    static void jumpToLine(CodeArea view, int line) {
+    public static void jumpToLine(CodeArea view, int line) {
         int total = view.getParagraphs().size();
         if (total > 0) {
             view.moveTo(Math.max(0, Math.min(line, total - 1)), 0);

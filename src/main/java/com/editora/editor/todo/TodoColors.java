@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.todo;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -14,7 +14,7 @@ import org.jspecify.annotations.Nullable;
  * visible mark on each repaint, and {@link Color#web} is a string parse — so the handful of distinct values
  * are resolved here once and shared. FX-thread only.
  */
-final class TodoColors {
+public final class TodoColors {
 
     /** Used for a value that is not a valid colour (the default amber). */
     private static final String FALLBACK = "#E5C07B";
@@ -28,7 +28,7 @@ final class TodoColors {
     private TodoColors() {}
 
     /** {@code web} as an opaque colour. */
-    static Color solid(@Nullable String web) {
+    public static Color solid(@Nullable String web) {
         return resolve(SOLID, web, 1.0);
     }
 

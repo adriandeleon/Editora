@@ -15,6 +15,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.editor.todo.TodoColors;
+import com.editora.editor.todo.TodoMark;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;

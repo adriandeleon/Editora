@@ -18,11 +18,11 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * A thin Markdown-lint overview stripe docked over the editor's vertical scrollbar (beside the TODO
- * {@link TodoStripe} / LSP {@link DiagnosticStripe}), mapping the <em>whole document</em> to its height
+ * {@code TodoStripe} / LSP {@link DiagnosticStripe}), mapping the <em>whole document</em> to its height
  * so a glance shows where the lint warnings are — IntelliJ-style. Each mark is a single amber warning
  * tick; hovering shows the rule code + message and clicking jumps the caret there (via an injected
  * {@code onActivate}). Coalesced redraw + a 1×1 backing texture while inactive — the same
- * {@link CanvasGuards}/overlay discipline as {@link TodoStripe}. Diagnostics carry 1-based lines.
+ * {@link CanvasGuards}/overlay discipline as {@code TodoStripe}. Diagnostics carry 1-based lines.
  */
 final class MarkdownLintStripe extends Region implements SecondaryPane.Followed {
 
