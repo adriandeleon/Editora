@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.git;
 
 import java.util.HashSet;
 import java.util.List;
@@ -10,6 +10,10 @@ import java.util.function.IntConsumer;
 import javafx.application.Platform;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 
+import com.editora.editor.FoldManager;
+import com.editora.editor.LineMarkTracker;
+import com.editora.editor.LineMarks;
+import com.editora.editor.Minimap;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
@@ -65,7 +69,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
      * @param dirty the buffer's unsaved-changes flag: whenever it clears, buffer and disk lines agree again
      * @param repaintGutter rebuilds every visible gutter graphic (after the whole mapping changed)
      */
-    GitGutterLines(CodeArea area, ReadOnlyBooleanProperty dirty, Runnable repaintGutter, Minimap minimap) {
+    public GitGutterLines(CodeArea area, ReadOnlyBooleanProperty dirty, Runnable repaintGutter, Minimap minimap) {
         this.area = area;
         this.dirty = dirty;
         this.repaintGutter = repaintGutter;
@@ -94,11 +98,11 @@ public final class GitGutterLines implements LineMarks.Carrier {
     }
 
     /** Wires the change-bar column of {@code folds} to this data. */
-    void attach(FoldManager folds) {
+    public void attach(FoldManager folds) {
         folds.setChangeHook(this::barsTracked, this::barAt, this::tooltipAt, line -> onBarClick.accept(line));
     }
 
-    boolean barsTracked() {
+    public boolean barsTracked() {
         return bars != null;
     }
 
@@ -288,18 +292,18 @@ public final class GitGutterLines implements LineMarks.Carrier {
     }
 
     @Nullable
-    List<BlameInfo> blame() {
+    public List<BlameInfo> blame() {
         return blame;
     }
 
     @Nullable
-    BlameInfo blameAt(int line) {
+    public BlameInfo blameAt(int line) {
         int disk = map.diskLine(line + hiddenAbove);
         return blame != null && disk >= 0 && disk < blame.size() ? blame.get(disk) : null;
     }
 
     /** Sets the blame column; returns false when it is what was already showing (no gutter rebuild then). */
-    boolean setBlame(@Nullable List<BlameInfo> lines) {
+    public boolean setBlame(@Nullable List<BlameInfo> lines) {
         List<BlameInfo> next = lines == null || lines.isEmpty() ? null : List.copyOf(lines);
         if (Objects.equals(next, blame)) {
             return false;
@@ -313,7 +317,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
      * slot changed: rebuild it), otherwise the buffer lines whose bar may have changed.
      */
     @Nullable
-    Set<Integer> setBars(@Nullable Map<Integer, String> lineClasses, @Nullable Map<Integer, String> hunkText) {
+    public Set<Integer> setBars(@Nullable Map<Integer, String> lineClasses, @Nullable Map<Integer, String> hunkText) {
         Map<Integer, String> old = bars;
         boolean wasTracked = old != null;
         Set<Integer> disk = new HashSet<>();
@@ -342,7 +346,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
     }
 
     /** The buffer matches the disk again (loaded, saved, or edited back to the saved text). */
-    void reset() {
+    public void reset() {
         if (!map.identity() || !reverted.isEmpty()) {
             map.reset();
             reverted.clear();
@@ -361,7 +365,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
      * A save was acknowledged while newer edits are pending: the disk now holds a text this map was not
      * following from, so unless nothing had moved the relation is unknown until the buffer is clean again.
      */
-    void savedWithPendingEdits() {
+    public void savedWithPendingEdits() {
         if (dirty.get() && !map.identity() && !map.lost()) {
             map.lose();
             marksChanged();
@@ -375,7 +379,7 @@ public final class GitGutterLines implements LineMarks.Carrier {
      *
      * @param split the split view's second area, or {@code null}
      */
-    void edited(List<PlainTextChange> changes, IntConsumer repaintLine, @Nullable CodeArea split) {
+    public void edited(List<PlainTextChange> changes, IntConsumer repaintLine, @Nullable CodeArea split) {
         if (swapping) {
             return;
         }

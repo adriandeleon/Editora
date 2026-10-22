@@ -40,6 +40,7 @@ import javafx.scene.shape.SVGPath;
 import javafx.scene.text.Text;
 
 import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.git.BlameInfo;
 import org.fxmisc.richtext.CharacterHit;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpan;

@@ -14,6 +14,8 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.git.GitGutterLines;
+import com.editora.editor.git.GitHunk;
 import com.editora.editor.lsp.LspDiagnostic;
 import com.editora.editor.todo.TodoColors;
 import com.editora.editor.todo.TodoMark;
@@ -37,7 +39,7 @@ import org.jspecify.annotations.Nullable;
  * A background tab keeps its content pixels on the CPU ({@link MinimapRetention}) so that switching back
  * re-blits instead of re-rendering; only the textures go.
  */
-final class Minimap extends Region {
+public final class Minimap extends Region {
 
     /** Fixed width of the minimap column, in pixels. */
     static final double WIDTH = 90;
@@ -221,13 +223,13 @@ final class Minimap extends Region {
     }
 
     /** Sets where the Git change marks come from; they are read on the next repaint. */
-    void setGitMarks(java.util.function.Supplier<int[]> source) {
+    public void setGitMarks(java.util.function.Supplier<int[]> source) {
         gitMarkSource = source == null ? () -> NO_GIT_MARKS : source;
         gitMarksChanged();
     }
 
     /** The marks (or the lines they sit on) changed: re-read them on the next repaint. */
-    void gitMarksChanged() {
+    public void gitMarksChanged() {
         if (follower != null) {
             follower.gitMarksChanged();
         }

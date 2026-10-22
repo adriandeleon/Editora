@@ -4,7 +4,7 @@ package com.editora.ui;
  * Which change "next" and "previous" mean from a given line. Pure; unit-tested.
  *
  * <p>The changes are the flat {@code {line, count, kind}} triples of
- * {@link com.editora.editor.GitGutterLines#marks()}, top to bottom.
+ * {@link com.editora.editor.git.GitGutterLines#marks()}, top to bottom.
  */
 final class GitHunkNav {
 

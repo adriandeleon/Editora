@@ -53,6 +53,8 @@ import com.editora.editor.debug.DebugHover;
 import com.editora.editor.debug.DebugValuePresenter;
 import com.editora.editor.debug.ExecutionLine;
 import com.editora.editor.debug.InlineValuesOverlay;
+import com.editora.editor.git.BlameInfo;
+import com.editora.editor.git.GitGutterLines;
 import com.editora.editor.http.HttpGutter;
 import com.editora.editor.http.HttpHooks;
 import com.editora.editor.http.HttpLineResult;

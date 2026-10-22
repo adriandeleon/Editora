@@ -1,4 +1,6 @@
-package com.editora.editor;
+package com.editora.editor.git;
+
+import com.editora.editor.FoldManager;
 
 /**
  * Neutral per-line blame annotation for the IntelliJ-style gutter "Annotate" column rendered by

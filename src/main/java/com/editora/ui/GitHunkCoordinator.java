@@ -8,9 +8,9 @@ import javafx.application.Platform;
 import javafx.geometry.Bounds;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GitGutterLines;
-import com.editora.editor.GitHunk;
-import com.editora.editor.HunkRevert;
+import com.editora.editor.git.GitGutterLines;
+import com.editora.editor.git.GitHunk;
+import com.editora.editor.git.HunkRevert;
 import com.editora.git.DiffParser;
 import com.editora.git.GitChangeBars;
 import com.editora.git.GitFileStatus;

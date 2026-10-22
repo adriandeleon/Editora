@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.git;
 
 import java.util.List;
 

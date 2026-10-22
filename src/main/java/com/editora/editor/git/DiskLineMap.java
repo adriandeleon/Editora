@@ -1,6 +1,8 @@
-package com.editora.editor;
+package com.editora.editor.git;
 
 import java.util.Arrays;
+
+import com.editora.editor.LineMarks;
 
 /**
  * Where each line of an edited buffer sits in the file <em>as it is on disk</em>.
