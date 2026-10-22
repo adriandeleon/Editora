@@ -241,7 +241,7 @@ final class NotesCoordinator {
             if (file == null) {
                 return;
             }
-            if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+            if (com.editora.editor.crypto.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
                 host.setStatus(tr("encryption.status.noNotes")); // a note keeps the text it is about, unencrypted
                 return;
             }

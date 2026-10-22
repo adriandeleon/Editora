@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.crypto;
 
 import java.util.List;
 import java.util.Locale;

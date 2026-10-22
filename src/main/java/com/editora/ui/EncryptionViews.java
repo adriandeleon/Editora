@@ -19,7 +19,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
-import com.editora.editor.EncryptionState;
+import com.editora.editor.crypto.EncryptionState;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

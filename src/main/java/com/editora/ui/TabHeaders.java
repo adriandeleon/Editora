@@ -122,7 +122,7 @@ final class TabHeaders {
         toggleClass(tab, "read-only", !buffer.isEditable());
         toggleClass(tab, "remote", remote);
         Tooltip tip = tooltip(p);
-        com.editora.editor.EncryptionState state = buffer.encryption().state();
+        com.editora.editor.crypto.EncryptionState state = buffer.encryption().state();
         if (encrypted && state != null) {
             tip.setText(EncryptionViews.tabTooltip(tip.getText(), state));
         }

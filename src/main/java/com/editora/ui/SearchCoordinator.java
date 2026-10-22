@@ -831,7 +831,7 @@ final class SearchCoordinator {
 
     static ClosedReplace replaceClosedFile(
             Path file, SearchQuery query, String replacement, Consumer<String> beforeWrite, BooleanSupplier commit) {
-        if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+        if (com.editora.editor.crypto.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
             // Its text on disk is ciphertext (or a key's armor): a rewrite would corrupt it, never edit it.
             return new ClosedReplace(0, false, true);
         }

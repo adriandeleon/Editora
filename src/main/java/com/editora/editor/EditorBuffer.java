@@ -47,6 +47,7 @@ import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
 import com.editora.editops.MultiTab;
+import com.editora.editor.crypto.BufferEncryption;
 import com.editora.editor.debug.BreakpointGutterMenu;
 import com.editora.editor.debug.BreakpointManager;
 import com.editora.editor.debug.DebugHover;

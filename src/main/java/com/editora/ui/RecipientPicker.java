@@ -35,7 +35,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.crypto.Gpg;
 import com.editora.crypto.GpgKey;
-import com.editora.editor.EncryptionState;
+import com.editora.editor.crypto.EncryptionState;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

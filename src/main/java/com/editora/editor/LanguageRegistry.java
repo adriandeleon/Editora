@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.Locale;
 import java.util.Map;
 
+import com.editora.editor.crypto.EncryptedNames;
+
 /**
  * Resolves a file name to a short language identifier. Syntax highlighting itself is handled by
  * {@link GrammarRegistry} (TextMate grammars via tm4e); this registry only supplies the language

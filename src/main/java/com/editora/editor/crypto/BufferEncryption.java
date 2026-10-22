@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.crypto;
 
 import javafx.scene.Node;
 import javafx.scene.layout.BorderPane;
@@ -29,7 +29,7 @@ public final class BufferEncryption {
      * @param editabilityChanged re-applies the buffer's editability (a locked buffer is not editable)
      * @param noticeChanged      re-lays out the banners above the editor
      */
-    BufferEncryption(BorderPane outer, Node editor, Runnable editabilityChanged, Runnable noticeChanged) {
+    public BufferEncryption(BorderPane outer, Node editor, Runnable editabilityChanged, Runnable noticeChanged) {
         this.outer = outer;
         this.editor = editor;
         this.editabilityChanged = editabilityChanged;
@@ -87,7 +87,7 @@ public final class BufferEncryption {
     }
 
     /** Forgets a kept passphrase (the tab is closing). */
-    void wipe() {
+    public void wipe() {
         if (state != null) {
             state.wipe();
         }

@@ -2895,7 +2895,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             Path target = treeItem.getValue();
             if (fileOps != null
                     && target != null
-                    && com.editora.editor.EncryptedNames.extensionOf(String.valueOf(target.getFileName())) == null) {
+                    && com.editora.editor.crypto.EncryptedNames.extensionOf(String.valueOf(target.getFileName()))
+                            == null) {
                 MenuItem encrypt = new MenuItem(tr("project.menu.encrypt"));
                 encrypt.setGraphic(Icons.lock());
                 encrypt.setOnAction(e -> fileOps.encrypt(target));
