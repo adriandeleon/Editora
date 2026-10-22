@@ -23,8 +23,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 
-import com.editora.editor.PreviewImageLoader;
 import com.editora.editor.TabContent;
+import com.editora.editor.markdown.PreviewImageLoader;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;

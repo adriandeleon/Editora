@@ -20,8 +20,8 @@ import javafx.stage.Popup;
 
 import com.editora.config.PathDisplay;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.MarkdownRenderer;
 import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.lsp.InlayHintFilter;
 import com.editora.lsp.JdtlsGenerate;
 import com.editora.lsp.JdtlsRefactor;

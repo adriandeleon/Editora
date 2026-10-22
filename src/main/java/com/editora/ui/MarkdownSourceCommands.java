@@ -5,8 +5,8 @@ import java.util.function.Function;
 
 import com.editora.command.Command;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.MarkdownFormatting;
-import com.editora.editor.MarkdownFormatting.Outcome;
+import com.editora.editor.markdown.MarkdownFormatting;
+import com.editora.editor.markdown.MarkdownFormatting.Outcome;
 import com.editora.markdown.MarkdownLintOptions;
 
 import static com.editora.i18n.Messages.tr;
@@ -43,11 +43,11 @@ final class MarkdownSourceCommands {
                         () -> host.indexCoordinator().backlinks.show()));
         // One resolver for every surface: the preview and the exports ask the editor package's seam, which is
         // answered here by the same WikiLinks the source editor, completion, the link tools and lint use.
-        com.editora.editor.WikiLinkTargets.setResolver(
+        com.editora.editor.markdown.WikiLinkTargets.setResolver(
                 (folder, target) -> folder == null ? null : WikiLinks.resolve(folder.resolve("-"), target));
-        host.indexCoordinator().linkGraph.addListener(com.editora.editor.WikiLinkTargets::changed);
+        host.indexCoordinator().linkGraph.addListener(com.editora.editor.markdown.WikiLinkTargets::changed);
         // Completion after "[[" lists the notes of the project that holds the document being edited.
-        com.editora.editor.MarkdownCompletions.setWikiSource(
+        com.editora.editor.markdown.MarkdownCompletions.setWikiSource(
                 document -> WikiLinks.enabled ? WikiLinks.targets(document) : com.editora.markdown.WikiTargets.EMPTY);
         edit(host, "markdown.formatDocument", MarkdownFormatting::formatDocument, "status.markdown.formatted");
         edit(host, "markdown.formatSelection", MarkdownFormatting::formatSelection, "status.markdown.formatted");

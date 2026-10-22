@@ -693,7 +693,7 @@ public class FindReplaceBar extends HBox {
      * out of sight, and its matches with it. Returns whether that was the case (the search has then run).
      */
     private boolean searchPreview(EditorBuffer buffer, boolean announce) {
-        com.editora.editor.PreviewFind preview = previewOf(buffer);
+        com.editora.editor.markdown.PreviewFind preview = previewOf(buffer);
         if (preview == null) {
             return false;
         }
@@ -709,12 +709,12 @@ public class FindReplaceBar extends HBox {
     }
 
     /** The preview search to use for {@code buffer}: only while its preview is all that is showing. */
-    private static com.editora.editor.@Nullable PreviewFind previewOf(EditorBuffer buffer) {
+    private static com.editora.editor.markdown.@Nullable PreviewFind previewOf(EditorBuffer buffer) {
         return buffer != null && buffer.isPreviewOnly() ? buffer.previewFind() : null;
     }
 
     private static void clearPreviewMarks(EditorBuffer buffer) {
-        com.editora.editor.PreviewFind preview = buffer.previewFind();
+        com.editora.editor.markdown.PreviewFind preview = buffer.previewFind();
         if (preview != null) {
             preview.clear();
         }
@@ -731,7 +731,7 @@ public class FindReplaceBar extends HBox {
 
     /** Steps through the preview's matches; false when the editor is what is being searched. */
     private boolean navigatePreview(EditorBuffer buffer, boolean forward) {
-        com.editora.editor.PreviewFind preview = previewOf(buffer);
+        com.editora.editor.markdown.PreviewFind preview = previewOf(buffer);
         if (preview == null) {
             return false;
         }

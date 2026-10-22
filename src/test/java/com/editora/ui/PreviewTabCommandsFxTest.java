@@ -6,7 +6,7 @@ import javafx.scene.control.Tab;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.MarkdownPreviewPane;
+import com.editora.editor.markdown.MarkdownPreviewPane;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

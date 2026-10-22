@@ -6,8 +6,8 @@ import java.util.List;
 import javafx.scene.control.MenuItem;
 
 import com.editora.editor.EditorFx;
-import com.editora.editor.MarkdownLintOverlay;
 import com.editora.editor.lsp.CodeAction;
+import com.editora.editor.markdown.MarkdownLintOverlay;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;

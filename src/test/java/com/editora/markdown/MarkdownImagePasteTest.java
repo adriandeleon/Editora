@@ -38,8 +38,8 @@ class MarkdownImagePasteTest {
 
     /** Parses {@code snippet} as Markdown and returns {@code [alt, destination]} of the image it produced. */
     private static String[] parsedImage(String snippet) {
-        org.commonmark.node.Node para =
-                com.editora.editor.MarkdownRenderer.parseToDocument(snippet).getFirstChild();
+        org.commonmark.node.Node para = com.editora.editor.markdown.MarkdownRenderer.parseToDocument(snippet)
+                .getFirstChild();
         org.commonmark.node.Node first = para == null ? null : para.getFirstChild();
         if (!(first instanceof org.commonmark.node.Image img) || first.getNext() != null) {
             return null; // not (only) an image: the snippet is broken Markdown
@@ -101,8 +101,8 @@ class MarkdownImagePasteTest {
         String[] parsed =
                 parsedImage(MarkdownImagePaste.snippet(MarkdownImagePaste.relativePath(dir, file), "image (1) copy"));
         // The preview's own URL resolution (private; other batches own the class, so it is probed, not changed).
-        java.lang.reflect.Method resolve =
-                com.editora.editor.MarkdownRenderer.class.getDeclaredMethod("resolveUrl", String.class, Path.class);
+        java.lang.reflect.Method resolve = com.editora.editor.markdown.MarkdownRenderer.class.getDeclaredMethod(
+                "resolveUrl", String.class, Path.class);
         resolve.setAccessible(true);
         String url = (String) resolve.invoke(null, parsed[1], dir);
         assertEquals(file.toUri().toString(), url);

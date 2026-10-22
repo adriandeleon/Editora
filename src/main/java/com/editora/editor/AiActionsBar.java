@@ -14,7 +14,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The floating bar shown above a non-empty selection offering the AI actions that apply to it —
  * currently Explain and Rewrite (extend here as more selection-scoped AI actions are added). Modeled
- * exactly on {@link MarkdownFormatBar}: a non-focus-traversable, free-positioned {@link HBox} of flat
+ * exactly on {@code MarkdownFormatBar}: a non-focus-traversable, free-positioned {@link HBox} of flat
  * icon buttons. Kept in the {@code editor} package (no dependency on {@code ui}) — the actual API calls
  * live in {@code ui.AiCoordinator} and reach here only via the {@link EditorBuffer} handlers it injects.
  * {@link EditorBuffer} owns the show/hide/position lifecycle.

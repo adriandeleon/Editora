@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.markdown.MarkdownAlerts;
 import com.editora.markdown.MarkdownDefinitions;
 import com.editora.markdown.MarkdownExportTree;
@@ -343,9 +343,9 @@ class ExportNewSyntaxTest {
         }
         Path pdf = dir.resolve("fm.pdf");
         MarkdownPdfWriter.write(md, dir, "letter", null, pdf);
-        String html = com.editora.editor.MarkdownHtmlExport.toHtml(md, "file", false);
+        String html = com.editora.editor.markdown.MarkdownHtmlExport.toHtml(md, "file", false);
         String body = html.substring(html.indexOf("<body>"));
-        String clipboard = com.editora.editor.MarkdownClipboardHtml.toHtml(md, false);
+        String clipboard = com.editora.editor.markdown.MarkdownClipboardHtml.toHtml(md, false);
         for (String out : new String[] {word, writer, PdfProbe.text(pdf), body, clipboard}) {
             assertTrue(out.contains("Body text."), out);
             assertFalse(out.contains("Ada Example"), "front matter is not content: " + out);
@@ -366,7 +366,7 @@ class ExportNewSyntaxTest {
 
         // The tree every writer walks: links and an image, no wiki node left.
         Node ast = MarkdownExportTree.lower(
-                MarkdownRenderer.parseForRender(md), com.editora.editor.MarkdownHtmlExport.wikiPaths(dir));
+                MarkdownRenderer.parseForRender(md), com.editora.editor.markdown.MarkdownHtmlExport.wikiPaths(dir));
         assertFalse(any(ast, com.editora.markdown.MarkdownWikiLinks.WikiLink.class));
         var runs = InlineRun.flatten(ast.getFirstChild());
         assertTrue(
@@ -412,8 +412,11 @@ class ExportNewSyntaxTest {
         assertFalse(text.contains("[["), text);
         assertEquals(1, PdfProbe.images(pdf).size(), "the embed is the picture");
 
-        String html = com.editora.editor.MarkdownHtmlExport.toHtml(
-                md, "t", false, new com.editora.editor.MarkdownHtmlExport.Options(false, false, dir, null, null));
+        String html = com.editora.editor.markdown.MarkdownHtmlExport.toHtml(
+                md,
+                "t",
+                false,
+                new com.editora.editor.markdown.MarkdownHtmlExport.Options(false, false, dir, null, null));
         assertTrue(html.contains("<a href=\"Other%20Note.md#the-part\">the part</a>"), html);
         assertTrue(html.contains("src=\"pic.png\""), html);
         assertFalse(html.contains("href=\"Other%20Note#"), "not the raw note name: " + html);

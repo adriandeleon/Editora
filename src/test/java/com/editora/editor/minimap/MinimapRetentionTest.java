@@ -1,6 +1,6 @@
 package com.editora.editor.minimap;
 
-import com.editora.editor.ImageCacheBudget;
+import com.editora.editor.markdown.ImageCacheBudget;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

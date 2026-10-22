@@ -3,9 +3,9 @@ package com.editora.ui;
 import java.nio.file.Path;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.MarkdownFormatting;
-import com.editora.editor.MarkdownFormatting.Outcome;
 import com.editora.editor.TypewriterMode;
+import com.editora.editor.markdown.MarkdownFormatting;
+import com.editora.editor.markdown.MarkdownFormatting.Outcome;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

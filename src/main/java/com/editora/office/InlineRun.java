@@ -3,7 +3,7 @@ package com.editora.office;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.editor.MarkdownDocInfo;
+import com.editora.editor.markdown.MarkdownDocInfo;
 import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.footnotes.FootnoteReference;

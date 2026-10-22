@@ -12,8 +12,8 @@ import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
 
-import com.editora.editor.MarkdownDocInfo;
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownDocInfo;
+import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.markdown.MarkdownMath;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.Borders;
@@ -94,7 +94,8 @@ public final class DocxWriter {
             throws IOException {
         // The preview's parse (math is nodes), with alerts and definition lists as blocks this writer knows.
         Node ast = com.editora.markdown.MarkdownExportTree.lower(
-                MarkdownRenderer.parseForRender(markdown), com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
+                MarkdownRenderer.parseForRender(markdown),
+                com.editora.editor.markdown.MarkdownHtmlExport.wikiPaths(baseDir));
         try (XWPFDocument doc = new XWPFDocument()) {
             Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
             Map<String, String> bookmarks = new HashMap<>();

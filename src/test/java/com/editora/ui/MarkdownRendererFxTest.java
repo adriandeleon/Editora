@@ -10,7 +10,7 @@ import javafx.scene.control.Label;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownRenderer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

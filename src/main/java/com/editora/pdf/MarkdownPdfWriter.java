@@ -14,11 +14,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import com.editora.editor.MarkdownDocInfo;
-import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.MathImages;
-import com.editora.editor.PreviewImageLoader;
 import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.markdown.MarkdownDocInfo;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.MathImages;
+import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.markdown.MarkdownMath;
 import com.editora.mermaid.Mermaid;
 import com.github.weisj.jsvg.SVGDocument;
@@ -170,7 +170,7 @@ public final class MarkdownPdfWriter {
         // in text the Markdown parser has already rewritten.
         Node ast = com.editora.markdown.MarkdownExportTree.lower(
                 MarkdownRenderer.parseForRender(markdown, MathImages.isEnabled()),
-                com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
+                com.editora.editor.markdown.MarkdownHtmlExport.wikiPaths(baseDir));
         return write(ast, baseDir, spec, meta, mmdcCommand, out, SystemFontFiles.get(), MathImages.isEnabled());
     }
 
@@ -1910,7 +1910,7 @@ public final class MarkdownPdfWriter {
         byte @Nullable [] fetch(String url) {
             // The preview's guarded fetcher: internal-address block re-checked per redirect hop, UNC refusal,
             // regular files only, and a byte cap — exporting a document must not reach what previewing refuses.
-            return com.editora.editor.PreviewImageLoader.fetchForExport(url, baseDir);
+            return com.editora.editor.markdown.PreviewImageLoader.fetchForExport(url, baseDir);
         }
     }
 

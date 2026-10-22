@@ -656,7 +656,7 @@ final class EditingCoordinator {
             return;
         }
         // Encode a raw dragged image now, on the FX thread (PixelReader), before going off-thread.
-        byte[] inlinePng = image != null ? com.editora.editor.PreviewImageLoader.imageToPng(image) : null;
+        byte[] inlinePng = image != null ? com.editora.editor.markdown.PreviewImageLoader.imageToPng(image) : null;
         // The drop moved the caret to where the image goes; the download may end after the caret left.
         CodeArea view = b.getFocusedArea();
         int at = view.getCaretPosition();
@@ -665,7 +665,7 @@ final class EditingCoordinator {
                         () -> {
                             WebImage found = resolveWebImage(url, inlinePng, u -> {
                                 try {
-                                    return com.editora.editor.PreviewImageLoader.fetchBytes(u);
+                                    return com.editora.editor.markdown.PreviewImageLoader.fetchBytes(u);
                                 } catch (Exception e) {
                                     return null; // fall back to the encoded image / a remote reference
                                 }

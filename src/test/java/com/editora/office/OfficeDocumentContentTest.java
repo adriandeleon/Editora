@@ -17,8 +17,8 @@ import java.util.zip.ZipInputStream;
 import javax.imageio.ImageIO;
 import javax.xml.parsers.DocumentBuilderFactory;
 
-import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.MathImages;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.MathImages;
 import org.apache.poi.xwpf.usermodel.Document;
 import org.apache.poi.xwpf.usermodel.UnderlinePatterns;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;

@@ -90,6 +90,29 @@ import com.editora.editor.lsp.LspTextEdit;
 import com.editora.editor.lsp.OccurrenceHighlightOverlay;
 import com.editora.editor.lsp.OccurrenceSpan;
 import com.editora.editor.lsp.SemanticToken;
+import com.editora.editor.markdown.DiagramImages;
+import com.editora.editor.markdown.MarkdownCompletions;
+import com.editora.editor.markdown.MarkdownEditing;
+import com.editora.editor.markdown.MarkdownFormatBar;
+import com.editora.editor.markdown.MarkdownLintHover;
+import com.editora.editor.markdown.MarkdownLintOverlay;
+import com.editora.editor.markdown.MarkdownLintStripe;
+import com.editora.editor.markdown.MarkdownMenus;
+import com.editora.editor.markdown.MarkdownPreview;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.MermaidImages;
+import com.editora.editor.markdown.MermaidLintHover;
+import com.editora.editor.markdown.MermaidLintOverlay;
+import com.editora.editor.markdown.PreviewButtons;
+import com.editora.editor.markdown.PreviewFind;
+import com.editora.editor.markdown.PreviewImageLoader;
+import com.editora.editor.markdown.PreviewLayout;
+import com.editora.editor.markdown.PreviewPrefs;
+import com.editora.editor.markdown.PreviewScrollSync;
+import com.editora.editor.markdown.PreviewSurfaces;
+import com.editora.editor.markdown.ScrollAnchor;
+import com.editora.editor.markdown.SvgImages;
+import com.editora.editor.markdown.TypstImages;
 import com.editora.editor.minimap.Minimap;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.editor.notes.NoteHighlightOverlay;
@@ -1332,7 +1355,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** A Markdown document up to this long keeps its live preview even in large-file mode (see below). */
-    static final int PREVIEW_LIVE_MAX_CHARS = 2_000_000;
+    public static final int PREVIEW_LIVE_MAX_CHARS = 2_000_000;
 
     /**
      * Whether an edit refreshes the preview. Large-file mode stops it — except for a Markdown document that
@@ -1417,6 +1440,11 @@ public class EditorBuffer implements TabContent {
     /** Injects the external-URL opener (controller's HostServices) used by Ctrl/Cmd-click + open-link. */
     public void setOpenUrlHandler(java.util.function.Consumer<String> handler) {
         completionActions.setLinkOpener(this.openUrlHandler = handler == null ? u -> {} : handler);
+    }
+
+    /** The external-URL opener injected by {@link #setOpenUrlHandler} (a no-op until then). */
+    public java.util.function.Consumer<String> openUrlHandler() {
+        return openUrlHandler;
     }
 
     /** Opens the link under the caret externally; returns false when the caret is not on a link. */

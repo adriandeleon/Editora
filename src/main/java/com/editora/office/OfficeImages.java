@@ -3,8 +3,8 @@ package com.editora.office;
 import java.nio.file.Path;
 import java.util.List;
 
-import com.editora.editor.MathImages;
-import com.editora.editor.PreviewImageLoader;
+import com.editora.editor.markdown.MathImages;
+import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.mermaid.Mermaid;
 import org.apache.poi.xwpf.usermodel.Document;
 import org.jspecify.annotations.Nullable;

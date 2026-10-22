@@ -8,10 +8,10 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import com.editora.editor.MarkdownClipboardHtml;
-import com.editora.editor.MarkdownHtmlExport;
-import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.MathImages;
+import com.editora.editor.markdown.MarkdownClipboardHtml;
+import com.editora.editor.markdown.MarkdownHtmlExport;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.MathImages;
 import com.editora.markdown.MarkdownMath;
 import com.editora.office.DocxWriter;
 import com.editora.office.OdtWriter;

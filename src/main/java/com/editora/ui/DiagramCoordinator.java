@@ -8,8 +8,8 @@ import javafx.stage.FileChooser;
 import com.editora.config.Settings;
 import com.editora.diagram.DiagramKind;
 import com.editora.diagram.DiagramService;
-import com.editora.editor.DiagramImages;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.markdown.DiagramImages;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

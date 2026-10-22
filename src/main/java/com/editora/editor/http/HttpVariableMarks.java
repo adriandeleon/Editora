@@ -7,7 +7,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.MarkdownLintOverlay;
+import com.editora.editor.markdown.MarkdownLintOverlay;
 import com.editora.markdown.MarkdownLint;
 import org.jspecify.annotations.Nullable;
 

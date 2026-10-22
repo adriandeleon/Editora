@@ -7,8 +7,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.editora.editor.MarkdownHtmlExport;
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownHtmlExport;
+import com.editora.editor.markdown.MarkdownRenderer;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;

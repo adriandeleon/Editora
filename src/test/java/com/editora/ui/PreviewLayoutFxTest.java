@@ -5,7 +5,7 @@ import java.nio.file.Path;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.PreviewLayout;
+import com.editora.editor.markdown.PreviewLayout;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

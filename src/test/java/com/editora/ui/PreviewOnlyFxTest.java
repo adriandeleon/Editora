@@ -15,7 +15,7 @@ import javafx.stage.Stage;
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
-import com.editora.editor.PreviewFind;
+import com.editora.editor.markdown.PreviewFind;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

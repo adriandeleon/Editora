@@ -11,7 +11,7 @@ import javafx.stage.Popup;
 import javafx.stage.Screen;
 import javafx.stage.Window;
 
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownRenderer;
 import org.jspecify.annotations.Nullable;
 
 /**

@@ -22,7 +22,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 
 import com.editora.config.PersonalNote;
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownRenderer;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 

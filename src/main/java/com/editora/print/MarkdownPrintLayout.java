@@ -21,8 +21,8 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
-import com.editora.editor.MarkdownPrintAssets;
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownPrintAssets;
+import com.editora.editor.markdown.MarkdownRenderer;
 import org.jspecify.annotations.Nullable;
 
 /**
