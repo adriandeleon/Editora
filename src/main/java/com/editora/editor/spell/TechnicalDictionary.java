@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.spell;
 
 import java.io.BufferedReader;
 import java.io.IOException;

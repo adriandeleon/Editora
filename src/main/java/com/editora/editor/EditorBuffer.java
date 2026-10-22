@@ -72,6 +72,8 @@ import com.editora.editor.notes.NoteDraft;
 import com.editora.editor.notes.NoteHighlightOverlay;
 import com.editora.editor.notes.NoteHover;
 import com.editora.editor.notes.NoteManager;
+import com.editora.editor.spell.BufferSpell;
+import com.editora.editor.spell.SpellCheckOverlay;
 import com.editora.logviewer.LogLevel;
 import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLint;

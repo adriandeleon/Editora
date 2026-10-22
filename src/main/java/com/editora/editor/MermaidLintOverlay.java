@@ -15,7 +15,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Draws red wavy underlines beneath Mermaid (maid) diagnostics, on top of the editor without touching the
- * document or its style spans. Mirrors {@link SpellCheckOverlay}: a mouse-transparent {@link Canvas} sized
+ * document or its style spans. Mirrors {@code SpellCheckOverlay}: a mouse-transparent {@link Canvas} sized
  * to the viewport, redrawn coalesced (one per pulse) on scroll / edit / resize, only for the currently
  * visible paragraphs. The diagnostics come from maid (1-based line/column + char length) and are pushed in
  * by {@link EditorBuffer}; this class only renders them.

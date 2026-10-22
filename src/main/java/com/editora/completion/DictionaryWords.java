@@ -23,7 +23,7 @@ import org.jspecify.annotations.Nullable;
  * Word-completion candidates drawn from the bundled Hunspell {@code .dic} word lists (the same resources
  * the spell checker uses: {@code resources/com/editora/dictionaries/<id>/index.dic}). The base word list
  * is parsed and sorted <b>once per language, off the FX thread, cached</b> (mirroring
- * {@link com.editora.editor.SpellDictionaries#ensureBuilt}); until a language is loaded, it contributes
+ * {@link com.editora.editor.spell.SpellDictionaries#ensureBuilt}); until a language is loaded, it contributes
  * nothing. Prefix lookup is a case-insensitive binary-search range over the sorted array, so it's
  * {@code O(log n + k)} and never touches the editor's hot paths.
  */

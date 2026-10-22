@@ -1,9 +1,10 @@
-package com.editora.editor;
+package com.editora.editor.spell;
 
 import java.util.BitSet;
 import java.util.List;
 import java.util.Set;
 
+import com.editora.editor.LanguageRegistry;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

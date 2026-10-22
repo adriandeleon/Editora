@@ -15,7 +15,7 @@ import org.jspecify.annotations.Nullable;
  * match more strongly), without touching the document's style spans so it never fights the syntax
  * highlighter.
  *
- * <p>Modeled on {@link SpellCheckOverlay}: a mouse-transparent {@link Canvas} sized to the viewport,
+ * <p>Modeled on {@code SpellCheckOverlay}: a mouse-transparent {@link Canvas} sized to the viewport,
  * redrawn coalesced (one per pulse) on scroll / edit / resize / fold, and only for the currently
  * visible paragraphs. Driven by {@link #setMatches}: it activates when there are matches and clears
  * when empty.

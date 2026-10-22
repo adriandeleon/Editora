@@ -46,8 +46,8 @@ import com.editora.build.BuildTool;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.GrammarRegistry;
-import com.editora.editor.SpellDictionaries;
 import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.spell.SpellDictionaries;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
@@ -3803,7 +3803,7 @@ public class SettingsWindow {
             // whole ("foo bar"), which no single word can ever match.
             String last = null;
             for (String part : input.getText().strip().split("\\s+")) {
-                String w = com.editora.editor.SpellChecker.canonical(part);
+                String w = com.editora.editor.spell.SpellChecker.canonical(part);
                 if (!w.isEmpty()) {
                     config.addUserWord(w);
                     last = w;

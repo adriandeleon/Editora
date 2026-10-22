@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.spell;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,6 +20,8 @@ import javafx.collections.ObservableList;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 
+import com.editora.editor.LanguageRegistry;
+import com.editora.editor.MenuIcons;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
 import org.jspecify.annotations.Nullable;
@@ -83,7 +85,7 @@ public final class BufferSpell {
     /** Bumped per suggestion request, so an answer for a menu that has since been rebuilt is dropped. */
     private long suggestGen;
 
-    BufferSpell(
+    public BufferSpell(
             CodeArea area,
             SpellCheckOverlay overlay,
             Supplier<CodeArea> focusedView,
@@ -152,13 +154,13 @@ public final class BufferSpell {
     }
 
     /** Re-derives the mode and the on/off state after the buffer's language (or its size class) changed. */
-    void languageChanged() {
+    public void languageChanged() {
         overlay.setMode(SpellMode.forLanguage(language.get()));
         applyActive();
     }
 
     /** The overlay is active only when enabled, enabled for this language, and not in large-file mode. */
-    void applyActive() {
+    public void applyActive() {
         boolean active = enabled && !isLanguageDisabled() && !largeFile.getAsBoolean();
         if (active && !overlay.isActive()) {
             SpellDictionaries.ensureBuilt(langId, this::dictionaryBuilt);
@@ -245,7 +247,7 @@ public final class BufferSpell {
     }
 
     /** The font or the tab size changed: the squiggles are in new places, the verdicts are the same. */
-    void geometryChanged() {
+    public void geometryChanged() {
         overlay.invalidateGeometry();
     }
 
@@ -384,7 +386,7 @@ public final class BufferSpell {
      * arrive in that time and the menu opens complete — and otherwise opens with a placeholder row that is
      * replaced in {@code menuItems} (the open menu's own list) when they arrive.
      */
-    List<MenuItem> menuItems(int offset, ObservableList<MenuItem> menuItems) {
+    public List<MenuItem> menuItems(int offset, ObservableList<MenuItem> menuItems) {
         Hit hit = hitAt(offset);
         if (hit == null) {
             return List.of();

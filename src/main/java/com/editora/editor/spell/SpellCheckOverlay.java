@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.spell;
 
 import java.time.Duration;
 import java.util.BitSet;
@@ -10,6 +10,10 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -17,13 +21,13 @@ import org.jspecify.annotations.Nullable;
  * A transparent overlay that draws red wavy underlines beneath misspelled words, on top of the editor
  * without touching the document or its style spans (so it never fights the syntax highlighter).
  *
- * <p>Modeled on {@link WhitespaceOverlay}: a mouse-transparent {@link Canvas} sized to the viewport,
+ * <p>Modeled on {@code WhitespaceOverlay}: a mouse-transparent {@link Canvas} sized to the viewport,
  * redrawn coalesced (one per pulse) on scroll / edit / resize / fold, and only for the currently visible
  * paragraphs. Which words are eligible is the buffer's {@link SpellMode}: every word of prose (except
  * Markdown inline/fenced {@code code}), the text content of HTML and Typst, and in code only words styled
  * {@code comment} or {@code string}.
  */
-final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private static final Color SQUIGGLE = Color.web("#e5484d");
     private static final double AMP = 1.6; // squiggle peak-to-baseline amplitude (px)
@@ -152,7 +156,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
         };
     }
 
-    SpellCheckOverlay(CodeArea area) {
+    public SpellCheckOverlay(CodeArea area) {
         this(area, area::getText);
     }
 
@@ -160,7 +164,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
      * @param textSnapshot the document text for the code-line scan, read on the FX thread and scanned off it:
      *     the buffer's versioned snapshot, so the scan copies nothing out of RichTextFX
      */
-    SpellCheckOverlay(CodeArea area, java.util.function.Supplier<String> textSnapshot) {
+    public SpellCheckOverlay(CodeArea area, java.util.function.Supplier<String> textSnapshot) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -342,7 +346,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
      * themselves ({@link #spellCache}) stay — they are Hunspell lookups, not geometry — and so does the
      * code-line set the hover and the menu consult. Nothing is scheduled: the tab is not on screen.
      */
-    void releaseHiddenCaches() {
+    public void releaseHiddenCaches() {
         if (follower != null) {
             follower.releaseHiddenCaches();
         }
