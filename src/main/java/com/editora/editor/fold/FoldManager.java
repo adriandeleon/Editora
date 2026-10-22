@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.fold;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -39,7 +39,8 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.SVGPath;
 import javafx.scene.text.Text;
 
-import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.LazyTooltip;
+import com.editora.editor.fold.FoldRegions.Region;
 import com.editora.editor.git.BlameInfo;
 import com.editora.editor.language.LanguageRegistry;
 import org.fxmisc.richtext.CharacterHit;
@@ -193,7 +194,7 @@ public final class FoldManager {
      * through the primary view, so RichTextFX moves only that view's caret off a line it hides: the
      * {@code second} view's (null while there is none) is put on the fold's header here.
      */
-    void setSplitViews(Supplier<CodeArea> focused, Supplier<CodeArea> second) {
+    public void setSplitViews(Supplier<CodeArea> focused, Supplier<CodeArea> second) {
         this.caretLine = () -> focused.get().getCurrentParagraph();
         this.secondView = second;
     }
@@ -214,7 +215,7 @@ public final class FoldManager {
         this(area, area::getText);
     }
 
-    FoldManager(CodeArea area, Supplier<String> textSnapshot) {
+    public FoldManager(CodeArea area, Supplier<String> textSnapshot) {
         this.area = area;
         this.caretLine = area::getCurrentParagraph;
         this.textSnapshot = textSnapshot;
@@ -1847,12 +1848,12 @@ public final class FoldManager {
     /** A small green play glyph (Material "play_arrow") for the gutter Run marker + the Run menu item;
      *  colored via the {@code .run-marker} CSS class. Returned in a {@link Group} so its bounds reflect
      *  the scaled size and the gutter stays narrow. */
-    static Node runGlyph() {
+    public static Node runGlyph() {
         return runGlyph(null);
     }
 
     /** {@code extraClass} (e.g. {@code test-run-marker}) tints/distinguishes the glyph; null for the plain ▶. */
-    static Node runGlyph(@Nullable String extraClass) {
+    public static Node runGlyph(@Nullable String extraClass) {
         SVGPath svg = new SVGPath();
         svg.setContent(HTTP_RUNNING_CLASS.equals(extraClass) ? STOP_GLYPH_PATH : RUN_GLYPH_PATH);
         svg.getStyleClass().add("run-marker");
@@ -1907,7 +1908,7 @@ public final class FoldManager {
      * {@link #PREVIEW_LINES}. Reading those spans is both cheaper and safer than re-tokenizing on the FX
      * thread: TextMate grammars are shared with the background highlighter and are not thread-safe.
      */
-    Node foldPreviewGraphic(Region region) {
+    public Node foldPreviewGraphic(Region region) {
         int total = area.getParagraphs().size();
         int last = Math.min(region.endLine(), region.startLine() + PREVIEW_LINES - 1);
         VBox lines = new VBox();

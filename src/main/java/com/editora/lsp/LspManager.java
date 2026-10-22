@@ -3059,11 +3059,11 @@ public final class LspManager {
 
     /**
      * Requests the document's foldable regions and delivers them on the FX thread as editor
-     * {@link com.editora.editor.FoldRegions.Region}s, ordered the way the built-in detector emits them
+     * {@link com.editora.editor.fold.FoldRegions.Region}s, ordered the way the built-in detector emits them
      * (see {@link LspFolding#toRegions}). Empty when the server has no folding provider — the caller then
      * keeps the heuristic regions rather than un-folding the file.
      */
-    public void foldingRanges(Path file, Consumer<List<com.editora.editor.FoldRegions.Region>> cb) {
+    public void foldingRanges(Path file, Consumer<List<com.editora.editor.fold.FoldRegions.Region>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || !foldingRangeProvider(s.capabilities())) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -3071,7 +3071,7 @@ public final class LspManager {
         }
         String uri = uri(file);
         latest.issue(uri, "foldingRange", stamp(s, uri, null), true, () -> s.foldingRange(uri), (ranges, error) -> {
-            List<com.editora.editor.FoldRegions.Region> regions =
+            List<com.editora.editor.fold.FoldRegions.Region> regions =
                     error == null ? LspFolding.toRegions(ranges) : List.of();
             Platform.runLater(() -> cb.accept(regions));
         });

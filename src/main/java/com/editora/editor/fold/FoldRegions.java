@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.fold;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.editora.editor.RegexLiterals;
 import com.editora.editor.language.LanguageRegistry;
 import com.editora.typst.TypstOutline;
 

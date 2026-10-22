@@ -7,6 +7,7 @@ import java.util.NavigableSet;
 import java.util.TreeMap;
 
 import com.editora.config.Bookmark;
+import com.editora.editor.fold.FoldManager;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;

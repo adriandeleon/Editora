@@ -38,8 +38,8 @@ import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.FoldRegions.Region;
-import com.editora.editor.NarrowLines;
+import com.editora.editor.fold.FoldRegions.Region;
+import com.editora.editor.fold.NarrowLines;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.highlight.TextMateHighlighter.Symbol;
@@ -52,7 +52,7 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * Tool window content showing the active editor's foldable-region hierarchy as a collapsible tree,
- * mirroring the code/text folding model ({@link com.editora.editor.FoldRegions}). A search box at the
+ * mirroring the code/text folding model ({@link com.editora.editor.fold.FoldRegions}). A search box at the
  * top fuzzy-filters the tree, and selecting an entry navigates the editor caret to that line.
  *
  * <p>The panel marks itself with the {@code editora.ownsKeys} property so the scene-level key
@@ -1630,7 +1630,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
         /** This source with its regions and symbols detected from the text. Pure: any thread. */
         OutlineSource analyzed() {
-            List<Region> detected = com.editora.editor.FoldManager.detectRegions(text, language, null, List.of(), true);
+            List<Region> detected =
+                    com.editora.editor.fold.FoldManager.detectRegions(text, language, null, List.of(), true);
             TextMateHighlighter.Analysis analysis = grammar == null ? null : TextMateHighlighter.analyze(text, grammar);
             List<Symbol> found = analysis == null ? List.of() : analysis.symbols();
             return new OutlineSource(

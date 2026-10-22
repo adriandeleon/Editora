@@ -11,8 +11,8 @@ import com.editora.config.ConfigManager;
 import com.editora.editops.KillRing;
 import com.editora.editops.Rectangle;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.FoldManager;
 import com.editora.editor.TextNav;
+import com.editora.editor.fold.FoldManager;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import org.jspecify.annotations.Nullable;
@@ -1630,8 +1630,9 @@ final class EditingCoordinator {
      * block), else to the innermost foldable region of the whole document holding the line; false when there is
      * none. The whole document's regions: while narrowed the fold manager only knows the region's own.
      */
-    boolean narrowToFoldRegionAt(EditorBuffer buffer, int line, com.editora.editor.FoldRegions.@Nullable Region block) {
-        com.editora.editor.FoldRegions.Region best =
+    boolean narrowToFoldRegionAt(
+            EditorBuffer buffer, int line, com.editora.editor.fold.FoldRegions.@Nullable Region block) {
+        com.editora.editor.fold.FoldRegions.Region best =
                 block != null && block.startLine() <= line && line <= block.endLine() ? block : null;
         if (best == null) {
             for (var r : documentFoldRegions(buffer)) {
@@ -1647,18 +1648,18 @@ final class EditingCoordinator {
             return false;
         }
         String text = buffer.getContent();
-        int start = com.editora.editor.NarrowLines.offsetOfLine(text, best.startLine());
-        int lastLineStart = com.editora.editor.NarrowLines.offsetOfLine(text, best.endLine());
+        int start = com.editora.editor.fold.NarrowLines.offsetOfLine(text, best.startLine());
+        int lastLineStart = com.editora.editor.fold.NarrowLines.offsetOfLine(text, best.endLine());
         int lineEnd = text.indexOf('\n', lastLineStart);
         return applyNarrowDocument(buffer, start, lineEnd < 0 ? text.length() : lineEnd);
     }
 
     /** The whole document's fold regions: the manager's while the buffer is whole, detected afresh while narrowed. */
-    static java.util.List<com.editora.editor.FoldRegions.Region> documentFoldRegions(EditorBuffer buffer) {
+    static java.util.List<com.editora.editor.fold.FoldRegions.Region> documentFoldRegions(EditorBuffer buffer) {
         if (!buffer.isNarrowed()) {
             return buffer.getFoldManager().regions();
         }
-        return com.editora.editor.FoldManager.detectRegions(
+        return com.editora.editor.fold.FoldManager.detectRegions(
                 buffer.getContent(), buffer.getLanguage(), null, java.util.List.of(), true);
     }
 
@@ -1673,14 +1674,14 @@ final class EditingCoordinator {
             @Override
             public boolean narrowToDefun(EditorBuffer buffer, int line) {
                 String text = buffer.getContent();
-                int at = com.editora.editor.NarrowLines.offsetOfLine(text, line);
+                int at = com.editora.editor.fold.NarrowLines.offsetOfLine(text, line);
                 int pos = at < text.length() && text.charAt(at) != '\n' ? at + 1 : at;
                 return narrowToDefunAt(buffer, pos);
             }
 
             @Override
             public boolean narrowToFoldRegion(
-                    EditorBuffer buffer, int line, com.editora.editor.FoldRegions.@Nullable Region block) {
+                    EditorBuffer buffer, int line, com.editora.editor.fold.FoldRegions.@Nullable Region block) {
                 return narrowToFoldRegionAt(buffer, line, block);
             }
 

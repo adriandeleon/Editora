@@ -19,14 +19,14 @@ import org.jspecify.annotations.Nullable;
  * instead. Installing on {@code MOUSE_ENTERED} is early enough: the tooltip's own timer starts on the
  * {@code MOUSE_MOVED} events that follow.
  */
-final class LazyTooltip {
+public final class LazyTooltip {
 
     /** Tooltips built so far — the test seam for "scrolling creates none". */
     static int created;
 
     private LazyTooltip() {}
 
-    static void install(Node node, Supplier<String> text) {
+    public static void install(Node node, Supplier<String> text) {
         install(node, text, null, -1);
     }
 
@@ -34,7 +34,7 @@ final class LazyTooltip {
      * As {@link #install(Node, Supplier)}, with a style class for the tooltip (may be {@code null}) and its
      * show delay in milliseconds (negative keeps the platform default).
      */
-    static void install(Node node, Supplier<String> text, @Nullable String styleClass, double showDelayMillis) {
+    public static void install(Node node, Supplier<String> text, @Nullable String styleClass, double showDelayMillis) {
         node.addEventHandler(MouseEvent.MOUSE_ENTERED, new EventHandler<>() {
             @Override
             public void handle(MouseEvent e) {

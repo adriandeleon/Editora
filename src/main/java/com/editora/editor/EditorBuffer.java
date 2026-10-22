@@ -54,6 +54,11 @@ import com.editora.editor.debug.DebugHover;
 import com.editora.editor.debug.DebugValuePresenter;
 import com.editora.editor.debug.ExecutionLine;
 import com.editora.editor.debug.InlineValuesOverlay;
+import com.editora.editor.fold.FoldManager;
+import com.editora.editor.fold.FoldRegions;
+import com.editora.editor.fold.NarrowPresentation;
+import com.editora.editor.fold.StickyScroll;
+import com.editora.editor.fold.StickyScrollBar;
 import com.editora.editor.git.BlameInfo;
 import com.editora.editor.git.GitGutterLines;
 import com.editora.editor.highlight.CsvRainbow;
@@ -8095,7 +8100,7 @@ public class EditorBuffer implements TabContent {
 
     /** Puts the active top bars into {@code outer.setTop}: the install banner above the view-mode banner
      *  (a {@code VBox} when both show), or {@code null} when neither does. */
-    void refreshTopBars() {
+    public void refreshTopBars() {
         java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
         if (encryption.notice() != null) {
             bars.add(encryption.notice());

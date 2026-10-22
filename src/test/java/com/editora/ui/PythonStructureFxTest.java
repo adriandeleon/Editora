@@ -12,7 +12,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.text.Text;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.FoldRegions;
+import com.editora.editor.fold.FoldRegions;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import org.junit.jupiter.api.BeforeAll;

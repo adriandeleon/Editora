@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.fold;
 
 /**
  * Line arithmetic for a narrowed buffer. While narrowed the text area holds only the accessible region, so

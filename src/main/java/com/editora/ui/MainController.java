@@ -9537,8 +9537,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else {
             map.put(file.toString(), lines);
         }
-        List<Integer> manual =
-                com.editora.editor.ManualFolds.toFlat(buffer.getFoldManager().manualRegions());
+        List<Integer> manual = com.editora.editor.fold.ManualFolds.toFlat(
+                buffer.getFoldManager().manualRegions());
         var manualMap = config.getWorkspaceState().getManualFoldRegions();
         if (manual.isEmpty()) {
             manualMap.remove(file.toString());
@@ -9566,7 +9566,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         List<Integer> manual = config.getWorkspaceState().getManualFoldRegions().get(file.toString());
         List<Integer> saved = config.getWorkspaceState().getFoldedRegions().getOrDefault(file.toString(), List.of());
         buffer.getFoldManager()
-                .restore(manual == null ? List.of() : com.editora.editor.ManualFolds.fromFlat(manual), saved);
+                .restore(manual == null ? List.of() : com.editora.editor.fold.ManualFolds.fromFlat(manual), saved);
     }
 
     /**

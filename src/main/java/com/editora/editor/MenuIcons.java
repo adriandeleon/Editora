@@ -4,6 +4,8 @@ import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.shape.SVGPath;
 
+import com.editora.editor.fold.FoldManager;
+
 /**
  * Glyphs for the editor's right-click context menus (the editor surface menu + the Markdown preview
  * menu). A package-local mirror of {@code com.editora.ui.Icons} so the {@code editor} package keeps its

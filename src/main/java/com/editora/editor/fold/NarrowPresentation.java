@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.fold;
 
 import java.util.List;
 
@@ -10,6 +10,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 
+import com.editora.editor.EditorBuffer;
 import com.editora.editor.logviewer.LogView;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -23,7 +24,7 @@ import static com.editora.i18n.Messages.tr;
  * with a Widen button — the status bar's pill is easy to miss while the text itself looks like a short, complete
  * file. Also the file-line arithmetic behind {@link EditorBuffer#narrowFirstLine()}.
  */
-final class NarrowPresentation {
+public final class NarrowPresentation {
 
     private final EditorBuffer buffer;
     private final CodeArea area;
@@ -42,7 +43,7 @@ final class NarrowPresentation {
     private int barLines = -1;
 
     /** Takes over the gutter's numbering ({@link FoldManager#setLineNumbers}): a filtered log keeps its numbers too. */
-    NarrowPresentation(EditorBuffer buffer, CodeArea area, LogView logView, FoldManager folds) {
+    public NarrowPresentation(EditorBuffer buffer, CodeArea area, LogView logView, FoldManager folds) {
         this.buffer = buffer;
         this.area = area;
         this.logView = logView;
@@ -56,7 +57,7 @@ final class NarrowPresentation {
         });
     }
 
-    int firstLine() {
+    public int firstLine() {
         return firstLine;
     }
 
@@ -71,7 +72,7 @@ final class NarrowPresentation {
     }
 
     /** The banner, as a list for the editor's top bars: empty while widened. */
-    List<Node> bars() {
+    public List<Node> bars() {
         return narrowed && bar != null ? List.of(bar) : List.of();
     }
 
@@ -82,7 +83,7 @@ final class NarrowPresentation {
     }
 
     /** The area now holds {@code [start, end)} of {@code full}. Called after the text swap and caret moves. */
-    void narrowed(String full, int start, int end, @Nullable CodeArea area2) {
+    public void narrowed(String full, int start, int end, @Nullable CodeArea area2) {
         narrowed = true;
         firstLine = NarrowLines.firstLine(full, start);
         suffixLines = NarrowLines.firstLine(full, full.length()) - NarrowLines.firstLine(full, end);
@@ -94,7 +95,7 @@ final class NarrowPresentation {
     }
 
     /** The area holds the whole document again. */
-    void widened(@Nullable CodeArea area2) {
+    public void widened(@Nullable CodeArea area2) {
         narrowed = false;
         firstLine = 0;
         suffixLines = 0;

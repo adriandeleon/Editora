@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.fold;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -13,6 +13,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
 
+import com.editora.editor.LazyTooltip;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.Paragraph;
 import org.fxmisc.richtext.model.StyleSpan;
@@ -31,7 +32,7 @@ import org.jspecify.annotations.Nullable;
  * <p>Clicking a row jumps to that line, which is the other half of the feature: the header tells you where
  * you are, and it is also the way back to it.
  */
-final class StickyScrollBar {
+public final class StickyScrollBar {
 
     /** Style class for the container; rows carry {@code sticky-scroll-row}. */
     private static final String STYLE_CLASS = "sticky-scroll";
@@ -56,7 +57,7 @@ final class StickyScrollBar {
 
     private StickyScroll.Index index = StickyScroll.Index.EMPTY;
 
-    StickyScrollBar() {
+    public StickyScrollBar() {
         box.getStyleClass().add(STYLE_CLASS);
         box.setVisible(false);
         // MANAGED, deliberately. It looks like the other floating controls, which are free-positioned, but
@@ -74,11 +75,11 @@ final class StickyScrollBar {
         box.setPickOnBounds(false);
     }
 
-    Node node() {
+    public Node node() {
         return box;
     }
 
-    void setFont(String family, int size) {
+    public void setFont(String family, int size) {
         box.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
     }
 
@@ -87,7 +88,7 @@ final class StickyScrollBar {
         return box.isVisible();
     }
 
-    void hide() {
+    public void hide() {
         if (box.isVisible()) {
             box.setVisible(false);
             box.getChildren().clear();
@@ -103,7 +104,7 @@ final class StickyScrollBar {
      * {@link StickyScroll#headerLines} for {@code regions}, answered from an index that is rebuilt only when
      * the fold regions themselves are replaced — so a scroll step walks the enclosing scopes, not the file.
      */
-    List<Integer> pinnedLines(@Nullable List<FoldRegions.Region> regions, int firstVisible) {
+    public List<Integer> pinnedLines(@Nullable List<FoldRegions.Region> regions, int firstVisible) {
         if (!index.isFor(regions)) {
             index = StickyScroll.Index.of(regions);
         }
@@ -115,7 +116,7 @@ final class StickyScrollBar {
      * Every {@code AnchorPane.setXAnchor} call requests a layout of the parent even for an unchanged value,
      * and this runs on each scroll step, so only a changed constraint is written.
      */
-    static void anchor(Node bar, double rightInset) {
+    public static void anchor(Node bar, double rightInset) {
         if (!Double.valueOf(0).equals(AnchorPane.getTopAnchor(bar))) {
             AnchorPane.setTopAnchor(bar, 0d);
             AnchorPane.setLeftAnchor(bar, 0d);
@@ -135,7 +136,7 @@ final class StickyScrollBar {
      *     so an indented header would sit at the wrong column against the code below it
      * @param onClick given the 0-based line of the row that was clicked
      */
-    void update(@Nullable CodeArea area, List<Integer> lines, int tabSize, IntConsumer onClick) {
+    public void update(@Nullable CodeArea area, List<Integer> lines, int tabSize, IntConsumer onClick) {
         this.onClick = onClick;
         if (area == null || lines == null || lines.isEmpty()) {
             hide();

@@ -1337,7 +1337,7 @@ class LspManagerFeatureRequestsFxTest {
         assertEquals(List.of(), this.<List<SymbolNode>>await(cb -> manager.latestDocumentSymbols(other, cb)));
         assertEquals(
                 List.of(),
-                this.<List<com.editora.editor.FoldRegions.Region>>await(cb -> manager.foldingRanges(other, cb)));
+                this.<List<com.editora.editor.fold.FoldRegions.Region>>await(cb -> manager.foldingRanges(other, cb)));
         assertEquals(List.of(), this.<List<int[]>>await(cb -> manager.selectionRanges(other, 0, 0, new int[] {0}, cb)));
         assertNull(this.<Boolean>await(cb -> manager.isTestFile(other, cb)));
         assertNull(this.<String>await(cb -> manager.resolveStackTraceLocation(other, "at demo.A.go(A.java:3)", cb)));

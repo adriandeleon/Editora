@@ -15,8 +15,8 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.text.Text;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.FoldRegions.Region;
-import com.editora.editor.NarrowLines;
+import com.editora.editor.fold.FoldRegions.Region;
+import com.editora.editor.fold.NarrowLines;
 import com.editora.lsp.SymbolNode;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;

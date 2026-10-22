@@ -615,7 +615,7 @@ class OverlayScrollPerfFxTest {
             assertEquals(header.prefWidth(-1), plain.prefWidth(-1), 0.01, "the chevron column keeps its width");
         });
 
-        Method tint = Class.forName("com.editora.editor.FoldManager").getDeclaredMethod("blameTint", String.class);
+        Method tint = Class.forName("com.editora.editor.fold.FoldManager").getDeclaredMethod("blameTint", String.class);
         tint.setAccessible(true);
         Object a = tint.invoke(null, "rgba(240,165,70,0.123)");
         assertNotNull(a);

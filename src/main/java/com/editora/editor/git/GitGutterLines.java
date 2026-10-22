@@ -10,9 +10,9 @@ import java.util.function.IntConsumer;
 import javafx.application.Platform;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 
-import com.editora.editor.FoldManager;
 import com.editora.editor.LineMarkTracker;
 import com.editora.editor.LineMarks;
+import com.editora.editor.fold.FoldManager;
 import com.editora.editor.minimap.Minimap;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;

@@ -333,7 +333,7 @@ final class NavigationCoordinator {
      */
     int documentLine(EditorBuffer buffer, int areaLine) {
         return buffer.isNarrowed()
-                ? areaLine + com.editora.editor.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart())
+                ? areaLine + com.editora.editor.fold.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart())
                 : areaLine;
     }
 
@@ -347,8 +347,8 @@ final class NavigationCoordinator {
         if (buffer == null || !buffer.isNarrowed()) {
             return documentLine;
         }
-        int first = com.editora.editor.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart());
-        int local = com.editora.editor.NarrowLines.toRegionLine(
+        int first = com.editora.editor.fold.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart());
+        int local = com.editora.editor.fold.NarrowLines.toRegionLine(
                 first, buffer.getArea().getParagraphs().size(), documentLine);
         if (local >= 0) {
             return local;
@@ -742,7 +742,7 @@ final class NavigationCoordinator {
     }
 
     /** Moves the caret to {@code target}'s header line, revealing it if it's hidden inside a fold. */
-    void gotoFold(com.editora.editor.FoldRegions.@Nullable Region target) {
+    void gotoFold(com.editora.editor.fold.FoldRegions.@Nullable Region target) {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null) {
             return;
@@ -760,7 +760,7 @@ final class NavigationCoordinator {
         EditorBuffer buffer = host.activeBuffer();
         CodeArea area = host.activeArea();
         if (buffer != null && area != null) {
-            gotoFold(com.editora.editor.FoldTree.parentFold(
+            gotoFold(com.editora.editor.fold.FoldTree.parentFold(
                     buffer.getFoldManager().regions(), area.getCurrentParagraph()));
         }
     }
@@ -769,7 +769,7 @@ final class NavigationCoordinator {
         EditorBuffer buffer = host.activeBuffer();
         CodeArea area = host.activeArea();
         if (buffer != null && area != null) {
-            gotoFold(com.editora.editor.FoldTree.nextFold(
+            gotoFold(com.editora.editor.fold.FoldTree.nextFold(
                     buffer.getFoldManager().regions(), area.getCurrentParagraph()));
         }
     }
@@ -778,7 +778,7 @@ final class NavigationCoordinator {
         EditorBuffer buffer = host.activeBuffer();
         CodeArea area = host.activeArea();
         if (buffer != null && area != null) {
-            gotoFold(com.editora.editor.FoldTree.previousFold(
+            gotoFold(com.editora.editor.fold.FoldTree.previousFold(
                     buffer.getFoldManager().regions(), area.getCurrentParagraph()));
         }
     }

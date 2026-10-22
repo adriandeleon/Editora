@@ -1,9 +1,9 @@
-package com.editora.editor;
+package com.editora.editor.fold;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.fold.FoldRegions.Region;
 
 /**
  * Line arithmetic for <b>manual fold ranges</b> (VS Code's {@code createFoldingRangeFromSelection}):

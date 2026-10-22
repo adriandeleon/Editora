@@ -3,8 +3,8 @@ package com.editora.editor.language;
 import java.util.Locale;
 import java.util.Map;
 
-import com.editora.editor.FoldRegions;
 import com.editora.editor.crypto.EncryptedNames;
+import com.editora.editor.fold.FoldRegions;
 import com.editora.editor.highlight.GrammarRegistry;
 
 /**

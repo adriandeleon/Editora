@@ -14,7 +14,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.text.Text;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.fold.FoldRegions.Region;
 import com.editora.editor.highlight.TextMateHighlighter.Symbol;
 import com.editora.lsp.SymbolNode;
 import org.junit.jupiter.api.BeforeAll;
