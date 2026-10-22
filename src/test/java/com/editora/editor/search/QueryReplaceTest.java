@@ -1,10 +1,10 @@
-package com.editora.editor;
+package com.editora.editor.search;
 
 import java.util.List;
 import java.util.Optional;
 
-import com.editora.editor.QueryReplace.Match;
-import com.editora.editor.QueryReplace.Spec;
+import com.editora.editor.search.QueryReplace.Match;
+import com.editora.editor.search.QueryReplace.Spec;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

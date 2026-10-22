@@ -24,7 +24,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
-import com.editora.editor.SearchMatcher;
+import com.editora.editor.search.SearchMatcher;
 import com.editora.search.FileResult;
 import com.editora.search.LineMatch;
 import com.editora.search.SearchQuery;

@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
  * highlighting (disabled on files ≥ 5 MB) this is <em>size-independent</em>, so a multi-GB log opened at
  * its tail still shows levels.
  *
- * <p>Modeled on {@code SpellCheckOverlay}/{@link SearchHighlightOverlay}: a mouse-transparent
+ * <p>Modeled on {@code SpellCheckOverlay}/{@code SearchHighlightOverlay}: a mouse-transparent
  * {@link Canvas} redrawn coalesced (one per pulse) on scroll/edit/resize, only over the visible
  * paragraphs. A continuation line (a stack-trace frame, a wrapped message) inherits the preceding
  * record's level, so an exception's whole trace tints red. Per-line level detection is cached by line

@@ -1,11 +1,11 @@
-package com.editora.editor;
+package com.editora.editor.search;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-import com.editora.editor.SearchMatcher.Located;
-import com.editora.editor.SearchMatcher.Query;
+import com.editora.editor.search.SearchMatcher.Located;
+import com.editora.editor.search.SearchMatcher.Query;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

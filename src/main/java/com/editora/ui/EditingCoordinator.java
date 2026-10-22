@@ -1377,21 +1377,22 @@ final class EditingCoordinator {
                 return;
             }
             if (regex) {
-                String err = com.editora.editor.SearchMatcher.regexError(query);
+                String err = com.editora.editor.search.SearchMatcher.regexError(query);
                 if (err != null) {
                     host.setStatus(tr("find.badRegex", err));
                     return;
                 }
             }
             host.promptText(title, tr("dialog.queryReplace.replaceLabel", query), "", replacement -> {
-                var spec = new com.editora.editor.QueryReplace.Spec(query, replacement, false, regex, false, false);
+                var spec =
+                        new com.editora.editor.search.QueryReplace.Spec(query, replacement, false, regex, false, false);
                 beginQueryReplace(buffer, spec);
             });
         });
     }
 
     /** Starts an interactive query-replace over {@code buffer} with a resolved spec (past the prompts). */
-    void beginQueryReplace(EditorBuffer buffer, com.editora.editor.QueryReplace.Spec spec) {
+    void beginQueryReplace(EditorBuffer buffer, com.editora.editor.search.QueryReplace.Spec spec) {
         if (queryReplaceSession != null) {
             queryReplaceSession.finish();
         }
@@ -1412,7 +1413,7 @@ final class EditingCoordinator {
         private final EditorBuffer buffer;
         private final CodeArea area;
         private final javafx.scene.Node keyHost;
-        private final com.editora.editor.QueryReplace.Spec spec;
+        private final com.editora.editor.search.QueryReplace.Spec spec;
         private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> pressed = this::onPressed;
         private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> typed = this::onTyped;
         private final javafx.beans.value.ChangeListener<Boolean> focusLost = (obs, was, isFocused) -> {
@@ -1421,11 +1422,11 @@ final class EditingCoordinator {
             }
         };
         private int from;
-        private com.editora.editor.QueryReplace.@Nullable Match current;
+        private com.editora.editor.search.QueryReplace.@Nullable Match current;
         private int replaced;
         private boolean active;
 
-        QueryReplaceSession(EditorBuffer buffer, com.editora.editor.QueryReplace.Spec spec) {
+        QueryReplaceSession(EditorBuffer buffer, com.editora.editor.search.QueryReplace.Spec spec) {
             this.buffer = buffer;
             this.area = buffer.getFocusedArea();
             this.keyHost = keyHost(area);
@@ -1453,13 +1454,13 @@ final class EditingCoordinator {
 
         /** Finds the next match from {@link #from}, highlights it and prompts. False when none remain. */
         private boolean showNext() {
-            var m = com.editora.editor.QueryReplace.next(area.getText(), from, spec);
+            var m = com.editora.editor.search.QueryReplace.next(area.getText(), from, spec);
             if (m.isEmpty()) {
                 current = null;
                 return false;
             }
             current = m.get();
-            buffer.setSearchMatches(com.editora.editor.SearchMatches.of(current.start(), current.end()), 0);
+            buffer.setSearchMatches(com.editora.editor.search.SearchMatches.of(current.start(), current.end()), 0);
             area.moveTo(current.start());
             area.requestFollowCaret();
             host.setStatus(tr("status.queryReplace.prompt", replaced));
@@ -1474,7 +1475,7 @@ final class EditingCoordinator {
             }
             area.replaceText(match.start(), match.end(), match.replacement());
             replaced++;
-            from = com.editora.editor.QueryReplace.afterReplace(match);
+            from = com.editora.editor.search.QueryReplace.afterReplace(match);
         }
 
         private void replaceCurrentAndAdvance() {
@@ -1489,7 +1490,7 @@ final class EditingCoordinator {
             if (match == null) {
                 return;
             }
-            from = com.editora.editor.QueryReplace.afterSkip(match);
+            from = com.editora.editor.search.QueryReplace.afterSkip(match);
             if (!showNext()) {
                 finish();
             }
@@ -1497,7 +1498,7 @@ final class EditingCoordinator {
 
         /** {@code !}: replace this and every remaining match in one edit, then stop. */
         private void replaceRest() {
-            var plan = com.editora.editor.QueryReplace.planRemaining(area.getText(), from, spec);
+            var plan = com.editora.editor.search.QueryReplace.planRemaining(area.getText(), from, spec);
             if (!plan.isEmpty()) {
                 int start = plan.get(0).start();
                 int end = plan.get(plan.size() - 1).end();
@@ -2266,7 +2267,7 @@ final class EditingCoordinator {
             if (pattern.isEmpty()) {
                 return;
             }
-            String err = com.editora.editor.SearchMatcher.regexError(pattern);
+            String err = com.editora.editor.search.SearchMatcher.regexError(pattern);
             if (err != null) {
                 host.setStatus(tr("find.badRegex", err));
                 return;
@@ -2328,7 +2329,7 @@ final class EditingCoordinator {
         if (regex == null || regex.isEmpty()) {
             return;
         }
-        String err = com.editora.editor.SearchMatcher.regexError(regex);
+        String err = com.editora.editor.search.SearchMatcher.regexError(regex);
         if (err != null) {
             host.setStatus(tr("find.badRegex", err));
             return;
@@ -2441,7 +2442,7 @@ final class EditingCoordinator {
             if (pattern.isEmpty()) {
                 return;
             }
-            String err = com.editora.editor.SearchMatcher.regexError(pattern);
+            String err = com.editora.editor.search.SearchMatcher.regexError(pattern);
             if (err != null) {
                 host.setStatus(tr("find.badRegex", err));
                 return;

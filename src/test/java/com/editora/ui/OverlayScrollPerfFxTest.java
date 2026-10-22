@@ -209,7 +209,7 @@ class OverlayScrollPerfFxTest {
                 FxTestSupport.call(b, "todoOverlay", new Class[] {}); // attach (lazy) so the loop below finds it
                 // The four overlays that are TabSurface since M4: a find, a word highlight, a suspended
                 // debug session and a jump each hold a full-viewport texture only while their tab is shown.
-                b.setSearchMatches(com.editora.editor.SearchMatches.of(0, 3), 0);
+                b.setSearchMatches(com.editora.editor.search.SearchMatches.of(0, 3), 0);
                 b.setOccurrenceSpans(List.of(new com.editora.editor.lsp.OccurrenceSpan(0, 0, 0, 3, false)));
                 b.setInlineValues(Map.of("value", "1", "text", "2"), 0);
                 b.startAceJump();
@@ -310,7 +310,7 @@ class OverlayScrollPerfFxTest {
         EditorBuffer hidden = buffers.get(1);
         FxTestSupport.runOnFx(() -> {
             hidden.setSearchMatches(
-                    com.editora.editor.SearchMatches.ofPairs(List.of()),
+                    com.editora.editor.search.SearchMatches.ofPairs(List.of()),
                     -1); // unrelated lazy overlay: must not disturb the others
             FxTestSupport.invokeWith(
                     FxTestSupport.field(hidden, "lspOverlay"), "setDiagnostics", List.class, List.of(diagnostic()));

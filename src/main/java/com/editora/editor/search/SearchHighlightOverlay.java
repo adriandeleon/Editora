@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.search;
 
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
@@ -6,6 +6,11 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.OverlayPalette;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
 import org.jspecify.annotations.Nullable;
@@ -20,7 +25,7 @@ import org.jspecify.annotations.Nullable;
  * visible paragraphs. Driven by {@link #setMatches}: it activates when there are matches and clears
  * when empty.
  */
-final class SearchHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+public final class SearchHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     /** Amber wash for all matches, a deeper one + border for the current match (see OverlayPalette). */
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
@@ -41,7 +46,7 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private @Nullable SearchHighlightOverlay follower;
 
-    SearchHighlightOverlay(CodeArea area) {
+    public SearchHighlightOverlay(CodeArea area) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -105,7 +110,7 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
     }
 
     /** Sets the matches to highlight and which is the current one (-1 for none). */
-    void setMatches(SearchMatches matches, int activeIndex) {
+    public void setMatches(SearchMatches matches, int activeIndex) {
         if (follower != null) {
             follower.setMatches(matches, activeIndex);
         }

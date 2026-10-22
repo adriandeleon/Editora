@@ -10,6 +10,8 @@ import javafx.scene.control.Label;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import com.editora.editor.search.SearchMatcher;
+
 /**
  * Find in the rendered Markdown preview: marks every occurrence of a query in the preview's text, and steps
  * through them.
