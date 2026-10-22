@@ -13,8 +13,8 @@ import javafx.scene.text.Text;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.FoldRegions;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

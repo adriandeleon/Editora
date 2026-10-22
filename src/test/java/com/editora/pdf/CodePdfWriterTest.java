@@ -4,8 +4,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;

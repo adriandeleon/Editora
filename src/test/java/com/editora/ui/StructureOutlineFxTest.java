@@ -5,7 +5,7 @@ import java.util.List;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.FoldRegions.Region;
-import com.editora.editor.TextMateHighlighter.Symbol;
+import com.editora.editor.highlight.TextMateHighlighter.Symbol;
 import com.editora.lsp.SymbolNode;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

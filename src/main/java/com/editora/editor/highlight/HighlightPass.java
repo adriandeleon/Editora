@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.highlight;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.BooleanSupplier;
 
+import com.editora.editor.EditorBuffer;
 import com.editora.editor.lsp.SemanticToken;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.grammar.IStateStack;
@@ -36,7 +37,7 @@ import org.jspecify.annotations.Nullable;
  * token spans here, on the pool thread, and so are the spliced per-line arrays and the symbol list. What is
  * left for the FX thread is one {@code setStyleSpans} over the restyled range and three reference swaps.
  */
-final class HighlightPass {
+public final class HighlightPass {
 
     private HighlightPass() {}
 
@@ -45,7 +46,7 @@ final class HighlightPass {
      * are on, the nesting depth at the end of every line ({@code null} otherwise). Never modified once
      * built — a pass reads the previous table from the pool thread while the FX thread still owns it.
      */
-    record Lines(IStateStack[] states, int @Nullable [] depths) {
+    public record Lines(IStateStack[] states, int @Nullable [] depths) {
         int count() {
             return states.length;
         }
@@ -59,7 +60,7 @@ final class HighlightPass {
      * @param dirtyEnd end offset (exclusive) of that range; past the end of the text = to the end
      * @param semantic semantic tokens anchored to {@code text} to overlay, or {@code null} for none
      */
-    record Request(
+    public record Request(
             String text,
             IGrammar grammar,
             @Nullable Lines lines,
@@ -77,7 +78,7 @@ final class HighlightPass {
      * @param firstLine first line tokenized
      * @param lastLine last line tokenized; before the last line of the text when the pass converged
      */
-    record Result(
+    public record Result(
             int fromOffset,
             @Nullable StyleSpans<Collection<String>> spans,
             Lines lines,
@@ -87,13 +88,13 @@ final class HighlightPass {
             int lastLine) {
 
         /** Number of characters restyled. */
-        int length() {
+        public int length() {
             return spans == null ? 0 : spans.length();
         }
     }
 
     /** Runs the pass. Returns {@code null} when {@code cancelled} reported true before it finished. */
-    static @Nullable Result run(Request r, BooleanSupplier cancelled) {
+    public static @Nullable Result run(Request r, BooleanSupplier cancelled) {
         String text = r.text();
         if (text == null || r.grammar() == null || cancelled.getAsBoolean()) {
             return null;
@@ -415,7 +416,7 @@ final class HighlightPass {
      * Whether any character of {@code spans} (which start at offset {@code from}) carries a style class,
      * other than a lone styled character at one of the {@code except} offsets.
      */
-    static boolean anyStyled(StyleSpans<Collection<String>> spans, int from, int @Nullable [] except) {
+    public static boolean anyStyled(StyleSpans<Collection<String>> spans, int from, int @Nullable [] except) {
         int at = from;
         for (var span : spans) {
             boolean excepted = span.getLength() == 1 && except != null && (at == except[0] || at == except[1]);
@@ -473,7 +474,7 @@ final class HighlightPass {
      * grammar instead, a waiting pass occupies no thread. Each pass is re-submitted rather than looped, so
      * a long lane still interleaves with the rest of the pool's work.
      */
-    static void submit(Executor pool, IGrammar grammar, Runnable pass) {
+    public static void submit(Executor pool, IGrammar grammar, Runnable pass) {
         Lane lane = LANES.computeIfAbsent(grammar, g -> new Lane());
         synchronized (lane) {
             lane.queue.add(pass);

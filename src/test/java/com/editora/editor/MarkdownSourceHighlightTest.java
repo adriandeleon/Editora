@@ -8,6 +8,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.stream.Stream;
 
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.junit.jupiter.api.Test;

@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 
+import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.heading.anchor.HeadingAnchorExtension;
 import org.commonmark.renderer.html.HtmlRenderer;

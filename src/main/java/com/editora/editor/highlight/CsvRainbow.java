@@ -1,9 +1,10 @@
-package com.editora.editor;
+package com.editora.editor.highlight;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
@@ -16,10 +17,10 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
  * <p>The pure {@link #segments} (no toolkit) is unit-tested; {@link #buildSpans} is the thin RichTextFX
  * wrapper that maps each segment's style code to a CSS class ({@code csv-col-<k>} / {@code csv-delimiter}).
  */
-final class CsvRainbow {
+public final class CsvRainbow {
 
     /** Number of distinct column colors before the cycle repeats (matches the {@code .text.csv-col-N} CSS). */
-    static final int COLORS = 8;
+    public static final int COLORS = 8;
 
     /** Style code for a delimiter character (rendered muted, like the grammar's separator). */
     static final int DELIMITER = -1;
@@ -104,7 +105,7 @@ final class CsvRainbow {
     }
 
     /** Builds RichTextFX style spans over {@code text} with per-column {@code csv-col-<k>} classes. */
-    static StyleSpans<Collection<String>> buildSpans(String text, char delim, int colors) {
+    public static StyleSpans<Collection<String>> buildSpans(String text, char delim, int colors) {
         StyleSpansBuilder<Collection<String>> b = new StyleSpansBuilder<>();
         boolean any = false;
         for (int[] seg : segments(text, delim, colors)) {

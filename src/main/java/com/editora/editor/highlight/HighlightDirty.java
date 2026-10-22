@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.highlight;
 
 /**
  * The part of the document an incremental highlight pass still owes: one character range
@@ -21,7 +21,7 @@ package com.editora.editor;
  * <p>Offsets rather than lines, so recording an edit costs a few integer operations and never asks the
  * document for a line lookup on the keystroke path.
  */
-final class HighlightDirty {
+public final class HighlightDirty {
 
     private static final int NONE = -1;
 
@@ -35,7 +35,7 @@ final class HighlightDirty {
      * characters. Successive calls take positions in the coordinates each replacement ran in, which is
      * how a multi-change edit reports them.
      */
-    void edited(int position, int removed, int inserted) {
+    public void edited(int position, int removed, int inserted) {
         int at = Math.max(0, position);
         int insertedEnd = at + Math.max(0, inserted);
         if (start == NONE) {
@@ -58,7 +58,7 @@ final class HighlightDirty {
      * Where the character at {@code offset} is after {@code removed} characters at {@code position} were
      * replaced by {@code inserted}, or {@code -1} if it was one of the characters removed.
      */
-    static int moved(int offset, int position, int removed, int inserted) {
+    public static int moved(int offset, int position, int removed, int inserted) {
         if (offset < position) {
             return offset;
         }
@@ -66,7 +66,7 @@ final class HighlightDirty {
     }
 
     /** Adds {@code [from, to)} of the current text to the owed range without any text change (a restyle). */
-    void include(int from, int to) {
+    public void include(int from, int to) {
         int lo = Math.max(0, Math.min(from, to));
         int hi = Math.max(from, to);
         if (start == NONE) {
@@ -79,28 +79,28 @@ final class HighlightDirty {
     }
 
     /** Owes the whole document (a language or grammar change, a feature toggle). */
-    void invalidate() {
+    public void invalidate() {
         start = 0;
         end = Integer.MAX_VALUE;
     }
 
     /** A pass covering the owed range reached the document: nothing is owed until the next edit. */
-    void applied() {
+    public void applied() {
         start = NONE;
         end = NONE;
     }
 
-    boolean isClean() {
+    public boolean isClean() {
         return start == NONE;
     }
 
     /** Start offset of the owed range. Only meaningful while {@link #isClean()} is false. */
-    int start() {
+    public int start() {
         return start;
     }
 
     /** End offset (exclusive) of the owed range; {@link Integer#MAX_VALUE} for "to the end". */
-    int end() {
+    public int end() {
         return end;
     }
 

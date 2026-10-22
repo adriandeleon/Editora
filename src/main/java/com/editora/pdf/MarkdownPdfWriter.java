@@ -18,7 +18,7 @@ import com.editora.editor.MarkdownDocInfo;
 import com.editora.editor.MarkdownRenderer;
 import com.editora.editor.MathImages;
 import com.editora.editor.PreviewImageLoader;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.markdown.MarkdownMath;
 import com.editora.mermaid.Mermaid;
 import com.github.weisj.jsvg.SVGDocument;

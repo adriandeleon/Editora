@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import java.util.List;
 
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.junit.jupiter.api.Test;
 

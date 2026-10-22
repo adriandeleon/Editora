@@ -39,10 +39,10 @@ import javafx.util.StringConverter;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.FoldRegions.Region;
-import com.editora.editor.GrammarRegistry;
 import com.editora.editor.NarrowLines;
-import com.editora.editor.TextMateHighlighter;
-import com.editora.editor.TextMateHighlighter.Symbol;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.highlight.TextMateHighlighter.Symbol;
 import com.editora.lsp.SymbolNode;
 import com.editora.search.FuzzyMatch;
 import org.fxmisc.richtext.CodeArea;

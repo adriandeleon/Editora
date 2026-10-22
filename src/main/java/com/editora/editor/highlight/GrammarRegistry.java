@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.highlight;
 
 import java.util.HashMap;
 import java.util.Locale;
@@ -342,7 +342,7 @@ public final class GrammarRegistry {
     }
 
     /** Every extension with a bundled grammar, mapped to the grammar's language name (its resource name). */
-    java.util.Map<String, String> extensionLanguages() {
+    public java.util.Map<String, String> extensionLanguages() {
         java.util.Map<String, String> out = new java.util.TreeMap<>();
         extensionToScope.forEach((ext, scope) -> out.put(ext, scopeToResource.get(scope)));
         return out;

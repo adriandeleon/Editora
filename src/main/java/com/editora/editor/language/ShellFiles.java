@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import com.editora.editor.GrammarRegistry;
+import com.editora.editor.highlight.GrammarRegistry;
 import org.jspecify.annotations.Nullable;
 
 /**

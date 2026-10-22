@@ -13,7 +13,7 @@ import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GrammarRegistry;
+import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.language.LanguageRegistry;
 import org.jspecify.annotations.Nullable;
 

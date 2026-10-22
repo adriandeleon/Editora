@@ -27,6 +27,8 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.i18n.Messages;
 import com.editora.markdown.MarkdownAlerts;
 import com.editora.markdown.MarkdownDefinitions;

@@ -3,7 +3,7 @@ package com.editora.editor.language;
 import java.util.Locale;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GrammarRegistry;
+import com.editora.editor.highlight.GrammarRegistry;
 import org.jspecify.annotations.Nullable;
 
 /**

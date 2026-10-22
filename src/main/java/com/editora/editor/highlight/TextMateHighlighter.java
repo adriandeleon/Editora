@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editor.highlight;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -230,7 +230,7 @@ public final class TextMateHighlighter {
     }
 
     /** Scopes whose tokenizer failure has been logged (see {@link #reportTokenizeFailure}). Test hook. */
-    static Set<String> reportedFailures() {
+    public static Set<String> reportedFailures() {
         return REPORTED_FAILURES;
     }
 
@@ -393,7 +393,7 @@ public final class TextMateHighlighter {
      * @param scopes the token's scope stack
      * @param before the line's text before the token
      */
-    static boolean isTypeReference(List<String> scopes, String before) {
+    public static boolean isTypeReference(List<String> scopes, String before) {
         String entity = null;
         for (String scope : scopes) {
             if (scope.startsWith("meta.type.annotation")
@@ -658,7 +658,7 @@ public final class TextMateHighlighter {
      * Reduces a TextMate scope list (least-specific first) to one CSS style class, or {@code null}
      * for unstyled text. The most specific scope wins, so we scan from the end.
      */
-    static @Nullable String styleForScopes(List<String> scopes) {
+    public static @Nullable String styleForScopes(List<String> scopes) {
         if (scopes == null) {
             return null;
         }

@@ -183,12 +183,13 @@ class BracketColorsFxTest {
         Thread t = new Thread(
                 () -> {
                     try {
-                        var g = com.editora.editor.GrammarRegistry.shared().forLanguageName("java");
+                        var g = com.editora.editor.highlight.GrammarRegistry.shared()
+                                .forLanguageName("java");
                         if (g == null) {
                             out.set("grammar=null");
                             return;
                         }
-                        var a = com.editora.editor.TextMateHighlighter.analyzeFrom(SRC, g, 0, null);
+                        var a = com.editora.editor.highlight.TextMateHighlighter.analyzeFrom(SRC, g, 0, null);
                         out.set(
                                 a == null
                                         ? "analysis=null"

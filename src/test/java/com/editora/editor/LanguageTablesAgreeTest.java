@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.language.LanguageRegistry;
 import com.editora.editor.language.ShellFiles;
 import org.junit.jupiter.api.Test;

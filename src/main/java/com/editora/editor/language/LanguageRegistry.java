@@ -4,8 +4,8 @@ import java.util.Locale;
 import java.util.Map;
 
 import com.editora.editor.FoldRegions;
-import com.editora.editor.GrammarRegistry;
 import com.editora.editor.crypto.EncryptedNames;
+import com.editora.editor.highlight.GrammarRegistry;
 
 /**
  * Resolves a file name to a short language identifier. Syntax highlighting itself is handled by

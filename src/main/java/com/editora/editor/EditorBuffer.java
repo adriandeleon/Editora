@@ -56,6 +56,11 @@ import com.editora.editor.debug.ExecutionLine;
 import com.editora.editor.debug.InlineValuesOverlay;
 import com.editora.editor.git.BlameInfo;
 import com.editora.editor.git.GitGutterLines;
+import com.editora.editor.highlight.CsvRainbow;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.HighlightDirty;
+import com.editora.editor.highlight.HighlightPass;
+import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.http.HttpGutter;
 import com.editora.editor.http.HttpHooks;
 import com.editora.editor.http.HttpLineResult;
@@ -4915,7 +4920,7 @@ public class EditorBuffer implements TabContent {
         return folds.removeManualFolds();
     }
 
-    /** Tint each bracket by nesting depth (see {@link BracketColors}). */
+    /** Tint each bracket by nesting depth (see {@code BracketColors}). */
     private boolean bracketColors;
 
     /**
