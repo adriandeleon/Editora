@@ -1082,61 +1082,10 @@ public final class DapManager {
         }
     }
 
-    /**
-     * In a folder with no build file jdtls keeps a Java file in an "invisible project" whose source folder it
-     * guesses — and it guesses the file's own folder, so {@code src/demo/Main.java} declaring {@code package
-     * demo} is class {@code Main} to it: the launch named a class that does not exist, its package line was
-     * flagged as wrong, and no stop could be shown in the file. When the declared package says the source
-     * folder is another one, this tells jdtls so (adding the right folder, then removing the wrong ones —
-     * Editora's jdtls workspace changes, never the user's files) and then runs {@code then}. Anything that
-     * cannot be corrected (no package, a misplaced file, a folder outside the server's workspace) runs
-     * {@code then} as it is: the compile below names the class from the file either way.
-     */
+    /** {@link JavaSourceRootFix} before a launch from a folder with no build file, then {@code then}. */
     private void correctSourceRoot(Path file, long epoch, Runnable then) {
-        String pkg = JavaLaunchSupport.declaredPackage(file);
-        Path root = pkg.isEmpty() || !com.editora.process.ExecTargets.runsHere(file)
-                ? null
-                : JavaLaunchSupport.sourceRoot(file, pkg);
-        if (root == null) {
-            then.run();
-            return;
-        }
-        lsp.executeCommand(file, "java.project.listSourcePaths", List.of(), (res, err) -> {
-            if (!isCurrent(epoch)) {
-                return;
-            }
-            List<Path> current = err == null ? JavaLaunchSupport.sourcePaths(res) : List.of();
-            List<Path> wrong = JavaLaunchSupport.wrongSourceRoots(current, file, root);
-            if (wrong.isEmpty()) {
-                then.run();
-                return;
-            }
-            lsp.executeCommand(
-                    file, "java.project.addToSourcePath", List.of(root.toUri().toString()), (added, e2) -> {
-                        if (!isCurrent(epoch)) {
-                            return;
-                        }
-                        if (e2 != null || !JavaLaunchSupport.statusOk(added)) {
-                            then.run(); // the right folder is outside the server's workspace: leave it be
-                            return;
-                        }
-                        removeSourceRoots(file, new ArrayList<>(wrong), epoch, then);
-                    });
-        });
-    }
-
-    private void removeSourceRoots(Path file, List<Path> wrong, long epoch, Runnable then) {
-        if (wrong.isEmpty()) {
-            then.run();
-            return;
-        }
-        Path next = wrong.remove(0);
-        lsp.executeCommand(
-                file, "java.project.removeFromSourcePath", List.of(next.toUri().toString()), (r, e) -> {
-                    if (isCurrent(epoch)) {
-                        removeSourceRoots(file, wrong, epoch, then);
-                    }
-                });
+        JavaSourceRootFix.correct(
+                lsp, file, JavaLaunchSupport.declaredPackage(file), () -> isCurrent(epoch), fixed -> then.run());
     }
 
     /** Debug a compact {@code .java} file as the implicit class named after the file. */

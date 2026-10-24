@@ -660,12 +660,51 @@ final class LspCoordinator {
         ops.onServerCapabilitiesReady();
     }
 
+    /** Folder-without-build-file source roots jdtls has been told about (C6): asked once each. */
+    private final java.util.Set<Path> correctedSourceRoots = new java.util.HashSet<>();
+
+    /** The build files that make a folder a project jdtls imports properly (no invisible-project guess). */
+    private static final List<String> JAVA_BUILD_FILES =
+            List.of("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts");
+
+    /**
+     * A Java file in a folder with no build file: jdtls guessed its source folder from where the file is, and
+     * the declared package says otherwise, so every file was red (Java review C6). Runs when the file is opened
+     * (the requests wait for the server) and again when the server's capabilities arrive or it says the import is
+     * done; {@link com.editora.dap.JavaSourceRootFix} does the telling, the same correction a Debug launch makes.
+     */
+    private void correctPlainFolderSourceRoot(EditorBuffer buffer, Path path) {
+        if (!LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))
+                || path.getFileName() == null
+                || !path.getFileName().toString().endsWith(".java")
+                || !com.editora.process.ExecTargets.runsHere(path)) {
+            return;
+        }
+        String pkg = com.editora.dap.JavaSourceRootFix.declaredPackage(buffer.getContent());
+        Path root = com.editora.dap.JavaSourceRootFix.sourceRoot(path, pkg);
+        Path projectRoot = lspRootFor(buffer, LspServerRegistry.JAVA_SERVER_ID);
+        if (root == null || correctedSourceRoots.contains(root) || projectRoot == null) {
+            return;
+        }
+        for (String build : JAVA_BUILD_FILES) {
+            if (java.nio.file.Files.exists(projectRoot.resolve(build))) {
+                return; // a Maven or Gradle project: jdtls reads its source folders from the build
+            }
+        }
+        com.editora.dap.JavaSourceRootFix.correct(lspManager, path, pkg, () -> !buffer.isDisposed(), fixed -> {
+            if (fixed) {
+                correctedSourceRoots.add(root);
+            }
+        });
+    }
+
     /**
      * Re-applies one managed buffer's gates after initialize or a dynamic capability change, and re-requests
      * its server data: diagnostics and folding ranges for any tab (both are kept per buffer), semantic
      * tokens and inlay hints only for the tab on screen.
      */
     private void refreshCapabilityGates(EditorBuffer b, Path path, boolean active) {
+        correctPlainFolderSourceRoot(b, path);
         b.setLspTriggerChars(lspManager.triggerCharacters(path));
         b.setLspFormatAvailable(lspManager.supportsFormatting(path) || b.isPython()); // Python: Ruff/Black
         b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
@@ -2443,6 +2482,7 @@ final class LspCoordinator {
                 }
                 lspManager.setDocumentIndent(path, formattingIndent(buffer)); // quick fixes keep its indent (B8)
                 lspManager.openDocument(path, root, routeLanguageId(buffer, serverId), buffer.text());
+                correctPlainFolderSourceRoot(buffer, path); // queued until the server is up (C6)
             }
             buffer.setLspActive(true);
             // Push the server's completion trigger characters + request initial pull diagnostics. Both are
@@ -3043,7 +3083,33 @@ final class LspCoordinator {
             lspManager.changeDocument(path, buffer.getContent());
             lspManager.saveDocument(path, savedText);
             lspManager.pullDiagnostics(path); // no-op for push-only servers
+            if (projectWideProblems && LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
+                pendingProjectRecheck = path;
+                projectRecheck.playFromStart();
+            }
         }
+    }
+
+    /** The file whose save asked for {@link #projectRecheck}; the build goes to its project's server. */
+    private @Nullable Path pendingProjectRecheck;
+
+    /**
+     * While Problems shows the whole project, a Java save is followed by an incremental build (debounced): with
+     * autobuild off nothing else rechecks the files that are not open, so an error fixed in one file stayed
+     * listed for the files that use it until Build Project was run by hand (Java review C7). Quiet: no status.
+     */
+    private final javafx.animation.PauseTransition projectRecheck = projectRecheck();
+
+    private javafx.animation.PauseTransition projectRecheck() {
+        var recheck = new javafx.animation.PauseTransition(javafx.util.Duration.millis(1200));
+        recheck.setOnFinished(e -> {
+            Path path = pendingProjectRecheck;
+            pendingProjectRecheck = null;
+            if (path != null && projectWideProblems && ops.lspFeatureEnabled()) {
+                lspManager.buildJavaWorkspace(path, false, outcome -> {});
+            }
+        });
+        return recheck;
     }
 
     /** Wires every LSP hook onto a freshly-added buffer (didChange/diagnostics/completion/format/nav), then

@@ -426,6 +426,32 @@ class JdtlsClientSettingsProbeTest {
             record("B15 willRenameFiles", renamed);
             assertTrue(String.valueOf(renamed).contains("Assistant"), "B15: the class is renamed with its file");
 
+            // C7: with autobuild off, an error in an unopened file caused by an edit is only found by a build, and
+            // only an incremental build after the fix clears it (what Editora now runs after a save while
+            // Problems shows the whole project).
+            Path shape = src.resolve("Shape.java");
+            Path use = src.resolve("UseShape.java");
+            Files.writeString(shape, "package demo;\n\npublic record Shape(int a) {}\n");
+            Files.writeString(use, "package demo;\n\nclass UseShape {\n    Shape s = new Shape(1);\n}\n");
+            String shapeUri = shape.toUri().toString();
+            String useUri = use.toUri().toString();
+            s.didOpen(shapeUri, "java", "package demo;\n\npublic record Shape(int a) {}\n");
+            get(s.rawRequest("java/buildWorkspace", true));
+            String broken2 = "package demo;\n\npublic record Shape(int a, int b) {}\n";
+            s.didChange(shapeUri, broken2);
+            Files.writeString(shape, broken2);
+            s.didSave(shapeUri, broken2);
+            get(s.rawRequest("java/buildWorkspace", false));
+            assertTrue(
+                    waitDiagnostics(diagnostics, "UseShape.java", true),
+                    "C7: the build finds the unopened file's error");
+            String fixed = "package demo;\n\npublic record Shape(int a) {}\n";
+            s.didChange(shapeUri, fixed);
+            Files.writeString(shape, fixed);
+            s.didSave(shapeUri, fixed);
+            get(s.rawRequest("java/buildWorkspace", false));
+            assertTrue(waitDiagnostics(diagnostics, "UseShape.java", false), "C7: an incremental build clears it");
+
             // D11: move twice() to the helper field, which it compares to null — an error jdtls asks about.
             var atTwice = actions(get(s.codeAction(app, range(pos(APP, "int twice", 6)), List.of())));
             JdtlsRefactor.Request move = refactor(atTwice, JdtlsRefactor.MOVE_INSTANCE_METHOD);
@@ -458,6 +484,25 @@ class JdtlsClientSettingsProbeTest {
         } finally {
             s.dispose();
         }
+    }
+
+    /** Waits until the latest diagnostics for a file named {@code name} are non-empty ({@code errors}) or empty. */
+    private static boolean waitDiagnostics(List<PublishDiagnosticsParams> all, String name, boolean errors)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline) {
+            PublishDiagnosticsParams latest = null;
+            for (var p : all) {
+                if (p.getUri().endsWith(name)) {
+                    latest = p;
+                }
+            }
+            if (latest != null && latest.getDiagnostics().isEmpty() != errors) {
+                return true;
+            }
+            Thread.sleep(100);
+        }
+        return false;
     }
 
     private static final java.util.regex.Pattern CORE_BUNDLE =

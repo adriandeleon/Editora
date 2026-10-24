@@ -80,6 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java: a folder of `.java` files with packages but no build file is no longer red everywhere.** jdtls guessed
+  each file's own folder as its source folder, so `src/demo/Main.java` declaring `package demo` was flagged as
+  being in the wrong package and nothing in it resolved. Editora now tells jdtls the source folder the package
+  declaration implies as soon as the file is open, the correction Debug already made at launch.
+- **Java: whole-project Problems drops errors that were fixed.** With Problems showing the whole project, saving
+  a Java file now runs a quiet incremental build, so errors in files that are not open clear once their cause is
+  fixed, instead of staying until Build Project was run again.
 - **The quick-fix list puts the fix first.** It listed jdtls's actions in the server's order, so "Extract
   interface..." was preselected and the fix for the squiggle sat below ten generators. Fixes now come first, then
   assists, refactorings and source actions; repeated titles are dropped, rows say "Fix", "Refactor" or "Generate"

@@ -701,6 +701,55 @@ class LspCoordinatorCommandsFxTest {
                 fx.server().rawNotifications.get(0).method());
     }
 
+    /**
+     * A Java file in a folder with no build file: once the server is up, jdtls is asked for its source folders,
+     * so a guessed one can be corrected (Java review C6). A Maven project is left to its build.
+     */
+    @Test
+    void aPlainFoldersSourceRootIsCheckedWithTheServer() throws Exception {
+        java.nio.file.Files.createDirectories(fx.root.resolve("src/demo"));
+        fx.open("src/demo/A.java", "package demo;\n\nclass A {}\n");
+        assertTrue(
+                fx.server().executedCommands.stream()
+                        .anyMatch(c -> c.getCommand().equals("java.project.listSourcePaths")),
+                "asked which folders are source folders");
+    }
+
+    /** While Problems shows the whole project, a Java save is followed by an incremental build (C7). */
+    @Test
+    void aSaveRechecksTheProjectWhileProblemsShowsAllOfIt() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(b, SOURCE));
+        Thread.sleep(1500);
+        fx.settle();
+        assertFalse(
+                fx.server().rawRequests.stream().anyMatch(r -> r.method().equals("java/buildWorkspace")),
+                "only the open files are listed: nothing to recheck");
+
+        FxTestSupport.runOnFx(() -> fx.coordinator.setProjectWideProblems(true));
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(b, SOURCE));
+        long deadline = System.currentTimeMillis() + 5000;
+        while (fx.server().rawRequests.stream().noneMatch(r -> r.method().equals("java/buildWorkspace"))
+                && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50);
+            fx.settle();
+        }
+        var build = fx.server().rawRequests.stream()
+                .filter(r -> r.method().equals("java/buildWorkspace"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(Boolean.FALSE, build.params(), "incremental, not a full build");
+    }
+
+    @Test
+    void aMavenProjectsSourceRootIsLeftToItsBuild() throws Exception {
+        java.nio.file.Files.writeString(fx.root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(fx.root.resolve("src/demo"));
+        fx.open("src/demo/A.java", "package demo;\n\nclass A {}\n");
+        assertTrue(fx.server().executedCommands.stream()
+                .noneMatch(c -> c.getCommand().equals("java.project.listSourcePaths")));
+    }
+
     @Test
     void buildWorkspaceSwitchesProblemsToTheProjectAndReportsTheResult() throws Exception {
         fx.open("A.java", SOURCE);
