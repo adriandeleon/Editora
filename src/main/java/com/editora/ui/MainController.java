@@ -1447,12 +1447,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::isPathModified,
                 this::hasFileOpen,
                 this::projectMapPreviewContent);
+        panel.setEditorWindow(() -> stage); // the Map window opens even while the Project tool window is closed
+        panel.setMapSceneSetup(toolWindows::setUpSecondaryScene);
         panel.setRememberedMapState(config::getWorkspaceState, config::save);
         panel.setOpenFiles(() -> editorArea.tabs().stream()
                 .map(MainController::tabPath)
                 .filter(java.util.Objects::nonNull)
                 .toList());
         panel.setPrompt(this::promptText); // in-scene rename prompt
+        panel.setPromptIn(host -> (title, label, initial, onAccept) ->
+                promptTextIn(host, title, label, initial, onAccept)); // the same, over the Map window
         panel.setOnFocusEditor(toolWindows::focusEditor); // Escape on the Project Map
         panel.setDeletePreparation(projectDeletes);
         panel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
@@ -9797,6 +9801,12 @@ public class MainController implements com.editora.mcp.McpBridge {
      * the tool-window panels call (so they don't need the overlay host / keymap directly).
      */
     void promptText(String title, String label, @Nullable String initial, Consumer<String> onAccept) {
+        promptTextIn(overlayHost, title, label, initial, onAccept);
+    }
+
+    /** {@link #promptText} in another of this window's scenes (the Project Map window has its own host). */
+    void promptTextIn(
+            OverlayHost host, String title, String label, @Nullable String initial, Consumer<String> onAccept) {
         Label promptLabel = new Label(label);
         TextField field = new TextField(initial == null ? "" : initial);
         field.setPrefColumnCount(32);
@@ -9804,15 +9814,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         com.editora.command.TextInputKeymap.install(field, keymap);
         VBox body = new VBox(6, promptLabel, field);
         OverlayInput.show(
-                overlayHost,
-                title,
-                body,
-                field,
-                tr("dialog.ok"),
-                null,
-                () -> onAccept.accept(field.getText()),
-                null,
-                false);
+                host, title, body, field, tr("dialog.ok"), null, () -> onAccept.accept(field.getText()), null, false);
     }
 
     /** Opens the Debug Log window (captured java.util.logging output + uncaught exceptions). Backs the

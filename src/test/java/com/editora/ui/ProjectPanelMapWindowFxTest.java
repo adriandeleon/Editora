@@ -23,16 +23,18 @@ import org.junit.jupiter.api.io.TempDir;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The Project panel with the Map as its view: what the workspace remembers of it, the shared filter field
- * searching the map, the tree's row actions reaching the map's selection, and the panel's own entry points
- * (reveal, refresh, print) going to the map instead of the hidden tree.
+ * The Project Map in its own window: it never shows inside the Project panel, which keeps the tree; what the
+ * workspace remembers of it; its own search field; the tree's row actions reaching the map's selection; and the
+ * panel's entry points (refresh, print) reaching the map while its window is open.
  */
 @Tag("fx")
-class ProjectPanelMapModeFxTest {
+class ProjectPanelMapWindowFxTest {
 
     @BeforeAll
     static void boot() throws Exception {
@@ -62,14 +64,82 @@ class ProjectPanelMapModeFxTest {
         FxTestSupport.call(surface(r), "select", new Class<?>[] {Path.class}, path);
     }
 
-    /** Switches the panel to the Map and waits until it lists the project. */
+    /** Opens the Map's window and waits until it lists the project. */
     private static void openMap(ProjectPanelRig r) throws Exception {
-        FxTestSupport.runOnFx(r.panel::toggleMapView);
+        FxTestSupport.runOnFx(() -> r.panel.openMapWindow(true));
         r.await("the map to list the project", () -> shows(r, r.beta));
     }
 
     @Test
-    void theWorkspaceRemembersTheViewTheFlowAndTheNavigationOptions(@TempDir Path dir) throws Exception {
+    void theMapButtonOpensTheMapInItsOwnWindowAndThePanelKeepsTheTree(@TempDir Path dir) throws Exception {
+        try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
+            javafx.scene.control.Button button = FxTestSupport.field(r.panel, "mapButton");
+            FxTestSupport.runOnFx(button::fire);
+            r.await("the map to list the project", () -> shows(r, r.beta));
+
+            FxTestSupport.runOnFx(() -> {
+                javafx.stage.Stage window = r.panel.mapWindow().stage();
+                assertTrue(window != null && window.isShowing());
+                assertSame(window.getScene(), map(r).getScene(), "the Map is in its own window's scene");
+                assertFalse(window.getScene() == r.stage.getScene());
+                assertFalse(r.panel.getChildren().contains(map(r)), "never inside the Project panel");
+                assertTrue(r.panel.getChildren().contains(r.tree), "the panel goes on showing the tree");
+                assertNull(window.getOwner(), "not owned, so the editor window can come in front of it");
+                assertEquals(tr("project.map.windowTitle", dir.getFileName().toString()), window.getTitle());
+                assertEquals(
+                        r.stage.getScene().getStylesheets(),
+                        window.getScene().getStylesheets(),
+                        "styled as the editor window is");
+
+                button.fire(); // already open: brought forward, not a second window
+                assertSame(window, r.panel.mapWindow().stage());
+                assertTrue(window.isShowing());
+            });
+
+            // The tree goes on following the disk while the Map is open, as the Map does.
+            Path added = Files.writeString(dir.resolve("added.txt"), "new\n");
+            FxTestSupport.runOnFx(r.panel::refreshTree);
+            r.await("the new file on the map", () -> shows(r, added));
+            r.await("the new file in the tree", () -> r.rows().contains("added.txt"));
+        }
+    }
+
+    @Test
+    void theMapWindowClosesWithTheEditorWindowAndWithTheProjectButStaysRemembered(@TempDir Path dir) throws Exception {
+        try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
+            WorkspaceState state = new WorkspaceState();
+            AtomicInteger saves = new AtomicInteger();
+            FxTestSupport.runOnFx(() -> r.panel.setRememberedMapState(() -> state, saves::incrementAndGet));
+            openMap(r);
+            assertEquals(WorkspaceState.PROJECT_VIEW_MAP, state.getProjectViewMode(), "opening it is remembered");
+            assertEquals(
+                    4,
+                    FxTestSupport.callOnFx(
+                            () -> state.getProjectMapWindowBounds().size()),
+                    "so is where");
+
+            FxTestSupport.runOnFx(() -> r.panel.setRoot(null));
+            assertFalse(FxTestSupport.callOnFx(r.panel::isMapShowing), "no project, nothing to map");
+            assertEquals(WorkspaceState.PROJECT_VIEW_MAP, state.getProjectViewMode(), "not the user closing it");
+
+            FxTestSupport.runOnFx(() -> r.panel.setRoot(r.root));
+            openMap(r);
+            FxTestSupport.runOnFx(() -> r.stage.hide());
+            assertFalse(FxTestSupport.callOnFx(r.panel::isMapShowing), "the editor window took its Map with it");
+            assertEquals(WorkspaceState.PROJECT_VIEW_MAP, state.getProjectViewMode(), "to reopen next time");
+
+            FxTestSupport.runOnFx(() -> {
+                r.stage.show();
+                r.panel.openMapWindow(false);
+                r.panel.mapWindow().closeByUser(); // what its close button does
+                assertFalse(r.panel.isMapShowing());
+                assertEquals(WorkspaceState.PROJECT_VIEW_TREE, state.getProjectViewMode());
+            });
+        }
+    }
+
+    @Test
+    void theWorkspaceRemembersTheWindowTheFlowAndTheNavigationOptions(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             WorkspaceState state = new WorkspaceState();
             state.setProjectViewMode(WorkspaceState.PROJECT_VIEW_MAP);
@@ -79,7 +149,6 @@ class ProjectPanelMapModeFxTest {
             FxTestSupport.runOnFx(() -> {
                 r.panel.setRememberedMapState(() -> state, saves::incrementAndGet);
 
-                assertTrue(r.panel.isMapMode(), "the Map was the view last time");
                 ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(map(r), "flowFilter");
                 CheckMenuItem keepZoom = FxTestSupport.field(map(r), "keepZoomOnOpen");
                 assertEquals(ProjectMapView.FlowDirection.TOP_TO_BOTTOM, flow.getValue());
@@ -97,12 +166,15 @@ class ProjectPanelMapModeFxTest {
                 keepZoom.fire();
                 assertFalse(state.isProjectMapKeepZoom());
                 assertEquals(2, saves.get());
-
-                r.panel.toggleMapView();
-                assertFalse(r.panel.isMapMode());
+            });
+            r.await("the Map window, open last time, to open again", r.panel::isMapShowing);
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(2, saves.get(), "reopening what was open is not a change to store");
+                r.panel.mapWindow().closeByUser();
+                assertFalse(r.panel.isMapShowing());
                 assertEquals(WorkspaceState.PROJECT_VIEW_TREE, state.getProjectViewMode());
                 assertEquals(3, saves.get());
-                r.panel.toggleMapView();
+                r.panel.openMapWindow(true);
                 assertEquals(WorkspaceState.PROJECT_VIEW_MAP, state.getProjectViewMode());
                 assertEquals(4, saves.get());
             });
@@ -110,13 +182,13 @@ class ProjectPanelMapModeFxTest {
     }
 
     @Test
-    void aWorkspaceThatRemembersNothingStartsInTheTreeWithTheDefaultFlow(@TempDir Path dir) throws Exception {
+    void aWorkspaceThatRemembersNothingOpensNoMapWindowAndHasTheDefaultFlow(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             WorkspaceState state = new WorkspaceState();
             state.setProjectMapFlow("a flow this build has never heard of");
             FxTestSupport.runOnFx(() -> {
                 r.panel.setRememberedMapState(() -> state, () -> {});
-                assertFalse(r.panel.isMapMode());
+                assertFalse(r.panel.isMapShowing());
                 ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(map(r), "flowFilter");
                 assertEquals(ProjectMapView.DEFAULT_FLOW, flow.getValue());
 
@@ -129,15 +201,20 @@ class ProjectPanelMapModeFxTest {
     }
 
     @Test
-    void theFilterFieldSearchesTheMapForMatchesAnywhereInTheProject(@TempDir Path dir) throws Exception {
+    void theMapWindowsOwnFieldSearchesTheMapForMatchesAnywhereInTheProject(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             openMap(r);
             assertFalse(FxTestSupport.callOnFx(() -> shows(r, r.helper)), "two folders down: not on the map yet");
+            assertSame(
+                    r.panel.mapWindow().stage().getScene(),
+                    FxTestSupport.callOnFx(() -> r.mapFilter.getScene()),
+                    "the field is in the Map's window");
 
-            FxTestSupport.runOnFx(() -> r.filter.setText("helper"));
+            FxTestSupport.runOnFx(() -> r.mapFilter.setText("helper"));
             r.await("the match on the map", () -> shows(r, r.helper));
+            assertEquals("", FxTestSupport.callOnFx(() -> r.filter.getText()), "the tree's filter is its own");
 
-            FxTestSupport.runOnFx(() -> r.filter.clear());
+            FxTestSupport.runOnFx(() -> r.mapFilter.clear());
             r.await("the whole project again", () -> shows(r, r.alpha) && shows(r, r.beta));
         }
     }
@@ -175,13 +252,13 @@ class ProjectPanelMapModeFxTest {
     }
 
     @Test
-    void revealAndRefreshGoToTheMapWhileItIsTheView(@TempDir Path dir) throws Exception {
+    void revealGoesToTheTreeAndRefreshReachesTheOpenMap(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             openMap(r);
 
             FxTestSupport.runOnFx(() -> r.panel.revealPath(r.helper));
-            r.await("the revealed file to be selected on the map", () -> r.helper.equals(selection(r)));
-            assertEquals(null, FxTestSupport.callOnFx(r::selected), "the hidden tree's selection is not what moved");
+            r.await("the revealed file to be selected in the tree", () -> r.helper.equals(r.selected()));
+            assertNotEquals(r.helper, FxTestSupport.callOnFx(() -> selection(r)), "the Map's selection is its own");
 
             Path added = Files.writeString(dir.resolve("added.txt"), "new\n");
             int before = FxTestSupport.callOnFx(() -> r.panel.treeRefreshCountForTest);
@@ -198,7 +275,7 @@ class ProjectPanelMapModeFxTest {
             List<ProjectMapOutput> exported = new ArrayList<>();
             FxTestSupport.runOnFx(() -> {
                 r.panel.setMapOutputActions(printed::add, exported::add); // recorded: nothing reaches a printer
-                assertFalse(r.panel.isMapOutputAvailable(), "the Tree has nothing to print");
+                assertFalse(r.panel.isMapOutputAvailable(), "no Map window, nothing to print");
             });
             openMap(r);
             r.await("the map to have something to print", r.panel::isMapOutputAvailable);
@@ -210,7 +287,7 @@ class ProjectPanelMapModeFxTest {
 
             assertEquals(1, printed.size());
             assertEquals(1, exported.size());
-            FxTestSupport.runOnFx(r.panel::toggleMapView);
+            FxTestSupport.runOnFx(() -> r.panel.mapWindow().closeByUser());
             assertFalse(FxTestSupport.callOnFx(r.panel::isMapOutputAvailable));
         }
     }
@@ -233,7 +310,7 @@ class ProjectPanelMapModeFxTest {
     }
 
     @Test
-    void thePanelIsEnteredAtItsFilterAndAPanelWithNoProjectCanStillSwitchViews(@TempDir Path dir) throws Exception {
+    void thePanelIsEnteredAtItsFilterAndAPanelWithNoProjectOpensNoMap(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             FxTestSupport.runOnFx(() -> {
                 r.panel.focusFirstItem();
@@ -241,11 +318,9 @@ class ProjectPanelMapModeFxTest {
 
                 r.panel.setRoot(null);
                 r.panel.toggleMapView();
-                assertTrue(r.panel.isMapMode(), "the choice is remembered for when a project opens");
+                assertFalse(r.panel.isMapShowing(), "no project, nothing to map");
                 assertEquals(1, r.panel.getChildren().size(), "still just the 'no project' placeholder");
                 r.panel.revealPath(r.alpha); // no project: nothing to reveal in
-                r.panel.toggleMapView();
-                assertFalse(r.panel.isMapMode());
             });
         }
     }

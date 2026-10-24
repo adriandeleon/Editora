@@ -6,7 +6,6 @@ import java.util.List;
 
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ContextMenu;
-import javafx.scene.control.ToggleButton;
 import javafx.scene.control.TreeItem;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseButton;
@@ -138,57 +137,41 @@ class ProjectPanelTreeFxTest {
     }
 
     @Test
-    void inMapModeTheTreeKeysAreLeftAloneAndTheFilterFieldDrivesTheMap(@TempDir Path dir) throws Exception {
+    void thePanelsFieldDrivesTheTreeAndTheMapWindowsFieldDrivesTheMap(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             FxTestSupport.runOnFx(() -> {
-                // In Tree mode the filter's Map handler stays out of the way: FilterFieldNav moves the tree.
                 javafx.event.Event.fireEvent(r.filter, key(KeyCode.N, true));
-                assertEquals(r.root, r.selected(), "C-n from the filter moved the tree selection");
-
-                r.panel.toggleMapView();
-                assertTrue(r.panel.isMapMode());
-                r.select(r.alpha);
-                assertFalse(r.press(r.tree, KeyCode.ENTER, false).isConsumed(), "the Map owns its keys");
-                assertFalse(r.press(r.tree, KeyCode.F2, false).isConsumed());
-                assertTrue(r.opened.isEmpty() && r.prompts.isEmpty());
+                assertEquals(r.root, r.selected(), "C-n from the panel's filter moved the tree selection");
+                r.panel.openMapWindow(false);
+                assertTrue(r.panel.isMapShowing());
             });
             ProjectMapView map = FxTestSupport.field(r.panel, "mapView");
             javafx.scene.layout.Region surface = FxTestSupport.field(map, "surface");
             r.await("the map to list the project", () -> mapContains(surface, r.beta));
             FxTestSupport.runOnFx(() -> {
+                // With the Map open the tree keeps its own keys: it is still the panel's view.
+                r.select(r.alpha);
+                assertTrue(r.press(r.tree, KeyCode.ENTER, false).isConsumed(), "the tree opens its row");
+                assertEquals(List.of(r.alpha), r.opened);
+                r.opened.clear();
+
                 FxTestSupport.call(surface, "select", new Class<?>[] {Path.class}, r.alpha);
-                javafx.event.Event.fireEvent(r.filter, key(KeyCode.N, true));
-                assertEquals(r.beta, mapSelection(surface), "C-n in the filter field moves the Map's selection");
-                javafx.event.Event.fireEvent(r.filter, key(KeyCode.P, true));
+                javafx.event.Event.fireEvent(r.mapFilter, key(KeyCode.N, true));
+                assertEquals(r.beta, mapSelection(surface), "C-n in the Map's field moves the Map's selection");
+                javafx.event.Event.fireEvent(r.mapFilter, key(KeyCode.P, true));
                 assertEquals(r.alpha, mapSelection(surface), "and C-p moves it back");
-                javafx.event.Event.fireEvent(r.filter, key(KeyCode.N, false));
-                javafx.event.Event.fireEvent(r.filter, key(KeyCode.P, false));
+                javafx.event.Event.fireEvent(r.mapFilter, key(KeyCode.N, false));
+                javafx.event.Event.fireEvent(r.mapFilter, key(KeyCode.P, false));
                 assertEquals(r.alpha, mapSelection(surface), "bare letters are typed, not navigation");
-                r.select(r.beta); // the hidden tree must not be what Enter opens
+                r.select(r.beta); // the tree's selection is not what the Map's Enter opens
 
-                javafx.event.Event.fireEvent(r.filter, key(KeyCode.ENTER, false));
-                assertEquals(List.of(r.alpha), r.opened, "Enter in the filter opens the Map's selection");
+                javafx.event.Event.fireEvent(r.mapFilter, key(KeyCode.ENTER, false));
+                assertEquals(List.of(r.alpha), r.opened, "Enter in the Map's field opens the Map's selection");
 
-                javafx.event.Event.fireEvent(r.filter, key(KeyCode.DOWN, false));
+                javafx.event.Event.fireEvent(r.mapFilter, key(KeyCode.DOWN, false));
                 assertTrue(
-                        isWithin(r.stage.getScene().getFocusOwner(), map),
-                        "Down hands the keyboard to the Map, not to the hidden tree");
-
-                r.panel.toggleMapView();
-                assertFalse(r.panel.isMapMode());
-                assertEquals(r.tree, r.stage.getScene().getFocusOwner(), "toggling back focuses the tree");
-            });
-        }
-    }
-
-    @Test
-    void theSelectedViewModeCannotBeSwitchedOffByClickingItAgain(@TempDir Path dir) throws Exception {
-        try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
-            FxTestSupport.runOnFx(() -> {
-                ToggleButton treeMode = FxTestSupport.field(r.panel, "treeMode");
-                treeMode.setSelected(false);
-                assertTrue(treeMode.isSelected(), "one of Tree / Map is always chosen");
-                assertFalse(r.panel.isMapMode());
+                        isWithin(map.getScene().getFocusOwner(), map),
+                        "Down hands the keyboard to the Map, in its window");
             });
         }
     }

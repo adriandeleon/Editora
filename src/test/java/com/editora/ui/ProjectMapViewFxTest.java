@@ -121,20 +121,12 @@ class ProjectMapViewFxTest {
             FxTestSupport.runOnFx(() -> {
                 HBox filterBar = FxTestSupport.field(panel, "filterBar");
                 HBox modes = (HBox) filterBar.getChildren().getLast();
-                ToggleButton map = (ToggleButton) modes.getChildren().getLast();
+                Button map = (Button) modes.getChildren().getLast();
                 map.fire();
 
                 ProjectMapView mapView = FxTestSupport.field(panel, "mapView");
-                assertSame(mapView, panel.getChildren().getLast());
-
-                Scene scene = new Scene(panel, 760, 520);
-                scene.getStylesheets()
-                        .add(ProjectMapViewFxTest.class
-                                .getResource("/com/editora/styles/app.css")
-                                .toExternalForm());
-                panel.applyCss();
-                panel.resize(760, 520);
-                panel.layout();
+                assertFalse(panel.getChildren().contains(mapView), "the Map opens in its own window");
+                sizeMapWindow(panel, 760, 520);
 
                 Region surface = FxTestSupport.field(mapView, "surface");
                 assertTrue(surface.getWidth() > 0);
@@ -219,24 +211,14 @@ class ProjectMapViewFxTest {
             ProjectMapView mapView = FxTestSupport.field(panel, "mapView");
             Region surface = FxTestSupport.field(mapView, "surface");
             FxTestSupport.runOnFx(() -> {
-                HBox filterBar = FxTestSupport.field(panel, "filterBar");
-                HBox modes = (HBox) filterBar.getChildren().getLast();
-                ((ToggleButton) modes.getChildren().getLast()).fire();
+                panel.openMapWindow(false);
+                sizeMapWindow(panel, 900, 620);
 
-                Scene scene = new Scene(panel, 900, 620);
-                scene.getStylesheets()
-                        .add(ProjectMapViewFxTest.class
-                                .getResource("/com/editora/styles/app.css")
-                                .toExternalForm());
-                panel.resize(900, 620);
-                panel.applyCss();
-                panel.layout();
-
-                TextField filter = FxTestSupport.field(panel, "filterField");
+                TextField filter = FxTestSupport.field(panel, "mapFilterField");
                 filter.setText("FileResult.java");
-                FxTestSupport.<javafx.animation.PauseTransition>field(panel, "filterDebounce")
+                FxTestSupport.<javafx.animation.PauseTransition>field(panel, "mapFilterDebounce")
                         .stop();
-                FxTestSupport.invoke(panel, "rebuildBody");
+                FxTestSupport.invoke(panel, "searchMap");
             });
 
             Set<Path> expectedExpansion = Set.of(
@@ -257,11 +239,11 @@ class ProjectMapViewFxTest {
                         FxTestSupport.<Set<Path>>field(mapView, "expanded"),
                         "search expansion must not replace the user's manually opened branches");
 
-                TextField filter = FxTestSupport.field(panel, "filterField");
+                TextField filter = FxTestSupport.field(panel, "mapFilterField");
                 filter.clear();
-                FxTestSupport.<javafx.animation.PauseTransition>field(panel, "filterDebounce")
+                FxTestSupport.<javafx.animation.PauseTransition>field(panel, "mapFilterDebounce")
                         .stop();
-                FxTestSupport.invoke(panel, "rebuildBody");
+                FxTestSupport.invoke(panel, "searchMap");
             });
             waitForFx(() -> mapView.expandedDirectories()
                             .equals(Set.of(root.toAbsolutePath().normalize()))
@@ -269,6 +251,20 @@ class ProjectMapViewFxTest {
         } finally {
             FxTestSupport.runOnFx(panel::dispose);
         }
+    }
+
+    /** Styles and sizes the open Map window as the app would, and lays it out. */
+    private static void sizeMapWindow(ProjectPanel panel, double width, double height) {
+        javafx.stage.Stage window = panel.mapWindow().stage();
+        window.getScene()
+                .getStylesheets()
+                .add(ProjectMapViewFxTest.class
+                        .getResource("/com/editora/styles/app.css")
+                        .toExternalForm());
+        window.setWidth(width);
+        window.setHeight(height);
+        window.getScene().getRoot().applyCss();
+        window.getScene().getRoot().layout();
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {

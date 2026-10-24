@@ -1068,6 +1068,11 @@ public class ToolWindowManager {
         this.floatingSceneSetup = setup == null ? scene -> {} : setup;
     }
 
+    /** Gives another of this window's own stages (the Project Map's) what a floating tool window's gets. */
+    void setUpSecondaryScene(javafx.scene.Scene scene) {
+        floatingSceneSetup.accept(scene);
+    }
+
     /** Returns a floating tool window to its side, where it lands as that side's primary. */
     private void dockBack(ToolWindow tw) {
         javafx.stage.Stage stage = floatingStages.remove(tw);

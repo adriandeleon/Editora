@@ -1370,8 +1370,8 @@
     -fx-text-fill: -color-fg-default;
 }
 
-/* Project navigator mode switch. The tree remains the management surface; Map is the read-only spatial
-   Canvas view, so this control is intentionally small enough to live beside the shared search field. */
+/* The Project panel's Map button. The tree is the panel's management surface; the Map, the spatial Canvas
+   view, always opens in a window of its own, so the button is small enough to live beside the search field. */
 .project-view-modes {
     -fx-background-color: -color-bg-subtle;
     -fx-background-radius: 5;
@@ -1387,6 +1387,17 @@
 .project-view-toggle:selected {
     -fx-background-color: -color-accent-subtle;
     -fx-text-fill: -color-accent-fg;
+}
+.project-view-toggle:hover {
+    -fx-background-color: -color-neutral-muted;
+    -fx-text-fill: -color-fg-default;
+}
+
+/* The Project Map's own window: its search row over the Map, on the theme's surface (a new scene has none). */
+.project-map-window {
+    -fx-background-color: -color-bg-default;
+    -fx-padding: 6;
+    -fx-spacing: 4;
 }
 
 /* Canvas project map. Filters are native controls for focus/accessibility; only the hierarchy is painted. */

@@ -11,7 +11,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
-import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -342,7 +341,7 @@ class ProjectPanelGitFolderMenuFxTest {
     }
 
     @Test
-    void revealFolderForcesTreeModeClearsFilterAndSelectsFolder(@TempDir Path root) throws Exception {
+    void revealFolderClearsTheFilterAndSelectsTheFolderInTheTree(@TempDir Path root) throws Exception {
         Path parent = Files.createDirectory(root.resolve("src"));
         Path folder = Files.createDirectory(parent.resolve("main"));
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
@@ -352,18 +351,14 @@ class ProjectPanelGitFolderMenuFxTest {
         });
 
         FxTestSupport.runOnFx(() -> {
-            ToggleButton map = FxTestSupport.field(panel, "mapModeButton");
             TextField filter = FxTestSupport.field(panel, "filterField");
-            map.setSelected(true);
             filter.setText("something else");
             panel.revealPathInTree(folder);
         });
 
-        ToggleButton treeMode = FxTestSupport.field(panel, "treeMode");
         TextField filter = FxTestSupport.field(panel, "filterField");
         @SuppressWarnings("unchecked")
         TreeView<Path> tree = FxTestSupport.field(panel, "tree");
-        assertEquals(true, FxTestSupport.callOnFx(treeMode::isSelected));
         assertEquals("", FxTestSupport.callOnFx(filter::getText));
         awaitSelectedPath(tree, folder);
     }

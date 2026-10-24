@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Workspace schema v13: the Project panel's Tree/Map choice and the Map's navigation options. */
+/** Workspace schema v13: the Map's open state and navigation options; v24: where the Map's window was. */
 class WorkspaceStateProjectViewTest {
 
     @Test
@@ -83,6 +83,30 @@ class WorkspaceStateProjectViewTest {
         reopened.load();
 
         assertEquals(java.util.List.of("remote"), reopened.getWorkspaceState().getCollapsedBranchSections());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, reopened.getWorkspaceState().getSchemaVersion());
+    }
+
+    /** Schema v24: the Project Map window's bounds. */
+    @Test
+    void theMapWindowsBoundsSurviveARestartAndAnOlderFileHasNone(@TempDir Path dir) throws Exception {
+        Files.writeString(
+                dir.resolve("workspace-state.json"),
+                "{\"schemaVersion\":23,\"projectViewMode\":\"MAP\",\"debugWatches\":[\"kept\"]}");
+        ConfigManager first = new ConfigManager(dir);
+        first.load();
+        WorkspaceState state = first.getWorkspaceState();
+        assertEquals(java.util.List.of(), state.getProjectMapWindowBounds());
+        assertEquals(WorkspaceState.PROJECT_VIEW_MAP, state.getProjectViewMode(), "the Map reopens, in its window");
+        assertEquals(java.util.List.of("kept"), state.getDebugWatches());
+        state.setProjectMapWindowBounds(java.util.List.of(10.0, 20.0, 900.0, 600.0));
+        first.save();
+
+        ConfigManager reopened = new ConfigManager(dir);
+        reopened.load();
+
+        assertEquals(
+                java.util.List.of(10.0, 20.0, 900.0, 600.0),
+                reopened.getWorkspaceState().getProjectMapWindowBounds());
         assertEquals(WorkspaceState.SCHEMA_VERSION, reopened.getWorkspaceState().getSchemaVersion());
     }
 }

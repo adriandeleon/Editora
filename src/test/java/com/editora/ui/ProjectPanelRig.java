@@ -93,6 +93,9 @@ final class ProjectPanelRig implements AutoCloseable {
     ProjectPanel panel;
     TreeView<Path> tree;
     TextField filter;
+    /** The Map window's own search field. */
+    TextField mapFilter;
+
     Stage stage;
 
     ProjectPanelRig(Path dir) throws Exception {
@@ -115,12 +118,16 @@ final class ProjectPanelRig implements AutoCloseable {
                     open::contains);
             panel.setDeleteOperations(ops);
             panel.setOnStatus(status::add);
-            panel.setPrompt((title, label, initial, onAccept) -> {
+            OverlayInput.Prompt recorder = (title, label, initial, onAccept) -> {
                 prompts.add(title + "|" + initial);
                 promptAccept = onAccept;
-            });
+            };
+            panel.setPrompt(recorder);
+            panel.setMapPromptForTest(recorder); // the same record when the Map window asks
+            panel.setEditorWindow(() -> stage);
             tree = FxTestSupport.field(panel, "tree");
             filter = FxTestSupport.field(panel, "filterField");
+            mapFilter = FxTestSupport.field(panel, "mapFilterField");
             stage = new Stage();
             stage.setScene(new Scene(panel, 420, 600));
             stage.show();

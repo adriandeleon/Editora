@@ -21,7 +21,6 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
-import javafx.scene.control.ToggleButton;
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelReader;
 import javafx.scene.input.KeyCode;
@@ -639,7 +638,7 @@ class ProjectMapCardsFxTest {
     }
 
     @Test
-    void cardsKeepTheirPlaceAcrossATreeAndMapSwitch() throws Exception {
+    void cardsKeepTheirPlaceWhenTheMapWindowIsClosedAndReopened() throws Exception {
         root = projectRoot();
         Path file = Files.writeString(root.resolve("Kept.java"), "class Kept {}\n");
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
@@ -651,12 +650,13 @@ class ProjectMapCardsFxTest {
             ProjectMapView mapView = FxTestSupport.callOnFx(() -> FxTestSupport.field(panel, "mapView"));
             Region surface = FxTestSupport.callOnFx(() -> FxTestSupport.field(mapView, "surface"));
             FxTestSupport.runOnFx(() -> {
-                Scene scene = new Scene(panel, 1_200, 800);
-                scene.getStylesheets().add(stylesheet());
-                FxTestSupport.<ToggleButton>field(panel, "mapModeButton").fire();
-                panel.applyCss();
-                panel.resize(1_200, 800);
-                panel.layout();
+                panel.openMapWindow(false);
+                javafx.stage.Stage window = panel.mapWindow().stage();
+                window.getScene().getStylesheets().add(stylesheet());
+                window.setWidth(1_200);
+                window.setHeight(800);
+                window.getScene().getRoot().applyCss();
+                window.getScene().getRoot().layout();
             });
             waitFor(() -> hasRow(surface, file), "the map must list the project");
             double[] placed = new double[2];
@@ -669,12 +669,12 @@ class ProjectMapCardsFxTest {
                 placed[0] = card.getLayoutX();
                 placed[1] = card.getLayoutY();
 
-                FxTestSupport.<ToggleButton>field(panel, "treeMode").fire();
-                FxTestSupport.<ToggleButton>field(panel, "mapModeButton").fire();
+                panel.mapWindow().closeByUser();
+                panel.openMapWindow(false);
 
                 ProjectMapPreview after = FxTestSupport.<Map<Path, ProjectMapPreview>>field(mapView, "previews")
                         .get(file);
-                assertSame(card, after, "the card is still open after Tree and back");
+                assertSame(card, after, "the card is still open after the window closed and reopened");
                 assertEquals(placed[0], after.getLayoutX(), 0.001);
                 assertEquals(placed[1], after.getLayoutY(), 0.001);
             });
