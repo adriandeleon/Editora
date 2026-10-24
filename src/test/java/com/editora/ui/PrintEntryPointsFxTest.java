@@ -317,7 +317,7 @@ class PrintEntryPointsFxTest {
         try {
             Map<String, Boolean> tree = verdicts(fx.controller, "projectMap.print", "projectMap.exportPdf");
             assertEquals(2, tree.size(), "both are in the palette");
-            assertFalse(tree.get("projectMap.print"), "the Project tool window shows the tree");
+            assertFalse(tree.get("projectMap.print"), "the Map window is not open");
             assertFalse(tree.get("projectMap.exportPdf"));
             assertEquals(tr("palette.disabled.needsProjectMap"), reason(fx.controller, "projectMap.print"));
             run(fx.controller, "projectMap.exportPdf");
@@ -326,12 +326,8 @@ class PrintEntryPointsFxTest {
             ProjectPanel panel = FxTestSupport.field(fx.controller, "projectPanel");
             FxTestSupport.runOnFx(() -> {
                 panel.setRoot(project);
-                FxTestSupport.<javafx.scene.control.ToggleButton>field(panel, "mapModeButton")
-                        .fire();
+                panel.openMapWindow(false); // its own window: the Project tool window need not be open
             });
-            if (!FxTestSupport.callOnFx(() -> panel.getScene() != null)) {
-                run(fx.controller, "tool.project"); // the Project tool window was closed in this layout
-            }
             for (int i = 0; i < 200 && !FxTestSupport.callOnFx(panel::isMapOutputAvailable); i++) {
                 Thread.sleep(50);
             }
@@ -344,7 +340,7 @@ class PrintEntryPointsFxTest {
             FxTestSupport.runOnFx(() -> {
                 // The map draws nothing into a panel that has no size yet, and then has nothing to export:
                 // lay the window out as a shown one is (the headless stage may not have done it).
-                javafx.scene.Parent root = panel.getScene().getRoot();
+                javafx.scene.Parent root = panel.mapWindow().stage().getScene().getRoot();
                 root.resize(1500, 800);
                 root.applyCss();
                 root.layout();

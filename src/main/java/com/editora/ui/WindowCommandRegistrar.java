@@ -70,6 +70,9 @@ final class WindowCommandRegistrar {
          *  Project tool window builds it. */
         ProjectPanel projectPanel();
 
+        /** The Project panel, built now if it has not been — without opening the Project tool window. */
+        ProjectPanel builtProjectPanel();
+
         @Nullable
         WindowManager windowManager();
 
@@ -456,11 +459,16 @@ final class WindowCommandRegistrar {
                 host.deleteProject();
             }
         }));
-        // The Tree/Map switch of the Project tool window, which this also opens so the change is on screen.
+        // The Project Map's own window: opened (or brought forward), or closed when it is the window in use.
         host.registry().register(Command.of("project.toggleMapView", () -> {
-            if (host.projectsEnabled()) {
-                host.toolWindows().open(host.projectToolWindow());
-                host.projectPanel().toggleMapView();
+            if (!host.projectsEnabled()) {
+                return;
+            }
+            ProjectPanel panel = host.builtProjectPanel(); // the Map's window needs no Project tool window
+            if (panel.isMapShowing() || panel.getRoot() != null) {
+                panel.toggleMapView();
+            } else {
+                host.setStatus(tr("status.projectMap.noProject"));
             }
         }));
         host.registry().register(Command.of("file.save", host::onSave));

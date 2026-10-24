@@ -93,6 +93,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public ProjectPanel builtProjectPanel() {
+        return mc.projectPanel();
+    }
+
+    @Override
     public @Nullable WindowManager windowManager() {
         return mc.windowManager;
     }

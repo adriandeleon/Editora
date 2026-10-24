@@ -374,7 +374,10 @@ public enum ConfigSchema {
                     // configuration runs on this machine)
                     Map.entry(21, ConfigMigrations::identity),
                     // v22→23: + buildCustomHistory (additive; absent means an empty "Run custom…" prompt)
-                    Map.entry(22, ConfigMigrations::identity))),
+                    Map.entry(22, ConfigMigrations::identity),
+                    // v23→24: + projectMapWindowBounds (additive; absent means a large window centred on the
+                    // editor). projectViewMode keeps its values: "MAP" now reopens the Map's own window.
+                    Map.entry(23, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

@@ -66,8 +66,13 @@ public class WorkspaceState {
      *
      * <p>v22 → v23 added {@code buildCustomHistory} (the last freeform build-tool task strings, per tool). Additive;
      * absent means an empty prompt, as before.
+     *
+     * <p>v23 → v24 added {@code projectMapWindowBounds}: the Project Map now always opens in a window of its own,
+     * and this is where that window was. Additive; absent means a large window centred on the editor window.
+     * {@code projectViewMode} keeps its values, but "MAP" now means the Map window was open — so a workspace that
+     * last showed the Map shows it again, in its window.
      */
-    public static final int SCHEMA_VERSION = 23;
+    public static final int SCHEMA_VERSION = 24;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -166,8 +171,13 @@ public class WorkspaceState {
     private String selectedRunConfig = "";
     /** Last Project Map flow direction; blank/unknown values fall back to left-to-right. Additive in v11. */
     private String projectMapFlow = DEFAULT_PROJECT_MAP_FLOW;
-    /** Which Project view this workspace last showed: "TREE" or "MAP". Additive in v13; missing means Tree. */
+    /**
+     * "MAP" while the Project Map's window is open, else "TREE" (v24; before it, which view the Project tool
+     * window showed). Additive in v13; missing means Tree.
+     */
     private String projectViewMode = PROJECT_VIEW_TREE;
+    /** Where the Project Map's window was: x, y, width, height. Additive in v24; empty means not yet placed. */
+    private List<Double> projectMapWindowBounds = new ArrayList<>();
     /** Project Map "Keep current zoom" when a column opens. Additive in v13; on by default. */
     private boolean projectMapKeepZoom = true;
     /** Project Map "Focus new column". Additive in v13; on by default. */
@@ -534,6 +544,15 @@ public class WorkspaceState {
 
     public void setProjectViewMode(String projectViewMode) {
         this.projectViewMode = PROJECT_VIEW_MAP.equals(projectViewMode) ? PROJECT_VIEW_MAP : PROJECT_VIEW_TREE;
+    }
+
+    public List<Double> getProjectMapWindowBounds() {
+        return projectMapWindowBounds;
+    }
+
+    public void setProjectMapWindowBounds(List<Double> projectMapWindowBounds) {
+        this.projectMapWindowBounds =
+                projectMapWindowBounds == null ? new ArrayList<>() : new ArrayList<>(projectMapWindowBounds);
     }
 
     public boolean isProjectMapKeepZoom() {

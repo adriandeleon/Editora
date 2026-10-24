@@ -24,7 +24,6 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
-import javafx.scene.control.ToggleButton;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -729,9 +728,12 @@ class ProjectMapInputFxTest {
                 registry.run("tool.project");
             }
             panel.setRoot(project);
-            FxTestSupport.<ToggleButton>field(panel, "mapModeButton").setSelected(true);
+            panel.openMapWindow(true);
         });
-        assertTrue(FxTestSupport.callOnFx(() -> surface.getScene() != null), "the Project tool window shows the map");
+        assertTrue(
+                FxTestSupport.callOnFx(
+                        () -> surface.getScene() == panel.mapWindow().stage().getScene()),
+                "the Map shows in its own window");
         Scene scene = FxTestSupport.callOnFx(surface::getScene);
         MapWindow w = new MapWindow(panel, view, surface, scene, tabs, project, a, readme);
         waitForFx(() -> contains(surface, readme));
@@ -853,7 +855,9 @@ class ProjectMapInputFxTest {
         MapWindow w = window("vscode"); // F2 is lsp.rename there
         List<String> prompts = new ArrayList<>();
         FxTestSupport.runOnFx(() -> {
-            w.panel().setPrompt((title, label, initial, onAccept) -> prompts.add(initial));
+            OverlayInput.Prompt recorder = (title, label, initial, onAccept) -> prompts.add(initial);
+            w.panel().setPrompt(recorder);
+            w.panel().setMapPromptForTest(recorder);
             select(w.surface(), w.file(2));
             KeyEvent f2 = press(w.surface(), KeyCode.F2);
             assertEquals(List.of("f2.txt"), prompts, "the file rename prompt, pre-filled with the name");
@@ -874,7 +878,7 @@ class ProjectMapInputFxTest {
     void ctrlNAndCtrlPInTheSharedSearchFieldMoveTheMapSelectionInAGuiKeymap() throws Exception {
         MapWindow w = window("cua"); // Ctrl+N is New File, Ctrl+P is Print
         FxTestSupport.runOnFx(() -> {
-            TextField search = FxTestSupport.field(w.panel(), "filterField");
+            TextField search = FxTestSupport.field(w.panel(), "mapFilterField");
             int tabs = w.tabs().getTabs().size();
             select(w.surface(), w.file(1));
             search.requestFocus();
@@ -898,24 +902,25 @@ class ProjectMapInputFxTest {
             return b;
         });
         MapWindow w = window("emacs");
-        TextField search = FxTestSupport.field(w.panel(), "filterField");
+        TextField search = FxTestSupport.field(w.panel(), "mapFilterField");
         FxTestSupport.runOnFx(() -> {
             search.setText("f1");
-            FxTestSupport.<javafx.animation.PauseTransition>field(w.panel(), "filterDebounce")
+            FxTestSupport.<javafx.animation.PauseTransition>field(w.panel(), "mapFilterDebounce")
                     .stop();
-            FxTestSupport.invoke(w.panel(), "rebuildBody");
+            FxTestSupport.invoke(w.panel(), "searchMap");
             w.surface().requestFocus();
             press(w.surface(), KeyCode.ESCAPE);
             assertEquals("", search.getText(), "the first Escape clears the search");
             assertSame(w.surface(), w.scene().getFocusOwner());
-            FxTestSupport.<javafx.animation.PauseTransition>field(w.panel(), "filterDebounce")
+            FxTestSupport.<javafx.animation.PauseTransition>field(w.panel(), "mapFilterDebounce")
                     .stop();
-            FxTestSupport.invoke(w.panel(), "rebuildBody");
+            FxTestSupport.invoke(w.panel(), "searchMap");
 
             press(w.surface(), KeyCode.ESCAPE);
-            Node owner = w.scene().getFocusOwner();
+            Node owner = buffer.getArea().getScene().getFocusOwner();
             assertTrue(
-                    owner != null && within(owner, buffer.getArea()), "the next one returns to the editor: " + owner);
+                    owner != null && within(owner, buffer.getArea()),
+                    "the next one returns to the editor, in the editor window: " + owner);
         });
     }
 

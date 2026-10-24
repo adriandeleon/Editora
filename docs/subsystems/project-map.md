@@ -1,17 +1,28 @@
 # Project Map canvas navigator
 
-The Project Map is the spatial file navigator in the Project tool window. It complements the
-traditional tree; it does not replace the tree or introduce a second file-management model. The
-Tree/Map switch chooses the presentation, while both modes share the active project root, search
-field, filesystem watcher, file-opening callback, editor and Git state, ordering, icons, and context
-menu actions.
+The Project Map is the spatial file navigator of the Project tool window. It complements the
+traditional tree; it does not replace the tree or introduce a second file-management model. The Map
+always opens in a window of its own (`ProjectMapWindow`), never inside the Project tool window, which
+keeps showing the tree: a canvas of columns wants the room of a document, not of a side panel. Both
+share the active project root, filesystem watcher, file-opening callback, editor and Git state,
+ordering, icons, and context menu actions; each has its own search field.
 
-The switch is two focus-traversable toggles beside the search field, and the `project.toggleMapView`
-command (no default key) flips it from the palette, opening the Project tool window if needed. The
-choice is remembered per workspace. The Map lists nothing until it is first shown, and reloads every
-time it is entered, so a window that stays on the Tree costs no listing and no loader thread, and
-changes made while the Tree was showing are picked up. Returning to the Tree puts the same tree back —
-expanded folders and selection included — and only re-lists it.
+The focus-traversable **Map** button beside the Project search field opens the window, or brings it
+forward when it is open already; the `project.toggleMapView` command (no default key) does the same from
+the palette — even with the Project tool window closed — and closes the window when it is the one in use.
+The window is *not* owned by the editor window: an owned stage stays above its owner for good, so a file
+opened from a large Map would land behind it. Unowned, the two stack like any other windows, and the Map
+window closes itself when its editor window hides or the project closes. Whether it was open, and where,
+is remembered per workspace, and a workspace that last had it open reopens it (without taking focus from
+the editor). The Map lists nothing until its window is first opened, and reloads every time it opens, so a
+window that never opens the Map costs no listing and no loader thread.
+
+Work started in the Map window that happens in the editor window brings the editor window forward:
+opening a file (a row, Enter, a preview card's Open), and every context-menu action except Rename, New
+Folder, Undo Move, Delete and Reveal, which stay over the Map — the name prompts in the Map window's own
+overlay host, the confirmations owned by its stage. Escape with nothing left to dismiss returns to the
+editor, in the editor window. The window copies the editor window's stylesheets and icons, and gets the
+editor window's key dispatcher, as a floating tool window does.
 
 The implementation is deliberately hybrid. Native JavaFX controls handle text entry, checkboxes,
 buttons, focus, accessibility, and popups. A focusable `Canvas` draws the hierarchy, connectors,
@@ -140,7 +151,7 @@ the target file.
 | `Alt-Left` / `Alt-Right` | Move backward or forward through map selection history |
 | `/` | Focus and select the selected column's filter text |
 | Shortcut + `0` | Fit all visible columns |
-| `Escape` | Close the open preview and note cards; otherwise clear the Project search query; otherwise return focus to the editor |
+| `Escape` | Close the open preview and note cards; otherwise clear the Map's search query; otherwise return focus to the editor (in the editor window) |
 
 Single sibling steps (perpendicular arrows, `Ctrl-N` / `Ctrl-P`) wrap around the column; page moves do
 not. `/` is matched by the character typed rather than the key, so it works where the slash is a
@@ -195,7 +206,8 @@ root and the last two crumbs.
 
 ## Filters, ordering, and state
 
-The Project tool window's search field becomes the map's global fuzzy name query. It combines with:
+The search field at the top of the Map window is the map's global fuzzy name query (the Project tool
+window's own field filters the tree only). It combines with:
 
 - status chips for files that are open, modified, Git-changed, bookmarked, or have Personal Notes;
 - a type selector for source, markup, configuration, other files, or all files;
@@ -328,10 +340,14 @@ flowchart LR
 
 Responsibilities are split as follows:
 
-- `ProjectPanel` owns the Tree/Map mode and its persistence, shared search field, filesystem watcher,
-  root, editor state, Git state, open-file action, and construction of the traditional context menu. It
-  tells the map when it is on screen (`setActive`), forwards the hidden-files setting, and reports in-app
-  renames and moves (`pathRenamed`).
+- `ProjectPanel` owns the Map (it builds the Map window's content: search row and map), the window's
+  open state and its persistence, the filesystem watcher (watching the tree's and the map's open folders
+  together), root, editor state, Git state, open-file action, and construction of the traditional context
+  menu. It tells the map when its window is open (`setActive`), forwards the hidden-files setting, and
+  reports in-app renames and moves (`pathRenamed`).
+- `ProjectMapWindow` owns only the stage: building it, copying the editor window's look, placement from
+  the remembered bounds (or large and centred on the editor window), closing with the editor window, and
+  telling a close by the user (remembered) from one by the editor window or the project (not).
 - `ProjectMapView` owns expansion (manual and per-search), row limits, selection history, breadcrumbs,
   global controls, async reloads, the deferred print/PDF job, and the bounded collection of floating
   cards: opening, placement, eviction, refresh scheduling, and closing the cards of a folder that is no
@@ -414,8 +430,10 @@ Changing roots clears expansion, selection history, per-column filters, position
 preview state. The view remembers the open branches, row limits and selection of the last eight local
 folders it showed, so in the window with no project — where the root follows the active tab's folder —
 switching back to a folder restores its map instead of starting from the root; zoom and column positions
-are not carried over. Workspace state (schema v13) persists the Tree/Map choice, the flow, and the two
-navigation options; expansion, zoom and the status/type filters are not persisted.
+are not carried over. Workspace state persists whether the Map window is open (`projectViewMode`, schema
+v13 — "MAP" meant the Map was the panel's view before v24, and means its window is open since), the
+window's bounds (`projectMapWindowBounds`, v24), the flow, and the two navigation options; expansion, zoom
+and the status/type filters are not persisted.
 
 ## Tests and change checklist
 
@@ -425,7 +443,10 @@ The focused coverage lives in:
   expansion, sorting, and column filtering;
 - `ProjectMapModelLoadingTest` for the per-directory and overall limits, "+N more" and stub rows,
   pinned paths, cancellation, expansion pruning, rename remapping, and type classification;
-- `ProjectMapDataFxTest` for deferred and re-entered loading, the Tree round trip, reloads during a
+- `ProjectPanelMapWindowFxTest` for the separate window: never in the panel, unowned, styled like the
+  editor window, closing with the editor window and the project, what the workspace remembers and
+  reopens, the window's own search field, row actions, refresh and print while it is open;
+- `ProjectMapDataFxTest` for deferred and re-opened loading, the tree kept while the Map is open, reloads during a
   search, search expansion and its status message, reveal, the hidden-files setting, chip emphasis of
   collapsed folders, folder markers, remembered mode and options, and per-folder memory;
 - `ProjectMapInputFxTest` for keyboard and pointer input: real key events fired through a wired window
@@ -436,8 +457,8 @@ The focused coverage lives in:
 - `ProjectMapCardsFxTest` for whole-map output beyond the viewport in a light palette, deferred PDF
   rendering, card placement in narrow panels without panning, late-load growth, decoding and CRLF
   highlighting, buffer/disk refresh and missing files, note-card saving and refresh, Escape/Tab, the
-  shared card limit, closing cards on collapse, and keeping cards across a Tree/Map switch;
-- `ProjectMapViewFxTest` for Tree/Map integration, native icon rasterization, open markers,
+  shared card limit, closing cards on collapse, and keeping cards when the Map window is closed and reopened;
+- `ProjectMapViewFxTest` for the Map button and window integration, native icon rasterization, open markers,
   tooltips, single-click expansion, multiple independent previews, shared context menus and dismissal, text-field
   key ownership, content-sized columns, hidden toggles, directional layouts and arrow semantics,
   complete-map output snapshots and live viewport restoration,

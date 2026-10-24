@@ -79,8 +79,8 @@ class ProjectMapDataFxTest {
             Path added = Files.writeString(root.resolve("ADDED.md"), "new");
             FxTestSupport.runOnFx(() -> {
                 long before = generation.get();
-                FxTestSupport.<ToggleButton>field(panel, "mapModeButton").setSelected(true);
-                assertTrue(generation.get() > before, "entering Map mode must reload it");
+                panel.openMapWindow(false);
+                assertTrue(generation.get() > before, "reopening the Map window must reload it");
             });
             waitForFx(() -> contains(surface, added) && !contains(surface, readme));
         } finally {
@@ -106,7 +106,7 @@ class ProjectMapDataFxTest {
             showMap(panel, false);
 
             FxTestSupport.runOnFx(() -> {
-                assertSame(tree, panel.getChildren().getLast());
+                assertSame(tree, panel.getChildren().getLast(), "the tree never left the panel");
                 assertSame(rootItem, tree.getRoot(), "the tree must not be rebuilt from the root");
                 assertTrue(child(tree.getRoot(), src).isExpanded());
                 assertEquals(file, tree.getSelectionModel().getSelectedItem().getValue());
@@ -129,10 +129,10 @@ class ProjectMapDataFxTest {
             FxTestSupport.runOnFx(() -> panel.setRoot(root));
             showMap(panel, true);
             FxTestSupport.runOnFx(() -> {
-                FxTestSupport.<TextField>field(panel, "filterField").setText("keep");
-                FxTestSupport.<javafx.animation.PauseTransition>field(panel, "filterDebounce")
+                FxTestSupport.<TextField>field(panel, "mapFilterField").setText("keep");
+                FxTestSupport.<javafx.animation.PauseTransition>field(panel, "mapFilterDebounce")
                         .stop();
-                FxTestSupport.invoke(panel, "rebuildBody");
+                FxTestSupport.invoke(panel, "searchMap");
             });
             waitForFx(() -> contains(surface, keep) && contains(surface, other));
 
@@ -266,7 +266,7 @@ class ProjectMapDataFxTest {
     }
 
     @Test
-    void treeOrMapAndTheNavigationOptionsAreRememberedPerWorkspace() throws Exception {
+    void theMapWindowAndTheNavigationOptionsAreRememberedPerWorkspace() throws Exception {
         Files.createDirectory(root.resolve("src"));
         WorkspaceState state = new WorkspaceState();
         state.setProjectViewMode(WorkspaceState.PROJECT_VIEW_MAP);
@@ -280,20 +280,20 @@ class ProjectMapDataFxTest {
                 panel.setRememberedMapState(() -> state, saves::incrementAndGet);
                 panel.setRoot(root);
 
-                assertTrue(panel.isMapMode(), "the workspace last showed the Map");
-                assertSame(mapView, panel.getChildren().getLast());
+                assertFalse(panel.getChildren().contains(mapView), "the Map is never inside the panel");
                 assertFalse(FxTestSupport.<javafx.scene.control.CheckMenuItem>field(mapView, "keepZoomOnOpen")
                         .isSelected());
                 assertFalse((boolean) FxTestSupport.field(surface, "keepZoomOnColumnOpen"));
                 assertTrue((boolean) FxTestSupport.field(surface, "focusNewColumn"));
                 assertEquals(0, saves.get(), "restoring is not a change");
 
-                panel.toggleMapView();
-                assertFalse(panel.isMapMode());
+                panel.openMapWindow(false);
+                panel.mapWindow().closeByUser();
+                assertFalse(panel.isMapShowing());
                 assertEquals(WorkspaceState.PROJECT_VIEW_TREE, state.getProjectViewMode());
-                assertEquals(1, saves.get());
+                assertEquals(2, saves.get(), "opened, then closed");
 
-                panel.toggleMapView();
+                panel.openMapWindow(false);
                 assertEquals(WorkspaceState.PROJECT_VIEW_MAP, state.getProjectViewMode());
 
                 FxTestSupport.<javafx.scene.control.CheckMenuItem>field(mapView, "focusNewColumn")
@@ -304,10 +304,9 @@ class ProjectMapDataFxTest {
                 assertTrue(state.isProjectMapKeepZoom());
 
                 assertTrue(
-                        FxTestSupport.<ToggleButton>field(panel, "mapModeButton")
+                        FxTestSupport.<javafx.scene.control.Button>field(panel, "mapButton")
                                 .isFocusTraversable(),
-                        "the Tree/Map switch must be reachable with Tab");
-                assertTrue(FxTestSupport.<ToggleButton>field(panel, "treeMode").isFocusTraversable());
+                        "the Map button must be reachable with Tab");
             });
         } finally {
             FxTestSupport.runOnFx(panel::dispose);
@@ -699,9 +698,15 @@ class ProjectMapDataFxTest {
         });
     }
 
+    /** Opens the Map's window, or closes it as its close button does. */
     private static void showMap(ProjectPanel panel, boolean map) throws Exception {
-        FxTestSupport.runOnFx(() -> FxTestSupport.<ToggleButton>field(panel, map ? "mapModeButton" : "treeMode")
-                .setSelected(true));
+        FxTestSupport.runOnFx(() -> {
+            if (map) {
+                panel.openMapWindow(false);
+            } else {
+                panel.mapWindow().closeByUser();
+            }
+        });
     }
 
     private static boolean contains(Region surface, Path path) {

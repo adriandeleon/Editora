@@ -115,13 +115,10 @@ class RemoteReadClosedFxTest {
             awaitEchoEnding(async, fx, closed);
             assertEquals(tr("status.remote.unreadable", com.editora.vfs.Vfs.displayLabel(root), closed), echo(fx));
 
-            // Project map: the same folder, drawn as a map.
+            // Project map: the same folder, drawn as a map in its window (the tree above already listed it).
             FxTestSupport.runOnFx(() -> {
-                FxTestSupport.<javafx.scene.control.ToggleButton>field(panel, "mapModeButton")
-                        .setSelected(true);
-                panel.setRoot(null);
                 FxTestSupport.call(fx.controller, "setStatus", new Class<?>[] {String.class}, "");
-                panel.setRoot(root);
+                panel.openMapWindow(false);
             });
             awaitEchoEnding(async, fx, closed);
 
