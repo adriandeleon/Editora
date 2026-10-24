@@ -861,7 +861,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         area.moveTo(line, 0);
         // Anchor the target at the top of the usable viewport, below any sticky-scroll rows, in this pulse (a
         // widen just swapped the text in: that one waits for the layout).
-        targetBuffer.revealJumpTarget(area, line, widened);
+        targetBuffer.jumps().reveal(area, line, widened);
         if (focusEditor) {
             area.requestFocus();
         }

@@ -753,7 +753,7 @@ final class NavigationCoordinator {
         CodeArea area = host.activeArea();
         if (area != null) {
             area.moveTo(line, 0);
-            buffer.revealJumpTargetIfHidden(area, line);
+            buffer.jumps().revealIfHidden(area, line);
         }
     }
 
@@ -833,7 +833,7 @@ final class NavigationCoordinator {
                 if (buffer != null) {
                     buffer.getFoldManager().unfoldContaining(targetLine);
                     area.moveTo(targetLine, targetColumn);
-                    buffer.revealJumpTargetIfHidden(area, targetLine);
+                    buffer.jumps().revealIfHidden(area, targetLine);
                 } else {
                     host.editing().moveAndFollow(a -> a.moveTo(targetLine, targetColumn));
                 }

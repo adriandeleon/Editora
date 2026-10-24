@@ -876,7 +876,7 @@ final class WindowSessionCoordinator {
         }
         // At the top, below any sticky-scroll rows (the line under them was hidden), in the frame that moves the
         // caret when the editor is already on screen.
-        buffer.revealJumpTarget(area, targetLine, widened);
+        buffer.jumps().reveal(area, targetLine, widened);
         if (focusEditor) {
             area.requestFocus();
         }
