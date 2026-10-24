@@ -38,7 +38,7 @@ another adapter the same way means its members of `MainController` become packag
 | `WindowSessionCoordinator` | Session restoration/persistence and command-line startup |
 | `TestNavigationCoordinator` | Test/stack navigation and test/main-method gutter gates |
 | `InstallPromptCoordinator` | Language-support install prompts and server picker |
-| `UpdateCoordinator` | The release check: the automatic one (`UpdateCheckScheduler`: once per session and per day, a few seconds after the first painted frame), the manual "Check for Updates", the status-bar notice and the download page; the newest release found is shared across windows |
+| `UpdateCoordinator` | The release check: the automatic one (`UpdateCheckScheduler`: once per session and per day, a few seconds after the first painted frame), the manual "Check for Updates", the status-bar notice, the download page and the About panel's update block; the last answer (newest release, its page, when) is kept in the shared preferences, so every window and the next launch go on it until the next check |
 
 The existing service coordinators continue to use `CoordinatorHost` and the shared `Services`
 adapter. Feature-specific hosts can refer to those owners when they need their capabilities. Keep

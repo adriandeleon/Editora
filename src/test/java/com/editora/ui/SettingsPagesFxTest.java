@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +32,7 @@ import com.editora.config.Settings;
 import com.editora.markdown.MarkdownLint;
 import com.editora.plugin.PluginManager;
 import com.editora.todo.TodoPattern;
-import com.editora.update.ReleaseInfo;
+import com.editora.update.UpdateStatus;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -806,7 +807,7 @@ class SettingsPagesFxTest {
             java.util.function.Consumer<Path> openFile,
             java.util.function.Consumer<String> openUrl,
             String commit,
-            ReleaseInfo update,
+            SettingsWindow.AboutUpdates updates,
             java.util.function.Consumer<DialogPane> inside) {
         Throwable[] failure = new Throwable[1];
         javafx.application.Platform.runLater(() -> {
@@ -826,10 +827,87 @@ class SettingsPagesFxTest {
                 }
             }
         });
-        SettingsWindow.showAbout(rig.owner, settingsFile, openFile, openUrl, commit, update);
+        SettingsWindow.showAbout(rig.owner, settingsFile, openFile, openUrl, commit, updates);
         if (failure[0] != null) {
             throw new AssertionError(failure[0]);
         }
+    }
+
+    /** When the About tests' last update check answered. */
+    private static final long CHECKED_AT = 1_792_800_000_000L;
+
+    /** An update check that last answered with {@code status} and never checks again. */
+    private static SettingsWindow.AboutUpdates updates(UpdateStatus status) {
+        return new SettingsWindow.AboutUpdates() {
+            @Override
+            public UpdateStatus status() {
+                return status;
+            }
+
+            @Override
+            public void checkNow(java.util.function.Consumer<String> done) {
+                throw new AssertionError("not asked to check");
+            }
+        };
+    }
+
+    private static String lastChecked(long epochMs) {
+        return tr(
+                "about.lastChecked",
+                HistoryRowText.fullText(epochMs, ZoneId.systemDefault(), FileHistoryPanel.locale()));
+    }
+
+    @Test
+    void theAboutPanelSaysItIsUpToDateAndWhenItLastChecked() throws Exception {
+        FxTestSupport.runOnFx(() -> about(
+                rig.config.getSettingsFile(),
+                null,
+                null,
+                "",
+                updates(new UpdateStatus(AppInfo.VERSION, "", CHECKED_AT)),
+                pane -> {
+                    List<String> texts = SettingsRig.texts(pane);
+                    assertTrue(texts.contains(tr("about.upToDate")), texts.toString());
+                    assertTrue(texts.contains(lastChecked(CHECKED_AT)), texts.toString());
+                    assertFalse(texts.stream().anyMatch(t -> t.startsWith(tr("about.updateAvailable"))));
+                }));
+    }
+
+    @Test
+    void beforeAnyCheckTheAboutPanelClaimsNothingAndCheckNowShowsTheAnswer() throws Exception {
+        UpdateStatus[] status = {UpdateStatus.NONE};
+        String[] answer = {"offline"};
+        SettingsWindow.AboutUpdates live = new SettingsWindow.AboutUpdates() {
+            @Override
+            public UpdateStatus status() {
+                return status[0];
+            }
+
+            @Override
+            public void checkNow(java.util.function.Consumer<String> done) {
+                if (answer[0] == null) {
+                    status[0] = new UpdateStatus("9.9.9", "", CHECKED_AT);
+                }
+                done.accept(answer[0]);
+            }
+        };
+        FxTestSupport.runOnFx(() -> about(rig.config.getSettingsFile(), null, null, "", live, pane -> {
+            List<String> texts = SettingsRig.texts(pane);
+            assertTrue(texts.contains(tr("about.notChecked")), texts.toString());
+            assertFalse(texts.contains(tr("about.upToDate")), "no answer yet: not \"up to date\"");
+
+            SettingsRig.button(pane, tr("about.checkNow")).fire();
+            texts = SettingsRig.texts(pane);
+            assertTrue(texts.contains(tr("status.update.failed", "offline")), texts.toString());
+            assertTrue(texts.contains(tr("about.notChecked")), "a failed check leaves the last answer");
+
+            answer[0] = null;
+            SettingsRig.button(pane, tr("about.checkNow")).fire();
+            texts = SettingsRig.texts(pane);
+            assertTrue(texts.contains(tr("about.updateAvailable") + " 9.9.9"), texts.toString());
+            assertTrue(texts.contains(lastChecked(CHECKED_AT)), texts.toString());
+            assertFalse(texts.contains(tr("status.update.failed", "offline")), "the failure is gone");
+        }));
     }
 
     @Test
@@ -845,7 +923,7 @@ class SettingsPagesFxTest {
                     files::add,
                     urls::add,
                     "abc1234",
-                    new ReleaseInfo("9.9.9", "https://example.org/releases/9.9.9", "Nine"),
+                    updates(new UpdateStatus("9.9.9", "https://example.org/releases/9.9.9", CHECKED_AT)),
                     pane -> {
                         SettingsRig.button(pane, AppInfo.LICENSE).fire();
                         SettingsRig.button(pane, tr("about.homepage")).fire();
@@ -885,7 +963,7 @@ class SettingsPagesFxTest {
         FxTestSupport.runOnFx(() -> {
             String[] details = new String[1];
             boolean[] closed = new boolean[1];
-            about(settingsFile, files::add, null, " ", null, pane -> {
+            about(settingsFile, files::add, null, " ", updates(UpdateStatus.NONE), pane -> {
                 assertFalse(
                         SettingsRig.texts(pane).stream().anyMatch(t -> t.startsWith(tr("about.updateAvailable"))),
                         "no newer release known: no update row");
@@ -909,15 +987,22 @@ class SettingsPagesFxTest {
     void theAboutPanelWorksWithNothingToOpenLinksWith() throws Exception {
         FxTestSupport.runOnFx(() -> {
             boolean[] closed = new boolean[2];
-            about(rig.config.getSettingsFile(), null, null, null, new ReleaseInfo("2.0", "", ""), pane -> {
-                Window panel = pane.getScene().getWindow();
-                SettingsRig.button(pane, AppInfo.LICENSE).fire();
-                SettingsRig.button(pane, tr("about.homepage")).fire();
-                SettingsRig.button(pane, tr("about.releases")).fire();
-                closed[0] = !panel.isShowing();
-                SettingsRig.button(pane, tr("about.updateAvailable") + " 2.0").fire();
-                closed[1] = !panel.isShowing();
-            });
+            about(
+                    rig.config.getSettingsFile(),
+                    null,
+                    null,
+                    null,
+                    updates(new UpdateStatus("2.0", "", CHECKED_AT)),
+                    pane -> {
+                        Window panel = pane.getScene().getWindow();
+                        SettingsRig.button(pane, AppInfo.LICENSE).fire();
+                        SettingsRig.button(pane, tr("about.homepage")).fire();
+                        SettingsRig.button(pane, tr("about.releases")).fire();
+                        closed[0] = !panel.isShowing();
+                        SettingsRig.button(pane, tr("about.updateAvailable") + " 2.0")
+                                .fire();
+                        closed[1] = !panel.isShowing();
+                    });
             assertFalse(closed[0]);
             assertTrue(closed[1], "the update row closes the panel even with no browser to open");
         });
@@ -933,7 +1018,7 @@ class SettingsPagesFxTest {
                     null,
                     urls::add,
                     null,
-                    new ReleaseInfo("2.0", null, null),
+                    updates(new UpdateStatus("2.0", null, CHECKED_AT)),
                     pane -> SettingsRig.button(pane, tr("about.updateAvailable") + " 2.0")
                             .fire());
             assertEquals(List.of(AppInfo.RELEASES_PAGE), urls);

@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again when it changes on disk, and a card whose declaration was removed keeps its last lines and says so.
   The arrow along the flow opens a file's structure, Enter on a declaration opens its card, and the columns
   are part of Print and PDF output. Nothing about it is remembered across restarts.
+- **About says whether Editora is up to date.** Under the version, the About panel now reads "You are up to date."
+  or "Update available: X.Y.Z" (a link to that release), then when the last check answered and a **Check now**
+  link that asks GitHub again and updates the panel in place, failures included. Before any check has answered it
+  says so instead of claiming anything. The answer is kept in the preferences (`latestReleaseVersion`,
+  `latestReleaseUrl`, `lastUpdateCheckOkEpoch`; settings schema 142→143, additive), so it survives a restart: the
+  status-bar update notice now also comes back after a restart until the release is opened or installed, instead
+  of waiting for the next day's check.
 
 ### Changed
 

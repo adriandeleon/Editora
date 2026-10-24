@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import java.lang.reflect.Field;
-
 import javafx.scene.control.Label;
 
 import com.editora.command.CommandRegistry;
@@ -20,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Pins the update-notice wiring against a real window ({@link FxWindowFixture}): the status-bar "update"
- * segment shows/hides from the shared {@code UpdateCoordinator.latestKnownUpdate} + the dismissed-version setting, opening the
+ * segment shows/hides from the last check's answer kept in the shared preferences + the dismissed-version setting, opening the
  * download page dismisses that version, and the three update commands are registered. The pure compare/parse
  * logic is covered separately by {@code com.editora.update.UpdateCheckTest}.
  */
@@ -50,10 +48,11 @@ class UpdateNoticeFxTest {
         settings().setDismissedUpdateVersion("");
     }
 
-    private static void setLatestKnownUpdate(ReleaseInfo info) throws Exception {
-        Field f = UpdateCoordinator.class.getDeclaredField("latestKnownUpdate");
-        f.setAccessible(true);
-        f.set(null, info);
+    /** What the last update check found, as the shared preferences keep it ({@code null} = never checked). */
+    private void setLatestKnownUpdate(ReleaseInfo info) {
+        settings().setLatestReleaseVersion(info == null ? "" : info.version());
+        settings().setLatestReleaseUrl(info == null ? "" : info.url());
+        settings().setLastUpdateCheckOkEpoch(info == null ? 0 : System.currentTimeMillis());
     }
 
     private Settings settings() {

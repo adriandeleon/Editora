@@ -3396,8 +3396,8 @@
 /* The Appearance page's live preview is a swatch of the editor surface sitting inside a card, not an
    input — the frame the control theme draws around the CodeArea reads as a second box inside the card's
    own border. Drop it; the card already delimits the sample. */
-/* About panel (native-About layout: icon + name/version/tagline, copyright, a stack of links, then a
-   monospace environment block). Sizes are absolute rather than em-derived so the block stays a fixed
+/* About panel (native-About layout: icon + name/version/tagline, the update status, copyright, a stack of
+   links, then a monospace environment block). Sizes are absolute rather than em-derived so the block stays a fixed
    ratio to the name whatever the chrome font size is. */
 .about-content { -fx-padding: 6 8 2 8; }
 .about-name { -fx-font-size: 26px; -fx-font-weight: bold; }
@@ -3405,6 +3405,9 @@
 .about-tagline { -fx-font-size: 13px; -fx-text-fill: -color-fg-muted; }
 .about-copyright { -fx-text-fill: -color-fg-muted; }
 .about-update { -fx-text-fill: -state-accent; -fx-font-weight: bold; }
+.about-uptodate { -fx-text-fill: -state-green; }
+.about-update-failed { -fx-text-fill: -state-red; }
+.about-checked { -fx-text-fill: -color-fg-muted; }
 .about-env {
     -fx-font-family: "JetBrains Mono", monospace;
     -fx-font-size: 11.5px;
