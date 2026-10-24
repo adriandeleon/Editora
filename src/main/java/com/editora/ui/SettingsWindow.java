@@ -9580,7 +9580,7 @@ public class SettingsWindow {
             Consumer<Path> openFile,
             Consumer<String> openUrl,
             String commit,
-            com.editora.update.@Nullable ReleaseInfo update) {
+            AboutUpdates updates) {
         Alert alert = Dialogs.styled(new Alert(Alert.AlertType.INFORMATION));
         alert.initOwner(owner);
         alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));
@@ -9624,6 +9624,11 @@ public class SettingsWindow {
         }
         header.setAlignment(Pos.TOP_LEFT);
 
+        // --- update status: what the last check found, when, and a way to check again ------------------
+        VBox updateStatus = new VBox(2);
+        updateStatus.getStyleClass().add("about-update-status");
+        showUpdateStatus(updateStatus, updates, alert, openUrl, null);
+
         // --- copyright + links ----------------------------------------------------------------------
         Label copyright = new Label(com.editora.AppInfo.COPYRIGHT);
         copyright.getStyleClass().add("about-copyright");
@@ -9658,20 +9663,6 @@ public class SettingsWindow {
             }
         });
         links.getChildren().add(settingsLink);
-        // When a newer release is known, an "Update available: X.Y.Z" row linking to that release.
-        if (update != null) {
-            String updateUrl =
-                    update.url() == null || update.url().isBlank() ? com.editora.AppInfo.RELEASES_PAGE : update.url();
-            Hyperlink updateLink = aboutLink(tr("about.updateAvailable") + " " + update.version(), () -> {});
-            updateLink.getStyleClass().add("about-update");
-            updateLink.setOnAction(e -> {
-                alert.close();
-                if (openUrl != null) {
-                    openUrl.accept(updateUrl);
-                }
-            });
-            links.getChildren().add(updateLink);
-        }
 
         // --- environment block ------------------------------------------------------------------------
         String details = environmentDetails(versionString, commit, settingsFile);
@@ -9689,13 +9680,87 @@ public class SettingsWindow {
         HBox footer = new HBox(copyDetails);
         footer.setAlignment(Pos.CENTER_LEFT);
 
-        VBox content = new VBox(14, header, copyright, links, env, footer);
+        VBox content = new VBox(14, header, updateStatus, copyright, links, env, footer);
         content.getStyleClass().add("about-content");
         alert.getDialogPane().setContent(content);
         // A single Close button; "Copy details" lives in the content so pressing it keeps the panel open.
         alert.getButtonTypes()
                 .setAll(new ButtonType(tr("dialog.close"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE));
         alert.showAndWait();
+    }
+
+    /** The About panel's view of the update check: what the last check found, and a way to check again. */
+    public interface AboutUpdates {
+        com.editora.update.UpdateStatus status();
+
+        /** Checks now; {@code done} runs on the FX thread with the failure reason, or null on an answer. */
+        void checkNow(Consumer<@Nullable String> done);
+    }
+
+    /**
+     * Fills the About panel's update block: "Update available: X.Y.Z" (a link to that release) or "You are
+     * up to date.", then when the last check answered and a "Check now" link that re-renders the block with
+     * the new answer. Nothing is claimed before any check has answered: an update check that is switched off
+     * must not read as "up to date".
+     */
+    private static void showUpdateStatus(
+            VBox box, AboutUpdates updates, Alert alert, Consumer<String> openUrl, @Nullable String failure) {
+        box.getChildren().clear();
+        com.editora.update.UpdateStatus status = updates.status();
+        switch (status.verdict(com.editora.AppInfo.VERSION)) {
+            case UPDATE_AVAILABLE -> {
+                String url = status.latestUrl().isBlank() ? com.editora.AppInfo.RELEASES_PAGE : status.latestUrl();
+                Hyperlink updateLink = aboutLink(tr("about.updateAvailable") + " " + status.latestVersion(), () -> {});
+                updateLink.getStyleClass().add("about-update");
+                updateLink.setOnAction(e -> {
+                    alert.close();
+                    if (openUrl != null) {
+                        openUrl.accept(url);
+                    }
+                });
+                box.getChildren().add(updateLink);
+            }
+            case UP_TO_DATE -> {
+                Label upToDate = new Label(tr("about.upToDate"));
+                upToDate.getStyleClass().add("about-uptodate");
+                box.getChildren().add(upToDate);
+            }
+            case NOT_CHECKED -> {
+                // nothing to claim yet
+            }
+        }
+        if (failure != null) {
+            Label failed = new Label(tr("status.update.failed", failure));
+            failed.getStyleClass().add("about-update-failed");
+            failed.setWrapText(true);
+            box.getChildren().add(failed);
+        }
+        Label when = new Label(
+                status.checkedAtMs() > 0
+                        ? tr(
+                                "about.lastChecked",
+                                HistoryRowText.fullText(
+                                        status.checkedAtMs(),
+                                        java.time.ZoneId.systemDefault(),
+                                        FileHistoryPanel.locale()))
+                        : tr("about.notChecked"));
+        when.getStyleClass().add("about-checked");
+        Hyperlink check = aboutLink(tr("about.checkNow"), () -> {});
+        check.setOnAction(e -> {
+            check.setText(tr("about.checking"));
+            check.setDisable(true);
+            updates.checkNow(error -> {
+                Window panel = box.getScene() == null ? null : box.getScene().getWindow();
+                if (panel == null || !panel.isShowing()) {
+                    return; // closed while the check ran
+                }
+                showUpdateStatus(box, updates, alert, openUrl, error);
+                panel.sizeToScene(); // a new line (the verdict, a failure) needs the room
+            });
+        });
+        HBox line = new HBox(8, when, check);
+        line.setAlignment(Pos.BASELINE_LEFT);
+        box.getChildren().add(line);
     }
 
     /** A borderless link row for the About panel. */

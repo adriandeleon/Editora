@@ -9286,7 +9286,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows::openPath,
                 this::openExternalUrl,
                 config.isDev() ? com.editora.AppInfo.gitCommit() : "", // build commit shown only in --dev
-                UpdateCoordinator.latestKnown()); // "Update available" row when a newer release is known
+                updates); // what the last update check found, and "Check now"
     }
 
     /**

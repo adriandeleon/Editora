@@ -148,7 +148,12 @@ public class SharedConfig {
     private final Set<Path> writeProtected = ConcurrentHashMap.newKeySet();
 
     /** Bookkeeping fields: they change without any window having something to re-apply. */
-    private static final List<String> SETTINGS_BOOKKEEPING = List.of("lastUpdateCheckEpoch", "dismissedUpdateVersion");
+    private static final List<String> SETTINGS_BOOKKEEPING = List.of(
+            "lastUpdateCheckEpoch",
+            "dismissedUpdateVersion",
+            "latestReleaseVersion",
+            "latestReleaseUrl",
+            "lastUpdateCheckOkEpoch");
     /** The serialized preferences every window last applied, or {@code null} until {@link #markSettingsApplied}. */
     private @Nullable JsonNode appliedSettings;
 
