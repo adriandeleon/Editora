@@ -211,17 +211,35 @@ class NarrowingFxTest {
         });
     }
 
+    /**
+     * The gutter's numbers once they read {@code expected}, or what they read after a few seconds. Right after
+     * the text swap a row's cell may not be back in the scene yet (seen on a macOS runner: {@code [3]} for
+     * {@code [2, 3]}), so one read can miss a row that the next pulse builds.
+     */
+    private List<String> settledGutterNumbers(EditorBuffer b, List<String> expected) throws Exception {
+        List<String> numbers = gutterNumbers(b);
+        for (int attempt = 0; attempt < 100 && !numbers.equals(expected); attempt++) {
+            Thread.sleep(30);
+            FxTestSupport.drainFx();
+            numbers = gutterNumbers(b);
+        }
+        return numbers;
+    }
+
     @Test
     void theGutterKeepsTheFilesLineNumbersWhileNarrowed() throws Exception {
         EditorBuffer b = narrowed(); // lines 2–3 of the file
         assertEquals(1, FxTestSupport.callOnFx(b::narrowFirstLine), "the region starts on 0-based line 1");
-        List<String> numbers = gutterNumbers(b);
+        List<String> numbers = settledGutterNumbers(b, List.of("2", "3"));
         assertEquals(List.of("2", "3"), numbers, "the region's rows are numbered as in the file, not from 1");
         assertTrue(
                 FxTestSupport.callOnFx(() -> b.getArea().getStyleClass().contains("narrowed")),
                 "the area wears the narrowed style while narrowed");
         run("edit.widen");
-        assertEquals(List.of("1", "2", "3", "4", "5"), gutterNumbers(b), "widening numbers the rows plainly again");
+        assertEquals(
+                List.of("1", "2", "3", "4", "5"),
+                settledGutterNumbers(b, List.of("1", "2", "3", "4", "5")),
+                "widening numbers the rows plainly again");
         assertEquals(0, FxTestSupport.callOnFx(b::narrowFirstLine));
         assertFalse(FxTestSupport.callOnFx(() -> b.getArea().getStyleClass().contains("narrowed")));
     }
