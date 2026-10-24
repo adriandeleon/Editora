@@ -11,14 +11,14 @@ import org.jspecify.annotations.Nullable;
 public final class PomFiles {
 
     /** How much of an XML file's head is read to decide whether it is a pom (a {@code <project>} preamble). */
-    static final int SNIFF_CHARS = 4096;
+    public static final int SNIFF_CHARS = 4096;
 
     /** The snippet language of a pom buffer: its own file ({@code maven-pom.json}) on top of XML's. */
     public static final String SNIPPET_LANGUAGE = "maven-pom";
 
     private PomFiles() {}
 
-    static boolean isPom(@Nullable String fileName, String head) {
+    public static boolean isPom(@Nullable String fileName, String head) {
         if (fileName != null && ("pom.xml".equalsIgnoreCase(fileName) || fileName.endsWith(".pom"))) {
             return true;
         }

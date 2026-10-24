@@ -59,6 +59,6 @@ class StructureHttpFxTest {
         });
         assertEquals("Slow — GET {{host}}/slow|POST {{host}}/echo", rendered);
         assertFalse(rendered.contains("()"), rendered);
-        assertNotEquals(StructureIcons.pathFor("method"), StructureIcons.pathFor(StructurePanel.HTTP_REQUEST_KIND));
+        assertNotEquals(StructureIcons.pathFor("method"), StructureIcons.pathFor(StructureOutline.HTTP_REQUEST_KIND));
     }
 }

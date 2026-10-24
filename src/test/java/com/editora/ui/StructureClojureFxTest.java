@@ -66,7 +66,7 @@ class StructureClojureFxTest {
     @Test
     void theParameterVectorIsFoundPastADocstringAndAnAttributeMap() {
         String text = "(defn f\n  \"Doc with ] and [.\"\n  {:added \"1.0\"}\n  [x\n   y]\n  x)";
-        assertEquals("[x y]", StructurePanel.clojureParams(text, "(defn f".length()));
-        assertEquals("", StructurePanel.clojureParams("(defn g\n  ([x] x)\n  ([x y] y))", "(defn g".length()));
+        assertEquals("[x y]", StructureOutline.clojureParams(text, "(defn f".length()));
+        assertEquals("", StructureOutline.clojureParams("(defn g\n  ([x] x)\n  ([x y] y))", "(defn g".length()));
     }
 }
