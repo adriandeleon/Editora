@@ -90,6 +90,15 @@ class StickyScrollTest {
     }
 
     @Test
+    void navigationJustInsideAScopeKeepsItsHeaderOnScreen() {
+        // Starting at 11 pins the class and the method over 11 and 12, hiding line 12; starting at 10 shows the
+        // method's header itself and pins the class alone. Following the pinned count bounced between the two
+        // and stopped on 11.
+        assertEquals(10, StickyScroll.navigationFirstVisible(NESTED, 12, 5));
+        assertEquals(20, StickyScroll.navigationFirstVisible(NESTED, 22, 5));
+    }
+
+    @Test
     void navigationNeedsNoClearanceWithoutPinnedHeaders() {
         assertEquals(250, StickyScroll.navigationFirstVisible(NESTED, 250, 5));
         assertEquals(0, StickyScroll.navigationFirstVisible(NESTED, -4, 5));

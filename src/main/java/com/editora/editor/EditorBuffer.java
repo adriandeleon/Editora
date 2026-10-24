@@ -699,6 +699,12 @@ public class EditorBuffer implements TabContent {
 
     private final ColumnRuler columnRuler = new ColumnRuler(area);
     private final Minimap minimap = new Minimap(area);
+    private final JumpReveal jumps = new JumpReveal(
+            () -> this.stickyScrollEnabled,
+            a -> a == focusedArea,
+            () -> this.folds.regions(),
+            this::stickyLinesFor,
+            () -> this.stickyLines.size());
     /** Lazily attached when "show whitespace" first turns on — see {@link #whitespace()}. */
     private @Nullable WhitespaceOverlay whitespace;
     /** Lazily attached when indent guides first turn on — see {@link #indentGuides()}. */
@@ -1511,14 +1517,9 @@ public class EditorBuffer implements TabContent {
         return stickyScrollEnabled;
     }
 
-    /**
-     * Places a navigation target at the top of the usable editor viewport, below any sticky-scroll rows.
-     * Call after moving the caret and after the editor has been laid out.
-     */
-    public void showParagraphAtTopClearOfStickyScroll(CodeArea targetArea, int line) {
-        int firstVisible =
-                stickyScrollEnabled ? StickyScroll.navigationFirstVisible(folds.regions(), line) : Math.max(0, line);
-        targetArea.showParagraphAtTop(firstVisible);
+    /** Shows a jump's target line in one of this buffer's views, clear of the sticky-scroll rows. */
+    public JumpReveal jumps() {
+        return jumps;
     }
 
     /** Package-visible for the FX test: what is pinned right now, as 0-based lines. */

@@ -2109,14 +2109,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (!navigation.navigating && buffer.getPath() != null) {
             navigation.recordJumpToLine(origin, buffer, line);
         }
-        Platform.runLater(() -> {
-            try {
-                buffer.showParagraphAtTopClearOfStickyScroll(area, line);
-            } catch (RuntimeException ignored) {
-                // Viewport not ready; ignore.
-            }
-        });
-        area.requestFollowCaret();
+        buffer.jumps().reveal(area, line, false);
         area.requestFocus();
     }
 

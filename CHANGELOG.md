@@ -44,6 +44,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SavedBaseline`, `DocumentSnapshots`, `WordWrap`, `LineMarks`, `TabSurface`, `RunScan`, and `CodeLensShift`, which
   works on RichTextFX types. Internal-only — no behavior, dependency, or `module-info` change.
 
+### Fixed
+
+- **Jumps no longer flicker, and their target is never hidden under the sticky-scroll rows.** A click in the
+  Structure panel, Go to Line, a jump to a line from a bookmark, TODO or the Problems list, Go to Definition, a
+  search hit and the fold motions all repainted the editor over two or three frames: the caret moved before the
+  view, the view jumped before the pinned scope headers changed, and the minimap's viewport box followed a frame
+  behind. Each now lands in one frame, and the minimap's box keeps up with every scroll. In the Structure panel
+  the row clicked and the row left no longer flash unstyled black text. Go to Line and the fold motions put a
+  line above the view below the pinned headers instead of under them, a line already in view is not scrolled
+  to, and a jump to the line just inside a method no longer lands under that method's own header.
+
 ## [0.24.0] - 2026-10-24
 
 ### Added
