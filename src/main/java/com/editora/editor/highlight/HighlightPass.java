@@ -11,7 +11,7 @@ import java.util.concurrent.Executor;
 import java.util.function.BooleanSupplier;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.lsp.SemanticToken;
+import com.editora.text.SemanticToken;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.grammar.IStateStack;
 import org.fxmisc.richtext.model.StyleSpans;

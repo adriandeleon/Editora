@@ -17,7 +17,6 @@ import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
 import com.editora.completion.CompletionProvider;
 import com.editora.editor.highlight.GrammarRegistry;
-import com.editora.editor.language.LanguageRegistry;
 import com.editora.markdown.MarkdownAnchors;
 import com.editora.markdown.MarkdownBlocks;
 import com.editora.markdown.MarkdownCompletionContext;
@@ -25,6 +24,7 @@ import com.editora.markdown.MarkdownCompletionContext.Context;
 import com.editora.markdown.MarkdownCompletionContext.Kind;
 import com.editora.markdown.MarkdownLinkAt;
 import com.editora.markdown.WikiTargets;
+import com.editora.text.LanguageRegistry;
 import org.jspecify.annotations.Nullable;
 
 /**

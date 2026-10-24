@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 142;
+    public static final int SCHEMA_VERSION = 143;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -220,6 +220,13 @@ public class Settings {
     private long lastUpdateCheckEpoch = 0;
     /** The version whose update notice the user dismissed (so it isn't re-shown); "" = none dismissed. */
     private String dismissedUpdateVersion = "";
+    /** The newest release the last successful update check found ("" = none yet), and its release page: what
+     *  the About panel and the status bar go on until the next check, across restarts. */
+    private String latestReleaseVersion = "";
+
+    private String latestReleaseUrl = "";
+    /** Epoch millis of the last update check that got an answer (0 = none): the About panel's "Last checked". */
+    private long lastUpdateCheckOkEpoch = 0;
 
     private boolean spellCheck = true;
     /** Honor the personal dictionary ({@code dictionary.txt}) during spell check; off re-flags those words. */
@@ -2516,6 +2523,30 @@ public class Settings {
 
     public void setDismissedUpdateVersion(String dismissedUpdateVersion) {
         this.dismissedUpdateVersion = dismissedUpdateVersion == null ? "" : dismissedUpdateVersion;
+    }
+
+    public String getLatestReleaseVersion() {
+        return latestReleaseVersion == null ? "" : latestReleaseVersion;
+    }
+
+    public void setLatestReleaseVersion(String latestReleaseVersion) {
+        this.latestReleaseVersion = latestReleaseVersion == null ? "" : latestReleaseVersion;
+    }
+
+    public String getLatestReleaseUrl() {
+        return latestReleaseUrl == null ? "" : latestReleaseUrl;
+    }
+
+    public void setLatestReleaseUrl(String latestReleaseUrl) {
+        this.latestReleaseUrl = latestReleaseUrl == null ? "" : latestReleaseUrl;
+    }
+
+    public long getLastUpdateCheckOkEpoch() {
+        return lastUpdateCheckOkEpoch;
+    }
+
+    public void setLastUpdateCheckOkEpoch(long lastUpdateCheckOkEpoch) {
+        this.lastUpdateCheckOkEpoch = lastUpdateCheckOkEpoch;
     }
 
     public boolean isShowMenuBar() {

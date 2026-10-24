@@ -3,8 +3,8 @@ package com.editora.ui;
 import java.util.function.Consumer;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.language.ShellScripts;
 import com.editora.editorconfig.EditorConfigCharset;
+import com.editora.text.ShellScripts;
 
 import static com.editora.i18n.Messages.tr;
 

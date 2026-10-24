@@ -7280,7 +7280,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Thin LspManager diagnostics callback — delegates to {@link LspCoordinator#onDiagnostics} (kept here
      *  only to avoid an illegal forward reference at the manager's field initializer; see {@link #lspManager}). */
-    private void onLspDiagnostics(Path file, java.util.List<com.editora.editor.lsp.LspDiagnostic> diagnostics) {
+    private void onLspDiagnostics(Path file, java.util.List<com.editora.text.LspDiagnostic> diagnostics) {
         lspCoordinator.onDiagnostics(file, diagnostics);
     }
 
@@ -9279,7 +9279,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows::openPath,
                 this::openExternalUrl,
                 config.isDev() ? com.editora.AppInfo.gitCommit() : "", // build commit shown only in --dev
-                UpdateCoordinator.latestKnown()); // "Update available" row when a newer release is known
+                updates); // what the last update check found, and "Check now"
     }
 
     /**

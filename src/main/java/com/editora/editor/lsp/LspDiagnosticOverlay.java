@@ -14,6 +14,7 @@ import com.editora.editor.CanvasGuards;
 import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
 import com.editora.editor.TabSurface;
+import com.editora.text.LspDiagnostic;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 

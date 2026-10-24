@@ -120,7 +120,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                         out.add(new OpenFile(
                                 placeholder.path().toString(),
                                 placeholder.title(),
-                                com.editora.editor.language.LanguageRegistry.forFileName(
+                                com.editora.text.LanguageRegistry.forFileName(
                                         placeholder.path().toString()),
                                 false,
                                 false));
@@ -174,7 +174,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                 if (!com.editora.config.PathKeys.samePath(host.canonicalPath(e.getKey()), key)) {
                     continue;
                 }
-                for (com.editora.editor.lsp.LspDiagnostic d : e.getValue()) {
+                for (com.editora.text.LspDiagnostic d : e.getValue()) {
                     out.add(new Diagnostic(
                             d.startLine() + 1, d.startCol() + 1, d.severity().name(), d.message(), d.origin()));
                 }

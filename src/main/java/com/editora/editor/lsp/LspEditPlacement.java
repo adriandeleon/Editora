@@ -1,6 +1,7 @@
 package com.editora.editor.lsp;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.text.LspTextEdit;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 

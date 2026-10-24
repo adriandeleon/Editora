@@ -739,7 +739,7 @@ final class NavigationCoordinator {
     }
 
     /** Moves the caret to {@code target}'s header line, revealing it if it's hidden inside a fold. */
-    void gotoFold(com.editora.editor.fold.FoldRegions.@Nullable Region target) {
+    void gotoFold(com.editora.text.FoldRegions.@Nullable Region target) {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null) {
             return;

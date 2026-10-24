@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 
-import com.editora.editor.crypto.EncryptedNames;
+import com.editora.text.EncryptedNames;
 import org.jspecify.annotations.Nullable;
 
 /**

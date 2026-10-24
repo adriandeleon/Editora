@@ -10,7 +10,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.editora.editor.lsp.SemanticToken;
+import com.editora.text.SemanticToken;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.junit.jupiter.api.Test;

@@ -40,9 +40,10 @@ import javafx.scene.shape.SVGPath;
 import javafx.scene.text.Text;
 
 import com.editora.editor.LazyTooltip;
-import com.editora.editor.fold.FoldRegions.Region;
 import com.editora.editor.git.BlameInfo;
-import com.editora.editor.language.LanguageRegistry;
+import com.editora.text.FoldRegions;
+import com.editora.text.FoldRegions.Region;
+import com.editora.text.LanguageRegistry;
 import org.fxmisc.richtext.CharacterHit;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpan;

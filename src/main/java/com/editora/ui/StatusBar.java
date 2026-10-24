@@ -1191,6 +1191,6 @@ public final class StatusBar extends HBox {
         if (name == null || name.isEmpty()) {
             return tr("statusbar.plainText");
         }
-        return com.editora.editor.language.LanguageNames.display(name);
+        return com.editora.text.LanguageNames.display(name);
     }
 }

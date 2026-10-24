@@ -7,6 +7,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.editora.editops.PreserveCase;
+import com.editora.text.SearchMatcher;
 
 /**
  * The pure kernel of Emacs {@code query-replace} ({@code M-%}) / {@code query-replace-regexp}

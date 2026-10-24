@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **About says whether Editora is up to date.** Under the version, the About panel now reads "You are up to date."
+  or "Update available: X.Y.Z" (a link to that release), then when the last check answered and a **Check now**
+  link that asks GitHub again and updates the panel in place, failures included. Before any check has answered it
+  says so instead of claiming anything. The answer is kept in the preferences (`latestReleaseVersion`,
+  `latestReleaseUrl`, `lastUpdateCheckOkEpoch`; settings schema 142→143, additive), so it survives a restart: the
+  status-bar update notice now also comes back after a restart until the release is opened or installed, instead
+  of waiting for the next day's check.
+
 ### Changed
 
+- **Refactor: the text model the editor shares with other packages moved to a new `com.editora.text`.** The LSP value types (`LspTextEdit`, `LspDiagnostic`, `SemanticToken`, `OccurrenceSpan`), `FoldRegions`, the search matcher with `CaseFold` and `SearchMatches`, all of language detection (`LanguageRegistry`, `LanguageNames`, `ConfigFileType`, `ShellFiles`, `ShellScripts`, `Shebang`, `Modeline`) and `EncryptedNames` leave the editor sub-packages, with 13 tests. `lsp`, `search`, `crypto`, `template` and `editops` no longer depend on the editor; `editor.language` is gone, its classes having no presentation in them. `text` has its own 0.95 coverage floor. Internal-only — no behavior, dependency, or `module-info` change.
 - **Refactor: the editor's toolkit-free helpers moved to the core packages they belong to.** `AceLabels`,
   `LineEndings`, `RegexLiterals`, `TextNav`, `TextFingerprint` and `WholeDocumentEdit` go to `com.editora.editops`;
   `CompactSource` to `com.editora.run`, `CodeLessLines` to `com.editora.dap`, `PomFiles` to `com.editora.maven` and

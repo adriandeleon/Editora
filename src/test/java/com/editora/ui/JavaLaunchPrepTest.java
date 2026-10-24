@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

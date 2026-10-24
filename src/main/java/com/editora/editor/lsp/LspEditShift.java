@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.text.LspTextEdit;
 import org.jspecify.annotations.Nullable;
 
 /**

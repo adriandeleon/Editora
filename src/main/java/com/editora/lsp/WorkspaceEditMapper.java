@@ -11,8 +11,8 @@ import java.util.Set;
 import java.util.function.Function;
 
 import com.editora.config.PathKeys;
-import com.editora.editor.lsp.LspTextEdit;
 import com.editora.process.ExecTargets;
+import com.editora.text.LspTextEdit;
 import org.eclipse.lsp4j.SnippetTextEdit;
 import org.eclipse.lsp4j.TextDocumentEdit;
 import org.eclipse.lsp4j.TextEdit;

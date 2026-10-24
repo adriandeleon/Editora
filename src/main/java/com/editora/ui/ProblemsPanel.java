@@ -27,8 +27,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.config.PathDisplay;
-import com.editora.editor.language.LanguageRegistry;
-import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.text.LanguageRegistry;
+import com.editora.text.LspDiagnostic;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -310,7 +310,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
     /** Friendly display name for a file's programming language (proper nouns, deliberately untranslated). */
     private static String languageOf(Path file) {
-        String name = com.editora.editor.language.LanguageNames.display(LanguageRegistry.forFileName(file.toString()));
+        String name = com.editora.text.LanguageNames.display(LanguageRegistry.forFileName(file.toString()));
         return name.isEmpty() ? "Other" : name;
     }
 

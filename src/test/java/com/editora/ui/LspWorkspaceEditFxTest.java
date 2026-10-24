@@ -17,11 +17,11 @@ import java.util.function.Consumer;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.lsp.LspTextEdit;
 import com.editora.io.DocumentWriteSequencer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import com.editora.lsp.WorkspaceEditMapper;
+import com.editora.text.LspTextEdit;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.RenameFile;
@@ -370,10 +370,7 @@ class LspWorkspaceEditFxTest {
         EditorBuffer a = openBuffer("A.java", "class A {}\n");
         var mapped = new WorkspaceEditMapper.Mapped(
                 List.of(new WorkspaceEditMapper.FileEdit(
-                        a.getPath(),
-                        List.of(new com.editora.editor.lsp.LspTextEdit(0, 6, 0, 7, "B")),
-                        null,
-                        "class A {}\n")),
+                        a.getPath(), List.of(new com.editora.text.LspTextEdit(0, 6, 0, 7, "B")), null, "class A {}\n")),
                 List.of());
         FxTestSupport.runOnFx(() -> a.setContent("// note\nclass A {}\n"));
 

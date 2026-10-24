@@ -946,7 +946,7 @@ final class AgentCoordinator implements AcpClient.Host {
     public String readTextFile(String path, @Nullable Integer line, @Nullable Integer limit) throws Exception {
         Path file = sessionPath(path);
         String key = PathKeys.key(file);
-        if (com.editora.editor.crypto.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+        if (com.editora.text.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
             throw new IOException(ENCRYPTED); // ADR 0017: neither the decrypted text nor the ciphertext
         }
         String text = fxCall(() -> {
@@ -972,7 +972,7 @@ final class AgentCoordinator implements AcpClient.Host {
     @Override
     public void writeTextFile(String path, @Nullable String content) throws Exception {
         Path file = sessionPath(path);
-        if (com.editora.editor.crypto.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+        if (com.editora.text.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
             throw new IOException(ENCRYPTED); // an agent's text would land in an encrypted file's name, unencrypted
         }
         String key = PathKeys.key(file);

@@ -503,7 +503,7 @@ class FindReplaceBarFxTest {
         Object overlay = FxTestSupport.field(buffer, "searchOverlay");
         return overlay == null
                 ? List.of()
-                : FxTestSupport.<com.editora.editor.search.SearchMatches>field(overlay, "matches")
+                : FxTestSupport.<com.editora.text.SearchMatches>field(overlay, "matches")
                         .toList();
     }
 

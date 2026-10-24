@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
