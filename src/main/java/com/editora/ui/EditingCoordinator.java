@@ -1664,21 +1664,12 @@ final class EditingCoordinator {
     }
 
     /**
-     * The Structure panel's narrowing segments. A row names a document line; the defun around it is found from
-     * just inside that line (from its very start {@code beginning-of-defun} would walk to the <em>previous</em>
-     * definition, as in Emacs), and Fold takes the row's own block when the outline knows it. Widening a buffer
-     * that is not narrowed is silent: the panel's segment is a state, not a command that can be wrong.
+     * The Structure panel's narrow-to-fold-region toggle. A row names a document line, and the row's own block is
+     * taken when the outline knows it. Widening a buffer that is not narrowed is silent: the panel's toggle is a
+     * state, not a command that can be wrong.
      */
     StructurePanel.NarrowActions structureNarrowActions() {
         return new StructurePanel.NarrowActions() {
-            @Override
-            public boolean narrowToDefun(EditorBuffer buffer, int line) {
-                String text = buffer.getContent();
-                int at = com.editora.editor.fold.NarrowLines.offsetOfLine(text, line);
-                int pos = at < text.length() && text.charAt(at) != '\n' ? at + 1 : at;
-                return narrowToDefunAt(buffer, pos);
-            }
-
             @Override
             public boolean narrowToFoldRegion(
                     EditorBuffer buffer, int line, com.editora.editor.fold.FoldRegions.@Nullable Region block) {

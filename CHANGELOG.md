@@ -10,20 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Narrowing from the Structure panel, and a narrowed editor that says so.** The Structure tool window's
-  sort row gains three segments — Widen, Defun, Fold region. Defun narrows the editor to the picked symbol's
-  top-level definition (`narrow-to-defun`: for a method, its class) and Fold region to the symbol's own block;
-  while either is on, a click on another symbol narrows to that one instead, and Widen shows the whole file
-  again. The outline stays the whole file's while narrowed — rows outside the region are muted, and in a mode
-  a click on one walks the file to it — and both narrowings are found in the whole document, so a narrowed
-  buffer can be re-narrowed to the definition around it. Browsing the outline never narrows: the arrow keys,
-  the filter field and a right-click only select. Defun is offered where a definition means something (not in
-  Markdown, Typst, HTTP or CSV), the segments are disabled for a file that cannot be narrowed, hidden in Simple
-  UI mode, reachable from the keyboard (`d`, `f`, `w` while the tree has focus, and the commands
-  `structure.narrowDefun`, `structure.narrowFold`, `structure.widen` for any keymap), and their tooltips name
-  the keys and that language support pauses while narrowed. The segments follow the buffer: one is lit while
-  the panel narrowed it, an amber border while a chord did, and Widen whenever the file is whole. A narrowed
-  editor shows it in the text itself, not only in the status bar pill: an amber banner above the code names
-  the accessible lines ("Narrowed to lines 120–180 of 950") with a Widen button, and the gutter's line numbers
+  sort row gains a Narrow to fold region toggle. One click narrows the editor to the picked symbol's own
+  block and turns the mode on — while on, a click on another symbol narrows to that one instead — and a second
+  click shows the whole file again. The outline stays the whole file's while narrowed — rows outside the
+  region are muted, and in the mode a click on one walks the file to it — and the block is found in the whole
+  document, so a narrowed buffer can be re-narrowed to the block around it. Browsing the outline never
+  narrows: the arrow keys, the filter field and a right-click only select. The toggle is disabled for a file
+  that cannot be narrowed, hidden in Simple UI mode, reachable from the keyboard (`f` while the tree has
+  focus, and the command `structure.narrowFold` for any keymap), and its tooltip names the keys and that
+  language support pauses while narrowed. It follows the buffer: lit while the panel narrowed it, an amber
+  border while a chord did. A narrowed editor shows it in the text itself, not only in the status bar pill: an
+  amber banner above the code names the accessible lines ("Narrowed to lines 120–180 of 950") with a Widen button, and the gutter's line numbers
   — which now keep the file's numbering while narrowed instead of restarting at 1 — turn amber. The status
   bar's Ln and the Structure rows' line numbers count from the top of the file too, and the status bar pill
   reads "Narrowed · Widen". `C-x n d` and `C-x n f` look for their definition and block in the whole document,
