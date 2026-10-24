@@ -14,6 +14,7 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.AfterLayoutPaint;
 import com.editora.editor.CanvasGuards;
 import com.editora.editor.OverlayPalette;
 import com.editora.editor.git.GitGutterLines;
@@ -108,6 +109,12 @@ public final class Minimap extends Region {
     private boolean painting;
 
     private boolean redrawPending;
+    /**
+     * Repaints the viewport box after the layout of the pulse that scrolled, so it moves in the same frame as
+     * the text. A {@code runLater} repaint ran after that frame was rendered: every scroll, and every jump
+     * (a Structure click, Go to Line), showed the box a frame behind the text.
+     */
+    private final AfterLayoutPaint afterLayout;
     /** Holds the content render back while the column is still being resized; see {@link #layoutChildren}. */
     private final javafx.animation.PauseTransition resizeRender =
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(RESIZE_SETTLE_MILLIS));
@@ -186,6 +193,8 @@ public final class Minimap extends Region {
 
     public Minimap(CodeArea area) {
         this.area = area;
+        this.afterLayout =
+                new AfterLayoutPaint(this, area, this::redrawAfterScroll, () -> renderingActive && isVisible());
         getStyleClass().add("minimap");
         getChildren().add(canvas);
         setMinWidth(WIDTH);
@@ -193,7 +202,7 @@ public final class Minimap extends Region {
         setMaxWidth(WIDTH);
 
         area.multiPlainChanges().successionEnds(Duration.ofMillis(200)).subscribe(ignore -> renderAfterEdit());
-        area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        area.estimatedScrollYProperty().addListener((o, a, b) -> afterLayout.request());
         pacedRender.setOnFinished(e -> renderContent());
 
         canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, this::beginDrag);
@@ -878,6 +887,15 @@ public final class Minimap extends Region {
         });
     }
 
+    /** {@link #afterLayout}'s repaint: a blit of the cached image; a first render (a snapshot) waits a pulse. */
+    private void redrawAfterScroll() {
+        if (contentImage == null) {
+            scheduleRedraw();
+        } else {
+            redraw();
+        }
+    }
+
     private void redraw() {
         if (painting) {
             return; // nested paint during a render in flight (see the `painting` guard); suppress it
@@ -914,10 +932,14 @@ public final class Minimap extends Region {
         return Math.min(MAX_ROW_HEIGHT, h / total);
     }
 
+    /** The viewport box as last painted ({@link #viewportBox()}'s form), for the FX test that checks each frame. */
+    private double @Nullable [] paintedViewport;
+
     private void drawViewport(GraphicsContext g, double w) {
         // One source of truth with the drag's hit test: a box you can see but not grab (or vice versa) is
         // worse than either alone.
         double[] box = viewportBox();
+        paintedViewport = box;
         if (box != null) {
             double vy = box[0];
             double vh = box[1];

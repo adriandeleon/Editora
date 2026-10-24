@@ -842,6 +842,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         EditorBuffer targetBuffer = buffer;
         int docLine = item.getValue().line();
         int line = areaLine(docLine);
+        boolean widened = false;
         if (line < 0) {
             if (!focusEditor || docLine < 0 || !buffer.isNarrowed()) {
                 return;
@@ -851,6 +852,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             } else {
                 buffer.widen();
             }
+            widened = true;
             line = areaLine(docLine);
             if (line < 0) {
                 return;
@@ -858,15 +860,21 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
         area.moveTo(line, 0);
         int target = line;
-        // Anchor the target at the top of the usable viewport, below any sticky-scroll rows (deferred
-        // until layout is ready).
-        Platform.runLater(() -> {
-            try {
-                targetBuffer.showParagraphAtTopClearOfStickyScroll(area, target);
-            } catch (RuntimeException ignored) {
-                // Viewport not ready; ignore.
-            }
-        });
+        // Anchor the target at the top of the usable viewport, below any sticky-scroll rows. An area already on
+        // screen scrolls now, in the pulse that moved the caret: deferring it painted one frame with the old
+        // viewport and the next one scrolled, a flicker on every click. One not laid out yet, or whose text a
+        // widen just swapped, waits a pulse for its viewport.
+        if (!widened && area.getScene() != null && area.getHeight() > 0) {
+            targetBuffer.showParagraphAtTopClearOfStickyScroll(area, target);
+        } else {
+            Platform.runLater(() -> {
+                try {
+                    targetBuffer.showParagraphAtTopClearOfStickyScroll(area, target);
+                } catch (RuntimeException ignored) {
+                    // Viewport not ready; ignore.
+                }
+            });
+        }
         if (focusEditor) {
             area.requestFocus();
         }
@@ -2064,10 +2072,19 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     private final class StructureCell extends TreeCell<StructureNode> {
+        /**
+         * The item whose tooltip and graphic this cell holds. A selection change makes JavaFX run
+         * {@code updateItem} again for the same item, from the cell's layout — after that pulse's CSS pass — so
+         * a graphic rebuilt there painted its text unstyled, in black, for one frame: the row clicked and the
+         * row left both blinked on every click.
+         */
+        private @Nullable StructureNode shown;
+
         @Override
         protected void updateItem(StructureNode item, boolean empty) {
             super.updateItem(item, empty);
             if (empty || item == null) {
+                shown = null;
                 setText(null);
                 setGraphic(null);
                 setTooltip(null);
@@ -2075,15 +2092,19 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 setOnContextMenuRequested(null);
                 return;
             }
+            boolean same = item == shown;
+            shown = item;
             // Show the cleaned leading doc comment (if any) as a hover tooltip.
-            if (item.doc() != null && !item.doc().isEmpty()) {
-                Tooltip tip = new Tooltip(item.doc());
-                tip.setWrapText(true);
-                tip.setMaxWidth(480);
-                tip.setShowDelay(javafx.util.Duration.millis(400));
-                setTooltip(tip);
-            } else {
-                setTooltip(null);
+            if (!same) {
+                if (item.doc() != null && !item.doc().isEmpty()) {
+                    Tooltip tip = new Tooltip(item.doc());
+                    tip.setWrapText(true);
+                    tip.setMaxWidth(480);
+                    tip.setShowDelay(javafx.util.Duration.millis(400));
+                    setTooltip(tip);
+                } else {
+                    setTooltip(null);
+                }
             }
             boolean real = item.kind() != null && item.line() >= 0;
             pseudoClassStateChanged(
@@ -2098,6 +2119,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             if (!real) {
                 setText(item.label());
                 setGraphic(null);
+                return;
+            }
+            if (same && getGraphic() != null) {
                 return;
             }
             String sig = signature(item);

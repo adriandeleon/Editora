@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SavedBaseline`, `DocumentSnapshots`, `WordWrap`, `LineMarks`, `TabSurface`, `RunScan`, and `CodeLensShift`, which
   works on RichTextFX types. Internal-only — no behavior, dependency, or `module-info` change.
 
+### Fixed
+
+- **A click in the Structure panel no longer flickers.** Picking a symbol used to repaint the editor over three
+  frames: the caret moved while the view stayed put, then the view jumped without the sticky-scroll rows for
+  its new place, then the rows and the minimap's viewport box caught up. The row clicked and the row left also
+  flashed unstyled black text for a frame. All of it now lands in one frame, and the minimap's box keeps up
+  with every scroll rather than following a frame behind.
+
 ## [0.24.0] - 2026-10-24
 
 ### Added

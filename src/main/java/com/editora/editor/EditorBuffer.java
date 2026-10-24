@@ -1514,11 +1514,18 @@ public class EditorBuffer implements TabContent {
     /**
      * Places a navigation target at the top of the usable editor viewport, below any sticky-scroll rows.
      * Call after moving the caret and after the editor has been laid out.
+     *
+     * <p>The pinned rows are filled in here, for the line about to be on top, rather than by the scroll
+     * listener: that one runs a pulse after the jump, so the jump would paint once with the old rows (or
+     * none) over the new text and again with the right ones — a flash on every Structure click.
      */
     public void showParagraphAtTopClearOfStickyScroll(CodeArea targetArea, int line) {
         int firstVisible =
                 stickyScrollEnabled ? StickyScroll.navigationFirstVisible(folds.regions(), line) : Math.max(0, line);
         targetArea.showParagraphAtTop(firstVisible);
+        if (stickyScrollEnabled && targetArea == focusedArea) {
+            stickyLinesFor(firstVisible);
+        }
     }
 
     /** Package-visible for the FX test: what is pinned right now, as 0-based lines. */
