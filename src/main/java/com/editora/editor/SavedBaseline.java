@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import java.util.Objects;
 
+import com.editora.editops.TextFingerprint;
 import org.jspecify.annotations.Nullable;
 
 /**

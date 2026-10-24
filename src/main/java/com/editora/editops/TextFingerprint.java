@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -6,7 +6,7 @@ import java.util.HexFormat;
 
 /**
  * The SHA-256 of a text's UTF-16 code units, as 64 hex characters: what the saved baseline of a document keeps
- * instead of the document ({@link SavedBaseline}).
+ * instead of the document ({@code SavedBaseline}).
  *
  * <p>Hashed over the chars themselves, not an encoding of them, so the answer depends on nothing but the text —
  * not on the file's charset or line ending, which the bytes on disk do. The digest is fed in fixed chunks:

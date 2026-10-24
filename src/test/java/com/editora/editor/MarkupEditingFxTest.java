@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
 
+import com.editora.editops.LineEndings;
 import com.editora.markdown.MarkdownTable;
 import com.editora.typst.TypstMarkup;
 import org.fxmisc.richtext.CodeArea;

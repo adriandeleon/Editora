@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.run;
 
 import java.util.regex.Pattern;
 
@@ -40,7 +40,7 @@ public final class CompactSource {
     }
 
     /** True if a {@code void main(...)} method appears at brace depth 0 (a compact source entry point). */
-    static boolean hasTopLevelMain(String source) {
+    public static boolean hasTopLevelMain(String source) {
         return mainLine(source) >= 0;
     }
 

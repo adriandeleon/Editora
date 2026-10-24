@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The arrow along the flow opens a file's structure, Enter on a declaration opens its card, and the columns
   are part of Print and PDF output. Nothing about it is remembered across restarts.
 
+### Changed
+
+- **Refactor: the editor's toolkit-free helpers moved to the core packages they belong to.** `AceLabels`,
+  `LineEndings`, `RegexLiterals`, `TextNav`, `TextFingerprint` and `WholeDocumentEdit` go to `com.editora.editops`;
+  `CompactSource` to `com.editora.run`, `CodeLessLines` to `com.editora.dap`, `PomFiles` to `com.editora.maven` and
+  `RulerColumns` to `com.editora.config`, each with its test. `com.editora.index` no longer depends on the editor at
+  all. `PomFiles.snippetLanguage(buffer, language)` became `EditorBuffer.snippetLanguage(language)`, so `maven` does
+  not reference the editor either. The classes that are the buffer's own state or reference the editor stay:
+  `SavedBaseline`, `DocumentSnapshots`, `WordWrap`, `LineMarks`, `TabSurface`, `RunScan`, and `CodeLensShift`, which
+  works on RichTextFX types. Internal-only — no behavior, dependency, or `module-info` change.
+
 ## [0.24.0] - 2026-10-24
 
 ### Added

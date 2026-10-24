@@ -10,8 +10,8 @@ import com.editora.command.CommandRegistry;
 import com.editora.config.ConfigManager;
 import com.editora.editops.KillRing;
 import com.editora.editops.Rectangle;
+import com.editora.editops.TextNav;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.TextNav;
 import com.editora.editor.fold.FoldManager;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
@@ -2231,7 +2231,7 @@ final class EditingCoordinator {
         }
         String before = area.getText().substring(from, to);
         // A decode (URL, Base64, JSON unescape) can produce '\r'; the document stores it as '\n'.
-        String after = com.editora.editor.LineEndings.toLf(op.apply(before));
+        String after = com.editora.editops.LineEndings.toLf(op.apply(before));
         if (after.equals(before)) {
             host.setStatus(tr("status.stringops.noChange"));
             return;
@@ -2380,7 +2380,7 @@ final class EditingCoordinator {
                 }
                 selected.set(true);
                 // A decode can produce '\r'; the document stores it as '\n'.
-                String after = com.editora.editor.LineEndings.toLf(codec.apply(text.substring(s, e)));
+                String after = com.editora.editops.LineEndings.toLf(codec.apply(text.substring(s, e)));
                 return new com.editora.editops.Indenter.TabEdit(s, e, after, s, s + after.length());
             });
         } catch (IllegalArgumentException unreadable) {
@@ -2469,7 +2469,7 @@ final class EditingCoordinator {
         }
         String before = text.substring(from, to);
         // A decode (URL, Base64, JSON unescape) can produce '\r'; the document stores it as '\n'.
-        String after = com.editora.editor.LineEndings.toLf(op.apply(before));
+        String after = com.editora.editops.LineEndings.toLf(op.apply(before));
         if (after.equals(before)) {
             host.setStatus(tr("status.stringops.noChange"));
             return;

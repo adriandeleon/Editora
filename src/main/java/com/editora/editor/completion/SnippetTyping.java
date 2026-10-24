@@ -5,8 +5,8 @@ import java.util.Collection;
 import java.util.function.BiFunction;
 
 import com.editora.editops.Commenter;
+import com.editora.editops.LineEndings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LineEndings;
 import com.editora.editor.language.ShellScripts;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.TabExpansion;

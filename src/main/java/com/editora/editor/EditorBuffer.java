@@ -39,14 +39,18 @@ import javafx.scene.paint.Color;
 
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionProvider;
+import com.editora.config.RulerColumns;
 import com.editora.diagram.DiagramKind;
 import com.editora.editops.AutoClose;
 import com.editora.editops.BraceMatcher;
 import com.editora.editops.Commenter;
 import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
+import com.editora.editops.LineEndings;
 import com.editora.editops.LineIndent;
 import com.editora.editops.MultiTab;
+import com.editora.editops.TextFingerprint;
+import com.editora.editops.WholeDocumentEdit;
 import com.editora.editor.completion.BufferCompletion;
 import com.editora.editor.completion.CompletionEditTracker;
 import com.editora.editor.completion.SnippetFieldOverlay;
@@ -148,6 +152,7 @@ import com.editora.logviewer.LogLevel;
 import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownTable;
+import com.editora.maven.PomFiles;
 import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetSessions;
@@ -3342,6 +3347,11 @@ public class EditorBuffer implements TabContent {
         }
         this.pomPreviewEnabled = enabled;
         reconcilePreviewMode();
+    }
+
+    /** The language whose snippets this buffer gets: {@code maven-pom} for a pom, else {@code language} (its own). */
+    public String snippetLanguage(String language) {
+        return isPom() ? PomFiles.SNIPPET_LANGUAGE : language;
     }
 
     /** Whether this pom buffer is currently showing the generic XML tree instead of the pom summary. */

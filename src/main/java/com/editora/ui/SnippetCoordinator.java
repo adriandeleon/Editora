@@ -91,10 +91,8 @@ final class SnippetCoordinator {
     /** Gives a new buffer its snippet lookup, the Tab-expansion setting and the session hint. */
     void wireBuffer(EditorBuffer buffer) {
         // A pom.xml gets the Maven snippets (dep, plugin, profile…) on top of XML's (Maven review C15).
-        buffer.setSnippetProvider((lang, prefix) ->
-                manager.byTabTrigger(com.editora.editor.PomFiles.snippetLanguage(buffer, lang), prefix));
-        buffer.setSnippetOfferProvider(
-                (lang, prefix) -> manager.byPrefix(com.editora.editor.PomFiles.snippetLanguage(buffer, lang), prefix));
+        buffer.setSnippetProvider((lang, prefix) -> manager.byTabTrigger(buffer.snippetLanguage(lang), prefix));
+        buffer.setSnippetOfferProvider((lang, prefix) -> manager.byPrefix(buffer.snippetLanguage(lang), prefix));
         buffer.setSnippetTabExpansion(host.settings().isSnippetTabExpansion());
         buffer.setSnippetHooks(file -> ops.projectRoot(), progress -> sessionMoved(buffer, progress));
     }
@@ -144,8 +142,7 @@ final class SnippetCoordinator {
         if (b == null) {
             return;
         }
-        if (manager.forLanguage(com.editora.editor.PomFiles.snippetLanguage(b, b.getLanguage()))
-                .isEmpty()) {
+        if (manager.forLanguage(b.snippetLanguage(b.getLanguage())).isEmpty()) {
             host.setStatus(tr("status.noSnippets"));
             return;
         }

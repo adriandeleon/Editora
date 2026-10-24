@@ -148,7 +148,7 @@ class LocalHistoryBaselineFxTest {
         return FxTestSupport.callOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
-            buffer.setContent(com.editora.editor.LineEndings.toLf(Files.readString(file)));
+            buffer.setContent(com.editora.editops.LineEndings.toLf(Files.readString(file)));
             buffer.setDiskSnapshot(Files.getLastModifiedTime(file).toMillis(), Files.size(file));
             FxTestSupport.call(
                     controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);

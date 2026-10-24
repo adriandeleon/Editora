@@ -398,7 +398,7 @@ final class AiCoordinator {
                                 // The document stores CRLF as one newline: the selection below is measured on the LF
                                 // form.
                                 String replacement =
-                                        com.editora.editor.LineEndings.toLf(AiRequests.stripCodeFence(out.toString()));
+                                        com.editora.editops.LineEndings.toLf(AiRequests.stripCodeFence(out.toString()));
                                 // Only a whole, non-empty answer may replace the selection: a reply cut off at the
                                 // output limit or by a closed connection is the start of a rewrite, not a rewrite.
                                 if (!usable(stopReason, replacement)) {

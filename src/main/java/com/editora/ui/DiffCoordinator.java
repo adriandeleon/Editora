@@ -74,8 +74,8 @@ final class DiffCoordinator {
         /** Decoded source bytes: the text in the editor's form, the format read off the raw decode. */
         static DiffContent decoded(EditorConfigCharset.Decoded raw) {
             return text(
-                    com.editora.editor.LineEndings.toLf(raw.text()),
-                    com.editora.editor.LineEndings.dominant(raw.text()),
+                    com.editora.editops.LineEndings.toLf(raw.text()),
+                    com.editora.editops.LineEndings.dominant(raw.text()),
                     raw.charset());
         }
 
@@ -1653,7 +1653,7 @@ final class DiffCoordinator {
         }
         if (open != null) {
             byte[] working = EditorConfigCharset.encode(
-                    com.editora.editor.LineEndings.apply(open.getContent(), open.getLineEnding()),
+                    com.editora.editops.LineEndings.apply(open.getContent(), open.getLineEnding()),
                     open.getEffectiveCharset());
             stageRewritten(
                     root, repoRel, expectedBlob, working, null, ecCharset, openCharset, request.afterText(), done);
@@ -1995,9 +1995,9 @@ final class DiffCoordinator {
     /** The two texts a patch is written from: each displayed side with its source's line ending put back. */
     static String[] patchSides(DiffViewerPane.PatchRequest request) {
         return new String[] {
-            com.editora.editor.LineEndings.apply(
+            com.editora.editops.LineEndings.apply(
                     request.leftText(), request.leftFormat().lineEnding()),
-            com.editora.editor.LineEndings.apply(
+            com.editora.editops.LineEndings.apply(
                     request.rightText(), request.rightFormat().lineEnding())
         };
     }
