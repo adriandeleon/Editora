@@ -7,6 +7,7 @@ import javafx.scene.input.KeyCode;
 import javafx.stage.Stage;
 
 import com.editora.completion.Completion;
+import com.editora.editor.completion.BufferCompletion;
 import com.editora.snippet.Snippet;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
@@ -104,13 +105,13 @@ class AbbrevGhostFxTest {
 
             area.moveTo(3);
             completion.updateCompletion(area, false);
-            assertNull(completion.ghostAbbrev, "the ghost would cover the text after the caret");
+            assertNull(completion.ghostAbbrev(), "the ghost would cover the text after the caret");
 
             area.replaceText("btw");
             area.moveTo(3);
             buffer.setAbbrevs(TABLE, false);
             completion.updateCompletion(area, false);
-            assertNull(completion.ghostAbbrev, "abbrev-mode off: nothing will expand, so nothing is previewed");
+            assertNull(completion.ghostAbbrev(), "abbrev-mode off: nothing will expand, so nothing is previewed");
             assertEquals("s", completion.ghostLabel().getText(), "the dictionary word, as before");
             stage[0].hide();
         });
@@ -146,10 +147,10 @@ class AbbrevGhostFxTest {
             assertEquals("btw", area.getText());
 
             completion.updateCompletion(area, true); // a manual invoke asks for the list, not the preview
-            assertNull(completion.ghostAbbrev);
+            assertNull(completion.ghostAbbrev());
 
             completion.updateCompletion(area, false);
-            assertNotNull(completion.ghostAbbrev);
+            assertNotNull(completion.ghostAbbrev());
             buffer.setAbbrevs(Map.of("btw", "between you and me"), true);
             completion.acceptGhost();
             assertEquals("btw", area.getText(), "the table changed under the preview: what it showed is gone");

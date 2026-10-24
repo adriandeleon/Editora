@@ -1951,8 +1951,8 @@ final class DebugCoordinator {
      * every Java file of the project was saved first) — and may still be on their way, so with none known yet
      * this looks again a few times before saying only that there are errors.
      */
-    private void showBuildErrors(Map<Path, List<com.editora.editor.LspDiagnostic>> published, int waits) {
-        Map<Path, List<com.editora.editor.LspDiagnostic>> found = new java.util.TreeMap<>(lsp.problems());
+    private void showBuildErrors(Map<Path, List<com.editora.editor.lsp.LspDiagnostic>> published, int waits) {
+        Map<Path, List<com.editora.editor.lsp.LspDiagnostic>> found = new java.util.TreeMap<>(lsp.problems());
         found.putAll(published);
         int errors = JavaLaunchPrep.errorCount(found, null);
         if (errors == 0 && waits > 0) {
@@ -2539,7 +2539,7 @@ final class DebugCoordinator {
         if (file == null || file.getFileName() == null) {
             return null;
         }
-        String language = com.editora.editor.LanguageRegistry.forFileName(
+        String language = com.editora.editor.language.LanguageRegistry.forFileName(
                 file.getFileName().toString());
         DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor(language);
         return spec != null && spec.kind() == DapServerRegistry.Kind.JVM ? language : null;

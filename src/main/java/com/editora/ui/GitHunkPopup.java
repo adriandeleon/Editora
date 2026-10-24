@@ -10,7 +10,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
-import com.editora.editor.GitHunk;
+import com.editora.editor.git.GitHunk;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

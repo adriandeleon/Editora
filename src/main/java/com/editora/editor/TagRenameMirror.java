@@ -7,6 +7,8 @@ import java.util.function.Supplier;
 
 import com.editora.editops.DoubleClickWord;
 import com.editora.editops.TagRename;
+import com.editora.editor.language.LanguageRegistry;
+import com.editora.editor.undo.CompletionUndoManager;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.EditableStyledDocument;
 import org.fxmisc.richtext.model.PlainTextChange;

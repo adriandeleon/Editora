@@ -11,7 +11,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
-import com.editora.editor.SvgImages;
+import com.editora.editor.markdown.SvgImages;
 import com.github.weisj.jsvg.ui.jfx.FXSVGCanvas;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

@@ -24,7 +24,7 @@ import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
 import com.editora.config.NoteScope;
-import com.editora.editor.NoteDraft;
+import com.editora.editor.notes.NoteDraft;
 import com.editora.ui.ProjectMapPreview.Content;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

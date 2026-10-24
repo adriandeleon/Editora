@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import com.editora.editor.markdown.MarkdownPreview;
+
 /** What tests in other packages may ask of this package's test helpers. */
 public final class EditorFxBridge {
 

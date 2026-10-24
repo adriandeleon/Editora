@@ -3883,12 +3883,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
+        public java.util.List<com.editora.editor.undo.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
             return MainController.this.undoHistoryCheckpoints();
         }
 
         @Override
-        public void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c) {
+        public void restoreUndoCheckpoint(com.editora.editor.undo.UndoHistory.Checkpoint c) {
             MainController.this.restoreUndoCheckpoint(c);
         }
 
@@ -7283,7 +7283,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Thin LspManager diagnostics callback — delegates to {@link LspCoordinator#onDiagnostics} (kept here
      *  only to avoid an illegal forward reference at the manager's field initializer; see {@link #lspManager}). */
-    private void onLspDiagnostics(Path file, java.util.List<com.editora.editor.LspDiagnostic> diagnostics) {
+    private void onLspDiagnostics(Path file, java.util.List<com.editora.editor.lsp.LspDiagnostic> diagnostics) {
         lspCoordinator.onDiagnostics(file, diagnostics);
     }
 
@@ -7944,7 +7944,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     // --- Undo History popup (the QuickOpen mirror of the Undo History tool window) ---
 
     /** Checkpoints of the active buffer, newest-first, seeding a baseline when empty (like the panel). */
-    private java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
+    private java.util.List<com.editora.editor.undo.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
         EditorBuffer b = activeBuffer();
         if (b == null) {
             return java.util.List.of();
@@ -7955,7 +7955,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return b.getUndoHistory().entriesNewestFirst();
     }
 
-    private void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c) {
+    private void restoreUndoCheckpoint(com.editora.editor.undo.UndoHistory.Checkpoint c) {
         EditorBuffer b = activeBuffer();
         if (b != null) {
             b.restoreUndoCheckpoint(c);
@@ -9537,8 +9537,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else {
             map.put(file.toString(), lines);
         }
-        List<Integer> manual =
-                com.editora.editor.ManualFolds.toFlat(buffer.getFoldManager().manualRegions());
+        List<Integer> manual = com.editora.editor.fold.ManualFolds.toFlat(
+                buffer.getFoldManager().manualRegions());
         var manualMap = config.getWorkspaceState().getManualFoldRegions();
         if (manual.isEmpty()) {
             manualMap.remove(file.toString());
@@ -9566,7 +9566,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         List<Integer> manual = config.getWorkspaceState().getManualFoldRegions().get(file.toString());
         List<Integer> saved = config.getWorkspaceState().getFoldedRegions().getOrDefault(file.toString(), List.of());
         buffer.getFoldManager()
-                .restore(manual == null ? List.of() : com.editora.editor.ManualFolds.fromFlat(manual), saved);
+                .restore(manual == null ? List.of() : com.editora.editor.fold.ManualFolds.fromFlat(manual), saved);
     }
 
     /**

@@ -23,7 +23,7 @@ import com.editora.config.PathKeys;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.NoteDraft;
+import com.editora.editor.notes.NoteDraft;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.jspecify.annotations.Nullable;
@@ -241,7 +241,7 @@ final class NotesCoordinator {
             if (file == null) {
                 return;
             }
-            if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+            if (com.editora.editor.crypto.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
                 host.setStatus(tr("encryption.status.noNotes")); // a note keeps the text it is about, unencrypted
                 return;
             }

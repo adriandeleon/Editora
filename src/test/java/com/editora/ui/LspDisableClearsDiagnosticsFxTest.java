@@ -5,8 +5,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-import com.editora.editor.LspDiagnostic;
-import com.editora.editor.LspDiagnostic.Severity;
+import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnostic.Severity;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

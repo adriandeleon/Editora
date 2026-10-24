@@ -162,7 +162,7 @@ class LspCoordinatorCodeActionsFxTest {
         assertEquals(
                 List.of("Remove field", "Add header"),
                 buffer.offered.stream()
-                        .map(com.editora.editor.CodeAction::title)
+                        .map(com.editora.editor.lsp.CodeAction::title)
                         .toList());
         assertTrue(buffer.offered.get(0).preferred());
         assertEquals("quickfix", buffer.offered.get(1).kind());
@@ -214,7 +214,7 @@ class LspCoordinatorCodeActionsFxTest {
         offer(new CodeAction("Real"));
         fx.run(() -> fx.coordinator.codeActions());
         int statuses = fx.host.statuses.size();
-        fx.run(() -> buffer.pickUnlisted(new com.editora.editor.CodeAction("Forged", "", false, new Object())));
+        fx.run(() -> buffer.pickUnlisted(new com.editora.editor.lsp.CodeAction("Forged", "", false, new Object())));
         assertEquals(statuses, fx.host.statuses.size());
         assertEquals(SOURCE, content());
     }

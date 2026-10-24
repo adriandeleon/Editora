@@ -3,7 +3,7 @@ package com.editora.lsp;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.editor.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnostic;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.MarkupContent;

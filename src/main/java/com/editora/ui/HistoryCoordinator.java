@@ -988,7 +988,7 @@ final class HistoryCoordinator {
                 || content == null
                 || !com.editora.vfs.Vfs.isLocal(file)
                 || !(evenWhenOff || isEnabled())
-                || com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+                || com.editora.editor.crypto.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
             if (durableCompletion != null) {
                 durableCompletion.accept(true);
             }

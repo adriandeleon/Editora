@@ -17,8 +17,8 @@ import javafx.stage.Stage;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspDiagnostic;
-import com.editora.editor.OccurrenceSpan;
+import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.editor.lsp.OccurrenceSpan;
 import com.editora.markdown.MarkdownLint;
 import com.editora.mermaid.MaidOutput;
 import org.fxmisc.richtext.CodeArea;
@@ -195,7 +195,7 @@ class SplitPaneOverlaysFxTest {
             b.setLspActive(true);
             b.setLspDiagnostics(List.of(error(3, 12, 17, "cannot find symbol value")));
             int at = first.getText().indexOf("value");
-            b.setSearchMatches(com.editora.editor.SearchMatches.of(at, at + 5), 0);
+            b.setSearchMatches(com.editora.editor.search.SearchMatches.of(at, at + 5), 0);
         });
         CodeArea second = split(b);
         Node squiggles = drawn(b, "lsp-diagnostic-overlay");

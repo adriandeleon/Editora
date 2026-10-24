@@ -21,6 +21,8 @@ import javafx.stage.Stage;
 
 import com.editora.editor.debug.DebugHover;
 import com.editora.editor.http.HttpHooks;
+import com.editora.editor.markdown.MarkdownMenus;
+import com.editora.editor.markdown.MermaidLintHover;
 import com.editora.i18n.Messages;
 import com.editora.markdown.MarkdownLint;
 import com.editora.mermaid.MaidOutput;

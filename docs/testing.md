@@ -188,7 +188,7 @@ alone (`-DexcludedGroups=fx`) covers under half of that, which is all the Window
 | `logviewer` | 0.92 | 95.5% |
 | `lsp` | 0.92 | 95.4% |
 | `editor` | 0.91 | 94.2% |
-| `editor.*` | 0.91 | each sub-package on its own: `editor.debug` 92.2%, `editor.http` 97.1% (targeted runs, a lower bound) |
+| `editor.*` | 0.91 | each of the 18 sub-packages on its own; the tightest on the full suite are `editor.completion` and `editor.structured`, about 92% |
 | `editorconfig` | 0.91 | 94.0% |
 | `http` | 0.91 | 94.6% |
 | `index` | 0.91 | 94.4% |

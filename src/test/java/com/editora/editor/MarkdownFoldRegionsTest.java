@@ -2,7 +2,8 @@ package com.editora.editor;
 
 import java.util.List;
 
-import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.fold.FoldRegions;
+import com.editora.editor.fold.FoldRegions.Region;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

@@ -20,7 +20,7 @@ import javafx.stage.Window;
 import com.editora.completion.CompletionResult;
 import com.editora.completion.CompletionSource;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspTextEdit;
+import com.editora.editor.lsp.LspTextEdit;
 import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspTestHooks;
 import com.editora.lsp.WorkspaceEditHazards;
@@ -315,17 +315,17 @@ class LspCoordinatorHooksFxTest {
     void aNetZeroEditRestoresTheDiagnosticsItCleared() throws Exception {
         // Written on the FX thread and read here, while the typing-pause timer may still add to it (about a
         // quarter second after the edit): a plain ArrayList threw ConcurrentModificationException mid-read.
-        List<List<com.editora.editor.LspDiagnostic>> shown = new java.util.concurrent.CopyOnWriteArrayList<>();
+        List<List<com.editora.editor.lsp.LspDiagnostic>> shown = new java.util.concurrent.CopyOnWriteArrayList<>();
         HookedBuffer buffer = fx.open("A.java", SOURCE, FxTestSupport.callOnFx(() -> new HookedBuffer() {
             @Override
-            public void setLspDiagnostics(List<com.editora.editor.LspDiagnostic> diagnostics) {
+            public void setLspDiagnostics(List<com.editora.editor.lsp.LspDiagnostic> diagnostics) {
                 shown.add(diagnostics);
                 super.setLspDiagnostics(diagnostics);
             }
         }));
         FxTestSupport.runOnFx(() -> fx.coordinator.wireBuffer(buffer));
-        var diagnostic = new com.editora.editor.LspDiagnostic(
-                1, 9, 1, 11, com.editora.editor.LspDiagnostic.Severity.ERROR, "x", null, null);
+        var diagnostic = new com.editora.editor.lsp.LspDiagnostic(
+                1, 9, 1, 11, com.editora.editor.lsp.LspDiagnostic.Severity.ERROR, "x", null, null);
         FxTestSupport.runOnFx(() -> fx.coordinator.onDiagnostics(buffer.getPath(), List.of(diagnostic)));
         shown.clear();
 

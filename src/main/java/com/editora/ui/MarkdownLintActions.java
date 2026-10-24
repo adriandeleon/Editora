@@ -15,7 +15,7 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.MarkdownLintText;
+import com.editora.editor.markdown.MarkdownLintText;
 import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownLint.Diagnostic;
 import com.editora.markdown.MarkdownLintConfig;

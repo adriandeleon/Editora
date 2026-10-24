@@ -25,7 +25,7 @@ public record PageImage(byte[] png, ImagePaging.Source source) {
     }
 
     /** The page images of a preview snapshot, chunk for chunk. */
-    public static java.util.List<PageImage> of(com.editora.editor.PreviewSnapshots.Result snapshot) {
+    public static java.util.List<PageImage> of(com.editora.editor.structured.PreviewSnapshots.Result snapshot) {
         return snapshot.images().stream()
                 .map(c -> rows(c.png(), c.scale(), c.cuts(), c.continues()))
                 .toList();

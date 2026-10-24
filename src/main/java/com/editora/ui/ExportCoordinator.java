@@ -667,7 +667,7 @@ final class ExportCoordinator {
      * null when it cannot be encoded as a PNG.
      */
     private static java.util.@Nullable List<com.editora.pdf.PageImage> pageImage(javafx.scene.image.Image image) {
-        byte[] png = com.editora.editor.PreviewImageLoader.imageToPng(image);
+        byte[] png = com.editora.editor.markdown.PreviewImageLoader.imageToPng(image);
         return png == null ? null : java.util.List.of(com.editora.pdf.PageImage.of(png));
     }
 
@@ -1000,24 +1000,24 @@ final class ExportCoordinator {
         boolean math = host.settings().isMathSupport();
         java.nio.file.Path source = b.getPath();
         java.util.List<String> mmdc = mermaid == null ? null : mermaid.mmdcCommandOrNull();
-        var options = new com.editora.editor.MarkdownHtmlExport.Options(
+        var options = new com.editora.editor.markdown.MarkdownHtmlExport.Options(
                 host.settings().isHtmlExportHighlightCode(),
                 host.settings().isHtmlExportEmbedImages(),
                 source != null && com.editora.vfs.Vfs.isLocal(source) ? source.getParent() : null,
                 mmdc,
-                com.editora.editor.MarkdownHtmlExport.painter(
+                com.editora.editor.markdown.MarkdownHtmlExport.painter(
                         com.editora.pdf.CodeHtml::toClassHtml,
                         () -> com.editora.pdf.CodeHtml.classCss(".markdown-body")));
         java.util.function.Supplier<Exception> write = () -> {
             try {
-                String html = com.editora.editor.MarkdownHtmlExport.toHtml(markdown, title, math, options);
+                String html = com.editora.editor.markdown.MarkdownHtmlExport.toHtml(markdown, title, math, options);
                 com.editora.io.StagedExport.writeString(f.toPath(), html);
                 return null;
             } catch (Exception ex) {
                 return ex;
             }
         };
-        if (!com.editora.editor.MarkdownHtmlExport.readsFilesOrRunsTools(markdown, options)) {
+        if (!com.editora.editor.markdown.MarkdownHtmlExport.readsFilesOrRunsTools(markdown, options)) {
             htmlExported(f, write.get(), true); // text only: nothing to wait for
             return;
         }

@@ -6,10 +6,10 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LanguageRegistry;
-import com.editora.editor.SemanticToken;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.language.LanguageRegistry;
+import com.editora.editor.lsp.SemanticToken;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.junit.jupiter.api.BeforeAll;

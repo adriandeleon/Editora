@@ -33,7 +33,7 @@ import com.editora.crypto.GpgKey;
 import com.editora.crypto.GpgStatus;
 import com.editora.crypto.PacketInfo;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.EncryptionState;
+import com.editora.editor.crypto.EncryptionState;
 import com.editora.process.ProcessRunner;
 import org.jspecify.annotations.Nullable;
 

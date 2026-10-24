@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Checks every frame an overlay shows for a while after a change — not where it settles, which can hide a frame
  * painted for the old layout and put right one frame later.
  */
-final class FrameWatch {
+public final class FrameWatch {
 
     /**
      * How long after a change each frame is checked: the line-number gutter is re-padded on the fold manager's
@@ -38,7 +38,7 @@ final class FrameWatch {
      * @param overlay the overlay, whose {@code afterLayout} ({@link AfterLayoutPaint}) says whether it paints later
      *     in the pulse; an overlay without one paints between pulses, never during one
      */
-    static List<String> wrongFrames(EditorBuffer buffer, Object overlay, Supplier<String> check, Runnable change)
+    public static List<String> wrongFrames(EditorBuffer buffer, Object overlay, Supplier<String> check, Runnable change)
             throws Exception {
         List<String> wrong = new ArrayList<>();
         CountDownLatch done = new CountDownLatch(1);

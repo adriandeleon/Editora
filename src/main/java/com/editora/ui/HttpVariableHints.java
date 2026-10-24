@@ -13,8 +13,8 @@ import java.util.concurrent.Executors;
 
 import javafx.application.Platform;
 
-import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.lsp.CodeAction;
 import com.editora.http.HttpEnv;
 import com.editora.http.HttpVariableIndex;
 import com.editora.markdown.MarkdownLint;

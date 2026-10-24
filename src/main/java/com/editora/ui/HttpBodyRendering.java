@@ -10,8 +10,8 @@ import java.util.concurrent.TimeUnit;
 
 import javafx.scene.image.Image;
 
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
 import org.eclipse.tm4e.core.grammar.IGrammar;

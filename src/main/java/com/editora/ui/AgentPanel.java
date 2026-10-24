@@ -21,7 +21,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.agent.AcpJson;
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownRenderer;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

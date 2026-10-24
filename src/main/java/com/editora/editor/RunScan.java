@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import com.editora.editor.language.ShellFiles;
 import com.editora.http.HttpFile;
 import com.editora.run.MainMethodScanner;
 import com.editora.run.MakefileTargets;

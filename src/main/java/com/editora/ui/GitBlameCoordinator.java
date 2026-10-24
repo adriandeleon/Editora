@@ -10,8 +10,8 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.function.Consumer;
 
-import com.editora.editor.BlameInfo;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.git.BlameInfo;
 import com.editora.git.BlameHeatmap;
 import com.editora.git.BlameOptions;
 import com.editora.git.BlameParser;

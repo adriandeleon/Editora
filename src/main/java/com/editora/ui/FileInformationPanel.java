@@ -28,7 +28,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LanguageRegistry;
+import com.editora.editor.language.LanguageRegistry;
 import com.editora.markdown.WordCount;
 import org.jspecify.annotations.Nullable;
 

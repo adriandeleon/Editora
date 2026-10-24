@@ -130,11 +130,11 @@ public final class CompletionMapper {
                         range.getEnd().getCharacter());
     }
 
-    public static List<com.editora.editor.LspTextEdit> additionalEdits(CompletionItem item) {
+    public static List<com.editora.editor.lsp.LspTextEdit> additionalEdits(CompletionItem item) {
         if (item == null || item.getAdditionalTextEdits() == null) return List.of();
         return item.getAdditionalTextEdits().stream()
                 .filter(e -> e != null && e.getRange() != null)
-                .map(e -> new com.editora.editor.LspTextEdit(
+                .map(e -> new com.editora.editor.lsp.LspTextEdit(
                         e.getRange().getStart().getLine(),
                         e.getRange().getStart().getCharacter(),
                         e.getRange().getEnd().getLine(),

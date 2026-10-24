@@ -20,11 +20,11 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
 
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.MarkdownPrintAssets;
-import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.PreviewImageLoader;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.markdown.MarkdownPrintAssets;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.mermaid.Mermaid;
 import com.editora.pdf.ImagePaging;
 import com.editora.pdf.PageImage;

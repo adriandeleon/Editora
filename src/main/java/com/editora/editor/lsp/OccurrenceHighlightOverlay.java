@@ -1,0 +1,209 @@
+package com.editora.editor.lsp;
+
+import java.util.List;
+
+import javafx.geometry.Bounds;
+import javafx.scene.canvas.Canvas;
+import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.layout.Region;
+import javafx.scene.paint.Color;
+
+import com.editora.editor.AfterLayoutPaint;
+import com.editora.editor.CanvasGuards;
+import com.editora.editor.SecondaryPane;
+import com.editora.editor.TabSurface;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
+
+/**
+ * A transparent overlay washing every occurrence of the symbol under the caret (LSP document highlight,
+ * #675) — Read occurrences in a neutral tint, Write occurrences (assignments) warmer with a thin border —
+ * behind the text, never touching the style spans.
+ *
+ * <p>A structural clone of {@code SearchHighlightOverlay} (itself modeled on {@code SpellCheckOverlay}):
+ * mouse-transparent {@link Canvas} sized to the viewport, redraws coalesced to one per pulse on
+ * scroll/edit/resize, visible paragraphs only, released to a 1×1 texture while empty (the common case —
+ * the caret is rarely resting on a highlightable symbol).
+ */
+public final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
+
+    private static final Color READ = Color.web("#90a4ae", 0.28); // neutral blue-gray wash
+    private static final Color WRITE = Color.web("#ffb74d", 0.32); // warmer — the symbol is assigned here
+    private static final Color WRITE_BORDER = Color.web("#ffb74d", 0.9);
+
+    private final CodeArea area;
+    private final Canvas canvas = new Canvas(1, 1);
+    /** {startOffset, endOffset, write(0/1)} triples, precomputed to offsets by the buffer. */
+    private List<int[]> spans = List.of();
+
+    private boolean active;
+    private boolean redrawPending;
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
+    /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
+    private boolean rendering = true;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private @Nullable OccurrenceHighlightOverlay follower;
+
+    public OccurrenceHighlightOverlay(CodeArea area) {
+        this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                this::drawable);
+        getStyleClass().add("occurrence-overlay");
+        setMouseTransparent(true);
+        setVisible(false);
+        getChildren().add(canvas);
+        area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
+        area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
+        area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+    }
+
+    /** The same wash for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public OccurrenceHighlightOverlay follower(CodeArea view) {
+        OccurrenceHighlightOverlay second = new OccurrenceHighlightOverlay(view);
+        second.setRenderingActive(rendering);
+        second.setSpans(spans);
+        follower = second;
+        return second;
+    }
+
+    /**
+     * Releases the canvas while this overlay's tab is in the background and repaints when it is shown again
+     * (driven by {@code EditorBuffer.setRenderingActive}): a word left highlighted on a hidden tab would
+     * otherwise keep a viewport-sized texture alive for as long as the tab stays open.
+     */
+    @Override
+    public void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
+        if (rendering == on) {
+            return;
+        }
+        rendering = on;
+        if (on) {
+            requestLayout();
+            scheduleRedraw();
+        } else {
+            CanvasGuards.release(canvas);
+        }
+    }
+
+    /** Whether there is anything to paint; the canvas is 1x1 (no viewport texture) whenever there is not. */
+    private boolean drawable() {
+        return active && rendering;
+    }
+
+    /** Sets the occurrence spans (offset triples) to wash; empty hides + releases the texture. */
+    public void setSpans(List<int[]> spans) {
+        if (follower != null) {
+            follower.setSpans(spans);
+        }
+        this.spans = spans == null ? List.of() : spans;
+        boolean show = !this.spans.isEmpty();
+        if (active != show) {
+            active = show;
+            setVisible(show);
+        }
+        if (show) {
+            requestLayout();
+            scheduleRedraw();
+        } else {
+            CanvasGuards.release(canvas); // release the full-viewport texture while hidden
+        }
+    }
+
+    @Override
+    protected void layoutChildren() {
+        canvas.relocate(0, 0);
+        if (!drawable()) {
+            return; // stay 1x1 / no texture while empty or backgrounded
+        }
+        CanvasGuards.fit(this, canvas);
+        scheduleRedraw();
+    }
+
+    private void scheduleRedraw() {
+        if (!drawable() || redrawPending) {
+            return;
+        }
+        redrawPending = true;
+        afterLayout.request();
+    }
+
+    private void redraw() {
+        GraphicsContext g = canvas.getGraphicsContext2D();
+        double w = canvas.getWidth();
+        double h = canvas.getHeight();
+        g.clearRect(0, 0, w, h);
+        if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+            return;
+        }
+        try {
+            int total = area.getParagraphs().size();
+            if (total == 0) {
+                return;
+            }
+            int first = Math.max(0, area.firstVisibleParToAllParIndex());
+            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
+            int firstOffset = area.getAbsolutePosition(first, 0);
+            int lastOffset = area.getAbsolutePosition(
+                    last, area.getParagraph(last).getText().length());
+            for (int[] s : spans) {
+                if (s[1] < firstOffset || s[0] > lastOffset) {
+                    continue; // cheap off-screen rejection before the costlier bounds lookups
+                }
+                paintSpan(g, s, first, last, w, h);
+            }
+        } catch (RuntimeException ignored) {
+            // Viewport mid-layout — skip this frame; a later event will redraw.
+        }
+    }
+
+    private void paintSpan(GraphicsContext g, int[] span, int first, int last, double w, double h) {
+        var startPos = area.offsetToPosition(span[0], Bias.Forward);
+        var endPos = area.offsetToPosition(Math.max(span[1], span[0]), Bias.Backward);
+        boolean write = span[2] != 0;
+        int startLine = startPos.getMajor();
+        int endLine = endPos.getMajor();
+        if (endLine < first || startLine > last) {
+            return;
+        }
+        for (int line = Math.max(startLine, first); line <= Math.min(endLine, last); line++) {
+            if (area.isFolded(line)) {
+                continue;
+            }
+            int lineLen = area.getParagraph(line).getText().length();
+            int c0 = line == startLine ? startPos.getMinor() : 0;
+            int c1 = line == endLine ? endPos.getMinor() : lineLen;
+            if (c1 <= c0) {
+                continue;
+            }
+            int absStart = area.getAbsolutePosition(line, c0);
+            int absEnd = area.getAbsolutePosition(line, c1);
+            Bounds b = toLocal(area.getCharacterBoundsOnScreen(absStart, absEnd).orElse(null));
+            if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
+                continue;
+            }
+            g.setFill(write ? WRITE : READ);
+            g.fillRect(b.getMinX(), b.getMinY(), b.getWidth(), b.getHeight());
+            if (write) {
+                g.setStroke(WRITE_BORDER);
+                g.setLineWidth(1);
+                g.strokeRect(b.getMinX() + 0.5, b.getMinY() + 0.5, b.getWidth() - 1, b.getHeight() - 1);
+            }
+        }
+    }
+
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
+        return screen == null ? null : canvas.screenToLocal(screen);
+    }
+}

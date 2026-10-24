@@ -13,6 +13,8 @@ import javafx.stage.Stage;
 
 import com.editora.completion.*;
 import com.editora.editor.*;
+import com.editora.editor.completion.CompletionPopup;
+import com.editora.editor.lsp.LspTextEdit;
 import com.editora.lsp.CompletionMapper;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;

@@ -11,7 +11,7 @@ import javafx.scene.input.ClipboardContent;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.MarkdownPreviewPane;
+import com.editora.editor.markdown.MarkdownPreviewPane;
 import com.editora.markdown.MarkdownTable;
 import org.jspecify.annotations.Nullable;
 
@@ -84,7 +84,8 @@ final class PreviewCoordinator {
 
     static final int TABLE_PICKER_MAX_COLS = 8;
 
-    final com.editora.editor.MarkdownLintService markdownLintService = new com.editora.editor.MarkdownLintService();
+    final com.editora.editor.markdown.MarkdownLintService markdownLintService =
+            new com.editora.editor.markdown.MarkdownLintService();
 
     /** Acting on lint issues (fix, disable, rule help, next/previous) and the project's lint config. */
     private @Nullable MarkdownLintActions lintActions;
@@ -363,19 +364,20 @@ final class PreviewCoordinator {
         Path file = buffer.getPath();
         var layouts = host.config().getWorkspaceState().getMarkdownPreviewLayouts();
         String saved = file == null ? null : layouts.get(file.toString());
-        buffer.restorePreviewLayout(saved == null ? null : com.editora.editor.PreviewLayout.parse(saved), () -> {
-            Path now = buffer.getPath();
-            if (now == null) {
-                return;
-            }
-            com.editora.editor.PreviewLayout layout = buffer.getPreviewLayout();
-            if (layout.isDefault()) {
-                layouts.remove(now.toString());
-            } else {
-                layouts.put(now.toString(), layout.text());
-            }
-            host.requestSave();
-        });
+        buffer.restorePreviewLayout(
+                saved == null ? null : com.editora.editor.markdown.PreviewLayout.parse(saved), () -> {
+                    Path now = buffer.getPath();
+                    if (now == null) {
+                        return;
+                    }
+                    com.editora.editor.markdown.PreviewLayout layout = buffer.getPreviewLayout();
+                    if (layout.isDefault()) {
+                        layouts.remove(now.toString());
+                    } else {
+                        layouts.put(now.toString(), layout.text());
+                    }
+                    host.requestSave();
+                });
     }
 
     /** Restores a Markdown/CSV/.http file's saved view mode after it is opened (and its toggle is wired). */
@@ -840,12 +842,12 @@ final class PreviewCoordinator {
      */
     void applyPreviewSettings() {
         Settings s = host.config().getSettings();
-        com.editora.editor.MathImages.configure(s.isMathSupport(), host.appThemeDark());
-        com.editora.editor.PreviewImageLoader.setRemotePolicy(
-                com.editora.editor.PreviewImageLoader.RemotePolicy.of(s.getMarkdownRemoteImagePolicy()));
-        com.editora.editor.PreviewScrollSync.setEnabled(s.isMarkdownScrollSync());
-        com.editora.editor.MarkdownRenderer.setWikiLinks(s.isMarkdownWikiLinks());
-        com.editora.editor.PreviewPrefs.set(
+        com.editora.editor.markdown.MathImages.configure(s.isMathSupport(), host.appThemeDark());
+        com.editora.editor.markdown.PreviewImageLoader.setRemotePolicy(
+                com.editora.editor.markdown.PreviewImageLoader.RemotePolicy.of(s.getMarkdownRemoteImagePolicy()));
+        com.editora.editor.markdown.PreviewScrollSync.setEnabled(s.isMarkdownScrollSync());
+        com.editora.editor.markdown.MarkdownRenderer.setWikiLinks(s.isMarkdownWikiLinks());
+        com.editora.editor.markdown.PreviewPrefs.set(
                 s.getMarkdownPreviewFontSize(), s.getMarkdownPreviewWidth(), s.isMarkdownHideFrontMatter());
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer b = host.bufferOf(tab);
@@ -984,7 +986,7 @@ final class PreviewCoordinator {
         String mode = host.config().getSettings().getMarkdownPreviewTheme();
         // Three states, so the toggle can let go again: follow the app → the other theme → the app's own,
         // pinned → follow the app.
-        String next = com.editora.editor.PreviewButtons.nextTheme(mode, host.appThemeDark());
+        String next = com.editora.editor.markdown.PreviewButtons.nextTheme(mode, host.appThemeDark());
         host.config().getSettings().setMarkdownPreviewTheme(next);
         host.requestSave();
         applyMarkdownPreviewTheme();

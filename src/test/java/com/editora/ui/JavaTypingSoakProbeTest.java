@@ -19,6 +19,7 @@ import com.editora.completion.CompletionSession;
 import com.editora.completion.CompletionSource;
 import com.editora.config.Settings;
 import com.editora.editor.*;
+import com.editora.editor.completion.CompletionPopup;
 import com.editora.lsp.*;
 import org.junit.jupiter.api.*;
 

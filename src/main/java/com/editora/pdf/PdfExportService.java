@@ -10,8 +10,8 @@ import javafx.application.Platform;
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelFormat;
 
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.jspecify.annotations.Nullable;
@@ -397,15 +397,16 @@ public final class PdfExportService {
 
     /**
      * Exports an SVG document as a PDF page: rasterized <b>here</b>, off the FX thread (a large SVG takes
-     * hundreds of milliseconds), at {@link com.editora.editor.PreviewImageLoader#PRINT_RASTER_SCALE}× and
+     * hundreds of milliseconds), at {@link com.editora.editor.markdown.PreviewImageLoader#PRINT_RASTER_SCALE}× and
      * drawn at the SVG's own size. A failed rasterization reports {@code noImageMessage}.
      */
     public void exportSvg(byte[] svg, String noImageMessage, String pageSize, Path out, Consumer<Result> onResult) {
         submit(onResult, () -> {
             Result result;
             try {
-                com.editora.editor.PreviewImageLoader.SvgPng r = com.editora.editor.PreviewImageLoader.svgToPng(
-                        svg, com.editora.editor.PreviewImageLoader.PRINT_RASTER_SCALE);
+                com.editora.editor.markdown.PreviewImageLoader.SvgPng r =
+                        com.editora.editor.markdown.PreviewImageLoader.svgToPng(
+                                svg, com.editora.editor.markdown.PreviewImageLoader.PRINT_RASTER_SCALE);
                 if (r == null) {
                     result = new Result(false, noImageMessage);
                 } else {

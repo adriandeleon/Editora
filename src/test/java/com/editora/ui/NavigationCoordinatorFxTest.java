@@ -8,7 +8,7 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.Tab;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.UndoHistory;
+import com.editora.editor.undo.UndoHistory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

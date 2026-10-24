@@ -112,7 +112,7 @@ class MarkdownBacklinksFxTest {
             // project, its name compared without case — not only a file beside the document.
             assertEquals(
                     root.resolve("docs/b.md"),
-                    com.editora.editor.WikiLinkTargets.resolve(root, "B"),
+                    com.editora.editor.markdown.WikiLinkTargets.resolve(root, "B"),
                     "the window installed its resolver");
 
             // Activating a link row goes to its line in its file.

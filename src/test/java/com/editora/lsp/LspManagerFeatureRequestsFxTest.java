@@ -13,9 +13,9 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
-import com.editora.editor.LspTextEdit;
-import com.editora.editor.OccurrenceSpan;
-import com.editora.editor.SemanticToken;
+import com.editora.editor.lsp.LspTextEdit;
+import com.editora.editor.lsp.OccurrenceSpan;
+import com.editora.editor.lsp.SemanticToken;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -1337,7 +1337,7 @@ class LspManagerFeatureRequestsFxTest {
         assertEquals(List.of(), this.<List<SymbolNode>>await(cb -> manager.latestDocumentSymbols(other, cb)));
         assertEquals(
                 List.of(),
-                this.<List<com.editora.editor.FoldRegions.Region>>await(cb -> manager.foldingRanges(other, cb)));
+                this.<List<com.editora.editor.fold.FoldRegions.Region>>await(cb -> manager.foldingRanges(other, cb)));
         assertEquals(List.of(), this.<List<int[]>>await(cb -> manager.selectionRanges(other, 0, 0, new int[] {0}, cb)));
         assertNull(this.<Boolean>await(cb -> manager.isTestFile(other, cb)));
         assertNull(this.<String>await(cb -> manager.resolveStackTraceLocation(other, "at demo.A.go(A.java:3)", cb)));

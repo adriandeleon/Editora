@@ -22,7 +22,7 @@ import javafx.application.Platform;
 
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
-import com.editora.editor.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnostic;
 import com.editora.lsp.LspManager;
 import com.editora.process.ExecSpec;
 import com.editora.process.ExecTarget;

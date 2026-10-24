@@ -18,7 +18,7 @@ import javafx.scene.input.MouseEvent;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GitHunk;
+import com.editora.editor.git.GitHunk;
 import com.editora.git.GitService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

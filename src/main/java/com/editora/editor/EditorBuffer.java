@@ -47,18 +47,103 @@ import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
 import com.editora.editops.MultiTab;
+import com.editora.editor.completion.BufferCompletion;
+import com.editora.editor.completion.CompletionEditTracker;
+import com.editora.editor.completion.SnippetFieldOverlay;
+import com.editora.editor.completion.SnippetTyping;
+import com.editora.editor.crypto.BufferEncryption;
 import com.editora.editor.debug.BreakpointGutterMenu;
 import com.editora.editor.debug.BreakpointManager;
 import com.editora.editor.debug.DebugHover;
 import com.editora.editor.debug.DebugValuePresenter;
 import com.editora.editor.debug.ExecutionLine;
 import com.editora.editor.debug.InlineValuesOverlay;
+import com.editora.editor.fold.FoldManager;
+import com.editora.editor.fold.FoldRegions;
+import com.editora.editor.fold.NarrowPresentation;
+import com.editora.editor.fold.StickyScroll;
+import com.editora.editor.fold.StickyScrollBar;
+import com.editora.editor.git.BlameInfo;
+import com.editora.editor.git.GitGutterLines;
+import com.editora.editor.highlight.CsvRainbow;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.HighlightDirty;
+import com.editora.editor.highlight.HighlightPass;
+import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.http.HttpGutter;
 import com.editora.editor.http.HttpHooks;
 import com.editora.editor.http.HttpLineResult;
 import com.editora.editor.http.HttpResultMarks;
 import com.editora.editor.http.HttpVariableFixes;
 import com.editora.editor.http.HttpVariableMarks;
+import com.editora.editor.language.LanguageRegistry;
+import com.editora.editor.language.Modeline;
+import com.editora.editor.language.Shebang;
+import com.editora.editor.logviewer.LogHighlightOverlay;
+import com.editora.editor.logviewer.LogView;
+import com.editora.editor.lsp.CodeAction;
+import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.editor.lsp.LspDiagnosticOverlay;
+import com.editora.editor.lsp.LspEditPlacement;
+import com.editora.editor.lsp.LspEditShift;
+import com.editora.editor.lsp.LspTextEdit;
+import com.editora.editor.lsp.OccurrenceHighlightOverlay;
+import com.editora.editor.lsp.OccurrenceSpan;
+import com.editora.editor.lsp.SemanticToken;
+import com.editora.editor.markdown.DiagramImages;
+import com.editora.editor.markdown.MarkdownCompletions;
+import com.editora.editor.markdown.MarkdownEditing;
+import com.editora.editor.markdown.MarkdownFormatBar;
+import com.editora.editor.markdown.MarkdownLintHover;
+import com.editora.editor.markdown.MarkdownLintOverlay;
+import com.editora.editor.markdown.MarkdownLintStripe;
+import com.editora.editor.markdown.MarkdownMenus;
+import com.editora.editor.markdown.MarkdownPreview;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.MermaidImages;
+import com.editora.editor.markdown.MermaidLintHover;
+import com.editora.editor.markdown.MermaidLintOverlay;
+import com.editora.editor.markdown.PreviewButtons;
+import com.editora.editor.markdown.PreviewFind;
+import com.editora.editor.markdown.PreviewImageLoader;
+import com.editora.editor.markdown.PreviewLayout;
+import com.editora.editor.markdown.PreviewPrefs;
+import com.editora.editor.markdown.PreviewScrollSync;
+import com.editora.editor.markdown.PreviewSurfaces;
+import com.editora.editor.markdown.ScrollAnchor;
+import com.editora.editor.markdown.SvgImages;
+import com.editora.editor.markdown.TypstImages;
+import com.editora.editor.minimap.Minimap;
+import com.editora.editor.notes.NoteDraft;
+import com.editora.editor.notes.NoteHighlightOverlay;
+import com.editora.editor.notes.NoteHover;
+import com.editora.editor.notes.NoteManager;
+import com.editora.editor.search.SearchHighlightOverlay;
+import com.editora.editor.search.SearchMatcher;
+import com.editora.editor.search.SearchMatches;
+import com.editora.editor.spell.BufferSpell;
+import com.editora.editor.spell.SpellCheckOverlay;
+import com.editora.editor.structured.CrontabPreview;
+import com.editora.editor.structured.DockerfilePreview;
+import com.editora.editor.structured.FstabPreview;
+import com.editora.editor.structured.GithubActionsPreview;
+import com.editora.editor.structured.MarkwhenCalendar;
+import com.editora.editor.structured.MarkwhenTimeline;
+import com.editora.editor.structured.OpenApiDoc;
+import com.editora.editor.structured.PomPreview;
+import com.editora.editor.structured.PreviewSnapshots;
+import com.editora.editor.structured.SshConfigPreview;
+import com.editora.editor.structured.StructuredTree;
+import com.editora.editor.structured.SystemdPreview;
+import com.editora.editor.structured.XmlTree;
+import com.editora.editor.todo.TodoHighlightOverlay;
+import com.editora.editor.todo.TodoMark;
+import com.editora.editor.todo.TodoMatcher;
+import com.editora.editor.todo.TodoStripe;
+import com.editora.editor.undo.CompletionUndoFactory;
+import com.editora.editor.undo.CompletionUndoManager;
+import com.editora.editor.undo.UndoHistory;
+import com.editora.editor.undo.UndoMerge;
 import com.editora.logviewer.LogLevel;
 import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLint;
@@ -793,11 +878,14 @@ public class EditorBuffer implements TabContent {
     private boolean noteIndicators = true;
     /** Invoked when the user clicks a note's inline start marker — the controller opens the note editor. */
     private java.util.function.BiConsumer<EditorBuffer, com.editora.config.PersonalNote> noteMarkerClick = (b, n) -> {};
-    /** Reused hover tooltip (a popup window with its own scene, so built on the first hover over a note) +
-     *  the id of the note it's currently showing (so we only update on change). */
-    private javafx.scene.control.@Nullable Tooltip noteTip;
-
-    private java.util.@Nullable UUID hoverNoteId;
+    /** The popup over a note's span and the click on its start marker ({@link NoteHover}). */
+    private final NoteHover noteHover = new NoteHover(
+            notes,
+            () -> noteIndicators,
+            n -> noteMarkerClick.accept(this, n),
+            () -> this.fontFamily,
+            () -> this.fontSize,
+            () -> this.path != null ? this.path.getParent() : null);
 
     /** Handles a gutter note-marker click (the controller opens/edits that line's note). Default: no-op. */
     /** Handles a click on a line's blame annotation (the controller shows that line's commit). Default: no-op. */
@@ -1133,7 +1221,7 @@ public class EditorBuffer implements TabContent {
                 }
                 // The matched pair moves with the text, so the next re-match clears it where it now is: a
                 // pass no longer restyles everything below an edit, which used to hide a stale position.
-                int[] pair = completionActions.braceMatch;
+                int[] pair = completionActions.braceMatch();
                 if (pair != null) {
                     pair[0] = HighlightDirty.moved(pair[0], change.getPosition(), removed, inserted);
                     pair[1] = HighlightDirty.moved(pair[1], change.getPosition(), removed, inserted);
@@ -1222,14 +1310,14 @@ public class EditorBuffer implements TabContent {
         settledEdits.at(
                 Duration.ofMillis(90),
                 () -> lspActive
-                        && completionActions.autocompleteEnabled
+                        && completionActions.autocompleteEnabled()
                         && focusedArea != null
                         && focusedArea.isFocused(),
                 () -> completionActions.updateCompletion(focusedArea, false));
         settledEdits.at(
                 Duration.ofMillis(280),
                 () -> !lspActive
-                        && completionActions.autocompleteEnabled
+                        && completionActions.autocompleteEnabled()
                         && focusedArea != null
                         && focusedArea.isFocused(),
                 () -> completionActions.updateCompletion(focusedArea, false));
@@ -1262,12 +1350,12 @@ public class EditorBuffer implements TabContent {
                 });
         settledEdits.at(
                 Duration.ofMillis(600),
-                () -> completionActions.aiCompletionEnabled && focusedArea != null && focusedArea.isFocused(),
+                () -> completionActions.aiCompletionEnabled() && focusedArea != null && focusedArea.isFocused(),
                 () -> completionActions.maybeRequestAiCompletion(focusedArea));
     }
 
     /** A Markdown document up to this long keeps its live preview even in large-file mode (see below). */
-    static final int PREVIEW_LIVE_MAX_CHARS = 2_000_000;
+    public static final int PREVIEW_LIVE_MAX_CHARS = 2_000_000;
 
     /**
      * Whether an edit refreshes the preview. Large-file mode stops it — except for a Markdown document that
@@ -1352,6 +1440,11 @@ public class EditorBuffer implements TabContent {
     /** Injects the external-URL opener (controller's HostServices) used by Ctrl/Cmd-click + open-link. */
     public void setOpenUrlHandler(java.util.function.Consumer<String> handler) {
         completionActions.setLinkOpener(this.openUrlHandler = handler == null ? u -> {} : handler);
+    }
+
+    /** The external-URL opener injected by {@link #setOpenUrlHandler} (a no-op until then). */
+    public java.util.function.Consumer<String> openUrlHandler() {
+        return openUrlHandler;
     }
 
     /** Opens the link under the caret externally; returns false when the caret is not on a link. */
@@ -4864,7 +4957,7 @@ public class EditorBuffer implements TabContent {
         return folds.removeManualFolds();
     }
 
-    /** Tint each bracket by nesting depth (see {@link BracketColors}). */
+    /** Tint each bracket by nesting depth (see {@code BracketColors}). */
     private boolean bracketColors;
 
     /**
@@ -6188,7 +6281,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Whether an OpenAPI document shows its docs view (the default) rather than the tree behind it. */
-    boolean showsApiDocs() {
+    public boolean showsApiDocs() {
         return structuredShowApiDocs == null || structuredShowApiDocs;
     }
 
@@ -7122,7 +7215,7 @@ public class EditorBuffer implements TabContent {
         noteIndicators = on;
         noteOverlay.setActive(on);
         if (!on) {
-            hideNoteTip();
+            noteHover.hide();
         }
     }
 
@@ -7135,99 +7228,7 @@ public class EditorBuffer implements TabContent {
                 hits -> HttpVariableFixes.hint(httpVariableMarks, httpGutter.hooks(), hits));
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         debugHover.install(a);
-        installNoteHover(a);
-    }
-
-    /** Hover popup over a note's span shows its body (updated only when the hovered note changes). */
-    private void installNoteHover(CodeArea a) {
-        a.addEventFilter(MouseEvent.MOUSE_MOVED, e -> {
-            // Every buffer has this filter and almost none has a note: without one on screen there is nothing to
-            // hit-test the pointer against.
-            if (!noteIndicators || !notes.hasActiveSpans()) {
-                hideNoteTip();
-                return;
-            }
-            NOTE_HOVER_HITS_FOR_TEST.incrementAndGet();
-            com.editora.config.PersonalNote n;
-            try {
-                // MOUSE_MOVED bubbles from RichTextFX's paragraph/text nodes. MouseEvent#getX/Y are
-                // relative to that original event source, not reliably to the CodeArea on which this
-                // filter is installed, so feeding them directly to CodeArea.hit() misses the note (and
-                // changes as the pointer crosses child nodes). Screen coordinates are stable across the
-                // dispatch chain; translate those back into the area's coordinate space first.
-                javafx.geometry.Point2D local = a.screenToLocal(e.getScreenX(), e.getScreenY());
-                n = notes.noteAt(a.hit(local.getX(), local.getY()).getInsertionIndex());
-            } catch (RuntimeException ex) {
-                n = null;
-            }
-            if (n == null || n.body().isBlank()) {
-                hideNoteTip();
-            } else if (!n.id().equals(hoverNoteId)) {
-                hoverNoteId = n.id();
-                if (noteTip == null) {
-                    noteTip = PersonalNoteTooltip.create();
-                }
-                noteTip.setText(null);
-                noteTip.setGraphic(renderNoteTooltip(n.body()));
-                if (noteTip.isShowing()) {
-                    noteTip.hide();
-                }
-                noteTip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
-            }
-        });
-        a.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hideNoteTip());
-        // Clicking the inline note marker (the ~7px amber triangle at a note's start) opens the editor —
-        // restoring the click-to-edit the gutter glyph used to give. A click elsewhere is untouched.
-        a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
-            if (!noteIndicators
-                    || e.getButton() != MouseButton.PRIMARY
-                    || e.getClickCount() != 1
-                    || !notes.hasActiveSpans()) {
-                return;
-            }
-            int[] window = visibleOffsets(a);
-            for (int[] span : notes.activeSpans()) {
-                if (window == null || span[0] < window[0] || span[0] > window[1]) {
-                    continue; // its marker is off screen: no layout query for it
-                }
-                Bounds scr;
-                try {
-                    scr = NoteHighlightOverlay.markerBoundsOnScreen(a, span[0]);
-                } catch (RuntimeException ex) {
-                    scr = null;
-                }
-                if (scr == null) {
-                    continue;
-                }
-                if (e.getScreenX() >= scr.getMinX()
-                        && e.getScreenX() <= scr.getMinX() + 11
-                        && e.getScreenY() >= scr.getMinY()
-                        && e.getScreenY() <= scr.getMinY() + 11) {
-                    com.editora.config.PersonalNote n = notes.noteAt(span[0]);
-                    if (n != null) {
-                        noteMarkerClick.accept(this, n);
-                        e.consume();
-                    }
-                    return;
-                }
-            }
-        });
-    }
-
-    /** Test seam: how many pointer moves were hit-tested against the notes. */
-    static final java.util.concurrent.atomic.AtomicInteger NOTE_HOVER_HITS_FOR_TEST =
-            new java.util.concurrent.atomic.AtomicInteger();
-
-    /** The document offsets {@code [first, last]} of the paragraphs {@code a} shows, or null mid-layout. */
-    private static int @Nullable [] visibleOffsets(CodeArea a) {
-        try {
-            int total = a.getParagraphs().size();
-            int first = Math.max(0, a.firstVisibleParToAllParIndex());
-            int last = Math.min(total - 1, a.lastVisibleParToAllParIndex());
-            return new int[] {a.getAbsolutePosition(first, 0), a.getAbsolutePosition(last, a.getParagraphLength(last))};
-        } catch (RuntimeException midLayout) {
-            return null;
-        }
+        noteHover.install(a);
     }
 
     /** Sets the handler invoked when the user clicks a note's inline start marker (controller edits it). */
@@ -7285,65 +7286,6 @@ public class EditorBuffer implements TabContent {
         area.moveTo(Math.min(target.start(), area.getLength()));
         area.requestFollowCaret();
         return true;
-    }
-
-    /**
-     * Renders a note body as the hover tooltip's graphic: the body is parsed as Markdown
-     * ({@link MarkdownRenderer}) so formatting shows in the popup, the editor's own font family/size is
-     * applied as the base font, and the app + syntax stylesheets are attached to the node (the tooltip
-     * lives in its own popup scene) so the {@code .markdown-preview} rules resolve. Falls back to a plain
-     * wrapped label if rendering fails.
-     */
-    private javafx.scene.Node renderNoteTooltip(String body) {
-        javafx.scene.Node node;
-        try {
-            node = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseForRender(body), path != null ? path.getParent() : null);
-        } catch (RuntimeException ex) {
-            javafx.scene.control.Label fallback = new javafx.scene.control.Label(body);
-            fallback.setWrapText(true);
-            node = fallback;
-        }
-        node.getStyleClass().add("personal-note-tooltip-content");
-        node.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
-        if (node instanceof javafx.scene.Parent parent) {
-            addStylesheet(parent, "/com/editora/styles/app.css");
-            addStylesheet(parent, "/com/editora/styles/syntax.css");
-        }
-        if (node instanceof javafx.scene.layout.Region region) {
-            // Pin the node to a definite size so the tooltip hugs the rendered content. A TextFlow inside a
-            // tooltip otherwise computes its height at a near-zero width (one char per line → a tall, empty
-            // popup). Measure in a throwaway Scene so the inline font + stylesheets actually apply (a
-            // detached node measures at the default font and mis-sizes): prefWidth(-1) is the natural
-            // one-line width (capped so long notes wrap), then the height at that width — so the box matches
-            // the rendered text (measuring the raw Markdown source would over-size it by the markup chars).
-            javafx.scene.Scene measureScene = new javafx.scene.Scene(region);
-            region.applyCss();
-            region.layout();
-            double width = Math.min(480, Math.ceil(region.prefWidth(-1)));
-            region.setPrefWidth(width);
-            region.setMaxWidth(width);
-            double height = Math.ceil(region.prefHeight(width)) + 1;
-            measureScene.setRoot(new javafx.scene.Group()); // release the node to reuse as the tooltip graphic
-            region.setMinHeight(height);
-            region.setPrefHeight(height);
-            region.setMaxHeight(height);
-        }
-        return node;
-    }
-
-    private void addStylesheet(javafx.scene.Parent parent, String resource) {
-        java.net.URL url = getClass().getResource(resource);
-        if (url != null) {
-            parent.getStylesheets().add(url.toExternalForm());
-        }
-    }
-
-    private void hideNoteTip() {
-        hoverNoteId = null;
-        if (noteTip != null && noteTip.isShowing()) {
-            noteTip.hide();
-        }
     }
 
     /** Removes all bookmarks in this buffer and repaints the gutter. */
@@ -8190,7 +8132,7 @@ public class EditorBuffer implements TabContent {
 
     /** Puts the active top bars into {@code outer.setTop}: the install banner above the view-mode banner
      *  (a {@code VBox} when both show), or {@code null} when neither does. */
-    void refreshTopBars() {
+    public void refreshTopBars() {
         java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
         if (encryption.notice() != null) {
             bars.add(encryption.notice());
@@ -8526,7 +8468,7 @@ public class EditorBuffer implements TabContent {
         newCaret = Math.max(lineStart, Math.min(newCaret, a.getLength()));
         a.moveTo(newCaret);
         // Re-indenting isn't the user typing a word — don't let the edit we just made pop the completion.
-        completionActions.suppressCompletionAtVersion = docVersion;
+        completionActions.suppressCompletionAt(docVersion);
     }
 
     /**
@@ -9050,15 +8992,15 @@ public class EditorBuffer implements TabContent {
         if (m != null) {
             addBraceClass(m[0] + winStart);
             addBraceClass(m[1] + winStart);
-            completionActions.braceMatch = new int[] {m[0] + winStart, m[1] + winStart};
+            completionActions.setBraceMatch(new int[] {m[0] + winStart, m[1] + winStart});
         }
     }
 
     private void clearBraceMatch() {
-        if (completionActions.braceMatch != null) {
-            removeBraceClass(completionActions.braceMatch[0]);
-            removeBraceClass(completionActions.braceMatch[1]);
-            completionActions.braceMatch = null;
+        if (completionActions.braceMatch() != null) {
+            removeBraceClass(completionActions.braceMatch()[0]);
+            removeBraceClass(completionActions.braceMatch()[1]);
+            completionActions.setBraceMatch(null);
         }
     }
 
@@ -9230,7 +9172,7 @@ public class EditorBuffer implements TabContent {
 
     /** Capture the acceptance independently of future completions and track safe typing until resolve lands. */
     public java.util.function.Consumer<java.util.List<LspTextEdit>> trackCompletionAdditionalEdits() {
-        var shift = completionActions.pendingCompletionShift;
+        var shift = completionActions.pendingCompletionShift();
         int start = shift == null
                 ? area.getCaretPosition()
                 : LspEditPlacement.offset(area, shift.startLine(), shift.startCol());
@@ -9249,7 +9191,7 @@ public class EditorBuffer implements TabContent {
             boolean tracked = completionEditTrackers.remove(tracker);
             if (tracked && !disposed) {
                 undo.accept(() -> applyLspEdits(tracker.translate(edits), true));
-                completionActions.suppressCompletionAtVersion = docVersion;
+                completionActions.suppressCompletionAt(docVersion);
             }
         };
     }
@@ -9264,7 +9206,7 @@ public class EditorBuffer implements TabContent {
         // Keep the caret where the accept left it. The import lands *above* the caret, and both apply paths
         // (replaceText, and MultiChangeBuilder.commit) leave the caret at the end of what they inserted — so
         // without this, accepting `List<Item` threw the caret onto the newly inserted `import` line (#834).
-        applyLspEdits(LspEditShift.shift(edits, completionActions.pendingCompletionShift), true);
+        applyLspEdits(LspEditShift.shift(edits, completionActions.pendingCompletionShift()), true);
     }
 
     /**
@@ -9920,7 +9862,7 @@ public class EditorBuffer implements TabContent {
             int length = area.getLength();
             int from = styled ? 0 : highlightDirty.isClean() ? length : Math.min(highlightDirty.start(), length);
             int to = styled ? length : Math.min(highlightDirty.end(), length);
-            int[] matched = styled ? null : completionActions.braceMatch; // the live pair is not a leftover
+            int[] matched = styled ? null : completionActions.braceMatch(); // the live pair is not a leftover
             if (styled) {
                 styled = false;
                 highlightGen++; // a pass still in flight must not style the document after this

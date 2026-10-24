@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import javafx.application.Platform;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LanguageRegistry;
+import com.editora.editor.language.LanguageRegistry;
 import com.editora.index.DeclarationScanner;
 import com.editora.index.Symbol;
 import com.editora.index.SymbolIndex;
@@ -388,7 +388,7 @@ final class IndexCoordinator {
         }
         String text = new String(head, java.nio.charset.StandardCharsets.ISO_8859_1);
         int nl = text.indexOf('\n');
-        String extension = com.editora.editor.Shebang.extension(nl < 0 ? text : text.substring(0, nl));
+        String extension = com.editora.editor.language.Shebang.extension(nl < 0 ? text : text.substring(0, nl));
         return extension == null ? language : LanguageRegistry.forFileName("shebang." + extension);
     }
 

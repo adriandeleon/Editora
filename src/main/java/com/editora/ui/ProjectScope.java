@@ -149,7 +149,8 @@ final class ProjectScope {
                 .spellLanguage(
                         user.getSpellLanguage(),
                         trusted(),
-                        id -> com.editora.editor.SpellDictionaries.available().contains(id));
+                        id -> com.editora.editor.spell.SpellDictionaries.available()
+                                .contains(id));
     }
 
     /** The command build tool {@code tool} runs here (blank = the tool's own default lookup). */

@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
-import com.editora.editor.LanguageRegistry;
+import com.editora.editor.language.LanguageRegistry;
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
 import org.jspecify.annotations.Nullable;

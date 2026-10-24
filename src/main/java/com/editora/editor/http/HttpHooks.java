@@ -7,8 +7,8 @@ import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 
-import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.lsp.CodeAction;
 import com.editora.http.HttpVariableIndex;
 import com.editora.markdown.MarkdownLint;
 import org.jspecify.annotations.Nullable;

@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javafx.scene.input.KeyEvent;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspTextEdit;
+import com.editora.editor.lsp.LspTextEdit;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

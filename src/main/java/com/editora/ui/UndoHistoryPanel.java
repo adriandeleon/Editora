@@ -16,7 +16,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.UndoHistory;
+import com.editora.editor.undo.UndoHistory;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

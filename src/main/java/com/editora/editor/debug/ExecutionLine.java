@@ -10,8 +10,8 @@ import java.util.function.Supplier;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 
-import com.editora.editor.FoldManager;
-import com.editora.editor.StickyScroll;
+import com.editora.editor.fold.FoldManager;
+import com.editora.editor.fold.StickyScroll;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 

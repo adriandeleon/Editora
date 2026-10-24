@@ -8,7 +8,7 @@ import java.util.Set;
 
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
-import com.editora.editor.MarkdownCompletions;
+import com.editora.editor.markdown.MarkdownCompletions;
 import com.editora.http.HttpVariableIndex;
 import org.jspecify.annotations.Nullable;
 

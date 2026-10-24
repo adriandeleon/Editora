@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Regression: a Markdown image whose bytes are SVG (e.g. a shields.io/GitHub badge served as
  * {@code image/svg+xml}) must not abort the PDF export. PDFBox can't decode SVG, so it's rasterized to
- * PNG via {@link com.editora.editor.PreviewImageLoader#svgToPng}; if that ever fails the writer falls
+ * PNG via {@link com.editora.editor.markdown.PreviewImageLoader#svgToPng}; if that ever fails the writer falls
  * back to alt text instead of throwing (it used to crash with IllegalArgumentException).
  */
 class MarkdownPdfWriterSvgTest {
@@ -24,7 +24,7 @@ class MarkdownPdfWriterSvgTest {
 
     @Test
     void svgRasterizesToPng() {
-        byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(SVG.getBytes(StandardCharsets.UTF_8));
+        byte[] png = com.editora.editor.markdown.PreviewImageLoader.svgToPng(SVG.getBytes(StandardCharsets.UTF_8));
         assertNotNull(png, "SVG should rasterize to PNG");
         assertTrue(png.length > 8 && (png[1] & 0xFF) == 'P' && (png[2] & 0xFF) == 'N', "PNG signature");
     }

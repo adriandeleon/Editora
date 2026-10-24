@@ -9,7 +9,7 @@ import javafx.stage.FileChooser;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.TypstImages;
+import com.editora.editor.markdown.TypstImages;
 import com.editora.process.ProcessRunner;
 import com.editora.typst.TypstService;
 import org.jspecify.annotations.Nullable;

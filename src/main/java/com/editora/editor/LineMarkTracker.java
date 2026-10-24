@@ -36,7 +36,7 @@ public final class LineMarkTracker {
      *     lower its line is in the final document than it was when the replacement ran
      * @param linesAddedLater the net number of lines all later replacements added anywhere
      */
-    record Settled(int offset, int linesAddedAbove, int linesAddedLater) {}
+    public record Settled(int offset, int linesAddedAbove, int linesAddedLater) {}
 
     /**
      * Pure: translates the start of replacement {@code i} into final-document terms. Every later replacement
@@ -46,7 +46,7 @@ public final class LineMarkTracker {
      * @param lengthDelta inserted minus removed characters, per replacement
      * @param lineDelta inserted minus removed newlines, per replacement
      */
-    static Settled settle(int i, int[] positions, int[] lengthDelta, int[] lineDelta) {
+    public static Settled settle(int i, int[] positions, int[] lengthDelta, int[] lineDelta) {
         int offset = positions[i];
         int above = 0;
         int later = 0;

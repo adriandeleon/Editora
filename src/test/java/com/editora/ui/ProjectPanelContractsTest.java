@@ -7,7 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.editora.editor.NoteDraft;
+import com.editora.editor.notes.NoteDraft;
 import com.editora.ui.ProjectPanel.DeleteApproval;
 import com.editora.ui.ProjectPanel.DeleteOperations;
 import com.editora.ui.ProjectPanel.MarkerActions;

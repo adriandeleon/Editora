@@ -6,6 +6,11 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 
+import com.editora.editor.markdown.MarkdownClipboardHtml;
+import com.editora.editor.markdown.MarkdownPreview;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.MathImages;
+import com.editora.editor.markdown.PreviewLightbox;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

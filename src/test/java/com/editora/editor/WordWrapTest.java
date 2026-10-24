@@ -3,6 +3,7 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.editora.editor.language.LanguageRegistry;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

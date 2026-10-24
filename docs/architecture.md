@@ -123,8 +123,8 @@ completion, snippets). Anything with behaviour, state or I/O is injected rather 
 `setLspCompletionProvider` — which is what keeps the `editor` package free of `ui`, `lsp`,
 `dap`, `git` and `process`. When you add an editor feature, follow that injection pattern. The
 `editor` package does import `config` and a set of pure parsers directly; the exact list is
-pinned by a test — see the [package map](#package-map) below. Sub-packages of `editor` (`editor.debug`,
-`editor.http`, …) count as `editor` for that test: the ratchet keys on the first package segment.
+pinned by a test — see the [package map](#package-map) below. Sub-packages of `editor` (`editor.lsp`,
+`editor.markdown`, …) count as `editor` for that test: the ratchet keys on the first package segment.
 
 A buffer's lifecycle, and why `dispose()` matters (a buffer owns no threads — highlighting and previews
 run on shared pools — but `dispose()` bumps the generation guards, unsubscribes, releases preview surfaces
@@ -165,7 +165,7 @@ save of an older snapshot therefore never authorizes disposal of newer text type
 | Package | Responsibility |
 | --- | --- |
 | `command/` | The keyboard core: `Command`/`CommandRegistry`, `KeymapManager`, `KeyDispatcher`. Every action is a registered command. |
-| `editor/` | `EditorBuffer` + the editor surface: highlighting, gutter, minimap, overlays, indentation, brackets, snippets/completion. A feature's presentation inside the buffer lives in a sub-package named after the feature's core package: `editor/debug/` (breakpoints, execution line, inline values, debug hover; core in `dap/`) and `editor/http/` (the `.http` gutter, result and variable marks, completions; core in `http/`). The root keeps the buffer itself and the overlay infrastructure every sub-package builds on (`OverlayPalette`, `CanvasGuards`, `AfterLayoutPaint`, `SecondaryPane`, `TabSurface`, `LineMarks`). More clusters move the same way as they are split out. |
+| `editor/` | `EditorBuffer` + the editor surface. A feature's presentation inside the buffer lives in a sub-package named after the feature's core package (`com.editora.X` is the toolkit-free core, `com.editora.editor.X` its presentation): `completion/`, `crypto/`, `debug/` (core `dap`), `fold/` (folding, the line-number gutter, sticky scroll, narrowing), `git/`, `highlight/` (TextMate highlighting, grammars), `http/`, `language/` (language detection: registry, shebang, modeline), `logviewer/`, `lsp/`, `markdown/` (editing, lint, the 3-mode preview and its images, exports), `minimap/`, `notes/`, `search/`, `spell/`, `structured/` (tree and summary previews), `todo/`, `undo/`. The root keeps the buffer itself and what every sub-package builds on: the overlay layer (`OverlayPalette`, `CanvasGuards`, `AfterLayoutPaint`, `SecondaryPane`, `TabSurface`), `LineMarks`, `MenuIcons`, and the caret and typing helpers. |
 | `ui/` | `MainController`, `WindowManager`, `SettingsWindow`, tool-window panels, the in-scene overlays (`OverlayHost`), status bar. |
 | `config/` | `ConfigManager`/`SharedConfig`, `Settings` (JSON — `settings.json`, see ADR 0011), `WorkspaceState` (JSON), the stores, and `config/migration/` (schema versioning). |
 | `i18n/` | `Messages` — the localized catalog (six languages). |

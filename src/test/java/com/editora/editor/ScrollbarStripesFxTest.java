@@ -14,6 +14,10 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
+import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.editor.markdown.MarkdownLintStripe;
+import com.editora.editor.todo.TodoMark;
+import com.editora.editor.todo.TodoStripe;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;

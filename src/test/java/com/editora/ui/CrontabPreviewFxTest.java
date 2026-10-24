@@ -10,7 +10,7 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
 
 import com.editora.cron.Crontab;
-import com.editora.editor.CrontabPreview;
+import com.editora.editor.structured.CrontabPreview;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

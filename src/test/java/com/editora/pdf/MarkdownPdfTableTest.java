@@ -4,8 +4,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.MathImages;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.MathImages;
 import com.editora.markdown.CsvTableDocument;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;

@@ -5,6 +5,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.editops.Commenter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.language.LanguageRegistry;
+import com.editora.editor.language.Shebang;
+import com.editora.editor.spell.SpellMode;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.grammar.IStateStack;
 import org.eclipse.tm4e.core.grammar.IToken;

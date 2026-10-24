@@ -132,7 +132,7 @@ class LspManagerRequestsFxTest {
 
     @Test
     void staleVersionedPushDiagnosticsAreDropped() throws Exception {
-        var delivered = new CopyOnWriteArrayList<List<com.editora.editor.LspDiagnostic>>();
+        var delivered = new CopyOnWriteArrayList<List<com.editora.editor.lsp.LspDiagnostic>>();
         var sessionRef = new AtomicReference<LanguageServerSession>();
         LspManager local = new LspManager((path, diagnostics) -> delivered.add(diagnostics), (t, m) -> {});
         local.setSessionStarterForTest(session -> {
@@ -162,7 +162,7 @@ class LspManagerRequestsFxTest {
 
     @Test
     void queuedPushDiagnosticsCannotReappearAfterDocumentClose() throws Exception {
-        var delivered = new CopyOnWriteArrayList<List<com.editora.editor.LspDiagnostic>>();
+        var delivered = new CopyOnWriteArrayList<List<com.editora.editor.lsp.LspDiagnostic>>();
         var sessionRef = new AtomicReference<LanguageServerSession>();
         LspManager local = new LspManager((path, diagnostics) -> delivered.add(diagnostics), (t, m) -> {});
         local.setSessionStarterForTest(session -> {
@@ -366,7 +366,7 @@ class LspManagerRequestsFxTest {
         var fake = open();
         capabilitiesWithOnTypeTrigger();
 
-        List<com.editora.editor.LspTextEdit> edits =
+        List<com.editora.editor.lsp.LspTextEdit> edits =
                 await(cb -> manager.onTypeFormatting(file, 7, 3, ';', 2, false, cb));
 
         assertNotNull(edits);
@@ -385,7 +385,7 @@ class LspManagerRequestsFxTest {
         var edit = new TextEdit(new Range(new Position(3, 0), new Position(3, 4)), "  ");
         fake.onTypeFormattingResponse = List.of(edit);
 
-        List<com.editora.editor.LspTextEdit> mapped =
+        List<com.editora.editor.lsp.LspTextEdit> mapped =
                 await(cb -> manager.onTypeFormatting(file, 3, 5, '}', 4, true, cb));
 
         assertEquals(1, mapped.size());
@@ -399,7 +399,7 @@ class LspManagerRequestsFxTest {
     void onTypeFormattingIsNotSentWhenTheServerHasNoProvider() throws Exception {
         var fake = open();
 
-        List<com.editora.editor.LspTextEdit> edits =
+        List<com.editora.editor.lsp.LspTextEdit> edits =
                 await(cb -> manager.onTypeFormatting(file, 1, 1, ';', 4, true, cb));
 
         assertTrue(edits.isEmpty());
@@ -412,7 +412,7 @@ class LspManagerRequestsFxTest {
         capabilitiesWithOnTypeTrigger();
         fake.failEverything = true;
 
-        List<com.editora.editor.LspTextEdit> edits =
+        List<com.editora.editor.lsp.LspTextEdit> edits =
                 await(cb -> manager.onTypeFormatting(file, 1, 1, ';', 4, true, cb));
 
         assertTrue(edits.isEmpty());
@@ -589,7 +589,7 @@ class LspManagerRequestsFxTest {
         var fake = open();
         fake.formattingResponse = List.of(new TextEdit(new Range(new Position(0, 0), new Position(0, 4)), "    "));
 
-        List<com.editora.editor.LspTextEdit> edits = await(cb -> manager.formatDocument(file, 2, true, cb));
+        List<com.editora.editor.lsp.LspTextEdit> edits = await(cb -> manager.formatDocument(file, 2, true, cb));
 
         assertEquals(1, edits.size());
         assertEquals(0, edits.get(0).startLine());
@@ -608,7 +608,7 @@ class LspManagerRequestsFxTest {
         edit.setRange(new Range(new Position(0, 0), new Position(0, 1)));
         fake.formattingResponse = List.of(edit);
 
-        List<com.editora.editor.LspTextEdit> edits = await(cb -> manager.formatDocument(file, 4, true, cb));
+        List<com.editora.editor.lsp.LspTextEdit> edits = await(cb -> manager.formatDocument(file, 4, true, cb));
 
         assertEquals("", edits.get(0).newText());
     }
@@ -631,7 +631,7 @@ class LspManagerRequestsFxTest {
         var fake = open();
         fake.semanticTokensResponse = new SemanticTokens(List.of(0, 0, 3, 1, 0));
 
-        List<com.editora.editor.SemanticToken> tokens =
+        List<com.editora.editor.lsp.SemanticToken> tokens =
                 await(cb -> manager.requestSemanticTokens(file, 0, 26, 27, 0, cb));
 
         assertEquals(1, fake.semanticRanges.size(), "a range-capable server must get the range request");
@@ -650,7 +650,7 @@ class LspManagerRequestsFxTest {
         var fake = open();
         fake.semanticTokensResponse = new SemanticTokens(List.of(0, 0, 3, 1, 0));
 
-        List<com.editora.editor.SemanticToken> ignored =
+        List<com.editora.editor.lsp.SemanticToken> ignored =
                 await(cb -> manager.requestSemanticTokens(file, 0, 26, 27, 0, cb));
         assertNotNull(ignored);
 
@@ -664,7 +664,7 @@ class LspManagerRequestsFxTest {
         capabilities = new ServerCapabilities();
         var fake = open();
 
-        List<com.editora.editor.SemanticToken> tokens =
+        List<com.editora.editor.lsp.SemanticToken> tokens =
                 await(cb -> manager.requestSemanticTokens(file, 0, 10, 11, 0, cb));
 
         assertTrue(tokens.isEmpty());
@@ -814,7 +814,7 @@ class LspManagerRequestsFxTest {
         List<LspManager.Target> refs = await(cb -> manager.references(file, 1, 1, cb));
         List<SymbolNode> docSyms = await(cb -> manager.documentSymbols(file, cb));
         List<LspManager.WorkspaceSymbolMatch> wsSyms = await(cb -> manager.workspaceSymbols(file, "q", cb));
-        List<com.editora.editor.LspTextEdit> fmt = await(cb -> manager.formatDocument(file, 4, true, cb));
+        List<com.editora.editor.lsp.LspTextEdit> fmt = await(cb -> manager.formatDocument(file, 4, true, cb));
         List<LspManager.InlayHintSpan> hints = await(cb -> manager.requestInlayHints(file, 0, 5, 6, 0, cb));
         LspManager.RenamePrep prep = await(cb -> manager.prepareRename(file, 1, 1, cb));
 
@@ -836,7 +836,7 @@ class LspManagerRequestsFxTest {
         List<LspManager.Target> defs = await(cb -> manager.definition(unopened, 0, 0, cb));
         List<SymbolNode> syms = await(cb -> manager.documentSymbols(unopened, cb));
         List<LspManager.InlayHintSpan> hints = await(cb -> manager.requestInlayHints(unopened, 0, 1, 2, 0, cb));
-        List<com.editora.editor.LspTextEdit> fmt = await(cb -> manager.formatDocument(unopened, 4, true, cb));
+        List<com.editora.editor.lsp.LspTextEdit> fmt = await(cb -> manager.formatDocument(unopened, 4, true, cb));
 
         assertTrue(defs.isEmpty());
         assertTrue(syms.isEmpty());
@@ -901,7 +901,7 @@ class LspManagerRequestsFxTest {
 
     @Test
     void diagnosticsQueuedBeforeANewerEditAreRejectedOnFxDelivery() throws Exception {
-        var delivered = new CopyOnWriteArrayList<List<com.editora.editor.LspDiagnostic>>();
+        var delivered = new CopyOnWriteArrayList<List<com.editora.editor.lsp.LspDiagnostic>>();
         var fake = new FakeLanguageServer();
         var session = new AtomicReference<LanguageServerSession>();
         var local = new LspManager((path, diagnostics) -> delivered.add(diagnostics), (t, m) -> {});

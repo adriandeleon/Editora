@@ -52,8 +52,8 @@ import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
 import com.editora.config.PersonalNote;
-import com.editora.editor.NoteDraft;
-import com.editora.editor.PersonalNoteTooltip;
+import com.editora.editor.notes.NoteDraft;
+import com.editora.editor.notes.PersonalNoteTooltip;
 import com.editora.search.FuzzyMatch;
 import org.jspecify.annotations.Nullable;
 
@@ -2895,7 +2895,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             Path target = treeItem.getValue();
             if (fileOps != null
                     && target != null
-                    && com.editora.editor.EncryptedNames.extensionOf(String.valueOf(target.getFileName())) == null) {
+                    && com.editora.editor.crypto.EncryptedNames.extensionOf(String.valueOf(target.getFileName()))
+                            == null) {
                 MenuItem encrypt = new MenuItem(tr("project.menu.encrypt"));
                 encrypt.setGraphic(Icons.lock());
                 encrypt.setOnAction(e -> fileOps.encrypt(target));

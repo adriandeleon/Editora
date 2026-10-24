@@ -28,7 +28,7 @@ public final class OverlayPalette {
     /** Contrast of a structural hint drawn across many lines (indent guides): there, but well behind text. */
     static final double GUIDE = 1.45;
     /** Contrast of a non-text indicator (squiggle, match border). */
-    static final double INDICATOR = 3.0;
+    public static final double INDICATOR = 3.0;
     /** Contrast of text the user reads (inline debug values). */
     static final double TEXT = 4.5;
 
@@ -71,7 +71,7 @@ public final class OverlayPalette {
     }
 
     /** Whether light ink reads better than dark ink on {@code ground}. Pure. */
-    static boolean isDark(Color ground) {
+    public static boolean isDark(Color ground) {
         return contrast(Color.WHITE, ground) >= contrast(Color.BLACK, ground);
     }
 
@@ -83,7 +83,7 @@ public final class OverlayPalette {
      * {@code base}, moved toward the ground's ink by the smallest step that reaches {@code ratio}
      * against {@code ground}; unchanged when it already does. Pure.
      */
-    static Color reach(Color base, Color ground, double ratio) {
+    public static Color reach(Color base, Color ground, double ratio) {
         if (contrast(base, ground) >= ratio) {
             return base;
         }
@@ -139,7 +139,7 @@ public final class OverlayPalette {
      * Six levels need to stay apart, so they differ in more than hue — FATAL is the error colour at full
      * strength with the heaviest wash, DEBUG and TRACE are two steps of the neutral.
      */
-    record LogTints(
+    public record LogTints(
             Color fatal,
             Color error,
             Color warn,
@@ -151,7 +151,7 @@ public final class OverlayPalette {
             Color warnWash) {}
 
     /** The log tints for an editor painted on {@code background}. Pure. */
-    static LogTints logTints(Color background) {
+    public static LogTints logTints(Color background) {
         Color ground = background == null
                 ? Color.WHITE
                 : Color.color(background.getRed(), background.getGreen(), background.getBlue());
@@ -174,7 +174,7 @@ public final class OverlayPalette {
     }
 
     /** {@link #logTints(Color)} for {@code area}'s current background. */
-    static LogTints logTints(Region area) {
+    public static LogTints logTints(Region area) {
         return logTints(backgroundOf(area));
     }
 
@@ -182,7 +182,7 @@ public final class OverlayPalette {
         return Color.color(c.getRed(), c.getGreen(), c.getBlue(), Math.min(1, opacity));
     }
 
-    static Color backgroundOf(Region area) {
+    public static Color backgroundOf(Region area) {
         Background background = area.getBackground();
         if (background != null && !background.getFills().isEmpty()) {
             Paint fill = background.getFills().get(0).getFill();

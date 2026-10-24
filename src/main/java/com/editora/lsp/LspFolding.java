@@ -5,7 +5,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 
-import com.editora.editor.FoldRegions;
+import com.editora.editor.fold.FoldRegions;
 import org.eclipse.lsp4j.FoldingRange;
 
 /**

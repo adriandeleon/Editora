@@ -17,8 +17,8 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.diff.PatchParser.FilePatch;
-import com.editora.editor.MarkdownRenderer;
 import com.editora.editor.TabContent;
+import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.github.PrReviewSummary;
 import com.editora.github.PrReviewSummary.FileRow;
 import com.editora.github.PrViewParser.PrDetail;

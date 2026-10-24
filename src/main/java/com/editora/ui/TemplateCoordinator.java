@@ -31,7 +31,7 @@ import com.editora.config.PathKeys;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GrammarRegistry;
+import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editorconfig.EditorConfig;
 import com.editora.editorconfig.EditorConfigProperties;
 import com.editora.i18n.Messages;

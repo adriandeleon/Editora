@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.eclipse.tm4e.core.grammar.IGrammar;

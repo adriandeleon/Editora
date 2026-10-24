@@ -16,8 +16,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import javax.imageio.ImageIO;
 
-import com.editora.editor.MarkdownDocInfo;
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownDocInfo;
+import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.gfm.tables.TableBlock;
@@ -96,7 +96,8 @@ public final class OdtWriter {
     static String contentXml(
             String markdown, @Nullable Path baseDir, @Nullable List<String> mmdc, List<Embedded> imageList) {
         Node ast = com.editora.markdown.MarkdownExportTree.lower(
-                MarkdownRenderer.parseForRender(markdown), com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
+                MarkdownRenderer.parseForRender(markdown),
+                com.editora.editor.markdown.MarkdownHtmlExport.wikiPaths(baseDir));
         Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
         Pictures images = new Pictures(imageList, baseDir, anchors, new HashSet<>(anchors.values()));
         StringBuilder b = new StringBuilder();

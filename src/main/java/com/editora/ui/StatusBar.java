@@ -784,7 +784,7 @@ public final class StatusBar extends HBox {
      * says something about the file that matters there too.
      */
     private void refreshEncryption(EditorBuffer buffer) {
-        com.editora.editor.EncryptionState state =
+        com.editora.editor.crypto.EncryptionState state =
                 buffer == null ? null : buffer.encryption().state();
         boolean show = state != null;
         encryption.setVisible(show);
@@ -1191,6 +1191,6 @@ public final class StatusBar extends HBox {
         if (name == null || name.isEmpty()) {
             return tr("statusbar.plainText");
         }
-        return com.editora.editor.LanguageNames.display(name);
+        return com.editora.editor.language.LanguageNames.display(name);
     }
 }

@@ -7,8 +7,8 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
-import com.editora.editor.MarkdownPrintAssets;
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownPrintAssets;
+import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.print.MarkdownPrintLayout;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -201,7 +201,7 @@ class MarkdownPrintLayoutFxTest {
     @Test
     void mathPrintsDarkOnWhiteUnderADarkAppTheme() throws Exception {
         double brightness = FxTestSupport.callOnFx(() -> {
-            com.editora.editor.MathImages.configure(true, true);
+            com.editora.editor.markdown.MathImages.configure(true, true);
             try {
                 // (parsed with the feature on: math is recognised by the parser, not found in text afterwards)
                 org.commonmark.node.Node ast = MarkdownRenderer.parseForRender("Inline $x^2 + y^2$ here.\n");
@@ -220,7 +220,7 @@ class MarkdownPrintLayoutFxTest {
                 }
                 return darkest;
             } finally {
-                com.editora.editor.MathImages.configure(false, false);
+                com.editora.editor.markdown.MathImages.configure(false, false);
             }
         });
         assertTrue(brightness < 0.3, "the formula's ink must be dark, its solid pixels are " + brightness);
@@ -848,12 +848,12 @@ class MarkdownPrintLayoutFxTest {
     void hiddenFrontMatterIsNotPrinted() throws Exception {
         String md = "---\ntitle: Secret Title\nauthor: Someone\n---\n\n# Notes\n\nBody text.\n";
         try {
-            com.editora.editor.PreviewPrefs.set(0, 0, false);
+            com.editora.editor.markdown.PreviewPrefs.set(0, 0, false);
             String shown = pageText(paginate(md, null).get(0));
             assertTrue(shown.contains("Secret Title") && shown.contains("author"), shown);
             assertTrue(shown.contains("Body text."), shown);
 
-            com.editora.editor.PreviewPrefs.set(0, 0, true);
+            com.editora.editor.markdown.PreviewPrefs.set(0, 0, true);
             List<Node> pages = paginate(md, null);
             assertEquals(1, pages.size());
             String hidden = pageText(pages.get(0));
@@ -861,7 +861,7 @@ class MarkdownPrintLayoutFxTest {
             assertFalse(hidden.contains("author"), hidden);
             assertTrue(hidden.contains("Notes") && hidden.contains("Body text."), hidden);
         } finally {
-            com.editora.editor.PreviewPrefs.set(0, 0, false);
+            com.editora.editor.markdown.PreviewPrefs.set(0, 0, false);
         }
     }
 

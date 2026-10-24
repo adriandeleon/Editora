@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import com.editora.editor.FoldRegions;
+import com.editora.editor.fold.FoldRegions;
 import org.eclipse.lsp4j.FoldingRange;
 import org.junit.jupiter.api.Test;
 

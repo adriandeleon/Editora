@@ -20,8 +20,8 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.config.Settings;
-import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.lsp.CodeAction;
 import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;

@@ -8,9 +8,9 @@ import java.util.Set;
 
 import com.editora.config.PathKeys;
 import com.editora.config.Settings;
-import com.editora.editor.BufferSpell;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.SpellDictionaries;
+import com.editora.editor.spell.BufferSpell;
+import com.editora.editor.spell.SpellDictionaries;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

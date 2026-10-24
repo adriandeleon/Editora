@@ -8,7 +8,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * note after the file changes, and the original {@code length} of the selection. A Jackson-serialized record.
  *
  * <p>{@code selectedText} is capped ({@link #MAX_TEXT}) to bound {@code notes.json}, but a note can span more
- * than that. {@code length} preserves the <em>full</em> selection length so {@link com.editora.editor.NoteAnchors}
+ * than that. {@code length} preserves the <em>full</em> selection length so {@link com.editora.editor.notes.NoteAnchors}
  * highlights the whole span, not just the first {@code MAX_TEXT} characters (#454). An old note deserialized
  * without {@code length} gets {@code 0}, and the relocator falls back to the (capped) needle length.
  */

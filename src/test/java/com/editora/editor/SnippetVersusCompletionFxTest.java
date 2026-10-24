@@ -6,6 +6,7 @@ import javafx.stage.Stage;
 
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
+import com.editora.editor.completion.BufferCompletion;
 import com.editora.snippet.Snippet;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
@@ -114,7 +115,7 @@ class SnippetVersusCompletionFxTest {
 
             buffer.setAutocomplete(true, true, true, true);
             completion.updateCompletion(area, false);
-            assertSame(DATE, completion.ghostSnippet);
+            assertSame(DATE, completion.ghostSnippet());
             area.fireEvent(EditorFx.pressed(javafx.scene.input.KeyCode.ESCAPE, false, false));
             assertFalse(completion.ghostVisible());
             assertEquals("date", area.getText());

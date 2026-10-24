@@ -749,7 +749,7 @@ final class WindowSessionCoordinator {
             Path p = b != null ? b.getPath() : host.tabPath(t);
             String language = b != null
                     ? b.getLanguage()
-                    : p == null ? null : com.editora.editor.LanguageRegistry.forFileName(p.toString());
+                    : p == null ? null : com.editora.editor.language.LanguageRegistry.forFileName(p.toString());
             if (p != null && "java".equals(language)) {
                 hasJavaOpen = true;
                 break;

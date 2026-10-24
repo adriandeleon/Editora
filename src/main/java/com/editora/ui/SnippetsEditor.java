@@ -156,7 +156,9 @@ final class SnippetsEditor {
         ComboBox<String> languageBox = new ComboBox<>(FXCollections.observableArrayList(
                 manager == null
                         ? List.of("global")
-                        : languages(manager.languagesWithSnippets(), com.editora.editor.LanguageRegistry.names())));
+                        : languages(
+                                manager.languagesWithSnippets(),
+                                com.editora.editor.language.LanguageRegistry.names())));
         languageBox.setValue(language);
 
         TextField filter = new TextField();

@@ -70,7 +70,7 @@ class DictionaryWordsTest {
      */
     @Test
     void everySpellCheckLanguageHasCompletionWords() throws Exception {
-        for (String id : com.editora.editor.SpellDictionaries.available()) {
+        for (String id : com.editora.editor.spell.SpellDictionaries.available()) {
             assertTrue(DictionaryWords.isAvailable(id), id + " has a spell dictionary, so it completes words too");
         }
         DictionaryWords.clearCache();

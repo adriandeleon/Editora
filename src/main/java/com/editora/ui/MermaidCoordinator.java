@@ -10,7 +10,7 @@ import javafx.stage.FileChooser;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.MermaidImages;
+import com.editora.editor.markdown.MermaidImages;
 import com.editora.mermaid.MermaidService;
 import com.editora.process.ProcessRunner;
 import org.jspecify.annotations.Nullable;

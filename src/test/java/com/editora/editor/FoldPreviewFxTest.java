@@ -12,7 +12,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 
-import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.fold.FoldManager;
+import com.editora.editor.fold.FoldRegions.Region;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 import org.junit.jupiter.api.BeforeAll;

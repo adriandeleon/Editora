@@ -16,8 +16,8 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.RadioMenuItem;
 
 import com.editora.config.Settings;
-import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.lsp.CodeAction;
 import com.editora.http.HttpExchange;
 import com.editora.i18n.Messages;
 import com.editora.markdown.MarkdownLint;

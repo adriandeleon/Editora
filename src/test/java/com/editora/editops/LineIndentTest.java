@@ -2,7 +2,7 @@ package com.editora.editops;
 
 import java.util.List;
 
-import com.editora.editor.LspTextEdit;
+import com.editora.editor.lsp.LspTextEdit;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

@@ -11,8 +11,8 @@ import com.editora.config.ConfigManager;
 import com.editora.editops.KillRing;
 import com.editora.editops.Rectangle;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.FoldManager;
 import com.editora.editor.TextNav;
+import com.editora.editor.fold.FoldManager;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import org.jspecify.annotations.Nullable;
@@ -656,7 +656,7 @@ final class EditingCoordinator {
             return;
         }
         // Encode a raw dragged image now, on the FX thread (PixelReader), before going off-thread.
-        byte[] inlinePng = image != null ? com.editora.editor.PreviewImageLoader.imageToPng(image) : null;
+        byte[] inlinePng = image != null ? com.editora.editor.markdown.PreviewImageLoader.imageToPng(image) : null;
         // The drop moved the caret to where the image goes; the download may end after the caret left.
         CodeArea view = b.getFocusedArea();
         int at = view.getCaretPosition();
@@ -665,7 +665,7 @@ final class EditingCoordinator {
                         () -> {
                             WebImage found = resolveWebImage(url, inlinePng, u -> {
                                 try {
-                                    return com.editora.editor.PreviewImageLoader.fetchBytes(u);
+                                    return com.editora.editor.markdown.PreviewImageLoader.fetchBytes(u);
                                 } catch (Exception e) {
                                     return null; // fall back to the encoded image / a remote reference
                                 }
@@ -1377,21 +1377,22 @@ final class EditingCoordinator {
                 return;
             }
             if (regex) {
-                String err = com.editora.editor.SearchMatcher.regexError(query);
+                String err = com.editora.editor.search.SearchMatcher.regexError(query);
                 if (err != null) {
                     host.setStatus(tr("find.badRegex", err));
                     return;
                 }
             }
             host.promptText(title, tr("dialog.queryReplace.replaceLabel", query), "", replacement -> {
-                var spec = new com.editora.editor.QueryReplace.Spec(query, replacement, false, regex, false, false);
+                var spec =
+                        new com.editora.editor.search.QueryReplace.Spec(query, replacement, false, regex, false, false);
                 beginQueryReplace(buffer, spec);
             });
         });
     }
 
     /** Starts an interactive query-replace over {@code buffer} with a resolved spec (past the prompts). */
-    void beginQueryReplace(EditorBuffer buffer, com.editora.editor.QueryReplace.Spec spec) {
+    void beginQueryReplace(EditorBuffer buffer, com.editora.editor.search.QueryReplace.Spec spec) {
         if (queryReplaceSession != null) {
             queryReplaceSession.finish();
         }
@@ -1412,7 +1413,7 @@ final class EditingCoordinator {
         private final EditorBuffer buffer;
         private final CodeArea area;
         private final javafx.scene.Node keyHost;
-        private final com.editora.editor.QueryReplace.Spec spec;
+        private final com.editora.editor.search.QueryReplace.Spec spec;
         private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> pressed = this::onPressed;
         private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> typed = this::onTyped;
         private final javafx.beans.value.ChangeListener<Boolean> focusLost = (obs, was, isFocused) -> {
@@ -1421,11 +1422,11 @@ final class EditingCoordinator {
             }
         };
         private int from;
-        private com.editora.editor.QueryReplace.@Nullable Match current;
+        private com.editora.editor.search.QueryReplace.@Nullable Match current;
         private int replaced;
         private boolean active;
 
-        QueryReplaceSession(EditorBuffer buffer, com.editora.editor.QueryReplace.Spec spec) {
+        QueryReplaceSession(EditorBuffer buffer, com.editora.editor.search.QueryReplace.Spec spec) {
             this.buffer = buffer;
             this.area = buffer.getFocusedArea();
             this.keyHost = keyHost(area);
@@ -1453,13 +1454,13 @@ final class EditingCoordinator {
 
         /** Finds the next match from {@link #from}, highlights it and prompts. False when none remain. */
         private boolean showNext() {
-            var m = com.editora.editor.QueryReplace.next(area.getText(), from, spec);
+            var m = com.editora.editor.search.QueryReplace.next(area.getText(), from, spec);
             if (m.isEmpty()) {
                 current = null;
                 return false;
             }
             current = m.get();
-            buffer.setSearchMatches(com.editora.editor.SearchMatches.of(current.start(), current.end()), 0);
+            buffer.setSearchMatches(com.editora.editor.search.SearchMatches.of(current.start(), current.end()), 0);
             area.moveTo(current.start());
             area.requestFollowCaret();
             host.setStatus(tr("status.queryReplace.prompt", replaced));
@@ -1474,7 +1475,7 @@ final class EditingCoordinator {
             }
             area.replaceText(match.start(), match.end(), match.replacement());
             replaced++;
-            from = com.editora.editor.QueryReplace.afterReplace(match);
+            from = com.editora.editor.search.QueryReplace.afterReplace(match);
         }
 
         private void replaceCurrentAndAdvance() {
@@ -1489,7 +1490,7 @@ final class EditingCoordinator {
             if (match == null) {
                 return;
             }
-            from = com.editora.editor.QueryReplace.afterSkip(match);
+            from = com.editora.editor.search.QueryReplace.afterSkip(match);
             if (!showNext()) {
                 finish();
             }
@@ -1497,7 +1498,7 @@ final class EditingCoordinator {
 
         /** {@code !}: replace this and every remaining match in one edit, then stop. */
         private void replaceRest() {
-            var plan = com.editora.editor.QueryReplace.planRemaining(area.getText(), from, spec);
+            var plan = com.editora.editor.search.QueryReplace.planRemaining(area.getText(), from, spec);
             if (!plan.isEmpty()) {
                 int start = plan.get(0).start();
                 int end = plan.get(plan.size() - 1).end();
@@ -1629,8 +1630,9 @@ final class EditingCoordinator {
      * block), else to the innermost foldable region of the whole document holding the line; false when there is
      * none. The whole document's regions: while narrowed the fold manager only knows the region's own.
      */
-    boolean narrowToFoldRegionAt(EditorBuffer buffer, int line, com.editora.editor.FoldRegions.@Nullable Region block) {
-        com.editora.editor.FoldRegions.Region best =
+    boolean narrowToFoldRegionAt(
+            EditorBuffer buffer, int line, com.editora.editor.fold.FoldRegions.@Nullable Region block) {
+        com.editora.editor.fold.FoldRegions.Region best =
                 block != null && block.startLine() <= line && line <= block.endLine() ? block : null;
         if (best == null) {
             for (var r : documentFoldRegions(buffer)) {
@@ -1646,18 +1648,18 @@ final class EditingCoordinator {
             return false;
         }
         String text = buffer.getContent();
-        int start = com.editora.editor.NarrowLines.offsetOfLine(text, best.startLine());
-        int lastLineStart = com.editora.editor.NarrowLines.offsetOfLine(text, best.endLine());
+        int start = com.editora.editor.fold.NarrowLines.offsetOfLine(text, best.startLine());
+        int lastLineStart = com.editora.editor.fold.NarrowLines.offsetOfLine(text, best.endLine());
         int lineEnd = text.indexOf('\n', lastLineStart);
         return applyNarrowDocument(buffer, start, lineEnd < 0 ? text.length() : lineEnd);
     }
 
     /** The whole document's fold regions: the manager's while the buffer is whole, detected afresh while narrowed. */
-    static java.util.List<com.editora.editor.FoldRegions.Region> documentFoldRegions(EditorBuffer buffer) {
+    static java.util.List<com.editora.editor.fold.FoldRegions.Region> documentFoldRegions(EditorBuffer buffer) {
         if (!buffer.isNarrowed()) {
             return buffer.getFoldManager().regions();
         }
-        return com.editora.editor.FoldManager.detectRegions(
+        return com.editora.editor.fold.FoldManager.detectRegions(
                 buffer.getContent(), buffer.getLanguage(), null, java.util.List.of(), true);
     }
 
@@ -1672,14 +1674,14 @@ final class EditingCoordinator {
             @Override
             public boolean narrowToDefun(EditorBuffer buffer, int line) {
                 String text = buffer.getContent();
-                int at = com.editora.editor.NarrowLines.offsetOfLine(text, line);
+                int at = com.editora.editor.fold.NarrowLines.offsetOfLine(text, line);
                 int pos = at < text.length() && text.charAt(at) != '\n' ? at + 1 : at;
                 return narrowToDefunAt(buffer, pos);
             }
 
             @Override
             public boolean narrowToFoldRegion(
-                    EditorBuffer buffer, int line, com.editora.editor.FoldRegions.@Nullable Region block) {
+                    EditorBuffer buffer, int line, com.editora.editor.fold.FoldRegions.@Nullable Region block) {
                 return narrowToFoldRegionAt(buffer, line, block);
             }
 
@@ -2266,7 +2268,7 @@ final class EditingCoordinator {
             if (pattern.isEmpty()) {
                 return;
             }
-            String err = com.editora.editor.SearchMatcher.regexError(pattern);
+            String err = com.editora.editor.search.SearchMatcher.regexError(pattern);
             if (err != null) {
                 host.setStatus(tr("find.badRegex", err));
                 return;
@@ -2328,7 +2330,7 @@ final class EditingCoordinator {
         if (regex == null || regex.isEmpty()) {
             return;
         }
-        String err = com.editora.editor.SearchMatcher.regexError(regex);
+        String err = com.editora.editor.search.SearchMatcher.regexError(regex);
         if (err != null) {
             host.setStatus(tr("find.badRegex", err));
             return;
@@ -2441,7 +2443,7 @@ final class EditingCoordinator {
             if (pattern.isEmpty()) {
                 return;
             }
-            String err = com.editora.editor.SearchMatcher.regexError(pattern);
+            String err = com.editora.editor.search.SearchMatcher.regexError(pattern);
             if (err != null) {
                 host.setStatus(tr("find.badRegex", err));
                 return;
