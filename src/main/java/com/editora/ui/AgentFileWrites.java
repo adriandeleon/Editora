@@ -6,7 +6,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 
 import com.editora.agent.AcpFsGuard;
-import com.editora.editor.LineEndings;
+import com.editora.editops.LineEndings;
 import org.jspecify.annotations.Nullable;
 
 /**

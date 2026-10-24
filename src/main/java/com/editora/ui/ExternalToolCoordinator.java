@@ -355,7 +355,7 @@ final class ExternalToolCoordinator {
             // The range selected at launch (the text is unchanged, so its offsets still hold) — not whatever
             // is selected now.
             case REPLACE_SELECTION -> {
-                String replacement = com.editora.editor.LineEndings.toLf(stripOneTrailingNewline(r.out()));
+                String replacement = com.editora.editops.LineEndings.toLf(stripOneTrailingNewline(r.out()));
                 area.replaceText(launch.selectionStart(), launch.selectionEnd(), replacement);
                 area.moveTo(launch.selectionStart() + replacement.length());
             }

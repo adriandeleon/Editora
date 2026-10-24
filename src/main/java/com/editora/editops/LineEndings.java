@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 import com.editora.editorconfig.EditorConfigTransform;
 import org.jspecify.annotations.Nullable;

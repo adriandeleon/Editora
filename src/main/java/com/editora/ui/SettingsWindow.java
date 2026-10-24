@@ -2860,29 +2860,29 @@ public class SettingsWindow {
                 Category.EDITOR,
                 "rulers",
                 "80, 120",
-                st -> com.editora.editor.RulerColumns.format(scopeUi.shown("editor.rulers", st.getRulers())),
+                st -> com.editora.config.RulerColumns.format(scopeUi.shown("editor.rulers", st.getRulers())),
                 (st, v) -> { // only called once the problem check below passed: v parses
-                    List<Integer> columns = com.editora.editor.RulerColumns.parse(v);
+                    List<Integer> columns = com.editora.config.RulerColumns.parse(v);
                     if (columns != null && !scopeUi.write("editor.rulers", columns)) {
                         st.setRulers(columns);
                     }
                 },
-                v -> rulerProblem(com.editora.editor.RulerColumns.problem(v)),
+                v -> rulerProblem(com.editora.config.RulerColumns.problem(v)),
                 "rulers ruler columns column margin line length 80 100 120");
         textRow(
                 display,
                 Category.EDITOR,
                 "languageRulers",
                 "java: 100; python: 79, 88",
-                st -> com.editora.editor.RulerColumns.formatByLanguage(
+                st -> com.editora.config.RulerColumns.formatByLanguage(
                         scopeUi.shown("editor.languageRulers", st.getLanguageRulers())),
                 (st, v) -> {
-                    java.util.Map<String, List<Integer>> by = com.editora.editor.RulerColumns.parseByLanguage(v);
+                    java.util.Map<String, List<Integer>> by = com.editora.config.RulerColumns.parseByLanguage(v);
                     if (by != null && !scopeUi.write("editor.languageRulers", by.isEmpty() ? null : by)) {
                         st.setLanguageRulers(by);
                     }
                 },
-                v -> rulerProblem(com.editora.editor.RulerColumns.byLanguageProblem(
+                v -> rulerProblem(com.editora.config.RulerColumns.byLanguageProblem(
                         v, SpellFileTypesEditor.languageNames(config.getSettings()))),
                 "rulers per language ruler columns margin line length");
         SettingsDependents.bind(columnRulerCheck.selectedProperty(), rowsSince(firstRulerRow));
@@ -3628,7 +3628,7 @@ public class SettingsWindow {
     }
 
     /** The field message for a typed ruler list that cannot be read, or null. */
-    private static @Nullable String rulerProblem(com.editora.editor.RulerColumns.@Nullable Problem problem) {
+    private static @Nullable String rulerProblem(com.editora.config.RulerColumns.@Nullable Problem problem) {
         if (problem == null) {
             return null;
         }
@@ -3637,7 +3637,7 @@ public class SettingsWindow {
                 tr(
                         "settings.rulers.notAColumn",
                         problem.part(),
-                        String.valueOf(com.editora.editor.RulerColumns.MAX_COLUMN));
+                        String.valueOf(com.editora.config.RulerColumns.MAX_COLUMN));
             case NO_LANGUAGE -> tr("settings.rulers.noLanguage", problem.part());
             case UNKNOWN_LANGUAGE -> tr("settings.rulers.unknownLanguage", problem.part());
         };

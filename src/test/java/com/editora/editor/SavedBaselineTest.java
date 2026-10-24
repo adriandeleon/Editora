@@ -1,5 +1,6 @@
 package com.editora.editor;
 
+import com.editora.editops.TextFingerprint;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

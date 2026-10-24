@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.run;
 
 import org.junit.jupiter.api.Test;
 

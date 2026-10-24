@@ -174,9 +174,9 @@ final class EditorSettingsCoordinator {
         host.promptText(
                 commandTitle("editor.setRulers"),
                 tr("palette.rulers.columns"),
-                com.editora.editor.RulerColumns.format(s.getRulers()),
+                com.editora.config.RulerColumns.format(s.getRulers()),
                 v -> {
-                    java.util.List<Integer> columns = com.editora.editor.RulerColumns.parse(v);
+                    java.util.List<Integer> columns = com.editora.config.RulerColumns.parse(v);
                     if (columns == null) {
                         host.setStatus(tr("status.rulers.invalid", v.trim()));
                         return;
@@ -202,7 +202,7 @@ final class EditorSettingsCoordinator {
         host.promptText(
                 commandTitle("editor.setLanguageRulers"),
                 tr("palette.rulers.language", language),
-                own == null ? "" : com.editora.editor.RulerColumns.format(own),
+                own == null ? "" : com.editora.config.RulerColumns.format(own),
                 v -> {
                     java.util.Map<String, java.util.List<Integer>> map =
                             new java.util.LinkedHashMap<>(s.getLanguageRulers());
@@ -210,7 +210,7 @@ final class EditorSettingsCoordinator {
                     if (v.isBlank()) {
                         map.remove(language);
                     } else {
-                        columns = com.editora.editor.RulerColumns.parse(v);
+                        columns = com.editora.config.RulerColumns.parse(v);
                         if (columns == null) {
                             host.setStatus(tr("status.rulers.invalid", v.trim()));
                             return;
@@ -232,7 +232,7 @@ final class EditorSettingsCoordinator {
         host.setStatus(
                 columns.isEmpty()
                         ? tr("status.rulers.none")
-                        : tr("status.rulers.set", com.editora.editor.RulerColumns.format(columns)));
+                        : tr("status.rulers.set", com.editora.config.RulerColumns.format(columns)));
     }
 
     void toggleLineHighlight() {
@@ -1190,7 +1190,7 @@ final class EditorSettingsCoordinator {
         }
         // Unconditional, so a file that leaves an end_of_line rule behind (Save As, EditorConfig switched off)
         // goes back to its own line ending. A manual conversion lives on the buffer, not in this override.
-        buffer.setEolOverride(com.editora.editor.LineEndings.labelOf(p.endOfLine()));
+        buffer.setEolOverride(com.editora.editops.LineEndings.labelOf(p.endOfLine()));
         buffer.setRulerColumn(p.maxLineLength()); // null = default 80, OFF = hide
         buffer.setCharsetOverride(p.charset());
     }

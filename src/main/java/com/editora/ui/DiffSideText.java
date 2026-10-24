@@ -2,7 +2,7 @@ package com.editora.ui;
 
 import java.nio.charset.CharacterCodingException;
 
-import com.editora.editor.LineEndings;
+import com.editora.editops.LineEndings;
 import com.editora.editorconfig.EditorConfigCharset;
 import org.jspecify.annotations.Nullable;
 

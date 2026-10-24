@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 import org.jspecify.annotations.Nullable;
 
@@ -15,14 +15,14 @@ import org.jspecify.annotations.Nullable;
  * @param end end (exclusive) of the differing span in the <em>current</em> text
  * @param replacement what the span becomes
  */
-record WholeDocumentEdit(int start, int end, String replacement) {
+public record WholeDocumentEdit(int start, int end, String replacement) {
 
     /**
      * The edit that makes {@code current} equal {@code next}, or null when they already are equal. The span
      * never starts or ends inside a surrogate pair or between a {@code \r} and its {@code \n}, so applying it
      * can neither create a lone surrogate nor turn one line break into two.
      */
-    static @Nullable WholeDocumentEdit between(String current, String next) {
+    public static @Nullable WholeDocumentEdit between(String current, String next) {
         int currentLength = current.length();
         int nextLength = next.length();
         int limit = Math.min(currentLength, nextLength);

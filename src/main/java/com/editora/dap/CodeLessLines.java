@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.dap;
 
 import org.jspecify.annotations.Nullable;
 

@@ -45,7 +45,7 @@ final class SourceBlanker {
         }
         boolean clojure = "clojure".equals(language);
         boolean scala = "scala".equals(language);
-        boolean regexLiterals = com.editora.editor.RegexLiterals.in(language);
+        boolean regexLiterals = com.editora.editops.RegexLiterals.in(language);
         char[] out = text.toCharArray();
         String lineComment = clojure ? ";" : style != null && style.hasLine() ? style.line() : null;
         String blockStart = style != null && style.hasBlock() ? style.blockStart() : null;
@@ -82,7 +82,7 @@ final class SourceBlanker {
                 continue;
             }
             if (c == '/' && regexLiterals) {
-                int end = com.editora.editor.RegexLiterals.end(text, i);
+                int end = com.editora.editops.RegexLiterals.end(text, i);
                 if (end > i) {
                     blankRange(out, i, end + 1);
                     i = end + 1;

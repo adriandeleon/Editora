@@ -3108,7 +3108,7 @@ final class DebugCoordinator {
         }
         // B8: a blank or comment-only line has no code to stop on. java-debug even called such a breakpoint
         // verified, and it never stopped.
-        if (com.editora.editor.CodeLessLines.isCodeLess(b.getContent(), line, b.getLanguage())) {
+        if (com.editora.dap.CodeLessLines.isCodeLess(b.getContent(), line, b.getLanguage())) {
             host.setStatus(tr("status.debug.noCodeOnLine"));
             return false;
         }

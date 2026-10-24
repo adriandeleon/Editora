@@ -19,8 +19,8 @@ import javafx.scene.control.Tab;
 
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
+import com.editora.editops.LineEndings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LineEndings;
 import com.editora.recovery.RecoveryPolicy;
 import com.editora.recovery.RecoveryRecord;
 import com.editora.recovery.RecoveryService;

@@ -1,6 +1,6 @@
 package com.editora.editor.language;
 
-import com.editora.editor.LineEndings;
+import com.editora.editops.LineEndings;
 import com.editora.editorconfig.EditorConfigCharset;
 import com.editora.editorconfig.EditorConfigProperties;
 import org.jspecify.annotations.Nullable;
