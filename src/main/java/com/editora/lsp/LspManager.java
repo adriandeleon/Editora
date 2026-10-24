@@ -102,6 +102,8 @@ public final class LspManager {
     private volatile boolean closed;
     /** Mirrors {@code Settings.lspOnTypeFormatting} into jdtls's {@code java.format.onType.enabled}. */
     private volatile boolean javaOnTypeFormatting;
+    /** Settings' Default JDK ("" = none): jdtls's default runtime and the JDK it may itself run on. */
+    private volatile String javaDefaultJdk = "";
     /** bash-language-server's {@code bashIde} settings (null = its defaults until the coordinator sets them). */
     private volatile @Nullable BashIdeConfig bashIde;
 
@@ -252,6 +254,15 @@ public final class LspManager {
             shutdownAll();
             com.editora.perf.AfterFirstPaint.run(ProcessRunner::warmAugmentedPathAsync);
         }
+    }
+
+    /**
+     * The JDK the user chose in Settings (Build Tools ▸ Default JDK, "" for none). A Java server started after
+     * this marks it as its default runtime and runs Gradle on it, and runs on it itself when the launcher's own
+     * Java is older than jdtls needs. A running server keeps what it started with.
+     */
+    public void setJavaDefaultJdk(@Nullable String home) {
+        javaDefaultJdk = home == null ? "" : home;
     }
 
     /**
@@ -1031,6 +1042,15 @@ public final class LspManager {
         return sessionsByRoot.containsKey(sessionKey(serverId, root));
     }
 
+    /**
+     * Whether {@code serverId} already runs for {@code root} and has finished its handshake: a file opened into
+     * it starts nothing, so there is no "starting" to announce (Java review C18).
+     */
+    public boolean isRunning(String serverId, Path root) {
+        LanguageServerSession s = sessionsByRoot.get(sessionKey(serverId, root));
+        return s != null && !s.isDisposed() && s.isInitialized();
+    }
+
     public boolean isManaged(@Nullable Path file) {
         // A remote (SFTP) file is never LSP-managed; bail before uri(), whose toUri() throws for such paths.
         return file != null && servable(file) && sessionByDocUri.containsKey(uri(file));
@@ -1343,6 +1363,9 @@ public final class LspManager {
         String workspaceBaseName = needsJdtlsWorkspace && !remote ? LspServerRegistry.workspaceDirName(root) : null;
         List<String> bundles = List.copyOf(debugBundles);
         boolean onTypeFormatting = javaOnTypeFormatting;
+        String javaPreferredHome = remote || !LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
+                ? null // a remote host's JDKs are its own; the setting names this machine's
+                : JavaRuntimes.preferredHome(javaDefaultJdk, System.getenv("JAVA_HOME"));
         boolean centralIndex = mavenCentralIndex;
         // Trust is read here, on the caller's thread, where the trust list is also edited.
         Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) || TypeScriptServer.SERVER_ID.equals(serverId)
@@ -1394,6 +1417,26 @@ public final class LspManager {
                             remoteEnvironment,
                             exe -> JavaServerEnvironment.isRemoteJdtlsLauncher(root, exe))
                     : resolvedSpec.command();
+            if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && !remote && !startCommand.isEmpty()) {
+                JavaRuntimes.ServerJava serverJava = JavaRuntimes.serverJava(
+                        JavaRuntimes.launcherJavaMajor(), JavaRuntimes.discover(), javaPreferredHome);
+                if (serverJava.missing() && JavaServerEnvironment.isJdtlsLauncher(startCommand.get(0))) {
+                    // The launcher would refuse with "jdtls requires at least Java 21" on its stderr, and the
+                    // user would only see a crash loop: say what is missing instead, and do not retry.
+                    session.dispose();
+                    dropSession(key, session);
+                    StartRefusal refusal = new StartRefusal(
+                            StartRefusal.Kind.NO_JAVA_FOR_SERVER, String.valueOf(JavaRuntimes.SERVER_MIN_MAJOR));
+                    Platform.runLater(() -> {
+                        if (!closed) {
+                            onStartRefused.refused(serverId, root, refusal);
+                        }
+                    });
+                    return;
+                }
+                startCommand = JavaServerEnvironment.withJavaExecutable(
+                        startCommand, serverJava.executable(), JavaServerEnvironment::isJdtlsLauncher);
+            }
             Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
                     ? astroTypeScriptSdk(root, sdkCeiling, startCommand)
                     : null;
@@ -1447,7 +1490,13 @@ public final class LspManager {
                             : TypeScriptServer.SERVER_ID.equals(serverId)
                                     ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
                                     : initOptionsFor(
-                                            serverId, startBundles, astroTsdk, onTypeFormatting, jdks, centralIndex));
+                                            serverId,
+                                            startBundles,
+                                            astroTsdk,
+                                            onTypeFormatting,
+                                            jdks,
+                                            centralIndex,
+                                            javaPreferredHome));
             if (!session.start()) {
                 dropSession(key, session);
                 if (session.startFailed()) {
@@ -4069,8 +4118,16 @@ public final class LspManager {
 
     static Map<String, Object> javaInitOptions(
             List<String> debugBundles, boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks) {
+        return javaInitOptions(debugBundles, onTypeFormatting, jdks, null);
+    }
+
+    static Map<String, Object> javaInitOptions(
+            List<String> debugBundles,
+            boolean onTypeFormatting,
+            @Nullable List<JavaRuntimes.Jdk> jdks,
+            @Nullable String preferredHome) {
         Map<String, Object> options = new java.util.HashMap<>();
-        options.put("settings", Map.of("java", javaSettings(onTypeFormatting, jdks)));
+        options.put("settings", Map.of("java", javaSettings(onTypeFormatting, jdks, preferredHome)));
         return finishJavaInitOptions(options, debugBundles);
     }
 
@@ -4087,13 +4144,24 @@ public final class LspManager {
      * importing" for a project that had imported perfectly. Declaring the real runtimes also gives jdtls a
      * sane default to fall back to when a project's exact release isn't installed at all.
      */
-    private static Map<String, Object> javaSettings(boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks) {
+    private static Map<String, Object> javaSettings(
+            boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks, @Nullable String preferredHome) {
         // The keys pushed after initialized, sent here too so the first import already runs with them.
         Map<String, Object> java = new java.util.HashMap<>(LspServerSettings.javaSettings(onTypeFormatting));
         java.put("autobuild", Map.of("enabled", false));
-        List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks);
+        List<Map<String, Object>> runtimes =
+                JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks, preferredHome);
         if (!runtimes.isEmpty()) {
-            java.put("configuration", Map.of("runtimes", runtimes));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> configuration =
+                    new java.util.HashMap<>((Map<String, Object>) java.getOrDefault("configuration", Map.of()));
+            configuration.put("runtimes", runtimes);
+            java.put("configuration", Map.copyOf(configuration));
+            String gradleJdk = JavaRuntimes.defaultPath(runtimes);
+            if (gradleJdk != null) {
+                // Gradle runs on the same JDK as the projects' default, not whatever jdtls itself runs on.
+                java.put("import", Map.of("gradle", Map.of("java", Map.of("home", gradleJdk))));
+            }
         }
         return Map.copyOf(java);
     }
@@ -4213,8 +4281,20 @@ public final class LspManager {
             boolean javaOnTypeFormatting,
             @Nullable List<JavaRuntimes.Jdk> jdks,
             boolean mavenCentralIndex) {
+        return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, jdks, mavenCentralIndex, null);
+    }
+
+    /** As above; {@code javaPreferredHome} is the JDK jdtls makes its default ({@link JavaRuntimes#preferredHome}). */
+    static @Nullable Object initOptionsFor(
+            String serverId,
+            List<String> debugBundles,
+            @Nullable Path astroTsdk,
+            boolean javaOnTypeFormatting,
+            @Nullable List<JavaRuntimes.Jdk> jdks,
+            boolean mavenCentralIndex,
+            @Nullable String javaPreferredHome) {
         return switch (serverId == null ? "" : serverId) {
-            case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting, jdks);
+            case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting, jdks, javaPreferredHome);
             case "go" -> Map.of("semanticTokens", true);
             case "json", "css", "html" -> Map.of("provideFormatter", true);
             // gvy reads a flat map of its VS Code settings. CodeNarc's style rules flag nearly every line of

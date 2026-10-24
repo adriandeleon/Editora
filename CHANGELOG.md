@@ -56,6 +56,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java: opening a project no longer writes Eclipse files into it.** jdtls put `.project`, `.classpath` and
+  `.settings/` into every imported project and module, where they showed up in `git status`. They now stay in
+  jdtls's own workspace (`-Djava.import.generatesMetadataFilesAtProjectRoot=false`, as vscode-java does). Files
+  written by earlier versions are not removed.
+- **Java: Gradle projects import when a newer JDK is installed.** The newest JDK on the machine became jdtls's
+  default runtime, and Gradle ran on it; with JDK 27 installed every Gradle 9 import failed while the status bar
+  read "1100% Starting Java Language Server". The default is now Settings ▸ Build Tools ▸ Default JDK, else
+  `JAVA_HOME`, else the newest, and Gradle is told to run on it.
+- **Java: jdtls starts when `JAVA_HOME` points at a JDK older than 21.** Editora now hands jdtls's launcher a JDK
+  21 or newer that it finds (the Default JDK when it qualifies), and when there is none it says so instead of
+  reporting that the server "keeps crashing".
+- **Java: jdtls's memory is capped.** It started with `-Xms1G` and no limit, 1.3–2.5 GB for a small project; it now
+  gets vscode-java's defaults (`-Xmx2G`, parallel GC, a small initial heap). A `-Xmx` or GC flag of your own on
+  the command or in `JDK_JAVA_OPTIONS` still wins.
+- **Java: Gradle projects reach "Loaded and ready", and the import narration makes sense.** A Gradle import kept
+  sending "Starting" lines after jdtls said it was ready, which kept the ready line from ever coming.
+  Percentages past 100 ("1100% Starting Java Language Server") are dropped, and a failed import ("WARNING") is
+  reported as an error that says where to look. Opening another file into a server that is already running no
+  longer says "Starting Java language server…".
+
 - **Java: the completion documentation popup shows Javadoc.** jdtls computes an item's Javadoc in
   `completionItem/resolve` only when the client lists `documentation` among the properties it resolves; Editora
   listed only `additionalTextEdits`, so the popup showed the return type and nothing else.

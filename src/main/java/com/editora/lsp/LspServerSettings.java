@@ -211,6 +211,9 @@ final class LspServerSettings {
         java.put("inlayHints", inlayHints);
         // workspace/symbol answers types only unless asked for methods too.
         java.put("symbols", Map.of("includeSourceMethodDeclarations", true));
+        // A pom.xml or build.gradle change reaches the classpath on its own. jdtls's default, "interactive",
+        // asks a question per change, and a pom edit never took effect until it was answered (Java review C1).
+        java.put("configuration", Map.of("updateBuildConfiguration", "automatic"));
         return java;
     }
 

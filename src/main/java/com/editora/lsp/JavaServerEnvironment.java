@@ -8,9 +8,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
- * Launch settings for ordered JDT document lifecycle/completion processing: jdtls must run with
- * {@code -Djava.lsp.joinOnCompletion=true}.
+ * The JVM options jdtls is launched with ({@link #OPTIONS}): ordered document lifecycle and completion
+ * processing ({@code -Djava.lsp.joinOnCompletion=true}), Eclipse's project metadata kept in the workspace
+ * instead of the user's project folder, and vscode-java's heap and GC defaults.
  *
  * <p>The option goes on the <b>command line</b> wherever Editora knows how to put it there — the jdtls
  * launcher script ({@code --jvm-arg=…}) and a direct {@code java …} command ({@code -D…} right after the
@@ -21,8 +24,38 @@ import java.util.Map;
  * a system property it never asked for.
  */
 final class JavaServerEnvironment {
-    private static final String JOIN = "-Djava.lsp.joinOnCompletion";
-    private static final String OPTION = JOIN + "=true";
+
+    /**
+     * One JVM option and the prefix that says the user already chose its value — on the command, or in an
+     * inherited {@code JDK_JAVA_OPTIONS}-style variable — in which case it is left out.
+     */
+    record Option(String prefix, String value) {}
+
+    /**
+     * What jdtls runs with unless the command or its environment says otherwise:
+     *
+     * <ul>
+     *   <li>{@code joinOnCompletion}: JDT waits for pending document jobs before completion and resolve, so
+     *       an auto-import is computed against the text being typed.
+     *   <li>{@code generatesMetadataFilesAtProjectRoot=false}: Eclipse's {@code .project}, {@code .classpath}
+     *       and {@code .settings/} go into jdtls's {@code -data} workspace instead of every imported project
+     *       and module, where they showed up in {@code git status} (Java review C3). vscode-java's default.
+     *   <li>The heap and GC: the launcher reserves {@code -Xms1G} and sets no cap, so a seven-class project
+     *       cost 1.3–2.5 GB per server (C11). These are vscode-java's {@code java.jdt.ls.vmargs} defaults; a
+     *       later {@code -Xms} wins over the launcher's.
+     * </ul>
+     */
+    static final List<Option> OPTIONS = List.of(
+            new Option("-Djava.lsp.joinOnCompletion", "-Djava.lsp.joinOnCompletion=true"),
+            new Option(
+                    "-Djava.import.generatesMetadataFilesAtProjectRoot",
+                    "-Djava.import.generatesMetadataFilesAtProjectRoot=false"),
+            new Option("-Xmx", "-Xmx2G"),
+            new Option("-Xms", "-Xms100m"),
+            new Option("-XX:+Use", "-XX:+UseParallelGC"),
+            new Option("-XX:GCTimeRatio", "-XX:GCTimeRatio=4"),
+            new Option("-XX:AdaptiveSizePolicyWeight", "-XX:AdaptiveSizePolicyWeight=90"),
+            new Option("-Dsun.zip.disableMemoryMapping", "-Dsun.zip.disableMemoryMapping=true"));
 
     private JavaServerEnvironment() {}
 
@@ -46,24 +79,60 @@ final class JavaServerEnvironment {
             java.util.function.Predicate<String> isLauncher) {
         if (!"java".equals(serverId) || command.isEmpty()) return command;
         // A command or inherited JVM option is an intentional override, including an explicit false.
-        if (command.stream().anyMatch(arg -> arg.contains(JOIN))) return command;
-        for (String key : List.of("JDK_JAVA_OPTIONS", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS")) {
-            if (environment.getOrDefault(key, "").contains(JOIN)) return command;
+        List<String> missing = new ArrayList<>();
+        for (Option option : OPTIONS) {
+            if (!chosen(option.prefix(), command, environment)) {
+                missing.add(option.value());
+            }
         }
-        // JDT joins pending lifecycle jobs inside the server process; the editor never waits on the FX thread.
+        if (missing.isEmpty()) return command;
         String executable = command.get(0);
-        String argument = isJavaExecutable(executable)
-                ? OPTION // a JVM option, so before -jar / the main class
-                : isLauncherName(executable) && isLauncher.test(executable) ? "--jvm-arg=" + OPTION : null;
-        if (argument != null) {
+        boolean java = isJavaExecutable(executable);
+        boolean launcher = !java && isLauncherName(executable) && isLauncher.test(executable);
+        if (java || launcher) {
             List<String> extended = new ArrayList<>(command);
-            extended.add(1, argument);
+            for (int i = 0; i < missing.size(); i++) {
+                // A JVM option goes before -jar / the main class; the launcher forwards --jvm-arg=.
+                extended.add(1 + i, java ? missing.get(i) : "--jvm-arg=" + missing.get(i));
+            }
             return List.copyOf(extended);
         }
-        // Anything else: only the environment reaches the JVM behind a wrapper we know nothing about.
-        String options = environment.getOrDefault("JDK_JAVA_OPTIONS", "");
-        environment.put("JDK_JAVA_OPTIONS", options.isBlank() ? OPTION : options + " " + OPTION);
+        // Anything else: only the environment reaches the JVM behind a wrapper we know nothing about. Only the
+        // option jdtls needs to be correct goes there — every JVM jdtls starts inherits this variable, a debugged
+        // program included, and heap or GC flags meant for the server would reach it too.
+        String join = OPTIONS.get(0).value();
+        if (missing.contains(join)) {
+            String options = environment.getOrDefault("JDK_JAVA_OPTIONS", "");
+            environment.put("JDK_JAVA_OPTIONS", options.isBlank() ? join : options + " " + join);
+        }
         return command;
+    }
+
+    private static boolean chosen(String prefix, List<String> command, Map<String, String> environment) {
+        if (command.stream().anyMatch(arg -> arg.contains(prefix))) return true;
+        for (String key : List.of("JDK_JAVA_OPTIONS", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS")) {
+            if (environment.getOrDefault(key, "").contains(prefix)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * {@code command} with {@code --java-executable=javaExecutable} when it is jdtls's own launcher and does not
+     * name one already; otherwise {@code command} unchanged. The launcher otherwise runs {@code $JAVA_HOME/bin/java}
+     * (or {@code java} on the PATH) and refuses anything older than 21 (Java review C5).
+     */
+    static List<String> withJavaExecutable(
+            List<String> command, @Nullable String javaExecutable, java.util.function.Predicate<String> isLauncher) {
+        if (javaExecutable == null
+                || command.isEmpty()
+                || command.stream().anyMatch(arg -> arg.startsWith("--java-executable"))
+                || !isLauncherName(command.get(0))
+                || !isLauncher.test(command.get(0))) {
+            return command;
+        }
+        List<String> extended = new ArrayList<>(command);
+        extended.add(1, "--java-executable=" + javaExecutable);
+        return List.copyOf(extended);
     }
 
     private static String fileName(String executable) {

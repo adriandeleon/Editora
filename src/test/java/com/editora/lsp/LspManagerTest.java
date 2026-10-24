@@ -676,8 +676,25 @@ class LspManagerTest {
             assertEquals(Boolean.FALSE, keys.get("java.format.onType.enabled"));
             assertEquals(Boolean.TRUE, keys.get("java.referencesCodeLens.enabled"));
             assertEquals("all", keys.get("java.implementationCodeLens"));
+            assertEquals("automatic", keys.get("java.configuration.updateBuildConfiguration"), "Java review C1");
         }
         assertEquals(Boolean.FALSE, flatten("java", init).get("java.autobuild.enabled"), "init keeps autobuild off");
+    }
+
+    /** Gradle runs on the projects' default JDK, the user's (Java review C4), not on what jdtls runs on. */
+    @SuppressWarnings("unchecked")
+    @Test
+    void gradleRunsOnTheDefaultRuntime() {
+        var jdks = List.of(new JavaRuntimes.Jdk(27, "/jdk27"), new JavaRuntimes.Jdk(25, "/jdk25"));
+        Map<String, Object> java = (Map<String, Object>)
+                ((Map<String, Object>) LspManager.javaInitOptions(List.of(), false, jdks, "/jdk25")
+                                .get("settings"))
+                        .get("java");
+        Map<String, Object> keys = flatten("java", java);
+        assertEquals("/jdk25", keys.get("java.import.gradle.java.home"));
+        assertEquals("automatic", keys.get("java.configuration.updateBuildConfiguration"), "kept beside the runtimes");
+        List<Map<String, Object>> runtimes = (List<Map<String, Object>>) keys.get("java.configuration.runtimes");
+        assertEquals("/jdk25", JavaRuntimes.defaultPath(runtimes));
     }
 
     @SuppressWarnings("unchecked")

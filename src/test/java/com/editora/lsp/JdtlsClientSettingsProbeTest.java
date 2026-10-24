@@ -226,6 +226,10 @@ class JdtlsClientSettingsProbeTest {
             }
             assertTrue(s.isInitialized(), "real handshake");
             assertTrue(imported.await(120, TimeUnit.SECONDS), "the project imported");
+            // C3: Eclipse's project files stay in the -data workspace, out of the user's folder.
+            for (String eclipse : List.of(".project", ".classpath", ".settings")) {
+                assertFalse(Files.exists(project.resolve(eclipse)), eclipse + " written into the project");
+            }
             assertNotNull(
                     get(s.hover(app, pos(APP, "greet(String", 2))), "imported (document requests queue behind it)");
 

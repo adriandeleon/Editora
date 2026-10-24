@@ -6,6 +6,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Discovers the JDKs installed on this machine and shapes them into jdtls's
  * {@code java.configuration.runtimes} setting.
@@ -188,38 +190,168 @@ public final class JavaRuntimes {
         return 0;
     }
 
-    /**
-     * The {@code java.configuration.runtimes} entries for {@code jdks}, newest first, with the newest marked
-     * default. One entry per execution environment — a duplicate major (the same JDK reached through two
-     * paths, e.g. sdkman's {@code current} symlink) would make jdtls reject the whole setting.
-     */
+    /** As {@link #runtimes(List, String)} with no preferred JDK: the newest is the default. */
     public static List<Map<String, Object>> runtimes(List<Jdk> jdks) {
+        return runtimes(jdks, null);
+    }
+
+    /**
+     * The {@code java.configuration.runtimes} entries for {@code jdks}, newest first. One entry per execution
+     * environment — a duplicate major (the same JDK reached through two paths, e.g. sdkman's {@code current}
+     * symlink) would make jdtls reject the whole setting.
+     *
+     * <p>jdtls takes at most one {@code default}: the JDK for a project whose own release has no exact match,
+     * for a folder with no build file, and the one Gradle runs on when nothing else names one. That is
+     * {@code preferredHome} — the user's Default JDK, else {@code JAVA_HOME} ({@link #preferredHome}) — when it
+     * is among them, and only otherwise the newest. Marking the newest outright handed Gradle a JDK newer than
+     * it supports, and every Gradle import failed (Java review C4).
+     */
+    public static List<Map<String, Object>> runtimes(List<Jdk> jdks, @Nullable String preferredHome) {
         if (jdks == null || jdks.isEmpty()) {
             return List.of();
         }
+        String preferred = realPath(preferredHome);
         Map<Integer, String> byMajor = new LinkedHashMap<>();
         jdks.stream()
                 .filter(j -> j != null
                         && j.major() > 0
                         && j.path() != null
                         && !j.path().isBlank())
-                .sorted(Comparator.comparingInt(Jdk::major).reversed())
+                .sorted(Comparator.comparingInt(Jdk::major)
+                        .reversed()
+                        // the preferred JDK holds its major's slot against another install of the same major
+                        .thenComparing(j -> !j.path().equals(preferred)))
                 .forEach(j -> byMajor.putIfAbsent(j.major(), j.path()));
 
+        if (byMajor.isEmpty()) {
+            return List.of();
+        }
+        String chosen = byMajor.containsValue(preferred)
+                ? preferred
+                : byMajor.values().iterator().next();
         List<Map<String, Object>> out = new ArrayList<>(byMajor.size());
-        boolean first = true;
         for (Map.Entry<Integer, String> e : byMajor.entrySet()) {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("name", executionEnvironment(e.getKey()));
             entry.put("path", e.getValue());
-            if (first) {
-                // jdtls requires at most one default; the newest is the sensible fallback for a project
-                // whose own execution environment has no exact match.
+            if (e.getValue().equals(chosen)) {
                 entry.put("default", true);
-                first = false;
             }
             out.add(Map.copyOf(entry));
         }
         return List.copyOf(out);
+    }
+
+    /** The path of the runtime {@link #runtimes} marked default, or null when there is none. */
+    public static @Nullable String defaultPath(List<Map<String, Object>> runtimes) {
+        for (Map<String, Object> entry : runtimes) {
+            if (Boolean.TRUE.equals(entry.get("default")) && entry.get("path") instanceof String path) {
+                return path;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The JDK the user chose for Java work: Settings' Default JDK ({@code settingHome}) when set, else
+     * {@code javaHome} (the {@code JAVA_HOME} variable), else null.
+     */
+    public static @Nullable String preferredHome(@Nullable String settingHome, @Nullable String javaHome) {
+        if (settingHome != null && !settingHome.isBlank()) {
+            return settingHome.strip();
+        }
+        return javaHome == null || javaHome.isBlank() ? null : javaHome.strip();
+    }
+
+    private static @Nullable String realPath(@Nullable String home) {
+        if (home == null || home.isBlank()) {
+            return null;
+        }
+        try {
+            return java.nio.file.Path.of(home).toRealPath().toString();
+        } catch (java.io.IOException | RuntimeException e) {
+            return home;
+        }
+    }
+
+    /** jdtls's own floor: its launcher refuses an older Java. */
+    static final int SERVER_MIN_MAJOR = 21;
+
+    /**
+     * What jdtls's launcher should be told to run on, given the major version of the Java it would pick itself
+     * ({@code launcherMajor}: {@code JAVA_HOME}'s, else the one on the PATH; 0 when unknown). Null executable
+     * when the launcher's own choice will do — it is new enough, or unknown and left to the launcher. Otherwise
+     * the preferred JDK when it is new enough, else the newest discovered one that is, and {@code missing} when
+     * none is (Java review C5: with {@code JAVA_HOME} on 17 jdtls could not start, and Editora only said it
+     * "keeps crashing").
+     */
+    public static ServerJava serverJava(int launcherMajor, List<Jdk> jdks, @Nullable String preferredHome) {
+        if (launcherMajor <= 0 || launcherMajor >= SERVER_MIN_MAJOR) {
+            return new ServerJava(null, false);
+        }
+        String preferred = realPath(preferredHome);
+        Jdk pick = null;
+        for (Jdk j : jdks == null ? List.<Jdk>of() : jdks) {
+            if (j == null || j.major() < SERVER_MIN_MAJOR || j.path() == null) {
+                continue;
+            }
+            if (j.path().equals(preferred)) {
+                pick = j;
+                break;
+            }
+            if (pick == null || j.major() > pick.major()) {
+                pick = j;
+            }
+        }
+        if (pick == null) {
+            return new ServerJava(null, true);
+        }
+        boolean windows = java.io.File.separatorChar == '\\';
+        return new ServerJava(
+                java.nio.file.Path.of(pick.path(), "bin", windows ? "java.exe" : "java")
+                        .toString(),
+                false);
+    }
+
+    /** The Java jdtls should be started on ({@code executable}, null: the launcher's own), or none qualifies. */
+    public record ServerJava(@Nullable String executable, boolean missing) {}
+
+    /**
+     * The major version of the Java jdtls's launcher picks by itself: {@code JAVA_HOME}'s, else the {@code java}
+     * on the {@code PATH}, read from that JDK's {@code release} file. 0 when it cannot be told.
+     */
+    public static int launcherJavaMajor() {
+        String javaHome = System.getenv("JAVA_HOME");
+        java.nio.file.Path home = null;
+        if (javaHome != null && !javaHome.isBlank()) {
+            home = java.nio.file.Path.of(javaHome);
+        } else {
+            String path = System.getenv("PATH");
+            for (String dir : path == null ? new String[0] : path.split(java.io.File.pathSeparator)) {
+                for (String name : List.of("java", "java.exe")) {
+                    java.nio.file.Path exe = java.nio.file.Path.of(dir, name);
+                    if (java.nio.file.Files.isExecutable(exe)) {
+                        try {
+                            java.nio.file.Path bin = exe.toRealPath().getParent();
+                            home = bin == null ? null : bin.getParent();
+                        } catch (java.io.IOException | RuntimeException e) {
+                            home = null;
+                        }
+                        break;
+                    }
+                }
+                if (home != null) {
+                    break;
+                }
+            }
+        }
+        if (home == null) {
+            return 0;
+        }
+        try {
+            return majorFromRelease(java.nio.file.Files.readString(home.resolve("release")));
+        } catch (java.io.IOException | RuntimeException e) {
+            return 0;
+        }
     }
 }

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JavaRuntimesTest {
@@ -51,6 +52,67 @@ class JavaRuntimesTest {
         assertEquals(Boolean.TRUE, out.get(0).get("default"));
         assertEquals(
                 1, out.stream().filter(m -> m.containsKey("default")).count(), "jdtls accepts at most one default");
+    }
+
+    /**
+     * The user's JDK is jdtls's default (Java review C4): Gradle runs on it and a folder without a build file
+     * compiles for it. Marking the newest handed Gradle 9.7 a JDK 27 it cannot run on.
+     */
+    @Test
+    void thePreferredJdkIsTheDefaultAndHoldsItsMajorsSlot() {
+        var jdks = List.of(
+                new JavaRuntimes.Jdk(27, "/jdk27"),
+                new JavaRuntimes.Jdk(25, "/jdk25.0.4"),
+                new JavaRuntimes.Jdk(25, "/jdk25.0.1"),
+                new JavaRuntimes.Jdk(21, "/jdk21"));
+        List<Map<String, Object>> out = JavaRuntimes.runtimes(jdks, "/jdk25.0.1");
+        assertEquals(
+                List.of("/jdk27", "/jdk25.0.1", "/jdk21"),
+                out.stream().map(m -> m.get("path")).toList());
+        assertEquals("/jdk25.0.1", JavaRuntimes.defaultPath(out));
+        assertEquals(1, out.stream().filter(m -> m.containsKey("default")).count());
+
+        assertEquals(
+                "/jdk27", JavaRuntimes.defaultPath(JavaRuntimes.runtimes(jdks, "/not/installed")), "else the newest");
+        assertEquals("/jdk27", JavaRuntimes.defaultPath(JavaRuntimes.runtimes(jdks, null)));
+        assertNull(JavaRuntimes.defaultPath(List.of()));
+    }
+
+    @Test
+    void theDefaultJdkSettingComesBeforeJavaHome() {
+        assertEquals("/chosen", JavaRuntimes.preferredHome(" /chosen ", "/env"));
+        assertEquals("/env", JavaRuntimes.preferredHome("", "/env"));
+        assertNull(JavaRuntimes.preferredHome(null, " "));
+    }
+
+    /** jdtls's launcher needs Java 21; with JAVA_HOME on 17 it could not start (Java review C5). */
+    @Test
+    void jdtlsIsGivenAJavaNewEnoughToRunOn() {
+        var jdks = List.of(
+                new JavaRuntimes.Jdk(17, "/jdk17"),
+                new JavaRuntimes.Jdk(21, "/jdk21"),
+                new JavaRuntimes.Jdk(25, "/jdk25"));
+        String sep = java.io.File.separator;
+        String exe = java.io.File.separatorChar == '\\' ? "java.exe" : "java";
+
+        assertEquals(new JavaRuntimes.ServerJava(null, false), JavaRuntimes.serverJava(21, jdks, null), "fine as is");
+        assertEquals(new JavaRuntimes.ServerJava(null, false), JavaRuntimes.serverJava(0, jdks, null), "unknown: left");
+        assertEquals(
+                new JavaRuntimes.ServerJava("/jdk25" + sep + "bin" + sep + exe, false),
+                JavaRuntimes.serverJava(17, jdks, null),
+                "the newest that qualifies");
+        assertEquals(
+                new JavaRuntimes.ServerJava("/jdk21" + sep + "bin" + sep + exe, false),
+                JavaRuntimes.serverJava(17, jdks, "/jdk21"),
+                "the user's choice when it qualifies");
+        assertEquals(
+                new JavaRuntimes.ServerJava("/jdk25" + sep + "bin" + sep + exe, false),
+                JavaRuntimes.serverJava(17, jdks, "/jdk17"),
+                "not when it is too old itself");
+        assertEquals(
+                new JavaRuntimes.ServerJava(null, true),
+                JavaRuntimes.serverJava(17, List.of(new JavaRuntimes.Jdk(17, "/jdk17")), null),
+                "nothing new enough: say so");
     }
 
     @Test

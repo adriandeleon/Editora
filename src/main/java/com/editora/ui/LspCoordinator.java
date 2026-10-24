@@ -911,6 +911,7 @@ final class LspCoordinator {
                         ? tr("status.lsp.tsNoSdk")
                         : tr("status.lsp.tsSdkWithoutTsserver", refusal.detail());
             case UNTRUSTED_TYPESCRIPT -> tr("status.lsp.tsSdkUntrusted", tr("command.lsp.trustProjectSettings"));
+            case NO_JAVA_FOR_SERVER -> tr("status.lsp.javaTooOld", server, refusal.detail());
         };
     }
 
@@ -1363,9 +1364,11 @@ final class LspCoordinator {
     }
 
     /** Pushes {@code Settings.lspOnTypeFormatting} to the manager, which jdtls needs to register the provider,
-     *  and the Maven server's Central-index choice (which restarts that server when it changes). */
+     *  the Default JDK (jdtls's default runtime), and the Maven server's Central-index choice (which restarts
+     *  that server when it changes). */
     void applyOnTypeFormatting() {
         lspManager.setJavaOnTypeFormatting(host.settings().isLspOnTypeFormatting());
+        lspManager.setJavaDefaultJdk(host.settings().getMavenJdkHome());
         lspManager.setMavenCentralIndex(host.settings().isMavenPomCentralIndex());
     }
 
@@ -2418,11 +2421,13 @@ final class LspCoordinator {
                     lspManager.closeDocument(path); // drop the old server's document + diagnostics before switching
                     clearDiagnostics(path);
                 }
-                host.setStatus(tr("status.lsp.starting", serverLabel(serverId)));
-                ops.setLspLoading(true); // show the loading bar until the server reports ready
+                Path root = lspRootFor(buffer, serverId);
+                if (root == null || !lspManager.isRunning(serverId, root)) {
+                    host.setStatus(tr("status.lsp.starting", serverLabel(serverId)));
+                    ops.setLspLoading(true); // show the loading bar until the server reports ready
+                }
                 lspManager.setDocumentIndent(path, formattingIndent(buffer)); // quick fixes keep its indent (B8)
-                lspManager.openDocument(
-                        path, lspRootFor(buffer, serverId), routeLanguageId(buffer, serverId), buffer.text());
+                lspManager.openDocument(path, root, routeLanguageId(buffer, serverId), buffer.text());
             }
             buffer.setLspActive(true);
             // Push the server's completion trigger characters + request initial pull diagnostics. Both are
@@ -2987,8 +2992,12 @@ final class LspCoordinator {
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
         if (line != null) {
             String server = line.serverId() == null ? "LSP" : serverProgram(line.serverId());
-            host.setStatus(
-                    line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
+            if (line.problem()) {
+                host.setError(tr("status.lsp.importProblem", server, line.text()));
+            } else {
+                host.setStatus(
+                        line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
+            }
         }
     }
 
