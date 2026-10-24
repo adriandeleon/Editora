@@ -3,7 +3,7 @@ package com.editora.editor.completion;
 import java.util.List;
 
 import com.editora.editor.lsp.LspEditShift;
-import com.editora.editor.lsp.LspTextEdit;
+import com.editora.text.LspTextEdit;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

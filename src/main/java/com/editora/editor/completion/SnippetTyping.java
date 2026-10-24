@@ -7,10 +7,10 @@ import java.util.function.BiFunction;
 import com.editora.editops.Commenter;
 import com.editora.editops.LineEndings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.language.ShellScripts;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.TabExpansion;
 import com.editora.snippet.VariableResolver;
+import com.editora.text.ShellScripts;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 

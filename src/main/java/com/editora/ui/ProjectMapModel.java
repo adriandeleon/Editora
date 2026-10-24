@@ -18,8 +18,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
-import com.editora.editor.language.LanguageRegistry;
 import com.editora.search.FuzzyMatch;
+import com.editora.text.LanguageRegistry;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -169,7 +169,7 @@ final class ProjectMapModel {
             int line,
             int startLine,
             int endLine,
-            com.editora.editor.fold.FoldRegions.@Nullable Region block,
+            com.editora.text.FoldRegions.@Nullable Region block,
             boolean branches) {}
 
     record Filters(

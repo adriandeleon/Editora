@@ -3,7 +3,7 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.editor.fold.FoldRegions.Region;
+import com.editora.text.FoldRegions.Region;
 import org.jspecify.annotations.Nullable;
 
 /** A node in the structure tree: a foldable region, its symbol label/kind, the line to navigate to, an

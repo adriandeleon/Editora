@@ -211,7 +211,7 @@ public final class TemplateOutput {
         if (rules != null
                 && rules.endOfLine() != null
                 && !"lf".equals(rules.endOfLine())
-                && com.editora.editor.language.ShellScripts.isShellScript(
+                && com.editora.text.ShellScripts.isShellScript(
                         target == null || target.getFileName() == null
                                 ? ""
                                 : target.getFileName().toString(),

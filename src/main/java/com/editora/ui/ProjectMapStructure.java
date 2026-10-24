@@ -21,8 +21,8 @@ import java.util.function.Function;
 import javafx.application.Platform;
 
 import com.editora.config.PathDisplay;
-import com.editora.editor.fold.FoldRegions.Region;
 import com.editora.lsp.SymbolNode;
+import com.editora.text.FoldRegions.Region;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

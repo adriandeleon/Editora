@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.editor.highlight.GrammarRegistry;
-import com.editora.editor.language.LanguageRegistry;
-import com.editora.editor.language.ShellFiles;
+import com.editora.text.LanguageRegistry;
+import com.editora.text.ShellFiles;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

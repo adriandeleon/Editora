@@ -3,7 +3,8 @@ package com.editora.editor.fold;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.editor.fold.FoldRegions.Region;
+import com.editora.text.FoldRegions;
+import com.editora.text.FoldRegions.Region;
 import org.jspecify.annotations.Nullable;
 
 /**

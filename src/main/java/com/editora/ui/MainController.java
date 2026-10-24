@@ -2156,7 +2156,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * A Project Map declaration's Open Narrowed: opens {@code file} and narrows it to {@code block} (0-based
      * document lines), as the Structure window's Narrow to Fold Region does for a picked symbol.
      */
-    private void openNarrowedFromMap(Path file, com.editora.editor.fold.FoldRegions.Region block) {
+    private void openNarrowedFromMap(Path file, com.editora.text.FoldRegions.Region block) {
         fileWorkflows.openThen(file, () -> {
             EditorBuffer buffer = activeBuffer();
             Path open = buffer == null ? null : buffer.getPath();
@@ -7307,7 +7307,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Thin LspManager diagnostics callback — delegates to {@link LspCoordinator#onDiagnostics} (kept here
      *  only to avoid an illegal forward reference at the manager's field initializer; see {@link #lspManager}). */
-    private void onLspDiagnostics(Path file, java.util.List<com.editora.editor.lsp.LspDiagnostic> diagnostics) {
+    private void onLspDiagnostics(Path file, java.util.List<com.editora.text.LspDiagnostic> diagnostics) {
         lspCoordinator.onDiagnostics(file, diagnostics);
     }
 

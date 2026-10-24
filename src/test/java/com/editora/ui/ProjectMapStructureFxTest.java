@@ -22,7 +22,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.input.PickResult;
 import javafx.scene.layout.Region;
 
-import com.editora.editor.fold.FoldRegions;
+import com.editora.text.FoldRegions;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;

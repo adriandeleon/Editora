@@ -10,14 +10,14 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.crypto.EncryptedNames;
-import com.editora.editor.fold.FoldRegions.Region;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.highlight.TextMateHighlighter.Symbol;
-import com.editora.editor.language.LanguageRegistry;
 import com.editora.lsp.SymbolNode;
 import com.editora.maven.PomFiles;
+import com.editora.text.EncryptedNames;
+import com.editora.text.FoldRegions.Region;
+import com.editora.text.LanguageRegistry;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 

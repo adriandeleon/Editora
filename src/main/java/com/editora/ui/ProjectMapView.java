@@ -238,7 +238,7 @@ final class ProjectMapView extends VBox {
     private final ProjectMapStructure structure;
 
     private java.util.function.BiConsumer<Path, Integer> onOpenAt = (file, line) -> {};
-    private java.util.function.BiConsumer<Path, com.editora.editor.fold.FoldRegions.Region> onOpenNarrowed =
+    private java.util.function.BiConsumer<Path, com.editora.text.FoldRegions.Region> onOpenNarrowed =
             (file, block) -> {};
 
     ProjectMapView(Consumer<Path> onOpenFile, Predicate<Path> isOpen, Predicate<Path> isModified) {
@@ -1080,7 +1080,7 @@ final class ProjectMapView extends VBox {
                 symbol.file(),
                 symbol.block() != null
                         ? symbol.block()
-                        : new com.editora.editor.fold.FoldRegions.Region(symbol.line(), symbol.endLine())));
+                        : new com.editora.text.FoldRegions.Region(symbol.line(), symbol.endLine())));
         menu.getItems().setAll(preview, openAt, openNarrowed);
         return menu;
     }
@@ -1587,12 +1587,10 @@ final class ProjectMapView extends VBox {
         preview.setOnOpenNarrowed(() -> {
             ProjectMapStructure.Node node = structure.node(key);
             ProjectMapModel.Symbol current = node == null ? symbol : node.symbol();
-            com.editora.editor.fold.FoldRegions.Region block = current.block();
+            com.editora.text.FoldRegions.Region block = current.block();
             onOpenNarrowed.accept(
                     file,
-                    block != null
-                            ? block
-                            : new com.editora.editor.fold.FoldRegions.Region(current.line(), current.endLine()));
+                    block != null ? block : new com.editora.text.FoldRegions.Region(current.line(), current.endLine()));
         });
         preview.showRange(
                 file,
@@ -1616,7 +1614,7 @@ final class ProjectMapView extends VBox {
      */
     void setOpenActions(
             java.util.function.BiConsumer<Path, Integer> openAt,
-            java.util.function.BiConsumer<Path, com.editora.editor.fold.FoldRegions.Region> openNarrowed) {
+            java.util.function.BiConsumer<Path, com.editora.text.FoldRegions.Region> openNarrowed) {
         onOpenAt = openAt == null ? (file, line) -> {} : openAt;
         onOpenNarrowed = openNarrowed == null ? (file, block) -> {} : openNarrowed;
     }

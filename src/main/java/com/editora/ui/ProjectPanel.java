@@ -2056,8 +2056,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * narrowed to a block. Either brings the editor window forward.
      */
     void setMapOpenActions(
-            BiConsumer<Path, Integer> openAt,
-            BiConsumer<Path, com.editora.editor.fold.FoldRegions.Region> openNarrowed) {
+            BiConsumer<Path, Integer> openAt, BiConsumer<Path, com.editora.text.FoldRegions.Region> openNarrowed) {
         mapView.setOpenActions(
                 (file, line) -> {
                     openAt.accept(file, line);
@@ -3119,8 +3118,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             Path target = treeItem.getValue();
             if (fileOps != null
                     && target != null
-                    && com.editora.editor.crypto.EncryptedNames.extensionOf(String.valueOf(target.getFileName()))
-                            == null) {
+                    && com.editora.text.EncryptedNames.extensionOf(String.valueOf(target.getFileName())) == null) {
                 MenuItem encrypt = new MenuItem(tr("project.menu.encrypt"));
                 encrypt.setGraphic(Icons.lock());
                 encrypt.setOnAction(e -> fileOps.encrypt(target));

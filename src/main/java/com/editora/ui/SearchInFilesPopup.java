@@ -24,11 +24,11 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
-import com.editora.editor.search.SearchMatcher;
 import com.editora.search.FileResult;
 import com.editora.search.LineMatch;
 import com.editora.search.SearchQuery;
 import com.editora.search.SearchService;
+import com.editora.text.SearchMatcher;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.lsp.LspTextEdit;
+import com.editora.text.LspTextEdit;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;

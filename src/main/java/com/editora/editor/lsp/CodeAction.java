@@ -1,5 +1,7 @@
 package com.editora.editor.lsp;
 
+import com.editora.text.LspDiagnostic;
+
 /**
  * One offered quick fix or refactoring, in terms this package can hold.
  *

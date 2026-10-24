@@ -14,9 +14,9 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
-import com.editora.editor.lsp.LspDiagnostic;
-import com.editora.editor.lsp.OccurrenceSpan;
 import com.editora.process.ProcessRunner;
+import com.editora.text.LspDiagnostic;
+import com.editora.text.OccurrenceSpan;
 import com.google.gson.JsonElement;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Hover;
@@ -1981,20 +1981,19 @@ public final class LspManager {
      * edits a completion implies, e.g. a TypeScript auto-import's {@code import} line — to {@code cb} on
      * the FX thread (empty list if none or unresolved).
      */
-    public void resolveCompletion(
-            Path file, CompletionItem item, Consumer<List<com.editora.editor.lsp.LspTextEdit>> cb) {
+    public void resolveCompletion(Path file, CompletionItem item, Consumer<List<com.editora.text.LspTextEdit>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || item == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
         s.resolveCompletion(item).whenComplete((resolved, error) -> {
-            List<com.editora.editor.lsp.LspTextEdit> edits = new ArrayList<>();
+            List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
             CompletionItem use = error == null && resolved != null ? resolved : item;
             if (use.getAdditionalTextEdits() != null) {
                 for (org.eclipse.lsp4j.TextEdit e : use.getAdditionalTextEdits()) {
                     if (e != null && e.getRange() != null) {
-                        edits.add(new com.editora.editor.lsp.LspTextEdit(
+                        edits.add(new com.editora.text.LspTextEdit(
                                 e.getRange().getStart().getLine(),
                                 e.getRange().getStart().getCharacter(),
                                 e.getRange().getEnd().getLine(),
@@ -2173,7 +2172,7 @@ public final class LspManager {
     /** Occurrences of the symbol at a 0-based position, mapped to neutral {@link OccurrenceSpan}s
      *  (Write kind flagged) and delivered on the FX thread — empty when unavailable (#675). */
     public void documentHighlights(
-            Path file, int line, int character, Consumer<List<com.editora.editor.lsp.OccurrenceSpan>> cb) {
+            Path file, int line, int character, Consumer<List<com.editora.text.OccurrenceSpan>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -2188,14 +2187,14 @@ public final class LspManager {
                 true,
                 () -> s.documentHighlight(uri, at),
                 (result, error) -> {
-                    List<com.editora.editor.lsp.OccurrenceSpan> spans = new ArrayList<>();
+                    List<com.editora.text.OccurrenceSpan> spans = new ArrayList<>();
                     if (error == null && result != null) {
                         for (var h : result) {
                             if (h == null || h.getRange() == null) {
                                 continue;
                             }
                             var r = h.getRange();
-                            spans.add(new com.editora.editor.lsp.OccurrenceSpan(
+                            spans.add(new com.editora.text.OccurrenceSpan(
                                     r.getStart().getLine(),
                                     r.getStart().getCharacter(),
                                     r.getEnd().getLine(),
@@ -2872,7 +2871,7 @@ public final class LspManager {
             char ch,
             int tabSize,
             boolean insertSpaces,
-            Consumer<List<com.editora.editor.lsp.LspTextEdit>> cb) {
+            Consumer<List<com.editora.text.LspTextEdit>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || onTypeTriggersOf(s.capabilities()).isEmpty()) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -2884,11 +2883,11 @@ public final class LspManager {
                         String.valueOf(ch),
                         new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
                 .whenComplete((result, error) -> {
-                    List<com.editora.editor.lsp.LspTextEdit> edits = new ArrayList<>();
+                    List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
                     if (error == null && result != null) {
                         for (org.eclipse.lsp4j.TextEdit e : result) {
                             if (e != null && e.getRange() != null) {
-                                edits.add(new com.editora.editor.lsp.LspTextEdit(
+                                edits.add(new com.editora.text.LspTextEdit(
                                         e.getRange().getStart().getLine(),
                                         e.getRange().getStart().getCharacter(),
                                         e.getRange().getEnd().getLine(),
@@ -2914,7 +2913,7 @@ public final class LspManager {
             int endChar,
             int tabSize,
             boolean insertSpaces,
-            Consumer<List<com.editora.editor.lsp.LspTextEdit>> cb) {
+            Consumer<List<com.editora.text.LspTextEdit>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -2924,11 +2923,11 @@ public final class LspManager {
                 new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
         s.rangeFormatting(uri(file), range, new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
                 .whenComplete((result, error) -> {
-                    List<com.editora.editor.lsp.LspTextEdit> edits = new ArrayList<>();
+                    List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
                     if (error == null && result != null) {
                         for (org.eclipse.lsp4j.TextEdit e : result) {
                             if (e != null && e.getRange() != null) {
-                                edits.add(new com.editora.editor.lsp.LspTextEdit(
+                                edits.add(new com.editora.text.LspTextEdit(
                                         e.getRange().getStart().getLine(),
                                         e.getRange().getStart().getCharacter(),
                                         e.getRange().getEnd().getLine(),
@@ -2947,7 +2946,7 @@ public final class LspManager {
      * {@code tabSize}/{@code insertSpaces} are formatter hints (many formatters use their own config).
      */
     public void formatDocument(
-            Path file, int tabSize, boolean insertSpaces, Consumer<List<com.editora.editor.lsp.LspTextEdit>> cb) {
+            Path file, int tabSize, boolean insertSpaces, Consumer<List<com.editora.text.LspTextEdit>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -2955,11 +2954,11 @@ public final class LspManager {
         }
         s.formatting(uri(file), new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
                 .whenComplete((result, error) -> {
-                    List<com.editora.editor.lsp.LspTextEdit> edits = new ArrayList<>();
+                    List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
                     if (error == null && result != null) {
                         for (org.eclipse.lsp4j.TextEdit e : result) {
                             if (e != null && e.getRange() != null) {
-                                edits.add(new com.editora.editor.lsp.LspTextEdit(
+                                edits.add(new com.editora.text.LspTextEdit(
                                         e.getRange().getStart().getLine(),
                                         e.getRange().getStart().getCharacter(),
                                         e.getRange().getEnd().getLine(),
@@ -3059,11 +3058,11 @@ public final class LspManager {
 
     /**
      * Requests the document's foldable regions and delivers them on the FX thread as editor
-     * {@link com.editora.editor.fold.FoldRegions.Region}s, ordered the way the built-in detector emits them
+     * {@link com.editora.text.FoldRegions.Region}s, ordered the way the built-in detector emits them
      * (see {@link LspFolding#toRegions}). Empty when the server has no folding provider — the caller then
      * keeps the heuristic regions rather than un-folding the file.
      */
-    public void foldingRanges(Path file, Consumer<List<com.editora.editor.fold.FoldRegions.Region>> cb) {
+    public void foldingRanges(Path file, Consumer<List<com.editora.text.FoldRegions.Region>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || !foldingRangeProvider(s.capabilities())) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -3071,7 +3070,7 @@ public final class LspManager {
         }
         String uri = uri(file);
         latest.issue(uri, "foldingRange", stamp(s, uri, null), true, () -> s.foldingRange(uri), (ranges, error) -> {
-            List<com.editora.editor.fold.FoldRegions.Region> regions =
+            List<com.editora.text.FoldRegions.Region> regions =
                     error == null ? LspFolding.toRegions(ranges) : List.of();
             Platform.runLater(() -> cb.accept(regions));
         });
@@ -3263,7 +3262,7 @@ public final class LspManager {
 
     /**
      * Requests semantic tokens over the line window {@code [startLine..endLine]} (inclusive) and delivers
-     * the decoded, CSS-classed {@link com.editora.editor.lsp.SemanticToken}s to {@code cb} on the FX thread
+     * the decoded, CSS-classed {@link com.editora.text.SemanticToken}s to {@code cb} on the FX thread
      * (empty when unsupported / on error). The window bounds cost on large files — the caller passes the
      * visible paragraph range. Decoding uses the server's effective legend, never hardcoded indices.
      *
@@ -3279,7 +3278,7 @@ public final class LspManager {
             int endLine,
             int lineCount,
             int lastLineLength,
-            Consumer<List<com.editora.editor.lsp.SemanticToken>> cb) {
+            Consumer<List<com.editora.text.SemanticToken>> cb) {
         LanguageServerSession s = sessionFor(file);
         var prov = s == null ? null : semanticTokensProvider(s.capabilities());
         if (s == null || prov == null) {
@@ -3304,7 +3303,7 @@ public final class LspManager {
                         if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
                             return;
                         }
-                        List<com.editora.editor.lsp.SemanticToken> out = (error != null || tokens == null)
+                        List<com.editora.text.SemanticToken> out = (error != null || tokens == null)
                                 ? List.of()
                                 : SemanticTokensDecoder.decode(
                                         tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
@@ -3352,7 +3351,7 @@ public final class LspManager {
                         rememberTokenState(s, uri, resultId, data);
                         wholeDocumentTokens.put(uri, new TokenMark(s, version));
                         List<Integer> decoded = data;
-                        List<com.editora.editor.lsp.SemanticToken> out = SemanticTokensDecoder.decode(
+                        List<com.editora.text.SemanticToken> out = SemanticTokensDecoder.decode(
                                 decoded, legend.getTokenTypes(), legend.getTokenModifiers());
                         Platform.runLater(() -> cb.accept(out));
                     });
@@ -3367,7 +3366,7 @@ public final class LspManager {
             Path file,
             org.eclipse.lsp4j.SemanticTokensLegend legend,
             long requestGeneration,
-            Consumer<List<com.editora.editor.lsp.SemanticToken>> cb) {
+            Consumer<List<com.editora.text.SemanticToken>> cb) {
         String uri = uri(file);
         Integer version = s.documentVersion(uri);
         latest.issue(uri, SEMANTIC, stamp(s, uri, "full"), true, () -> s.semanticTokensFull(uri), (tokens, error) -> {
@@ -3381,7 +3380,7 @@ public final class LspManager {
             }
             rememberTokenState(s, uri, tokens.getResultId(), tokens.getData());
             wholeDocumentTokens.put(uri, new TokenMark(s, version));
-            List<com.editora.editor.lsp.SemanticToken> out =
+            List<com.editora.text.SemanticToken> out =
                     SemanticTokensDecoder.decode(tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
             Platform.runLater(() -> cb.accept(out));
         });

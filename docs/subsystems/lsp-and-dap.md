@@ -17,7 +17,7 @@ gson, and `module-info` carries `opens com.editora.lsp;` (unqualified — gson r
 JDT vendor-notification DTOs, which under `mvn javafx:run` run in the unnamed module)
 and `opens com.editora.dap` (gson parses jdtls's untyped `executeCommand` results).
 
-The neutral value types ([`lsp/LspDiagnostic`](../../src/main/java/com/editora/editor/lsp/LspDiagnostic.java)
+The neutral value types ([`lsp/LspDiagnostic`](../../src/main/java/com/editora/text/LspDiagnostic.java)
 lives in `editor`; `dap/DapModels`) keep `editor`/`ui` free of any lsp4j wire type.
 
 ---

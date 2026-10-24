@@ -34,10 +34,10 @@ import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.fold.FoldRegions.Region;
 import com.editora.editor.fold.NarrowLines;
 import com.editora.lsp.SymbolNode;
 import com.editora.search.FuzzyMatch;
+import com.editora.text.FoldRegions.Region;
 import com.editora.ui.StructureNode.SyntaxRun;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -46,7 +46,7 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * Tool window content showing the active editor's foldable-region hierarchy as a collapsible tree,
- * mirroring the code/text folding model ({@link com.editora.editor.fold.FoldRegions}). A search box at the
+ * mirroring the code/text folding model ({@link com.editora.text.FoldRegions}). A search box at the
  * top fuzzy-filters the tree, and selecting an entry navigates the editor caret to that line.
  *
  * <p>The panel marks itself with the {@code editora.ownsKeys} property so the scene-level key
