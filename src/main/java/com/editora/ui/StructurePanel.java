@@ -24,12 +24,12 @@ import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.control.skin.VirtualFlow;
+import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -79,24 +79,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * What picking a symbol does to the editor besides scrolling there: nothing (the file stays whole), or it
-     * narrows the editor to the symbol's function ({@code narrow-to-defun}) or to its foldable block. A mode
-     * belongs to the buffer it was turned on for and ends when that buffer is widened by any means.
-     */
-    enum NarrowMode {
-        OFF,
-        DEFUN,
-        FOLD
-    }
-
-    /**
      * Narrowing, as the editing coordinator does it (status messages included); wired by MainController. Lines
      * are document lines: the outline keeps the whole file's numbering while the buffer is narrowed.
      */
     interface NarrowActions {
-        /** Narrows to the top-level definition around document line {@code line}; false when there is none. */
-        boolean narrowToDefun(EditorBuffer buffer, int line);
-
         /**
          * Narrows to {@code block} when it holds document line {@code line} (the picked row's own block), else to
          * the innermost foldable region of the whole document holding the line; false when there is none.
@@ -115,17 +101,16 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     private @Nullable EditorBuffer buffer;
     private @Nullable MarkerActions markerActions;
     private @Nullable NarrowActions narrowActions;
-    /** The attached buffer's narrowing mode; {@link #narrowModes} remembers the others' across tab switches. */
-    private NarrowMode narrowMode = NarrowMode.OFF;
+    /**
+     * Whether the attached buffer is in fold mode: picking a symbol narrows the editor to its foldable block. The
+     * mode belongs to the buffer it was turned on for ({@link #foldModes} remembers the others' across tab
+     * switches) and ends when that buffer is widened by any means.
+     */
+    private boolean foldMode;
 
-    private final Map<EditorBuffer, NarrowMode> narrowModes = new java.util.WeakHashMap<>();
-    private final ToggleGroup narrowGroup = new ToggleGroup();
-    private final ToggleButton narrowWiden = narrowSegment(Icons.widen(), "structure.narrow.widen");
-    private final ToggleButton narrowDefun = narrowSegment(Icons.defun(), "structure.narrow.defun");
-    private final ToggleButton narrowFold = narrowSegment(Icons.foldRegion(), "structure.narrow.fold");
-    private final HBox narrowToggle = new HBox(narrowWiden, narrowDefun, narrowFold);
-    /** Suppresses the segments' actions while {@link #syncNarrowToggle} selects one programmatically. */
-    private boolean syncingNarrow;
+    private final java.util.Set<EditorBuffer> foldModes =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    private final ToggleButton narrowFold = new ToggleButton();
     /**
      * The whole file's outline while the buffer is narrowed, in document lines. The fold manager and the
      * highlighter then only know the region the area holds, so this is computed from {@code getContent()} off
@@ -254,19 +239,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         });
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
-        // Narrowing segments: Widen (the file is whole) | Defun | Fold. One of the latter is lit while this panel
-        // narrowed the buffer; none while it was narrowed some other way (C-x n n), which the group's amber border
-        // then says. They sit at the end of the sort/kind row so the search field keeps its width.
-        for (ToggleButton segment : List.of(narrowWiden, narrowDefun, narrowFold)) {
-            segment.setToggleGroup(narrowGroup);
-        }
-        narrowWiden.setOnAction(e -> chooseNarrowMode(NarrowMode.OFF));
-        narrowDefun.setOnAction(e -> chooseNarrowMode(NarrowMode.DEFUN));
-        narrowFold.setOnAction(e -> chooseNarrowMode(NarrowMode.FOLD));
-        narrowDefun.getStyleClass().add("structure-narrow-on"); // selected = narrowed: amber, like the banner
-        narrowFold.getStyleClass().add("structure-narrow-on");
-        narrowToggle.getStyleClass().add("structure-narrow-toggle");
-        narrowToggle.setAlignment(Pos.CENTER);
+        // Narrow to fold region: one toggle at the end of the sort/kind row (the search field keeps its width). A
+        // click turns fold mode on and narrows to the picked symbol's block; a second click widens. It is lit
+        // while this panel narrowed the buffer; narrowed some other way (C-x n n), an amber border says so.
+        narrowFold.setGraphic(Icons.foldRegion());
+        narrowFold.getStyleClass().addAll("structure-narrow-fold", "flat");
+        narrowFold.setAccessibleText(tr("structure.narrow.fold"));
+        narrowFold.setFocusTraversable(false);
+        narrowFold.setOnAction(e -> toggleFoldMode());
         refreshNarrowTooltips();
         syncNarrowToggle();
         HBox.setHgrow(filterField, Priority.ALWAYS);
@@ -307,7 +287,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
         javafx.scene.layout.Region toolbarSpacer = new javafx.scene.layout.Region();
         HBox.setHgrow(toolbarSpacer, Priority.ALWAYS);
-        HBox toolbar = new HBox(4, sortCombo, kindFilter, toolbarSpacer, narrowToggle);
+        HBox toolbar = new HBox(4, sortCombo, kindFilter, toolbarSpacer, narrowFold);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.getStyleClass().add("structure-toolbar");
 
@@ -327,7 +307,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 navigateTo(now, false);
             }
         });
-        // A click on a row is an activation: in a narrowing mode it narrows to that row; a double-click also
+        // A click on a row is an activation: in fold mode it narrows to that row; a double-click also
         // moves focus into the editor.
         tree.setOnMouseClicked(e -> {
             if (e.getButton() != MouseButton.PRIMARY) {
@@ -335,7 +315,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
             if (e.getClickCount() == 2) {
                 navigateSelected();
-            } else if (e.getClickCount() == 1 && narrowMode != NarrowMode.OFF && rowClick(e)) {
+            } else if (e.getClickCount() == 1 && foldMode && rowClick(e)) {
                 narrowToSelected();
             }
         });
@@ -398,9 +378,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         narrowedRoots = null;
         narrowedOutlineGeneration++;
         userPicked = false;
-        narrowMode = buffer != null && buffer.isNarrowed()
-                ? narrowModes.getOrDefault(buffer, NarrowMode.OFF)
-                : NarrowMode.OFF;
+        foldMode = buffer != null && buffer.isNarrowed() && foldModes.contains(buffer);
         syncNarrowToggle();
         if (buffer == null) {
             rebuild();
@@ -513,17 +491,13 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
             default -> {
                 if (!e.isControlDown()) {
-                    if (tree.isFocused() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown()) {
-                        NarrowMode mode = switch (e.getCode()) {
-                            case D -> NarrowMode.DEFUN;
-                            case F -> NarrowMode.FOLD;
-                            case W -> NarrowMode.OFF;
-                            default -> null;
-                        };
-                        if (mode != null) {
-                            chooseNarrowMode(mode);
-                            e.consume();
-                        }
+                    if (tree.isFocused()
+                            && e.getCode() == KeyCode.F
+                            && !e.isAltDown()
+                            && !e.isMetaDown()
+                            && !e.isShiftDown()) {
+                        toggleFoldMode();
+                        e.consume();
                     }
                     return;
                 }
@@ -641,10 +615,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         navigateSelected();
     }
 
-    /** Activates the current selection: navigates and moves focus into the editor (in a mode, narrows to it). */
+    /** Activates the current selection: navigates and moves focus into the editor (in fold mode, narrows to it). */
     private void navigateSelected() {
         TreeItem<StructureNode> item = tree.getSelectionModel().getSelectedItem();
-        if (narrowMode != NarrowMode.OFF && buffer != null && narrowToSelected()) {
+        if (foldMode && buffer != null && narrowToSelected()) {
             buffer.getArea().requestFocus();
             return;
         }
@@ -653,111 +627,81 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     // --- Narrowing ---
 
-    private static ToggleButton narrowSegment(Node icon, String key) {
-        ToggleButton b = new ToggleButton();
-        b.setGraphic(icon);
-        b.getStyleClass().addAll("structure-narrow-segment", "flat");
-        b.setAccessibleText(tr(key));
-        b.setTooltip(new Tooltip(tr(key + ".tip")));
-        b.setFocusTraversable(false);
-        return b;
-    }
-
-    /** Installs the narrowing actions; without them the segments are disabled. */
+    /** Installs the narrowing actions; without them the toggle is disabled. */
     void setNarrowActions(NarrowActions actions) {
         narrowActions = actions;
         syncNarrowToggle();
     }
 
-    /** Whether Simple UI mode is on: the segments are hidden there (the chords and the banner still work). */
+    /** Whether Simple UI mode is on: the toggle is hidden there (the chords and the banner still work). */
     public void setSimpleMode(java.util.function.BooleanSupplier simpleMode) {
         this.simpleMode = simpleMode;
         syncNarrowToggle();
     }
 
-    /** How the segments' tooltips learn the chords bound to a command (null when it is unbound). */
+    /** How the toggle's tooltip learns the chords bound to a command (null when it is unbound). */
     void setChordLookup(java.util.function.Function<String, @Nullable String> chordFor) {
         this.chordFor = chordFor;
         refreshNarrowTooltips();
     }
 
-    /** Re-reads what the segments depend on besides the buffer (Simple mode, the keymap). */
+    /** Re-reads what the toggle depends on besides the buffer (Simple mode, the keymap). */
     public void refreshChrome() {
         refreshNarrowTooltips();
         syncNarrowToggle();
     }
 
-    /** The attached buffer's narrowing mode (tests). */
-    NarrowMode narrowMode() {
-        return narrowMode;
+    /** Whether the attached buffer is in fold mode (tests). */
+    boolean foldMode() {
+        return foldMode;
     }
 
-    /** Structure: Narrow to Defun — as clicking the segment. */
-    public void narrowToDefunCommand() {
-        chooseNarrowMode(NarrowMode.DEFUN);
-    }
-
-    /** Structure: Narrow to Fold Region — as clicking the segment. */
-    public void narrowToFoldCommand() {
-        chooseNarrowMode(NarrowMode.FOLD);
-    }
-
-    /** Structure: Widen — as clicking the segment. */
-    public void widenCommand() {
-        chooseNarrowMode(NarrowMode.OFF);
+    /** Structure: Toggle Narrow to Fold Region — as clicking the toggle. */
+    public void toggleFoldCommand() {
+        toggleFoldMode();
     }
 
     /**
-     * A segment was chosen: widen, or narrow to the row the user picked (the caret's line when the selected row
-     * was only left there by a rebuild). A re-click of the lit segment changes nothing: the ToggleGroup
-     * deselected it, and {@link #syncNarrowToggle} puts it back. A narrowing that found nothing (the status bar
-     * said why) leaves the mode the buffer had.
+     * The toggle was clicked. In fold mode it widens and ends the mode; otherwise it narrows to the row the user
+     * picked (the caret's line when the selected row was only left there by a rebuild) and turns the mode on. A
+     * narrowing that found nothing (the status bar said why) leaves the toggle off.
      */
-    private void chooseNarrowMode(NarrowMode mode) {
-        if (syncingNarrow) {
-            return;
-        }
-        if (buffer != null && narrowActions != null) {
-            if (mode == NarrowMode.OFF) {
-                narrowMode = NarrowMode.OFF;
-                narrowModes.remove(buffer);
-                narrowActions.widen(buffer);
-            } else if (mode != narrowMode || !buffer.isNarrowed()) {
-                NarrowMode previous = narrowMode;
-                narrowMode = mode;
+    private void toggleFoldMode() {
+        EditorBuffer b = buffer;
+        NarrowActions actions = narrowActions;
+        if (b != null && actions != null) {
+            if (foldMode && b.isNarrowed()) {
+                foldMode = false;
+                foldModes.remove(b);
+                actions.widen(b);
+            } else {
+                foldMode = true;
                 StructureNode row = userPicked ? selectedNodeValue() : null;
-                boolean ok = row != null ? narrowTo(mode, row) : narrowAtCaret(mode);
-                if (ok) {
-                    narrowModes.put(buffer, mode);
+                if (row != null ? narrowTo(row) : narrowAtCaret()) {
+                    foldModes.add(b);
                 } else {
-                    narrowMode = buffer.isNarrowed() ? previous : NarrowMode.OFF;
-                    if (narrowMode == NarrowMode.OFF) {
-                        narrowModes.remove(buffer);
-                    }
+                    foldMode = false;
+                    foldModes.remove(b);
                 }
             }
         }
         syncNarrowToggle();
     }
 
-    /** In a mode, narrows the editor to the selected row; false when there is none or nothing to narrow to. */
+    /** In fold mode, narrows the editor to the selected row; false when there is none or nothing to narrow to. */
     private boolean narrowToSelected() {
         StructureNode row = selectedNodeValue();
-        return row != null && narrowTo(narrowMode, row);
+        return row != null && narrowTo(row);
     }
 
-    /** Narrows to {@code row} the way {@code mode} says, and puts the caret on the row. */
-    private boolean narrowTo(NarrowMode mode, StructureNode row) {
+    /** Narrows to {@code row}'s block, and puts the caret on the row. */
+    private boolean narrowTo(StructureNode row) {
         EditorBuffer b = buffer;
         NarrowActions actions = narrowActions;
         if (b == null || actions == null || row.line() < 0) {
             return false;
         }
-        boolean ok = switch (mode) {
-            case DEFUN -> actions.narrowToDefun(b, row.line());
-            case FOLD -> actions.narrowToFoldRegion(b, row.line(), row.region());
-            default -> false;
-        };
+        boolean ok = actions.narrowToFoldRegion(b, row.line(), row.region());
         if (ok) {
             int line = areaLine(row.line());
             if (line >= 0) {
@@ -768,22 +712,18 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return ok;
     }
 
-    private boolean narrowAtCaret(NarrowMode mode) {
+    private boolean narrowAtCaret() {
         EditorBuffer b = buffer;
         NarrowActions actions = narrowActions;
         if (b == null || actions == null) {
             return false;
         }
         int docLine = b.getArea().getCurrentParagraph() + b.narrowFirstLine();
-        return switch (mode) {
-            case DEFUN -> actions.narrowToDefun(b, docLine);
-            case FOLD -> actions.narrowToFoldRegion(b, docLine, null);
-            default -> false;
-        };
+        return actions.narrowToFoldRegion(b, docLine, null);
     }
 
     /**
-     * The buffer narrowed or widened, by this panel or by anything else: the segments follow the buffer, and the
+     * The buffer narrowed or widened, by this panel or by anything else: the toggle follows the buffer, and the
      * outline stays the whole file's (document lines) either way. Widening leaves the shown outline alone: it
      * already is the whole file's, and the fold manager's fresh scan rebuilds it shortly if it differs.
      */
@@ -792,8 +732,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return;
         }
         if (buffer != null && !buffer.isNarrowed()) {
-            narrowMode = NarrowMode.OFF;
-            narrowModes.remove(buffer);
+            foldMode = false;
+            foldModes.remove(buffer);
             narrowedRoots = null;
             narrowedOutlineGeneration++;
         } else if (buffer != null) {
@@ -831,62 +771,30 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         });
     }
 
-    private void refreshNarrowTooltips() {
-        narrowTooltip(narrowWiden, "structure.narrow.widen.tip", "structure.widen", "edit.widen", "w");
-        narrowTooltip(narrowDefun, "structure.narrow.defun.tip", "structure.narrowDefun", "edit.narrowToDefun", "d");
-        narrowTooltip(narrowFold, "structure.narrow.fold.tip", "structure.narrowFold", "edit.narrowToFoldRegion", "f");
-    }
-
     /** The tip, then the keys: the panel's own letter (and the command's chord when one is bound), the editor's. */
-    private void narrowTooltip(ToggleButton b, String key, String commandId, String editorCommandId, String letter) {
-        String chord = chordFor.apply(commandId);
-        String keys = chord == null || chord.isBlank() ? letter : chord + " · " + letter;
-        StringBuilder text = new StringBuilder(tr(key)).append('\n').append(tr("structure.narrow.keys", keys));
-        String editorChord = chordFor.apply(editorCommandId);
+    private void refreshNarrowTooltips() {
+        String chord = chordFor.apply("structure.narrowFold");
+        String keys = chord == null || chord.isBlank() ? "f" : chord + " · f";
+        StringBuilder text = new StringBuilder(tr("structure.narrow.fold.tip"))
+                .append('\n')
+                .append(tr("structure.narrow.keys", keys));
+        String editorChord = chordFor.apply("edit.narrowToFoldRegion");
         if (editorChord != null && !editorChord.isBlank()) {
             text.append('\n').append(tr("structure.narrow.editorKeys", editorChord));
         }
         Tooltip tip = new Tooltip(text.toString());
         tip.setShowDelay(javafx.util.Duration.millis(400));
-        b.setTooltip(tip);
+        narrowFold.setTooltip(tip);
     }
 
     private void syncNarrowToggle() {
-        syncingNarrow = true;
-        try {
-            boolean shown = !simpleMode.getAsBoolean();
-            narrowToggle.setVisible(shown);
-            narrowToggle.setManaged(shown);
-            boolean usable = buffer != null && narrowActions != null && buffer.canNarrow();
-            narrowWiden.setDisable(!usable);
-            narrowFold.setDisable(!usable);
-            narrowDefun.setDisable(!usable || !defunApplies(buffer));
-            boolean narrowed = buffer != null && buffer.isNarrowed();
-            ToggleButton lit = !narrowed
-                    ? narrowWiden
-                    : switch (narrowMode) {
-                        case DEFUN -> narrowDefun;
-                        case FOLD -> narrowFold;
-                        default -> null; // narrowed by a command, not by a mode of this panel
-                    };
-            narrowGroup.selectToggle(lit);
-            narrowToggle.pseudoClassStateChanged(NARROWED_ELSEWHERE, narrowed && lit == null);
-        } finally {
-            syncingNarrow = false;
-        }
-    }
-
-    /**
-     * Whether {@code narrow-to-defun} means anything in {@code buffer}: a top-level definition is a line that
-     * starts at column 0 with a letter or an opening bracket, which prose, requests and tables have everywhere
-     * and nowhere. Fold regions still apply there (a heading's section, a request).
-     */
-    static boolean defunApplies(@Nullable EditorBuffer buffer) {
-        if (buffer == null || buffer.isMarkdown() || buffer.isTypst() || buffer.isHttpFile() || buffer.isCsv()) {
-            return false;
-        }
-        String language = buffer.getLanguage();
-        return language != null && !language.isBlank() && !"plaintext".equals(language) && !"text".equals(language);
+        boolean shown = !simpleMode.getAsBoolean();
+        narrowFold.setVisible(shown);
+        narrowFold.setManaged(shown);
+        narrowFold.setDisable(buffer == null || narrowActions == null || !buffer.canNarrow());
+        boolean narrowed = buffer != null && buffer.isNarrowed();
+        narrowFold.setSelected(narrowed && foldMode);
+        narrowFold.pseudoClassStateChanged(NARROWED_ELSEWHERE, narrowed && !foldMode);
     }
 
     /**

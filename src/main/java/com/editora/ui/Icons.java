@@ -545,17 +545,7 @@ final class Icons {
         return line("M3 2.5h10v8l-3 3H3zM10 13.5v-3h3");
     }
 
-    /** Two arrows pointing apart — the whole file; the Structure panel's Widen segment. */
-    static Node widen() {
-        return line("M2.5 8h11M5.5 5l-3 3 3 3M10.5 5l3 3-3 3");
-    }
-
-    /** An italic f — a function; the Structure panel's narrow-to-defun segment. */
-    static Node defun() {
-        return line("M10.5 3c-1.6 0-2.3.8-2.6 2.4L6.6 12c-.3 1.4-1 2-2.4 2M5.5 7.5h5");
-    }
-
-    /** A pair of curly braces — a block; the Structure panel's narrow-to-fold-region segment. */
+    /** A pair of curly braces — a block; the Structure panel's narrow-to-fold-region toggle. */
     static Node foldRegion() {
         return line("M5.5 2.5c-1.6 0-2 .9-2 2.4v1.6c0 1-.5 1.5-1.5 1.5 1 0 1.5.5 1.5 1.5v1.6c0 1.5.4 2.4 2 2.4"
                 + "M10.5 2.5c1.6 0 2 .9 2 2.4v1.6c0 1 .5 1.5 1.5 1.5-1 0-1.5.5-1.5 1.5v1.6c0 1.5-.4 2.4-2 2.4");

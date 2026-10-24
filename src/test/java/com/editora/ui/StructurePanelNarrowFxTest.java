@@ -6,7 +6,6 @@ import java.util.List;
 import javafx.scene.Scene;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -26,15 +25,13 @@ import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The Structure panel's narrowing segments (Widen | Defun | Fold): a segment narrows the editor to the picked
- * symbol and turns a mode on under which a click on another symbol re-narrows to it; the outline stays the whole
- * file's while narrowed (document lines, rows outside the region muted); a mere selection never narrows; Widen
- * ends the mode; the segments follow the buffer whatever narrowed or widened it.
+ * The Structure panel's narrow-to-fold-region toggle: a first click narrows the editor to the picked symbol's
+ * block and turns fold mode on, under which a click on another symbol re-narrows to it; a second click widens and
+ * ends the mode. The outline stays the whole file's while narrowed (document lines, rows outside the region
+ * muted); a mere selection never narrows; the toggle follows the buffer whatever narrowed or widened it.
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -46,12 +43,6 @@ class StructurePanelNarrowFxTest {
     private static final class Actions implements StructurePanel.NarrowActions {
         final List<String> log = new ArrayList<>();
         boolean foldFails;
-
-        @Override
-        public boolean narrowToDefun(EditorBuffer buffer, int line) {
-            log.add("defun " + line);
-            return narrowLines(buffer, line, line + 1);
-        }
 
         @Override
         public boolean narrowToFoldRegion(EditorBuffer buffer, int line, @Nullable Region block) {
@@ -137,12 +128,12 @@ class StructurePanelNarrowFxTest {
         return (TreeView<Object>) FxTestSupport.<TreeView<?>>field(p, "tree");
     }
 
-    private static ToggleButton segment(StructurePanel p, String name) {
-        return FxTestSupport.field(p, name);
+    private static ToggleButton toggle(StructurePanel p) {
+        return FxTestSupport.field(p, "narrowFold");
     }
 
-    private static ToggleGroup group(StructurePanel p) {
-        return FxTestSupport.field(p, "narrowGroup");
+    private static boolean lit(StructurePanel p) throws Exception {
+        return FxTestSupport.callOnFx(() -> toggle(p).isSelected());
     }
 
     private static @Nullable TreeItem<Object> find(TreeItem<Object> from, String name) {
@@ -177,7 +168,7 @@ class StructurePanelNarrowFxTest {
         });
     }
 
-    /** Activates the selected row (Enter, a double-click): in a mode, narrows to it. */
+    /** Activates the selected row (Enter, a double-click): in fold mode, narrows to it. */
     private static void activate(StructurePanel p) throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(p, "activateSelected", new Class<?>[0]));
         settle();
@@ -215,38 +206,37 @@ class StructurePanelNarrowFxTest {
                 .reduce("", String::concat);
     }
 
-    private static void fire(StructurePanel p, String segment) throws Exception {
-        FxTestSupport.runOnFx(() -> segment(p, segment).fire());
+    private static void click(StructurePanel p) throws Exception {
+        FxTestSupport.runOnFx(() -> toggle(p).fire());
         settle();
     }
 
     @Test
-    void theSegmentsStartOnWidenAndAreDisabledWithoutActions() throws Exception {
+    void theToggleStartsOffAndIsDisabledWithoutActions() throws Exception {
         StructurePanel bare = FxTestSupport.callOnFx(StructurePanel::new);
-        assertTrue(FxTestSupport.callOnFx(() -> segment(bare, "narrowDefun").isDisabled()), "nothing to narrow with");
+        assertTrue(FxTestSupport.callOnFx(() -> toggle(bare).isDisabled()), "nothing to narrow with");
         Rig r = rig();
-        assertFalse(
-                FxTestSupport.callOnFx(() -> segment(r.panel(), "narrowDefun").isDisabled()));
-        assertSame(
-                segment(r.panel(), "narrowWiden"),
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()));
-        assertEquals(StructurePanel.NarrowMode.OFF, r.panel().narrowMode());
+        assertFalse(FxTestSupport.callOnFx(() -> toggle(r.panel()).isDisabled()));
+        assertFalse(lit(r.panel()));
+        assertFalse(r.panel().foldMode());
     }
 
     @Test
-    void defunSegmentNarrowsToThePickedRowAndTheOutlineStaysTheWholeFiles() throws Exception {
+    void aClickNarrowsToThePickedRowsBlockAndTheOutlineStaysTheWholeFiles() throws Exception {
         Rig r = rig();
         pick(r.panel(), "bar");
         assertTrue(r.actions().log.isEmpty(), "with the mode off a picked symbol only scrolls");
 
-        fire(r.panel(), "narrowDefun");
-        assertEquals(List.of("defun 4"), r.actions().log, "the segment narrows to the picked row's document line");
+        click(r.panel());
+        assertEquals(List.of("fold 4 4-6"), r.actions().log, "the LSP row's range is its block");
         assertTrue(FxTestSupport.callOnFx(r.buffer()::isNarrowed));
         assertEquals(4, FxTestSupport.callOnFx(r.buffer()::narrowFirstLine));
-        assertEquals(StructurePanel.NarrowMode.DEFUN, r.panel().narrowMode());
-        assertSame(
-                segment(r.panel(), "narrowDefun"),
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()));
+        assertEquals(
+                3,
+                FxTestSupport.callOnFx(
+                        () -> r.buffer().getArea().getParagraphs().size()));
+        assertTrue(r.panel().foldMode());
+        assertTrue(lit(r.panel()));
 
         // The whole file's outline, in document lines, with the picked row still selected.
         List<String> rows = FxTestSupport.callOnFx(() -> rows(r.panel()));
@@ -258,165 +248,117 @@ class StructurePanelNarrowFxTest {
     }
 
     @Test
+    void aSecondClickWidensAndEndsTheMode() throws Exception {
+        Rig r = rig();
+        pick(r.panel(), "foo");
+        click(r.panel());
+        click(r.panel());
+        assertEquals(List.of("fold 1 1-3", "widen"), r.actions().log);
+        assertFalse(FxTestSupport.callOnFx(r.buffer()::isNarrowed));
+        assertFalse(r.panel().foldMode());
+        assertFalse(lit(r.panel()));
+        click(r.panel());
+        assertEquals(List.of("fold 1 1-3", "widen", "fold 1 1-3"), r.actions().log, "a third click is on again");
+        assertTrue(lit(r.panel()));
+    }
+
+    @Test
     void aSelectionNeverNarrowsButAnActivationDoes() throws Exception {
         Rig r = rig();
         pick(r.panel(), "bar");
-        fire(r.panel(), "narrowDefun");
-        assertEquals(List.of("defun 4"), r.actions().log);
+        click(r.panel());
+        assertEquals(List.of("fold 4 4-6"), r.actions().log);
 
         pick(r.panel(), "foo"); // the arrow keys, the filter, a right-click: a selection
         settle();
-        assertEquals(List.of("defun 4"), r.actions().log, "selecting a row out of the region narrows nothing");
+        assertEquals(List.of("fold 4 4-6"), r.actions().log, "selecting a row out of the region narrows nothing");
         assertEquals(4, FxTestSupport.callOnFx(r.buffer()::narrowFirstLine));
 
         activate(r.panel()); // Enter / a click on the row
-        assertEquals(List.of("defun 4", "defun 1"), r.actions().log, "activating a row in the mode re-narrows to it");
+        assertEquals(
+                List.of("fold 4 4-6", "fold 1 1-3"), r.actions().log, "activating a row in the mode re-narrows to it");
         assertEquals(1, FxTestSupport.callOnFx(r.buffer()::narrowFirstLine));
         assertEquals(
                 0, FxTestSupport.callOnFx(() -> r.buffer().getArea().getCurrentParagraph()), "the caret lands on it");
-        assertEquals(StructurePanel.NarrowMode.DEFUN, r.panel().narrowMode());
+        assertTrue(r.panel().foldMode());
     }
 
     @Test
     void typingInTheFilterDoesNotNarrow() throws Exception {
         Rig r = rig();
         pick(r.panel(), "bar");
-        fire(r.panel(), "narrowDefun");
+        click(r.panel());
         TextField filter = FxTestSupport.field(r.panel(), "filterField");
         for (String typed : List.of("f", "fo", "foo")) {
             FxTestSupport.runOnFx(() -> filter.setText(typed));
             settle();
         }
-        assertEquals(List.of("defun 4"), r.actions().log, "three keystrokes, no narrowing");
+        assertEquals(List.of("fold 4 4-6"), r.actions().log, "three keystrokes, no narrowing");
         assertEquals(4, FxTestSupport.callOnFx(r.buffer()::narrowFirstLine));
-    }
-
-    @Test
-    void foldSegmentUsesTheFoldActionWithTheRowsOwnBlock() throws Exception {
-        Rig r = rig();
-        pick(r.panel(), "foo");
-        fire(r.panel(), "narrowFold");
-        assertEquals(List.of("fold 1 1-3"), r.actions().log, "the LSP row's range is its block");
-        assertEquals(StructurePanel.NarrowMode.FOLD, r.panel().narrowMode());
-        assertEquals(1, FxTestSupport.callOnFx(r.buffer()::narrowFirstLine));
-        assertEquals(
-                3,
-                FxTestSupport.callOnFx(
-                        () -> r.buffer().getArea().getParagraphs().size()));
-        assertSame(
-                segment(r.panel(), "narrowFold"),
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()));
     }
 
     @Test
     void theCaretLineIsTheTargetWhenNoRowWasPicked() throws Exception {
         Rig r = rig(); // the rebuild left row 0 (A) selected; the user picked nothing
         FxTestSupport.runOnFx(() -> r.buffer().getArea().moveTo(5, 2));
-        fire(r.panel(), "narrowDefun");
-        assertEquals(List.of("defun 5"), r.actions().log, "the caret's line, not the row a rebuild selected");
+        click(r.panel());
+        assertEquals(List.of("fold 5"), r.actions().log, "the caret's line, not the row a rebuild selected");
     }
 
     @Test
-    void reClickingTheLitSegmentNarrowsNothingAgain() throws Exception {
+    void aFailedNarrowingLeavesTheToggleOff() throws Exception {
         Rig r = rig();
-        pick(r.panel(), "bar");
-        fire(r.panel(), "narrowDefun");
-        fire(r.panel(), "narrowDefun");
-        assertEquals(List.of("defun 4"), r.actions().log, "a re-click is not a second text swap");
-        assertSame(
-                segment(r.panel(), "narrowDefun"),
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()),
-                "the ToggleGroup's deselect was undone");
-    }
-
-    @Test
-    void aFailedNarrowingKeepsTheModeTheBufferHad() throws Exception {
-        Rig r = rig();
-        pick(r.panel(), "bar");
-        fire(r.panel(), "narrowDefun");
         r.actions().foldFails = true;
-        fire(r.panel(), "narrowFold");
-        assertEquals(
-                StructurePanel.NarrowMode.DEFUN,
-                r.panel().narrowMode(),
-                "Defun stays: the buffer is still narrowed by it");
-        assertSame(
-                segment(r.panel(), "narrowDefun"),
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()));
+        pick(r.panel(), "bar");
+        click(r.panel());
+        assertEquals(List.of("fold 4 4-6"), r.actions().log);
+        assertFalse(r.panel().foldMode());
+        assertFalse(lit(r.panel()), "nothing was narrowed, so the toggle is not on");
     }
 
     @Test
-    void widenSegmentWidensAndEndsTheMode() throws Exception {
-        Rig r = rig();
-        pick(r.panel(), "foo");
-        fire(r.panel(), "narrowDefun");
-        fire(r.panel(), "narrowWiden");
-        assertEquals(List.of("defun 1", "widen"), r.actions().log);
-        assertFalse(FxTestSupport.callOnFx(r.buffer()::isNarrowed));
-        assertEquals(StructurePanel.NarrowMode.OFF, r.panel().narrowMode());
-        assertSame(
-                segment(r.panel(), "narrowWiden"),
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()));
-        fire(r.panel(), "narrowWiden");
-        assertEquals(
-                List.of("defun 1", "widen", "widen"), r.actions().log, "Widen on a whole file is the action's no-op");
-    }
-
-    @Test
-    void aBufferNarrowedByACommandLightsNoSegmentAndWideningByAnyMeansResetsThem() throws Exception {
+    void aBufferNarrowedByACommandLeavesTheToggleUnlitAndWideningByAnyMeansResetsIt() throws Exception {
         Rig r = rig();
         FxTestSupport.runOnFx(() -> r.buffer().narrowTo(10, 30)); // C-x n n, not the panel
         settle();
-        assertNull(
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()),
-                "narrowed, but by no mode of the panel");
-        assertEquals(StructurePanel.NarrowMode.OFF, r.panel().narrowMode());
-        HBox toggle = FxTestSupport.field(r.panel(), "narrowToggle");
+        assertFalse(lit(r.panel()), "narrowed, but not by the panel");
+        assertFalse(r.panel().foldMode());
         assertTrue(
-                FxTestSupport.callOnFx(() -> toggle.getPseudoClassStates().stream()
+                FxTestSupport.callOnFx(() -> toggle(r.panel()).getPseudoClassStates().stream()
                         .anyMatch(c -> c.getPseudoClassName().equals("narrowed-elsewhere"))),
-                "the group says the buffer is narrowed elsewhere");
+                "the toggle says the buffer is narrowed elsewhere");
         assertEquals(
                 List.of("A@0", "foo@1", "bar@4"),
                 FxTestSupport.callOnFx(() -> rows(r.panel())),
                 "the outline stays the whole file's under a chord's narrowing too");
 
         pick(r.panel(), "bar");
-        fire(r.panel(), "narrowDefun");
-        assertEquals(StructurePanel.NarrowMode.DEFUN, r.panel().narrowMode(), "a segment takes over");
+        click(r.panel());
+        assertTrue(r.panel().foldMode(), "the toggle takes over");
         assertEquals(4, FxTestSupport.callOnFx(r.buffer()::narrowFirstLine), "measured on the whole document");
         FxTestSupport.runOnFx(r.buffer()::widen); // the status bar pill, C-x n w, a whole-document write…
         settle();
-        assertEquals(StructurePanel.NarrowMode.OFF, r.panel().narrowMode(), "widening ends the mode");
-        assertSame(
-                segment(r.panel(), "narrowWiden"),
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()));
+        assertFalse(r.panel().foldMode(), "widening ends the mode");
+        assertFalse(lit(r.panel()));
     }
 
     @Test
     void theModeBelongsToItsBufferAcrossTabSwitches() throws Exception {
         Rig r = rig();
         pick(r.panel(), "foo");
-        fire(r.panel(), "narrowFold");
+        click(r.panel());
         EditorBuffer other = FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
             b.setContent("plain\ntext\n");
             return b;
         });
         FxTestSupport.runOnFx(() -> r.panel().attach(other));
-        assertEquals(StructurePanel.NarrowMode.OFF, r.panel().narrowMode(), "the other buffer is whole");
-        assertSame(
-                segment(r.panel(), "narrowWiden"),
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()));
+        assertFalse(r.panel().foldMode(), "the other buffer is whole");
+        assertFalse(lit(r.panel()));
         FxTestSupport.runOnFx(() -> r.panel().attach(r.buffer()));
         settle();
-        assertEquals(
-                StructurePanel.NarrowMode.FOLD,
-                r.panel().narrowMode(),
-                "back on the narrowed buffer, its mode is back");
-        assertSame(
-                segment(r.panel(), "narrowFold"),
-                FxTestSupport.callOnFx(() -> group(r.panel()).getSelectedToggle()));
+        assertTrue(r.panel().foldMode(), "back on the narrowed buffer, its mode is back");
+        assertTrue(lit(r.panel()));
         assertEquals(
                 List.of("A@0", "foo@1", "bar@4"),
                 FxTestSupport.callOnFx(() -> rows(r.panel())),
@@ -424,21 +366,9 @@ class StructurePanelNarrowFxTest {
     }
 
     @Test
-    void defunIsNotOfferedWhereThereAreNoDefinitions() throws Exception {
-        Rig md = rig("markdown", "# Title\n\nText.\n\n## Section\n\nMore.\n");
-        assertTrue(
-                FxTestSupport.callOnFx(() -> segment(md.panel(), "narrowDefun").isDisabled()), "Markdown: no defun");
-        assertFalse(
-                FxTestSupport.callOnFx(() -> segment(md.panel(), "narrowFold").isDisabled()), "a section folds");
-        Rig java = rig();
-        assertFalse(FxTestSupport.callOnFx(
-                () -> segment(java.panel(), "narrowDefun").isDisabled()));
-    }
-
-    @Test
-    void simpleModeHidesTheSegmentsAndTheCommandsActLikeTheSegments() throws Exception {
+    void simpleModeHidesTheToggleAndTheCommandActsLikeIt() throws Exception {
         Rig r = rig();
-        HBox toggle = FxTestSupport.field(r.panel(), "narrowToggle");
+        ToggleButton toggle = toggle(r.panel());
         assertTrue(FxTestSupport.callOnFx(toggle::isVisible));
         FxTestSupport.runOnFx(() -> r.panel().setSimpleMode(() -> true));
         assertFalse(FxTestSupport.callOnFx(toggle::isVisible));
@@ -446,13 +376,13 @@ class StructurePanelNarrowFxTest {
         FxTestSupport.runOnFx(() -> r.panel().setSimpleMode(() -> false));
 
         pick(r.panel(), "bar");
-        FxTestSupport.runOnFx(r.panel()::narrowToFoldCommand);
+        FxTestSupport.runOnFx(r.panel()::toggleFoldCommand);
         settle();
         assertEquals(List.of("fold 4 4-6"), r.actions().log);
-        assertEquals(StructurePanel.NarrowMode.FOLD, r.panel().narrowMode());
-        FxTestSupport.runOnFx(r.panel()::widenCommand);
+        assertTrue(r.panel().foldMode());
+        FxTestSupport.runOnFx(r.panel()::toggleFoldCommand);
         settle();
-        assertEquals(StructurePanel.NarrowMode.OFF, r.panel().narrowMode());
+        assertFalse(r.panel().foldMode());
         assertFalse(FxTestSupport.callOnFx(r.buffer()::isNarrowed));
     }
 }
