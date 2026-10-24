@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **File structure in the Project Map.** A file row whose language the Structure tool window can outline
+  (Java, Python, JavaScript/TypeScript, Kotlin, Markdown headings, Typst, `.http` requests, Clojure, poms…)
+  gets a Structure icon before its preview eye. It opens a column of the file's declarations, the way a
+  folder's chevron opens its children; a declaration that holds others — a class's members, a heading's
+  subsections — has a chevron of its own and opens a further column, and a file with one top-level type opens
+  its members straight away. Clicking a declaration opens a floating preview card of only its lines: its block
+  with the doc comment and annotations above it, numbered as the file numbers them (in the narrowed amber),
+  coloured as in the editor, sized to fit, and titled "App.java › add()". Open goes to the declaration; Open
+  Narrowed, in the card's and the row's menu, opens the file narrowed to the declaration's fold block, as the
+  Structure window's Narrow to fold region does. Several declarations of one file can be open side by side
+  under the usual eight-card limit. The columns and cards follow edits: an open file's unsaved text is what is
+  outlined (with the language server's symbols when the Structure window has them), a closed file is read
+  again when it changes on disk, and a card whose declaration was removed keeps its last lines and says so.
+  The arrow along the flow opens a file's structure, Enter on a declaration opens its card, and the columns
+  are part of Print and PDF output. Nothing about it is remembered across restarts.
+
 ## [0.24.0] - 2026-10-24
 
 ### Added

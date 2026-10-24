@@ -2836,6 +2836,10 @@
 .narrow-bar .narrow-bar-text { -fx-text-fill: -state-amber; -fx-font-weight: bold; }
 .narrow-bar .narrow-bar-widen { -fx-padding: 2 12 2 12; }
 .editor-area.narrowed .lineno { -fx-text-fill: -state-amber; }
+/* A Project Map declaration card shows some of its file's lines, numbered as the file numbers them: its gutter
+   is the narrowed one. The editor themes' `.editor-area .text` fill would reach the number's own Text. */
+.project-map-preview-editor.narrowed .lineno,
+.project-map-preview-editor.narrowed .lineno > .text { -fx-text-fill: -state-amber; -fx-fill: -state-amber; }
 
 /* Structure panel: the narrow-to-fold-region toggle. Lit, it reads amber like the narrowing indicators; narrowed
    by a chord (C-x n n) it is not lit, and an amber border says the file is narrowed anyway. */

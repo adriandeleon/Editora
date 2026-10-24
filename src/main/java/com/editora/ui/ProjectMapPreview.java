@@ -77,6 +77,9 @@ final class ProjectMapPreview extends StackPane {
     static final double MIN_HEIGHT = 220;
     static final double EDGE_MARGIN = 14;
     private static final double TEXT_CHROME_WIDTH = 72;
+    /** A card's title bar, borders and scroll-bar room around its text, vertically. */
+    private static final double TEXT_CHROME_HEIGHT = 58;
+
     private static final int TAB_COLUMNS = 4;
     /** A card never widens itself past this many columns; longer lines scroll. */
     private static final int MAX_FIT_COLUMNS = 120;
@@ -493,7 +496,7 @@ final class ProjectMapPreview extends StackPane {
         path = file.toAbsolutePath().normalize();
         this.placementResolver = placementResolver;
         preferredWidth = DEFAULT_WIDTH;
-        preferredHeight = DEFAULT_HEIGHT;
+        preferredHeight = range == null ? DEFAULT_HEIGHT : fittedHeight(range);
         placed = false;
         placementPending = true;
         userMoved = false;
@@ -1130,6 +1133,18 @@ final class ProjectMapPreview extends StackPane {
     /** Where an offset lands after {@code prefix..oldEnd} was replaced by text {@code shift} chars longer. */
     private static int movedOffset(int offset, int prefix, int oldEnd, int shift) {
         return offset <= prefix ? offset : offset >= oldEnd ? offset + shift : prefix;
+    }
+
+    /**
+     * A declaration card's height: all of its lines when they fit the default height, which most methods do —
+     * a five-line method in a card sized for a whole file was mostly empty.
+     */
+    private double fittedHeight(Range shown) {
+        Text glyph = new Text("M");
+        glyph.setFont(Font.font("Monospaced", 12 * contentZoom));
+        double lineHeight = Math.max(1, glyph.getLayoutBounds().getHeight());
+        int lines = Math.max(1, shown.endLine() - shown.startLine() + 1);
+        return Math.max(MIN_HEIGHT, Math.min(DEFAULT_HEIGHT, lines * lineHeight + TEXT_CHROME_HEIGHT));
     }
 
     /** The width that shows the text's longest line, up to {@value #MAX_FIT_COLUMNS} columns. */

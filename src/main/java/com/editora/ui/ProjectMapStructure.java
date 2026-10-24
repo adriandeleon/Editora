@@ -187,6 +187,13 @@ final class ProjectMapStructure {
 
     /** Carries open columns across an in-app rename or move; the moved file is outlined again. */
     void pathRenamed(Path from, Path to) {
+        List<Path> movedFiles = new ArrayList<>();
+        for (Path file : openFiles()) {
+            Path moved = file.startsWith(from) ? ProjectMapModel.remap(file, from, to) : null;
+            if (moved != null) {
+                movedFiles.add(moved);
+            }
+        }
         List<Path> moved = open.stream()
                 .map(path -> ProjectMapModel.remap(path, from, to))
                 .filter(java.util.Objects::nonNull)
@@ -195,6 +202,9 @@ final class ProjectMapStructure {
         open.addAll(moved);
         outlines.keySet().removeIf(path -> path.startsWith(from));
         requests.keySet().removeIf(path -> path.startsWith(from));
+        for (Path file : movedFiles) {
+            request(file, null); // its declarations' paths moved with it; a new name may be another language
+        }
     }
 
     /**

@@ -345,6 +345,32 @@ class ProjectMapStructureFxTest {
     }
 
     @Test
+    void aRenamedFileKeepsItsOpenStructureColumns() throws Exception {
+        root = projectRoot();
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        Fixture map = openMap(path -> null);
+        try {
+            waitForRow(map, app);
+            FxTestSupport.runOnFx(() -> clickStructureIcon(map.surface(), app));
+            waitForSymbol(map, "reset()");
+            Path renamed = root.resolve("Main.java");
+            Files.move(app, renamed);
+            FxTestSupport.runOnFx(() -> {
+                map.view().pathRenamed(app, renamed);
+                map.view().refresh();
+            });
+            waitFor(
+                    () -> rows(map.surface()).stream()
+                            .anyMatch(row -> row.isSymbol()
+                                    && row.name().equals("reset()")
+                                    && row.path().startsWith(renamed)),
+                    "the declarations move with their file, still open");
+        } finally {
+            map.close();
+        }
+    }
+
+    @Test
     void printedOutputIncludesTheOpenStructureColumns() throws Exception {
         root = projectRoot();
         Path app = Files.writeString(root.resolve("App.java"), APP);
