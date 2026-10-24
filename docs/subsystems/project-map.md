@@ -58,6 +58,9 @@ stored in workspace state and restored when the editor is reopened.
 | Click a folder's chevron (the row's trailing edge) | Expand or collapse it; collapsing closes its descendant columns |
 | Single-click a file | Open it in a normal editor tab |
 | Click a file's preview icon | Open or focus that file's floating read-only preview on the canvas |
+| Click a file's Structure icon (just before the eye) | Open or close the file's structure column |
+| Click a declaration | Open or focus a floating preview of only its lines |
+| Click a declaration's chevron | Open or close the column of the declarations it holds |
 | Right-click a node | Select it and open the same context menu as the Project tree, including first-line bookmark and Personal Note actions |
 | Drag empty canvas space | Pan the map |
 | Middle-button drag | Pan the map, wherever the drag starts (including on a row) |
@@ -133,16 +136,65 @@ Marker state is read from an open buffer when available and otherwise from
 the active project's persisted stores, so adding an annotation refreshes both views without opening
 the target file.
 
+### Structure columns and declaration cards
+
+A file whose language the Structure tool window can outline has a **Structure icon** — that window's glyph
+of stepped lines — before its eye. `StructureOutline.supports` decides by the name alone (a language with a
+bundled grammar, or Markdown, Typst, `.http` or Clojure; never an encrypted file), so a row costs no read.
+The icon opens a **structure column**: the file's declarations, as the Structure window shows them, in the
+order they are written. A declaration that holds others (a class's members, a heading's subsections) ends in
+a chevron and opens a further column, as a folder does; a file whose outline is one top-level declaration
+with members (most Java files) opens that declaration's column too. The icon sits in a filled disc while its
+column is open. A structure column has the usual title (`App.java · Structure`, or the declaration's
+label), count, filter, lock and close button, but no Show hidden checkbox. While its file is being outlined,
+when it cannot be read and when it has no declarations it holds one explanatory row; past 1,000 rows it ends
+in one that says how many were left out.
+
+**Clicking a declaration opens a declaration card**: the ordinary preview card showing only the declaration's
+lines — its block, from its declaration (or its fold region's first line, when that is above it) to the
+region's last line, extended upwards over the doc comment, annotations, decorators and Rust attributes
+directly above it (`ProjectMapStructure.range` / `leadingDocStart`). A heading runs to the line before the
+next heading at its level; a declaration with no block of its own is its own line. The card reads and
+highlights the whole file and shows that slice, so a line inside a comment or a string is coloured as in the
+editor; its gutter keeps the file's numbers in the narrowed amber, its title reads `App.java › add()`, its
+status line says `Lines 9–19 of 29`, and it opens no taller than its lines need (but no smaller than the card
+minimum). **Open** opens the file at the declaration; **Open Narrowed** (the card's and the row's menu) opens
+it narrowed to the declaration's fold block through `EditingCoordinator.narrowToFoldRegionAt`, as the Structure
+window's Narrow to fold region does. Bookmarks and Personal Notes added from a declaration card land on the
+file's own lines. Declaration cards are keyed by the declaration's row, so several of one file can be open,
+under the shared eight-card limit.
+
+A declaration row's path is made up: its file followed by one segment per declaration down to it
+(`App.java/…sApp~0/…sadd~0`), each the declaration's name up to its parameter list, made file-name safe, and
+its place among same-named siblings. No such path can exist on disk — a file has no children — and because
+the segment is a name rather than a line, an open column, the selection and an open card survive an edit that
+moves the declaration. `ProjectMapModel.Entry.symbol` rows are neither files nor folders (`isSymbol()`,
+`isFile()`): the Project context menu, F2, Delete, the type filter, the open/unsaved/Git/marker states and the
+hidden-files filter never apply to them; their emphasis under a filter is their file's. Closing a structure
+column, collapsing the folder above its file or deleting the file closes the columns below it and their cards.
+
+`ProjectMapStructure` holds which files and declarations have a column open and the outline of each. Outlines
+are built on one daemon `project-map-outline` thread from the open buffer's text when the file is open —
+unsaved edits included, and the language server's document symbols when the Structure window has them for
+that buffer (`StructurePanel.serverSymbolsFor`) — or from the file read and decoded as a preview card reads
+it (`ProjectMapPreview.readText`, under the same 1,000,000-byte cap). Each result is checked against the newest
+request for its file. They are brought up to date with the cards: an open buffer is compared by its text
+(once a second while one is on show), a closed file by its size and time on disk after every listing and
+watcher notification. When an outline changes, every declaration card is moved to its declaration's new lines
+(`setRange`); a card whose declaration is gone keeps its last lines and says "No longer in this file". No
+language server is started for a closed file, the Map's global search still matches file names only, and
+nothing about the columns is remembered across restarts.
+
 ### Keyboard
 
 | Key | Result |
 | --- | --- |
-| Arrow along the flow | Select the first child, or expand the selected directory |
+| Arrow along the flow | Select the first child, or expand the selected directory, file structure or declaration |
 | Arrow against the flow | Select the parent |
 | Perpendicular arrows | Move among siblings |
 | `Ctrl-N` / `Ctrl-P` | Select the next or previous sibling |
 | `Page Down` / `Page Up` | Move ten siblings forward or backward, stopping at the last or first row |
-| `Enter` or `Space` | Open the selected file, or expand or collapse the selected folder |
+| `Enter` or `Space` | Open the selected file or declaration card, or expand or collapse the selected folder |
 | `F2` | Rename the selected file or folder (not the project root), as in the Project tree |
 | `Delete` | Delete the selected file through the Project tree's confirmed delete |
 | Menu key / `Shift-F10` | Open the selected node's context menu at its row |
@@ -333,6 +385,8 @@ flowchart LR
     Model -->|bounded entry snapshot| View
     View --> Surface[MapSurface Canvas]
     View --> Preview[ProjectMapPreview]
+    View -->|open files and declarations| Structure[ProjectMapStructure]
+    Structure -->|StructureOutline, off the FX thread| View
     ProjectPanel -->|shared factory| Menu[Project tree context menu]
     Surface -->|selected file| Preview
     Surface -->|activate file| Editor[normal editor tab]
@@ -359,6 +413,9 @@ Responsibilities are split as follows:
   column controls, icon snapshots, and accessibility text.
 - `ProjectMapPreview` owns one bounded read-only RichTextFX card, off-thread file loading and syntax
   highlighting, in-place refresh, drag/resize behavior, and promotion to an editor tab.
+- `ProjectMapStructure` owns the structure columns: which files and declarations have one open, the
+  outline of each (built off the FX thread by `StructureOutline`, the Structure tool window's own outline
+  builder), the made-up declaration paths, the rows they become, and their pruning.
 - `ProjectMapNotePreview` owns one editable Personal Notes card: a text area per note, saving, and
   adopting the store's notes on refresh.
 - `ProjectMapOutputPlan` is the JavaFX-free page plan for print/PDF; `ExportCoordinator` renders the
@@ -463,6 +520,12 @@ The focused coverage lives in:
   key ownership, content-sized columns, hidden toggles, directional layouts and arrow semantics,
   complete-map output snapshots and live viewport restoration,
   movable/locked columns, overview navigation, and wheel zoom;
+- `ProjectMapStructureTest` for which files get a Structure icon, declaration path segments, a card's lines
+  (block, doc comment, headings, field), and the order of a structure column;
+- `ProjectMapStructureFxTest` for the Structure icon, nested columns and the lone-class rule, declaration cards
+  (their lines, gutter numbers, title, Open, Open Narrowed, two of one file), closing a column with its cards,
+  following an open buffer's edits and a removed declaration, Markdown headings, the keyboard, the
+  declaration menu and row keys, a deleted file, and Print output;
 - `ProjectMapLayoutFxTest` for the first view, Fit and auto-fit anchoring, opening long folders, depth
   bands, header collapse, reserved areas, empty states, row painting (selection, focus ring, chevrons,
   status marks, contrast), the toolbar at tool-window widths in all six languages, breadcrumbs, the help
