@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-24
+
 ### Added
 
 - **An icon for every Settings page.** Each category in the Settings window's sidebar now has a glyph before
@@ -39,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings says which project the Project scope edits.** In a project window the scope switch's Project pill
+  reads "Project: *name*" (the name the main window's title shows; the folder path is its tooltip), the scope
+  bar is tinted while Project is selected, the window is titled "Settings — Project: *name*", and the note
+  leads with the project the changes apply to and the `.editora/settings.json` they are saved in.
 - **The Project Map always opens in its own window.** The Project tool window's Tree / Map switch is now a
   single Map button: the tool window keeps showing the tree, and the Map opens in a separate, resizable window
   beside the editor window (or on another screen), or comes forward when it is open already. The window has
