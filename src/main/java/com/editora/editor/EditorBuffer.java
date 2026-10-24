@@ -1528,6 +1528,59 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * Shows a jump's target {@code line}, where the caret was just moved, at the top of {@code targetArea} below
+     * any sticky-scroll rows ({@link #showParagraphAtTopClearOfStickyScroll}).
+     *
+     * <p>An area on screen scrolls now, so the frame that moves the caret shows the line too. Deferring it to
+     * the next pulse painted the caret's move first — with {@code requestFollowCaret} the line pulled in at the
+     * viewport's edge — and the line at the top a frame later: every Go to Line, definition and search hit
+     * flickered. An area not laid out yet (a file just opened, a widen that just swapped its text in, which the
+     * caller passes as {@code layoutPending}) follows the caret now and anchors the line once it is laid out.
+     */
+    public void revealJumpTarget(CodeArea targetArea, int line, boolean layoutPending) {
+        if (!layoutPending && targetArea.getScene() != null && targetArea.getHeight() > 0) {
+            try {
+                showParagraphAtTopClearOfStickyScroll(targetArea, line);
+                return;
+            } catch (RuntimeException notReady) {
+                // The viewport refused the target; anchor it after the next layout instead.
+            }
+        }
+        targetArea.requestFollowCaret();
+        Platform.runLater(() -> {
+            try {
+                showParagraphAtTopClearOfStickyScroll(targetArea, line);
+            } catch (RuntimeException ignored) {
+                // Viewport not ready; ignore.
+            }
+        });
+    }
+
+    /**
+     * As {@link #revealJumpTarget} for a line that is not in view yet; a line already on screen, clear of the
+     * sticky-scroll rows, is only followed (a partly shown last line slides in). Go to Line and the fold motions
+     * used to follow the caret alone: a line above the viewport landed under the pinned rows, hidden, and the
+     * rows changed a frame after the text.
+     */
+    public void revealJumpTargetIfHidden(CodeArea targetArea, int line) {
+        int first;
+        int last;
+        try {
+            first = targetArea.firstVisibleParToAllParIndex();
+            last = targetArea.lastVisibleParToAllParIndex();
+        } catch (RuntimeException notLaidOut) {
+            revealJumpTarget(targetArea, line, true);
+            return;
+        }
+        int pinned = stickyScrollEnabled && targetArea == focusedArea ? stickyLines.size() : 0;
+        if (line >= first + pinned && line <= last) {
+            targetArea.requestFollowCaret();
+        } else {
+            revealJumpTarget(targetArea, line, false);
+        }
+    }
+
     /** Package-visible for the FX test: what is pinned right now, as 0-based lines. */
     java.util.List<Integer> stickyScrollLines() {
         return stickyLines;

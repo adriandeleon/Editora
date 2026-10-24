@@ -153,22 +153,22 @@ public final class StickyScroll {
      * The first viewport line that leaves {@code target} unobscured by the pinned headers above it.
      *
      * <p>Navigation surfaces commonly put their destination at the top of the viewport. That position is
-     * underneath this overlay whenever the destination is inside a fold region. Work backwards by the
-     * number of headers that the resulting viewport would pin; iterating matters near a nested scope's
-     * header, where moving the viewport up can make that scope visible and remove it from the pinned set.
+     * underneath this overlay whenever the destination is inside a fold region. The answer is the highest start
+     * whose pinned rows end at or above the target. Moving the viewport up can make a nested scope's header
+     * visible and drop it from the pinned set, so the row count is read at each candidate start, from the target
+     * down: following the count instead could settle between two starts, the line just inside a method then
+     * landing under the method's own pinned header. At most {@code max} rows are pinned, so {@code target - max}
+     * always qualifies and the scan is that short.
      */
     public static int navigationFirstVisible(@Nullable List<Region> regions, int target, int max) {
         int clampedTarget = Math.max(0, target);
-        int firstVisible = clampedTarget;
-        for (int i = 0; i <= Math.max(0, max); i++) {
-            int candidate = Math.max(
-                    0, clampedTarget - headerLines(regions, firstVisible, max).size());
-            if (candidate == firstVisible) {
-                return candidate;
+        int lowest = Math.max(0, clampedTarget - Math.max(0, max));
+        for (int firstVisible = clampedTarget; firstVisible > lowest; firstVisible--) {
+            if (firstVisible + headerLines(regions, firstVisible, max).size() <= clampedTarget) {
+                return firstVisible;
             }
-            firstVisible = candidate;
         }
-        return firstVisible;
+        return lowest;
     }
 
     /** As {@link #navigationFirstVisible(List, int, int)} with {@link #DEFAULT_MAX}. */

@@ -750,7 +750,11 @@ final class NavigationCoordinator {
         }
         int line = target.startLine();
         buffer.getFoldManager().unfoldContaining(line);
-        host.editing().moveAndFollow(a -> a.moveTo(line, 0));
+        CodeArea area = host.activeArea();
+        if (area != null) {
+            area.moveTo(line, 0);
+            buffer.revealJumpTargetIfHidden(area, line);
+        }
     }
 
     void gotoParentFold() {
@@ -828,8 +832,11 @@ final class NavigationCoordinator {
                 EditorBuffer buffer = host.activeBuffer();
                 if (buffer != null) {
                     buffer.getFoldManager().unfoldContaining(targetLine);
+                    area.moveTo(targetLine, targetColumn);
+                    buffer.revealJumpTargetIfHidden(area, targetLine);
+                } else {
+                    host.editing().moveAndFollow(a -> a.moveTo(targetLine, targetColumn));
                 }
-                host.editing().moveAndFollow(a -> a.moveTo(targetLine, targetColumn));
                 host.setStatus(tr("status.gotoResult", targetLine + 1, targetColumn + 1));
             } catch (NumberFormatException e) {
                 host.setStatus(tr("status.gotoInvalid", input));

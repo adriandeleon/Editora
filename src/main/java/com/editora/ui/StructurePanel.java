@@ -859,22 +859,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
         }
         area.moveTo(line, 0);
-        int target = line;
-        // Anchor the target at the top of the usable viewport, below any sticky-scroll rows. An area already on
-        // screen scrolls now, in the pulse that moved the caret: deferring it painted one frame with the old
-        // viewport and the next one scrolled, a flicker on every click. One not laid out yet, or whose text a
-        // widen just swapped, waits a pulse for its viewport.
-        if (!widened && area.getScene() != null && area.getHeight() > 0) {
-            targetBuffer.showParagraphAtTopClearOfStickyScroll(area, target);
-        } else {
-            Platform.runLater(() -> {
-                try {
-                    targetBuffer.showParagraphAtTopClearOfStickyScroll(area, target);
-                } catch (RuntimeException ignored) {
-                    // Viewport not ready; ignore.
-                }
-            });
-        }
+        // Anchor the target at the top of the usable viewport, below any sticky-scroll rows, in this pulse (a
+        // widen just swapped the text in: that one waits for the layout).
+        targetBuffer.revealJumpTarget(area, line, widened);
         if (focusEditor) {
             area.requestFocus();
         }

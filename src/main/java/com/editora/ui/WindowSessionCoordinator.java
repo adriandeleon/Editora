@@ -851,9 +851,11 @@ final class WindowSessionCoordinator {
             return;
         }
         CodeArea area = buffer.getArea();
+        boolean wasNarrowed = buffer.isNarrowed();
         // The caller names a line of the file. In a narrowed buffer the area holds only the region, so rebase
         // (or widen, when the target is outside it) before clamping against the area's own line count.
         int areaLine1 = host.navigation().areaLine(buffer, line1 - 1) + 1;
+        boolean widened = wasNarrowed && !buffer.isNarrowed();
         int total = area.getParagraphs().size();
         int line = Math.max(1, Math.min(total, areaLine1)) - 1;
         int col = 0;
@@ -872,14 +874,9 @@ final class WindowSessionCoordinator {
                             new NavigationHistory.Location(
                                     file, host.navigation().documentLine(buffer, targetLine), targetCol));
         }
-        area.requestFollowCaret();
-        Platform.runLater(() -> {
-            try {
-                area.showParagraphAtTop(targetLine);
-            } catch (RuntimeException ignored) {
-                // Viewport not ready; ignore.
-            }
-        });
+        // At the top, below any sticky-scroll rows (the line under them was hidden), in the frame that moves the
+        // caret when the editor is already on screen.
+        buffer.revealJumpTarget(area, targetLine, widened);
         if (focusEditor) {
             area.requestFocus();
         }
