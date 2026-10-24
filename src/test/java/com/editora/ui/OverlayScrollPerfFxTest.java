@@ -85,6 +85,8 @@ class OverlayScrollPerfFxTest {
     @Test
     void scrollingInsideOneScopeRebuildsNothingAndAChangeRebuildsOnlyItsRow() throws Exception {
         FxTestSupport.runOnFx(() -> {
+            // The count is for the whole JVM: an earlier test that pinned rows made tooltips of its own.
+            int tooltipsBefore = staticInt("com.editora.editor.LazyTooltip", "created");
             EditorBuffer b = new EditorBuffer();
             try {
                 b.setLanguageOverride("java");
@@ -108,7 +110,7 @@ class OverlayScrollPerfFxTest {
                 assertEquals(2, rows.size(), "the class and the method are pinned");
                 int built = rowsBuilt(bar);
                 int tooltips = staticInt("com.editora.editor.LazyTooltip", "created");
-                assertEquals(0, tooltips, "no row has been hovered, so no tooltip exists");
+                assertEquals(tooltipsBefore, tooltips, "no row has been hovered, so no tooltip exists");
 
                 for (int first = 11; first < 150; first++) {
                     pin(b, first);

@@ -66,8 +66,9 @@ agent all go through `AsyncPipeWriter`, never the FX thread.
 Re-highlighting is debounced; overlay/ruler/minimap redraws coalesce to **one per pulse** with
 a `pending` flag. Don't add per-keystroke or per-scroll-pulse work that isn't coalesced. The overlays drawn
 over the text paint after the pulse's layout through `AfterLayoutPaint` (see
-[Canvas overlays](#canvas-overlays)); the minimap, the stripes and the ruler, which do not sit on a character,
-use `Platform.runLater`. The coalescing shape:
+[Canvas overlays](#canvas-overlays)), and so does the minimap's scroll repaint, or its viewport box trails the
+text by a frame on every scroll and every jump. The minimap's other repaints, the stripes and the ruler, which do
+not sit on a character, use `Platform.runLater`. The coalescing shape:
 
 ```java
 private boolean redrawPending;

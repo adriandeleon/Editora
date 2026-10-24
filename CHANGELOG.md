@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   symbols, and its matches inside JDK or dependency classes (`jdt://`) were dropped. They are listed after the
   project's own, labelled with their module or jar, and open as library source.
 
+- **File structure in the Project Map.** A file row whose language the Structure tool window can outline
+  (Java, Python, JavaScript/TypeScript, Kotlin, Markdown headings, Typst, `.http` requests, Clojure, poms…)
+  gets a Structure icon before its preview eye. It opens a column of the file's declarations, the way a
+  folder's chevron opens its children; a declaration that holds others — a class's members, a heading's
+  subsections — has a chevron of its own and opens a further column, and a file with one top-level type opens
+  its members straight away. Clicking a declaration opens a floating preview card of only its lines: its block
+  with the doc comment and annotations above it, numbered as the file numbers them (in the narrowed amber),
+  coloured as in the editor, sized to fit, and titled "App.java › add()". Open goes to the declaration; Open
+  Narrowed, in the card's and the row's menu, opens the file narrowed to the declaration's fold block, as the
+  Structure window's Narrow to fold region does. Several declarations of one file can be open side by side
+  under the usual eight-card limit. The columns and cards follow edits: an open file's unsaved text is what is
+  outlined (with the language server's symbols when the Structure window has them), a closed file is read
+  again when it changes on disk, and a card whose declaration was removed keeps its last lines and says so.
+  The arrow along the flow opens a file's structure, Enter on a declaration opens its card, and the columns
+  are part of Print and PDF output. Nothing about it is remembered across restarts.
 - **About says whether Editora is up to date.** Under the version, the About panel now reads "You are up to date."
   or "Update available: X.Y.Z" (a link to that release), then when the last check answered and a **Check now**
   link that asks GitHub again and updates the panel in place, failures included. Before any check has answered it
@@ -57,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java: quick fixes and generated members follow the file's indentation.** jdtls asks the client for
   `java.format.tabSize` and `insertSpaces` before every code action and got no answer, so Generate toString,
   Create method and the other generators indented with tabs in space-indented files.
+- **Jumps no longer flicker, and their target is never hidden under the sticky-scroll rows.** A click in the
+  Structure panel, Go to Line, a jump to a line from a bookmark, TODO or the Problems list, Go to Definition, a
+  search hit and the fold motions all repainted the editor over two or three frames: the caret moved before the
+  view, the view jumped before the pinned scope headers changed, and the minimap's viewport box followed a frame
+  behind. Each now lands in one frame, and the minimap's box keeps up with every scroll. In the Structure panel
+  the row clicked and the row left no longer flash unstyled black text. Go to Line and the fold motions put a
+  line above the view below the pinned headers instead of under them, a line already in view is not scrolled
+  to, and a jump to the line just inside a method no longer lands under that method's own header.
 
 ## [0.24.0] - 2026-10-24
 

@@ -790,7 +790,7 @@ class ProjectMapLayoutFxTest {
             for (Node node : help.getChildrenUnmodifiable()) {
                 text.add(((Label) node).getText());
             }
-            assertEquals(2 + 16 * 2, text.size(), "two headings and sixteen gesture rows");
+            assertEquals(2 + 18 * 2, text.size(), "two headings and eighteen gesture rows");
             assertTrue(text.contains(tr("project.map.help.chevron")));
             assertTrue(text.contains(tr("project.map.help.dragHeader.gesture")));
             assertTrue(text.contains(tr("project.map.help.escape")));
@@ -1200,8 +1200,9 @@ class ProjectMapLayoutFxTest {
     }
 
     /** Ink count and height of the status mark just before a file row's preview strip. */
+    /** The status marks of a source file's row: left of its Structure icon (24) and eye (29), at 100%. */
     private static int[] markBounds(Image shot, Object row, Color fill) {
-        int right = (int) (edge(row, "x", "width") - 31);
+        int right = (int) (edge(row, "x", "width") - 31 - 24);
         int top = Integer.MAX_VALUE;
         int bottom = -1;
         int ink = 0;

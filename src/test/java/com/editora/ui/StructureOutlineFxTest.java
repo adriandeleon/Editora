@@ -93,9 +93,9 @@ class StructureOutlineFxTest {
     @Test
     void signatureStartIsOnlyLookedForBehindAClosingParen() {
         List<String> lines = List.of("void f(", "    int a,", "    int b) {", "  if (x) {", "  }).then(y -> {");
-        assertEquals(0, StructurePanel.signatureStartLine(lines::get, 2));
-        assertEquals(-1, StructurePanel.signatureStartLine(lines::get, 3), "balanced: an ordinary header");
-        assertEquals(-1, StructurePanel.signatureStartLine(lines::get, 4), "the tail of a call chain");
+        assertEquals(0, StructureOutline.signatureStartLine(lines::get, 2));
+        assertEquals(-1, StructureOutline.signatureStartLine(lines::get, 3), "balanced: an ordinary header");
+        assertEquals(-1, StructureOutline.signatureStartLine(lines::get, 4), "the tail of a call chain");
     }
 
     @Test

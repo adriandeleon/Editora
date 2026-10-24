@@ -267,6 +267,18 @@ gesture on the next press anywhere in the app, without consuming the press. Don'
 RichTextFX, the ScrollPane or the platform grab and were removed. A menu opened from a plain click
 (a drop-down) is left to the stock behaviour.
 
+## A selection change re-runs a cell's `updateItem` after the CSS pass
+
+**Symptom:** in a tree or list whose cells build their own graphic (`Text` runs, an icon), the row you click
+and the row you leave flash plain black text for one frame, then take their colours.
+
+**Why/fix:** `Cell.updateSelected` marks the cell dirty and `Cell.layoutChildren` calls `updateItem` again with
+the *same* item, during the layout pass, after that pulse's CSS pass. Nodes built there are drawn with their
+default styling until the next pulse. Keep the graphic when the item has not changed (`StructurePanel`'s
+`StructureCell` compares the item it last built for). The flash is one frame, so only a frame-by-frame check
+sees it: the robot's screen capture in an `AnimationTimer` returns what the previous pulse rendered, and
+`FrameWatch` checks every frame an overlay shows.
+
 ## `applyCss()` restyles everything below the node it is called on
 
 **Symptom:** a change to one node of a large scene graph (one block of a long Markdown preview) costs
