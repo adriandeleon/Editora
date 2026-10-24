@@ -354,6 +354,7 @@ class RunConfigToolbarFxTest {
         try {
             RunConfiguration row = editRow(); // hoisted: runOnFx takes a Runnable, which cannot throw
             FxTestSupport.runOnFx(() -> combo.setValue(row));
+            FxTestSupport.drainFx(); // the revert and the open run on the next pulse
             assertEquals(
                     List.of("Client"), opened, "fired once, on the configuration that was selected — not the sentinel");
         } finally {
@@ -374,6 +375,100 @@ class RunConfigToolbarFxTest {
                 "and the sentinel was never persisted as the choice");
 
         setConfigs(List.of());
+    }
+
+    @Test
+    void theEditRowOpensTheEditorEveryTimeItIsPickedFromTheList() throws Exception {
+        pickTheEditRowTwice(List.of(java("Server"), java("Client")), "Server");
+    }
+
+    /**
+     * The same with nothing selected — no configurations yet, where the Edit row is the only row and how you
+     * make the first. This is the case that broke: putting back a null value clears the popup list's selection
+     * while its click is still being handled.
+     */
+    @Test
+    void theEditRowOpensTheEditorEveryTimeWithNoConfigurations() throws Exception {
+        pickTheEditRowTwice(List.of(), null);
+    }
+
+    /**
+     * Picks the Edit row from the open dropdown twice — the way a click does, through the popup list's
+     * selection model — closing the editor in between, and expects it opened both times.
+     *
+     * <p>The revert used to run inside the list's own selection change: with nothing to put back, JavaFX threw
+     * an IndexOutOfBoundsException out of the click ({@code ListViewBehavior} reading an added range the revert
+     * had already emptied) and left the popup list on the Edit row, so the next pick of that row was no change
+     * and nothing opened. {@code combo.setValue} (the test above) never goes through the list, so it missed
+     * this.
+     */
+    private void pickTheEditRowTwice(List<RunConfiguration> configs, String selected) throws Exception {
+        setConfigs(configs);
+        ComboBox<RunConfiguration> combo = combo();
+        if (!configs.isEmpty()) {
+            FxTestSupport.runOnFx(() -> combo.setValue(combo.getItems().get(0)));
+        }
+        assertEquals(selected, FxTestSupport.callOnFx(() -> nameOf(combo.getValue())));
+
+        java.util.List<String> opened = new java.util.ArrayList<>();
+        // A real window, as the editor is: showing it takes focus from the combo and hides its popup.
+        javafx.stage.Stage editor = FxTestSupport.callOnFx(javafx.stage.Stage::new);
+        FxTestSupport.runOnFx(() -> editor.setScene(new javafx.scene.Scene(new javafx.scene.layout.Pane(), 200, 100)));
+        java.util.function.Consumer<String> open = name -> {
+            opened.add(name);
+            editor.show();
+        };
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                fx.controller, "setRunConfigEditorForTest", new Class[] {java.util.function.Consumer.class}, open));
+        java.util.List<Throwable> uncaught = new java.util.concurrent.CopyOnWriteArrayList<>();
+        Thread fxThread = FxTestSupport.callOnFx(Thread::currentThread);
+        Thread.UncaughtExceptionHandler was = fxThread.getUncaughtExceptionHandler();
+        fxThread.setUncaughtExceptionHandler((t, e) -> uncaught.add(e));
+        try {
+            @SuppressWarnings("unchecked")
+            javafx.scene.control.ListView<RunConfiguration> popup = FxTestSupport.callOnFx(() -> {
+                combo.show();
+                return (javafx.scene.control.ListView<RunConfiguration>)
+                        ((javafx.scene.control.skin.ComboBoxListViewSkin<?>) combo.getSkin()).getPopupContent();
+            });
+            for (int pick = 1; pick <= 2; pick++) {
+                FxTestSupport.runOnFx(() -> {
+                    editor.close(); // closed, as the user closed it before picking the row again
+                    combo.show();
+                });
+                try {
+                    FxTestSupport.runOnFx(() -> popup.getSelectionModel()
+                            .clearAndSelect(popup.getItems().size() - 1)); // the Edit row, as a click selects it
+                } catch (Exception e) {
+                    uncaught.add(e);
+                }
+                FxTestSupport.drainFx();
+                assertEquals(List.of(), uncaught, "nothing thrown out of pick " + pick);
+                assertEquals(java.util.Collections.nCopies(pick, selected), opened, "opened on pick " + pick);
+                assertEquals(selected, FxTestSupport.callOnFx(() -> nameOf(combo.getValue())), "selection put back");
+                assertEquals(
+                        configs.isEmpty() ? -1 : 0,
+                        FxTestSupport.callOnFx(() -> popup.getSelectionModel().getSelectedIndex()),
+                        "the popup list follows the reverted value, so the Edit row can be picked again");
+            }
+        } finally {
+            fxThread.setUncaughtExceptionHandler(was);
+            FxTestSupport.runOnFx(() -> {
+                combo.hide();
+                editor.close();
+                FxTestSupport.call(
+                        fx.controller,
+                        "setRunConfigEditorForTest",
+                        new Class[] {java.util.function.Consumer.class},
+                        (java.util.function.Consumer<String>) null);
+            });
+        }
+
+        setConfigs(List.of());
+    }
+
+    private static String nameOf(RunConfiguration cfg) {
+        return cfg == null ? null : cfg.name();
     }
 
     /** The sentinel is compared by identity, so a configuration named like it stays a configuration. */
