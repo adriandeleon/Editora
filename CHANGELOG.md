@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An icon for every Settings page.** Each category in the Settings window's sidebar now has a glyph before
+  its name — a palette for Appearance, a pencil for Editor, a padlock for Encryption, and so on — in the UI
+  Kit's outline style. Pages that already have an icon elsewhere reuse it (Git, GitHub, Terminal, Debugging,
+  Search, Templates), so they look the same in Settings as on the tool stripe and toolbar. The glyph is muted,
+  brightens on hover and takes the accent colour with the selected row; the Beta pill and modified-setting
+  count stay after the name.
 - **Narrowing from the Structure panel, and a narrowed editor that says so.** The Structure tool window's
   sort row gains three segments — Widen, Defun, Fold region. Defun narrows the editor to the picked symbol's
   top-level definition (`narrow-to-defun`: for a method, its class) and Fold region to the symbol's own block;
