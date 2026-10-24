@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status-bar update notice now also comes back after a restart until the release is opened or installed, instead
   of waiting for the next day's check.
 
+- **Java: Undo Last Refactoring.** A rename, move or other refactoring that changed several files can be undone in
+  all of them at once: Undo in one of its files asks whether to undo it everywhere, and **LSP: Undo Last
+  Refactoring** does it from the palette. Renamed files move back and created ones are removed. Before, Undo
+  reverted one file and left the rest of the project renamed.
+- **Java: renaming a `.java` file or a package folder in the Project tree renames the class or package.** The
+  tree asks jdtls (`workspace/willRenameFiles`) for the edits first, so references, `package` lines and imports
+  follow; before, the class kept its old name and the project stopped compiling.
+
 ### Changed
 
 - **Refactor: the text model the editor shares with other packages moved to a new `com.editora.text`.** The LSP value types (`LspTextEdit`, `LspDiagnostic`, `SemanticToken`, `OccurrenceSpan`), `FoldRegions`, the search matcher with `CaseFold` and `SearchMatches`, all of language detection (`LanguageRegistry`, `LanguageNames`, `ConfigFileType`, `ShellFiles`, `ShellScripts`, `Shebang`, `Modeline`) and `EncryptedNames` leave the editor sub-packages, with 13 tests. `lsp`, `search`, `crypto`, `template` and `editops` no longer depend on the editor; `editor.language` is gone, its classes having no presentation in them. `text` has its own 0.95 coverage floor. Internal-only — no behavior, dependency, or `module-info` change.
@@ -56,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java: a refactoring that moves or creates files leaves the disk consistent.** A class rename, Move or
+  Extract Interface changed files on disk but left their new text unsaved, so the project did not compile until
+  every tab was saved. Every file such a refactoring touches is now saved. A file the refactoring opened only to
+  change it is saved and its tab closed, instead of a dirty tab per file.
+- **Java: a rename that clashes with an existing name is reported.** jdtls applies it anyway; Editora now checks
+  the renamed files afterwards and says how many new errors it left and how to undo it.
 - **Java: a pom.xml or build.gradle change reaches the classpath.** jdtls asked "A build file was modified. Do you
   want to synchronize the Java classpath/configuration?" in the status line, where it could not be answered, so a
   dependency added to the pom stayed unresolved. Build files now sync on save (`updateBuildConfiguration:

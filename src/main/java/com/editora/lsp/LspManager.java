@@ -5178,6 +5178,30 @@ public final class LspManager {
         return best;
     }
 
+    /**
+     * Before {@code from} is renamed to {@code to} on disk (a Project tree rename): asks the Java server of its
+     * project for the edits that go with it ({@code workspace/willRenameFiles} — the class renamed with its
+     * {@code .java} file, the package declarations and imports of a moved folder) and applies them, then calls
+     * {@code proceed} on the FX thread with whether the edits are in. With no Java server, or none it wants
+     * made, {@code proceed} runs at once with true (Java review B15).
+     */
+    public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed) {
+        LanguageServerSession s = javaSessionFor(from);
+        if (s == null) {
+            Platform.runLater(() -> proceed.accept(true));
+            return;
+        }
+        EditBasis expected = editBasis(s);
+        s.willRenameFiles(s.uris().toWire(uri(from)), s.uris().toWire(uri(to)))
+                .whenComplete((edit, e) -> Platform.runLater(() -> {
+                    if (e != null || edit == null || !changesText(edit)) {
+                        proceed.accept(true);
+                    } else {
+                        applyWorkspaceEdit(edit, expected, proceed);
+                    }
+                }));
+    }
+
     /** Whether a jdtls serves {@code file}'s project, whichever server edits the file itself. */
     public boolean hasJavaSession(@Nullable Path file) {
         return javaSessionFor(file) != null;

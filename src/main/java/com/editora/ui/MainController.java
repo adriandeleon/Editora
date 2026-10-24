@@ -1461,6 +1461,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setDeletePreparation(projectDeletes);
         panel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
         panel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
+        // A Java file or package folder renamed in the tree takes its class or package with it (Java review B15).
+        panel.setRenameParticipant((from, to, proceed) -> {
+            if (lspEnabled()) {
+                lspManager.willRenameFile(from, to, proceed);
+            } else {
+                proceed.accept(true);
+            }
+        });
         panel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
         panel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         panel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
@@ -6539,6 +6547,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void openBackgroundBufferAsync(Path file, java.util.function.Consumer<@Nullable EditorBuffer> done) {
             MainController.this.openBackgroundBufferAsync(file, done);
+        }
+
+        @Override
+        public boolean saveBuffer(EditorBuffer buffer) {
+            return fileWorkflows.saveSynchronously(buffer);
+        }
+
+        @Override
+        public void closeBackgroundBuffer(EditorBuffer buffer) {
+            Tab tab = tabFor(buffer);
+            if (tab != null && !buffer.isDirty()) {
+                editorArea.remove(tab);
+            }
         }
 
         @Override

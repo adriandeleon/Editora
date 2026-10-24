@@ -812,6 +812,11 @@ final class LanguageServerSession implements LanguageClient {
         // We push watched-file events (#677) — without them a git checkout / CLI build leaves the server's
         // project model stale until restart. Static push only (no dynamic watcher registration).
         ws.setDidChangeWatchedFiles(new org.eclipse.lsp4j.DidChangeWatchedFilesCapabilities(false));
+        // A file or folder renamed in the Project tree is offered to the server first: jdtls renames the class
+        // with its .java file, or updates the package declarations and imports of a moved folder (review B15).
+        var fileOperations = new org.eclipse.lsp4j.FileOperationsWorkspaceCapabilities();
+        fileOperations.setWillRename(true);
+        ws.setFileOperations(fileOperations);
         // We answer workspace/applyEdit (#670) — how a server-side command (a jdtls quick fix routed
         // through executeCommand) actually lands its edits in the editor. documentChanges=true because
         // jdtls emits the modern TextDocumentEdit[] shape when the client accepts it.
@@ -1924,6 +1929,25 @@ final class LanguageServerSession implements LanguageClient {
         }
         ReferenceParams params = new ReferenceParams(doc(uri), pos, new ReferenceContext(true));
         return bounded(server().getTextDocumentService().references(params));
+    }
+
+    /**
+     * {@code workspace/willRenameFiles} for {@code from} → {@code to} (wire URIs): the edit the server wants made
+     * before the move — an empty one when it has none, cannot say, or does not take the request.
+     */
+    CompletableFuture<org.eclipse.lsp4j.WorkspaceEdit> willRenameFiles(String from, String to) {
+        ServerCapabilities c = capabilities;
+        if (!ready()
+                || c == null
+                || c.getWorkspace() == null
+                || c.getWorkspace().getFileOperations() == null
+                || c.getWorkspace().getFileOperations().getWillRename() == null) {
+            return CompletableFuture.completedFuture(new org.eclipse.lsp4j.WorkspaceEdit());
+        }
+        var params = new org.eclipse.lsp4j.RenameFilesParams(List.of(new org.eclipse.lsp4j.FileRename(from, to)));
+        return bounded(server().getWorkspaceService().willRenameFiles(params))
+                .thenApply(edit -> edit == null ? new org.eclipse.lsp4j.WorkspaceEdit() : edit)
+                .exceptionally(t -> new org.eclipse.lsp4j.WorkspaceEdit());
     }
 
     /** Project-wide symbol search ({@code workspace/symbol}) for {@code query}; empty when not ready/on error. */

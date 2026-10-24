@@ -1850,6 +1850,20 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.onNewFromTemplate = onNewFromTemplate;
     }
 
+    /**
+     * What may change before a rename: {@code (from, to, proceed)} makes the edits that go with it (a Java class
+     * renamed with its file) and then calls {@code proceed} with whether to go on. By default nothing does.
+     */
+    public interface RenameParticipant {
+        void willRename(Path from, Path to, Consumer<Boolean> proceed);
+    }
+
+    private RenameParticipant renameParticipant = (from, to, proceed) -> proceed.accept(true);
+
+    public void setRenameParticipant(RenameParticipant participant) {
+        this.renameParticipant = participant == null ? (from, to, proceed) -> proceed.accept(true) : participant;
+    }
+
     /** Injects the dirty-buffer and durable-history gate run after confirmation but before filesystem changes. */
     public void setDeletePreparation(DeletePreparation deletePreparation) {
         this.deletePreparation = deletePreparation == null
@@ -2254,17 +2268,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     if (target.equals(path) || Files.exists(target)) {
                         return;
                     }
-                    try {
-                        Files.move(path, target);
-                    } catch (IOException ex) {
-                        showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
-                        return;
-                    }
-                    markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
-                    mapView.pathRenamed(path, target); // a renamed open folder stays open in the Map
-                    refreshAfterChange();
-                    onFileRenamed.accept(path, target);
+                    renameParticipant.willRename(path, target, ok -> {
+                        if (ok) {
+                            move(path, target); // says why when the file is gone or the name taken by now
+                        }
+                    });
                 });
+    }
+
+    private void move(Path path, Path target) {
+        try {
+            Files.move(path, target);
+        } catch (IOException ex) {
+            showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
+            return;
+        }
+        markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
+        mapView.pathRenamed(path, target); // a renamed open folder stays open in the Map
+        refreshAfterChange();
+        onFileRenamed.accept(path, target);
     }
 
     private void deleteItem(TreeItem<Path> item) {

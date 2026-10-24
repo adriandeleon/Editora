@@ -419,6 +419,13 @@ class JdtlsClientSettingsProbeTest {
                     askedNames.stream().anyMatch(n -> n.startsWith("Date")), "A3: the ambiguous Date is asked about");
             assertTrue(organized.contains("import java."), "A3: the chosen imports are written: " + organized);
 
+            // B15: renaming Helper.java in the Project tree renames the class and its uses with it.
+            String helper = src.resolve("Helper.java").toUri().toString();
+            String assistant = src.resolve("Assistant.java").toUri().toString();
+            var renamed = get(s.willRenameFiles(helper, assistant));
+            record("B15 willRenameFiles", renamed);
+            assertTrue(String.valueOf(renamed).contains("Assistant"), "B15: the class is renamed with its file");
+
             // D11: move twice() to the helper field, which it compares to null — an error jdtls asks about.
             var atTwice = actions(get(s.codeAction(app, range(pos(APP, "int twice", 6)), List.of())));
             JdtlsRefactor.Request move = refactor(atTwice, JdtlsRefactor.MOVE_INSTANCE_METHOD);

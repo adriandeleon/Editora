@@ -221,6 +221,36 @@ class ProjectPanelTreeFxTest {
         }
     }
 
+    /** The rename participant (jdtls's willRenameFiles for Java) makes its edits before the file moves (B15). */
+    @Test
+    void aRenameAsksItsParticipantFirstAndCanBeStopped(@TempDir Path dir) throws Exception {
+        try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
+            java.util.List<String> asked = new java.util.ArrayList<>();
+            java.util.concurrent.atomic.AtomicBoolean go = new java.util.concurrent.atomic.AtomicBoolean(false);
+            FxTestSupport.runOnFx(() -> {
+                r.panel.setRenameParticipant((from, to, proceed) -> {
+                    asked.add(from.getFileName() + ">" + to.getFileName() + " exists=" + Files.exists(to));
+                    proceed.accept(go.get());
+                });
+                r.select(r.alpha);
+                r.press(r.tree, KeyCode.F2, false);
+            });
+            FxTestSupport.runOnFx(() -> r.promptAccept.accept("gamma.txt"));
+            assertEquals(java.util.List.of("alpha.txt>gamma.txt exists=false"), asked, "asked before the move");
+            assertTrue(Files.exists(r.alpha), "the participant said no: nothing moves");
+            assertTrue(r.renamed.isEmpty());
+
+            go.set(true);
+            FxTestSupport.runOnFx(() -> {
+                r.select(r.alpha);
+                r.press(r.tree, KeyCode.F2, false);
+            });
+            FxTestSupport.runOnFx(() -> r.promptAccept.accept("gamma.txt"));
+            assertTrue(Files.exists(dir.resolve("gamma.txt")));
+            assertFalse(Files.exists(r.alpha));
+        }
+    }
+
     @Test
     void aRenameThatFailsOnDiskSaysWhyAndReportsNoRename(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
