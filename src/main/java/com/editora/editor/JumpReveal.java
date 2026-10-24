@@ -9,8 +9,8 @@ import java.util.function.Supplier;
 
 import javafx.application.Platform;
 
-import com.editora.editor.fold.FoldRegions.Region;
 import com.editora.editor.fold.StickyScroll;
+import com.editora.text.FoldRegions.Region;
 import org.fxmisc.richtext.CodeArea;
 
 /**
