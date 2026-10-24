@@ -3190,6 +3190,33 @@
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
 }
+/* A category row is graphic-only (CategoryCell): glyph, name Label, badges. The cell's own text fill
+   doesn't reach a child Label, so the name and the glyph take the row's colours here. */
+.settings-sidebar .list-cell .settings-sidebar-name {
+    -fx-text-fill: -color-fg-default;
+}
+.settings-sidebar .list-cell:filled:selected .settings-sidebar-name {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
+.settings-sidebar .settings-sidebar-icon .icon-line {
+    -fx-stroke: -color-fg-muted;
+}
+.settings-sidebar .settings-sidebar-icon .toolbar-icon {
+    -fx-fill: -color-fg-muted;
+}
+.settings-sidebar .list-cell.settings-sidebar-item:filled:hover .settings-sidebar-icon .icon-line {
+    -fx-stroke: -color-fg-default;
+}
+.settings-sidebar .list-cell.settings-sidebar-item:filled:hover .settings-sidebar-icon .toolbar-icon {
+    -fx-fill: -color-fg-default;
+}
+.settings-sidebar .list-cell:filled:selected .settings-sidebar-icon .icon-line {
+    -fx-stroke: -color-accent-fg;
+}
+.settings-sidebar .list-cell:filled:selected .settings-sidebar-icon .toolbar-icon {
+    -fx-fill: -color-accent-fg;
+}
 /* A category with no search hit is disabled (CategoryCell); say so, or it looks clickable and is not. */
 .settings-sidebar .list-cell.settings-sidebar-item:disabled {
     -fx-opacity: 0.4;

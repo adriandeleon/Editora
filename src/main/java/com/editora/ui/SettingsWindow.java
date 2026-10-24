@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import javafx.beans.binding.Bindings;
 import javafx.geometry.Insets;
@@ -110,60 +111,63 @@ public class SettingsWindow {
     /** Settings categories shown in the sidebar, each grouped under a {@link Group} header (declaration order). */
     private enum Category {
         // General
-        APPEARANCE(tr("settings.cat.appearance"), Group.GENERAL),
-        INTERFACE(tr("settings.cat.interface"), Group.GENERAL),
-        TOOLBAR(tr("settings.cat.toolbar"), Group.GENERAL),
-        WORKSPACE(tr("settings.cat.workspace"), Group.GENERAL),
-        TOOL_WINDOWS(tr("settings.cat.toolWindows"), Group.GENERAL),
+        APPEARANCE(tr("settings.cat.appearance"), Group.GENERAL, SettingsIcons::appearance),
+        INTERFACE(tr("settings.cat.interface"), Group.GENERAL, SettingsIcons::interfaceWindow),
+        TOOLBAR(tr("settings.cat.toolbar"), Group.GENERAL, SettingsIcons::toolbar),
+        WORKSPACE(tr("settings.cat.workspace"), Group.GENERAL, SettingsIcons::workspace),
+        TOOL_WINDOWS(tr("settings.cat.toolWindows"), Group.GENERAL, SettingsIcons::toolWindows),
         // Editor
-        EDITOR(tr("settings.cat.editor"), Group.EDITOR),
-        COMPLETION(tr("settings.cat.completion"), Group.EDITOR),
-        SNIPPETS(tr("settings.cat.snippets"), Group.EDITOR),
-        TEMPLATES(tr("settings.cat.templates"), Group.EDITOR),
-        TODO(tr("settings.cat.todo"), Group.EDITOR),
-        SPELL_CHECK(tr("settings.cat.spellCheck"), Group.EDITOR),
-        SEARCH(tr("settings.cat.search"), Group.EDITOR),
-        ABBREVIATIONS(tr("settings.cat.abbreviations"), Group.EDITOR),
+        EDITOR(tr("settings.cat.editor"), Group.EDITOR, SettingsIcons::editor),
+        COMPLETION(tr("settings.cat.completion"), Group.EDITOR, SettingsIcons::completion),
+        SNIPPETS(tr("settings.cat.snippets"), Group.EDITOR, SettingsIcons::snippets),
+        TEMPLATES(tr("settings.cat.templates"), Group.EDITOR, SettingsIcons::templates),
+        TODO(tr("settings.cat.todo"), Group.EDITOR, SettingsIcons::todo),
+        SPELL_CHECK(tr("settings.cat.spellCheck"), Group.EDITOR, SettingsIcons::spellCheck),
+        SEARCH(tr("settings.cat.search"), Group.EDITOR, SettingsIcons::search),
+        ABBREVIATIONS(tr("settings.cat.abbreviations"), Group.EDITOR, SettingsIcons::abbreviations),
         // AI (a master enable switch, then the two AI features it gates)
-        AI_GENERAL(tr("settings.cat.aiGeneral"), Group.AI, true),
-        AGENT(tr("settings.cat.agent"), Group.AI, true),
-        AI(tr("settings.cat.ai"), Group.AI, true),
+        AI_GENERAL(tr("settings.cat.aiGeneral"), Group.AI, SettingsIcons::ai, true),
+        AGENT(tr("settings.cat.agent"), Group.AI, SettingsIcons::agent, true),
+        AI(tr("settings.cat.ai"), Group.AI, SettingsIcons::aiActions, true),
         // Languages & Tools
-        LSP(tr("settings.cat.lsp"), Group.LANGUAGES_TOOLS, true),
-        DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS, true),
-        MARKDOWN(tr("settings.cat.markdown"), Group.LANGUAGES_TOOLS),
-        MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS),
-        DIAGRAMS(tr("settings.cat.diagrams"), Group.LANGUAGES_TOOLS),
-        TYPST(tr("settings.cat.typst"), Group.LANGUAGES_TOOLS),
-        BUILD_TOOLS(tr("settings.cat.buildTools"), Group.LANGUAGES_TOOLS),
-        WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS),
-        EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
-        TERMINAL(tr("settings.cat.terminal"), Group.LANGUAGES_TOOLS),
+        LSP(tr("settings.cat.lsp"), Group.LANGUAGES_TOOLS, SettingsIcons::lsp, true),
+        DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS, SettingsIcons::debug, true),
+        MARKDOWN(tr("settings.cat.markdown"), Group.LANGUAGES_TOOLS, SettingsIcons::markdown),
+        MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS, SettingsIcons::mermaid),
+        DIAGRAMS(tr("settings.cat.diagrams"), Group.LANGUAGES_TOOLS, SettingsIcons::diagrams),
+        TYPST(tr("settings.cat.typst"), Group.LANGUAGES_TOOLS, SettingsIcons::typst),
+        BUILD_TOOLS(tr("settings.cat.buildTools"), Group.LANGUAGES_TOOLS, SettingsIcons::buildTools),
+        WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, SettingsIcons::web),
+        EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS, SettingsIcons::externalTools),
+        TERMINAL(tr("settings.cat.terminal"), Group.LANGUAGES_TOOLS, SettingsIcons::terminal),
         // Version control
-        GIT(tr("settings.cat.git"), Group.VERSION_CONTROL),
-        GITHUB(tr("settings.cat.github"), Group.VERSION_CONTROL),
+        GIT(tr("settings.cat.git"), Group.VERSION_CONTROL, SettingsIcons::git),
+        GITHUB(tr("settings.cat.github"), Group.VERSION_CONTROL, SettingsIcons::github),
         // System
-        KEYMAPS(tr("settings.cat.keymaps"), Group.SYSTEM),
-        MACROS(tr("settings.cat.macros"), Group.SYSTEM),
-        REMOTE(tr("settings.cat.remote"), Group.SYSTEM, true),
-        ENCRYPTION(tr("settings.cat.encryption"), Group.SYSTEM),
-        PLUGINS(tr("settings.cat.plugins"), Group.SYSTEM),
-        SYNC(tr("settings.cat.sync"), Group.SYSTEM, true),
-        MCP(tr("settings.cat.mcp"), Group.SYSTEM, true),
-        ADVANCED(tr("settings.cat.advanced"), Group.SYSTEM);
+        KEYMAPS(tr("settings.cat.keymaps"), Group.SYSTEM, SettingsIcons::keymaps),
+        MACROS(tr("settings.cat.macros"), Group.SYSTEM, SettingsIcons::macros),
+        REMOTE(tr("settings.cat.remote"), Group.SYSTEM, SettingsIcons::remote, true),
+        ENCRYPTION(tr("settings.cat.encryption"), Group.SYSTEM, SettingsIcons::encryption),
+        PLUGINS(tr("settings.cat.plugins"), Group.SYSTEM, SettingsIcons::plugins),
+        SYNC(tr("settings.cat.sync"), Group.SYSTEM, SettingsIcons::sync, true),
+        MCP(tr("settings.cat.mcp"), Group.SYSTEM, SettingsIcons::mcp, true),
+        ADVANCED(tr("settings.cat.advanced"), Group.SYSTEM, SettingsIcons::advanced);
 
         final String display;
         final Group group;
+        /** A fresh copy of the glyph shown left of the name (see {@link SettingsIcons}). */
+        final Supplier<Node> icon;
         /** Whether the feature is still beta — the sidebar shows a small "Beta" pill beside its name. */
         final boolean beta;
 
-        Category(String display, Group group) {
-            this(display, group, false);
+        Category(String display, Group group, Supplier<Node> icon) {
+            this(display, group, icon, false);
         }
 
-        Category(String display, Group group, boolean beta) {
+        Category(String display, Group group, Supplier<Node> icon, boolean beta) {
             this.display = display;
             this.group = group;
+            this.icon = icon;
             this.beta = beta;
         }
     }
@@ -8483,6 +8487,7 @@ public class SettingsWindow {
             super.updateItem(item, empty);
             getStyleClass().removeAll("settings-group-header", "settings-sidebar-item");
             setGraphic(null);
+            setContentDisplay(ContentDisplay.LEFT); // a reused category row was GRAPHIC_ONLY
             if (empty || item == null) {
                 setText(null);
                 setDisable(false);
@@ -8499,16 +8504,25 @@ public class SettingsWindow {
                 setDisable(searchHiddenGroups.contains(g));
             } else {
                 Category c = (Category) item;
-                setText(c.display);
+                setText(c.display); // hidden by GRAPHIC_ONLY, but still the row's accessible name
                 getStyleClass().add("settings-sidebar-item");
                 setMouseTransparent(false);
                 setDisable(searchHiddenCats.contains(c));
+                // A ListCell has one graphic, and the row needs two beside its name — the category's
+                // glyph before it, the modified-row count and the "Beta" pill after — so the name is a
+                // Label in the row and the cell shows only that.
+                Label name = new Label(c.display);
+                name.getStyleClass().add("settings-sidebar-name");
+                name.setMinWidth(0); // ellipsize rather than push the badges off the rail
+                HBox row = new HBox(8, c.icon.get(), name);
+                row.setAlignment(Pos.CENTER_LEFT);
                 Node badges = SettingsFrameBits.sidebarBadges(c.beta, modifiedPerPage.getOrDefault(c, 0));
-                if (badges != null) { // the modified-row count and the "Beta" pill, beside the name
-                    setGraphic(badges);
-                    setContentDisplay(ContentDisplay.RIGHT);
-                    setGraphicTextGap(6);
+                if (badges != null) {
+                    HBox.setMargin(badges, new Insets(0, 0, 0, -2)); // 6 px from the name, as before
+                    row.getChildren().add(badges);
                 }
+                setGraphic(row);
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
             }
         }
     }
