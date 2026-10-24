@@ -647,7 +647,7 @@ class LspManagerTest {
         var caps = LspManager.javaExtendedClientCapabilities();
 
         assertFalse(caps.containsKey("advancedOrganizeImportsSupport"), "an ambiguous-import chooser");
-        assertFalse(caps.containsKey("executeClientCommandSupport"), "workspace/executeClientCommand for jdtls");
+        assertEquals(Boolean.TRUE, caps.get("executeClientCommandSupport"), "the import chooser answers it (A3)");
     }
 
     /**

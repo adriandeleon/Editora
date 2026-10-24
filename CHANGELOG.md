@@ -56,6 +56,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java: a pom.xml or build.gradle change reaches the classpath.** jdtls asked "A build file was modified. Do you
+  want to synchronize the Java classpath/configuration?" in the status line, where it could not be answered, so a
+  dependency added to the pom stayed unresolved. Build files now sync on save (`updateBuildConfiguration:
+  automatic`), and jdtls's other questions come with buttons that run its answer.
+- **Java: Organize Imports works when a name is ambiguous.** With one `Date` or `List` that could be two classes it
+  did nothing and said "Imports already organized". It now asks which class each such name means, and imports the
+  rest either way.
+- **Java: paste with imports only imports what the pasted code uses.** jdtls resolved every missing import of the
+  file, so pasting `int z = 1;` could add an unrelated `import java.time.LocalDate;`.
+- **Java: Reload Project Configuration and Build Project work from the pom.xml tab,** where they reached the pom
+  language server instead of jdtls. Build Project now says when the build found errors ("Project built with
+  errors: see Problems") instead of "Project built".
 - **Java: opening a project no longer writes Eclipse files into it.** jdtls put `.project`, `.classpath` and
   `.settings/` into every imported project and module, where they showed up in `git status`. They now stay in
   jdtls's own workspace (`-Djava.import.generatesMetadataFilesAtProjectRoot=false`, as vscode-java does). Files

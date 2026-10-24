@@ -707,15 +707,20 @@ class LspCoordinatorCommandsFxTest {
         assertFalse(fx.coordinator.isProjectWideProblems());
         fx.ops.loading.clear();
 
+        fx.server().rawResponse = 1; // BuildWorkspaceStatus.SUCCEED
         fx.run(() -> fx.coordinator.buildWorkspace());
         assertTrue(fx.coordinator.isProjectWideProblems(), "or the results would be filtered straight out again");
         assertEquals(List.of(true, false), fx.ops.loading);
         assertTrue(fx.host.statuses.contains(tr("status.lsp.buildingWorkspace")));
         assertEquals(tr("status.lsp.buildWorkspaceDone"), fx.host.lastStatus());
 
+        fx.server().rawResponse = 2; // WITH_ERROR: not "Project built" (Java review C15)
+        fx.run(() -> fx.coordinator.buildWorkspace());
+        assertEquals(tr("status.lsp.buildWorkspaceErrors"), fx.host.lastError());
+
         fx.server().failEverything = true;
         fx.run(() -> fx.coordinator.buildWorkspace());
-        assertEquals(tr("status.lsp.buildWorkspaceFailed"), fx.host.lastStatus());
+        assertEquals(tr("status.lsp.buildWorkspaceFailed"), fx.host.lastError());
         assertFalse(fx.ops.loading.get(fx.ops.loading.size() - 1), "the loading bar stops on failure too");
     }
 

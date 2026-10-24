@@ -2685,11 +2685,153 @@ final class LanguageServerSession implements LanguageClient {
     @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("language/eventNotification")
     public void languageEventNotification(LanguageEventNotification event) {}
 
-    /** Surface JDT's actionable message even though Editora does not render the optional command buttons. */
+    /**
+     * JDT's actionable message: its commands become the buttons of a non-modal question, and the one chosen is
+     * run through {@code workspace/executeCommand}. Only commands the server itself executes are offered — some
+     * name client commands of VS Code's extension ("learn more" pages, settings editors) that mean nothing
+     * here. Without a command to offer, or without a window to ask in, the message is echoed as before. Before
+     * this, "A build file was modified. Do you want to synchronize the Java classpath/configuration?" could not
+     * be answered (Java review C1).
+     */
     @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("language/actionableNotification")
     public void languageActionableNotification(LanguageActionableNotification notification) {
-        if (notification != null && notification.message != null && !notification.message.isBlank()) {
-            onStatus.accept("Message", notification.message.strip());
+        if (notification == null || notification.message == null || notification.message.isBlank()) {
+            return;
+        }
+        String message = notification.message.strip();
+        List<org.eclipse.lsp4j.Command> runnable = new ArrayList<>();
+        java.util.Set<String> executable = executableCommands();
+        if (notification.commands != null) {
+            for (org.eclipse.lsp4j.Command c : notification.commands) {
+                if (c != null
+                        && c.getTitle() != null
+                        && c.getCommand() != null
+                        && executable.contains(c.getCommand())) {
+                    runnable.add(c);
+                }
+            }
+        }
+        LspClientUi ui = clientUi;
+        if (ui == null || runnable.isEmpty() || disposed) {
+            onStatus.accept("Message", message);
+            return;
+        }
+        List<String> titles =
+                runnable.stream().map(org.eclipse.lsp4j.Command::getTitle).toList();
+        ui.chooseAction(
+                        serverId,
+                        notification.severity == null ? org.eclipse.lsp4j.MessageType.Info : notification.severity,
+                        message,
+                        titles)
+                .thenAccept(chosen -> {
+                    if (chosen == null || disposed) {
+                        return;
+                    }
+                    for (org.eclipse.lsp4j.Command c : runnable) {
+                        if (chosen.equals(c.getTitle())) {
+                            executeCommand(c.getCommand(), c.getArguments() == null ? List.of() : c.getArguments());
+                            return;
+                        }
+                    }
+                });
+    }
+
+    /** The commands the server says it executes ({@code executeCommandProvider}). */
+    private java.util.Set<String> executableCommands() {
+        ServerCapabilities c = capabilities;
+        if (c == null
+                || c.getExecuteCommandProvider() == null
+                || c.getExecuteCommandProvider().getCommands() == null) {
+            return java.util.Set.of();
+        }
+        return java.util.Set.copyOf(c.getExecuteCommandProvider().getCommands());
+    }
+
+    /** jdtls's {@code java.action.organizeImports.chooseImports}: which class each ambiguous name means. */
+    static final String CHOOSE_IMPORTS = "java.action.organizeImports.chooseImports";
+
+    /**
+     * {@code workspace/executeClientCommand}: a command jdtls asks the client to carry out while it waits for the
+     * answer (declared by {@code executeClientCommandSupport}). {@link #CHOOSE_IMPORTS} asks, for each simple name
+     * with several candidates, which class is meant; the answer is the chosen candidates, and a name the user
+     * skips is left unimported while the rest still applies. Before this the request failed, jdtls cancelled the
+     * whole Organize Imports, and nothing was organized (Java review A3). Any other command is answered null.
+     */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("workspace/executeClientCommand")
+    public CompletableFuture<Object> executeClientCommand(org.eclipse.lsp4j.ExecuteCommandParams params) {
+        LspClientUi ui = clientUi;
+        if (params == null || !CHOOSE_IMPORTS.equals(params.getCommand()) || ui == null || disposed) {
+            return CompletableFuture.completedFuture(null);
+        }
+        List<ImportChoice> choices = ImportChoice.of(params.getArguments());
+        List<Object> chosen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
+        for (ImportChoice choice : choices) {
+            chain = chain.thenCompose(ignored -> disposed
+                    ? CompletableFuture.completedFuture(null)
+                    : ui.chooseImport(serverId, choice.simpleName(), choice.line(), choice.items())
+                            .thenAccept(id -> {
+                                Object candidate =
+                                        id == null ? null : choice.candidates().get(id);
+                                if (candidate != null) {
+                                    chosen.add(candidate);
+                                }
+                            }));
+        }
+        return chain.handle((ignored, error) -> List.copyOf(chosen));
+    }
+
+    /**
+     * One name {@link #CHOOSE_IMPORTS} asks about, read from jdtls's {@code ImportSelection}
+     * ({@code {candidates: [{fullyQualifiedName, id}], range}}): the candidates by id, as the server sent them.
+     */
+    record ImportChoice(String simpleName, int line, List<LspClientUi.PickItem> items, Map<String, Object> candidates) {
+
+        static List<ImportChoice> of(@Nullable List<Object> arguments) {
+            List<ImportChoice> out = new ArrayList<>();
+            if (arguments == null || arguments.size() < 2) {
+                return out;
+            }
+            com.google.gson.JsonElement selections = LspManager.asJson(arguments.get(1));
+            if (selections == null || !selections.isJsonArray()) {
+                return out;
+            }
+            for (com.google.gson.JsonElement e : selections.getAsJsonArray()) {
+                if (!e.isJsonObject() || !e.getAsJsonObject().has("candidates")) {
+                    continue;
+                }
+                com.google.gson.JsonObject selection = e.getAsJsonObject();
+                List<LspClientUi.PickItem> items = new ArrayList<>();
+                Map<String, Object> byId = new java.util.LinkedHashMap<>();
+                String simple = "";
+                for (com.google.gson.JsonElement c : selection.getAsJsonArray("candidates")) {
+                    if (!c.isJsonObject() || !c.getAsJsonObject().has("fullyQualifiedName")) {
+                        continue;
+                    }
+                    String fqn = c.getAsJsonObject().get("fullyQualifiedName").getAsString();
+                    String id = c.getAsJsonObject().has("id")
+                            ? c.getAsJsonObject().get("id").getAsString()
+                            : fqn;
+                    int dot = fqn.lastIndexOf('.');
+                    simple = dot < 0 ? fqn : fqn.substring(dot + 1);
+                    items.add(new LspClientUi.PickItem(id, fqn, dot < 0 ? null : fqn.substring(0, dot), null));
+                    byId.put(id, c);
+                }
+                int line = 0;
+                com.google.gson.JsonElement range = selection.get("range");
+                if (range != null
+                        && range.isJsonObject()
+                        && range.getAsJsonObject().has("start")) {
+                    line = range.getAsJsonObject()
+                            .getAsJsonObject("start")
+                            .get("line")
+                            .getAsInt();
+                }
+                if (!items.isEmpty()) {
+                    out.add(new ImportChoice(simple, line, List.copyOf(items), Map.copyOf(byId)));
+                }
+            }
+            return out;
         }
     }
 

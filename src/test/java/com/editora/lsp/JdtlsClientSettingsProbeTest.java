@@ -120,6 +120,15 @@ class JdtlsClientSettingsProbeTest {
             }
             """;
 
+    private static final String AMBIGUOUS = """
+            package demo;
+
+            public class Ambig {
+                Date when;
+                Duration took;
+            }
+            """;
+
     private static final String BROKEN = """
             package demo;
 
@@ -193,6 +202,7 @@ class JdtlsClientSettingsProbeTest {
         Files.writeString(src.resolve("App.java"), APP);
         Files.writeString(src.resolve("Helper.java"), HELPER);
         Files.writeString(src.resolve("Broken.java"), BROKEN);
+        Files.writeString(src.resolve("Ambig.java"), AMBIGUOUS);
         Files.writeString(project.resolve("pom.xml"), """
                 <project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
                 <groupId>demo</groupId><artifactId>settings-probe</artifactId><version>1</version>
@@ -200,6 +210,7 @@ class JdtlsClientSettingsProbeTest {
                 """);
         String app = src.resolve("App.java").toUri().toString();
         String broken = src.resolve("Broken.java").toUri().toString();
+        String ambiguous = src.resolve("Ambig.java").toUri().toString();
         var diagnostics = new CopyOnWriteArrayList<PublishDiagnosticsParams>();
         var imported = new java.util.concurrent.CountDownLatch(1); // jdtls's "ProjectStatus" ends the import
         var s = new LanguageServerSession(
@@ -220,6 +231,7 @@ class JdtlsClientSettingsProbeTest {
             assertTrue(s.start());
             s.didOpen(app, "java", APP);
             s.didOpen(broken, "java", BROKEN);
+            s.didOpen(ambiguous, "java", AMBIGUOUS);
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
             while (!s.isInitialized() && System.nanoTime() < deadline) {
                 Thread.sleep(100);
@@ -363,6 +375,49 @@ class JdtlsClientSettingsProbeTest {
             assertNotNull(field, "Extract to field is offered on a selection");
             record("D10 scopes", JdtlsRefactor.initializedScopes(field));
             assertFalse(JdtlsRefactor.initializedScopes(field).isEmpty(), "D10: initializedScopes");
+
+            // A3: Organize Imports asks which Date and Duration are meant (java.util / java.sql, java.time /
+            // javax.xml.datatype) and imports the choices; unanswered, jdtls gave up and changed nothing.
+            List<String> askedNames = new CopyOnWriteArrayList<>();
+            s.setClientUi(new LspClientUi() {
+                @Override
+                public CompletableFuture<String> chooseImport(
+                        String serverId, String simpleName, int line, List<PickItem> items) {
+                    askedNames.add(
+                            simpleName + items.stream().map(PickItem::label).toList());
+                    return CompletableFuture.completedFuture(items.get(0).id());
+                }
+
+                @Override
+                public CompletableFuture<String> chooseAction(
+                        String serverId, org.eclipse.lsp4j.MessageType type, String message, List<String> actions) {
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                @Override
+                public CompletableFuture<String> inputBox(
+                        String serverId, String prompt, String value, String placeHolder) {
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                @Override
+                public CompletableFuture<String> quickPick(String serverId, String placeHolder, List<PickItem> items) {
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                @Override
+                public void openLocation(String serverId, Path file, int line, int column) {}
+            });
+            var organize = new org.eclipse.lsp4j.CodeActionParams(
+                    new org.eclipse.lsp4j.TextDocumentIdentifier(ambiguous),
+                    new Range(new Position(0, 0), new Position(6, 0)),
+                    new org.eclipse.lsp4j.CodeActionContext(List.of()));
+            String organized = String.valueOf(LspManager.asJson(get(s.rawRequest("java/organizeImports", organize))));
+            record("A3 asked", askedNames);
+            record("A3 organized", organized);
+            assertTrue(
+                    askedNames.stream().anyMatch(n -> n.startsWith("Date")), "A3: the ambiguous Date is asked about");
+            assertTrue(organized.contains("import java."), "A3: the chosen imports are written: " + organized);
 
             // D11: move twice() to the helper field, which it compares to null — an error jdtls asks about.
             var atTwice = actions(get(s.codeAction(app, range(pos(APP, "int twice", 6)), List.of())));

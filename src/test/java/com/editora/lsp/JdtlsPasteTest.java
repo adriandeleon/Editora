@@ -78,4 +78,58 @@ class JdtlsPasteTest {
         assertNull(JdtlsPaste.additionalEdit(JsonParser.parseString("{\"additionalEdit\":null}")));
         assertNull(JdtlsPaste.additionalEdit(JsonParser.parseString("[]")));
     }
+
+    /** A paste answer's additionalEdit: one TextEdit at line 2, an insertion or a one-line replacement. */
+    private static String edit(String newText, boolean insertion) {
+        var start = new com.google.gson.JsonObject();
+        start.addProperty("line", 2);
+        start.addProperty("character", 0);
+        var end = new com.google.gson.JsonObject();
+        end.addProperty("line", insertion ? 2 : 3);
+        end.addProperty("character", 0);
+        var range = new com.google.gson.JsonObject();
+        range.add("start", start);
+        range.add("end", end);
+        var textEdit = new com.google.gson.JsonObject();
+        textEdit.add("range", range);
+        textEdit.addProperty("newText", newText);
+        var edits = new com.google.gson.JsonArray();
+        edits.add(textEdit);
+        var changes = new com.google.gson.JsonObject();
+        changes.add("file:///p/A.java", edits);
+        var edit = new com.google.gson.JsonObject();
+        edit.add("changes", changes);
+        return edit.toString();
+    }
+
+    private static String newText(com.google.gson.JsonElement edit) {
+        return edit.getAsJsonObject()
+                .getAsJsonObject("changes")
+                .getAsJsonArray("file:///p/A.java")
+                .get(0)
+                .getAsJsonObject()
+                .get("newText")
+                .getAsString();
+    }
+
+    /** Only the imports the pasted text uses are added (Java review A11). */
+    @Test
+    void onlyThePastedNamesAreImported() {
+        String both = "import java.time.Instant;\nimport java.time.LocalDate;\n";
+        var kept =
+                JdtlsPaste.keepPastedImports(JsonParser.parseString(edit(both, true)), "Instant now = Instant.now();");
+        assertEquals("import java.time.Instant;\n", newText(kept));
+
+        assertNull(
+                JdtlsPaste.keepPastedImports(
+                        JsonParser.parseString(edit("\nimport java.time.LocalDate;\n", true)), "int z = 1;"),
+                "nothing the paste uses: no edit at all");
+        var star = JdtlsPaste.keepPastedImports(JsonParser.parseString(edit("import java.util.*;\n", true)), "int z;");
+        assertEquals("import java.util.*;\n", newText(star), "a package import cannot be judged by name");
+        var replacing = JdtlsPaste.keepPastedImports(JsonParser.parseString(edit(both, false)), "int z;");
+        assertEquals(both, newText(replacing), "a replacement could delete an existing import: left whole");
+        var statics = JdtlsPaste.keepPastedImports(
+                JsonParser.parseString(edit("import static java.lang.Math.max;\n", true)), "int m = max(a, b);");
+        assertEquals("import static java.lang.Math.max;\n", newText(statics));
+    }
 }

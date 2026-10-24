@@ -37,6 +37,15 @@ public interface LspClientUi {
     /** Asks for one of {@code items} ({@code metals/quickPick}); completes with its id, or null when cancelled. */
     CompletableFuture<String> quickPick(String serverId, @Nullable String placeHolder, List<PickItem> items);
 
+    /**
+     * Asks which class a simple name used on 0-based {@code line} means ({@code items}: the candidates, by fully
+     * qualified name); completes with the chosen item's id, or null when the user skipped it. jdtls asks this
+     * from Organize Imports ({@code java.action.organizeImports.chooseImports}).
+     */
+    default CompletableFuture<String> chooseImport(String serverId, String simpleName, int line, List<PickItem> items) {
+        return quickPick(serverId, simpleName, items);
+    }
+
     /** Opens {@code file} at the 0-based {@code line} and {@code column} ({@code metals-goto-location}). */
     void openLocation(String serverId, Path file, int line, int column);
 }

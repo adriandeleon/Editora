@@ -539,6 +539,12 @@ public final class LspManager {
         }
 
         @Override
+        public java.util.concurrent.CompletableFuture<String> chooseImport(
+                String serverId, String simpleName, int line, List<PickItem> items) {
+            return onFx(ui -> ui.chooseImport(serverId, simpleName, line, items));
+        }
+
+        @Override
         public void openLocation(String serverId, Path file, int line, int column) {
             Platform.runLater(() -> {
                 LspClientUi ui = clientUi;
@@ -4224,6 +4230,9 @@ public final class LspManager {
         // client-driven command, whose edit is one java/getRefactorEdit away.
         caps.put("inferSelectionSupport", List.of("extractMethod", "extractVariable", "extractField"));
         caps.put("advancedIntroduceParameterRefactoringSupport", true);
+        // jdtls asks through workspace/executeClientCommand which class an ambiguous name means (Organize
+        // Imports) and waits for the answer; LanguageServerSession.executeClientCommand gives it (review A3).
+        caps.put("executeClientCommandSupport", true);
         return Map.copyOf(caps);
     }
 
@@ -4983,8 +4992,10 @@ public final class LspManager {
         s.executeCommand(JdtlsPaste.COMMAND, List.of(params))
                 .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .whenComplete((r, e) -> {
-                    org.eclipse.lsp4j.WorkspaceEdit edit =
-                            e != null ? null : asWorkspaceEdit(JdtlsPaste.additionalEdit(asJson(r)));
+                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null
+                            ? null
+                            : asWorkspaceEdit(
+                                    JdtlsPaste.keepPastedImports(JdtlsPaste.additionalEdit(asJson(r)), pastedText));
                     Platform.runLater(() -> {
                         if (edit == null || !stillValid.getAsBoolean()) {
                             cb.accept(false);
@@ -5119,16 +5130,57 @@ public final class LspManager {
      * <p>Given a longer timeout than the other commands: a cold full build of a large project genuinely
      * takes minutes, and timing out early would leave the caller reporting failure while the build ran on.
      */
-    public void refreshProjectDiagnostics(Path file, Consumer<Boolean> cb) {
-        LanguageServerSession s = sessionFor(file);
+    public void refreshProjectDiagnostics(Path file, Consumer<BuildOutcome> cb) {
+        LanguageServerSession s = javaSessionFor(file);
         if (s == null || file == null) {
-            Platform.runLater(() -> cb.accept(false));
+            Platform.runLater(() -> cb.accept(BuildOutcome.UNAVAILABLE));
             return;
         }
         // (uri, isFullBuild) — a full build, since the point is the files we have NOT opened.
         s.rawRequest("java/buildWorkspace", Boolean.TRUE, BUILD_WORKSPACE_TIMEOUT)
                 .orTimeout(BUILD_WORKSPACE_TIMEOUT.toMinutes(), java.util.concurrent.TimeUnit.MINUTES)
-                .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null)));
+                .whenComplete((r, e) -> {
+                    BuildOutcome outcome = e != null ? BuildOutcome.UNAVAILABLE : buildOutcome(r);
+                    Platform.runLater(() -> cb.accept(outcome));
+                });
+    }
+
+    /**
+     * The jdtls session serving {@code file}: its own when jdtls manages it, else the one whose root holds it
+     * (the deepest) — a pom.xml or build.gradle belongs to the Java project beside it although another server, or
+     * none, edits it. Before this, Reload and Build Project run from a pom.xml tab went to lemminx-maven (Java
+     * review C2). Null when no jdtls serves the file's folder.
+     */
+    private @Nullable LanguageServerSession javaSessionFor(@Nullable Path file) {
+        LanguageServerSession own = sessionFor(file);
+        if (own != null && LspServerRegistry.JAVA_SERVER_ID.equals(own.serverId())) {
+            return own;
+        }
+        if (file == null) {
+            return null;
+        }
+        Path at = file.toAbsolutePath().normalize();
+        String prefix = sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID);
+        LanguageServerSession best = null;
+        for (var entry : sessionsByRoot.entrySet()) {
+            LanguageServerSession s = entry.getValue();
+            if (!entry.getKey().startsWith(prefix) || s.isDisposed()) {
+                continue;
+            }
+            Path root = s.root().toAbsolutePath().normalize();
+            if (at.startsWith(root)
+                    && (best == null
+                            || root.getNameCount()
+                                    > best.root().toAbsolutePath().normalize().getNameCount())) {
+                best = s;
+            }
+        }
+        return best;
+    }
+
+    /** Whether a jdtls serves {@code file}'s project, whichever server edits the file itself. */
+    public boolean hasJavaSession(@Nullable Path file) {
+        return javaSessionFor(file) != null;
     }
 
     /** What a jdtls {@code java/buildWorkspace} reported ({@code BuildWorkspaceStatus}), or {@link #UNAVAILABLE}. */
@@ -5147,7 +5199,7 @@ public final class LspManager {
      * jdtls (and java-debug inside it, for hot code replace) can see.
      */
     public void buildJavaWorkspace(Path file, boolean full, Consumer<BuildOutcome> cb) {
-        LanguageServerSession s = file == null ? null : sessionFor(file);
+        LanguageServerSession s = file == null ? null : javaSessionFor(file);
         if (s == null || !LspServerRegistry.JAVA_SERVER_ID.equals(s.serverId())) {
             Platform.runLater(() -> cb.accept(BuildOutcome.UNAVAILABLE));
             return;
@@ -5252,7 +5304,9 @@ public final class LspManager {
         ORGANIZED,
         UNCHANGED,
         /** The file's server has no way to organize imports. */
-        UNSUPPORTED
+        UNSUPPORTED,
+        /** The server failed or gave up (jdtls cancels the whole operation when it cannot ask about a name). */
+        FAILED
     }
 
     /**
@@ -5269,11 +5323,7 @@ public final class LspManager {
         }
         String serverId = s.serverId();
         if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
-            organizeImports(
-                    file,
-                    lastLine,
-                    lastChar,
-                    ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.UNCHANGED));
+            organizeJavaImports(s, file, lastLine, lastChar, cb);
             return;
         }
         if (PYTHON_SERVER_ID.equals(serverId)) {
@@ -5365,6 +5415,17 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(false));
             return;
         }
+        organizeJavaImports(s, file, lastLine, lastChar, outcome -> cb.accept(outcome == OrganizeOutcome.ORGANIZED));
+    }
+
+    /**
+     * jdtls's {@code java/organizeImports}. For a name with several candidates jdtls asks the client
+     * ({@code java.action.organizeImports.chooseImports}, answered by {@link LanguageServerSession}). Unanswered,
+     * it cancelled the whole operation and answered null, which reads exactly like "nothing to change" — so the
+     * question is what had to be answered (Java review A3); a request that fails is {@link OrganizeOutcome#FAILED}.
+     */
+    private void organizeJavaImports(
+            LanguageServerSession s, Path file, int lastLine, int lastChar, Consumer<OrganizeOutcome> cb) {
         var range = new org.eclipse.lsp4j.Range(new Position(0, 0), new Position(lastLine, lastChar));
         var params = new org.eclipse.lsp4j.CodeActionParams(
                 new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)),
@@ -5376,10 +5437,15 @@ public final class LspManager {
                 .whenComplete((r, e) -> {
                     org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
                     Platform.runLater(() -> {
-                        if (edit == null) {
-                            cb.accept(false);
+                        if (e != null) {
+                            cb.accept(OrganizeOutcome.FAILED);
+                        } else if (edit == null || !changesText(edit)) {
+                            cb.accept(OrganizeOutcome.UNCHANGED);
                         } else {
-                            applyWorkspaceEdit(edit, expected, cb);
+                            applyWorkspaceEdit(
+                                    edit,
+                                    expected,
+                                    ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.FAILED));
                         }
                     });
                 });
@@ -5410,12 +5476,16 @@ public final class LspManager {
      * <p>A <b>notification</b>, not a request (jdtls declares it {@code void}), so there is nothing to
      * report back and nothing to wait for; the result shows up as fresh diagnostics.
      */
-    public void reloadProjectConfiguration(Path file) {
-        LanguageServerSession s = sessionFor(file);
+    /** Asks the Java server of {@code file}'s project to reload its build configuration; false when there is none. */
+    public boolean reloadProjectConfiguration(Path file) {
+        LanguageServerSession s = javaSessionFor(file);
         if (s != null && file != null) {
+            // jdtls takes the build file itself as well as any source file of the project.
             s.rawNotify(
                     "java/projectConfigurationUpdate", new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)));
+            return true;
         }
+        return false;
     }
 
     public void classFileContents(Path anchorFile, @Nullable String jdtUri, Consumer<String> cb) {

@@ -1172,16 +1172,22 @@ final class LspCoordinator {
     void buildWorkspace() {
         EditorBuffer b = host.activeBuffer();
         Path path = b == null ? null : lspPath(b);
-        if (path == null || !lspManager.isManaged(path)) {
+        if (path == null || !lspManager.hasJavaSession(path)) {
             host.setStatus(tr("status.lsp.unavailable"));
             return;
         }
         setProjectWideProblems(true);
         ops.setLspLoading(true);
         host.setStatus(tr("status.lsp.buildingWorkspace"));
-        lspManager.refreshProjectDiagnostics(path, ok -> {
+        lspManager.refreshProjectDiagnostics(path, outcome -> {
             ops.setLspLoading(false);
-            host.setStatus(tr(ok ? "status.lsp.buildWorkspaceDone" : "status.lsp.buildWorkspaceFailed"));
+            // "Project built" over a build with errors read as success (Java review C15).
+            switch (outcome) {
+                case SUCCEEDED -> host.setStatus(tr("status.lsp.buildWorkspaceDone"));
+                case WITH_ERRORS -> host.setError(tr("status.lsp.buildWorkspaceErrors"));
+                case CANCELLED -> host.setStatus(tr("status.lsp.buildWorkspaceCancelled"));
+                case FAILED, UNAVAILABLE -> host.setError(tr("status.lsp.buildWorkspaceFailed"));
+            }
         });
     }
 
@@ -3237,6 +3243,12 @@ final class LspCoordinator {
         }
 
         @Override
+        public java.util.concurrent.CompletableFuture<String> chooseImport(
+                String serverId, String simpleName, int line, List<PickItem> items) {
+            return quickPick(serverId, tr("picker.lsp.chooseImport", simpleName, line + 1), items);
+        }
+
+        @Override
         public void openLocation(String serverId, Path file, int line, int column) {
             ops.openAndGoto(file, line, column);
         }
@@ -3841,16 +3853,18 @@ final class LspCoordinator {
         int lastLine = Math.max(0, area.getParagraphs().size() - 1);
         int lastChar = area.getParagraph(lastLine).length();
         lspManager.changeDocument(path, b.text()); // the server organizes the text it has
-        lspManager.organizeImportsAny(
-                path,
-                lastLine,
-                lastChar,
-                outcome -> host.setStatus(tr(
-                        switch (outcome) {
-                            case ORGANIZED -> "status.lsp.importsOrganized";
-                            case UNCHANGED -> "status.lsp.importsUnchanged";
-                            case UNSUPPORTED -> "status.lsp.importsUnsupported";
-                        })));
+        lspManager.organizeImportsAny(path, lastLine, lastChar, outcome -> {
+            if (outcome == LspManager.OrganizeOutcome.FAILED) {
+                host.setError(tr("status.lsp.importsFailed"));
+                return;
+            }
+            host.setStatus(tr(
+                    switch (outcome) {
+                        case ORGANIZED -> "status.lsp.importsOrganized";
+                        case UNCHANGED -> "status.lsp.importsUnchanged";
+                        case UNSUPPORTED, FAILED -> "status.lsp.importsUnsupported";
+                    }));
+        });
     }
 
     /** Copies the fully qualified name of the symbol at the caret ({@code java.getFullyQualifiedName}). */
@@ -3885,16 +3899,17 @@ final class LspCoordinator {
      * notification, so the only observable result is fresh diagnostics arriving.
      */
     void reloadProject() {
-        EditorBuffer b = activeLspBuffer();
-        if (b == null) {
-            return;
-        }
-        Path path = lspPath(b);
+        EditorBuffer b = host.activeBuffer(); // a pom.xml tab counts, whichever server (if any) edits it
+        Path path = b == null ? null : lspPath(b);
         if (path == null) {
+            host.setStatus(tr("status.lsp.unavailable"));
             return;
         }
-        lspManager.reloadProjectConfiguration(path);
-        host.setStatus(tr("status.lsp.projectReloading"));
+        if (lspManager.reloadProjectConfiguration(path)) {
+            host.setStatus(tr("status.lsp.projectReloading"));
+        } else {
+            host.setStatus(tr("status.lsp.unavailable"));
+        }
     }
 
     /**
