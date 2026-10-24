@@ -5,12 +5,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import com.editora.editor.language.ShellFiles;
 import com.editora.http.HttpFile;
 import com.editora.run.CompactSource;
 import com.editora.run.MainMethodScanner;
 import com.editora.run.MakefileTargets;
 import com.editora.test.JavaTestScanner;
+import com.editora.text.ShellFiles;
 import org.jspecify.annotations.Nullable;
 
 /**

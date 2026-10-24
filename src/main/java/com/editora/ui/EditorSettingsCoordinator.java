@@ -14,7 +14,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.highlight.GrammarRegistry;
-import com.editora.editor.language.LanguageRegistry;
+import com.editora.text.LanguageRegistry;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -661,11 +661,7 @@ final class EditorSettingsCoordinator {
         // combo made that unsearchable.)
         String current = names.contains(buffer.getLanguage()) ? buffer.getLanguage() : names.get(0);
         chooseSetting(
-                "buffer.setLanguage",
-                () -> names,
-                com.editora.editor.language.LanguageNames::display,
-                () -> current,
-                name -> {
+                "buffer.setLanguage", () -> names, com.editora.text.LanguageNames::display, () -> current, name -> {
                     buffer.setLanguageOverride(name);
                     host.previews().applyDefaultViewMode(buffer); // an untitled buffer just made Markdown
                     host.statusBar().refresh();
@@ -1179,7 +1175,7 @@ final class EditorSettingsCoordinator {
     /** Applies an already-resolved EditorConfig result without touching the filesystem. */
     void applyResolvedEditorConfig(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties properties) {
         // A shell script keeps LF and no BOM whatever a broad [*] section says: bash cannot run it otherwise.
-        com.editora.editorconfig.EditorConfigProperties p = com.editora.editor.language.ShellScripts.honoured(
+        com.editora.editorconfig.EditorConfigProperties p = com.editora.text.ShellScripts.honoured(
                 buffer.getLanguage(),
                 properties == null ? com.editora.editorconfig.EditorConfigProperties.EMPTY : properties);
         buffer.setEditorConfigProps(p);

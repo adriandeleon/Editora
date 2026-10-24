@@ -10,9 +10,9 @@ import java.util.function.Consumer;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.lsp.LspDiagnostic;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
+import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;

@@ -21,7 +21,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 
 import com.editora.editor.MenuIcons;
-import com.editora.editor.language.LanguageRegistry;
+import com.editora.text.LanguageRegistry;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
 import org.jspecify.annotations.Nullable;

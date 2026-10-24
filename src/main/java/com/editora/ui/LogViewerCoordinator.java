@@ -12,13 +12,13 @@ import javafx.application.Platform;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.language.LanguageRegistry;
 import com.editora.logviewer.LogFileNames;
 import com.editora.logviewer.LogFilter;
 import com.editora.logviewer.LogLevel;
 import com.editora.logviewer.LogNavigation;
 import com.editora.logviewer.LogPatterns;
 import com.editora.logviewer.LogTailService;
+import com.editora.text.LanguageRegistry;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
 

@@ -6,7 +6,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import com.editora.editor.search.SearchMatcher;
+import com.editora.text.SearchMatcher;
 import org.jspecify.annotations.Nullable;
 
 /**

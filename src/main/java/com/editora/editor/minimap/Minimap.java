@@ -18,10 +18,10 @@ import com.editora.editor.CanvasGuards;
 import com.editora.editor.OverlayPalette;
 import com.editora.editor.git.GitGutterLines;
 import com.editora.editor.git.GitHunk;
-import com.editora.editor.lsp.LspDiagnostic;
 import com.editora.editor.todo.TodoColors;
 import com.editora.editor.todo.TodoMark;
 import com.editora.markdown.MarkdownLint;
+import com.editora.text.LspDiagnostic;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 

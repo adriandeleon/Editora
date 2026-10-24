@@ -3,7 +3,7 @@ package com.editora.template;
 import java.util.Locale;
 import java.util.Set;
 
-import com.editora.editor.language.LanguageRegistry;
+import com.editora.text.LanguageRegistry;
 
 /**
  * "Can this be a file name on every platform Editora runs on?" — the one definition shared by the

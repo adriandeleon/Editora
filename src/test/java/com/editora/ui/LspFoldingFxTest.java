@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.editora.editor.fold.FoldManager;
-import com.editora.editor.fold.FoldRegions;
+import com.editora.text.FoldRegions;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

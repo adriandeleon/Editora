@@ -9,7 +9,7 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 
-import com.editora.editor.language.LanguageRegistry;
+import com.editora.text.LanguageRegistry;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -424,9 +424,8 @@ public final class FileIcons {
      */
     static boolean isEncryptedWithInnerType(String fileName) {
         return fileName != null
-                && com.editora.editor.crypto.EncryptedNames.extensionOf(fileName) != null
-                && !com.editora.editor.crypto.EncryptedNames.languageName(fileName)
-                        .equals(fileName);
+                && com.editora.text.EncryptedNames.extensionOf(fileName) != null
+                && !com.editora.text.EncryptedNames.languageName(fileName).equals(fileName);
     }
 
     /** {@code glyph} with a small lock at its lower right: the file is encrypted. */
@@ -503,7 +502,7 @@ public final class FileIcons {
         if (fileName == null) {
             return "generic";
         }
-        fileName = com.editora.editor.crypto.EncryptedNames.languageName(fileName); // notes.md.gpg: a Markdown glyph
+        fileName = com.editora.text.EncryptedNames.languageName(fileName); // notes.md.gpg: a Markdown glyph
         String base = fileName;
         int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
         if (slash >= 0) {

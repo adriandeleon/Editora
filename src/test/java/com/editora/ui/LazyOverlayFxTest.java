@@ -9,9 +9,9 @@ import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.StackPane;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.lsp.OccurrenceSpan;
-import com.editora.editor.search.SearchMatches;
 import com.editora.editor.todo.TodoMark;
+import com.editora.text.OccurrenceSpan;
+import com.editora.text.SearchMatches;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

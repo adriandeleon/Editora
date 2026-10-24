@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-import com.editora.editor.lsp.LspTextEdit;
+import com.editora.text.LspTextEdit;
 import org.jspecify.annotations.Nullable;
 
 /**

@@ -3,7 +3,7 @@ package com.editora.ui;
 import java.util.List;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.lsp.LspTextEdit;
+import com.editora.text.LspTextEdit;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
