@@ -50,6 +50,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tree asks jdtls (`workspace/willRenameFiles`) for the edits first, so references, `package` lines and imports
   follow; before, the class kept its old name and the project stopped compiling.
 
+- **Java: Generate, Refactor This and a command per refactoring.** **LSP: Generate…** lists the generators
+  (getters/setters, constructors, toString, equals/hashCode, overrides, delegates), **LSP: Refactor This…** the
+  refactorings at the caret, and Extract Variable / Constant / Field / Method, Introduce Parameter, Inline, Move,
+  Change Signature and Override/Implement Methods each have a command that runs the one jdtls offers there. They
+  are in a new **Code ▸ Refactor** submenu; before, all of them were reachable only through the quick-fix list.
+- **Next / Previous Problem and Show Problem at Caret.** Jump between the file's errors (warnings when there
+  are none) and read the one under the caret without the mouse.
+- **The "IntelliJ IDEA" keymap uses IntelliJ's Java chords:** Alt+Enter for quick fixes, Shift+F6 Rename,
+  F2/Shift+F2 next/previous problem, Ctrl+F1 problem at caret, Alt+Insert Generate, Ctrl+Alt+L/O format and
+  organize imports, Ctrl+N / Ctrl+Alt+Shift+N symbols, Ctrl+Alt+B implementations, Ctrl+Shift+B type,
+  Ctrl+H / Ctrl+Alt+H hierarchies, Ctrl+P parameter info, Ctrl+Alt+V/C/F/M/P/N, F6 Move, Ctrl+F6 Change
+  Signature, Ctrl+Alt+Shift+T Refactor This, Ctrl+O Override, Ctrl+Alt+Left/Right Back/Forward (and the macOS
+  equivalents). F2 is no longer Rename and Alt+Insert no longer New File (now Ctrl+Alt+Insert) in that keymap.
+  The default Emacs keymap gains a `C-c l` prefix for the language-server commands, `M-g M-n`/`M-g M-p` for
+  problems and `M-,`/`C-M-,` for back/forward; every keymap now binds Back and Forward.
+
 ### Changed
 
 - **Refactor: the text model the editor shares with other packages moved to a new `com.editora.text`.** The LSP value types (`LspTextEdit`, `LspDiagnostic`, `SemanticToken`, `OccurrenceSpan`), `FoldRegions`, the search matcher with `CaseFold` and `SearchMatches`, all of language detection (`LanguageRegistry`, `LanguageNames`, `ConfigFileType`, `ShellFiles`, `ShellScripts`, `Shebang`, `Modeline`) and `EncryptedNames` leave the editor sub-packages, with 13 tests. `lsp`, `search`, `crypto`, `template` and `editops` no longer depend on the editor; `editor.language` is gone, its classes having no presentation in them. `text` has its own 0.95 coverage floor. Internal-only — no behavior, dependency, or `module-info` change.
@@ -64,6 +80,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The quick-fix list puts the fix first.** It listed jdtls's actions in the server's order, so "Extract
+  interface..." was preselected and the fix for the squiggle sat below ten generators. Fixes now come first, then
+  assists, refactorings and source actions; repeated titles are dropped, rows say "Fix", "Refactor" or "Generate"
+  instead of LSP kind ids, and for Java the generators moved to Generate. Typing filters the list instead of
+  editing the code behind it, and the fixes for a line's problem are offered from anywhere on that line, not
+  only with the caret on the squiggle.
 - **Java: a refactoring that moves or creates files leaves the disk consistent.** A class rename, Move or
   Extract Interface changed files on disk but left their new text unsaved, so the project did not compile until
   every tab was saved. Every file such a refactoring touches is now saved. A file the refactoring opened only to

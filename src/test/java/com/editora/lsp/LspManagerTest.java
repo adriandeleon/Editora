@@ -827,4 +827,59 @@ class LspManagerTest {
                 "a user's own launcher has no folder to check");
         assertFalse(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, java.util.List.of()));
     }
+
+    /** A bare caret on no squiggle carries the diagnostics of its line, or quick fixes vanish off the token (A5). */
+    @Test
+    void aCaretOffTheSquiggleStillCarriesItsLinesDiagnostics() {
+        var onLine = new org.eclipse.lsp4j.Diagnostic(
+                new org.eclipse.lsp4j.Range(
+                        new org.eclipse.lsp4j.Position(4, 8), new org.eclipse.lsp4j.Position(4, 23)),
+                "Unhandled exception");
+        var elsewhere = new org.eclipse.lsp4j.Diagnostic(
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(9, 0), new org.eclipse.lsp4j.Position(9, 3)),
+                "Other");
+        var caret =
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 0));
+        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), caret));
+        var onToken = new org.eclipse.lsp4j.Range(
+                new org.eclipse.lsp4j.Position(4, 10), new org.eclipse.lsp4j.Position(4, 10));
+        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), onToken));
+        var selection =
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 2));
+        assertEquals(
+                List.of(),
+                LspManager.contextDiagnostics(List.of(onLine, elsewhere), selection),
+                "a selection is exact");
+    }
+
+    /** Fixes first, then assists, refactorings, source; duplicates dropped; preferred first (A4). */
+    @Test
+    void codeActionsAreGroupedByKindAndDeduplicated() {
+        var items = List.of(
+                new LspManager.CodeActionItem("Generate toString()...", "source.generate.toString", false, "a"),
+                new LspManager.CodeActionItem("Extract interface...", "refactor.extract.interface", false, "b"),
+                new LspManager.CodeActionItem("Organize imports", "quickassist", false, "c"),
+                new LspManager.CodeActionItem("Import 'LocalDate'", "quickfix", false, "d"),
+                new LspManager.CodeActionItem("Organize imports", "source.organizeImports", false, "e"),
+                new LspManager.CodeActionItem("Surround with try/catch", "quickfix", false, "f"));
+        assertEquals(
+                List.of(
+                        "Import 'LocalDate'",
+                        "Surround with try/catch",
+                        "Organize imports",
+                        "Extract interface...",
+                        "Generate toString()..."),
+                CodeActionKinds.arrange(items, i -> true).stream()
+                        .map(LspManager.CodeActionItem::title)
+                        .toList());
+        assertEquals(
+                List.of("Generate toString()...", "Organize imports"),
+                CodeActionKinds.arrange(items, i -> CodeActionKinds.group(i.kind()) == CodeActionKinds.Group.SOURCE)
+                        .stream()
+                        .map(LspManager.CodeActionItem::title)
+                        .toList());
+        assertTrue(CodeActionKinds.matches("refactor.extract.function", "refactor.extract"));
+        assertFalse(CodeActionKinds.matches("refactor.extracted", "refactor.extract"));
+        assertEquals(CodeActionKinds.Group.ASSIST, CodeActionKinds.group(""));
+    }
 }

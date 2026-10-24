@@ -25,6 +25,7 @@ import com.editora.lsp.InlayHintFilter;
 import com.editora.lsp.JdtlsGenerate;
 import com.editora.lsp.JdtlsRefactor;
 import com.editora.lsp.LspManager;
+import com.editora.lsp.LspServerRegistry;
 import com.editora.text.LspDiagnostic;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -4639,6 +4640,55 @@ final class LspCoordinator {
      * and its edits come back through {@code workspace/applyEdit} (→ {@link #applyWorkspaceEdits}).
      */
     void codeActions() {
+        // jdtls lists every generator at every caret; they have their own command (Generate), so the quick-fix
+        // list is about the caret (Java review A4). Other servers' source actions stay in it.
+        showCodeActions(
+                (serverId, item) -> !LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
+                        || com.editora.lsp.CodeActionKinds.group(item.kind())
+                                != com.editora.lsp.CodeActionKinds.Group.SOURCE,
+                "status.lsp.noCodeActions",
+                null);
+    }
+
+    /** Generate (IntelliJ's Alt+Insert): the source actions here — getters, constructors, toString, overrides. */
+    void generateActions() {
+        showCodeActions(
+                (serverId, item) -> com.editora.lsp.CodeActionKinds.group(item.kind())
+                        == com.editora.lsp.CodeActionKinds.Group.SOURCE,
+                "status.lsp.noGenerate",
+                null);
+    }
+
+    /** Refactor This (IntelliJ's Ctrl+Alt+Shift+T): the refactorings offered here. */
+    void refactorActions() {
+        showCodeActions(
+                (serverId, item) -> com.editora.lsp.CodeActionKinds.group(item.kind())
+                        == com.editora.lsp.CodeActionKinds.Group.REFACTOR,
+                "status.lsp.noRefactorings",
+                null);
+    }
+
+    /**
+     * One refactoring by its code-action kind ({@code refactor.extract.variable}, {@code refactor.move}, …), for
+     * the commands IntelliJ binds to its own chords: run at once when the server offers exactly one action of
+     * that kind here, listed when it offers several, and said when it offers none (Java review E3).
+     */
+    void refactoring(String kind, String commandId) {
+        showCodeActions(
+                (serverId, item) -> com.editora.lsp.CodeActionKinds.matches(item.kind(), kind),
+                "status.lsp.noRefactoringHere",
+                commandId);
+    }
+
+    /**
+     * The code actions at the caret (or selection) that {@code keep} accepts, arranged by {@link
+     * com.editora.lsp.CodeActionKinds}. {@code loneCommand} non-null: a single action runs without a list, and
+     * the empty message names that command.
+     */
+    private void showCodeActions(
+            java.util.function.BiPredicate<@Nullable String, LspManager.CodeActionItem> keep,
+            String emptyKey,
+            @Nullable String loneCommand) {
         EditorBuffer b = activeLspBuffer();
         if (b == null) {
             return;
@@ -4651,6 +4701,7 @@ final class LspCoordinator {
             host.setStatus(tr("status.lsp.noCodeActions"));
             return;
         }
+        String serverId = lspManager.managedServerId(path);
         CodeArea area = b.getFocusedArea();
         lspManager.changeDocument(path, b.text()); // sync latest text before the request
         var sel = area.getSelection();
@@ -4661,24 +4712,137 @@ final class LspCoordinator {
         var end = hasSelection
                 ? area.offsetToPosition(sel.getEnd(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
                 : start;
-        lspManager.codeActions(path, start.getMajor(), start.getMinor(), end.getMajor(), end.getMinor(), items -> {
+        lspManager.codeActions(path, start.getMajor(), start.getMinor(), end.getMajor(), end.getMinor(), all -> {
             if (b != host.activeBuffer()) {
                 return; // switched tabs while the server was thinking
             }
+            List<LspManager.CodeActionItem> items =
+                    com.editora.lsp.CodeActionKinds.arrange(all, item -> keep.test(serverId, item));
             if (items.isEmpty()) {
-                host.setStatus(tr("status.lsp.noCodeActions"));
+                host.setStatus(loneCommand == null ? tr(emptyKey) : tr(emptyKey, tr("command." + loneCommand)));
+                return;
+            }
+            if (loneCommand != null && items.size() == 1) {
+                applyChosenAction(path, items, codeActionRow(items.get(0)));
                 return;
             }
             // Anchored at the caret rather than a centred overlay card (#767): this acts on the symbol under
             // the cursor, which is where the user is looking. The editor keeps focus, so the caret stays
             // visible at the spot the fix will land while the list is open.
             b.showCodeActions(
-                    items.stream()
-                            .map(i ->
-                                    new com.editora.editor.lsp.CodeAction(i.title(), i.kind(), i.preferred(), i.raw()))
-                            .toList(),
+                    items.stream().map(LspCoordinator::codeActionRow).toList(),
                     chosen -> applyChosenAction(path, items, chosen));
         });
+    }
+
+    /** The popup's row for {@code item}: its title, and a word for its group instead of the raw LSP kind (A17). */
+    private static com.editora.editor.lsp.CodeAction codeActionRow(LspManager.CodeActionItem item) {
+        String label = item.kind().isBlank()
+                ? ""
+                : tr("lsp.codeAction.group."
+                        + com.editora.lsp.CodeActionKinds.group(item.kind())
+                                .name()
+                                .toLowerCase(java.util.Locale.ROOT));
+        return new com.editora.editor.lsp.CodeAction(item.title(), label, item.preferred(), item.raw());
+    }
+
+    // --- problems at the caret (Java review A6) -------------------------------------------------------
+
+    /**
+     * Next / Previous Problem (IntelliJ's F2 / Shift+F2): moves the caret to the next error of the file after it
+     * (or the previous one before it), wrapping, and says what it is. Warnings and the rest when the file has
+     * no errors. Before this a diagnostic could only be read with the mouse or in the Problems window.
+     */
+    void gotoProblem(boolean forward) {
+        EditorBuffer b = host.activeBuffer();
+        Path path = b == null ? null : lspPath(b);
+        if (b == null || path == null) {
+            host.setStatus(tr("status.lsp.noProblems"));
+            return;
+        }
+        List<LspDiagnostic> here = problems.getOrDefault(ops.canonicalize(path), List.of());
+        List<LspDiagnostic> errors = here.stream()
+                .filter(d -> d.severity() == LspDiagnostic.Severity.ERROR)
+                .toList();
+        List<LspDiagnostic> candidates = new java.util.ArrayList<>(errors.isEmpty() ? here : errors);
+        if (candidates.isEmpty()) {
+            host.setStatus(tr("status.lsp.noProblems"));
+            return;
+        }
+        candidates.sort(
+                java.util.Comparator.comparingInt(LspDiagnostic::startLine).thenComparingInt(LspDiagnostic::startCol));
+        CodeArea area = b.getFocusedArea();
+        int line = area.getCurrentParagraph();
+        int col = area.getCaretColumn();
+        LspDiagnostic target = nextProblem(candidates, line, col, forward);
+        int targetLine = Math.min(target.startLine(), area.getParagraphs().size() - 1);
+        int targetCol =
+                Math.min(target.startCol(), area.getParagraph(targetLine).length());
+        area.moveTo(targetLine, targetCol);
+        area.requestFollowCaret();
+        sayProblem(target);
+    }
+
+    /** Pure: the first problem after ({@code forward}) or before the caret, wrapping; {@code sorted} is non-empty. */
+    static LspDiagnostic nextProblem(List<LspDiagnostic> sorted, int line, int col, boolean forward) {
+        if (forward) {
+            for (LspDiagnostic d : sorted) {
+                if (d.startLine() > line || (d.startLine() == line && d.startCol() > col)) {
+                    return d;
+                }
+            }
+            return sorted.get(0);
+        }
+        for (int i = sorted.size() - 1; i >= 0; i--) {
+            LspDiagnostic d = sorted.get(i);
+            if (d.startLine() < line || (d.startLine() == line && d.startCol() < col)) {
+                return d;
+            }
+        }
+        return sorted.get(sorted.size() - 1);
+    }
+
+    /** Show Problem at Caret (IntelliJ's Ctrl+F1): says the problems the caret is on, or on its line. */
+    void problemAtCaret() {
+        EditorBuffer b = host.activeBuffer();
+        Path path = b == null ? null : lspPath(b);
+        if (b == null || path == null) {
+            host.setStatus(tr("status.lsp.noProblemHere"));
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        int line = area.getCurrentParagraph();
+        int col = area.getCaretColumn();
+        LspDiagnostic best = null;
+        for (LspDiagnostic d : problems.getOrDefault(ops.canonicalize(path), List.of())) {
+            boolean onLine = d.startLine() <= line && line <= d.endLine();
+            boolean atCaret = onLine
+                    && (d.startLine() < line || d.startCol() <= col)
+                    && (d.endLine() > line || col <= d.endCol());
+            if (onLine
+                    && (best == null
+                            || atCaret
+                            || d.severity().ordinal() < best.severity().ordinal())) {
+                best = d;
+                if (atCaret) {
+                    break;
+                }
+            }
+        }
+        if (best == null) {
+            host.setStatus(tr("status.lsp.noProblemHere"));
+        } else {
+            sayProblem(best);
+        }
+    }
+
+    private void sayProblem(LspDiagnostic d) {
+        String text = tr("status.lsp.problem", d.startLine() + 1, d.message());
+        if (d.severity() == LspDiagnostic.Severity.ERROR) {
+            host.setError(text);
+        } else {
+            host.setStatus(text);
+        }
     }
 
     /**

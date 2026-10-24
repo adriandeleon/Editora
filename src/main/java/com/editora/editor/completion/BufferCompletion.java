@@ -614,6 +614,20 @@ public final class BufferCompletion {
 
     public void installCommitCharacters(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            // The quick-fix list is open: what is typed filters it and does not reach the text.
+            CodeActionPopup quickFixes = codeActionPopup;
+            if (!e.isConsumed()
+                    && quickFixes != null
+                    && quickFixes.isShowing()
+                    && e.getCharacter().length() == 1
+                    && !e.isControlDown()
+                    && !e.isMetaDown()
+                    && !Character.isISOControl(e.getCharacter().charAt(0))) {
+                quickFixes.type(e.getCharacter());
+                e.consume();
+            }
+        });
+        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
             if (e.isConsumed()
                     || e.getCharacter().length() != 1
                     || !completionPopupShowing()
@@ -719,11 +733,26 @@ public final class BufferCompletion {
                             e.consume();
                         }
                     }
+                    case BACK_SPACE -> {
+                        // Backspace edits the filter while there is one; with none it dismisses, as it edits.
+                        if (quickFixes.backspace()) {
+                            e.consume();
+                        } else {
+                            hideCodeActions();
+                        }
+                    }
                     default -> {
-                        // Anything else dismisses: the list is about the caret's current position, and a
-                        // keystroke that moves or edits invalidates it. A modifier on its own does neither —
-                        // and Control goes down before the N/P/G of the chords above, so it must not close.
-                        if (!e.getCode().isModifierKey()) hideCodeActions();
+                        // A printable key filters the list (its KEY_TYPED is taken below), as IntelliJ's speed
+                        // search does; typing used to dismiss it and edit the code (Java review E6). Anything else
+                        // dismisses: the list is about the caret's current position, and a keystroke that moves
+                        // or edits invalidates it. A modifier on its own does neither — and Control goes down
+                        // before the N/P/G of the chords above, so it must not close.
+                        boolean printable = !e.getText().isEmpty()
+                                && !e.isControlDown()
+                                && !e.isAltDown()
+                                && !e.isMetaDown()
+                                && !Character.isISOControl(e.getText().charAt(0));
+                        if (!printable && !e.getCode().isModifierKey()) hideCodeActions();
                     }
                 }
                 return;

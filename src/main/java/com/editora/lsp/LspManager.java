@@ -3770,7 +3770,7 @@ public final class LspManager {
             return;
         }
         var range = new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
-        List<org.eclipse.lsp4j.Diagnostic> context = diagnosticsOverlapping(rawDiagnosticsFor(file), range);
+        List<org.eclipse.lsp4j.Diagnostic> context = contextDiagnostics(rawDiagnosticsFor(file), range);
         EditBasis basis = editBasis(s);
         Map<Path, String> expected = basis.documents();
         long sentAt = basis.sentAtMillis();
@@ -3803,6 +3803,31 @@ public final class LspManager {
             }
             Platform.runLater(() -> cb.accept(items));
         });
+    }
+
+    /**
+     * Pure: what a code-action request at {@code range} carries as its context — the diagnostics overlapping it,
+     * or, for a bare caret on no squiggle, those on the caret's line. The quick fixes come from the context's
+     * diagnostics, so with the caret at the start of a line, after its {@code ;} or on the next word, there were
+     * none (Java review A5).
+     */
+    static List<org.eclipse.lsp4j.Diagnostic> contextDiagnostics(
+            List<org.eclipse.lsp4j.Diagnostic> all, org.eclipse.lsp4j.Range range) {
+        List<org.eclipse.lsp4j.Diagnostic> overlapping = diagnosticsOverlapping(all, range);
+        if (!overlapping.isEmpty() || !range.getStart().equals(range.getEnd())) {
+            return overlapping;
+        }
+        int line = range.getStart().getLine();
+        List<org.eclipse.lsp4j.Diagnostic> out = new ArrayList<>();
+        for (var d : all) {
+            if (d != null
+                    && d.getRange() != null
+                    && d.getRange().getStart().getLine() <= line
+                    && line <= d.getRange().getEnd().getLine()) {
+                out.add(d);
+            }
+        }
+        return out;
     }
 
     /** Pure: the diagnostics whose range overlaps {@code range} (what a code-action context should carry). */

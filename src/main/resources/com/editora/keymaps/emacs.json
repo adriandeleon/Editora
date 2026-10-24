@@ -226,5 +226,22 @@
   "C-c C-d t": "debug.toggleBreakpointEnabled",
   "C-c C-d s": "debug.smartStepInto",
   "C-c C-d h": "debug.applyCodeChanges",
-  "C-c C-d f": "debug.restartFrame"
+  "C-c C-d f": "debug.restartFrame",
+  "C-c l a": "lsp.codeActions",
+  "C-c l g": "lsp.generate",
+  "C-c l t": "lsp.refactorThis",
+  "C-c l r": "lsp.rename",
+  "C-c l f": "lsp.formatDocument",
+  "C-c l o": "lsp.organizeImports",
+  "C-c l s": "lsp.signatureHelp",
+  "C-c l i": "lsp.gotoImplementation",
+  "C-c l d": "lsp.gotoTypeDefinition",
+  "C-c l h": "lsp.typeHierarchy",
+  "C-c l c": "lsp.callHierarchy",
+  "C-c l e": "lsp.problemAtCaret",
+  "C-c l u": "lsp.undoRefactoring",
+  "M-g M-n": "lsp.nextProblem",
+  "M-g M-p": "lsp.previousProblem",
+  "M-,": "nav.back",
+  "C-M-,": "nav.forward"
 }

@@ -44,7 +44,14 @@ public final class CodeActionPopup {
 
     private final Popup popup = new Popup();
     private final ListView<CodeAction> list = new ListView<>();
+    /** What was typed while the list is open; it narrows the list to titles containing it (Java review E6). */
+    private final Label filterLabel = new Label();
+
     private Consumer<CodeAction> onAccept = a -> {};
+    private List<CodeAction> all = List.of();
+    private String filter = "";
+    private @org.jspecify.annotations.Nullable Window owner;
+    private @org.jspecify.annotations.Nullable Bounds caret;
 
     public CodeActionPopup() {
         list.getStyleClass().addAll("completion-list", "code-action-list");
@@ -61,7 +68,10 @@ public final class CodeActionPopup {
                 }
             }
         });
-        VBox box = new VBox(list);
+        filterLabel.getStyleClass().add("completion-detail");
+        filterLabel.setManaged(false);
+        filterLabel.setVisible(false);
+        VBox box = new VBox(filterLabel, list);
         box.getStyleClass().addAll("completion-popup", "code-action-popup");
         popup.getContent().add(box);
         popup.setAutoFix(true); // keep it on screen near a window edge
@@ -131,12 +141,68 @@ public final class CodeActionPopup {
         }
     }
 
+    /** Adds {@code text} to the filter and narrows the list; a filter nothing matches is not taken. */
+    public void type(String text) {
+        String next = filter + text;
+        if (matching(all, next).isEmpty()) {
+            return;
+        }
+        filter = next;
+        refilter();
+    }
+
+    /** Removes the filter's last character; false when there was none (Backspace then dismisses). */
+    public boolean backspace() {
+        if (filter.isEmpty()) {
+            return false;
+        }
+        filter = filter.substring(0, filter.length() - 1);
+        refilter();
+        return true;
+    }
+
+    /** The filter typed so far. */
+    public String filter() {
+        return filter;
+    }
+
+    /** The actions whose title contains {@code filter}, ignoring case. Pure. */
+    static List<CodeAction> matching(List<CodeAction> actions, String filter) {
+        if (filter == null || filter.isEmpty()) {
+            return actions;
+        }
+        String f = filter.toLowerCase(java.util.Locale.ROOT);
+        return actions.stream()
+                .filter(a -> a.title() != null
+                        && a.title().toLowerCase(java.util.Locale.ROOT).contains(f))
+                .toList();
+    }
+
+    private void refilter() {
+        filterLabel.setText(filter);
+        filterLabel.setManaged(!filter.isEmpty());
+        filterLabel.setVisible(!filter.isEmpty());
+        if (owner != null && caret != null) {
+            place(owner, caret, matching(all, filter));
+        }
+    }
+
     /** Shows the list just below {@code caretScreen}, preselecting the server's preferred action if any. */
     public void show(Window owner, Bounds caretScreen, List<CodeAction> actions) {
         if (owner == null || caretScreen == null || actions == null || actions.isEmpty()) {
             hide();
             return;
         }
+        this.owner = owner;
+        this.caret = caretScreen;
+        all = List.copyOf(actions);
+        filter = "";
+        filterLabel.setManaged(false);
+        filterLabel.setVisible(false);
+        place(owner, caretScreen, actions);
+    }
+
+    private void place(Window owner, Bounds caretScreen, List<CodeAction> actions) {
         list.getItems().setAll(actions);
         int preferred = 0;
         for (int i = 0; i < actions.size(); i++) {
@@ -173,6 +239,10 @@ public final class CodeActionPopup {
             popup.hide();
         }
         list.getItems().clear();
+        all = List.of();
+        filter = "";
+        owner = null;
+        caret = null;
     }
 
     /** Width that fits the widest title plus its kind column, clamped. */

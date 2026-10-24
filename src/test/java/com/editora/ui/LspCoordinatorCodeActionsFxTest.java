@@ -165,7 +165,7 @@ class LspCoordinatorCodeActionsFxTest {
                         .map(com.editora.editor.lsp.CodeAction::title)
                         .toList());
         assertTrue(buffer.offered.get(0).preferred());
-        assertEquals("quickfix", buffer.offered.get(1).kind());
+        assertEquals(tr("lsp.codeAction.group.fix"), buffer.offered.get(1).kind(), "a word, not the LSP kind (A17)");
         assertEquals(
                 range(1, 4, 13),
                 FakeLanguageServer.last(fx.server().codeActions).getRange());

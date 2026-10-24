@@ -601,6 +601,20 @@ class LspWorkspaceEditFxTest {
         assertEquals(com.editora.i18n.Messages.tr("status.lsp.refactoringChangedSince"), host.error);
     }
 
+    /** F2 / Shift+F2 move to the next or previous problem, wrapping (Java review A6). */
+    @Test
+    void theNextProblemWraps() {
+        var a = new com.editora.text.LspDiagnostic(
+                2, 4, 2, 9, com.editora.text.LspDiagnostic.Severity.ERROR, "a", null, "java");
+        var b = new com.editora.text.LspDiagnostic(
+                7, 0, 7, 3, com.editora.text.LspDiagnostic.Severity.ERROR, "b", null, "java");
+        var sorted = List.of(a, b);
+        assertEquals(b, LspCoordinator.nextProblem(sorted, 2, 4, true), "past the one the caret is on");
+        assertEquals(a, LspCoordinator.nextProblem(sorted, 9, 0, true), "wraps to the first");
+        assertEquals(a, LspCoordinator.nextProblem(sorted, 7, 0, false));
+        assertEquals(b, LspCoordinator.nextProblem(sorted, 0, 0, false), "wraps to the last");
+    }
+
     @Test
     void theEndOfATextIsCountedInUtf16() {
         assertEquals(new Position(0, 0), LspCoordinator.endOf(""));
