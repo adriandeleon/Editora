@@ -118,8 +118,9 @@ final class RunConfigurationCoordinator {
      * <b>identity</b>, never by name — a real configuration a user happens to name "Edit Configurations…"
      * must still behave like a configuration.
      *
-     * <p>It is not a selectable value. Choosing it reverts the selection and opens Settings, so
-     * {@code host.runConfigCombo().getValue()} is never the sentinel by the time anything reads it.
+     * <p>It is not a selectable value. Choosing it reverts the selection (on the next pulse) and opens the
+     * Run Configurations window; until that revert runs the combo holds it, so {@link #selectedRunConfig}
+     * reads it as no selection.
      */
     static final com.editora.config.RunConfiguration EDIT_CONFIGS_ROW =
             new com.editora.config.RunConfiguration("", "", "", "", "", "");
@@ -267,15 +268,24 @@ final class RunConfigurationCoordinator {
                 return;
             }
             if (now == EDIT_CONFIGS_ROW) {
-                // Put the real selection back first, so nothing downstream — the Run buttons, the persisted
-                // selectedRunConfig, a launch — ever sees the sentinel as the chosen configuration.
-                revertingRunConfigRow = true;
-                try {
-                    host.runConfigCombo().setValue(was == EDIT_CONFIGS_ROW ? null : was);
-                } finally {
-                    revertingRunConfigRow = false;
-                }
-                editRunConfigs();
+                // Put the real selection back, so nothing downstream — the Run buttons, the persisted
+                // selectedRunConfig, a launch — ever sees the sentinel as the chosen configuration. Later, not
+                // here: this runs inside the popup list's own selection change, and reverting to null (no
+                // configurations yet) emptied that selection under the click. JavaFX's ListViewBehavior then
+                // threw IndexOutOfBoundsException and the list stayed on this row, so picking it again was no
+                // change and the editor never reopened (RunConfigToolbarFxTest).
+                javafx.application.Platform.runLater(() -> {
+                    if (host.runConfigCombo().getValue() != EDIT_CONFIGS_ROW) {
+                        return; // a refresh already replaced it
+                    }
+                    revertingRunConfigRow = true;
+                    try {
+                        host.runConfigCombo().setValue(was == EDIT_CONFIGS_ROW ? null : was);
+                    } finally {
+                        revertingRunConfigRow = false;
+                    }
+                    editRunConfigs();
+                });
                 return;
             }
             host.config().getWorkspaceState().setSelectedRunConfig(now == null ? "" : now.name());
@@ -347,8 +357,8 @@ final class RunConfigurationCoordinator {
         // own ListView is a listener on them: a combo whose items shrink under a selection in flight is the
         // shape that makes JavaFX's ListViewBehavior read a stale added-range and throw
         // IndexOutOfBoundsException out to the uncaught handler (reproduced against JavaFX 26 in
-        // ComboItemsMutationFxTest). Whether that is the crash seen in the wild is unproven — this closes the
-        // one place in the app carrying the shape.
+        // ComboItemsMutationFxTest). The crash seen in the wild turned out to be the Edit row's revert emptying
+        // the selection mid-click (see setupRunConfigCombo); this still closes the other place with the shape.
         List<com.editora.config.RunConfiguration> rows = new ArrayList<>(configs);
         rows.add(EDIT_CONFIGS_ROW);
         host.runConfigCombo().getItems().setAll(rows);
@@ -480,7 +490,9 @@ final class RunConfigurationCoordinator {
 
     /** The configuration the toolbar's Run/Debug buttons act on, or null with nothing selected. */
     com.editora.config.@Nullable RunConfiguration selectedRunConfig() {
-        return host.runConfigCombo() == null ? null : host.runConfigCombo().getValue();
+        com.editora.config.RunConfiguration value =
+                host.runConfigCombo() == null ? null : host.runConfigCombo().getValue();
+        return value == EDIT_CONFIGS_ROW ? null : value; // the Edit row, until its revert runs
     }
 
     /** Runs the selected configuration. The button chooses the verb; the configuration never does. */
