@@ -310,7 +310,10 @@ public enum ConfigSchema {
                     Map.entry(140, (Migration) ConfigMigrations::identity),
                     // v141→142: + mavenPomCentralIndex (off): lemminx-maven may use the Maven Central index for
                     // pom.xml completion. Additive: absent is the default (local repository only, as before).
-                    Map.entry(141, (Migration) ConfigMigrations::identity)),
+                    Map.entry(141, (Migration) ConfigMigrations::identity),
+                    // v142→143: + latestReleaseVersion/latestReleaseUrl/lastUpdateCheckOkEpoch, the last update
+                    // check's answer kept for the About panel. Additive bookkeeping: absent means "not checked yet".
+                    Map.entry(142, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -500,7 +503,13 @@ public enum ConfigSchema {
      */
     public java.util.Set<String> selfMaintainedKeys() {
         return switch (this) {
-            case SETTINGS -> java.util.Set.of("lastUpdateCheckEpoch", "dismissedUpdateVersion");
+            case SETTINGS ->
+                java.util.Set.of(
+                        "lastUpdateCheckEpoch",
+                        "dismissedUpdateVersion",
+                        "latestReleaseVersion",
+                        "latestReleaseUrl",
+                        "lastUpdateCheckOkEpoch");
             case PROJECTS -> java.util.Set.of("activeProjectId", "openProjectIds");
             default -> java.util.Set.of();
         };
