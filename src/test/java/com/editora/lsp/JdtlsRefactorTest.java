@@ -284,4 +284,78 @@ class JdtlsRefactorTest {
                 .map(p -> p.getAsJsonObject().get("originalIndex").getAsInt())
                 .toList();
     }
+
+    // --- Extract at a caret, field scopes, move confirmation (Java review D7, D10, D11) -------------------
+
+    private static JdtlsRefactor.Request request(String name, String params, String info) {
+        return JdtlsRefactor.parse(JdtlsRefactor.COMMAND, List.of(json("\"" + name + "\""), json(params), json(info)));
+    }
+
+    private static final String SELECTED = """
+            {"textDocument":{"uri":"file:///p/App.java"},
+             "range":{"start":{"line":9,"character":12},"end":{"line":9,"character":30}}}
+            """;
+
+    @Test
+    void anExtractionAtABareCaretAsksTheServerWhichExpression() {
+        assertTrue(JdtlsRefactor.needsInferredSelection(request("extractMethod", PARAMS, "{}")));
+        assertTrue(JdtlsRefactor.needsInferredSelection(request("extractField", PARAMS, "{}")));
+        assertTrue(JdtlsRefactor.needsInferredSelection(request("extractVariableAllOccurrence", PARAMS, "{}")));
+        assertFalse(JdtlsRefactor.needsInferredSelection(request("extractMethod", SELECTED, "{}")), "a selection");
+        assertFalse(JdtlsRefactor.needsInferredSelection(request("introduceParameter", PARAMS, "{}")));
+        assertFalse(JdtlsRefactor.needsInferredSelection(request("convertVariableToField", PARAMS, "{}")));
+
+        var params = JdtlsRefactor.inferSelectionParams("extractMethod", json(PARAMS));
+        assertEquals("extractMethod", params.get("command").getAsString());
+        assertEquals(json(PARAMS), params.get("context"));
+    }
+
+    @Test
+    void theInferredExpressionsAreReadAndSentBackWhole() {
+        var found = JdtlsRefactor.selections(json("""
+                [{"name":"prefix.repeat(times)","offset":120,"length":19},
+                 {"name":"String  s =\n   prefix.repeat(times);","offset":110,"length":40,
+                  "params":["Current method","Field declaration","Class constructors"]},
+                 {"name":"no offset"}]
+                """));
+        assertEquals(2, found.size(), "an entry without offset and length cannot be extracted");
+        assertEquals("prefix.repeat(times)", found.get(0).label());
+        assertEquals("String s = prefix.repeat(times);", found.get(1).label(), "one line in the picker");
+        assertEquals(
+                List.of("Current method", "Field declaration", "Class constructors"),
+                found.get(1).initializedScopes());
+        assertTrue(JdtlsRefactor.selections(json("null")).isEmpty());
+
+        JsonArray both = JdtlsRefactor.extractArguments("Current method", found.get(0));
+        assertEquals("Current method", both.get(0).getAsString());
+        assertEquals(120, both.get(1).getAsJsonObject().get("offset").getAsInt());
+        assertEquals(0, JdtlsRefactor.extractArguments(null, null).size());
+        assertEquals(1, JdtlsRefactor.extractArguments(null, found.get(0)).size());
+    }
+
+    @Test
+    void anExtractedFieldOffersTheScopesFromTheCommandInfo() {
+        var request =
+                request("extractField", SELECTED, "{\"initializedScopes\":[\"Field declaration\",\"Current method\"]}");
+        assertEquals(List.of("Field declaration", "Current method"), JdtlsRefactor.initializedScopes(request));
+        assertTrue(JdtlsRefactor.initializedScopes(request("extractVariable", SELECTED, "{}"))
+                .isEmpty());
+    }
+
+    @Test
+    void aMoveWithProblemsIsAskedAgainWithItsToken() {
+        assertEquals(
+                "t-1",
+                JdtlsRefactor.confirmationToken(
+                        json("{\"errorMessage\":\"x is not visible\",\"confirmationToken\":\"t-1\"}")));
+        assertNull(JdtlsRefactor.confirmationToken(json("{\"edit\":{\"changes\":{}}}")));
+        assertNull(JdtlsRefactor.confirmationToken(json("{\"confirmationToken\":\"  \"}")));
+        assertNull(JdtlsRefactor.confirmationToken(null));
+
+        var asked = JdtlsRefactor.moveParams("moveInstanceMethod", "file:///p/App.java", json(PARAMS), json("{}"));
+        var again = JdtlsRefactor.withConfirmationToken(asked, "t-1");
+        assertEquals("t-1", again.get("confirmationToken").getAsString());
+        assertFalse(asked.has("confirmationToken"), "the first request is left as it was");
+        assertEquals(asked.get("destination"), again.get("destination"));
+    }
 }

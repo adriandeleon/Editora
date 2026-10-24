@@ -627,14 +627,70 @@ class LspManagerTest {
                 "jdtls offers Extract Interface only with both flags");
     }
 
+    /**
+     * Extract at a bare caret (the expression picker over {@code java/inferSelection}), Introduce Parameter
+     * through {@code java/getRefactorEdit}, and the move confirmation are driven by {@code LspCoordinator}
+     * (Java review D7, D11).
+     */
+    @Test
+    void theInferredSelectionAndMoveConfirmationFlowsAreDeclared() {
+        var caps = LspManager.javaExtendedClientCapabilities();
+
+        assertEquals(List.of("extractMethod", "extractVariable", "extractField"), caps.get("inferSelectionSupport"));
+        assertEquals(Boolean.TRUE, caps.get("advancedIntroduceParameterRefactoringSupport"));
+        assertEquals(Boolean.TRUE, caps.get("moveRefactoringConfirmationSupport"));
+    }
+
     /** Each of these changes an answer into something that needs a client flow Editora does not have. */
     @Test
     void theCapabilitiesWithoutAClientFlowAreNotDeclared() {
         var caps = LspManager.javaExtendedClientCapabilities();
 
-        assertFalse(caps.containsKey("inferSelectionSupport"), "extract with no selection: an expression picker");
-        assertFalse(caps.containsKey("advancedIntroduceParameterRefactoringSupport"), "needs inferSelection");
         assertFalse(caps.containsKey("advancedOrganizeImportsSupport"), "an ambiguous-import chooser");
+        assertFalse(caps.containsKey("executeClientCommandSupport"), "workspace/executeClientCommand for jdtls");
+    }
+
+    /**
+     * jdtls reads its preferences by dotted key ({@code java.signatureHelp.description.enabled}), walking the
+     * nested maps. A value placed one level too high resolves to no key at all, which is how the signature
+     * Javadoc stayed off (Java review A2) — so these are checked by their flattened names, in both channels.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void theJavaPreferencesReachJdtlsUnderTheirReadKeys() {
+        Map<String, Object> init = (Map<String, Object>)
+                ((Map<String, Object>) LspManager.javaInitOptions(List.of()).get("settings")).get("java");
+        Map<String, Object> pushed =
+                (Map<String, Object>) LspServerSettings.push("java", false).get("java");
+        for (Map<String, Object> java : List.of(init, pushed)) {
+            Map<String, Object> keys = flatten("java", java);
+            assertEquals(Boolean.TRUE, keys.get("java.signatureHelp.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.signatureHelp.description.enabled"));
+            assertEquals(LspServerSettings.FILTERED_TYPES, keys.get("java.completion.filteredTypes"));
+            assertEquals("all", keys.get("java.inlayHints.parameterNames.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.inlayHints.parameterNames.suppressWhenSameNameNumbered"));
+            assertEquals(Boolean.TRUE, keys.get("java.inlayHints.variableTypes.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.inlayHints.parameterTypes.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.symbols.includeSourceMethodDeclarations"));
+            assertEquals(Boolean.TRUE, keys.get("java.edit.smartSemicolonDetection.enabled"));
+            assertEquals(Boolean.FALSE, keys.get("java.format.onType.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.referencesCodeLens.enabled"));
+            assertEquals("all", keys.get("java.implementationCodeLens"));
+        }
+        assertEquals(Boolean.FALSE, flatten("java", init).get("java.autobuild.enabled"), "init keeps autobuild off");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> flatten(String prefix, Map<String, Object> map) {
+        Map<String, Object> out = new java.util.HashMap<>();
+        map.forEach((k, v) -> {
+            if (v instanceof Map<?, ?> nested) {
+                out.putAll(flatten(prefix + "." + k, (Map<String, Object>) nested));
+            } else {
+                out.put(prefix + "." + k, v);
+            }
+        });
+        return out;
     }
 
     /** The options object must still carry what it did before — the flags are additive to it. */

@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -39,8 +38,8 @@ final class WorkspaceSymbolPopup {
         /** Runs {@code workspace/symbol} for {@code text}; {@code cb} is delivered on the FX thread. */
         void query(String text, Consumer<List<WorkspaceSymbolMatch>> cb);
 
-        /** Opens {@code file} and jumps to the 0-based {@code line}/{@code character}, focusing the editor. */
-        void open(Path file, int line, int character);
+        /** Opens the symbol's file (or its library source) at its 0-based line/character, focusing the editor. */
+        void open(WorkspaceSymbolMatch match);
     }
 
     private static final double CELL_HEIGHT = 26;
@@ -137,7 +136,7 @@ final class WorkspaceSymbolPopup {
             return;
         }
         overlayHost.hide();
-        ops.open(m.file(), m.line(), m.character());
+        ops.open(m);
     }
 
     /** The query the in-flight request was issued for, so its results can be ranked when they land. */
@@ -168,7 +167,8 @@ final class WorkspaceSymbolPopup {
      * it back — jdtls in particular returns something close to index order, so an exact name can sit below
      * a dozen incidental hits. This does not re-filter (a symbol the server chose to return is kept even
      * if the name alone doesn't match — the server may have matched on the container), it only sorts;
-     * anything unmatched keeps its server order at the end.
+     * anything unmatched keeps its server order at the end. Between equally good names, the project's own
+     * symbol comes before a JDK or library one.
      */
     static List<WorkspaceSymbolMatch> rankByName(List<WorkspaceSymbolMatch> matches, String query) {
         if (query == null || query.isBlank() || matches.size() < 2) {
@@ -182,6 +182,7 @@ final class WorkspaceSymbolPopup {
         }
         scored.sort(java.util.Comparator.comparingInt((Scored s) -> s.score())
                 .reversed()
+                .thenComparing((Scored s) -> s.match().isLibrary())
                 .thenComparingInt(Scored::index));
         return scored.stream().map(Scored::match).toList();
     }
@@ -227,7 +228,7 @@ final class WorkspaceSymbolPopup {
             name.setGraphic(StructureIcons.forKind(item.kind()));
             String container = item.container() == null ? "" : item.container();
             detail.setText(container.isBlank() ? "" : container);
-            location.setText(String.valueOf(item.file().getFileName()));
+            location.setText(item.locationLabel());
             setGraphic(row);
         }
     }

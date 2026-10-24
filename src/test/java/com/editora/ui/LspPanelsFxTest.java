@@ -399,8 +399,8 @@ class LspPanelsFxTest {
         }
 
         @Override
-        public void open(Path file, int line, int character) {
-            opened.add(new Opened(file, line, character));
+        public void open(WorkspaceSymbolMatch match) {
+            opened.add(new Opened(match.file(), match.line(), match.character()));
         }
     }
 
@@ -439,6 +439,27 @@ class LspPanelsFxTest {
 
     private static WorkspaceSymbolMatch match(String name, String container, Path file, int line) {
         return new WorkspaceSymbolMatch(name, container, "class", file, line, 6);
+    }
+
+    /** jdtls answers JDK and dependency symbols under jdt:// (Java review B3): kept, after the project's own. */
+    @Test
+    void aLibrarySymbolRanksAfterAProjectSymbolOfTheSameName() {
+        var library = new WorkspaceSymbolMatch(
+                "ArrayList", "java.util", "class", null, 0, 0, "jdt://contents/java.base/java.util/ArrayList.class?=x");
+        var own = match("ArrayList", "demo", ALPHA, 3);
+        assertEquals(List.of(own, library), WorkspaceSymbolPopup.rankByName(List.of(library, own), "ArrayList"));
+        assertTrue(library.isLibrary());
+        assertEquals("java.base", library.locationLabel());
+        assertEquals(String.valueOf(ALPHA.getFileName()), own.locationLabel());
+        var jar = new WorkspaceSymbolMatch(
+                "Test",
+                "org.junit.jupiter.api",
+                "class",
+                null,
+                0,
+                0,
+                "jdt://contents/junit-jupiter-api-5.13.4.jar/org.junit.jupiter.api/Test.class?=p");
+        assertEquals("junit-jupiter-api-5.13.4.jar", jar.locationLabel());
     }
 
     @Test

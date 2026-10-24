@@ -677,9 +677,12 @@ final class LanguageServerSession implements LanguageClient {
         CompletionItemCapabilities completionItem = new CompletionItemCapabilities(true); // snippetSupport
         // Advertise that we can resolve additionalTextEdits — Pyright (and others) only emit an
         // auto-import's `import` edit when the client says it can resolve it. We resolve on accept
-        // (see MainController.autoImportAccept). detail/documentation stay eager so the popup hint shows.
+        // (see MainController.autoImportAccept). `documentation` too: the doc popup resolves the selected
+        // item, and jdtls computes an item's Javadoc in completionItem/resolve only for a client that lists
+        // it here — without it the popup never showed Javadoc for Java (review A1). `detail` stays eager so
+        // every row keeps its type column.
         completionItem.setResolveSupport(new org.eclipse.lsp4j.CompletionItemResolveSupportCapabilities(
-                java.util.List.of("additionalTextEdits")));
+                java.util.List.of("additionalTextEdits", "documentation")));
         completionItem.setPreselectSupport(true);
         completionItem.setDeprecatedSupport(true);
         completionItem.setInsertReplaceSupport(true);
@@ -936,7 +939,10 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
-    /** A document's indentation by its wire URI, for the TypeScript server's {@code formattingOptions} question. */
+    /**
+     * A document's indentation by its wire URI, for the TypeScript server's {@code formattingOptions} question
+     * and jdtls's {@code java.format.tabSize} / {@code insertSpaces}.
+     */
     private volatile java.util.function.Function<String, @Nullable FormattingIndent> indentForUri = uri -> null;
 
     void setIndentForUri(java.util.function.Function<String, @Nullable FormattingIndent> lookup) {
@@ -2408,11 +2414,19 @@ final class LanguageServerSession implements LanguageClient {
                                 ? TypeScriptServer.answer(
                                         item.getSection(),
                                         item.getScopeUri() == null ? null : indentForUri.apply(item.getScopeUri()))
-                                : LspServerSettings.answer(
-                                        serverId, item.getSection(), effectiveBashIde(), pythonPath));
+                                : answerFor(item));
             }
         }
         return CompletableFuture.completedFuture(out);
+    }
+
+    /** A non-TypeScript server's answer for one {@code workspace/configuration} item. */
+    private @Nullable Object answerFor(org.eclipse.lsp4j.ConfigurationItem item) {
+        Object answer = LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde(), pythonPath);
+        if (answer == null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && item.getScopeUri() != null) {
+            answer = LspServerSettings.javaFormatAnswer(item.getSection(), indentForUri.apply(item.getScopeUri()));
+        }
+        return answer;
     }
 
     @Override

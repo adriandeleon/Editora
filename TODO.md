@@ -252,8 +252,8 @@ A backlog of planned features and improvements. Unordered within each section.
       (`Settings.codeLens`, schema 108→109) ride the inlay mechanism at end of line; `JavaTestScanner`
       reports `Outer$Inner` targets.
       *Not done: the rename jdtls proposes after an extract (`RefactorWorkspaceEdit.command`) is ignored;
-      `inferSelectionSupport` (extract with no selection), Introduce Parameter and the ambiguous-import
-      chooser are not declared; a Change Signature preview.*
+      the ambiguous-import chooser is not declared; a Change Signature preview. (`inferSelectionSupport`,
+      Introduce Parameter and the move confirmation followed in the Java LSP review's fix group 1.)*
 - [x] **Go to Implementation / Type Definition / Declaration** (#735, #736) — the three navigation requests
       every registered server advertises and none of which Editora sent. `LspManager.requestDefinition`
       generalized into a shared `requestLocations` walk parameterized by which session method runs, so all

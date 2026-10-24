@@ -77,4 +77,7 @@ interface JdtLanguageServer extends LanguageServer {
 
     @JsonRequest("java/searchSymbols")
     CompletableFuture<JsonElement> searchSymbols(Object params);
+
+    @JsonRequest("java/inferSelection")
+    CompletableFuture<JsonElement> inferSelection(Object params);
 }

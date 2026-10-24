@@ -18,6 +18,7 @@ import com.editora.process.ProcessRunner;
 import com.editora.text.LspDiagnostic;
 import com.editora.text.OccurrenceSpan;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
@@ -1289,8 +1290,8 @@ public final class LspManager {
         session.setBashIde(bashIde);
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);
-            session.setIndentForUri(documentIndents::get);
         }
+        session.setIndentForUri(documentIndents::get); // TypeScript's formattingOptions, jdtls's java.format.*
         // Drop the session the moment it can no longer serve requests — the process died on its own, or the
         // handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps returning true
         // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
@@ -2463,8 +2464,9 @@ public final class LspManager {
      *
      * <p>{@code kind} is <b>optional</b> in the protocol, and a server that omits it would otherwise have
      * every hint treated as a parameter — so an unkinded {@code : String} would become filterable. The
-     * fallback reads the label instead: a leading {@code :} is the type form, a trailing {@code :}/{@code =}
-     * the parameter form.
+     * fallback reads the label instead: a parameter name ends with {@code :} or {@code =} ({@code count:},
+     * {@code ...args:}); anything else is a type — jdtls, which sends no kind, labels a {@code var} with
+     * {@code : int} and a lambda parameter with a bare {@code String}.
      */
     static boolean isParameterHint(org.eclipse.lsp4j.InlayHintKind kind, String label) {
         if (kind == org.eclipse.lsp4j.InlayHintKind.Parameter) {
@@ -2473,7 +2475,8 @@ public final class LspManager {
         if (kind == org.eclipse.lsp4j.InlayHintKind.Type) {
             return false;
         }
-        return !label.startsWith(":");
+        String l = label == null ? "" : label.strip();
+        return !l.startsWith(":") && (l.endsWith(":") || l.endsWith("="));
     }
 
     /** Pure: an inlay hint's display label — the plain string, or its label parts joined. */
@@ -3097,9 +3100,45 @@ public final class LspManager {
         });
     }
 
-    /** A project-wide symbol match ({@code workspace/symbol}): name + container + lowercased kind + location. */
+    /**
+     * A project-wide symbol match ({@code workspace/symbol}): name + container + lowercased kind + location. A
+     * symbol inside a JDK or dependency class (jdtls answers those under {@code jdt://}) has no {@code file};
+     * {@code libraryUri} carries its URI and it opens as library source.
+     */
     public record WorkspaceSymbolMatch(
-            String name, String container, String kind, Path file, int line, int character) {}
+            String name,
+            String container,
+            String kind,
+            @Nullable Path file,
+            int line,
+            int character,
+            @Nullable String libraryUri) {
+
+        public WorkspaceSymbolMatch(String name, String container, String kind, Path file, int line, int character) {
+            this(name, container, kind, file, line, character, null);
+        }
+
+        /** Whether this is a library symbol (no file of its own). */
+        public boolean isLibrary() {
+            return file == null;
+        }
+
+        /**
+         * Where it is, for a picker row: the file name, or the JDK module / jar of a library symbol
+         * ({@code jdt://contents/java.base/java.util/ArrayList.class} → {@code java.base}).
+         */
+        public String locationLabel() {
+            if (file != null) {
+                return String.valueOf(file.getFileName());
+            }
+            String uri = libraryUri == null ? "" : libraryUri;
+            String rest =
+                    uri.startsWith(JDT_SCHEME + "contents/") ? uri.substring((JDT_SCHEME + "contents/").length()) : "";
+            int slash = rest.indexOf('/');
+            String head = slash > 0 ? rest.substring(0, slash) : classFileTitle(uri);
+            return java.net.URLDecoder.decode(head, java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
 
     /** True if {@code file}'s server is ready and advertises {@code workspace/symbol} (Go to Symbol). */
     public boolean supportsWorkspaceSymbols(Path file) {
@@ -3153,10 +3192,15 @@ public final class LspManager {
             return;
         }
         Path p = uris.toPath(loc.getUri());
+        Position start = loc.getRange() != null ? loc.getRange().getStart() : new Position(0, 0);
         if (p == null) {
+            // A JDK or dependency symbol (jdtls's jdt:// class-file URI): kept, opened as library source.
+            if (loc.getUri() != null && loc.getUri().startsWith(JDT_SCHEME)) {
+                out.add(new WorkspaceSymbolMatch(
+                        name, container, kindName(kind), null, start.getLine(), start.getCharacter(), loc.getUri()));
+            }
             return;
         }
-        Position start = loc.getRange() != null ? loc.getRange().getStart() : new Position(0, 0);
         out.add(new WorkspaceSymbolMatch(name, container, kindName(kind), p, start.getLine(), start.getCharacter()));
     }
 
@@ -4044,13 +4088,9 @@ public final class LspManager {
      * sane default to fall back to when a project's exact release isn't installed at all.
      */
     private static Map<String, Object> javaSettings(boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks) {
-        Map<String, Object> java = new java.util.HashMap<>();
+        // The keys pushed after initialized, sent here too so the first import already runs with them.
+        Map<String, Object> java = new java.util.HashMap<>(LspServerSettings.javaSettings(onTypeFormatting));
         java.put("autobuild", Map.of("enabled", false));
-        // jdtls registers textDocument/onTypeFormatting dynamically, and only while this preference is on.
-        java.put("format", Map.of("onType", Map.of("enabled", onTypeFormatting)));
-        // Asked for only while Settings.codeLens is on; see LspServerSettings.
-        java.put("referencesCodeLens", Map.of("enabled", true));
-        java.put("implementationCodeLens", "all");
         List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks);
         if (!runtimes.isEmpty()) {
             java.put("configuration", Map.of("runtimes", runtimes));
@@ -4108,6 +4148,14 @@ public final class LspManager {
         caps.put("extractInterfaceSupport", true);
         caps.put("advancedExtractRefactoringSupport", true);
         caps.put("moveRefactoringSupport", true);
+        // jdtls 1.61+: a move with problems answers a confirmationToken instead of applying anyway; the
+        // coordinator shows the problems and resends with the token (review D11). Older servers ignore it.
+        caps.put("moveRefactoringConfirmationSupport", true);
+        // Extract Method / Variable / Field at a bare caret: the action is offered and the client asks
+        // java/inferSelection which expression to extract (review D7). Introduce Parameter becomes the same
+        // client-driven command, whose edit is one java/getRefactorEdit away.
+        caps.put("inferSelectionSupport", List.of("extractMethod", "extractVariable", "extractField"));
+        caps.put("advancedIntroduceParameterRefactoringSupport", true);
         return Map.copyOf(caps);
     }
 
@@ -4764,6 +4812,22 @@ public final class LspManager {
             Object params,
             Map<Path, String> expectedAtAction,
             java.util.function.BiConsumer<Boolean, String> cb) {
+        jdtlsApplyEdit(file, method, params, expectedAtAction, null, cb);
+    }
+
+    /**
+     * As above, for a request jdtls may answer with problems and a {@code confirmationToken} instead of an edit
+     * ({@code java/move} once {@code moveRefactoringConfirmationSupport} is declared). {@code confirm} gets the
+     * problems on the FX thread and the action that asks again with the token; without it, or for any other
+     * answer, this behaves exactly as above.
+     */
+    public void jdtlsApplyEdit(
+            Path file,
+            String method,
+            Object params,
+            Map<Path, String> expectedAtAction,
+            java.util.function.@Nullable BiConsumer<String, Runnable> confirm,
+            java.util.function.BiConsumer<Boolean, String> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(false, null));
@@ -4775,6 +4839,14 @@ public final class LspManager {
         s.rawRequest(method, params).whenComplete((r, e) -> {
             JsonElement json = e != null ? null : asJson(r);
             String refused = JdtlsRefactor.errorMessage(json);
+            String token = JdtlsRefactor.confirmationToken(json);
+            if (token != null && confirm != null && params instanceof JsonObject asked) {
+                JsonObject again = JdtlsRefactor.withConfirmationToken(asked, token);
+                Platform.runLater(() -> confirm.accept(
+                        refused == null ? "" : refused,
+                        () -> jdtlsApplyEdit(file, method, again, expectedAtAction, null, cb)));
+                return;
+            }
             org.eclipse.lsp4j.WorkspaceEdit edit = asWorkspaceEdit(JdtlsRefactor.editOf(json));
             Platform.runLater(() -> {
                 if (edit == null) {

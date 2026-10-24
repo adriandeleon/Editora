@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Java: Extract Method, Variable and Field at the caret, Introduce Parameter, and a warning before a risky
+  move.** Editora now declares jdtls's `inferSelectionSupport`: with nothing selected the extract actions are
+  offered, and Editora asks the server which expressions are there and lets you pick one when there are several.
+  Introduce Parameter is offered as its own refactoring. Extract to Field and Convert Local to Field ask where
+  to initialize the field when there is a choice. A Move Instance Method that jdtls finds problems with (jdtls
+  1.61 final and newer) now shows those problems and moves only if you continue; before, it was applied anyway.
+- **Java: Go to Symbol in Workspace finds methods and JDK or library types.** jdtls was never asked for method
+  symbols, and its matches inside JDK or dependency classes (`jdt://`) were dropped. They are listed after the
+  project's own, labelled with their module or jar, and open as library source.
+
 - **About says whether Editora is up to date.** Under the version, the About panel now reads "You are up to date."
   or "Update available: X.Y.Z" (a link to that release), then when the last check answered and a **Check now**
   link that asks GitHub again and updates the panel in place, failures included. Before any check has answered it
@@ -28,6 +38,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not reference the editor either. The classes that are the buffer's own state or reference the editor stay:
   `SavedBaseline`, `DocumentSnapshots`, `WordWrap`, `LineMarks`, `TabSurface`, `RunScan`, and `CodeLensShift`, which
   works on RichTextFX types. Internal-only — no behavior, dependency, or `module-info` change.
+
+### Fixed
+
+- **Java: the completion documentation popup shows Javadoc.** jdtls computes an item's Javadoc in
+  `completionItem/resolve` only when the client lists `documentation` among the properties it resolves; Editora
+  listed only `additionalTextEdits`, so the popup showed the return type and nothing else.
+- **Java: signature help shows the method's Javadoc.** The setting was sent as `java.signatureHelp.description`;
+  jdtls reads `java.signatureHelp.description.enabled`.
+- **Java: completion and import quick fixes no longer offer JDK internals** (`sun.*`, `com.sun.*`, `jdk.*`),
+  nor `java.awt.*`, `java.beans.*`, `Hashtable` or `Vector`. jdtls installs its type filter only when the client
+  sends one; Editora now sends vscode-java's list.
+- **Java: inlay hints follow the "all arguments" mode and show inferred types.** jdtls filtered parameter-name
+  hints to literals on its own, so the "all" mode changed nothing; it now sends every name and Editora's filter
+  applies the mode. `var` declarations and lambda parameters get their inferred type, hints for numbered names
+  such as `List.of(e1:, e2:)` are dropped, and an unkinded hint without a trailing `:` or `=` (jdtls's lambda
+  parameter type) counts as a type hint, which the literals mode never removes.
+- **Java: quick fixes and generated members follow the file's indentation.** jdtls asks the client for
+  `java.format.tabSize` and `insertSpaces` before every code action and got no answer, so Generate toString,
+  Create method and the other generators indented with tabs in space-indented files.
 
 ## [0.24.0] - 2026-10-24
 

@@ -309,6 +309,33 @@ drives its command.
   then by type for a renamed one; `= value` marks a new parameter). Both end in `java/getRefactorEdit`,
   which is also all an extract refactoring needs. jdtls offers Extract Interface only when
   `advancedExtractRefactoringSupport` is declared as well, and Change Signature with no flag at all.
+  With `inferSelectionSupport` jdtls offers Extract Method, Variable and Field at a bare caret; the
+  client then asks `java/inferSelection` for the candidate expressions, picks one (a picker when there
+  are several) and sends that `SelectionInfo` as the command argument. Extract to Field and Convert
+  Local to Field ask where to initialize the field when the server offers more than one
+  `initializedScopes` entry; the scope goes first in `commandArguments`. With
+  `moveRefactoringConfirmationSupport` (jdtls 1.61 final and newer) a Move Instance Method that jdtls
+  finds problems with answers `{errorMessage, confirmationToken}` and no edit; the user sees the problems
+  and the move is asked again with the token only if they continue.
+
+### jdtls preferences
+
+jdtls's defaults assume vscode-java, which sends its own `package.json` defaults; several features stay
+off for a client that sends nothing. `LspServerSettings.javaSettings` is the one `java` object, sent at
+`initialize` (inside `LspManager.javaSettings`, with autobuild and the runtimes) and pushed after it:
+`signatureHelp.enabled` and `signatureHelp.description.enabled` (the Javadoc in signature help; jdtls
+reads dotted keys through the nested maps, so `description: true` resolved to no key at all),
+`completion.filteredTypes` (vscode-java's list; jdtls's own default list is not installed unless one is
+sent), `inlayHints.parameterNames.enabled = all` with `suppressWhenSameNameNumbered` plus
+`variableTypes` and `parameterTypes` (hints are requested only while the setting is on, and
+`InlayHintFilter` applies Editora's literals/all mode), and `symbols.includeSourceMethodDeclarations`.
+jdtls also asks `workspace/configuration` for `java.format.tabSize` / `insertSpaces` per document before
+every code action; the session answers from the document's recorded indent, so quick fixes and generated
+members follow the file. The completion `resolveSupport` lists `documentation`: jdtls computes an item's
+Javadoc in `completionItem/resolve` only for a client that lists it. The opt-in
+`JdtlsClientSettingsProbeTest` checks each of these against a real jdtls
+(`./mvnw test -Dtest=JdtlsClientSettingsProbeTest -Dgroups=probe -Dlsp.probe=true`, and
+`-Dlsp.probe.jdtls=PATH` for another server).
 
 `LspCoordinator.runGeneratePrompt` / `runRefactorCommand` intercept these before `applyCodeAction`;
 `LspManager.jdtlsRequest` / `jdtlsApplyEdit` send the custom requests, which must be registered on

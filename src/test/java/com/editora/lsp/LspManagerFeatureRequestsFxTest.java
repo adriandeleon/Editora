@@ -959,6 +959,19 @@ class LspManagerFeatureRequestsFxTest {
         assertEquals(List.of(new LspManager.WorkspaceSymbolMatch("B", "demo", "class", target, 3, 6)), older);
         assertEquals("B", FakeLanguageServer.last(fake.workspaceSymbols).getQuery());
 
+        // jdtls answers JDK and dependency types under jdt:// (Java review B3): kept as library symbols.
+        String jdt = "jdt://contents/java.base/java.util/ArrayList.class?=demo";
+        fake.symbolInformationResponse = List.of(
+                info,
+                new SymbolInformation(
+                        "ArrayList", SymbolKind.Class, new Location(jdt, range(40, 13, 22)), "java.util"));
+        List<LspManager.WorkspaceSymbolMatch> withLibrary =
+                await(cb -> manager.workspaceSymbols(file, "ArrayList", cb));
+        assertEquals(
+                new LspManager.WorkspaceSymbolMatch("ArrayList", "java.util", "class", null, 40, 13, jdt),
+                withLibrary.get(1));
+        assertEquals("java.base", withLibrary.get(1).locationLabel());
+
         fake.symbolInformationResponse = null;
         var uriOnly = new WorkspaceSymbol(
                 "C",

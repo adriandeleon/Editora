@@ -3535,11 +3535,113 @@ final class LspCoordinator {
             case JdtlsRefactor.MOVE_TYPE -> moveType(path, item, request);
             case JdtlsRefactor.EXTRACT_INTERFACE -> extractInterface(path, item, request);
             case JdtlsRefactor.CHANGE_SIGNATURE -> changeSignature(path, item, request);
-            default ->
-                // A refactoring that needs no choice from the user: the edit is one request away.
-                applyJdtlsEdit(path, item, "java/getRefactorEdit", refactorEdit(request, null));
+            default -> extractRefactor(path, item, request);
         }
         return true;
+    }
+
+    /**
+     * A refactoring whose edit is one {@code java/getRefactorEdit} away, after at most two questions: which
+     * expression, when it was offered at a bare caret ({@code java/inferSelection}), and where an extracted
+     * field is initialized. Most refactorings ask neither.
+     */
+    private void extractRefactor(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
+        java.util.function.BiConsumer<@Nullable String, JdtlsRefactor.@Nullable Selection> apply =
+                (scope, selection) -> applyJdtlsEdit(
+                        path,
+                        item,
+                        "java/getRefactorEdit",
+                        refactorEdit(request, JdtlsRefactor.extractArguments(scope, selection)));
+        if (!JdtlsRefactor.needsInferredSelection(request)) {
+            chooseInitializeScope(item, JdtlsRefactor.initializedScopes(request), scope -> apply.accept(scope, null));
+            return;
+        }
+        lspManager.jdtlsRequest(
+                path,
+                "java/inferSelection",
+                JdtlsRefactor.inferSelectionParams(request.name(), request.params()),
+                answer -> {
+                    List<JdtlsRefactor.Selection> found = JdtlsRefactor.selections(answer);
+                    if (found.isEmpty()) {
+                        host.setStatus(tr("status.lsp.refactorNoExpression", item.title()));
+                        return;
+                    }
+                    java.util.function.Consumer<JdtlsRefactor.Selection> chosen = selection -> chooseInitializeScope(
+                            item, selection.initializedScopes(), scope -> apply.accept(scope, selection));
+                    if (found.size() == 1) {
+                        chosen.accept(found.get(0));
+                    } else {
+                        pickOne(
+                                item.title(),
+                                tr("picker.refactor.expression"),
+                                found,
+                                JdtlsRefactor.Selection::label,
+                                selection -> "",
+                                chosen);
+                    }
+                });
+    }
+
+    /** Asks where a field is initialized when the server offers more than one place; none or one is not asked. */
+    private void chooseInitializeScope(
+            LspManager.CodeActionItem item, List<String> scopes, java.util.function.Consumer<@Nullable String> then) {
+        if (scopes.size() <= 1) {
+            then.accept(scopes.isEmpty() ? null : scopes.get(0));
+            return;
+        }
+        pickOne(item.title(), tr("picker.refactor.initializeIn"), scopes, s -> s, s -> "", then::accept);
+    }
+
+    /**
+     * {@code java/move} with {@code params}. When jdtls finds problems it answers with them and a token instead
+     * of an edit; the user sees them and the move is applied only if they continue.
+     */
+    private void applyJdtlsMove(Path path, LspManager.CodeActionItem item, com.google.gson.JsonObject params) {
+        beginReportedEdit();
+        lspManager.jdtlsApplyEdit(
+                path,
+                "java/move",
+                params,
+                item.expectedDocuments(),
+                (problems, proceed) -> {
+                    if (moveProblemsConfirmer.test(problems)) {
+                        proceed.run();
+                    } else {
+                        host.setStatus(tr("status.lsp.refactorCancelled", item.title()));
+                    }
+                },
+                (ok, refused) -> {
+                    if (!ok && refused != null) {
+                        host.setError(refused);
+                        return;
+                    }
+                    reportEdit(
+                            ok,
+                            tr("status.lsp.codeActionApplied", item.title()),
+                            tr("status.lsp.codeActionFailed", item.title()));
+                });
+    }
+
+    /** Asks whether to move despite the problems jdtls found; a field so a test can answer. */
+    java.util.function.Predicate<String> moveProblemsConfirmer = this::confirmMoveProblems;
+
+    private boolean confirmMoveProblems(String problems) {
+        javafx.scene.control.ButtonType proceed = new javafx.scene.control.ButtonType(
+                tr("dialog.lsp.moveProblems.continue"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.WARNING,
+                problems,
+                javafx.scene.control.ButtonType.CANCEL,
+                proceed);
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("dialog.lsp.moveProblems.title"));
+        confirm.setHeaderText(tr("dialog.lsp.moveProblems.header"));
+        confirm.getDialogPane().setMinWidth(520);
+        // The move may break code: Enter cancels.
+        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(proceed)).setDefaultButton(false);
+        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL))
+                .setDefaultButton(true);
+        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == proceed;
     }
 
     private com.google.gson.JsonObject refactorEdit(
@@ -3573,11 +3675,8 @@ final class LspCoordinator {
                             item,
                             prompt,
                             targets,
-                            target -> applyJdtlsEdit(
-                                    path,
-                                    item,
-                                    "java/move",
-                                    JdtlsRefactor.moveParams(moveKind, source, params, target.raw())));
+                            target -> applyJdtlsMove(
+                                    path, item, JdtlsRefactor.moveParams(moveKind, source, params, target.raw())));
                 });
     }
 
@@ -3595,10 +3694,9 @@ final class LspCoordinator {
                             item,
                             tr("picker.refactor.class"),
                             types,
-                            target -> applyJdtlsEdit(
+                            target -> applyJdtlsMove(
                                     path,
                                     item,
-                                    "java/move",
                                     JdtlsRefactor.moveParams(
                                             moveKind, request.documentUri(), request.params(), target.raw())));
                 });
@@ -3606,10 +3704,9 @@ final class LspCoordinator {
 
     /** Move Type: into a file of its own, or into another class — asked only when both are possible. */
     private void moveType(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
-        Runnable newFile = () -> applyJdtlsEdit(
+        Runnable newFile = () -> applyJdtlsMove(
                 path,
                 item,
-                "java/move",
                 JdtlsRefactor.moveParams("moveTypeToNewFile", request.documentUri(), request.params(), null));
         Runnable otherClass = () -> moveToType(path, item, "moveTypeToClass", request);
         boolean toFile = request.supportsDestination("newFile");
@@ -4394,8 +4491,14 @@ final class LspCoordinator {
             }
 
             @Override
-            public void open(Path file, int line, int character) {
-                ops.openAndGoto(file, line, character);
+            public void open(LspManager.WorkspaceSymbolMatch match) {
+                Path file = match.file();
+                if (file != null) {
+                    ops.openAndGoto(file, match.line(), match.character());
+                } else {
+                    openLibraryDefinition(
+                            anchor, new LspManager.Target(null, match.line(), match.character(), match.libraryUri()));
+                }
             }
         });
         popup.show(seed);
