@@ -4,7 +4,7 @@ import java.util.BitSet;
 import java.util.Collection;
 import java.util.function.IntFunction;
 
-import com.editora.editor.language.LanguageRegistry;
+import com.editora.text.LanguageRegistry;
 
 /**
  * Which of a buffer's words spell check looks at, decided by its language. Pure.

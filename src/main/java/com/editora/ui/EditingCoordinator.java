@@ -1377,7 +1377,7 @@ final class EditingCoordinator {
                 return;
             }
             if (regex) {
-                String err = com.editora.editor.search.SearchMatcher.regexError(query);
+                String err = com.editora.text.SearchMatcher.regexError(query);
                 if (err != null) {
                     host.setStatus(tr("find.badRegex", err));
                     return;
@@ -1460,7 +1460,7 @@ final class EditingCoordinator {
                 return false;
             }
             current = m.get();
-            buffer.setSearchMatches(com.editora.editor.search.SearchMatches.of(current.start(), current.end()), 0);
+            buffer.setSearchMatches(com.editora.text.SearchMatches.of(current.start(), current.end()), 0);
             area.moveTo(current.start());
             area.requestFollowCaret();
             host.setStatus(tr("status.queryReplace.prompt", replaced));
@@ -1630,9 +1630,8 @@ final class EditingCoordinator {
      * block), else to the innermost foldable region of the whole document holding the line; false when there is
      * none. The whole document's regions: while narrowed the fold manager only knows the region's own.
      */
-    boolean narrowToFoldRegionAt(
-            EditorBuffer buffer, int line, com.editora.editor.fold.FoldRegions.@Nullable Region block) {
-        com.editora.editor.fold.FoldRegions.Region best =
+    boolean narrowToFoldRegionAt(EditorBuffer buffer, int line, com.editora.text.FoldRegions.@Nullable Region block) {
+        com.editora.text.FoldRegions.Region best =
                 block != null && block.startLine() <= line && line <= block.endLine() ? block : null;
         if (best == null) {
             for (var r : documentFoldRegions(buffer)) {
@@ -1655,7 +1654,7 @@ final class EditingCoordinator {
     }
 
     /** The whole document's fold regions: the manager's while the buffer is whole, detected afresh while narrowed. */
-    static java.util.List<com.editora.editor.fold.FoldRegions.Region> documentFoldRegions(EditorBuffer buffer) {
+    static java.util.List<com.editora.text.FoldRegions.Region> documentFoldRegions(EditorBuffer buffer) {
         if (!buffer.isNarrowed()) {
             return buffer.getFoldManager().regions();
         }
@@ -1672,7 +1671,7 @@ final class EditingCoordinator {
         return new StructurePanel.NarrowActions() {
             @Override
             public boolean narrowToFoldRegion(
-                    EditorBuffer buffer, int line, com.editora.editor.fold.FoldRegions.@Nullable Region block) {
+                    EditorBuffer buffer, int line, com.editora.text.FoldRegions.@Nullable Region block) {
                 return narrowToFoldRegionAt(buffer, line, block);
             }
 
@@ -2259,7 +2258,7 @@ final class EditingCoordinator {
             if (pattern.isEmpty()) {
                 return;
             }
-            String err = com.editora.editor.search.SearchMatcher.regexError(pattern);
+            String err = com.editora.text.SearchMatcher.regexError(pattern);
             if (err != null) {
                 host.setStatus(tr("find.badRegex", err));
                 return;
@@ -2321,7 +2320,7 @@ final class EditingCoordinator {
         if (regex == null || regex.isEmpty()) {
             return;
         }
-        String err = com.editora.editor.search.SearchMatcher.regexError(regex);
+        String err = com.editora.text.SearchMatcher.regexError(regex);
         if (err != null) {
             host.setStatus(tr("find.badRegex", err));
             return;
@@ -2434,7 +2433,7 @@ final class EditingCoordinator {
             if (pattern.isEmpty()) {
                 return;
             }
-            String err = com.editora.editor.search.SearchMatcher.regexError(pattern);
+            String err = com.editora.text.SearchMatcher.regexError(pattern);
             if (err != null) {
                 host.setStatus(tr("find.badRegex", err));
                 return;

@@ -9,9 +9,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import com.editora.editor.language.ConfigFileType;
-import com.editora.editor.language.LanguageRegistry;
-import com.editora.editor.language.ShellFiles;
+import com.editora.text.ConfigFileType;
+import com.editora.text.LanguageRegistry;
+import com.editora.text.ShellFiles;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.registry.IGrammarSource;
 import org.eclipse.tm4e.core.registry.IRegistryOptions;

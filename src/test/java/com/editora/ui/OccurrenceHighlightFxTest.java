@@ -5,7 +5,7 @@ import java.util.List;
 import javafx.scene.layout.Region;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.lsp.OccurrenceSpan;
+import com.editora.text.OccurrenceSpan;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

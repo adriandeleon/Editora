@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit;
 
 import javafx.application.Platform;
 
-import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.text.LspDiagnostic;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;

@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Pure data plus lookups, so the whole menu is one table: adding a type is a row, and the menu,
  * the palette picker and the tests all pick it up. Every entry names a type Editora already
- * understands (its extension resolves through {@link com.editora.editor.language.LanguageRegistry} /
+ * understands (its extension resolves through {@link com.editora.text.LanguageRegistry} /
  * {@code ConfigFileType} to a real language, so the new file opens highlighted) — the catalog is
  * deliberately a curated subset of "one obvious file per language" rather than every extension
  * alias: nobody looks for "New ▸ .mjs".

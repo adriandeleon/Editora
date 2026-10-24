@@ -11,6 +11,7 @@ import com.editora.editor.CanvasGuards;
 import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
 import com.editora.editor.TabSurface;
+import com.editora.text.SearchMatches;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
 import org.jspecify.annotations.Nullable;

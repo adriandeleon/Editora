@@ -4,9 +4,9 @@ import java.lang.reflect.Field;
 import java.util.List;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.fold.FoldRegions.Region;
 import com.editora.editor.highlight.TextMateHighlighter.Symbol;
 import com.editora.lsp.SymbolNode;
+import com.editora.text.FoldRegions.Region;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -130,8 +130,8 @@ class StructureOutlineFxTest {
             shell.setContent(sh);
             setSymbols(shell, List.of(new Symbol(2, "usage", "function"), new Symbol(6, "main", "function")));
             java.util.List<Region> regions =
-                    new java.util.ArrayList<>(com.editora.editor.fold.FoldRegions.detect(sh, "shell"));
-            regions.addAll(com.editora.editor.fold.FoldRegions.markers(sh, "shell"));
+                    new java.util.ArrayList<>(com.editora.text.FoldRegions.detect(sh, "shell"));
+            regions.addAll(com.editora.text.FoldRegions.markers(sh, "shell"));
             shell.getFoldManager().setServerRegions(regions);
             StructurePanel panel = new StructurePanel();
             panel.attach(shell);
@@ -142,7 +142,7 @@ class StructureOutlineFxTest {
             python.setLanguageOverride("python");
             python.setContent(py);
             setSymbols(python, List.of(new Symbol(1, "load", "function"), new Symbol(4, "save", "function")));
-            python.getFoldManager().setServerRegions(com.editora.editor.fold.FoldRegions.markers(py, "python"));
+            python.getFoldManager().setServerRegions(com.editora.text.FoldRegions.markers(py, "python"));
             panel.attach(python);
             return List.of(first, outline(panel));
         });

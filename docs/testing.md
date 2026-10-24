@@ -171,6 +171,7 @@ alone (`-DexcludedGroups=fx`) covers under half of that, which is all the Window
 | `cron` | 0.96 | 99.7% |
 | `systemd` | 0.96 | 99.6% |
 | `csv` | 0.95 | 98.2% |
+| `text` | 0.95 | 97.9% (the classes' figure before they moved) |
 | `diff` | 0.94 | 97.5% |
 | `editops` | 0.94 | 97.1% |
 | `config` | 0.93 | 96.3% |

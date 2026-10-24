@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit;
 
 import javafx.application.Platform;
 
-import com.editora.editor.lsp.LspDiagnostic;
+import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

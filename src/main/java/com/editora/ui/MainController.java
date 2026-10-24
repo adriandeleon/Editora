@@ -7287,7 +7287,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Thin LspManager diagnostics callback — delegates to {@link LspCoordinator#onDiagnostics} (kept here
      *  only to avoid an illegal forward reference at the manager's field initializer; see {@link #lspManager}). */
-    private void onLspDiagnostics(Path file, java.util.List<com.editora.editor.lsp.LspDiagnostic> diagnostics) {
+    private void onLspDiagnostics(Path file, java.util.List<com.editora.text.LspDiagnostic> diagnostics) {
         lspCoordinator.onDiagnostics(file, diagnostics);
     }
 
