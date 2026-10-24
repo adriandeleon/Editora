@@ -1486,6 +1486,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setFileActions(new ProjectTreeFileActions(
                 git, gitWindows, diffCoordinator, historyCoordinator, fileWorkflows, this::localHistoryEnabled));
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
+        panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
+        panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));
         panel.setSimpleMode(chrome::simpleModeActive);
         panel.setShowHidden(config.getSettings().isProjectShowHidden());
         panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
@@ -2148,6 +2150,24 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         fileWorkflows.openThen(file, () -> navigateToLine(navigation.areaLine(activeBuffer(), line)));
+    }
+
+    /**
+     * A Project Map declaration's Open Narrowed: opens {@code file} and narrows it to {@code block} (0-based
+     * document lines), as the Structure window's Narrow to Fold Region does for a picked symbol.
+     */
+    private void openNarrowedFromMap(Path file, com.editora.editor.fold.FoldRegions.Region block) {
+        fileWorkflows.openThen(file, () -> {
+            EditorBuffer buffer = activeBuffer();
+            Path open = buffer == null ? null : buffer.getPath();
+            if (buffer != null
+                    && open != null
+                    && com.editora.config.PathKeys.samePath(
+                            open.toAbsolutePath().normalize(),
+                            file.toAbsolutePath().normalize())) {
+                editing.narrowToFoldRegionAt(buffer, block.startLine(), block);
+            }
+        });
     }
 
     /**

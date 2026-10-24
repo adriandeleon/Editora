@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -181,6 +182,21 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     /** Whether the tool window is open, i.e. the outline is on screen and worth keeping current. */
     boolean showsOutline() {
         return visible();
+    }
+
+    /**
+     * The language server's outline of {@code file} when it is this panel's buffer and the server served one —
+     * what the Project Map's structure column of an open file shows — else null (the heuristic is used).
+     */
+    @Nullable
+    List<SymbolNode> serverSymbolsFor(Path file) {
+        EditorBuffer attached = buffer;
+        Path path = attached == null ? null : attached.getPath();
+        return path != null
+                        && lspSymbols != null
+                        && path.toAbsolutePath().normalize().equals(file)
+                ? lspSymbols
+                : null;
     }
 
     /**

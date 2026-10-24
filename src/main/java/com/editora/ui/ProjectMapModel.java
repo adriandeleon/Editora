@@ -79,7 +79,8 @@ final class ProjectMapModel {
             long size,
             long modifiedMillis,
             boolean symbolicLink,
-            @Nullable Placeholder placeholder) {
+            @Nullable Placeholder placeholder,
+            @Nullable Symbol symbol) {
         Entry {
             path = normalize(path);
             parent = normalize(parent);
@@ -97,7 +98,7 @@ final class ProjectMapModel {
                 long size,
                 long modifiedMillis,
                 boolean symbolicLink) {
-            this(path, parent, depth, directory, size, modifiedMillis, symbolicLink, null);
+            this(path, parent, depth, directory, size, modifiedMillis, symbolicLink, null, null);
         }
 
         /**
@@ -106,7 +107,17 @@ final class ProjectMapModel {
          * act on folders must check {@link #isPlaceholder()} first.
          */
         static Entry placeholder(Path parent, int depth, Placeholder placeholder) {
-            return new Entry(parent.resolve(PLACEHOLDER_NAME), parent, depth, true, -1, -1, false, placeholder);
+            return new Entry(parent.resolve(PLACEHOLDER_NAME), parent, depth, true, -1, -1, false, placeholder, null);
+        }
+
+        /**
+         * A row of a file's structure column: one declaration of the file (or of the declaration that is
+         * {@code parent}). Its path is made up — {@code symbol.file()} followed by one segment per declaration
+         * down to this one (see {@link ProjectMapStructure}) — and never exists on disk. It is not a directory,
+         * so no file-management action applies to it; callers that act on files must check {@link #isSymbol()}.
+         */
+        static Entry symbol(Path path, Path parent, int depth, Symbol symbol) {
+            return new Entry(path, parent, depth, false, -1, -1, false, null, symbol);
         }
 
         boolean isPlaceholder() {
@@ -117,14 +128,49 @@ final class ProjectMapModel {
             return placeholder != null && placeholder.kind() == PlaceholderKind.MORE;
         }
 
+        boolean isSymbol() {
+            return symbol != null;
+        }
+
+        /** A real file: not a folder, a placeholder row or a declaration. */
+        boolean isFile() {
+            return !directory && symbol == null;
+        }
+
         String name() {
             if (placeholder != null) {
                 return placeholder.label();
+            }
+            if (symbol != null) {
+                return symbol.label();
             }
             Path fileName = path == null ? null : path.getFileName();
             return fileName == null ? String.valueOf(path) : fileName.toString();
         }
     }
+
+    /**
+     * One declaration of a file as a structure row shows it.
+     *
+     * @param file the file it is declared in
+     * @param label what the Structure tool window calls it ({@code bar(int)}, a heading's text)
+     * @param kind the Structure kind ({@code method}, {@code class}, {@code heading}…), or null
+     * @param line the 0-based line it is declared on (where Open puts the caret)
+     * @param startLine the 0-based first line of what its card shows: the block, with its doc comment and
+     *     annotations
+     * @param endLine the 0-based last line of what its card shows
+     * @param block the fold block that Open Narrowed narrows the editor to, or null when it has none
+     * @param branches whether it holds declarations of its own (it opens a column, like a folder)
+     */
+    record Symbol(
+            Path file,
+            String label,
+            @Nullable String kind,
+            int line,
+            int startLine,
+            int endLine,
+            com.editora.editor.fold.FoldRegions.@Nullable Region block,
+            boolean branches) {}
 
     record Filters(
             String query,
@@ -531,10 +577,16 @@ final class ProjectMapModel {
         for (var group : grouped.entrySet()) {
             ColumnId id = group.getKey();
             int depth = id.depth();
-            // The placeholder row ("+N more", "Empty folder") always closes its column.
+            // The placeholder row ("+N more", "Empty folder") always closes its column. A structure column
+            // keeps the order its declarations are written in (the sort is stable).
+            boolean structure = group.getValue().stream().anyMatch(Entry::isSymbol);
+            java.util.Comparator<Entry> order = java.util.Comparator.comparing(Entry::isPlaceholder);
             List<Entry> all = group.getValue().stream()
-                    .sorted(java.util.Comparator.comparing(Entry::isPlaceholder)
-                            .thenComparing(ProjectPathOrder.directoriesFirst(Entry::directory, Entry::name)))
+                    .sorted(
+                            structure
+                                    ? order
+                                    : order.thenComparing(
+                                            ProjectPathOrder.directoriesFirst(Entry::directory, Entry::name)))
                     .toList();
             if (depth > 0 && id.parent() != null && !visible.contains(id.parent())) {
                 continue;
@@ -544,8 +596,10 @@ final class ProjectMapModel {
             boolean showHidden = showHiddenByColumn == null || showHiddenByColumn.getOrDefault(id, true);
             List<Entry> shown = all.stream()
                     .filter(entry -> depth == 0 || entry.parent() == null || visible.contains(entry.parent()))
-                    .filter(entry ->
-                            entry.isPlaceholder() || showHidden || !entry.name().startsWith("."))
+                    .filter(entry -> entry.isPlaceholder()
+                            || entry.isSymbol()
+                            || showHidden
+                            || !entry.name().startsWith("."))
                     .filter(entry -> entry.isPlaceholder()
                             || normalizedQuery.isEmpty()
                             || FuzzyMatch.of(entry.name(), normalizedQuery) != null)
@@ -831,8 +885,8 @@ final class ProjectMapModel {
         if (filter == null || filter == TypeFilter.ALL) {
             return true;
         }
-        if (entry.directory()) {
-            return false; // folders are retained as ancestor context for matching files
+        if (!entry.isFile()) {
+            return false; // folders (and declarations) are retained as context for matching files
         }
         return classify(entry.name()) == filter;
     }

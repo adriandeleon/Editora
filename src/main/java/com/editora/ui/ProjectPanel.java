@@ -2051,6 +2051,30 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.simpleMode = simpleMode;
     }
 
+    /**
+     * Where the Map's declaration cards and rows go: the file opened at a 0-based line, and the file opened
+     * narrowed to a block. Either brings the editor window forward.
+     */
+    void setMapOpenActions(
+            BiConsumer<Path, Integer> openAt,
+            BiConsumer<Path, com.editora.editor.fold.FoldRegions.Region> openNarrowed) {
+        mapView.setOpenActions(
+                (file, line) -> {
+                    openAt.accept(file, line);
+                    raiseEditorWindow();
+                },
+                (file, block) -> {
+                    openNarrowed.accept(file, block);
+                    raiseEditorWindow();
+                });
+    }
+
+    /** The language server's outline of an open buffer, for the Map's structure columns. */
+    void setMapServerSymbols(
+            java.util.function.Function<Path, java.util.@Nullable List<com.editora.lsp.SymbolNode>> symbols) {
+        mapView.setServerSymbols(symbols);
+    }
+
     /** Injects bookmark/note actions and state used by both Project renderers. */
     public void setMarkerActions(MarkerActions markerActions) {
         this.markerActions = markerActions;
