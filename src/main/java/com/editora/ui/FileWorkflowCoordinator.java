@@ -1299,10 +1299,10 @@ final class FileWorkflowCoordinator {
                 buffer,
                 load.file(),
                 load.truncated() ? null : load.sourceBytes(),
-                load.document() != null ? load.document().lineEnding() : com.editora.editor.LineEndings.dominant(text),
+                load.document() != null ? load.document().lineEnding() : com.editora.editops.LineEndings.dominant(text),
                 load.document() != null
                         ? load.document().mixedLineEndings()
-                        : com.editora.editor.LineEndings.mixed(text));
+                        : com.editora.editops.LineEndings.mixed(text));
         if (load.log()) {
             host.logViewer().recordLoadOffset(buffer, load.logOffset());
         } else if (!load.truncated()) {
@@ -1315,7 +1315,7 @@ final class FileWorkflowCoordinator {
                     load.file().getFileName().toString(),
                     load.document() != null
                             ? load.document().lineEnding()
-                            : com.editora.editor.LineEndings.dominant(text),
+                            : com.editora.editops.LineEndings.dominant(text),
                     buffer.getEffectiveCharset(),
                     host::setStatus);
         }
@@ -2421,10 +2421,10 @@ final class FileWorkflowCoordinator {
                         : com.editora.editorconfig.EditorConfigProperties.EMPTY;
         p = host.lspCoordinator().projectScope().saveRules(p); // the project's trim/final newline under .editorconfig
         String text = com.editora.editorconfig.EditorConfigTransform.transform(content, p);
-        if (com.editora.editor.LineEndings.labelOf(p.endOfLine()) == null) {
+        if (com.editora.editops.LineEndings.labelOf(p.endOfLine()) == null) {
             // No end_of_line rule: write the file's own line ending back. The document only ever holds '\n',
             // so without this every CRLF file was rewritten as LF by its first save.
-            text = com.editora.editor.LineEndings.apply(text, buffer.getLineEnding());
+            text = com.editora.editops.LineEndings.apply(text, buffer.getLineEnding());
         }
         // A charset that can't represent what the user typed (an em dash / curly quote / emoji under
         // `charset = latin1`) would be written as '?' by String.getBytes — and the editor keeps showing the
@@ -3235,7 +3235,7 @@ final class FileWorkflowCoordinator {
                 request.target(),
                 request.documentVersion(),
                 request.content().length(),
-                com.editora.editor.TextFingerprint.of(request.content()),
+                com.editora.editops.TextFingerprint.of(request.content()),
                 fingerprint(request.diskBytes()),
                 request.diskBytes().length,
                 disk,

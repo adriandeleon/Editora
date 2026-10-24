@@ -22,8 +22,8 @@ import javafx.scene.control.TextArea;
 import javafx.stage.FileChooser;
 
 import com.editora.diff.PatchParser;
+import com.editora.editops.LineEndings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LineEndings;
 import com.editora.editorconfig.EditorConfigCharset;
 import com.editora.git.GitFormat;
 import com.editora.git.GitService;

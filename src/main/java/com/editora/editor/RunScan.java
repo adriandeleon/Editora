@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
 
 import com.editora.editor.language.ShellFiles;
 import com.editora.http.HttpFile;
+import com.editora.run.CompactSource;
 import com.editora.run.MainMethodScanner;
 import com.editora.run.MakefileTargets;
 import com.editora.test.JavaTestScanner;

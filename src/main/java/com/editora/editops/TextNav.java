@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 /**
  * Pure, unit-tested caret-navigation math for the Emacs-style motion commands — extracted from

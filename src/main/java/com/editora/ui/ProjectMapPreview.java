@@ -48,7 +48,7 @@ import javafx.scene.text.Text;
 import com.editora.config.NoteScope;
 import com.editora.config.PathDisplay;
 import com.editora.config.TextAnchor;
-import com.editora.editor.LineEndings;
+import com.editora.editops.LineEndings;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.notes.NoteDraft;

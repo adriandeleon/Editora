@@ -97,15 +97,15 @@ public final class DiffViewerPane implements TabContent {
 
     /**
      * How a side's source bytes spell what the viewer holds as bare-{@code \n} text: its line ending (a
-     * {@link com.editora.editor.LineEndings} label) and charset name. Only an exported patch needs them — it
+     * {@link com.editora.editops.LineEndings} label) and charset name. Only an exported patch needs them — it
      * has to match the file's bytes to apply.
      */
     public record SideFormat(String lineEnding, String charset) {
         public static final SideFormat DEFAULT =
-                new SideFormat(com.editora.editor.LineEndings.LF, com.editora.editorconfig.EditorConfigCharset.UTF_8);
+                new SideFormat(com.editora.editops.LineEndings.LF, com.editora.editorconfig.EditorConfigCharset.UTF_8);
 
         public SideFormat {
-            lineEnding = lineEnding == null ? com.editora.editor.LineEndings.LF : lineEnding;
+            lineEnding = lineEnding == null ? com.editora.editops.LineEndings.LF : lineEnding;
             charset = charset == null ? com.editora.editorconfig.EditorConfigCharset.UTF_8 : charset;
         }
     }

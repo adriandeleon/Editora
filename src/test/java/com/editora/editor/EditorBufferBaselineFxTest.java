@@ -7,6 +7,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javafx.application.Platform;
 
+import com.editora.editops.LineEndings;
+import com.editora.editops.TextFingerprint;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

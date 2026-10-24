@@ -16,6 +16,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 
+import com.editora.editops.AceLabels;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 

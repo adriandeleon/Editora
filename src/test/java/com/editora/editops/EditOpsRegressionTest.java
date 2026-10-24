@@ -2,7 +2,6 @@ package com.editora.editops;
 
 import java.util.List;
 
-import com.editora.editor.TextNav;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
