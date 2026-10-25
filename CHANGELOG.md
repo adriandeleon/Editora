@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Complete Statement** (`edit.completeStatement`, Code ▸ Complete Statement; Ctrl+Shift+Enter / Cmd+Shift+Enter in
+  the IntelliJ keymaps), as IntelliJ's Complete Current Statement: in Java, C, C++, C#, JavaScript, TypeScript, PHP
+  and Kotlin it closes the line's open string and brackets, adds the `;` (not in Kotlin) or the `{ }` block a
+  control header, type or method needs, and leaves the caret where the next code goes. A finished statement gets a
+  new line below; other languages get Insert Line Below. Every caret, one undo step.
 - **One Java server per project, whichever windows it is open in.** A second window on a Java project joins the
   jdtls the first one runs instead of starting another, which imported the project again on a second
   workspace and used as much memory again (about 1.5 GB). Both windows see its diagnostics; a question the

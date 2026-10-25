@@ -59,10 +59,10 @@ A backlog of planned features and improvements. Unordered within each section.
       with request/state capture; passing follow-up runs do not establish a fix or root cause.
 - [ ] Track JDT LS's conflicting import proposal for a same-file class in broken source; rerun the
       strict live probe when evaluating server updates.
-- [ ] **Java LSP review (2026-10-24) leftovers:** Smart Type completion (#1341) and Complete Statement (#1340).
-      Clean-ups / organize imports / format on save, chain completion, the project's import layout and
-      formatter profile, and Lombok downloads landed in the follow-up PR; one jdtls shared between windows
-      (C12) in its own.
+- [ ] **Java LSP review (2026-10-24) leftovers:** Smart Type completion (#1341). Clean-ups / organize imports /
+      format on save, chain completion, the project's import layout and formatter profile, and Lombok
+      downloads landed in the follow-up PR; Complete Statement and one jdtls shared between windows (C12) in
+      their own.
 
 ## Recently shipped
 - [x] **Commit options, bulk actions and the remaining Git items** — in the Commit window: Amend (names the
