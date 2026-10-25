@@ -83,4 +83,16 @@ class SignatureFormatTest {
         assertEquals("f(int a)", a.label()); // clamped to the last signature, not an exception
         assertEquals(2, a.total());
     }
+
+    @Test
+    void theActiveParametersOwnDocumentationLeadsTheDoc() {
+        SignatureInformation si = sig("greet(String text, int times)", "String text", "int times");
+        si.setDocumentation("Greets someone several times.");
+        si.getParameters().get(0).setDocumentation("the greeting text, e.g. `\"hi\"`"); // as jdtls 1.63 sends it
+        var a = SignatureFormat.resolve(new SignatureHelp(List.of(si), 0, 0));
+        assertEquals(
+                "`String text` — the greeting text, e.g. `\"hi\"`\n\nGreets someone several times.", a.documentation());
+        var second = SignatureFormat.resolve(new SignatureHelp(List.of(si), 0, 1));
+        assertEquals("Greets someone several times.", second.documentation(), "times has none (re-review D2)");
+    }
 }

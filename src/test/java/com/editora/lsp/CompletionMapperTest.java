@@ -237,4 +237,16 @@ class CompletionMapperTest {
         assertEquals("ssh-keygen (command)", out.get(4).label());
         assertEquals("names", out.get(5).insert(), "a decorated label is still reduced to its identifier");
     }
+
+    @Test
+    void aMethodIsMatchedOnItsNameNotItsParameterList() {
+        var item = new org.eclipse.lsp4j.CompletionItem("addAll(Collection<? extends Item> c) : boolean");
+        item.setKind(org.eclipse.lsp4j.CompletionItemKind.Method);
+        item.setFilterText("addAll(Collection<? extends Item> c) : boolean"); // as jdtls 1.63 sends it (A16)
+        org.junit.jupiter.api.Assertions.assertEquals("addAll", CompletionMapper.filterTextOf(item));
+        var field = new org.eclipse.lsp4j.CompletionItem("size");
+        field.setKind(org.eclipse.lsp4j.CompletionItemKind.Field);
+        field.setFilterText("weird(name");
+        org.junit.jupiter.api.Assertions.assertEquals("weird(name", CompletionMapper.filterTextOf(field));
+    }
 }

@@ -1673,14 +1673,13 @@ final class LanguageServerSession implements LanguageClient {
                 .exceptionally(t -> List.of());
     }
 
-    /** Resolves a code action ({@code codeAction/resolve}) to fill in its deferred {@code edit};
-     *  returns the action unchanged if the server can't resolve. */
+    /** Resolves a code action ({@code codeAction/resolve}) to fill in its deferred {@code edit}; the action
+     *  unchanged before the server is ready. A refusal fails the future, so the caller can say why (BN9). */
     CompletableFuture<org.eclipse.lsp4j.CodeAction> resolveCodeAction(org.eclipse.lsp4j.CodeAction action) {
         if (!ready()) {
             return CompletableFuture.completedFuture(action);
         }
-        return bounded(server().getTextDocumentService().resolveCodeAction(action))
-                .exceptionally(t -> action);
+        return bounded(server().getTextDocumentService().resolveCodeAction(action));
     }
 
     /** Handler for a server-initiated {@code workspace/applyEdit}: {@code accept(edit, respond)} — the

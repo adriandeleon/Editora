@@ -75,6 +75,17 @@ class LspJavaSettingsPushFxTest {
     }
 
     @Test
+    void aNewDefaultJdkSaysARunningJavaServerKeepsItsOwn() throws Exception {
+        assertFalse(manager.setJavaDefaultJdk("/jdk/21"), "no Java server runs: nothing to restart");
+        Path f = root.resolve("A.java");
+        Files.writeString(f, "class A {}\n");
+        manager.openDocument(f, root, "java", "class A {}\n");
+        assertTrue(manager.hasSession("java", root), "started or starting: no second \"Starting…\" (C18)");
+        assertTrue(manager.setJavaDefaultJdk("/jdk/25"), "it keeps /jdk/21 until restarted (re-review CN7)");
+        assertFalse(manager.setJavaDefaultJdk("/jdk/25"), "unchanged");
+    }
+
+    @Test
     void aChangedEditorConfigPushesTheProjectsImportLayoutAgain() throws Exception {
         Path f = root.resolve("A.java");
         Files.writeString(f, "class A {}\n");

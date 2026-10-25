@@ -35,6 +35,8 @@ class ProjectPanelRowKeysFxTest {
 
     @Test
     void rowKeyDecision() {
+        assertEquals(RowKey.NEW, ProjectPanel.rowKey(KeyCode.N, false, true, true, true), "⌘N in the tree (EN7)");
+        assertEquals(RowKey.NONE, ProjectPanel.rowKey(KeyCode.N, false, false, true, true), "a plain N");
         assertEquals(RowKey.RENAME, ProjectPanel.rowKey(KeyCode.F2, true, true));
         assertEquals(RowKey.DELETE, ProjectPanel.rowKey(KeyCode.DELETE, true, true));
         assertEquals(RowKey.NONE, ProjectPanel.rowKey(KeyCode.F2, false, true), "not from the filter field");
@@ -95,7 +97,7 @@ class ProjectPanelRowKeysFxTest {
         Harness h = harness();
         FxTestSupport.runOnFx(() -> {
             assertEquals(
-                    java.util.Set.of("f2", "delete", "M-insert"),
+                    java.util.Set.of("f2", "delete", "M-insert", "Cmd-n"),
                     h.tree().getProperties().get(com.editora.command.KeyDispatcher.CLAIMED_KEYS));
             assertTrue(!h.panel().getProperties().containsKey(com.editora.command.KeyDispatcher.CLAIMED_KEYS));
             // The filter field claims only its own selection chords (C-n / C-p), never the row keys.

@@ -283,6 +283,10 @@ class KeymapsTest {
         assertEquals("git.push", ideaMac.get("Cmd-S-k"));
         assertEquals("git.pull", ideaMac.get("Cmd-t"));
         assertEquals("git.switchBranch", ideaMac.get("C-S-back-quote"));
+        // IntelliJ's macOS Generate is ⌘N in the editor; New File moves to ⌃⌘N (re-review EN7)
+        assertEquals("lsp.generate", ideaMac.get("Cmd-n"));
+        assertEquals("file.new", ideaMac.get("C-Cmd-n"));
+        assertEquals("nav.back", ideaMac.get("Cmd-["));
 
         for (String id : List.of("cua", "sublime", "vscode")) {
             for (String suffix : List.of(".json", ".mac.json")) {

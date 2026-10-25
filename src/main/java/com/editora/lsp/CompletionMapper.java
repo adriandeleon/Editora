@@ -71,11 +71,9 @@ public final class CompletionMapper {
                     .withReplaceRange(replaceRangeOf(item))
                     .withSnippet(snippetOf(item, label))
                     .withProtocol(new Completion.Protocol(
-                            // Without a filterText the match ran over "name(params)", so items.st offered
-                            // addAll(Collection<? extends Item> c) and equals(Object o) (Java review A16).
-                            item.getFilterText() != null
-                                    ? item.getFilterText()
-                                    : item.getLabel().strip(),
+                            // Matching over "name(params)" made items.st offer addAll(Collection<? extends Item> c)
+                            // and equals(Object o) (Java review A16); jdtls's own filterText is that whole label.
+                            filterTextOf(item),
                             replacementRangeOf(item),
                             item.getCommitCharacters(),
                             item.getInsertTextMode() == null
@@ -83,6 +81,19 @@ public final class CompletionMapper {
                                     : item.getInsertTextMode().getValue())));
         }
         return out;
+    }
+
+    /** What the typed prefix is matched against: a method's name only, never its parameter list (A16). Pure. */
+    static String filterTextOf(CompletionItem item) {
+        String text = item.getFilterText() != null
+                ? item.getFilterText()
+                : item.getLabel().strip();
+        var kind = item.getKind();
+        boolean callable = kind == org.eclipse.lsp4j.CompletionItemKind.Method
+                || kind == org.eclipse.lsp4j.CompletionItemKind.Function
+                || kind == org.eclipse.lsp4j.CompletionItemKind.Constructor;
+        int paren = text.indexOf('(');
+        return callable && paren > 0 ? text.substring(0, paren).strip() : text;
     }
 
     /** Expand list defaults before mapping AND before resolve so the opaque data is preserved. */

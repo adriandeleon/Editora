@@ -1464,6 +1464,13 @@ class LspCoordinatorCommandsFxTest {
 
         fx.run(() -> fx.coordinator.afterUserSave(b)); // the save it made reaches the hook again: no new round
         assertEquals(1, fx.ops.saved.size());
+
+        // One Undo gives back what the user saved, not "organized but not formatted" (re-review AN7).
+        FxTestSupport.runOnFx(() -> b.getArea().getUndoManager().undo());
+        assertEquals(UNTIDY, FxTestSupport.callOnFx(b::getContent));
+        FxTestSupport.runOnFx(() -> b.getArea().getUndoManager().redo());
+        assertEquals(
+                "import java.util.List;\n\nclass A {\n    List<String> l;\n}\n", FxTestSupport.callOnFx(b::getContent));
     }
 
     @Test

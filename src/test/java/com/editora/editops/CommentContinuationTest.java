@@ -47,6 +47,8 @@ class CommentContinuationTest {
     @Test
     void enterBetweenTheOpenerAndTheCloserSplitsThem() {
         assertEquals("/**\n * |\n */\n", enter("/**|*/\n", "javascript"));
+        // `/**` auto-closed as `/** */`: the closer lines up with the body's `*` (re-review AN6)
+        assertEquals("    /**\n     * |\n     */\n", enter("    /**| */\n", "java"));
     }
 
     @Test

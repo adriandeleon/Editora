@@ -467,7 +467,11 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
             return failed();
         }
         var resolver = codeActionResolver;
-        return CompletableFuture.completedFuture(resolver == null ? unresolved : resolver.apply(unresolved));
+        try { // a resolver that throws is a server answering with an error
+            return CompletableFuture.completedFuture(resolver == null ? unresolved : resolver.apply(unresolved));
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     public final List<CompletionItem> resolvedCompletions = new ArrayList<>();

@@ -188,6 +188,21 @@ class LspCoordinatorCodeActionsFxTest {
     }
 
     @Test
+    void aRefusedActionSaysWhyTheServerRefused() throws Exception {
+        offer(new CodeAction("Inline Method"));
+        fx.server().codeActionResolver = a -> {
+            throw new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                    new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                            -32603, "Cannot inline abstract methods", null));
+        };
+        runAction("Inline Method");
+        assertEquals(
+                tr("status.lsp.codeActionFailedWhy", "Inline Method", "Cannot inline abstract methods"),
+                fx.host.lastStatus(),
+                "not just \"Could not apply\" (re-review BN9)");
+    }
+
+    @Test
     void anActionThatDoesNothingIsReportedAsFailed() throws Exception {
         offer(new CodeAction("Hollow"));
         runAction("Hollow");

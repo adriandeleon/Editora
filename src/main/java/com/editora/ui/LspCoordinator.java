@@ -1490,7 +1490,9 @@ final class LspCoordinator {
      *  that server when it changes). */
     void applyOnTypeFormatting() {
         lspManager.setJavaOnTypeFormatting(host.settings().isLspOnTypeFormatting());
-        lspManager.setJavaDefaultJdk(host.settings().getMavenJdkHome());
+        if (lspManager.setJavaDefaultJdk(host.settings().getMavenJdkHome())) {
+            host.setStatus(tr("status.lsp.javaJdkChanged")); // a running jdtls keeps its JDK (re-review CN7)
+        }
         lspManager.setMavenCentralIndex(host.settings().isMavenPomCentralIndex());
     }
 
@@ -2234,7 +2236,7 @@ final class LspCoordinator {
                 .thenComparingInt(com.editora.lsp.LspManager.InlayHintSpan::col));
         List<EditorBuffer.InlayHint> out = new java.util.ArrayList<>(sorted.size());
         for (var s : sorted) {
-            out.add(new EditorBuffer.InlayHint(s.line(), s.col(), s.label()));
+            out.add(new EditorBuffer.InlayHint(s.line(), s.col(), s.paddedLabel()));
         }
         return out;
     }
@@ -2544,7 +2546,7 @@ final class LspCoordinator {
                     clearDiagnostics(path);
                 }
                 Path root = lspRootFor(buffer, serverId);
-                if (root == null || !lspManager.isRunning(serverId, root)) {
+                if (root == null || !lspManager.hasSession(serverId, root)) {
                     host.setStatus(tr("status.lsp.starting", serverLabel(serverId)));
                     ops.setLspLoading(true); // show the loading bar until the server reports ready
                 }
@@ -3339,10 +3341,61 @@ final class LspCoordinator {
         if (buffer.isDisposed() || buffer.getContent().equals(saved) || !buffer.isDirty()) {
             return;
         }
+        foldIntoOneUndo(buffer, saved);
         savingAfterActions.add(buffer);
         if (!ops.saveBuffer(buffer)) {
             savingAfterActions.remove(buffer);
         }
+    }
+
+    /** Clean-up, Organize Imports and Format, each of which may be an undo step of its own. */
+    private static final int SAVE_ACTION_STEPS = 3;
+
+    /**
+     * Makes what the actions on save did one undo step: undoing it took one Undo per action, and the states in
+     * between were never on disk (re-review AN7). Undoes the actions' steps back to {@code saved}, then puts
+     * their result back as a single edit. The history is left as it was when those steps cannot be told apart
+     * from the user's own (they do not lead back to {@code saved}) or the buffer shows only part of its text.
+     */
+    static void foldIntoOneUndo(EditorBuffer buffer, String saved) {
+        CodeArea area = buffer.getArea();
+        String result = area.getText();
+        if (!result.equals(buffer.getContent())) {
+            return; // narrowed or filtered: the area is not the whole document
+        }
+        var undo = area.getUndoManager();
+        int caret = area.getCaretPosition();
+        int undone = 0;
+        while (!area.getText().equals(saved) && undo.isUndoAvailable() && undone < SAVE_ACTION_STEPS) {
+            undo.undo();
+            undone++;
+        }
+        if (!area.getText().equals(saved)) {
+            for (int i = 0; i < undone && undo.isRedoAvailable(); i++) {
+                undo.redo();
+            }
+            return;
+        }
+        if (undone < 2) {
+            if (undone == 1) {
+                undo.redo(); // already one step
+            }
+            return;
+        }
+        int prefix = 0;
+        int max = Math.min(saved.length(), result.length());
+        while (prefix < max && saved.charAt(prefix) == result.charAt(prefix)) {
+            prefix++;
+        }
+        int suffix = 0;
+        while (suffix < max - prefix
+                && saved.charAt(saved.length() - 1 - suffix) == result.charAt(result.length() - 1 - suffix)) {
+            suffix++;
+        }
+        undo.preventMerge();
+        area.replaceText(prefix, saved.length() - suffix, result.substring(prefix, result.length() - suffix));
+        undo.preventMerge();
+        area.moveTo(Math.min(caret, area.getLength()));
     }
 
     /** The file whose save asked for {@link #projectRecheck}; the build goes to its project's server. */
@@ -5782,7 +5835,12 @@ final class LspCoordinator {
                 ok -> reportEdit(
                         ok,
                         tr("status.lsp.codeActionApplied", applied.title()),
-                        tr("status.lsp.codeActionFailed", applied.title())));
+                        lspManager.lastCodeActionFailure() == null // the server's reason when it gave one (BN9)
+                                ? tr("status.lsp.codeActionFailed", applied.title())
+                                : tr(
+                                        "status.lsp.codeActionFailedWhy",
+                                        applied.title(),
+                                        lspManager.lastCodeActionFailure())));
     }
 
     /**

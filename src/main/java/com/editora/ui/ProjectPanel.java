@@ -488,7 +488,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         // F2 / Delete / Alt+Insert are row actions here (see onKey), even in keymaps that bind them to a global
         // command: the IntelliJ keymap's Alt+Insert is Generate in the editor and New in the Project view (EN1).
         tree.getProperties()
-                .put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("f2", "delete", "M-insert"));
+                .put(
+                        com.editora.command.KeyDispatcher.CLAIMED_KEYS,
+                        java.util.Set.of("f2", "delete", "M-insert", "Cmd-n")); // ⌘N: the same on macOS (EN7)
         VBox.setVgrow(tree, Priority.ALWAYS);
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
@@ -1684,9 +1686,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         // the right-click menu. Only while the tree itself has the key: in the filter field they are text
         // editing keys.
         boolean alt = e.isAltDown() && !e.isControlDown() && !e.isMetaDown() && !e.isShiftDown();
-        boolean rowActionKey = rowKey(e.getCode(), alt, true, true) != RowKey.NONE; // else: no lookups
+        boolean cmd = e.isMetaDown() && !e.isAltDown() && !e.isControlDown() && !e.isShiftDown();
+        boolean rowActionKey = rowKey(e.getCode(), alt, cmd, true, true) != RowKey.NONE; // else: no lookups
         TreeItem<Path> selected = rowActionKey ? tree.getSelectionModel().getSelectedItem() : null;
-        switch (rowKey(e.getCode(), alt, rowActionKey && inTree(e), selected != null && selected.getValue() != null)) {
+        switch (rowKey(
+                e.getCode(), alt, cmd, rowActionKey && inTree(e), selected != null && selected.getValue() != null)) {
             case NEW -> {
                 if (selected != null) {
                     showNewMenu(selected.isLeaf() && selected.getParent() != null ? selected.getParent() : selected);
@@ -1772,8 +1776,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** As above, with Alt held: Alt+Insert is New in the selected folder, as in IntelliJ's Project view. */
     static RowKey rowKey(javafx.scene.input.KeyCode code, boolean alt, boolean inTree, boolean hasSelection) {
+        return rowKey(code, alt, false, inTree, hasSelection);
+    }
+
+    /** As above, with Cmd held: ⌘N is New in the selected folder, as in IntelliJ's macOS Project view (EN7). */
+    static RowKey rowKey(
+            javafx.scene.input.KeyCode code, boolean alt, boolean cmd, boolean inTree, boolean hasSelection) {
         if (!inTree || !hasSelection) {
             return RowKey.NONE;
+        }
+        if (cmd) {
+            return code == javafx.scene.input.KeyCode.N ? RowKey.NEW : RowKey.NONE;
         }
         return switch (code) {
             case F2 -> alt ? RowKey.NONE : RowKey.RENAME;

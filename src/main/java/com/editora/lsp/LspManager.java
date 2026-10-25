@@ -294,10 +294,16 @@ public final class LspManager {
     /**
      * The JDK the user chose in Settings (Build Tools ▸ Default JDK, "" for none). A Java server started after
      * this marks it as its default runtime and runs Gradle on it, and runs on it itself when the launcher's own
-     * Java is older than jdtls needs. A running server keeps what it started with.
+     * Java is older than jdtls needs. A running server keeps what it started with; true when one does and the
+     * value changed.
      */
-    public void setJavaDefaultJdk(@Nullable String home) {
-        javaDefaultJdk = home == null ? "" : home;
+    public boolean setJavaDefaultJdk(@Nullable String home) {
+        String next = home == null ? "" : home;
+        boolean changed = !next.equals(javaDefaultJdk);
+        javaDefaultJdk = next;
+        String prefix = sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID);
+        // true: a running Java server keeps the old one until it restarts (re-review CN7)
+        return changed && sessionsByRoot.keySet().stream().anyMatch(k -> k.startsWith(prefix));
     }
 
     /** The clean-ups jdtls's {@code java/cleanup} runs ({@code java.cleanup.actions}); every Java session gets them. */
@@ -1194,6 +1200,16 @@ public final class LspManager {
      * Whether {@code serverId} already runs for {@code root} and has finished its handshake: a file opened into
      * it starts nothing, so there is no "starting" to announce (Java review C18).
      */
+    /**
+     * Whether a session for {@code (serverId, root)} exists, started or still starting: a second file opened
+     * while jdtls starts said "Starting…" again (Java review C18).
+     */
+    public boolean hasSession(String serverId, Path root) {
+        String key = sessionKey(serverId, root);
+        return sessionsByRoot.containsKey(key)
+                || (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && sharedServers.containsKey(key));
+    }
+
     public boolean isRunning(String serverId, Path root) {
         String key = sessionKey(serverId, root);
         LanguageServerSession s = sessionsByRoot.get(key);
@@ -2641,11 +2657,24 @@ public final class LspManager {
      * named — whereas a {@code : String} type hint is information the source does not otherwise carry and
      * must survive every mode.
      */
-    public record InlayHintSpan(int line, int col, String label, boolean parameter) {
+    public record InlayHintSpan(
+            int line, int col, String label, boolean parameter, boolean paddingLeft, boolean paddingRight) {
 
         /** A parameter hint — the dominant kind, and what a server omitting the kind is assumed to mean. */
         public InlayHintSpan(int line, int col, String label) {
             this(line, col, label, true);
+        }
+
+        public InlayHintSpan(int line, int col, String label, boolean parameter) {
+            this(line, col, label, parameter, false, false);
+        }
+
+        /**
+         * The label as drawn, with the space the server asked for on either side: jdtls's lambda type hint
+         * ({@code paddingRight}) read "Strings -> …" without it (re-review DN2).
+         */
+        public String paddedLabel() {
+            return (paddingLeft ? " " : "") + label + (paddingRight ? " " : "");
         }
     }
 
@@ -2802,7 +2831,9 @@ public final class LspManager {
                                 h.getPosition().getLine(),
                                 h.getPosition().getCharacter(),
                                 label,
-                                isParameterHint(h.getKind(), label)));
+                                isParameterHint(h.getKind(), label),
+                                Boolean.TRUE.equals(h.getPaddingLeft()),
+                                Boolean.TRUE.equals(h.getPaddingRight())));
                     }
                 }
             }
@@ -4328,6 +4359,7 @@ public final class LspManager {
      * {@code cb} gets overall success on the FX thread.
      */
     public void applyCodeAction(Path file, Object raw, Consumer<Boolean> cb) {
+        lastCodeActionFailure = null;
         LanguageServerSession s = sessionFor(file);
         // No request time: an edit already inside this action was computed at some earlier, unknown moment,
         // so nothing can show a closed file is still what the server saw.
@@ -4349,6 +4381,9 @@ public final class LspManager {
             return;
         }
         s.resolveCodeAction(action).whenComplete((resolved, error) -> {
+            if (error != null) {
+                lastCodeActionFailure = failureReason(error);
+            }
             org.eclipse.lsp4j.CodeAction use = error == null && resolved != null ? resolved : action;
             Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), expected, cb));
         });
@@ -4375,14 +4410,26 @@ public final class LspManager {
             return; // do not let concurrent commands share or overwrite each other's stale-edit guard
         }
         executeCommand(file, command.getCommand(), command.getArguments(), (result, error) -> {
+            if (error != null) {
+                lastCodeActionFailure = failureReason(error);
+            }
             pendingApplyExpected.remove(session, pending);
             Boolean applied = pending.applied().get();
             cb.accept(error == null && !Boolean.FALSE.equals(applied));
         });
     }
 
+    /** Why the last code action failed to apply, when the server said; or null. */
+    private volatile @Nullable String lastCodeActionFailure;
+
+    /** The server's reason for the last failed code action, or null ("Could not apply: Inline Method" — BN9). */
+    public @Nullable String lastCodeActionFailure() {
+        return lastCodeActionFailure;
+    }
+
     /** Applies a code action together with the request-time snapshots captured when it was listed. */
     public void applyCodeAction(Path file, CodeActionItem item, Consumer<Boolean> cb) {
+        lastCodeActionFailure = null;
         if (item == null) {
             Platform.runLater(() -> cb.accept(false));
             return;
@@ -4408,6 +4455,9 @@ public final class LspManager {
             return;
         }
         s.resolveCodeAction(action).whenComplete((resolved, error) -> {
+            if (error != null) {
+                lastCodeActionFailure = failureReason(error);
+            }
             org.eclipse.lsp4j.CodeAction use = error == null && resolved != null ? resolved : action;
             Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), basis, cb));
         });
