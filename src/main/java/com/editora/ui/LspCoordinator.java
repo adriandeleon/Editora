@@ -508,6 +508,11 @@ final class LspCoordinator {
             }
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
+        lspManager.setOnSharedServerEnded(this::sharedServerEnded);
+        lspManager.setWindowFocused(() -> {
+            javafx.stage.Window w = host.window();
+            return w != null && w.isFocused();
+        });
         lspManager.setOnServerStatus(this::onServerStatus);
         lspManager.setPythonInterpreterResolver(pythonInterpreters::pythonPathForServerRoot); // review B1
         // A server root the Project panel's watcher does not cover gets a watcher of its own (review B7).
@@ -876,6 +881,19 @@ final class LspCoordinator {
             if (restart) {
                 syncBufferWhenShown(b); // active → re-open (forks a fresh server) now; background → on show
             }
+        });
+        updateStatusBar();
+    }
+
+    /**
+     * Another window restarted the Java server this window shared (or saw it crash first): this window's
+     * documents on it reopen on the new one, with no crash notice — this window did nothing wrong.
+     */
+    private void sharedServerEnded(String serverId, Path root) {
+        forEachCrashedBuffer(serverId, root, b -> {
+            b.setLspActive(false);
+            clearDiagnostics(lspPath(b));
+            syncBufferWhenShown(b);
         });
         updateStatusBar();
     }
@@ -3156,7 +3174,7 @@ final class LspCoordinator {
         startBlocked.clear();
         failingServers.clear();
         statusNarrator.forget(null);
-        lspManager.shutdownAll();
+        lspManager.restartAll(); // a Java server shared with another window restarts for both
         clearAllDiagnostics();
         applyGating();
         host.setStatus(tr("status.lsp.restarted"));

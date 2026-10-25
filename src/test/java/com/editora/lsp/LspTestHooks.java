@@ -53,6 +53,16 @@ public final class LspTestHooks {
         manager.sessionForTest(serving).publishDiagnostics(params);
     }
 
+    /** Makes {@code other} share {@code manager}'s servers, as a second window of the process does. */
+    public static void shareServers(LspManager manager, LspManager other) {
+        manager.shareServersForTest(other);
+    }
+
+    /** The project root of the server serving {@code file}. */
+    public static java.nio.file.Path sessionRoot(LspManager manager, java.nio.file.Path file) {
+        return manager.sessionForTest(file).root();
+    }
+
     /** Plays the server serving {@code file} dying on its own — a crash, not a shutdown the editor asked for. */
     public static void simulateServerDeath(LspManager manager, java.nio.file.Path file) {
         manager.sessionForTest(file).simulateServerDeathForTest();

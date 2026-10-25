@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a call's argument (signature help). Fields, variables and methods of a fitting type stay, `null` for an object
   and `true`/`false` for a boolean; after `new`, the classes that implement the type. Where the code states no
   type the full list opens, and the status bar says so.
+- **One Java server per project, whichever windows it is open in.** A second window on a Java project joins the
+  jdtls the first one runs instead of starting another, which imported the project again on a second
+  workspace and used as much memory again (about 1.5 GB). Both windows see its diagnostics; a question the
+  server asks goes to the window you are working in. Closing one window leaves the server to the other, and
+  Restart Language Servers in either restarts it for both.
 - **Java: organize imports and format on save.** Two settings under Settings ▸ Code Completion ▸ Language server features: after you
   save a Java file, jdtls organizes its imports and/or formats it, and the file is saved again when that changed
   it, as IntelliJ's Actions on Save do. Both are off by default; autosave never runs them, and an ambiguous import

@@ -197,6 +197,33 @@ process has actually exited (it is given a moment to shut down cleanly, and stil
 meanwhile), and a restart of the same `(server, root)` waits — bounded, on the start thread — for that
 exit before launching.
 
+### One jdtls per project across windows
+
+Windows of one process share a project's Java server (Java review C12) instead of each starting a jdtls on a
+workspace of its own (`-2`), which cost another ~1.5 GB and a cold import. `LspManager.SHARED_SERVERS` (static;
+tests get a private registry from `setSessionStarterForTest`, and `shareServersForTest` joins two) maps a local
+root's Java session key to its session, and `sessionForRoot` joins one that is running before it creates
+another (`join`). A remote or container root is never shared.
+
+A `LanguageServerSession` serves its windows through `LanguageServerSession.Client`s: the window that started it
+holds `primaryClient()` (what the older setters configure), others `attach` their own. Diagnostics, status,
+refreshes, request outcomes and death reach every client. `workspace/applyEdit` and the client-UI questions
+(`showMessageRequest`, Metals' prompts, `chooseImports`) go to the client whose window has the focus
+(`LspManager.setWindowFocused`), else the longest-attached one. Each document is opened per window
+(`didOpen(uri, …, opener)`): the server hears the first open and the last close, and a second window's open is
+sent as a change, so the server holds the text of the window it last heard from (each window syncs before
+it asks).
+
+A window that closes, turns its language servers off, or lets its last document on the server go idle only
+leaves (`leaveShared`): its documents are closed on the server and its client detached. The workspace claim
+belongs to the session (`jdtlsWorkspaceBySession` is per process), so the window that finally stops the server
+releases it, whichever window started it. The last window to leave stops it.
+A restart (`restartAll`, `shutdownServer`, a changed command) stops it for every window: `reportEndedForAll`
+tells the others at once, and their `dropSession` — the session ended, not by this window (`endedHere`) —
+calls `onSharedServerEnded`, which `LspCoordinator.sharedServerEnded` answers by reopening that window's
+buffers on the new server, with no crash notice. A crash is a crash in the window whose client is told
+first and a quiet reopen in the others, so it is counted once towards the crash-loop cap.
+
 Nothing deletes a workspace on its own: there is one per Java folder ever opened, each ~40 MB before the
 project's own classes (jdtls indexes the JDK into every one). `lsp.clearJavaIndexCaches` runs
 `LspManager.clearJdtlsWorkspaces` off the FX thread: it claims each directory in the same static claim set the
