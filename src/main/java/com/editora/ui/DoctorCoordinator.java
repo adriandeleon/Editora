@@ -24,6 +24,7 @@ import com.editora.doctor.DoctorService;
 import com.editora.git.GitService;
 import com.editora.github.GitHubService;
 import com.editora.install.InstallCatalog;
+import com.editora.install.PinnedVersions;
 import com.editora.process.ElevatedSave;
 import com.editora.run.RunService;
 import com.editora.search.Ripgrep;
@@ -83,14 +84,19 @@ final class DoctorCoordinator {
             return null;
         }
 
-        void installServer(String serverId, Consumer<Boolean> onDone);
+        /** Installs {@code serverId}; {@code update} (Doctor's Update) also replaces a copy older than its pin. */
+        void installServer(String serverId, boolean update, Consumer<Boolean> onDone);
 
-        void installLang(InstallCatalog.Lang lang, Consumer<Boolean> onDone);
+        /** Installs {@code lang}'s support; {@code update} also reinstalls its pinned steps. */
+        void installLang(InstallCatalog.Lang lang, boolean update, Consumer<Boolean> onDone);
 
         void installTypstCli(Consumer<Boolean> onDone);
 
-        /** Installs a pinned command-line tool ({@code shellcheck}/{@code shfmt}). */
-        default void installTool(String toolId, Consumer<Boolean> onDone) {
+        /**
+         * Installs a pinned command-line tool ({@code shellcheck}/{@code shfmt}); {@code update} also replaces a
+         * copy older than its pin.
+         */
+        default void installTool(String toolId, boolean update, Consumer<Boolean> onDone) {
             onDone.accept(false);
         }
 
@@ -294,11 +300,12 @@ final class DoctorCoordinator {
             pane.installFinished(check.id());
             runChecks(); // re-probe either way so the row reflects the outcome; the page keeps its results meanwhile
         };
+        boolean update = check.update(); // Update: replace an install older than its pin, not only a missing one
         switch (check.install()) {
-            case SERVER -> ops.installServer(check.installArg(), done);
-            case LANG -> ops.installLang(InstallCatalog.Lang.valueOf(check.installArg()), done);
+            case SERVER -> ops.installServer(check.installArg(), update, done);
+            case LANG -> ops.installLang(InstallCatalog.Lang.valueOf(check.installArg()), update, done);
             case TYPST_CLI -> ops.installTypstCli(done);
-            case TOOL -> ops.installTool(check.installArg(), done);
+            case TOOL -> ops.installTool(check.installArg(), update, done);
             case NONE -> {
                 /* no action */
             }
@@ -593,6 +600,8 @@ final class DoctorCoordinator {
                 DoctorCheck jsDebug = DoctorCheck.checking("debug.javascript", "debug", tr("doctor.label.jsDebug"), "")
                         .withSettings("debug")
                         .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.JAVASCRIPT.name());
+                PinnedVersions.Pin jsPin = PinnedVersions.forStep("js-debug").orElse(null);
+                Path config = host.configDir();
                 specs.add(probe(jsDebug, base -> {
                     var server = DebugAdapterLocator.locateJsDebugServer(jsPath, home);
                     if (server.isEmpty()) {
@@ -605,13 +614,25 @@ final class DoctorCoordinator {
                     if (!nodeP.present()) {
                         return base.missing("doctor.tip.missing", node);
                     }
+                    if (com.editora.dap.JsLaunch.runsAdapter(nodeP.version()) && jsPin != null) {
+                        // Update is offered for Editora's copy only: a configured js-debug path keeps winning.
+                        return pinnedRow(
+                                base,
+                                jsPin,
+                                config,
+                                List.of(server.get().toString()),
+                                null,
+                                null,
+                                server.get() + " · Node.js " + nodeP.version(),
+                                false);
+                    }
                     return com.editora.dap.JsLaunch.runsAdapter(nodeP.version())
                             ? base.ok(server.get() + " · Node.js " + nodeP.version())
                             : base.warn(
                                     server.get().toString(),
                                     "doctor.tip.jsDebugOldNode",
                                     nodeP.version(),
-                                    String.valueOf(com.editora.dap.JsLaunch.MIN_ADAPTER_NODE_MAJOR));
+                                    com.editora.install.VersionFloor.NODE_JS_DEBUG.minimum());
                 }));
             }
         } else {
@@ -633,7 +654,12 @@ final class DoctorCoordinator {
             int major = RunService.javaMajorOf(out);
             return switch (DoctorRules.javaRunStatus(major)) {
                 case OK -> base.ok(DoctorRules.firstLine(out, ""));
-                case WARN -> base.warn(DoctorRules.firstLine(out, ""), "doctor.tip.javaOld", String.valueOf(major));
+                case WARN ->
+                    base.warn(
+                            DoctorRules.firstLine(out, ""),
+                            "doctor.tip.javaOld",
+                            String.valueOf(major),
+                            com.editora.install.VersionFloor.JAVA_RUN.minimum());
                 default -> base.missing("doctor.tip.missing", javaExecutable);
             };
         }));
@@ -665,7 +691,11 @@ final class DoctorCoordinator {
                     }
                     String version = "v" + v[0] + "." + v[1] + "." + v[2];
                     return com.editora.http.HttpScripts.guardFor(v) == com.editora.http.HttpScripts.Guard.NONE
-                            ? base.warn(version, "doctor.tip.httpNodeOld", version)
+                            ? base.warn(
+                                    version,
+                                    "doctor.tip.httpNodeOld",
+                                    version,
+                                    com.editora.install.VersionFloor.NODE_HTTP_SCRIPTS.minimum())
                             : base.ok(tr("doctor.detail.httpScripts", version));
                 }));
             } else {
@@ -868,6 +898,8 @@ final class DoctorCoordinator {
         boolean python = "python".equals(serverId);
         boolean configured = ops.lspServerCommandSet(serverId);
         String failing = ops.lspServerFailure(serverId);
+        PinnedVersions.Pin pin = PinnedVersions.forServer(serverId).orElse(null);
+        Path config = host.configDir();
         return probe(row, base -> {
             if (argv.isEmpty()) {
                 // No command at all (an uninstalled maven-pom): say that, not "not found on PATH" (review A3).
@@ -902,23 +934,61 @@ final class DoctorCoordinator {
             if (failing != null) {
                 return base.warn(failing, "doctor.tip.serverFailing"); // it starts, then fails every request (C2)
             }
-            if (com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
-                // Which jdtls, and whether it is older than the build Editora is measured against (Java review D8).
-                com.editora.install.JdtlsVersion installed = com.editora.install.JdtlsVersion.installed(Path.of(path));
-                if (installed != null) {
-                    String detail = installed.label() + " — " + path;
-                    return installed.compareTo(com.editora.install.JdtlsVersion.pinned()) < 0
-                            ? base.warn(
-                                    detail,
-                                    "doctor.tip.jdtlsOutdated",
-                                    com.editora.install.JdtlsVersion.pinned().label())
-                            : base.ok(detail);
-                }
+            if (pin != null) {
+                // Which release, and whether it is older than the one Editora installs and is tested with (D8).
+                List<String> locations = new ArrayList<>(argv);
+                locations.add(path);
+                Path own = com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId) ? Path.of(path) : null;
+                Supplier<String> printed = InstallCatalog.CLOJURE_LSP_ID.equals(pin.stepId())
+                        ? () -> DoctorProbes.output(withArgs(argv, "--version"))
+                        : null;
+                return pinnedRow(base, pin, config, locations, own, printed, path, true);
             }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
             String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";
             return base.ok(version.isEmpty() ? path : version + " — " + path);
         });
+    }
+
+    /**
+     * The row of a found server or tool whose version Editora pins ({@link PinnedVersions}): OK with the version
+     * it is, or a warning with Update when it is older than the pin. Editora's own copy (one of {@code locations}
+     * lies in the pin's folder under {@code config}) is read from its install receipt, else from its files; the
+     * user's own from {@code own} (a jdtls launcher) or what it {@code printed} for {@code --version}. Editora's
+     * copy whose version cannot be told also offers Update — it predates receipts, so it may be from an older pin.
+     * The user's older copy gets Update only when {@code updateOwn} (Update then switches to Editora's copy);
+     * otherwise just the warning. Runs on the probe pool.
+     */
+    private static DoctorCheck pinnedRow(
+            DoctorCheck base,
+            PinnedVersions.Pin pin,
+            @Nullable Path config,
+            List<String> locations,
+            @Nullable Path own,
+            @Nullable Supplier<String> printed,
+            String where,
+            boolean updateOwn) {
+        Path dir = config == null ? null : config.resolve(pin.destSubpath());
+        boolean editoras = PinnedVersions.anyInside(locations, dir);
+        String installed = editoras && dir != null ? PinnedVersions.installedVersion(pin, dir) : null;
+        if (installed == null && own != null) {
+            installed = PinnedVersions.fingerprint(pin.stepId(), own);
+        }
+        if (installed == null && printed != null) {
+            installed = PinnedVersions.fromVersionOutput(pin.stepId(), printed.get());
+        }
+        String version = installed == null ? "" : PinnedVersions.label(pin.stepId(), installed);
+        String detail = version.isEmpty() ? where : version + " — " + where;
+        return switch (PinnedVersions.freshness(pin, installed)) {
+            case CURRENT -> base.ok(detail);
+            case OUTDATED ->
+                editoras
+                        ? base.outdated(detail, "doctor.tip.pinOutdated", version, pin.label())
+                        : updateOwn
+                                ? base.outdated(detail, "doctor.tip.ownOutdated", version, pin.label())
+                                : base.warn(detail, "doctor.tip.ownOutdatedConfigured", version, pin.label());
+            case UNKNOWN -> editoras ? base.outdated(detail, "doctor.tip.pinUnknown", pin.label()) : base.ok(detail);
+        };
     }
 
     /** A row for one of bash-language-server's tools: its version when it runs, else Install…. */
@@ -930,10 +1000,28 @@ final class DoctorCoordinator {
                 .withInstall(DoctorCheck.Install.TOOL, toolId);
         List<String> argv = List.of(command);
         boolean needed = needs.shellOpen();
+        PinnedVersions.Pin pin = PinnedVersions.forStep(toolId).orElse(null);
+        Path config = host.configDir();
+        // A bare name is the copy on PATH, which Editora's own replaces once installed; a path is the user's choice.
+        boolean fromPath = command.indexOf('/') < 0 && command.indexOf('\\') < 0;
         return probe(row, base -> {
             DoctorProbes.Presence p = DoctorProbes.version(argv);
             if (p.present()) {
-                return base.ok(p.version());
+                if (pin == null) {
+                    return base.ok(p.version());
+                }
+                String path = DoctorProbes.resolvedPath(argv);
+                return pinnedRow(
+                        base,
+                        pin,
+                        config,
+                        List.of(command, path),
+                        null,
+                        () -> DoctorProbes.output(withArgs(argv, "--version")),
+                        path.isEmpty() ? command : path,
+                        fromPath
+                                || PinnedVersions.anyInside(
+                                        List.of(command), config == null ? null : config.resolve(pin.destSubpath())));
             }
             return needed
                     ? base.missing("doctor.tip.bashTool", command)

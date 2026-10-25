@@ -3,6 +3,8 @@ package com.editora.github;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.editora.install.VersionFloor;
+
 /**
  * The {@code gh} release a version line names ({@code gh version 2.96.0 (2026-07-02)}), and what Editora
  * needs from it. Established from gh's release notes: everything Editora calls exists since gh 2.16
@@ -15,11 +17,8 @@ public final class GhVersion {
 
     private GhVersion() {}
 
-    /** The oldest gh with every feature Editora uses, as shown to the user. */
-    public static final String MINIMUM = "2.50";
-
-    private static final int MINIMUM_MAJOR = 2;
-    private static final int MINIMUM_MINOR = 50;
+    /** The oldest gh with every feature Editora uses, as shown to the user ({@link VersionFloor#GH}). */
+    public static final String MINIMUM = VersionFloor.GH.minimum();
 
     private static final Pattern NUMBER = Pattern.compile("(\\d+)\\.(\\d+)(?:\\.(\\d+))?");
 
@@ -46,7 +45,7 @@ public final class GhVersion {
 
     /** Whether this gh has {@code pr checks --json} (2.50+), which the CI-checks roll-up reads. */
     public static boolean supportsChecksJson(String versionLine) {
-        return atLeast(versionLine, MINIMUM_MAJOR, MINIMUM_MINOR);
+        return atLeast(versionLine, VersionFloor.GH.major(), VersionFloor.GH.minor());
     }
 
     /** The bare number in {@code versionLine} ({@code 2.96.0}), or the line itself when it has none. */

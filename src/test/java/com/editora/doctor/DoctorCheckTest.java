@@ -50,7 +50,7 @@ class DoctorCheckTest {
     @Test
     void nullsNormalizeToEmpty() {
         DoctorCheck c = new DoctorCheck(
-                "id", "sec", "L", null, DoctorStatus.OK, null, null, null, null, null, null, null, null);
+                "id", "sec", "L", null, DoctorStatus.OK, null, null, null, null, null, null, null, null, false);
         assertEquals("", c.command());
         assertEquals("", c.detail());
         assertEquals("", c.tipKey());
@@ -60,6 +60,23 @@ class DoctorCheckTest {
         assertEquals("", c.settingsKey());
         assertEquals("", c.enableKey());
         assertEquals("", c.helpUrl());
+    }
+
+    @Test
+    void outdatedIsAWarningWhoseInstallReadsUpdate() {
+        DoctorCheck base = DoctorCheck.checking("lsp.groovy", "lsp", "Groovy", "gls")
+                .withInstall(DoctorCheck.Install.SERVER, "groovy");
+
+        DoctorCheck c = base.outdated("0.4.7 — /x/gls-0.4.7.jar", "doctor.tip.pinOutdated", "0.4.7", "0.4.8");
+
+        assertEquals(DoctorStatus.WARN, c.status());
+        assertTrue(c.update());
+        assertEquals(DoctorCheck.Install.SERVER, c.install());
+        assertEquals("groovy", c.installArg());
+        assertEquals(List.of("0.4.7", "0.4.8"), c.tipArgs());
+        assertFalse(base.update());
+        assertFalse(c.ok("0.4.8").update(), "a fresh outcome is not an update");
+        assertFalse(base.warn("", "doctor.tip.serverFailing").update(), "a plain warning offers no Update");
     }
 
     @Test

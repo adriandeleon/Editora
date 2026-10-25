@@ -61,6 +61,9 @@ public final class InstallService {
     /** A bounded cap on any single download (vsix/tarball/JSON) so a hostile/oversized response can't OOM. */
     private static final long MAX_DOWNLOAD_BYTES = 200L * 1024 * 1024;
 
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(InstallService.class.getName());
+
     private static final Duration NET_TIMEOUT = Duration.ofMinutes(3);
     /** npm/pip can take minutes (compiling/native deps); generous but bounded. */
     private static final Duration CMD_TIMEOUT = Duration.ofMinutes(10);
@@ -170,6 +173,7 @@ public final class InstallService {
             for (Step s : steps) {
                 onStepStart.accept(s.id());
                 String cmd = runStep(s, configDir);
+                writeReceipt(s, configDir);
                 if (cmd != null) {
                     installedCommand = cmd;
                 }
@@ -180,6 +184,22 @@ public final class InstallService {
         } catch (Exception e) {
             return new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
         }
+    }
+
+    /**
+     * Records which version a pinned step just installed ({@link InstallReceipt}), so a later Editora that moves the
+     * pin can tell this copy is older. A receipt that cannot be written does not fail the install: the copy works,
+     * and Doctor reads its version from the files where it can.
+     */
+    private static void writeReceipt(Step s, Path configDir) {
+        PinnedVersions.forStep(s.id()).ifPresent(pin -> {
+            try {
+                new InstallReceipt(pin.stepId(), pin.version(), java.time.Instant.now())
+                        .write(configDir.resolve(s.destSubpath()));
+            } catch (IOException | RuntimeException e) {
+                LOG.log(java.util.logging.Level.WARNING, "could not record the installed version of " + s.id(), e);
+            }
+        });
     }
 
     /** Stops the worker (window dispose). */

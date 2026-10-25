@@ -367,7 +367,7 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   logpoint, a watch on `total`, step-into, and set-value. `samples/run/hello.java` is the Java
   equivalent for a first breakpoint.
 
-## debug/ — Java debugging (breakpoints, stepping, values, threads)
+## debug/ — Java and Clojure debugging (breakpoints, stepping, values, threads)
 
 - `samples/debug/java/pom.xml` — a standalone **Java 25 Maven** project (not a `<module>` of the root
   pom) built to try every breakpoint kind on, in ~220 lines across six classes. Open the folder as a
@@ -391,6 +391,36 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
     — a record with a compact constructor (one hit per item built) and the sealed discount hierarchy.
   - `samples/debug/java/src/test/java/com/example/shelf/ShelfTest.java` — nine green JUnit 5 tests
     (one parameterized) for **Debug Test** from the test gutter ▶; a breakpoint is marked in the first.
+
+- `samples/debug/clojure/deps.edn` — the same shelf as a standalone **Clojure CLI** project (four
+  namespaces, a script and six green clojure.test tests, ~150 lines), for the JVM debugger on Clojure.
+  Open the folder as a project, open `main.clj` and Debug ▶ `-main` (Run and Debug use `clojure -M -m
+  shelf.main` in the project folder, with locals clearing disabled so every `let`/`loop` binding stays
+  in Variables). Every suggested spot is a `break here` comment; `clojure -M:run` runs it outside
+  Editora, `clojure -M:test` runs the tests (both aliases are in the Clojure CLI toolbar button's
+  popup). Plain breakpoints only: this debugger does not evaluate conditions, hit counts or log
+  messages yet, so the two spots where they would go are marked as such. Values show as their class
+  (`PersistentArrayMap`, `Long`); expand one for its fields.
+  - `samples/debug/clojure/src/shelf/main.clj` — the entry point: a first plain breakpoint, **Step
+    Into / Step Out** on `greeting` (frames read `shelf.main/greeting`), stepping into `checkout`, and
+    the `crash` program argument for an **uncaught exception** (`ex-info`; any other argument is parsed,
+    a word is a *caught* one).
+  - `samples/debug/clojure/src/shelf/core.clj` — the `checkout` **loop/recur**: `total` grows on every
+    pass (a watch on it), `by-prefix` shows under its JVM name `by_prefix`, step-into on
+    `pricing/discount-for`, a breakpoint **inside an anonymous fn** in a `filter`, and `parse-quantity`
+    with a caught `NumberFormatException` (`err` in Variables, or the **Caught Exceptions** filter).
+  - `samples/debug/clojure/src/shelf/pricing.clj` — discounts as maps: a `cond` hit once per item
+    (where a conditional breakpoint would go) and `apply-discount`, whose `:stacked` arm **recurses**,
+    so the call stack shows two `shelf.pricing/apply-discount` frames with their own `discount` and `price`.
+  - `samples/debug/clojure/src/shelf/restock.clj` — three named worker threads (`restock-1…3`): the
+    **Threads** view, one paused worker while the others run on, and a loop line that runs 160 times
+    (where a hit-count breakpoint would go).
+  - `samples/debug/clojure/dev/tally.clj` — a **script** with no `-main`: Run (gutter ▶) loads it by
+    path from the project folder, Debug stops at breakpoints on its **top-level forms**, and `item` is
+    nil on the third pass.
+  - `samples/debug/clojure/test/shelf/core_test.clj` — six green clojure.test tests, run with
+    `clojure -M:test` (cognitect's test-runner, a git dependency fetched on first run); a breakpoint is
+    marked in the first.
 
 ## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup + tests
 

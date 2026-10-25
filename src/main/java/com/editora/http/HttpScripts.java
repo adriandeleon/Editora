@@ -81,12 +81,12 @@ public final class HttpScripts {
         if (version == null || version.length < 2) {
             return Guard.NONE;
         }
-        int major = version[0];
-        int minor = version[1];
-        if (major > 22 || (major == 22 && minor >= 13)) {
+        if (com.editora.install.VersionFloor.NODE_HTTP_PERMISSION.metBy(version)) {
             return Guard.PERMISSION;
         }
-        return major >= 20 ? Guard.EXPERIMENTAL_PERMISSION : Guard.NONE;
+        return com.editora.install.VersionFloor.NODE_HTTP_SCRIPTS.metBy(version)
+                ? Guard.EXPERIMENTAL_PERMISSION
+                : Guard.NONE;
     }
 
     /** The flags that switch {@code guard} on, letting the script read only {@code shim}. */

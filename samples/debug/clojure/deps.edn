@@ -1,0 +1,16 @@
+;; Sample Clojure CLI project for exercising Editora's debugger on Clojure. Small on purpose: one
+;; entry namespace, a handful of functions, and `break here` comments marking where a breakpoint is
+;; worth placing (plain, inside an anonymous fn, in a recursion, on worker threads, in a caught and an
+;; uncaught exception, in a script's top-level forms). Standalone: the repo's own build never reads it.
+;; Needs the Clojure CLI and a JDK: `clojure -M:run` (or `clojure -M -m shelf.main`) runs it,
+;; `clojure -M:test` runs the tests, `clojure -M dev/tally.clj` runs the script.
+{:paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.6"}}
+ :aliases
+ {;; `clojure -M:run [arg]` — the demo; the argument is a quantity, a word, or `crash`.
+  :run {:main-opts ["-m" "shelf.main"]}
+  ;; `clojure -M:test` — the clojure.test suite through cognitect's runner (a git dependency, fetched once).
+  :test {:extra-paths ["test"]
+         :extra-deps {io.github.cognitect-labs/test-runner {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+         :main-opts ["-m" "cognitect.test-runner"]
+         :exec-fn cognitect.test-runner.api/test}}}

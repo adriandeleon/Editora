@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every implementation is listed in a picker with its package, instead of one being opened with no word of the
   others.
 
+- **Doctor: Update for servers and tools older than Editora's.** Editora installs jdtls, the JavaScript debugger,
+  the Maven pom.xml server, Groovy's gls, Metals, the Kotlin server, clojure-lsp, ShellCheck and shfmt at the
+  exact release it is tested with. When a new Editora moves to a newer release, Doctor now marks a copy installed
+  under the old one with a warning that names both versions and an **Update…** button, which installs the new
+  release and restarts the server on it. Each install now records its version (`.editora-install` in its folder);
+  for copies from before this, Doctor reads the version from the files or from `--version` where it can, and
+  offers Update where it cannot tell (a Kotlin server from an earlier Editora). Install also replaces Editora's
+  own copy that is known to be older, as it already did for jdtls.
+- **A Clojure debugging sample.** `samples/debug/clojure/` is the same shelf as a small standalone Clojure CLI
+  project (four namespaces, a script, six green clojure.test tests) with a `break here` comment at every spot
+  worth a breakpoint: a `loop/recur` whose bindings change on every pass, an anonymous fn, a recursion, three
+  named worker threads, a caught and an uncaught exception, and a script's top-level forms. `clojure -M:run`
+  and `clojure -M:test` run it outside Editora.
 - **Complete Statement** (`edit.completeStatement`, Code ▸ Complete Statement; Ctrl+Shift+Enter / Cmd+Shift+Enter in
   the IntelliJ keymaps), as IntelliJ's Complete Current Statement: in Java, C, C++, C#, JavaScript, TypeScript, PHP
   and Kotlin it closes the line's open string and brackets, adds the `;` (not in Kotlin) or the `{ }` block a
@@ -231,8 +244,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java: a failed import says why** (jdtls's logged reason, not a raw "(WARNING)") and is not then called "Loaded
   and ready"; project-level problems (in `pom.xml` or a Gradle build file) reach Problems when it lists only open
   files; a plain-folder file is no longer red until reopened; the post-import build runs for Maven projects only.
-- **Doctor: the outdated-jdtls warning has its Install… button**, and Settings ▸ LSP no longer calls that jdtls
-  "Installed".
+- **Settings ▸ LSP no longer calls an outdated jdtls "Installed".** Its pill says it is older than the release
+  Editora is tested with, with Install… to update Editora's copy, as Doctor's Update… does.
 - **Java navigation:** a library class opened from Go to Symbol lands on its declaration, not its package line;
   Structure no longer shows a method's return type twice; implementation, type definition and declaration report
   a failed request instead of "nothing found"; a refused rename or code action says the server's reason.

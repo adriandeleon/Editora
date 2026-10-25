@@ -893,6 +893,31 @@ found, via `lspCoordinator.isServerAvailable("java")`; python/js = their enable 
 
 ---
 
+## Installed versions: pins, receipts and floors
+
+Editora installs some servers and tools at an **exact release** (jdtls, vscode-js-debug, lemminx-maven, gls,
+Metals, JetBrains' Kotlin LSP, clojure-lsp, ShellCheck, shfmt): the version constants in `InstallCatalog`, listed
+with their steps in `install/PinnedVersions`. Every other installer takes whatever is latest (npm, pip, `go
+install …@latest`, rustup, the GitHub `releases/latest` archives).
+
+- **Receipts.** After a pinned step installs, `InstallService` writes `.editora-install` (`InstallReceipt`: step id,
+  version, time) into its folder. A dot file and not a jar, so neither a `<dir>/*` classpath nor `findBinary` sees
+  it.
+- **Outdated copies.** Doctor's row for a pinned server or tool reads Editora's copy's receipt, else what its
+  files show (`PinnedVersions.fingerprint`: jdtls's core bundle, a jar's name, js-debug's bundle constant), else
+  what it prints for `--version` (clojure-lsp, ShellCheck, shfmt). Older than the pin, or a copy from before
+  receipts whose files say nothing (the Kotlin server), is a warning with **Update**
+  (`DoctorCheck.outdated`): the same installer with `update = true`, which reinstalls the pinned step even though
+  a server is found and stops the running server first; the settings apply after the install starts it on the new copy. A plain Install also
+  replaces Editora's copy that is known to be older (`InstallCoordinator.editoraCopyOutdated`, files only — it
+  runs on the FX thread). The user's own older server gets the warning too, and Update switches it to Editora's
+  copy; a ShellCheck/shfmt path set in Settings gets only the warning.
+- **Bumping a pin** is the version constant (and its hashes) in `InstallCatalog`; the receipt and Doctor follow.
+  `PinnedVersionsTest` fails when a new exact-release installer has no `PinnedVersions` entry.
+- **Floors.** The tools Editora finds rather than installs have minimum versions, all in `install/VersionFloor`
+  (JDK for Run, `gh`, Node.js for js-debug and for HTTP scripts). Compare with `VersionFloor.metBy` where the
+  version is read, and pass `minimum()` to the Doctor tip rather than writing the number into a message.
+
 ## Adding a server or adapter
 
 See [extending.md](../extending.md) — adding an LSP server is one `ServerDef` entry plus its id in the

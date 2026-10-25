@@ -80,7 +80,10 @@ not new logic:
    `pinnedTool` recipe for a per-OS binary pinned by SHA-256, as clojure-lsp is, `COURSIER_LSP` for a server
    published only as Maven artifacts — a pinned coursier resolves it, as for Metals), and the persist case in
    `InstallCoordinator.applyServerCommand`. A server run by `java` gets the Settings JDK
-   through `JvmServerCommand.withJdk`.
+   through `JvmServerCommand.withJdk`. An installer of an exact release also gets a `PinnedVersions` entry, so
+   its install leaves a receipt and Doctor offers Update once the pin moves
+   ([installed versions](subsystems/lsp-and-dap.md#installed-versions-pins-receipts-and-floors)); a fingerprint
+   for installs from before receipts is optional.
 
 `LspManager.configure(enabled, Map<serverId, command>)` is map-based, so it never needs a
 signature change. If the language has no bundled grammar, also do
