@@ -1,5 +1,6 @@
 package com.editora.lsp;
 
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -70,9 +71,20 @@ public final class JavaExpectedType {
             i--;
         }
         i = skipSpaceBack(text, i);
+        if (i > 0 && text.charAt(i - 1) == '.' && (i < 2 || text.charAt(i - 2) != '.')) {
+            // `String s = user.na|`: a member of the qualifier's, expected as the whole expression is (AN3)
+            i = skipSpaceBack(text, qualifierStart(text, i - 1));
+            if (endsWithWord(text, i, "new")) {
+                i = skipSpaceBack(text, i - 3);
+            }
+        }
         boolean afterNew = endsWithWord(text, i, "new");
         if (afterNew) {
             i = skipSpaceBack(text, i - 3);
+        }
+        if (i > 0 && isTernaryBranch(text, i - 1)) {
+            // `String q = ready ? a|` / `… : b|`: a branch is expected as the whole conditional is (AN3)
+            i = skipSpaceBack(text, conditionalStart(text, i - 1));
         }
         if (i == 0) {
             return null;
@@ -114,20 +126,139 @@ public final class JavaExpectedType {
 
     /** The type part of a parameter's label from signature help: {@code int n} → {@code int}. */
     public static @Nullable String parameterType(@Nullable String label) {
+        List<String> types = parameterTypes(label);
+        return types.isEmpty() ? null : types.get(0);
+    }
+
+    /**
+     * The types an argument for a parameter's label may have: its type, or for varargs ({@code Object... args})
+     * one element first and the whole array second — {@code format("%d", count} passes an element (AN2).
+     */
+    public static List<String> parameterTypes(@Nullable String label) {
         if (label == null) {
-            return null;
+            return List.of();
         }
         String s = label.strip().replaceAll("@[\\w.]+(?:\\([^)]*\\))?\\s+", "").replaceFirst("^final\\s+", "");
         int cut = s.lastIndexOf(' ');
         String type = cut < 0 ? s : s.substring(0, cut).strip();
-        if (type.endsWith("...")) {
-            type = type.substring(0, type.length() - 3) + "[]";
+        if (type.isEmpty() || NOT_TYPES.contains(type)) {
+            return List.of();
         }
-        return type.isEmpty() || NOT_TYPES.contains(type) ? null : type;
+        if (type.endsWith("...")) {
+            String element = type.substring(0, type.length() - 3).strip();
+            return List.of(element, element + "[]");
+        }
+        return List.of(type);
+    }
+
+    /**
+     * Where the qualifier ending at the {@code .} at {@code dot} begins: identifiers, calls, indexes, literals
+     * and the chain they make ({@code users.get(0).name.}), also across lines.
+     */
+    private static int qualifierStart(String text, int dot) {
+        int j = dot;
+        while (true) {
+            int k = skipSpaceBack(text, j);
+            int end = k;
+            while (k > 0) {
+                char ch = text.charAt(k - 1);
+                if (Character.isJavaIdentifierPart(ch)) {
+                    k--;
+                } else if (ch == ')' || ch == ']') {
+                    int open = matchBack(text, k - 1);
+                    if (open < 0) {
+                        return k;
+                    }
+                    k = open;
+                } else if (ch == '"') {
+                    int q = text.lastIndexOf('"', k - 2);
+                    if (q < 0) {
+                        return k;
+                    }
+                    k = q;
+                } else {
+                    break;
+                }
+            }
+            if (k == end) {
+                return j; // nothing before the dot to qualify it
+            }
+            int before = skipSpaceBack(text, k);
+            if (before > 0 && text.charAt(before - 1) == '.') {
+                j = before - 1;
+            } else {
+                return k;
+            }
+        }
+    }
+
+    /** The opening bracket that the {@code )} or {@code ]} at {@code close} matches, or -1. */
+    private static int matchBack(String text, int close) {
+        char closer = text.charAt(close);
+        char opener = closer == ')' ? '(' : '[';
+        int depth = 0;
+        for (int i = close; i >= 0; i--) {
+            char ch = text.charAt(i);
+            if (ch == closer) {
+                depth++;
+            } else if (ch == opener && --depth == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Whether the {@code ?} or {@code :} at {@code at} is a conditional's, not {@code ?.}, {@code ::} or a label. */
+    private static boolean isTernaryBranch(String text, int at) {
+        char ch = text.charAt(at);
+        if (ch == '?') {
+            return true;
+        }
+        if (ch != ':'
+                || (at > 0 && text.charAt(at - 1) == ':')
+                || (at + 1 < text.length() && text.charAt(at + 1) == ':')) {
+            return false;
+        }
+        int start = conditionalStart(text, at);
+        return text.substring(start, at).contains("?"); // `case X:`, `for (String s :`, a label have none
+    }
+
+    /**
+     * Where the conditional expression holding the {@code ?} or {@code :} at {@code at} begins: just after the
+     * {@code =}, {@code (}, {@code ,}, {@code return} or statement start before it, at its own bracket depth.
+     */
+    private static int conditionalStart(String text, int at) {
+        int depth = 0;
+        for (int i = at - 1; i >= 0; i--) {
+            char ch = text.charAt(i);
+            if (ch == ')' || ch == ']') {
+                depth++;
+            } else if (ch == '(' || ch == '[') {
+                if (depth-- == 0) {
+                    return i + 1;
+                }
+            } else if (depth == 0) {
+                boolean comparison =
+                        ch == '=' && (i > 0 && "=!<>".indexOf(text.charAt(i - 1)) >= 0 || text.charAt(i + 1) == '=');
+                if ((ch == '=' && !comparison) || ch == ',' || ch == ';' || ch == '{' || ch == '}') {
+                    return i + 1;
+                }
+                if (endsWithWord(text, i + 1, "return")) {
+                    return i + 1;
+                }
+            }
+        }
+        return 0;
     }
 
     private static @Nullable Expected assignment(String text, int eq, boolean afterNew) {
         String left = text.substring(statementStart(text, eq), eq).strip();
+        int nl = left.lastIndexOf('\n');
+        if (nl >= 0
+                && !DECLARED.matcher(left).matches()
+                && !ASSIGNED.matcher(left).matches()) {
+            left = left.substring(nl + 1).strip(); // a line above still being typed has no `;` to end it
+        }
         Matcher d = DECLARED.matcher(left);
         if (d.matches()) {
             String type = d.group(1);

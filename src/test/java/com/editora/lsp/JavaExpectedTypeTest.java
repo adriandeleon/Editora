@@ -1,5 +1,7 @@
 package com.editora.lsp;
 
+import java.util.List;
+
 import com.editora.lsp.JavaExpectedType.Expected;
 import com.editora.lsp.JavaExpectedType.Source;
 import org.junit.jupiter.api.Test;
@@ -100,9 +102,39 @@ class JavaExpectedTypeTest {
     void aParameterLabelGivesItsType() {
         assertEquals("int", JavaExpectedType.parameterType("int n"));
         assertEquals("List<? extends T>", JavaExpectedType.parameterType("final List<? extends T> c"));
-        assertEquals("String[]", JavaExpectedType.parameterType("String... args"));
+        assertEquals("String", JavaExpectedType.parameterType("String... args"), "a varargs argument is one element");
+        assertEquals(List.of("Object", "Object[]"), JavaExpectedType.parameterTypes("Object... args"));
+        assertEquals(List.of("int"), JavaExpectedType.parameterTypes("int n"));
         assertEquals("Path", JavaExpectedType.parameterType("@NonNull Path file"));
         assertNull(JavaExpectedType.parameterType(null));
         assertTrue(JavaExpectedType.parameterType("x") != null, "a bare name is taken as the type");
+    }
+
+    @Test
+    void aMemberAfterADotIsExpectedAsTheWholeExpressionIs() {
+        assertEquals(new Expected(Source.DECLARATION, "String", false), inBody("String t = name.|"));
+        assertEquals("String", inBody("String t = name.tr|").type());
+        assertEquals("String", inBody("String t = users.get(0).name().|").type());
+        assertEquals(
+                Source.ARGUMENT,
+                inBody("String t = names.stream()\n        .findFirst()\n        .orElse(|")
+                        .source(),
+                "an argument of the chain's last call asks signature help");
+        assertEquals("String", inBody("String t = names.get(0)\n        .tr|").type(), "a chain across lines");
+        assertEquals(new Expected(Source.RETURN, "String", false), inBody("return label(1).|"));
+        assertEquals(
+                "String", inBody("Shape sh = c\n        String t = name.|").type(), "a line above still being typed");
+        assertEquals(Source.ARGUMENT, inBody("label(other.|").source());
+    }
+
+    @Test
+    void aBranchOfAConditionalIsExpectedAsTheConditionalIs() {
+        assertEquals(new Expected(Source.DECLARATION, "String", false), inBody("String q = ready ? n|"));
+        assertEquals("String", inBody("String q = ready ? \"a\" : |").type());
+        assertEquals("String", inBody("String q = (a == b) ? x : |").type());
+        assertEquals(new Expected(Source.RETURN, "String", false), inBody("return ok ? |"));
+        assertEquals(Source.ARGUMENT, inBody("label(ok ? |").source());
+        assertNull(at("for (String s : |"), "a for-each colon is no branch");
+        assertNull(at("switch (k) {\n    case A:|"), "nor is a label");
     }
 }

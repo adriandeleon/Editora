@@ -7837,7 +7837,7 @@ final class LspCoordinator {
         }
         String type = expected.type();
         if (type != null) {
-            showSmartType(b, type, expected.afterNew());
+            showSmartType(b, List.of(type), expected.afterNew());
             return;
         }
         lspManager.changeDocument(path, b.text());
@@ -7849,13 +7849,13 @@ final class LspCoordinator {
                 return;
             }
             var active = com.editora.lsp.SignatureFormat.resolve(help);
-            String parameter = active == null
+            List<String> parameter = active == null
                             || active.paramStart() < 0
                             || active.paramEnd() > active.label().length()
-                    ? null
-                    : com.editora.lsp.JavaExpectedType.parameterType(
+                    ? List.of()
+                    : com.editora.lsp.JavaExpectedType.parameterTypes(
                             active.label().substring(active.paramStart(), active.paramEnd()));
-            if (parameter == null) {
+            if (parameter.isEmpty()) {
                 host.setStatus(tr("status.lsp.smartTypeUnknown"));
                 b.triggerCompletion();
             } else {
@@ -7864,11 +7864,13 @@ final class LspCoordinator {
         });
     }
 
-    private void showSmartType(EditorBuffer b, String type, boolean afterNew) {
+    /** {@code types}: what the argument may be, the first named in the status (a varargs element, then its array). */
+    private void showSmartType(EditorBuffer b, List<String> types, boolean afterNew) {
+        String type = types.get(0);
         host.setStatus(tr("status.lsp.smartType", type));
         b.triggerCompletion(items -> {
             List<com.editora.completion.Completion> kept =
-                    com.editora.lsp.SmartTypeFilter.filter(items, type, afterNew);
+                    com.editora.lsp.SmartTypeFilter.filter(items, types, afterNew);
             if (kept.isEmpty() && !items.isEmpty()) {
                 Platform.runLater(() -> host.setStatus(tr("status.lsp.smartTypeNone", type)));
             }
