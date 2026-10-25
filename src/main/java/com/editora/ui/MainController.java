@@ -8163,17 +8163,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setInsertTableHandler(previews::markdownInsertTable); // Markdown format-bar "insert table" button
         buffer.setInsertTypstTableHandler(() -> previews.showTableSizePicker(buffer::insertTypstTable)); // Typst #table
         buffer.setTypstImageHandler(() -> editing.insertImageFromChooser(buffer)); // Typst "Insert Image" menu
-        buffer.setPreviewExportPngHandler(typst::exportPng); // Typst preview right-click → PNG
-        buffer.setPreviewExportSvgHandler(typst::exportSvg); // Typst preview right-click → SVG
+        buffer.previewMenu().setExportPng(typst::exportPng); // Typst preview right-click → PNG
+        buffer.previewMenu().setExportSvg(typst::exportSvg); // Typst preview right-click → SVG
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
         buffer.setHtmlPreviewDirtyListener(() -> htmlPreview.onBufferEdited(buffer));
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
-        buffer.setPreviewExportPdfHandler(exports::exportPreviewPdf); // preview right-click menu
-        buffer.setPreviewPrintHandler(exports::printPreview);
+        buffer.previewMenu().setExportPdf(exports::exportPreviewPdf); // preview right-click menu
+        buffer.previewMenu().setPrint(exports::printPreview);
         buffer.setPomViewToggleHandler(previews::togglePomView); // pom preview right-click: summary ⇄ XML tree
-        buffer.setPreviewExportDocxHandler(exports::exportPreviewDocx); // preview → MS Word
-        buffer.setPreviewExportOdtHandler(exports::exportPreviewOdt); // preview → OpenDocument
-        buffer.setPreviewExportJsonHandler(exports::exportMarkwhenJson); // Markwhen preview → JSON
+        buffer.previewMenu().setExportDocx(exports::exportPreviewDocx); // preview → MS Word
+        buffer.previewMenu().setExportOdt(exports::exportPreviewOdt); // preview → OpenDocument
+        buffer.previewMenu().setExportJson(exports::exportMarkwhenJson); // Markwhen preview → JSON
         buffer.setTypstRootResolver(this::resolveTypstRoot); // typst --root: nearest typst.toml / project root
         buffer.setOnMarkwhenViewChanged(() -> previews.persistMarkwhenView(buffer)); // persist timeline/calendar choice
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button

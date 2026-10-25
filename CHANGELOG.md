@@ -104,6 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: the preview's right-click menu owns its own state and moved to `editor.markdown`.** `PreviewMenu` is now an object the buffer holds: the seven export and print actions the window injects, and what the pointer was on when the menu opened, live in it instead of in eleven `EditorBuffer` fields read from outside. The window injects the actions through `buffer.previewMenu()` (`setExportPdf`, `setPrint`, …) in place of seven `setPreview…Handler` setters. `EditorBuffer` is 58 lines shorter, which restores room under the 10,000-line cap. Internal-only — no behavior, dependency, or `module-info` change.
 - **jdtls is pinned to 1.63.0** (from 1.62.0), checked against the jdtls probes. Doctor now names the installed
   jdtls version and warns when it is older than the pinned one, and Install replaces an older copy of Editora's
   own instead of saying it is already installed. Installs made before a pin bump used to keep their server for

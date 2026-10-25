@@ -194,7 +194,7 @@ class PreviewSelectionCommandsFxTest {
             java.util.function.Consumer<javafx.scene.Node> ask = on -> pane.fireEvent(new ContextMenuEvent(
                     ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 200, 200, false, new PickResult(on, 5, 5)));
             ask.accept(text);
-            ContextMenu menu = EditorFx.field(buffer, "previewContextMenu");
+            ContextMenu menu = EditorFx.field(EditorFx.field(buffer, "previewMenu"), "menu");
             MenuItem enlarge = EditorFx.menuItem(menu.getItems(), tr("previewmenu.enlarge"));
             assertFalse(enlarge.isVisible(), "offered on a picture only");
             menu.hide();
@@ -227,7 +227,7 @@ class PreviewSelectionCommandsFxTest {
                     false,
                     new PickResult(second, b.getMinX() + 2, b.getMinY() + 2)));
             ask.run();
-            ContextMenu menu = EditorFx.field(buffer, "previewContextMenu");
+            ContextMenu menu = EditorFx.field(EditorFx.field(buffer, "previewMenu"), "menu");
             List<String> titles = EditorFx.titles(menu.getItems());
             assertTrue(
                     titles.containsAll(List.of(
