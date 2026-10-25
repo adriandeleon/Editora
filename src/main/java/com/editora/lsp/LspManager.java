@@ -457,6 +457,20 @@ public final class LspManager {
         this.jdtlsWorkspaceBase = base;
     }
 
+    /** Where Editora keeps a Lombok it downloaded ({@code <config>/plugins/lsp/lombok}); null: none is offered. */
+    private volatile @Nullable Path lombokDir;
+
+    /** Told, on the FX thread, of a Java root whose build declares Lombok when no Lombok jar can be found. */
+    private volatile Consumer<Path> onLombokMissing = root -> {};
+
+    public void setLombokDir(@Nullable Path dir) {
+        this.lombokDir = dir;
+    }
+
+    public void setOnLombokMissing(Consumer<Path> handler) {
+        this.onLombokMissing = handler == null ? root -> {} : handler;
+    }
+
     /** Sets the java-debug plugin bundle jar(s) injected into the java server's {@code initialize} so
      *  jdtls can debug. Takes effect on the next java session start — call {@link #restartServer} after
      *  changing it to reload a running jdtls. */
@@ -1451,10 +1465,12 @@ public final class LspManager {
                 }
                 startCommand = JavaServerEnvironment.withJavaExecutable(
                         startCommand, serverJava.executable(), JavaServerEnvironment::isJdtlsLauncher);
-                startCommand = JavaLombok.withAgent(
-                        startCommand,
-                        JavaLombok.agentFor(root, Path.of(System.getProperty("user.home"))),
-                        JavaServerEnvironment::isJdtlsLauncher);
+                Path lombok = JavaLombok.agentFor(root, Path.of(System.getProperty("user.home")), lombokDir);
+                startCommand = JavaLombok.withAgent(startCommand, lombok, JavaServerEnvironment::isJdtlsLauncher);
+                if (lombok == null && lombokDir != null && JavaLombok.declaresLombok(root)) {
+                    // Declared, but no build has downloaded it yet: the window offers to fetch it.
+                    Platform.runLater(() -> onLombokMissing.accept(root));
+                }
             }
             Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
                     ? astroTypeScriptSdk(root, sdkCeiling, startCommand)
@@ -1508,14 +1524,17 @@ public final class LspManager {
                             ? TypeScriptServer.initializationOptions(tsserverPath, typeAcquisition, loose)
                             : TypeScriptServer.SERVER_ID.equals(serverId)
                                     ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
-                                    : initOptionsFor(
+                                    : withProjectSettings(
                                             serverId,
-                                            startBundles,
-                                            astroTsdk,
-                                            onTypeFormatting,
-                                            jdks,
-                                            centralIndex,
-                                            javaPreferredHome));
+                                            initOptionsFor(
+                                                    serverId,
+                                                    startBundles,
+                                                    astroTsdk,
+                                                    onTypeFormatting,
+                                                    jdks,
+                                                    centralIndex,
+                                                    javaPreferredHome),
+                                            remote ? null : root));
             if (!session.start()) {
                 dropSession(key, session);
                 if (session.startFailed()) {
@@ -4467,6 +4486,25 @@ public final class LspManager {
      *       first place.</li>
      * </ul>
      */
+    /**
+     * {@code options} (jdtls's) with the preferences {@code root}'s own files state ({@link JavaProjectSettings})
+     * merged into {@code settings.java}; anything else unchanged.
+     */
+    @SuppressWarnings("unchecked")
+    static @Nullable Object withProjectSettings(String serverId, @Nullable Object options, @Nullable Path root) {
+        if (!LspServerRegistry.JAVA_SERVER_ID.equals(serverId) || !(options instanceof Map<?, ?> map) || root == null) {
+            return options;
+        }
+        Map<String, Object> project = JavaProjectSettings.forRoot(root);
+        Object settings = map.get("settings");
+        if (project.isEmpty() || !(settings instanceof Map<?, ?> s) || !(s.get("java") instanceof Map<?, ?> java)) {
+            return options;
+        }
+        Map<String, Object> out = new java.util.HashMap<>((Map<String, Object>) map);
+        out.put("settings", Map.of("java", JavaProjectSettings.merge((Map<String, Object>) java, project)));
+        return Map.copyOf(out);
+    }
+
     static @Nullable Object initOptionsFor(String serverId, List<String> debugBundles) {
         return initOptionsFor(serverId, debugBundles, null, false);
     }
@@ -5730,6 +5768,23 @@ public final class LspManager {
             return true;
         }
         return edit.getDocumentChanges() != null && !edit.getDocumentChanges().isEmpty();
+    }
+
+    /**
+     * Organize Imports as a save runs it: no question for an ambiguous name (it is left unimported), and the
+     * outcome reported. {@code cb} on the FX thread.
+     */
+    public void organizeImportsQuietly(Path file, int lastLine, int lastChar, Consumer<OrganizeOutcome> cb) {
+        LanguageServerSession s = javaSessionFor(file);
+        if (s == null || file == null || sessionFor(file) != s) {
+            Platform.runLater(() -> cb.accept(OrganizeOutcome.FAILED));
+            return;
+        }
+        s.quietImportChoices.incrementAndGet();
+        organizeJavaImports(s, file, lastLine, lastChar, outcome -> {
+            s.quietImportChoices.decrementAndGet();
+            cb.accept(outcome);
+        });
     }
 
     public void organizeImports(Path file, int lastLine, int lastChar, Consumer<Boolean> cb) {

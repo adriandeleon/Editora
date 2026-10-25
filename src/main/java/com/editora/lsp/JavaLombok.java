@@ -26,7 +26,33 @@ public final class JavaLombok {
 
     /** The jar to run jdtls with for {@code root}, or null when its build declares no Lombok or none is cached. */
     public static @Nullable Path agentFor(Path root, Path home) {
-        return declaresLombok(root) ? cachedJar(home) : null;
+        return agentFor(root, home, null);
+    }
+
+    /**
+     * As above, with {@code editoraDir} — where Editora keeps a Lombok it downloaded — tried after the build
+     * caches.
+     */
+    public static @Nullable Path agentFor(Path root, Path home, @Nullable Path editoraDir) {
+        if (!declaresLombok(root)) {
+            return null;
+        }
+        Path cached = cachedJar(home);
+        return cached != null ? cached : editoraDir == null ? null : newestIn(editoraDir);
+    }
+
+    /** The newest {@code lombok-<version>.jar} directly in {@code dir}, or null. */
+    static @Nullable Path newestIn(Path dir) {
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.filter(p -> {
+                        String n = p.getFileName().toString();
+                        return n.startsWith("lombok-") && n.endsWith(".jar") && Files.isRegularFile(p);
+                    })
+                    .max((a, b) -> compareVersions(versionOf(a), versionOf(b)))
+                    .orElse(null);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     /** Whether {@code root}'s build, or one of its modules' one level down, depends on Lombok. */

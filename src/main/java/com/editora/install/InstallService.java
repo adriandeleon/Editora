@@ -954,6 +954,35 @@ public final class InstallService {
         return url;
     }
 
+    /**
+     * Downloads the pinned Lombok jar ({@link InstallCatalog#LOMBOK}) into {@code dir}, refusing it unless its
+     * SHA-256 is the catalog's, and returns where it is. Written beside its final name and moved, so a failed
+     * download never leaves a half jar for jdtls to load.
+     */
+    public Path installLombok(Path dir) throws Exception {
+        return installLombok(dir, InstallCatalog.LOMBOK);
+    }
+
+    /** As above, for the recipe {@code jar} (a test's own hash). */
+    Path installLombok(Path dir, InstallCatalog.JvmLspJar jar) throws Exception {
+        byte[] bytes = download(jar.url());
+        String actual = InstallCatalog.sha256Hex(bytes);
+        if (!actual.equalsIgnoreCase(jar.sha256())) {
+            throw new InstallException(jar.fileName() + " does not match its published checksum (expected "
+                    + jar.sha256() + ", got " + actual + ") — not installed");
+        }
+        Files.createDirectories(dir);
+        Path target = dir.resolve(jar.fileName());
+        Path part = dir.resolve(jar.fileName() + ".part");
+        Files.write(part, bytes);
+        Files.move(
+                part,
+                target,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        return target;
+    }
+
     private byte[] download(@Nullable String url) throws Exception {
         if (!PluginRegistry.isHttps(url)) {
             throw new InstallException("download url must be https: " + url);

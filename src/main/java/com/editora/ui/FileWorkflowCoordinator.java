@@ -3035,6 +3035,7 @@ final class FileWorkflowCoordinator {
                 host.refreshBuildTools();
                 host.indexCoordinator().onBufferSaved(request.buffer());
                 host.sourceSaved(request.buffer()); // after didSave: the build it may start reads the saved text
+                host.lspCoordinator().afterUserSave(request.buffer()); // Java organize imports / format on save
             }
         }
     }

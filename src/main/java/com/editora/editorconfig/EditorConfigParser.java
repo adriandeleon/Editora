@@ -90,8 +90,9 @@ public final class EditorConfigParser {
     /**
      * Overlays one section's raw values onto the accumulated ones (lower precedence first). The special value
      * {@code unset} <em>removes</em> whatever was inherited for that key — per the spec it returns the property
-     * to the editor's own default — while an unrecognized key or an invalid value is ignored, leaving the
-     * inherited value in place (a typo must not silently clear a parent's setting).
+     * to the editor's own default — while an invalid value of a known key is ignored, leaving the inherited
+     * value in place (a typo must not silently clear a parent's setting). Keys Editora does not interpret
+     * itself, such as IntelliJ's {@code ij_java_*}, are kept as written for whoever reads them.
      */
     public static void overlay(Map<String, String> accumulated, Map<String, String> section) {
         for (Map.Entry<String, String> e : section.entrySet()) {
@@ -112,7 +113,7 @@ public final class EditorConfigParser {
             case "charset" -> charset(value) != null;
             case "trim_trailing_whitespace", "insert_final_newline" -> bool(value) != null;
             case "max_line_length" -> maxLineLength(value) != null;
-            default -> false;
+            default -> !key.isEmpty();
         };
     }
 

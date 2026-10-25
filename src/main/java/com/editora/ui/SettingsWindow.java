@@ -268,6 +268,8 @@ public class SettingsWindow {
     private CheckBox codeLensCheck;
     private ComboBox<String> inlayHintModeCombo;
     private CheckBox onTypeFormattingCheck;
+    private CheckBox javaOrganizeImportsOnSaveCheck;
+    private CheckBox javaFormatOnSaveCheck;
     private CheckBox pasteImportsCheck;
     private CheckBox smartSemicolonCheck;
     private CheckBox spellCheckBox;
@@ -1346,6 +1348,9 @@ public class SettingsWindow {
         onTypeFormattingCheck = viewCheck(tr("settings.onTypeFormatting"), Settings::setLspOnTypeFormatting);
         pasteImportsCheck = viewCheck(tr("settings.lspPasteImports"), Settings::setLspPasteImports);
         smartSemicolonCheck = viewCheck(tr("settings.lspSmartSemicolon"), Settings::setLspSmartSemicolon);
+        javaOrganizeImportsOnSaveCheck =
+                viewCheck(tr("settings.javaOrganizeImportsOnSave"), Settings::setJavaOrganizeImportsOnSave);
+        javaFormatOnSaveCheck = viewCheck(tr("settings.javaFormatOnSave"), Settings::setJavaFormatOnSave);
         // The per-source toggles are only meaningful while the master switch is on.
         autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
             autocompleteProseCheck.setDisable(!now);
@@ -4069,6 +4074,13 @@ public class SettingsWindow {
                 smartSemicolonCheck,
                 null,
                 "smart semicolon detection statement end java jdtls");
+        checkRow(
+                lsp,
+                Category.COMPLETION,
+                javaOrganizeImportsOnSaveCheck,
+                tr("settings.javaOnSave.note"),
+                "organize optimize imports on save actions java jdtls");
+        checkRow(lsp, Category.COMPLETION, javaFormatOnSaveCheck, null, "format reformat on save actions java jdtls");
         SettingsDependents.bind(lspCheck.selectedProperty(), rowsSince(firstLspRow));
         return p;
     }
@@ -8773,6 +8785,8 @@ public class SettingsWindow {
             onTypeFormattingCheck.setSelected(settings.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(settings.isLspPasteImports());
             smartSemicolonCheck.setSelected(settings.isLspSmartSemicolon());
+            javaOrganizeImportsOnSaveCheck.setSelected(settings.isJavaOrganizeImportsOnSave());
+            javaFormatOnSaveCheck.setSelected(settings.isJavaFormatOnSave());
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
             pdfPageFooterCheck.setSelected(settings.isPdfPageFooter());
@@ -9364,6 +9378,8 @@ public class SettingsWindow {
             onTypeFormattingCheck.setSelected(s.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(s.isLspPasteImports());
             smartSemicolonCheck.setSelected(s.isLspSmartSemicolon());
+            javaOrganizeImportsOnSaveCheck.setSelected(s.isJavaOrganizeImportsOnSave());
+            javaFormatOnSaveCheck.setSelected(s.isJavaFormatOnSave());
         } finally {
             loading = prev;
         }

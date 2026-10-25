@@ -924,6 +924,14 @@ final class LanguageServerSession implements LanguageClient {
         if (settings == null) {
             return;
         }
+        if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && settings.get("java") instanceof Map<?, ?> javaMap) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> own = (Map<String, Object>) javaMap;
+            Map<String, Object> project = JavaProjectSettings.forRoot(root);
+            if (!project.isEmpty()) {
+                settings = Map.of("java", JavaProjectSettings.merge(own, project)); // the project's own style
+            }
+        }
         try {
             server().getWorkspaceService()
                     .didChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
@@ -2776,6 +2784,10 @@ final class LanguageServerSession implements LanguageClient {
     /** jdtls's {@code java.action.organizeImports.chooseImports}: which class each ambiguous name means. */
     static final String CHOOSE_IMPORTS = "java.action.organizeImports.chooseImports";
 
+    /** While positive, {@link #CHOOSE_IMPORTS} is answered with no choice: an Organize Imports run on save. */
+    final java.util.concurrent.atomic.AtomicInteger quietImportChoices =
+            new java.util.concurrent.atomic.AtomicInteger();
+
     /**
      * {@code workspace/executeClientCommand}: a command jdtls asks the client to carry out while it waits for the
      * answer (declared by {@code executeClientCommandSupport}). {@link #CHOOSE_IMPORTS} asks, for each simple name
@@ -2788,6 +2800,9 @@ final class LanguageServerSession implements LanguageClient {
         LspClientUi ui = clientUi;
         if (params == null || !CHOOSE_IMPORTS.equals(params.getCommand()) || ui == null || disposed) {
             return CompletableFuture.completedFuture(null);
+        }
+        if (quietImportChoices.get() > 0) {
+            return CompletableFuture.completedFuture(List.of()); // on save: an ambiguous name is skipped, not asked
         }
         List<ImportChoice> choices = ImportChoice.of(params.getArguments());
         List<Object> chosen = new java.util.concurrent.CopyOnWriteArrayList<>();

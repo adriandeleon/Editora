@@ -36,14 +36,23 @@ public final class EditorConfig {
 
     /** The merged EditorConfig properties for {@code file}, or {@link EditorConfigProperties#EMPTY}. */
     public static EditorConfigProperties resolveFor(@Nullable Path file) {
+        Map<String, String> merged = rawFor(file);
+        return merged.isEmpty() ? EditorConfigProperties.EMPTY : EditorConfigParser.toProperties(merged);
+    }
+
+    /**
+     * Every property that applies to {@code file}, merged as {@link #resolveFor} merges them but untyped, keys
+     * lower-cased — the tool-specific ones too, such as IntelliJ's {@code ij_java_imports_layout}. Empty when none.
+     */
+    public static Map<String, String> rawFor(@Nullable Path file) {
         if (file == null) {
-            return EditorConfigProperties.EMPTY;
+            return Map.of();
         }
         Path abs;
         try {
             abs = file.toAbsolutePath().normalize();
         } catch (RuntimeException e) {
-            return EditorConfigProperties.EMPTY;
+            return Map.of();
         }
         List<List<Map<String, String>>> nearestFirst = new ArrayList<>();
         for (Path dir = abs.getParent(); dir != null; dir = dir.getParent()) {
@@ -64,7 +73,7 @@ public final class EditorConfig {
                 EditorConfigParser.overlay(merged, section);
             }
         }
-        return EditorConfigParser.toProperties(merged);
+        return merged;
     }
 
     /**
