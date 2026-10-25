@@ -315,6 +315,19 @@ public final class LspManager {
         }
     }
 
+    /**
+     * The last error {@code serverId}'s servers logged (its first line), or null: what a failed import was really
+     * about, which jdtls says only in its log (re-review CN2).
+     */
+    public @Nullable String lastServerError(@Nullable String serverId) {
+        for (LanguageServerSession s : sessionsByRoot.values()) {
+            if (s.serverId().equals(serverId) && s.lastErrorLog() != null) {
+                return s.lastErrorLog();
+            }
+        }
+        return null;
+    }
+
     /** {@link #setJavaFilteredTypes}'s list, which library results of symbol searches honour too (EN2). */
     public List<String> javaFilteredTypes() {
         return javaFilteredTypes;
@@ -5200,6 +5213,24 @@ public final class LspManager {
         openDocumentDiagnosticsOnly = openDocumentsOnly;
     }
 
+    /**
+     * Whether diagnostics on {@code file} are the project's rather than one file's: on its folder (jdtls: the
+     * expected JDK is missing, the compliance level does not match) or its build file. They are listed whatever
+     * Problems shows, so they must not be dropped with the closed files' (re-review C19, CN2).
+     */
+    public static boolean projectLevel(@Nullable Path file) {
+        if (file == null || com.editora.vfs.Vfs.isRemote(file)) {
+            return false;
+        }
+        String name = file.getFileName() == null ? "" : file.getFileName().toString();
+        return name.equals("pom.xml")
+                || name.equals("build.gradle")
+                || name.equals("build.gradle.kts")
+                || name.equals("settings.gradle")
+                || name.equals("settings.gradle.kts")
+                || java.nio.file.Files.isDirectory(file);
+    }
+
     private void onPublishDiagnostics(LanguageServerSession source, org.eclipse.lsp4j.PublishDiagnosticsParams params) {
         if (source == null || source.isDisposed()) {
             return;
@@ -5218,7 +5249,7 @@ public final class LspManager {
         if (!buildCaptures.isEmpty()) {
             captureBuildErrors(source, file, DiagnosticMapper.map(params.getDiagnostics()));
         }
-        if (sourceUri == null && openDocumentDiagnosticsOnly) {
+        if (sourceUri == null && openDocumentDiagnosticsOnly && !projectLevel(file)) {
             // Nobody shows a file that is not open here, and a server publishes for its whole project
             // (jdtls: once per file on import). Dropped on this, the reader, thread: each one used to
             // cost the FX thread a queued task, a search of the tabs and a path resolution to learn that.

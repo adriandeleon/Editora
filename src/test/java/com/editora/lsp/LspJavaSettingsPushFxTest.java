@@ -98,4 +98,44 @@ class LspJavaSettingsPushFxTest {
         manager.projectStyleChanged(f);
         assertEquals(now, fakes.get(0).configurations.size(), "a .java save pushes nothing");
     }
+
+    @Test
+    void aProjectsOwnProblemsGetThroughWhenOnlyOpenFilesAreShown() throws Exception {
+        List<String> delivered = new java.util.concurrent.CopyOnWriteArrayList<>();
+        LspManager m =
+                new LspManager((file, list) -> delivered.add(file.getFileName().toString()), (t, msg) -> {});
+        try {
+            LspTestHooks.useFakeSessions(m);
+            m.configure(true, Map.of("java", "jdtls"));
+            m.setOpenDocumentDiagnosticsOnly(true);
+            Path f = root.resolve("A.java");
+            Files.writeString(f, "class A {}\n");
+            m.openDocument(f, root, "java", "class A {}\n");
+            var d = new org.eclipse.lsp4j.Diagnostic(
+                    new org.eclipse.lsp4j.Range(
+                            new org.eclipse.lsp4j.Position(0, 0), new org.eclipse.lsp4j.Position(0, 1)),
+                    "Build path specifies execution environment JavaSE-1.8.");
+            LspTestHooks.publishDiagnostics(
+                    m,
+                    f,
+                    new org.eclipse.lsp4j.PublishDiagnosticsParams(root.toUri().toString(), List.of(d)));
+            LspTestHooks.publishDiagnostics(
+                    m,
+                    f,
+                    new org.eclipse.lsp4j.PublishDiagnosticsParams(
+                            root.resolve("Closed.java").toUri().toString(), List.of(d)));
+            long deadline = System.nanoTime() + 5_000_000_000L;
+            while (delivered.isEmpty() && System.nanoTime() < deadline) {
+                var latch = new java.util.concurrent.CountDownLatch(1);
+                javafx.application.Platform.runLater(latch::countDown);
+                latch.await();
+            }
+            assertEquals(List.of(root.getFileName().toString()), delivered, "the folder's, not a closed file's (C19)");
+            assertTrue(LspManager.projectLevel(root.resolve("pom.xml")), "a build file's are the project's too");
+            assertTrue(LspManager.projectLevel(root));
+            assertFalse(LspManager.projectLevel(f));
+        } finally {
+            m.close();
+        }
+    }
 }

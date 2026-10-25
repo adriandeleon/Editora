@@ -711,6 +711,17 @@ final class LspCoordinator {
         com.editora.dap.JavaSourceRootFix.correct(lspManager, path, pkg, () -> !buffer.isDisposed(), fixed -> {
             if (fixed) {
                 correctedSourceRoots.add(root);
+                // jdtls keeps a file it has open bound to the source folder it was opened under: reopened, each
+                // one in the corrected folder is read there, instead of staying red until its tab is reopened
+                // (re-review C6).
+                host.forEachBuffer(open -> {
+                    Path p = lspPath(open);
+                    if (p != null && p.startsWith(root) && lspManager.isManaged(p) && !open.isDisposed()) {
+                        lspManager.closeDocument(p);
+                        clearDiagnostics(p);
+                        syncBuffer(open);
+                    }
+                });
             }
         });
     }
@@ -1210,10 +1221,7 @@ final class LspCoordinator {
         }
         // Problems of a project rather than a file arrive on its folder (jdtls: the expected JDK is missing, the
         // compliance level does not match). Listed in either scope, and said once (Java review C19).
-        boolean projectLevel = buffer == null
-                && file != null
-                && !com.editora.vfs.Vfs.isRemote(file)
-                && java.nio.file.Files.isDirectory(file);
+        boolean projectLevel = buffer == null && LspManager.projectLevel(file);
         if (projectLevel) {
             for (LspDiagnostic d : listed) {
                 if (d.severity().ordinal() <= LspDiagnostic.Severity.WARNING.ordinal()
@@ -1280,7 +1288,11 @@ final class LspCoordinator {
             // "Project built" over a build with errors read as success (Java review C15).
             switch (outcome) {
                 case SUCCEEDED -> host.setStatus(tr("status.lsp.buildWorkspaceDone"));
-                case WITH_ERRORS -> host.setError(tr("status.lsp.buildWorkspaceErrors"));
+                case WITH_ERRORS ->
+                    host.setError(
+                            problems.isEmpty() // a project that did not import builds "with errors" and lists none
+                                    ? tr("status.lsp.buildWorkspaceNotImported")
+                                    : tr("status.lsp.buildWorkspaceErrors"));
                 case CANCELLED -> host.setStatus(tr("status.lsp.buildWorkspaceCancelled"));
                 case FAILED, UNAVAILABLE -> host.setError(tr("status.lsp.buildWorkspaceFailed"));
             }
@@ -2659,6 +2671,17 @@ final class LspCoordinator {
             // A module pom's root is its reactor's: one lemminx-maven JVM per reactor, not per module (C11).
             return com.editora.lsp.RootResolver.outermostContiguous(resolved, "pom.xml", ops.lspProjectRoot());
         }
+        if (com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
+                && com.editora.lsp.RootResolver.isLoose(
+                        ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId))) {
+            // A loose `package demo;` file in …/src/demo is rooted where its package says, not in its own folder,
+            // where jdtls expected the default package and marked every declaration (re-review C6).
+            Path implied = com.editora.dap.JavaSourceRootFix.sourceRoot(
+                    file, com.editora.dap.JavaSourceRootFix.declaredPackage(buffer.getContent()));
+            if (implied != null && !com.editora.lsp.RootResolver.isBroadRoot(implied)) {
+                return implied;
+            }
+        }
         if (resolved != null && com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
             // A module's root is its build's: one jdtls per reactor or Gradle build, as a project gets (C10).
             return com.editora.lsp.RootResolver.javaBuildRoot(resolved, ops.lspProjectRoot());
@@ -3083,7 +3106,12 @@ final class LspCoordinator {
                 return;
             }
             Path root = lspRootFor(b, LspServerRegistry.JAVA_SERVER_ID);
-            if (root != null && hasJavaBuildFile(root) && builtAfterImport.add(root)) {
+            // Maven only: jdtls compiles a Gradle project into Buildship's bin/, which then shows in `git status`;
+            // that is for Build Project, run on purpose, to do (re-review CN3, owner decision).
+            if (root != null
+                    && hasJavaBuildFile(root)
+                    && java.nio.file.Files.isRegularFile(root.resolve("pom.xml"))
+                    && builtAfterImport.add(root)) {
                 lspManager.buildJavaWorkspace(path, false, outcome -> {});
             }
         });
@@ -3158,11 +3186,23 @@ final class LspCoordinator {
         return settle;
     }
 
+    /** Servers whose project did not import cleanly since the last restart or reload: never "ready" over that. */
+    private final java.util.Set<String> importFailed = new java.util.HashSet<>();
+
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
         if (line != null) {
             String server = line.serverId() == null ? "LSP" : serverProgram(line.serverId());
             if (line.problem()) {
-                host.setError(tr("status.lsp.importProblem", server, line.text()));
+                // The reason is in the server's log only (a Gradle exception), and Problems often has nothing
+                // to show: say the reason here, never jdtls's raw "WARNING" (re-review CN2, CN9).
+                importFailed.add(String.valueOf(line.serverId()));
+                String reason = lspManager.lastServerError(line.serverId());
+                host.setError(
+                        reason == null
+                                ? tr("status.lsp.importProblem", server)
+                                : tr("status.lsp.importProblemWhy", server, reason));
+            } else if (line.ready() && importFailed.contains(String.valueOf(line.serverId()))) {
+                host.setError(tr("status.lsp.readyImportFailed", server)); // not "Loaded and ready" over it
             } else {
                 host.setStatus(
                         line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
@@ -3174,6 +3214,7 @@ final class LspCoordinator {
     void restartServers() {
         startBlocked.clear();
         failingServers.clear();
+        importFailed.clear();
         statusNarrator.forget(null);
         lspManager.restartAll(); // a Java server shared with another window restarts for both
         clearAllDiagnostics();
@@ -4326,6 +4367,7 @@ final class LspCoordinator {
      * notification, so the only observable result is fresh diagnostics arriving.
      */
     void reloadProject() {
+        importFailed.clear(); // the import runs again: its outcome is said afresh
         EditorBuffer b = host.activeBuffer(); // a pom.xml tab counts, whichever server (if any) edits it
         Path path = b == null ? null : lspPath(b);
         if (path == null) {

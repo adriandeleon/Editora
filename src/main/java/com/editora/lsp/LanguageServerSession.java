@@ -2878,11 +2878,34 @@ final class LanguageServerSession implements LanguageClient {
         // says only here that it found no ShellCheck ("disabling linting as no executable was found") or that
         // a format failed, and the user otherwise saw a script with no diagnostics and no hint why.
         org.eclipse.lsp4j.MessageType type = message.getType();
+        if (type == org.eclipse.lsp4j.MessageType.Error && message.getMessage() != null) {
+            lastErrorLog = firstLine(message.getMessage());
+        }
         if (type == org.eclipse.lsp4j.MessageType.Error || type == org.eclipse.lsp4j.MessageType.Warning) {
             LOG.info("[" + serverId + "] " + message.getMessage());
         } else if (LOG.isLoggable(Level.FINE)) {
             LOG.fine(message.getMessage());
         }
+    }
+
+    /** The first line of the last error this server logged: a failed Gradle import's reason is only there. */
+    private volatile @Nullable String lastErrorLog;
+
+    @Nullable
+    String lastErrorLog() {
+        return lastErrorLog;
+    }
+
+    /** {@code text}'s first non-blank line (jdtls's log lines carry a date prefix, kept off), at most 300 chars. */
+    static String firstLine(String text) {
+        String line = text.strip()
+                .lines()
+                .filter(l -> !l.isBlank())
+                .findFirst()
+                .orElse("")
+                .strip();
+        line = line.replaceFirst("^[A-Z][a-z]{2} \\d{1,2}, \\d{4},? \\d{1,2}:\\d{2}:\\d{2}\\s*(?:[AP]M)?\\s*", "");
+        return line.length() > 300 ? line.substring(0, 300) + "…" : line;
     }
 
     /** JDT LS sends a non-standard {@code language/status} notification with start/ready/progress text

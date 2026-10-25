@@ -775,6 +775,16 @@ class LspCoordinatorCommandsFxTest {
 
         fx.server().rawResponse = 2; // WITH_ERROR: not "Project built" (Java review C15)
         fx.run(() -> fx.coordinator.buildWorkspace());
+        assertEquals(
+                tr("status.lsp.buildWorkspaceNotImported"),
+                fx.host.lastError(),
+                "errors and not one problem: the project did not import (CN2)");
+        var file = fx.root.resolve("A.java");
+        FxTestSupport.runOnFx(() -> fx.coordinator.onDiagnostics(
+                file,
+                List.of(new com.editora.text.LspDiagnostic(
+                        0, 0, 0, 5, com.editora.text.LspDiagnostic.Severity.ERROR, "x", null, "jdtls"))));
+        fx.run(() -> fx.coordinator.buildWorkspace());
         assertEquals(tr("status.lsp.buildWorkspaceErrors"), fx.host.lastError());
 
         fx.server().failEverything = true;
@@ -1305,6 +1315,11 @@ class LspCoordinatorCommandsFxTest {
         fx.server().rawRequests.clear();
         fx.run(() -> fx.coordinator.buildAfterImport());
         assertTrue(fx.server().rawRequests.isEmpty(), "a folder without a build file is not built (Debug compiles it)");
+        Files.writeString(root.resolve("build.gradle"), "plugins { id 'java' }\n");
+        fx.run(() -> fx.coordinator.buildAfterImport());
+        assertTrue(
+                fx.server().rawRequests.isEmpty(), "nor a Gradle build unasked: it would write bin/ (re-review CN3)");
+        Files.delete(root.resolve("build.gradle"));
         Files.writeString(root.resolve("pom.xml"), "<project/>");
         fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "OK"));
         fx.run(() -> fx.coordinator.buildAfterImport()); // what the import timer runs
@@ -1606,5 +1621,45 @@ class LspCoordinatorCommandsFxTest {
         });
         fx.run(() -> fx.coordinator.smartTypeCompletion());
         assertEquals(tr("status.lsp.smartTypeJavaOnly"), fx.host.lastStatus());
+    }
+
+    // --- a failed import says why (re-review CN2, CN9) -----------------------------------------------
+
+    private void awaitError(String expected) throws Exception {
+        for (int i = 0; i < 200 && !expected.equals(fx.host.lastError()); i++) {
+            Thread.sleep(10);
+            fx.settle();
+        }
+        assertEquals(expected, fx.host.lastError());
+    }
+
+    @Test
+    void aFailedImportSaysWhyAndIsNotThenCalledReady() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(
+                fx.manager,
+                b.getPath(),
+                "Oct 25, 2026, 11:02:14 AM Could not find method thisIsNotAConfiguration() for arguments [x:y:1]\n\tat …");
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "WARNING"));
+        awaitError(tr(
+                "status.lsp.importProblemWhy",
+                "jdtls",
+                "Could not find method thisIsNotAConfiguration() for arguments [x:y:1]"));
+        assertFalse(fx.host.lastError().contains("(WARNING)"), "jdtls's raw word is not shown");
+
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ServiceReady", "ServiceReady"));
+        awaitError(tr("status.lsp.readyImportFailed", "jdtls"));
+    }
+
+    @Test
+    void aLooseJavaFileIsRootedWhereItsPackageSays() throws Exception {
+        java.nio.file.Files.createDirectories(root.resolve("src/demo"));
+        EditorBuffer b = fx.open("src/demo/Hello.java", "package demo;\n\nclass Hello {}\n");
+        assertEquals(
+                root.resolve("src").toAbsolutePath().normalize(),
+                LspTestHooks.sessionRoot(fx.manager, b.getPath())
+                        .toAbsolutePath()
+                        .normalize(),
+                "not src/demo, where jdtls expected the default package (re-review C6)");
     }
 }

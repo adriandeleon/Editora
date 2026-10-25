@@ -63,6 +63,12 @@ public final class LspTestHooks {
         return manager.sessionForTest(file).root();
     }
 
+    /** Plays the server serving {@code file} logging an error ({@code window/logMessage}). */
+    public static void logError(LspManager manager, java.nio.file.Path file, String message) {
+        manager.sessionForTest(file)
+                .logMessage(new org.eclipse.lsp4j.MessageParams(org.eclipse.lsp4j.MessageType.Error, message));
+    }
+
     /** Plays the server serving {@code file} dying on its own — a crash, not a shutdown the editor asked for. */
     public static void simulateServerDeath(LspManager manager, java.nio.file.Path file) {
         manager.sessionForTest(file).simulateServerDeathForTest();
