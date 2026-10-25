@@ -27,6 +27,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.transform.Scale;
 
 import com.editora.config.PersonalNote;
 
@@ -75,6 +76,9 @@ final class ProjectMapNotePreview extends StackPane {
     private Runnable onBlankRejected = () -> {};
     private boolean placed;
     private double preferredWidth = DEFAULT_WIDTH;
+    /** The map's zoom, applied from the card's top-left corner (see {@link ProjectMapPreview#setMapScale}). */
+    private final Scale mapZoom = new Scale(1, 1, 0, 0);
+
     private double preferredHeight = DEFAULT_HEIGHT;
     private double dragScreenX;
     private double dragScreenY;
@@ -121,6 +125,7 @@ final class ProjectMapNotePreview extends StackPane {
         resizeGrip.addEventHandler(MouseEvent.MOUSE_PRESSED, this::resizePressed);
         resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
         getChildren().addAll(frame, resizeGrip);
+        getTransforms().add(mapZoom);
         addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
             toFront();
             onActivate.run();
@@ -289,11 +294,21 @@ final class ProjectMapNotePreview extends StackPane {
         if (!placed || width <= 0 || height <= 0) {
             return;
         }
-        double margin = ProjectMapPreview.EDGE_MARGIN;
         // Only the size: the card sits on the canvas, which may have it partly or wholly out of view.
         resize(
-                ProjectMapPreview.boundedSize(preferredWidth, MIN_WIDTH, width - margin * 2),
-                ProjectMapPreview.boundedSize(preferredHeight, MIN_HEIGHT, height - margin * 2));
+                ProjectMapPreview.boundedSize(
+                        preferredWidth, MIN_WIDTH, ProjectMapPreview.unzoomedRoom(width, mapScale())),
+                ProjectMapPreview.boundedSize(
+                        preferredHeight, MIN_HEIGHT, ProjectMapPreview.unzoomedRoom(height, mapScale())));
+    }
+
+    void setMapScale(double scale) {
+        mapZoom.setX(scale);
+        mapZoom.setY(scale);
+    }
+
+    double mapScale() {
+        return mapZoom.getX();
     }
 
     void dispose() {
@@ -346,15 +361,15 @@ final class ProjectMapNotePreview extends StackPane {
         if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
             return;
         }
-        double margin = ProjectMapPreview.EDGE_MARGIN;
+        double scale = mapScale(); // the pointer moves in zoomed pixels, the card's size is unzoomed
         preferredWidth = ProjectMapPreview.boundedSize(
-                resizeWidth + event.getScreenX() - resizeScreenX,
+                resizeWidth + (event.getScreenX() - resizeScreenX) / scale,
                 MIN_WIDTH,
-                Math.max(1, parent.getWidth() - margin * 2));
+                Math.max(1, ProjectMapPreview.unzoomedRoom(parent.getWidth(), scale)));
         preferredHeight = ProjectMapPreview.boundedSize(
-                resizeHeight + event.getScreenY() - resizeScreenY,
+                resizeHeight + (event.getScreenY() - resizeScreenY) / scale,
                 MIN_HEIGHT,
-                Math.max(1, parent.getHeight() - margin * 2));
+                Math.max(1, ProjectMapPreview.unzoomedRoom(parent.getHeight(), scale)));
         resize(preferredWidth, preferredHeight);
         event.consume();
     }

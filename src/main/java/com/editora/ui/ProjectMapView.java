@@ -1704,6 +1704,7 @@ final class ProjectMapView extends VBox {
             surface.requestFocus();
         });
         preview.setOnBlankRejected(() -> onStatus.accept(tr("status.projectMap.noteBlankRestored")));
+        preview.setMapScale(surface.cardZoom());
         installPreviewListeners(preview);
         notePreviews.put(selected, preview);
         cardTouches.put(preview, ++cardTouchSequence);
@@ -1724,6 +1725,7 @@ final class ProjectMapView extends VBox {
     private ProjectMapPreview createPreview(Path path) {
         makeRoomForCard();
         ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
+        preview.setMapScale(surface.cardZoom());
         preview.setMarkerActions(previewMarkerActions);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
@@ -1952,9 +1954,34 @@ final class ProjectMapView extends VBox {
      * The one placement path for code and note cards: beside the row's column when there is room for the
      * card's minimum size, otherwise over the map inside the panel, then shifted or cascaded clear of the
      * cards already open — of those in view; one dragged or panned off the panel takes no room. The map
-     * itself is never panned to make room.
+     * itself is never panned to make room. Sizes in and out are the card's own, unzoomed; the room is found
+     * for the card as drawn at its zoom.
      */
     private ProjectMapPreview.Placement previewPlacement(
+            Region preview,
+            Path path,
+            double width,
+            double height,
+            double minimumWidth,
+            double minimumHeight,
+            double parentWidth,
+            double parentHeight) {
+        double scale = cardScale(preview);
+        ProjectMapPreview.Placement drawn = drawnPlacement(
+                preview,
+                path,
+                width * scale,
+                height * scale,
+                minimumWidth * scale,
+                minimumHeight * scale,
+                parentWidth,
+                parentHeight);
+        return new ProjectMapPreview.Placement(
+                drawn.x(), drawn.y(), drawn.width() / scale, drawn.height() / scale, drawn.growLeft());
+    }
+
+    /** {@link #previewPlacement} in panel pixels: every size here is a card as drawn. */
+    private ProjectMapPreview.Placement drawnPlacement(
             Region preview,
             Path path,
             double width,
@@ -2019,9 +2046,10 @@ final class ProjectMapView extends VBox {
             if (other == candidate || !other.isVisible()) {
                 continue;
             }
-            if (x < other.getLayoutX() + other.getWidth() + PREVIEW_CASCADE
+            double scale = cardScale(other);
+            if (x < other.getLayoutX() + other.getWidth() * scale + PREVIEW_CASCADE
                     && x + width + PREVIEW_CASCADE > other.getLayoutX()
-                    && y < other.getLayoutY() + other.getHeight() + PREVIEW_CASCADE
+                    && y < other.getLayoutY() + other.getHeight() * scale + PREVIEW_CASCADE
                     && y + height + PREVIEW_CASCADE > other.getLayoutY()) {
                 return true;
             }
@@ -2031,6 +2059,14 @@ final class ProjectMapView extends VBox {
 
     private static double clampPreview(double value, double minimum, double maximum) {
         return Math.max(minimum, Math.min(maximum, value));
+    }
+
+    /** The map zoom a card is drawn at: its width and height are unzoomed, its corner is in panel pixels. */
+    private static double cardScale(Region card) {
+        if (card instanceof ProjectMapPreview code) {
+            return code.mapScale();
+        }
+        return card instanceof ProjectMapNotePreview note ? note.mapScale() : 1;
     }
 
     private void repaintPreviewConnectors() {
@@ -2075,25 +2111,29 @@ final class ProjectMapView extends VBox {
         double y1;
         double x2;
         double y2;
+        double left = preview.getLayoutX();
+        double top = preview.getLayoutY();
+        double width = preview.getWidth() * cardScale(preview);
+        double height = preview.getHeight() * cardScale(preview);
         boolean horizontal = flowFilter.getValue() == FlowDirection.LEFT_TO_RIGHT
                 || flowFilter.getValue() == FlowDirection.RIGHT_TO_LEFT;
         if (horizontal) {
-            boolean previewAfter = preview.getLayoutX() + preview.getWidth() / 2 >= anchor.x() + anchor.width() / 2;
+            boolean previewAfter = left + width / 2 >= anchor.x() + anchor.width() / 2;
             x1 = previewAfter ? anchor.x() + anchor.width() : anchor.x();
             y1 = anchor.y() + anchor.height() / 2;
-            x2 = previewAfter ? preview.getLayoutX() : preview.getLayoutX() + preview.getWidth();
-            y2 = clampPreview(y1, preview.getLayoutY(), preview.getLayoutY() + preview.getHeight());
+            x2 = previewAfter ? left : left + width;
+            y2 = clampPreview(y1, top, top + height);
             double control = Math.max(18, Math.abs(x2 - x1) * 0.45);
             g.beginPath();
             g.moveTo(x1, y1);
             g.bezierCurveTo(
                     x1 + (previewAfter ? control : -control), y1, x2 + (previewAfter ? -control : control), y2, x2, y2);
         } else {
-            boolean previewAfter = preview.getLayoutY() + preview.getHeight() / 2 >= anchor.y() + anchor.height() / 2;
+            boolean previewAfter = top + height / 2 >= anchor.y() + anchor.height() / 2;
             x1 = anchor.x() + anchor.width() / 2;
             y1 = previewAfter ? anchor.y() + anchor.height() : anchor.y();
-            x2 = clampPreview(x1, preview.getLayoutX(), preview.getLayoutX() + preview.getWidth());
-            y2 = previewAfter ? preview.getLayoutY() : preview.getLayoutY() + preview.getHeight();
+            x2 = clampPreview(x1, left, left + width);
+            y2 = previewAfter ? top : top + height;
             double control = Math.max(18, Math.abs(y2 - y1) * 0.45);
             g.beginPath();
             g.moveTo(x1, y1);
@@ -3003,7 +3043,7 @@ final class ProjectMapView extends VBox {
 
         /**
          * Cards sit on the canvas: a pan or a zoom since the last paint carries each card's corner along with
-         * the map under it, as it does the columns. The card keeps its own size, so a zoom only moves it.
+         * the map under it, as it does the columns, and draws the card at the new zoom from that corner.
          */
         private void moveCardsWithViewport() {
             double fromX = cardsOffsetX;
@@ -3022,6 +3062,13 @@ final class ProjectMapView extends VBox {
                 card.relocate(
                         offsetX + (card.getLayoutX() - fromX) * ratio, offsetY + (card.getLayoutY() - fromY) * ratio);
             }
+            previews.values().forEach(card -> card.setMapScale(zoom));
+            notePreviews.values().forEach(card -> card.setMapScale(zoom));
+        }
+
+        /** The zoom of the last paint, which the open cards are drawn at and a new card opens at. */
+        double cardZoom() {
+            return Double.isNaN(cardsZoom) ? zoom : cardsZoom;
         }
 
         /** Coalesces continuous viewport gestures so they submit no more than one Canvas render per pulse. */
