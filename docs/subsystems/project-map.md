@@ -78,8 +78,11 @@ stored in workspace state and restored when the editor is reopened.
 | Click **?** | Show the mouse and keyboard model in a popover |
 | Click the overview | Recenter the canvas around that content position |
 
-Floating previews stay at screen scale instead of participating in canvas zoom. Each title bar moves
-its card, each lower corner resizes it, and each editor scrolls independently. Opening another file
+Preview and note cards sit on the canvas: a pan or zoom carries each card's corner with the map under it
+(`MapSurface.moveCardsWithViewport`, run after every paint), while the card keeps its own screen size
+instead of participating in canvas zoom. Each title bar moves its card — like a column header, anywhere,
+including out of view, where panning finds it again — each lower corner resizes it up to the panel's size,
+and each editor scrolls independently. A resized panel bounds a card's size but never moves it. Opening another file
 keeps existing cards visible; clicking an already-previewed file focuses its existing card, and each
 close button removes only that card. An accent connector runs from every preview to its source file row
 and follows map pan/zoom plus card movement and resizing.
@@ -90,7 +93,8 @@ else on the other — when at least the card's minimum size fits there; otherwis
 against the panel edge, which is the normal case in a tool-window-wide panel. It is then shifted or
 cascaded clear of the cards already open. **Placement never pans the map**, and a card is never smaller
 than its minimum (340 × 220 for code, 300 × 180 for notes) unless the panel itself is. Text that arrives
-after a card was placed only widens it where it stands, by at most 120 columns and never past the panel;
+after a card was placed only widens it where it stands, by at most 120 columns and never past the panel
+(a card already partly out of view is never narrowed);
 a card the user moved keeps its position and one the user resized keeps its size.
 
 Up to eight cards remain open, code and note cards together; a ninth replaces the least recently used

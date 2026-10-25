@@ -63,7 +63,10 @@ import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
-/** A bounded, read-only editor card that floats above the Project map without participating in its zoom. */
+/**
+ * A bounded, read-only editor card on the Project map. It moves with the map when it is panned or zoomed but
+ * keeps its own size, and like a column it may be dragged past the visible part of the canvas.
+ */
 final class ProjectMapPreview extends StackPane {
 
     static final int MAX_PREVIEW_CHARS = 400_000;
@@ -682,16 +685,17 @@ final class ProjectMapPreview extends StackPane {
         onEscape = callback == null ? () -> onClose.run() : callback;
     }
 
+    /**
+     * Keeps the card no larger than the panel. Where it stands is left alone: it sits on the canvas, which
+     * may have it partly or wholly out of view.
+     */
     void constrainTo(double parentWidth, double parentHeight) {
         if (!placed || parentWidth <= 0 || parentHeight <= 0) {
             return;
         }
-        double width = boundedSize(preferredWidth, MIN_WIDTH, parentWidth - EDGE_MARGIN * 2);
-        double height = boundedSize(preferredHeight, MIN_HEIGHT, parentHeight - EDGE_MARGIN * 2);
-        resize(width, height);
-        relocate(
-                clamp(getLayoutX(), EDGE_MARGIN, Math.max(EDGE_MARGIN, parentWidth - width - EDGE_MARGIN)),
-                clamp(getLayoutY(), EDGE_MARGIN, Math.max(EDGE_MARGIN, parentHeight - height - EDGE_MARGIN)));
+        resize(
+                boundedSize(preferredWidth, MIN_WIDTH, parentWidth - EDGE_MARGIN * 2),
+                boundedSize(preferredHeight, MIN_HEIGHT, parentHeight - EDGE_MARGIN * 2));
     }
 
     void dispose() {
@@ -872,6 +876,13 @@ final class ProjectMapPreview extends StackPane {
             relocate(Math.max(EDGE_MARGIN, parent.getWidth() - width - 24), 24);
         }
         constrainTo(parent.getWidth(), parent.getHeight());
+        // A new card opens in view; only the user (or a pan) takes it elsewhere.
+        relocate(
+                clamp(getLayoutX(), EDGE_MARGIN, Math.max(EDGE_MARGIN, parent.getWidth() - getWidth() - EDGE_MARGIN)),
+                clamp(
+                        getLayoutY(),
+                        EDGE_MARGIN,
+                        Math.max(EDGE_MARGIN, parent.getHeight() - getHeight() - EDGE_MARGIN)));
     }
 
     private void dragPressed(MouseEvent event) {
@@ -887,15 +898,12 @@ final class ProjectMapPreview extends StackPane {
         event.consume();
     }
 
+    /** Follows the pointer anywhere, as a column header drag does: panning brings the card back into view. */
     private void dragged(MouseEvent event) {
-        if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
+        if (!event.isPrimaryButtonDown()) {
             return;
         }
-        double x = dragLayoutX + event.getScreenX() - dragScreenX;
-        double y = dragLayoutY + event.getScreenY() - dragScreenY;
-        relocate(
-                clamp(x, EDGE_MARGIN, Math.max(EDGE_MARGIN, parent.getWidth() - getWidth() - EDGE_MARGIN)),
-                clamp(y, EDGE_MARGIN, Math.max(EDGE_MARGIN, parent.getHeight() - getHeight() - EDGE_MARGIN)));
+        relocate(dragLayoutX + event.getScreenX() - dragScreenX, dragLayoutY + event.getScreenY() - dragScreenY);
         event.consume();
     }
 
@@ -915,8 +923,9 @@ final class ProjectMapPreview extends StackPane {
         if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
             return;
         }
-        double maxWidth = Math.max(1, parent.getWidth() - getLayoutX() - EDGE_MARGIN);
-        double maxHeight = Math.max(1, parent.getHeight() - getLayoutY() - EDGE_MARGIN);
+        // As large as the panel, wherever the card stands: one partly out of view must not shrink to fit.
+        double maxWidth = Math.max(1, parent.getWidth() - EDGE_MARGIN * 2);
+        double maxHeight = Math.max(1, parent.getHeight() - EDGE_MARGIN * 2);
         preferredWidth = boundedSize(resizeWidth + event.getScreenX() - resizeScreenX, MIN_WIDTH, maxWidth);
         preferredHeight = boundedSize(resizeHeight + event.getScreenY() - resizeScreenY, MIN_HEIGHT, maxHeight);
         resize(preferredWidth, preferredHeight);
@@ -1172,10 +1181,9 @@ final class ProjectMapPreview extends StackPane {
         }
         if (growLeft && !userMoved) {
             double right = getLayoutX() + getWidth();
-            double x = Math.max(EDGE_MARGIN, right - wanted);
-            preferredWidth = right - x;
+            preferredWidth = Math.max(getWidth(), right - Math.max(EDGE_MARGIN, right - wanted));
             resize(preferredWidth, getHeight());
-            relocate(x, getLayoutY());
+            relocate(right - preferredWidth, getLayoutY());
         } else {
             preferredWidth = Math.max(getWidth(), Math.min(wanted, parent.getWidth() - EDGE_MARGIN - getLayoutX()));
             resize(preferredWidth, getHeight());

@@ -1951,7 +1951,8 @@ final class ProjectMapView extends VBox {
     /**
      * The one placement path for code and note cards: beside the row's column when there is room for the
      * card's minimum size, otherwise over the map inside the panel, then shifted or cascaded clear of the
-     * cards already open. The map itself is never panned to make room.
+     * cards already open — of those in view; one dragged or panned off the panel takes no room. The map
+     * itself is never panned to make room.
      */
     private ProjectMapPreview.Placement previewPlacement(
             Region preview,
@@ -2505,6 +2506,11 @@ final class ProjectMapView extends VBox {
         private boolean focusNewColumn = true;
         private double offsetX;
         private double offsetY;
+        /** The viewport the open cards were last moved for; NaN until the first paint. */
+        private double cardsOffsetX = Double.NaN;
+
+        private double cardsOffsetY = Double.NaN;
+        private double cardsZoom = Double.NaN;
         private double pressX;
         private double pressY;
         private double pressOffsetX;
@@ -2988,9 +2994,33 @@ final class ProjectMapView extends VBox {
                     paint(); // the row under a resting pointer changed with the viewport
                 }
                 completedPaints++;
+                moveCardsWithViewport();
                 repaintPreviewConnectors();
             } finally {
                 painting = false;
+            }
+        }
+
+        /**
+         * Cards sit on the canvas: a pan or a zoom since the last paint carries each card's corner along with
+         * the map under it, as it does the columns. The card keeps its own size, so a zoom only moves it.
+         */
+        private void moveCardsWithViewport() {
+            double fromX = cardsOffsetX;
+            double fromY = cardsOffsetY;
+            double fromZoom = cardsZoom;
+            cardsOffsetX = offsetX;
+            cardsOffsetY = offsetY;
+            cardsZoom = zoom;
+            if (Double.isNaN(fromZoom) || fromX == offsetX && fromY == offsetY && fromZoom == zoom) {
+                return;
+            }
+            double ratio = zoom / fromZoom;
+            List<Region> cards = new ArrayList<>(previews.values());
+            cards.addAll(notePreviews.values());
+            for (Region card : cards) {
+                card.relocate(
+                        offsetX + (card.getLayoutX() - fromX) * ratio, offsetY + (card.getLayoutY() - fromY) * ratio);
             }
         }
 
