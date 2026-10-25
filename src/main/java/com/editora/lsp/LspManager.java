@@ -303,6 +303,23 @@ public final class LspManager {
     /** The clean-ups jdtls's {@code java/cleanup} runs ({@code java.cleanup.actions}); every Java session gets them. */
     private volatile List<String> javaCleanups = List.of();
 
+    /** The types jdtls never offers or imports (Settings → Java); every Java session gets them. */
+    private volatile List<String> javaFilteredTypes = LspServerSettings.FILTERED_TYPES;
+
+    public void setJavaFilteredTypes(List<String> types) {
+        javaFilteredTypes = types == null ? List.of() : List.copyOf(types);
+        for (LanguageServerSession session : sessionsByRoot.values()) {
+            if (LspServerRegistry.JAVA_SERVER_ID.equals(session.serverId())) {
+                session.setJavaFilteredTypes(javaFilteredTypes);
+            }
+        }
+    }
+
+    /** {@link #setJavaFilteredTypes}'s list, which library results of symbol searches honour too (EN2). */
+    public List<String> javaFilteredTypes() {
+        return javaFilteredTypes;
+    }
+
     public void setJavaCleanups(List<String> cleanups) {
         javaCleanups = JavaCleanups.known(cleanups);
         for (LanguageServerSession session : sessionsByRoot.values()) {
@@ -1515,6 +1532,7 @@ public final class LspManager {
         configureClient(session.primaryClient(), key, session);
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         session.setJavaCleanups(javaCleanups);
+        session.setJavaFilteredTypes(javaFilteredTypes);
         session.setBashIde(bashIde);
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);
@@ -2546,6 +2564,25 @@ public final class LspManager {
             List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(changes, s.root(), s.uris());
             if (!events.isEmpty()) {
                 s.didChangeWatchedFiles(events);
+            }
+        }
+        changes.stream().map(WatchedFile::file).filter(f -> f != null).forEach(this::projectStyleChanged);
+    }
+
+    /**
+     * {@code file} changed (saved here, or seen by a watcher): when it is one the project's Java style is read
+     * from, the Java servers whose project holds it get the style again (re-review AN5).
+     */
+    public void projectStyleChanged(Path file) {
+        if (file == null || !JavaProjectSettings.isStyleSource(file)) {
+            return;
+        }
+        Path at = file.toAbsolutePath().normalize();
+        for (Map.Entry<String, LanguageServerSession> e : sessionsByRoot.entrySet()) {
+            LanguageServerSession s = e.getValue();
+            if (e.getKey().startsWith(sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID))
+                    && at.startsWith(s.root().toAbsolutePath().normalize())) {
+                s.refreshProjectSettings();
             }
         }
     }
@@ -6005,9 +6042,10 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(OrganizeOutcome.FAILED));
             return;
         }
-        s.quietImportChoices.incrementAndGet();
+        String quiet = s.uris().toWire(uri(file));
+        s.quietImportChoices.add(quiet);
         organizeJavaImports(s, file, lastLine, lastChar, outcome -> {
-            s.quietImportChoices.decrementAndGet();
+            s.quietImportChoices.remove(quiet);
             cb.accept(outcome);
         });
     }

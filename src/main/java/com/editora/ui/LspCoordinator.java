@@ -1372,6 +1372,7 @@ final class LspCoordinator {
                         : config.getConfigDir().resolve(com.editora.install.InstallCatalog.LOMBOK_SUBPATH));
         lspManager.setOnLombokMissing(this::offerLombok);
         lspManager.setJavaCleanups(host.settings().getJavaCleanups());
+        lspManager.setJavaFilteredTypes(host.settings().getJavaExcludedTypes());
         applyOnTypeFormatting();
         // The commands that actually launch: the global ones, with this project's overrides laid over them
         // when (and only when) its folder is trusted. Building this from the global settings alone meant a
@@ -3188,6 +3189,9 @@ final class LspCoordinator {
         }
         if (buffer != null && isProjectSettingsFile(lspPath(buffer))) {
             reloadProjectSettings(); // the overrides were just edited: apply them to the running servers
+        }
+        if (buffer != null && buffer.getPath() != null) {
+            lspManager.projectStyleChanged(buffer.getPath()); // .editorconfig, a formatter profile, the build (AN5)
         }
         Path path = buffer == null ? null : lspPath(buffer);
         if (buffer != null && path != null && lspManager.isManaged(path)) {

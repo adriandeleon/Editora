@@ -4102,6 +4102,16 @@ public class SettingsWindow {
                 tr("settings.javaCleanups.note"),
                 new HBox(10, javaCleanupsCount, chooseCleanups),
                 "clean up cleanups override final redundant modifiers lambda java jdtls");
+        textRow(
+                lsp,
+                Category.COMPLETION,
+                "javaExcludedTypes",
+                "java.awt.*, com.sun.*",
+                st -> String.join(", ", st.getJavaExcludedTypes()),
+                (st, v) -> st.setJavaExcludedTypes(java.util.Arrays.stream(v.split("[,\\s]+"))
+                        .filter(t -> !t.isBlank())
+                        .toList()),
+                "exclude excluded types auto import completion filter awt java jdtls");
         SettingsDependents.bind(lspCheck.selectedProperty(), rowsSince(firstLspRow));
         return p;
     }

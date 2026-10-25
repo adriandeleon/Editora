@@ -1026,12 +1026,35 @@ final class LanguageServerSession implements LanguageClient {
     /** jdtls's {@code java.cleanup.actions}: the clean-ups {@code java/cleanup} runs (Settings → Java clean-ups). */
     private volatile List<String> javaCleanups = List.of();
 
+    /** jdtls's {@code java.completion.filteredTypes}: types never offered or imported (Settings → Java). */
+    private volatile List<String> javaFilteredTypes = LspServerSettings.FILTERED_TYPES;
+
+    /** Sets {@link #javaFilteredTypes} and, for a running Java server, pushes them. */
+    void setJavaFilteredTypes(List<String> types) {
+        List<String> next = types == null ? List.of() : List.copyOf(types);
+        boolean changed = !next.equals(javaFilteredTypes);
+        javaFilteredTypes = next;
+        if (changed && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
     /** Sets {@link #javaCleanups} and, for a running Java server, pushes them. */
     void setJavaCleanups(List<String> cleanups) {
         List<String> next = cleanups == null ? List.of() : List.copyOf(cleanups);
         boolean changed = !next.equals(javaCleanups);
         javaCleanups = next;
         if (changed && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
+    /**
+     * Pushes the project's style again — its {@code .editorconfig}, formatter profile or build file changed — so
+     * Organize Imports and Format follow it without a restart (re-review AN5).
+     */
+    void refreshProjectSettings() {
+        if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && ready()) {
             pushConfiguration();
         }
     }
@@ -1059,9 +1082,16 @@ final class LanguageServerSession implements LanguageClient {
         if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && settings.get("java") instanceof Map<?, ?> javaMap) {
             @SuppressWarnings("unchecked")
             Map<String, Object> own = (Map<String, Object>) javaMap;
-            Map<String, Object> merged = JavaProjectSettings.merge(own, JavaProjectSettings.forRoot(root));
+            Map<String, Object> merged = JavaProjectSettings.merge(
+                    own, JavaProjectSettings.withJdtlsDefaults(JavaProjectSettings.forRoot(root)));
             // The clean-ups java/cleanup runs; never jdtls's own on-save switch (Editora runs them after a save).
             merged.put("cleanup", Map.of("actions", javaCleanups));
+            Map<String, Object> completion = new java.util.HashMap<>();
+            if (merged.get("completion") instanceof Map<?, ?> c) {
+                c.forEach((k, v) -> completion.put(String.valueOf(k), v));
+            }
+            completion.put("filteredTypes", javaFilteredTypes);
+            merged.put("completion", completion);
             settings = Map.of("java", merged); // the project's own style, and the chosen clean-ups
         }
         try {
@@ -2963,9 +2993,15 @@ final class LanguageServerSession implements LanguageClient {
     /** jdtls's {@code java.action.organizeImports.chooseImports}: which class each ambiguous name means. */
     static final String CHOOSE_IMPORTS = "java.action.organizeImports.chooseImports";
 
-    /** While positive, {@link #CHOOSE_IMPORTS} is answered with no choice: an Organize Imports run on save. */
-    final java.util.concurrent.atomic.AtomicInteger quietImportChoices =
-            new java.util.concurrent.atomic.AtomicInteger();
+    /**
+     * The documents (wire URIs) whose {@link #CHOOSE_IMPORTS} is answered with no choice: an Organize Imports run on
+     * save. Per document, not per session: another file's explicit Organize Imports in the same moment — in
+     * another window, since a Java server is shared — still asks (re-review AN8).
+     */
+    final java.util.Set<String> quietImportChoices = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** jdtls asks this at every start and expects a list of the bundles to reload; it has none to reload here. */
+    static final String RELOAD_BUNDLES = "_java.reloadBundles.command";
 
     /**
      * {@code workspace/executeClientCommand}: a command jdtls asks the client to carry out while it waits for the
@@ -2977,10 +3013,15 @@ final class LanguageServerSession implements LanguageClient {
     @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("workspace/executeClientCommand")
     public CompletableFuture<Object> executeClientCommand(org.eclipse.lsp4j.ExecuteCommandParams params) {
         LspClientUi ui = clientUi();
+        if (params != null && RELOAD_BUNDLES.equals(params.getCommand())) {
+            return CompletableFuture.completedFuture(List.of()); // null logged an error in jdtls's log (CN6)
+        }
         if (params == null || !CHOOSE_IMPORTS.equals(params.getCommand()) || ui == null || disposed) {
             return CompletableFuture.completedFuture(null);
         }
-        if (quietImportChoices.get() > 0) {
+        List<Object> args = params.getArguments();
+        com.google.gson.JsonElement doc = args == null || args.isEmpty() ? null : LspManager.asJson(args.get(0));
+        if (doc != null && doc.isJsonPrimitive() && quietImportChoices.contains(doc.getAsString())) {
             return CompletableFuture.completedFuture(List.of()); // on save: an ambiguous name is skipped, not asked
         }
         List<ImportChoice> choices = ImportChoice.of(params.getArguments());
