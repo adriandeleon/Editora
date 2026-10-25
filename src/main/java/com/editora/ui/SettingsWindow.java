@@ -7928,12 +7928,38 @@ public class SettingsWindow {
                                     lspCheck.isSelected());
                             return;
                         }
+                        String outdated = found ? outdatedPin(srv.id(), argv, config.getConfigDir()) : null;
+                        if (outdated != null) { // "Installed" over what Doctor offers to update (re-review D8)
+                            status.showProblem(
+                                    tr("settings.lsp.pinOutdated", lspToolName(srv.id(), argv), outdated),
+                                    lspCheck.isSelected());
+                            return;
+                        }
                         status.show(
                                 found,
                                 found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "",
                                 lspCheck.isSelected());
                     });
         }
+    }
+
+    /**
+     * The pinned release, as shown, when {@code argv} runs Editora's own copy of {@code serverId}'s server and that
+     * copy is older than it; else null. A copy from elsewhere is not one Install… replaces. File lookups only.
+     */
+    static @Nullable String outdatedPin(String serverId, List<String> argv, @Nullable Path configDir) {
+        var pin = com.editora.install.PinnedVersions.forServer(serverId).orElse(null);
+        if (pin == null || configDir == null || argv.isEmpty()) {
+            return null;
+        }
+        List<String> tokens = new java.util.ArrayList<>(argv); // a classpath token names the Maven server's folder
+        tokens.add(com.editora.doctor.DoctorProbes.resolvedPath(argv));
+        boolean editoras = com.editora.install.PinnedVersions.anyInside(tokens, configDir.resolve(pin.destSubpath()));
+        return editoras
+                        && com.editora.install.PinnedVersions.installedFreshness(pin, configDir)
+                                == com.editora.install.PinnedVersions.Freshness.OUTDATED
+                ? pin.label()
+                : null;
     }
 
     /** Whether the Maven server's {@code java -cp "<dir>/*"} folder exists but lacks required jars. Pure (file lookups). */
