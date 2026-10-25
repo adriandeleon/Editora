@@ -1453,7 +1453,8 @@ class LspCoordinatorCommandsFxTest {
         EditorBuffer b = fx.open("A.java", OVERRIDES);
         fx.ops.saves = true;
         fx.host.settings.setJavaCleanupOnSave(true);
-        fx.run(() -> fx.coordinator.applySupport()); // the default clean-ups reach the manager
+        // What applySupport hands the manager; applySupport itself may restart the server mid-test.
+        fx.run(() -> fx.manager.setJavaCleanups(fx.host.settings.getJavaCleanups()));
         fx.server().rawHandler = raw -> "java/cleanup".equals(raw.method()) ? addOverride(b) : null;
 
         fx.run(() -> fx.coordinator.afterUserSave(b));
@@ -1477,7 +1478,7 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(tr("status.lsp.cleanupNoneChosen"), fx.host.lastStatus());
 
         fx.host.settings.setJavaCleanups(List.of("addOverride"));
-        fx.run(() -> fx.coordinator.applySupport()); // Settings applied: the list reaches the manager
+        fx.run(() -> fx.manager.setJavaCleanups(fx.host.settings.getJavaCleanups()));
         fx.server().rawHandler = raw -> null;
         fx.run(() -> fx.coordinator.cleanUpFile());
         fx.settle();
