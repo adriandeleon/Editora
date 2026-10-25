@@ -77,6 +77,17 @@ public record DoctorCheck(
         return withOutcome(DoctorStatus.WARN, detail, tipKey, List.of(tipArgs));
     }
 
+    /** Warnings whose tip says "Click Install…": the row offers Install… as a missing tool's does (CN4). */
+    private static final java.util.Set<String> INSTALL_FIXES = java.util.Set.of("doctor.tip.jdtlsOutdated");
+
+    /** Whether the row offers its {@link Install}: missing or not installed, or a warning Install… fixes. */
+    public boolean offersInstall() {
+        return install != Install.NONE
+                && (status == DoctorStatus.MISSING
+                        || status == DoctorStatus.OPTIONAL
+                        || (status == DoctorStatus.WARN && INSTALL_FIXES.contains(tipKey)));
+    }
+
     /**
      * Resolved absent, but nothing in this window needs it (a server for a language not open, an optional
      * accelerator) — the neutral state; any Install action is kept.

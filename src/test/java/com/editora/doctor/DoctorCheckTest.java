@@ -40,6 +40,22 @@ class DoctorCheckTest {
     }
 
     @Test
+    void installIsOfferedForAMissingToolAndForAWarningItFixes() {
+        DoctorCheck java =
+                DoctorCheck.checking("lsp.java", "lsp", "Java", "jdtls").withInstall(DoctorCheck.Install.LANG, "JAVA");
+        assertTrue(java.missing("doctor.tip.missingInstallable", "jdtls").offersInstall());
+        assertTrue(java.optional("doctor.tip.serverOptional").offersInstall());
+        assertTrue(
+                java.warn("1.61.0", "doctor.tip.jdtlsOutdated", "1.63.0").offersInstall(),
+                "its tip says Click Install… (CN4)");
+        assertFalse(java.warn("x", "doctor.tip.javaOld", "17").offersInstall(), "Install… would not fix that");
+        assertFalse(java.ok("/bin/jdtls").offersInstall());
+        assertFalse(java.withoutInstall()
+                .warn("1.61.0", "doctor.tip.jdtlsOutdated", "1.63.0")
+                .offersInstall());
+    }
+
+    @Test
     void disabledCarriesTheGenericTip() {
         DoctorCheck c =
                 DoctorCheck.checking("mmdc", "preview", "Mermaid CLI", "mmdc").disabled();

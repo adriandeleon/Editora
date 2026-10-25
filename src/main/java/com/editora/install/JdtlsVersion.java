@@ -70,6 +70,27 @@ public record JdtlsVersion(int major, int minor, int patch, long build) implemen
         }
     }
 
+    /**
+     * The version of the jdtls {@code launcher} runs when it is the copy Editora installs under {@code configDir}
+     * and older than {@link #pinned()}, else null. Only that copy can Install… replace; an older jdtls from
+     * elsewhere is updated where it came from (Java re-review CN4).
+     */
+    public static @Nullable JdtlsVersion outdatedEditoraCopy(Path launcher, @Nullable Path configDir) {
+        if (configDir == null) {
+            return null;
+        }
+        try {
+            Path home = configDir.resolve("plugins/lsp/java");
+            if (!Files.isDirectory(home) || !launcher.toRealPath().startsWith(home.toRealPath())) {
+                return null;
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+        JdtlsVersion installed = installed(launcher);
+        return installed != null && installed.compareTo(pinned()) < 0 ? installed : null;
+    }
+
     @Override
     public int compareTo(JdtlsVersion o) {
         int c = Integer.compare(major, o.major);
