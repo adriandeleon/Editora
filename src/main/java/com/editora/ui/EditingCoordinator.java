@@ -940,6 +940,14 @@ final class EditingCoordinator {
         }
     }
 
+    /** Complete Current Statement at every caret (the {@code edit.completeStatement} command). */
+    void completeStatement() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null && activeEditable()) {
+            buffer.completeStatement();
+        }
+    }
+
     /** Manually opens the autocomplete popup for the active buffer (the {@code edit.completion} command). */
     void triggerCompletion() {
         EditorBuffer b = host.activeBuffer();

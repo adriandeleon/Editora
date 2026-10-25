@@ -2823,6 +2823,7 @@ final class WindowCommandRegistrar {
                         "edit.transposeLines",
                         () -> host.editing().transpose(com.editora.editops.Transposer::transposeLines)));
         host.registry().register(Command.of("edit.selectAll", host.editing()::selectAll));
+        host.registry().register(Command.of("edit.completeStatement", host.editing()::completeStatement));
         for (var line : java.util.Map.of(
                         "edit.insertLineBelow", EditorBuffer.LineCommand.INSERT_BELOW,
                         "edit.insertLineAbove", EditorBuffer.LineCommand.INSERT_ABOVE,

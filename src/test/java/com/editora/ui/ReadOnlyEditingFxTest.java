@@ -76,6 +76,7 @@ class ReadOnlyEditingFxTest {
                 "edit.incrementNumber",
                 "edit.insertLineBelow",
                 "edit.insertLineAbove",
+                "edit.completeStatement",
                 "edit.deleteLine",
                 "edit.indentLines",
                 "edit.outdentLines",

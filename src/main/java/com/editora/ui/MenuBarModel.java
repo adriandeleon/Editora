@@ -236,6 +236,7 @@ final class MenuBarModel {
                                 "lsp.formatDocument",
                                 "lsp.organizeImports",
                                 "lsp.cleanUp",
+                                "edit.completeStatement",
                                 SEPARATOR,
                                 "lsp.nextProblem",
                                 "lsp.previousProblem",

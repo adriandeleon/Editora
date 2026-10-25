@@ -5502,6 +5502,24 @@ public class EditorBuffer implements TabContent {
         });
     }
 
+    /**
+     * Complete Current Statement ({@link com.editora.editops.CompleteStatement}) at every caret, as one undoable
+     * edit; in a language it does not know, Insert Line Below. False when the area is read-only.
+     */
+    public boolean completeStatement() {
+        CodeArea a = getFocusedArea();
+        if (!a.isEditable()) {
+            return false;
+        }
+        com.editora.editops.CompleteStatement.Style style = com.editora.editops.CompleteStatement.styleFor(language);
+        if (style == null) {
+            return lineCommand(LineCommand.INSERT_BELOW);
+        }
+        String unit = indentUnit();
+        return atEachCaret((text, s, e) -> com.editora.editops.CompleteStatement.edit(
+                text, s, e, style, unit, at -> IndentWindow.enterEdit(IndentKeys.doc(a), at, language, unit)));
+    }
+
     /** One caret's edit: its change and its selection afterwards, given the text and the caret's selection. */
     @FunctionalInterface
     public interface CaretEdit {
