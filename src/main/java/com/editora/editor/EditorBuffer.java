@@ -104,6 +104,7 @@ import com.editora.editor.markdown.PreviewButtons;
 import com.editora.editor.markdown.PreviewFind;
 import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.editor.markdown.PreviewLayout;
+import com.editora.editor.markdown.PreviewMenu;
 import com.editora.editor.markdown.PreviewPrefs;
 import com.editora.editor.markdown.PreviewScrollSync;
 import com.editora.editor.markdown.PreviewSurfaces;
@@ -633,34 +634,13 @@ public class EditorBuffer implements TabContent {
     private @Nullable Runnable insertTypstTableHandler;
 
     private @Nullable Runnable typstImagePasteHandler;
-    /** Preview right-click menu actions (injected from the controller's export/print commands). */
-    Runnable previewExportPdfHandler = () -> {};
+    /** The preview's right-click menu: its export/print actions and what the pointer was on ({@link PreviewMenu}). */
+    private final PreviewMenu previewMenu = new PreviewMenu(this, () -> this.markdownPreview);
     /** Runs the {@code pom.toggleView} command (summary ⇄ XML tree) from the preview's right-click menu. */
     private Runnable pomViewToggleHandler = () -> {};
     /** The menu item for that switch — relabelled per show, and hidden for a non-pom tree preview. */
     private @Nullable MenuItem pomViewItem;
 
-    Runnable previewExportPngHandler = () -> {};
-    Runnable previewExportSvgHandler = () -> {};
-
-    Runnable previewPrintHandler = () -> {};
-    Runnable previewExportDocxHandler = () -> {};
-    Runnable previewExportOdtHandler = () -> {};
-    /** Markwhen preview "Export to JSON" action (controller command); null = no-op. */
-    Runnable previewExportJsonHandler = () -> {};
-
-    private javafx.scene.control.@Nullable ContextMenu previewContextMenu;
-    /** The link / code block / node under the pointer (and its scene y) when the preview menu was asked for. */
-    @Nullable
-    String previewMenuLink;
-
-    @Nullable
-    String previewMenuCode;
-
-    @Nullable
-    Node previewMenuHit;
-
-    double previewMenuY;
     private javafx.scene.control.@Nullable ContextMenu treePreviewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
@@ -2181,7 +2161,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Whether the right-click menus are trimmed for Simple UI mode (the preview menus read it too). */
-    boolean isSimpleMenu() {
+    public boolean isSimpleMenu() {
         return simpleMenu;
     }
 
@@ -5152,11 +5132,7 @@ public class EditorBuffer implements TabContent {
             // Right-click menu: Copy (rendered text), the link or code block under the pointer, exports, Print.
             previewPane.setOnContextMenuRequested(e -> {
                 Node hit = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
-                previewMenuLink = MarkdownRenderer.property(hit, MarkdownRenderer.LINK_KEY);
-                previewMenuCode = MarkdownRenderer.property(hit, MarkdownRenderer.CODE_KEY);
-                previewMenuHit = hit;
-                previewMenuY = e.getSceneY();
-                showPreviewContextMenu(e.getScreenX(), e.getScreenY());
+                previewMenu.show(previewPane(), hit, e.getSceneY(), e.getScreenX(), e.getScreenY());
                 e.consume();
             });
             previewPane.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
@@ -5176,9 +5152,9 @@ public class EditorBuffer implements TabContent {
         return previewPane;
     }
 
-    /** Injects the preview right-click "Export to PDF" / "Print" actions (controller commands). */
-    public void setPreviewExportPdfHandler(Runnable handler) {
-        this.previewExportPdfHandler = handler == null ? () -> {} : handler;
+    /** The preview's right-click menu, where the window injects its export and print actions. */
+    public PreviewMenu previewMenu() {
+        return previewMenu;
     }
 
     /** Injects the pom preview's "Show as XML" / "Show POM Summary" action (the controller command, so the
@@ -5187,54 +5163,20 @@ public class EditorBuffer implements TabContent {
         this.pomViewToggleHandler = handler == null ? () -> {} : handler;
     }
 
-    /** Injects the Typst preview right-click "Export to PNG" / "Export to SVG" actions (controller commands). */
-    public void setPreviewExportPngHandler(Runnable handler) {
-        this.previewExportPngHandler = handler == null ? () -> {} : handler;
-    }
-
-    public void setPreviewExportSvgHandler(Runnable handler) {
-        this.previewExportSvgHandler = handler == null ? () -> {} : handler;
-    }
-
-    public void setPreviewPrintHandler(Runnable handler) {
-        this.previewPrintHandler = handler == null ? () -> {} : handler;
-    }
-
-    /** Injects the preview right-click "Export to Word (.docx)" / "Export to OpenDocument (.odt)" actions. */
-    public void setPreviewExportDocxHandler(Runnable handler) {
-        this.previewExportDocxHandler = handler == null ? () -> {} : handler;
-    }
-
-    public void setPreviewExportOdtHandler(Runnable handler) {
-        this.previewExportOdtHandler = handler == null ? () -> {} : handler;
-    }
-
-    /** Injects the Markwhen preview "Export to JSON" action (controller command). */
-    public void setPreviewExportJsonHandler(Runnable handler) {
-        this.previewExportJsonHandler = handler == null ? () -> {} : handler;
-    }
-
     /** Copies the preview's selection when it has one, else all of it ({@link PreviewMenu#copy}). */
     public void copyPreviewToClipboard() {
-        PreviewMenu.copy(this);
+        previewMenu.copy();
     }
 
     /** Copies the preview's HTML <em>markup</em> as plain text ({@link PreviewMenu#copyHtmlSource}). */
     public boolean copyPreviewHtmlSource() {
-        return PreviewMenu.copyHtmlSource(this);
+        return previewMenu.copyHtmlSource();
     }
 
     /** Copy / Select All aimed at the rendered preview when that is where the user is
      *  ({@link PreviewMenu#editCommand}); false: the editor's own command applies. */
     public boolean previewEditCommand(boolean selectAll) {
-        return PreviewMenu.editCommand(this, previewPane, selectAll);
-    }
-
-    private void showPreviewContextMenu(double screenX, double screenY) {
-        if (previewContextMenu == null) {
-            previewContextMenu = PreviewMenu.build(this);
-        }
-        previewContextMenu.show(previewPane, screenX, screenY);
+        return previewMenu.editCommand(previewPane, selectAll);
     }
 
     /** Scrolls the preview by {@code pages} viewport heights (negative: up; infinite: to that end); no-op if
@@ -6269,10 +6211,10 @@ public class EditorBuffer implements TabContent {
         if (treePreviewContextMenu == null) {
             MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
             pdf.setGraphic(MenuIcons.download());
-            pdf.setOnAction(ev -> previewExportPdfHandler.run());
+            pdf.setOnAction(ev -> previewMenu.exportPdf());
             MenuItem print = new MenuItem(tr("command.preview.print"));
             print.setGraphic(MenuIcons.print());
-            print.setOnAction(ev -> previewPrintHandler.run());
+            print.setOnAction(ev -> previewMenu.print());
             pomViewItem = new MenuItem();
             pomViewItem.setGraphic(MenuIcons.code());
             pomViewItem.setOnAction(ev -> pomViewToggleHandler.run());

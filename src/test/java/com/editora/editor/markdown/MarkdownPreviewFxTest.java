@@ -600,7 +600,7 @@ class MarkdownPreviewFxTest {
             pane(buffer)
                     .fireEvent(new ContextMenuEvent(
                             ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 220, 220, false, new PickResult(out, 5, 5)));
-            ContextMenu menu = EditorFx.field(buffer, "previewContextMenu");
+            ContextMenu menu = EditorFx.field(EditorFx.field(buffer, "previewMenu"), "menu");
             List<String> titles = EditorFx.titles(menu.getItems());
             assertTrue(titles.contains(tr("previewmenu.selectAll")), "text can be selected: Select All is back");
             MenuItem copyLink = EditorFx.menuItem(menu.getItems(), tr("previewmenu.copyLink"));

@@ -716,8 +716,8 @@ class ExternalRenderFxTest {
             buffer.setTypstPreviewEnabled(true);
             buffer.setTypstPreviewEnabled(true);
             buffer.setTypstRootResolver(path -> path.getParent());
-            buffer.setPreviewExportPngHandler(() -> ran.add("png"));
-            buffer.setPreviewExportSvgHandler(() -> ran.add("svg"));
+            buffer.previewMenu().setExportPng(() -> ran.add("png"));
+            buffer.previewMenu().setExportSvg(() -> ran.add("svg"));
             stage[0] = EditorFx.show(buffer, 640, 320);
             buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW);
             host[0] = imageHost(buffer, "md-diagram");
@@ -731,7 +731,7 @@ class ExternalRenderFxTest {
             buffer.getNode().layout();
             ScrollPane pane = EditorFx.call(buffer, "previewPane");
             pane.fireEvent(new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 220, 220, false, null));
-            ContextMenu menu = EditorFx.field(buffer, "previewContextMenu");
+            ContextMenu menu = EditorFx.field(EditorFx.field(buffer, "previewMenu"), "menu");
             EditorFx.menuItem(menu.getItems(), Messages.tr("command.typst.exportPng"))
                     .fire();
             EditorFx.menuItem(menu.getItems(), Messages.tr("command.typst.exportSvg"))

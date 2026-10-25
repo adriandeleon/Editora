@@ -269,8 +269,8 @@ class PreviewRenderFxTest {
             buffer.setPomPreviewEnabled(true);
             buffer.setPomPreviewEnabled(true);
             assertTrue(buffer.hasPomPreview());
-            buffer.setPreviewExportPdfHandler(() -> handled.add("pdf"));
-            buffer.setPreviewPrintHandler(() -> handled.add("print"));
+            buffer.previewMenu().setExportPdf(() -> handled.add("pdf"));
+            buffer.previewMenu().setPrint(() -> handled.add("print"));
             buffer.setPomViewToggleHandler(() -> handled.add("toggle:" + buffer.togglePomView()));
             stage[0] = EditorFx.show(buffer, 700, 400);
             ref[0] = buffer;
@@ -319,8 +319,8 @@ class PreviewRenderFxTest {
                     MarkdownViewMode.PREVIEW,
                     buffer.getMarkdownViewMode(),
                     "the XML tree is still a preview of this file");
-            buffer.setPreviewExportPdfHandler(null);
-            buffer.setPreviewPrintHandler(null);
+            buffer.previewMenu().setExportPdf(null);
+            buffer.previewMenu().setPrint(null);
             buffer.setPomViewToggleHandler(null);
             ContextMenu menu = treeMenu(buffer);
             menu.getItems().forEach(MenuItem::fire); // the no-op handlers: nothing is recorded, nothing throws
@@ -608,17 +608,17 @@ class PreviewRenderFxTest {
         buffer.getNode().layout();
         pane(buffer)
                 .fireEvent(new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 220, 220, false, null));
-        return EditorFx.field(buffer, "previewContextMenu");
+        return EditorFx.field(EditorFx.field(buffer, "previewMenu"), "menu");
     }
 
     private static void wireExports(EditorBuffer buffer, Consumer<String> sink) {
-        buffer.setPreviewExportPdfHandler(() -> sink.accept("pdf"));
-        buffer.setPreviewExportPngHandler(() -> sink.accept("png"));
-        buffer.setPreviewExportSvgHandler(() -> sink.accept("svg"));
-        buffer.setPreviewPrintHandler(() -> sink.accept("print"));
-        buffer.setPreviewExportDocxHandler(() -> sink.accept("docx"));
-        buffer.setPreviewExportOdtHandler(() -> sink.accept("odt"));
-        buffer.setPreviewExportJsonHandler(() -> sink.accept("json"));
+        buffer.previewMenu().setExportPdf(() -> sink.accept("pdf"));
+        buffer.previewMenu().setExportPng(() -> sink.accept("png"));
+        buffer.previewMenu().setExportSvg(() -> sink.accept("svg"));
+        buffer.previewMenu().setPrint(() -> sink.accept("print"));
+        buffer.previewMenu().setExportDocx(() -> sink.accept("docx"));
+        buffer.previewMenu().setExportOdt(() -> sink.accept("odt"));
+        buffer.previewMenu().setExportJson(() -> sink.accept("json"));
     }
 
     /**
