@@ -72,6 +72,24 @@ public final class SnippetTyping {
         return style.contains("comment") || style.contains("string");
     }
 
+    /**
+     * The part of the selection {@code [from, to)} of {@code text} a snippet from the picker replaces. Whole
+     * selected lines (Surround With) are replaced from their first line's indentation and up to, not including,
+     * the last line break, so the expansion sits at their indent and the next line is not joined onto it. Pure.
+     */
+    public static int[] wrappedRange(String text, int from, int to) {
+        if (to - 1 > from && text.charAt(to - 1) == '\n') {
+            to--;
+        }
+        int lineStart = text.lastIndexOf('\n', from - 1) + 1;
+        if (text.substring(lineStart, from).isBlank()) {
+            while (from < to && (text.charAt(from) == ' ' || text.charAt(from) == '\t')) {
+                from++;
+            }
+        }
+        return new int[] {from, to};
+    }
+
     /** The variables for a snippet replacing {@code [from, to)} of {@code a}, in file {@code path} (null = untitled). */
     static VariableResolver variables(
             CodeArea a, int from, int to, @Nullable Path path, String language, @Nullable Path workspace) {

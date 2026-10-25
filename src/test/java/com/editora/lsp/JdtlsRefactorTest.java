@@ -149,6 +149,26 @@ class JdtlsRefactorTest {
     }
 
     @Test
+    void aNewPackageGoesUnderTheCurrentPackagesSourceRoot() {
+        assertEquals(
+                java.nio.file.Path.of("/p/src/main/java").toString(),
+                JdtlsRefactor.currentSourceRoot(json("{\"destinations\":[{\"displayName\":\"com.acme\","
+                        + "\"path\":\"/p/src/main/java/com/acme\",\"isParentOfSelectedFile\":true}]}")));
+        assertEquals(
+                "/p/src/main/java",
+                JdtlsRefactor.currentSourceRoot(
+                        json(
+                                "{\"destinations\":[{\"displayName\":\"(default package)\","
+                                        + "\"path\":\"/p/src/main/java\",\"isDefaultPackage\":true,\"isParentOfSelectedFile\":true}]}")));
+        assertNull(JdtlsRefactor.currentSourceRoot(json("{\"destinations\":[]}")));
+        assertTrue(JdtlsRefactor.isPackageName("com.acme.geo"));
+        assertFalse(JdtlsRefactor.isPackageName("com..acme"));
+        assertFalse(JdtlsRefactor.isPackageName("com.acme."));
+        assertFalse(JdtlsRefactor.isPackageName("1com"));
+        assertFalse(JdtlsRefactor.isPackageName(""));
+    }
+
+    @Test
     void testRootPackagesAreListedAfterTheMainOnes() {
         var packages = JdtlsRefactor.packages(
                 json(

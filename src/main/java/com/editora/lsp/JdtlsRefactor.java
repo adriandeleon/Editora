@@ -305,6 +305,47 @@ public final class JdtlsRefactor {
         return p.contains("/src/test/") || p.endsWith("/src/test");
     }
 
+    /**
+     * The source folder a {@code java/getMoveDestinations} answer's current package lies in — the path of the
+     * node marked {@code isParentOfSelectedFile}, less its package's folders — where a typed new package is
+     * created (Java review B20). Null when the answer marks none.
+     */
+    public static @Nullable String currentSourceRoot(@Nullable JsonElement response) {
+        for (JsonElement e : destinations(response)) {
+            if (!e.isJsonObject() || !bool(e.getAsJsonObject(), "isParentOfSelectedFile")) {
+                continue;
+            }
+            JsonObject o = e.getAsJsonObject();
+            String path = string(o, "path");
+            if (path == null) {
+                return null;
+            }
+            if (bool(o, "isDefaultPackage")) {
+                return path;
+            }
+            java.nio.file.Path p = java.nio.file.Path.of(path);
+            int segments = String.valueOf(string(o, "displayName")).split("\\.").length;
+            for (int i = 0; i < segments && p != null; i++) {
+                p = p.getParent();
+            }
+            return p == null ? null : p.toString();
+        }
+        return null;
+    }
+
+    /** Whether {@code name} is a package name: dot-separated Java identifiers. */
+    public static boolean isPackageName(String name) {
+        if (name == null || name.isEmpty() || name.startsWith(".") || name.endsWith(".")) {
+            return false;
+        }
+        for (String part : name.split("\\.", -1)) {
+            if (!isTypeName(part)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** The parameters and fields an instance method can move to ({@code name : Type}). */
     public static List<Destination> instanceTargets(JsonElement response) {
         List<Destination> out = new ArrayList<>();

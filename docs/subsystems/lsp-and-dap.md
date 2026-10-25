@@ -335,6 +335,21 @@ hierarchy node with a `jdt://` URI opens as library source. Search Everywhere's 
 jdtls's `workspace/symbol` types that live in `jdt://` (`LspManager.javaLibraryTypes`), as a second batch
 after the index's own (`SearchEverywherePopup.Ops.laterSymbols`).
 
+Peek Definition goes through `navOrigin()` too, and a `jdt://` target is peeked from
+`java/classFileContents` (on the declaration, past its Javadoc) rather than opened. Move into a package that
+does not exist yet creates its folder under the current package's source root
+(`JdtlsRefactor.currentSourceRoot`), announces it with `workspace/didChangeWatchedFiles`, and sends
+`java/move` a destination that is the folder's URI string, which jdtls accepts in place of a package node.
+After each `ProjectStatus OK`, `LspCoordinator.buildAfterImport` runs one incremental `java/buildWorkspace` per
+Maven or Gradle Java root with an open file (never a loose file's invisible project, which Debug compiles itself); diagnostics jdtls then publishes on a project folder (JDK and compliance
+problems) are listed in Problems in either scope and said once in the status line.
+
+**Launch extras.** `JavaLombok` adds `-javaagent:` with the newest Lombok jar from `~/.m2` or Gradle's module
+cache when the root's build file, or a module's one level down, declares Lombok (`JdtlsLombokProbeTest` checks
+the agent against a real jdtls with `-Dlsp.probe.lombok=PATH`). `LspServerSettings.javaSettings` also sends
+vscode-java's `completion.favoriteStaticMembers` and the `compile.nullAnalysis` annotation lists, with mode
+`automatic`: vscode-java's `interactive` answers through a command only it implements.
+
 jdtls's "Javadoc comment" completion is offered only on a `/**` line that is already closed. In a Java
 buffer with the server on, the `*` that makes a line `/**` therefore inserts `* */` and requests completion
 (`EditorBuffer.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).

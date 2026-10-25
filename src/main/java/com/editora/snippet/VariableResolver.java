@@ -62,6 +62,34 @@ public final class VariableResolver implements SnippetParser.Variables {
     private final String directory; // absolute parent directory, or ""
     private final String filePath; // absolute file path, or ""
     private final String selectedText; // current selection, or ""
+
+    /**
+     * A selection as a snippet places it inside a body ("Surround With", Java review gap): the expansion is
+     * re-indented line by line to where it lands, so a multi-line selection gives up its own indentation first —
+     * the first line's leading blanks, the lines' common indent — and one trailing line break. Otherwise wrapped
+     * lines came out indented twice. A one-line selection is unchanged. Pure.
+     */
+    static String forBody(String selected) {
+        if (selected.indexOf('\n') < 0) {
+            return selected;
+        }
+        String text = selected.endsWith("\n") ? selected.substring(0, selected.length() - 1) : selected;
+        String[] lines = text.split("\n", -1);
+        int common = Integer.MAX_VALUE;
+        for (int i = 1; i < lines.length; i++) {
+            if (!lines[i].isBlank()) {
+                common = Math.min(
+                        common, lines[i].length() - lines[i].stripLeading().length());
+            }
+        }
+        StringBuilder out = new StringBuilder(lines[0].stripLeading());
+        for (int i = 1; i < lines.length; i++) {
+            out.append('\n');
+            out.append(lines[i].isBlank() ? "" : lines[i].substring(Math.min(common, lines[i].length())));
+        }
+        return out.toString();
+    }
+
     private final String clipboard; // clipboard text, or ""
     private final int lineIndex; // 0-based caret line
     private final String currentLine; // text of the caret line
@@ -138,7 +166,7 @@ public final class VariableResolver implements SnippetParser.Variables {
             case "TM_DIRECTORY" -> directory;
             case "TM_FILEPATH" -> filePath;
             case "RELATIVE_FILEPATH" -> relativePath();
-            case "TM_SELECTED_TEXT", "SELECTION" -> selectedText;
+            case "TM_SELECTED_TEXT", "SELECTION" -> forBody(selectedText);
             case "CLIPBOARD" -> clipboard;
             case "TM_LINE_INDEX" -> String.valueOf(lineIndex);
             case "TM_LINE_NUMBER" -> String.valueOf(lineIndex + 1);

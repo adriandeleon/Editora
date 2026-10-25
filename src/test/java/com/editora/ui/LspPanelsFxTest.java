@@ -177,6 +177,44 @@ class LspPanelsFxTest {
     }
 
     @Test
+    void aReferenceThatAssignsOrIncrementsIsAWrite() {
+        assertTrue(ReferencesPanel.writes("    side = 3;", 4, 4));
+        assertTrue(ReferencesPanel.writes("    this.side += 2;", 9, 4));
+        assertTrue(ReferencesPanel.writes("    side++;", 4, 4));
+        assertTrue(ReferencesPanel.writes("    --side;", 6, 4));
+        assertTrue(ReferencesPanel.writes("    side >>>= 1;", 4, 4));
+        assertFalse(ReferencesPanel.writes("    if (side == 3) {", 8, 4), "a comparison reads");
+        assertFalse(ReferencesPanel.writes("    int a = side;", 12, 4), "the right-hand side reads");
+        assertFalse(ReferencesPanel.writes("    f(side);", 6, 4));
+        assertFalse(ReferencesPanel.writes("x", 4, 4), "out of range");
+        assertFalse(ReferencesPanel.writes(null, 0, 1));
+    }
+
+    @Test
+    void aClosedFilesLateLineMarksItsWrites() throws Exception {
+        ReferencesPanel panel = FxTestSupport.callOnFx(() -> new ReferencesPanel((file, line, col) -> {}));
+        show(panel);
+        long generation = FxTestSupport.callOnFx(() -> {
+            panel.setReferences(
+                    List.of(
+                            new ReferencesPanel.Reference(ALPHA, 2, 8, ""),
+                            new ReferencesPanel.Reference(ALPHA, 3, 15, "")),
+                    "side",
+                    Path.of("/proj"));
+            return panel.generation();
+        });
+        FxTestSupport.runOnFx(() ->
+                panel.fillPreviews(generation, r -> r.line() == 2 ? "        side = 4;" : "        return side;"));
+        layout(panel);
+        assertEquals(
+                List.of(
+                        "Alpha.java  (2)  ·  src",
+                        "3:9  " + tr("references.write") + "  side = 4;",
+                        "4:16  return side;"),
+                FxTestSupport.callOnFx(() -> cellTexts(panel, ".tree-cell")));
+    }
+
+    @Test
     void aFoldersPlaceIsRelativeToTheProject() {
         assertEquals("src/main", ReferencesPanel.folderOf(Path.of("/p/src/main/A.java"), Path.of("/p")));
         assertEquals("", ReferencesPanel.folderOf(Path.of("/p/A.java"), Path.of("/p")));

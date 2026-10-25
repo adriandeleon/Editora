@@ -86,6 +86,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Change Signature and Move show their files before applying.** When they change other files, the rename preview
   lists them, ticked, and an unticked file is left alone; before, both applied unseen.
 - **Related File (test ⇄ subject) is in the Navigate menu**, and on `C-c S-t` (`C-c T`) in the Emacs keymap.
+- **Java: Lombok.** jdtls runs with Lombok as its Java agent for a project whose build declares Lombok (Maven
+  `org.projectlombok`, Gradle's Freefair plugin), using the newest Lombok jar already in the local Maven or Gradle
+  cache, as vscode-java does with its own. Before, every getter of an `@Data` or `@Getter` class was an error.
+  Nothing is downloaded: a project built for the first time gets it when its server next starts.
+- **Java: null analysis from the project's annotations.** With JSpecify, `javax.annotation`, Spring or Eclipse
+  null annotations on the classpath, jdtls checks `@Nullable` and `@NonNull` use, as IntelliJ's inspections do.
+- **Java: static members of JUnit and Mockito are completed without an import** (`assertEquals`, `mock`,
+  `when`…), and the static import is added.
+- **Surround With.** Insert Snippet over selected lines wraps them in the Java `if`, `for`, `while`, `do`, `try`
+  and `synchronized` snippets, re-indented; Ctrl+Alt+T (Cmd+Alt+T on macOS) in the IntelliJ keymap. A snippet's
+  multi-line variable now keeps the indentation of the line it is on.
+- **Java: Move into a new package.** Move's package list ends with "New package…": type the name and the folder
+  is created under the current source root and the file moved there.
+- **Java: Related File offers to create a missing test.** On a class under `src/main/java` with no test, it offers
+  a JUnit 5 test in the same package under `src/test/java`, and opens it.
 
 ### Changed
 
@@ -116,6 +131,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Generate list says so instead of closing silently. The list's rows are taller and it shows twelve at a time.
 - **Java: Move lists the test source folders' packages after the main ones,** so a main class is not moved into
   `src/test` by picking the first of two identical package names.
+- **Peek Definition works in library source and peeks it.** From a JDK or dependency tab, and on a definition
+  inside one, the peek window shows the library source, on the declaration, instead of opening a tab.
+- **A member called more than once is one row in Call Hierarchy,** with the count ("append(String) ×2").
+- **The References window marks the references that write** — an assignment, `+=`, `++` — with "(write)".
 
 - **Refactor: the text model the editor shares with other packages moved to a new `com.editora.text`.** The LSP value types (`LspTextEdit`, `LspDiagnostic`, `SemanticToken`, `OccurrenceSpan`), `FoldRegions`, the search matcher with `CaseFold` and `SearchMatches`, all of language detection (`LanguageRegistry`, `LanguageNames`, `ConfigFileType`, `ShellFiles`, `ShellScripts`, `Shebang`, `Modeline`) and `EncryptedNames` leave the editor sub-packages, with 13 tests. `lsp`, `search`, `crypto`, `template` and `editops` no longer depend on the editor; `editor.language` is gone, its classes having no presentation in them. `text` has its own 0.95 coverage floor. Internal-only — no behavior, dependency, or `module-info` change.
 - **Refactor: the editor's toolkit-free helpers moved to the core packages they belong to.** `AceLabels`,
@@ -216,6 +235,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Problems no longer shows jdtls's numeric problem ids** (`[67108964]`), which linked nowhere.
 - **New Java files in Gradle source sets get the right package.** In `src/integrationTest/java` or
   `src/testFixtures/java` the source-set folders became part of the package name.
+- **Java: a project's JDK and compliance problems appear after it is imported.** jdtls reports them on the project
+  folder, and only a build produced them: a project expecting Java 8 on a machine without one showed odd errors
+  and no reason until Build Project. One quiet build now follows each Maven or Gradle import, and such a problem is
+  said in the status line and listed in Problems in either scope.
 
 
 ## [0.24.0] - 2026-10-24

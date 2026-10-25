@@ -279,6 +279,19 @@ public final class NewFileContent {
      * The Java package {@code dir} implies with no project to bound the search: only the conventional
      * {@code src/main/java} and {@code src/test/java} markers count. See {@link #packageFor(Path, Path)}.
      */
+    /** A JUnit 5 test class for Related File's Create Test (the bundled "JUnit 5 Test" template's body). */
+    public static String junitTest(String packageName, String className) {
+        return (packageName.isEmpty() ? "" : "package " + packageName + ";\n\n")
+                + "import org.junit.jupiter.api.Test;\n\n"
+                + "import static org.junit.jupiter.api.Assertions.assertEquals;\n\n"
+                + "class " + className + " {\n\n"
+                + "    @Test\n"
+                + "    void works() {\n"
+                + "        assertEquals(2, 1 + 1);\n"
+                + "    }\n"
+                + "}\n";
+    }
+
     public static String packageFor(Path dir) {
         return packageFor(dir, null);
     }

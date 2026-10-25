@@ -1155,6 +1155,9 @@ final class LspCoordinator {
     }
 
     /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
+    /** Project-level problems already said in the status line, by folder and message. */
+    private final java.util.Set<String> announcedProjectProblems = new java.util.HashSet<>();
+
     void onDiagnostics(Path file, List<LspDiagnostic> diagnostics) {
         if (!ops.lspFeatureEnabled()) {
             return;
@@ -1187,7 +1190,22 @@ final class LspCoordinator {
         if (isUntitledLspPath(file)) {
             listed = List.of(); // an untitled buffer has no file a Problems row could open
         }
-        boolean keep = projectWideProblems ? !listed.isEmpty() : buffer != null && !listed.isEmpty();
+        // Problems of a project rather than a file arrive on its folder (jdtls: the expected JDK is missing, the
+        // compliance level does not match). Listed in either scope, and said once (Java review C19).
+        boolean projectLevel = buffer == null
+                && file != null
+                && !com.editora.vfs.Vfs.isRemote(file)
+                && java.nio.file.Files.isDirectory(file);
+        if (projectLevel) {
+            for (LspDiagnostic d : listed) {
+                if (d.severity().ordinal() <= LspDiagnostic.Severity.WARNING.ordinal()
+                        && announcedProjectProblems.add(key + "\u0000" + d.message())) {
+                    host.setError(tr("status.lsp.projectProblem", PathDisplay.fileName(file), d.message()));
+                    break;
+                }
+            }
+        }
+        boolean keep = projectWideProblems || projectLevel ? !listed.isEmpty() : buffer != null && !listed.isEmpty();
         if (keep) {
             problems.put(key, listed);
         } else {
@@ -3007,6 +3025,60 @@ final class LspCoordinator {
             return;
         }
         narrateServerStatus(serverId, type, message);
+        if ("ProjectStatus".equalsIgnoreCase(type)
+                && "OK".equalsIgnoreCase(message)
+                && (serverId == null || LspServerRegistry.JAVA_SERVER_ID.equals(serverId))) {
+            importBuild.playFromStart(); // one per import: each project of a reactor reports its own
+        }
+    }
+
+    /**
+     * After jdtls imports a project, one quiet incremental build of each Java root with an open file, so the
+     * problems that belong to the project rather than a file — a JDK it expects that is not installed, a
+     * compliance level the JDK in use does not match — are reported then, not after a Build Project most users
+     * never run (Java review C19). With autobuild off nothing else would build it.
+     */
+    private final javafx.animation.PauseTransition importBuild = importBuildTimer();
+
+    private final java.util.Set<Path> builtAfterImport = new java.util.HashSet<>();
+
+    private javafx.animation.PauseTransition importBuildTimer() {
+        var t = new javafx.animation.PauseTransition(javafx.util.Duration.millis(800));
+        t.setOnFinished(e -> buildAfterImport());
+        return t;
+    }
+
+    void buildAfterImport() {
+        host.forEachBuffer(b -> {
+            Path path = lspPath(b);
+            if (path == null
+                    || !LspServerRegistry.JAVA_SERVER_ID.equals(serverIdForBuffer(b))
+                    || !lspManager.hasJavaSession(path)) {
+                return;
+            }
+            Path root = lspRootFor(b, LspServerRegistry.JAVA_SERVER_ID);
+            if (root != null && hasJavaBuildFile(root) && builtAfterImport.add(root)) {
+                lspManager.buildJavaWorkspace(path, false, outcome -> {});
+            }
+        });
+    }
+
+    /**
+     * Whether {@code root} is a Maven or Gradle project — where a JDK or compliance level is declared, the
+     * problems the post-import build is for. A loose file's invisible project is left unbuilt: Debug compiles
+     * such a file into a folder of its own because jdtls never builds it, and must keep doing so.
+     */
+    private static boolean hasJavaBuildFile(Path root) {
+        if (com.editora.vfs.Vfs.isRemote(root)) {
+            return false;
+        }
+        for (String name :
+                List.of("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")) {
+            if (java.nio.file.Files.isRegularFile(root.resolve(name))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Holds the Maven server's ready status until its own initialization progress ends (C18). */
@@ -3815,13 +3887,49 @@ final class LspCoordinator {
                         host.setError(refused != null ? refused : tr("status.lsp.refactorNoTarget", item.title()));
                         return;
                     }
-                    pickDestination(
-                            item,
-                            prompt,
-                            targets,
-                            target -> applyJdtlsMove(
-                                    path, item, JdtlsRefactor.moveParams(moveKind, source, params, target.raw())));
+                    String sourceRoot =
+                            "moveResource".equals(moveKind) ? JdtlsRefactor.currentSourceRoot(answer) : null;
+                    List<JdtlsRefactor.Destination> rows = new java.util.ArrayList<>(targets);
+                    JdtlsRefactor.Destination newPackage = new JdtlsRefactor.Destination(
+                            tr("picker.refactor.newPackage"), "", com.google.gson.JsonNull.INSTANCE);
+                    if (sourceRoot != null && !com.editora.vfs.Vfs.isRemote(path)) {
+                        rows.add(newPackage); // a package that does not exist yet (Java review B20)
+                    }
+                    pickDestination(item, prompt, rows, target -> {
+                        if (target == newPackage && sourceRoot != null) {
+                            moveToNewPackage(path, item, source, Path.of(sourceRoot));
+                        } else {
+                            applyJdtlsMove(
+                                    path, item, JdtlsRefactor.moveParams(moveKind, source, params, target.raw()));
+                        }
+                    });
                 });
+    }
+
+    /**
+     * Move into a package that does not exist yet, typed as IntelliJ's Move Class takes it: its folder is
+     * created under the current source root and announced to the server, which moves the file there by URI.
+     * Before, the package's folder had to be made in the Project tree first.
+     */
+    private void moveToNewPackage(Path path, LspManager.CodeActionItem item, @Nullable String source, Path root) {
+        host.promptText(item.title(), tr("prompt.refactor.newPackage"), "", typed -> {
+            String name = typed == null ? "" : typed.strip();
+            if (!JdtlsRefactor.isPackageName(name)) {
+                host.setError(tr("status.lsp.refactorBadPackage", name));
+                return;
+            }
+            Path folder = root.resolve(name.replace('.', java.io.File.separatorChar));
+            try {
+                java.nio.file.Files.createDirectories(folder);
+            } catch (java.io.IOException | RuntimeException e) {
+                host.setError(tr("status.lsp.refactorPackageNotCreated", name, String.valueOf(e.getMessage())));
+                return;
+            }
+            lspManager.notifyWatchedFiles(List.of(new LspManager.WatchedFile(folder, LspManager.WatchedKind.CREATED)));
+            com.google.gson.JsonObject params = JdtlsRefactor.moveParams("moveResource", source, null, null);
+            params.addProperty("destination", folder.toUri().toString());
+            applyJdtlsMove(path, item, params);
+        });
     }
 
     /** Moves a static member or a nested type into another type of the same project. */
@@ -4126,6 +4234,8 @@ final class LspCoordinator {
         }
         host.setStatus(tr("status.lsp.javaWorkspaceCleaning"));
         correctedSourceRoots.clear();
+        builtAfterImport.clear(); // the fresh import builds again
+        announcedProjectProblems.clear();
         lspManager.cleanJavaWorkspace(path, deleted -> {
             host.setStatus(tr(deleted ? "status.lsp.javaWorkspaceCleaned" : "status.lsp.javaWorkspaceKept"));
             applyGating(); // reopen the project's files: the server starts again on a fresh workspace
@@ -4213,36 +4323,65 @@ final class LspCoordinator {
      * real jump, so nothing is taken away.
      */
     void peekDefinition() {
-        EditorBuffer b = activeLspBuffer();
-        if (b == null) {
+        NavOrigin origin = navOrigin();
+        if (origin == null) {
             return;
         }
+        EditorBuffer b = origin.buffer();
         CodeArea area = b.getFocusedArea();
-        Path originPath = lspPath(b);
-        if (originPath == null) {
-            return;
-        }
+        Path originPath = origin.ownPath();
+        Path anchor = origin.anchor();
         long originVersion = b.docVersion();
         long requestGeneration = ++navigationRequestGeneration;
-        lspManager.changeDocument(originPath, b.text());
-        lspManager.definition(originPath, area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
-            if (!navigationRequestCurrent(b, originPath, originVersion, requestGeneration)) {
+        syncForRequest(origin);
+        lspManager.definitionAt(
+                anchor, origin.libraryUri(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+                    if (!navigationRequestCurrent(b, originPath, originVersion, requestGeneration)) {
+                        return;
+                    }
+                    if (targets.isEmpty()) {
+                        host.setStatus(tr("status.lsp.noDefinition"));
+                        return;
+                    }
+                    LspManager.Target t = targets.get(0);
+                    Path file = t.file();
+                    if (file == null) {
+                        peekLibrary(
+                                anchor,
+                                t,
+                                () -> navigationRequestCurrent(b, originPath, originVersion, requestGeneration));
+                        return;
+                    }
+                    peekTarget(t, file, b, originPath, originVersion, requestGeneration);
+                });
+    }
+
+    /**
+     * Peeks a {@code jdt://} definition — a JDK or dependency member — in the peek window like any other
+     * (Java review B7), its source asked of {@code anchor}'s session; Open there opens it as library source.
+     * Before, peek gave up and opened a tab.
+     */
+    private void peekLibrary(Path anchor, LspManager.Target t, java.util.function.BooleanSupplier current) {
+        String uri = t.classFileUri();
+        if (uri == null) {
+            host.setStatus(tr("status.lsp.noDefinition"));
+            return;
+        }
+        lspManager.classFileContents(anchor, uri, content -> {
+            if (!current.getAsBoolean()) {
                 return;
             }
-            if (targets.isEmpty()) {
-                host.setStatus(tr("status.lsp.noDefinition"));
+            if (content == null) {
+                host.setStatus(tr("status.lsp.libraryUnavailable"));
                 return;
             }
-            LspManager.Target t = targets.get(0);
-            Path file = t.file();
-            if (file == null) {
-                // A jdt:// class-file target has no file to read a snippet out of, so peek degrades to
-                // the thing it is a lighter version of rather than reporting a failure.
-                openLibraryDefinition(
-                        lspPath(b), t, () -> navigationRequestCurrent(b, originPath, originVersion, requestGeneration));
-                return;
-            }
-            peekTarget(t, file, b, originPath, originVersion, requestGeneration);
+            int line = com.editora.lsp.JavadocSkip.declarationLine(content, t.line());
+            showPeek(
+                    LspManager.classFileTitle(uri),
+                    content,
+                    line,
+                    "java",
+                    () -> openLibraryDefinition(anchor, t, current));
         });
     }
 
@@ -4280,18 +4419,26 @@ final class LspCoordinator {
     }
 
     private void showPeek(LspManager.Target t, Path file, String text) {
+        String name = PathDisplay.fileName(file);
+        showPeek(
+                name,
+                text,
+                t.line(),
+                com.editora.text.LanguageRegistry.forFileName(name),
+                () -> ops.openAndGoto(file, t.line(), t.character()));
+    }
+
+    private void showPeek(String name, String text, int line, String language, Runnable open) {
         if (peekPopup == null) {
             peekPopup = new PeekPopup(host.overlayHost());
         }
-        String name = PathDisplay.fileName(file);
-        String language = com.editora.text.LanguageRegistry.forFileName(name);
-        String title = tr("lsp.peek.title", name, t.line() + 1);
+        String title = tr("lsp.peek.title", name, line + 1);
         // The editor's own font, so the peeked lines wrap and align the way the file does.
         peekPopup.show(
-                PeekPopup.build(title, text, t.line(), language),
+                PeekPopup.build(title, text, line, language),
                 host.settings().getFontFamily(),
                 host.settings().getFontSize(),
-                () -> ops.openAndGoto(file, t.line(), t.character()));
+                open);
     }
 
     void gotoDefinition() {
@@ -4710,7 +4857,12 @@ final class LspCoordinator {
         for (int i = 0; i < targets.size(); i++) {
             LspManager.Target t = targets.get(i);
             refs.add(new ReferencesPanel.Reference(
-                    t.file(), t.line(), t.character(), previews.get(i), previewRuns(t, previews.get(i))));
+                    t.file(),
+                    t.line(),
+                    t.character(),
+                    previews.get(i),
+                    previewRuns(t, previews.get(i)),
+                    symbol != null && ReferencesPanel.writes(openLine(t), t.character(), symbol.length())));
             if (previews.get(i).isEmpty() && t.file() != null && bufferForLspPath(t.file()) == null) {
                 unread.add(t.file());
             }
@@ -4721,6 +4873,18 @@ final class LspCoordinator {
         if (!unread.isEmpty()) {
             readPreviewsFromDisk(panel, panel.generation(), unread);
         }
+    }
+
+    /** A reference's whole line from its file's open tab, or null without one. */
+    private @Nullable String openLine(LspManager.Target t) {
+        EditorBuffer buffer = t.file() == null ? null : bufferForLspPath(t.file());
+        if (buffer == null) {
+            return null;
+        }
+        CodeArea area = buffer.getArea();
+        return t.line() >= 0 && t.line() < area.getParagraphs().size()
+                ? area.getParagraph(t.line()).getText()
+                : null;
     }
 
     /** The largest file whose lines a References preview reads from disk. */
@@ -4748,7 +4912,7 @@ final class LspCoordinator {
             }
             javafx.application.Platform.runLater(() -> panel.fillPreviews(generation, r -> {
                 String[] in = r.file() == null ? null : lines.get(r.file());
-                return in != null && r.line() >= 0 && r.line() < in.length ? in[r.line()].strip() : "";
+                return in != null && r.line() >= 0 && r.line() < in.length ? in[r.line()] : "";
             }));
         });
     }

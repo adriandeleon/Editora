@@ -94,4 +94,24 @@ class RelatedFilesTest {
         assertTrue(RelatedFiles.candidates("parser.py").contains("test_parser.py"));
         assertEquals(List.of("parser.py"), RelatedFiles.candidates("test_parser.py"));
     }
+
+    @Test
+    void aClassesTestGoesUnderTheMatchingSrcTestJava() {
+        java.nio.file.Path p = java.nio.file.Path.of("/w/app/core/src/main/java/com/acme/Shape.java");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.nio.file.Path.of("/w/app/core/src/test/java/com/acme/ShapeTest.java"), RelatedFiles.testFor(p));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.nio.file.Path.of("/w/src/test/java/Main.java".replace("Main", "MainTest")),
+                RelatedFiles.testFor(java.nio.file.Path.of("/w/src/main/java/Main.java")),
+                "the default package");
+        org.junit.jupiter.api.Assertions.assertNull(
+                RelatedFiles.testFor(java.nio.file.Path.of("/w/src/main/java/com/acme/ShapeTest.java")), "a test");
+        org.junit.jupiter.api.Assertions.assertNull(
+                RelatedFiles.testFor(java.nio.file.Path.of("/w/src/main/java/com/acme/package-info.java")));
+        org.junit.jupiter.api.Assertions.assertNull(
+                RelatedFiles.testFor(java.nio.file.Path.of("/w/notes/Shape.java")), "no Maven layout");
+        org.junit.jupiter.api.Assertions.assertNull(
+                RelatedFiles.testFor(java.nio.file.Path.of("/w/src/main/java/a.kt")));
+        org.junit.jupiter.api.Assertions.assertNull(RelatedFiles.testFor(null));
+    }
 }

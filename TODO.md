@@ -59,11 +59,11 @@ A backlog of planned features and improvements. Unordered within each section.
       with request/state capture; passing follow-up runs do not establish a fix or root cause.
 - [ ] Track JDT LS's conflicting import proposal for a same-file class in broken source; rerun the
       strict live probe when evaluating server updates.
-- [ ] **Java LSP review (2026-10-24) leftovers after the fix pass (PR #1329):** Peek Definition inside a
-      library tab; repeated callees merged with a call-site count; Move's typed "New package…" row; Related
-      File's "Create test…" for a class without one; read/write marks in the References window; save actions,
-      favourite static members, formatter profile and the other jdtls settings in the review's gap list;
-      Lombok; a jdtls shared between windows (C12, a notice only today).
+- [ ] **Java LSP review (2026-10-24) leftovers after the fix pass (PR #1329):** save actions (organize
+      imports / cleanups on save need `willSaveWaitUntil` or an Editora save hook), chain completion, a
+      formatter profile, import order and star thresholds, Smart Type completion, Complete Statement; a
+      jdtls shared between windows (C12, a notice only today). Lombok is found only in the local Maven/Gradle
+      cache, never downloaded.
 
 ## Recently shipped
 - [x] **Commit options, bulk actions and the remaining Git items** — in the Commit window: Amend (names the

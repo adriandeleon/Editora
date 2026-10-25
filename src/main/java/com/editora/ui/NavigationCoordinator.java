@@ -574,7 +574,12 @@ final class NavigationCoordinator {
             }
         }
         if (found.isEmpty()) {
-            host.setStatus(tr("status.related.none", current.getFileName()));
+            Path test = com.editora.search.RelatedFiles.testFor(current);
+            if (test != null && !java.nio.file.Files.exists(test) && createTestConfirmer.test(test)) {
+                createTest(test);
+            } else {
+                host.setStatus(tr("status.related.none", current.getFileName()));
+            }
             return;
         }
         if (found.size() == 1) {
@@ -588,6 +593,48 @@ final class NavigationCoordinator {
     }
 
     List<Path> relatedCandidates = List.of();
+
+    /** Asks whether to create the missing test {@code test}; a field so a test can answer. */
+    java.util.function.Predicate<Path> createTestConfirmer = this::confirmCreateTest;
+
+    private boolean confirmCreateTest(Path test) {
+        javafx.scene.control.ButtonType create = new javafx.scene.control.ButtonType(
+                tr("dialog.related.createTest.create"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.Alert ask = Dialogs.styled(new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                tr("dialog.related.createTest.body", host.homeCollapsed(test.toString())),
+                create,
+                javafx.scene.control.ButtonType.CANCEL));
+        ask.initOwner(host.stage());
+        ask.setTitle(tr("dialog.related.createTest.title"));
+        ask.setHeaderText(null);
+        return ask.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == create;
+    }
+
+    /**
+     * Creates the JUnit 5 test a class has none of, where Maven and Gradle look for it, and opens it — IntelliJ's
+     * Navigate ▸ Test ▸ Create New Test (Java review B21).
+     */
+    private void createTest(Path test) {
+        String name = test.getFileName().toString();
+        String className = name.substring(0, name.length() - ".java".length());
+        Path dir = test.getParent();
+        if (dir == null) {
+            return; // testFor always answers a path inside a src/test/java
+        }
+        try {
+            java.nio.file.Files.createDirectories(dir);
+            java.nio.file.Files.writeString(
+                    test,
+                    com.editora.template.NewFileContent.junitTest(
+                            com.editora.template.NewFileContent.packageFor(dir), className),
+                    java.nio.file.StandardOpenOption.CREATE_NEW);
+        } catch (java.io.IOException | RuntimeException e) {
+            host.setStatus(tr("status.related.testNotCreated", name, String.valueOf(e.getMessage())));
+            return;
+        }
+        host.fileWorkflows().openPath(test);
+    }
 
     /**
      * {@code lsp.gotoDefinitionInSplit}: open the definition beside the code that referenced it.

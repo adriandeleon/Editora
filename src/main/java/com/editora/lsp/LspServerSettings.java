@@ -199,7 +199,19 @@ final class LspServerSettings {
         //
         // jdtls holds a default type filter but installs it only when the client sends one: without it
         // JDK internals (sun.*, com.sun.*, jdk.internal.*) filled completion and the import quick fixes.
-        java.put("completion", Map.of("filteredTypes", FILTERED_TYPES));
+        // favoriteStaticMembers: `assertEquals`, `mock` and the like are offered (and imported statically) without an
+        // import, as IntelliJ's second completion does; jdtls has no list of its own.
+        java.put("completion", Map.of("filteredTypes", FILTERED_TYPES, "favoriteStaticMembers", FAVORITE_STATICS));
+        // Null analysis from the project's own annotations (JSpecify, javax, Spring, Eclipse), as IntelliJ's
+        // @Nullable inspections. jdtls knows no annotation names unless sent, so it never ran; vscode-java's mode,
+        // "interactive", asks through a command only vscode-java can run, so it is "automatic" here: on in a
+        // project that has the annotations, off in one that has none.
+        Map<String, Object> nullAnalysis = new HashMap<>();
+        nullAnalysis.put("mode", "automatic");
+        nullAnalysis.put("nonnull", NONNULL);
+        nullAnalysis.put("nullable", NULLABLE);
+        nullAnalysis.put("nonnullbydefault", NONNULL_BY_DEFAULT);
+        java.put("compile", Map.of("nullAnalysis", nullAnalysis));
         // Inlay hints are requested only while Settings.inlayHints is on, so the server side can be generous:
         // every parameter name (InlayHintFilter applies Editora's literals/all mode on top — jdtls's own
         // default, "literals", made the "all" mode a no-op), and the inferred types of `var` and lambda
@@ -216,6 +228,37 @@ final class LspServerSettings {
         java.put("configuration", Map.of("updateBuildConfiguration", "automatic"));
         return java;
     }
+
+    /** vscode-java's {@code java.completion.favoriteStaticMembers} default. */
+    static final java.util.List<String> FAVORITE_STATICS = java.util.List.of(
+            "org.junit.Assert.*",
+            "org.junit.Assume.*",
+            "org.junit.jupiter.api.Assertions.*",
+            "org.junit.jupiter.api.Assumptions.*",
+            "org.junit.jupiter.api.DynamicContainer.*",
+            "org.junit.jupiter.api.DynamicTest.*",
+            "org.mockito.Mockito.*",
+            "org.mockito.ArgumentMatchers.*",
+            "org.mockito.Answers.*");
+
+    /** vscode-java's {@code java.compile.nullAnalysis} annotation lists. */
+    static final java.util.List<String> NONNULL = java.util.List.of(
+            "javax.annotation.Nonnull",
+            "org.eclipse.jdt.annotation.NonNull",
+            "org.springframework.lang.NonNull",
+            "org.jspecify.annotations.NonNull");
+
+    static final java.util.List<String> NULLABLE = java.util.List.of(
+            "javax.annotation.Nullable",
+            "org.eclipse.jdt.annotation.Nullable",
+            "org.springframework.lang.Nullable",
+            "org.jspecify.annotations.Nullable");
+
+    static final java.util.List<String> NONNULL_BY_DEFAULT = java.util.List.of(
+            "javax.annotation.ParametersAreNonnullByDefault",
+            "org.eclipse.jdt.annotation.NonNullByDefault",
+            "org.springframework.lang.NonNullApi",
+            "org.jspecify.annotations.NullMarked");
 
     /** vscode-java's {@code java.completion.filteredTypes} default: types never offered or imported. */
     static final java.util.List<String> FILTERED_TYPES = java.util.List.of(
