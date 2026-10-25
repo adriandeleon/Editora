@@ -39,6 +39,14 @@ class JdtlsSharedServerProbeTest {
         }
     }
 
+    private static String readQuietly(Path file) {
+        try {
+            return Files.readString(file);
+        } catch (java.io.IOException e) {
+            return "";
+        }
+    }
+
     @Test
     void twoWindowsShareOneRealJdtls() throws Exception {
         Assumptions.assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
@@ -76,6 +84,25 @@ class JdtlsSharedServerProbeTest {
                 assertEquals(1, names.size(), "one Eclipse workspace for the project: " + names);
                 assertFalse(names.get(0).endsWith("-2"), names.toString());
             }
+
+            // CN1: Clean Java Workspace from the first window while the second shares the server. The second
+            // reopens at once (as its coordinator does), and still the workspace is deleted, not kept.
+            Path workspace;
+            try (var dirs = Files.list(base)) {
+                workspace = dirs.findFirst().orElseThrow();
+            }
+            Files.writeString(workspace.resolve("stale-marker"), "x");
+            second.setOnSharedServerEnded((id, r) -> second.openDocument(two, project, "java", readQuietly(two)));
+            var cleaned = new java.util.concurrent.CompletableFuture<Boolean>();
+            javafx.application.Platform.runLater(() -> first.cleanJavaWorkspace(one, cleaned::complete));
+            assertTrue(
+                    cleaned.get(60, TimeUnit.SECONDS), "CN1: the workspace was deleted, not kept for the other window");
+            assertFalse(Files.exists(workspace.resolve("stale-marker")), "a fresh workspace");
+            await(() -> second.isRunning("java", project), "the second window's server after the clean");
+            first.openDocument(one, project, "java", Files.readString(one));
+            await(() -> first.isRunning("java", project), "the first window back on it");
+            shared = first.sessionForTest(one);
+            assertSame(shared, second.sessionForTest(two), "one server again, shared");
 
             first.close();
             assertFalse(shared.isDisposed(), "the server outlives the first window");

@@ -1098,10 +1098,14 @@ public final class LspManager {
     }
 
     /** How long a restarted session waits for the one it replaces to finish exiting. */
-    private static final long PRIOR_EXIT_WAIT_MILLIS = 8_000;
+    private static final long PRIOR_EXIT_WAIT_MILLIS = 20_000;
 
-    /** Session key → the exit of a session that was deliberately disposed and has not gone yet. */
-    private final Map<String, CompletableFuture<Void>> exiting = new ConcurrentHashMap<>();
+    /**
+     * Session key → the exit of a session that was deliberately disposed and has not gone yet, or a Clean Java
+     * Workspace still deleting its workspace. Per process: another window sharing the server restarts on the
+     * same key, and must wait for both (re-review CN1).
+     */
+    private static final Map<String, CompletableFuture<Void>> exiting = new ConcurrentHashMap<>();
 
     /**
      * Disposes a session on purpose (restart, disable, idle eviction, window close) and keeps what it held
@@ -1148,6 +1152,11 @@ public final class LspManager {
         } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
             LOG.log(java.util.logging.Level.FINE, "the previous language server had not exited yet", e);
         }
+    }
+
+    /** TEST SEAM — what a start on {@code serverId}/{@code root} waits for first, or null (CN1). */
+    static @Nullable CompletableFuture<Void> pendingExitForTest(String serverId, Path root) {
+        return exiting.get(sessionKey(serverId, root));
     }
 
     /** TEST SEAM — the session serving {@code file}, so a test can play the server's side of it. */
@@ -1448,13 +1457,9 @@ public final class LspManager {
         clientOf.put(session, client);
         ensureRootWatcher(session.root());
         if (session.isInitialized()) {
-            // Ready before this window came: its documents' gates and data are due now, not at a status that
-            // was said before it joined.
-            Platform.runLater(() -> {
-                if (!closed) {
-                    onRefreshRequested.refreshRequested("capabilities", session);
-                }
-            });
+            // Ready before this window came: it hears so now — its status bar says "Loaded and ready" instead of
+            // a stale progress line, and its documents' gates and data are refreshed (re-review CN5).
+            client.status.accept("ServiceReady", null);
         }
         return session;
     }
@@ -5776,8 +5781,20 @@ public final class LspManager {
         disposeDeliberately(key, s);
         String exitedKey = key;
         Path workspace = base.resolve(name);
+        // Every start on this key — this window's reopen, and another window's that shared the server — waits
+        // for the clean, not only for the process: the other window restarted at once and took the workspace
+        // before it could be deleted, so the clean became a plain restart (re-review CN1).
+        CompletableFuture<Void> priorExit = exiting.getOrDefault(key, CompletableFuture.completedFuture(null));
+        CompletableFuture<Void> cleaned = new CompletableFuture<>();
+        exiting.put(key, cleaned);
         Thread.ofVirtual().name("jdtls-clean").start(() -> {
-            awaitPriorExit(exitedKey);
+            try {
+                priorExit.get(PRIOR_EXIT_WAIT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                LOG.log(java.util.logging.Level.FINE, "the Java server had not exited yet", e);
+            }
             boolean deleted = false;
             for (int attempt = 0; attempt < 50 && !deleted; attempt++) {
                 if (claimedJdtlsWorkspaces.add(name)) {
@@ -5797,6 +5814,8 @@ public final class LspManager {
                 }
             }
             boolean result = deleted;
+            cleaned.complete(null);
+            exiting.remove(exitedKey, cleaned);
             Platform.runLater(() -> done.accept(result));
         });
     }
