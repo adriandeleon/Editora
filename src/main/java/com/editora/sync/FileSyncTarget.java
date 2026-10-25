@@ -87,16 +87,39 @@ public class FileSyncTarget implements SyncTarget {
     @Override
     public boolean apply(Map<String, String> expected, Map<String, String> changes) throws IOException {
         for (String path : changes.keySet()) {
-            Path file = configDir.resolve(path);
-            String now = Files.isRegularFile(file) ? readText(file) : null;
-            if (!Objects.equals(now, expected.get(path))) {
+            if (!Objects.equals(current(path), expected.get(path))) {
                 return false;
             }
         }
         backup(changes.keySet());
         for (Map.Entry<String, String> change : changes.entrySet()) {
-            writeOrDelete(configDir.resolve(change.getKey()), change.getValue());
+            write(change.getKey(), change.getValue());
         }
+        return true;
+    }
+
+    /**
+     * What {@code path} (relative, forward slashes) holds now, or null when it does not exist. A subclass that
+     * keeps a category somewhere other than its file overrides this, {@link #write} and {@link #backupTo}.
+     */
+    protected @Nullable String current(String path) throws IOException {
+        Path file = configDir.resolve(path);
+        return Files.isRegularFile(file) ? readText(file) : null;
+    }
+
+    /** Replaces {@code path} with {@code text}, or deletes it when {@code text} is null. */
+    protected void write(String path, @Nullable String text) throws IOException {
+        writeOrDelete(configDir.resolve(path), text);
+    }
+
+    /** Copies what {@code path} holds now to {@code copy}; false when there is nothing to copy. */
+    protected boolean backupTo(String path, Path copy) throws IOException {
+        Path file = configDir.resolve(path);
+        if (!Files.isRegularFile(file)) {
+            return false;
+        }
+        Files.createDirectories(copy.getParent());
+        Files.copy(file, copy);
         return true;
     }
 
@@ -112,20 +135,12 @@ public class FileSyncTarget implements SyncTarget {
     }
 
     private void backup(Set<String> paths) throws IOException {
-        Path set = null;
+        Path set = backupsDir().resolve(LocalDateTime.now().format(STAMP));
+        boolean any = false;
         for (String path : paths) {
-            Path file = configDir.resolve(path);
-            if (!Files.isRegularFile(file)) {
-                continue;
-            }
-            if (set == null) {
-                set = backupsDir().resolve(LocalDateTime.now().format(STAMP));
-            }
-            Path copy = set.resolve(path);
-            Files.createDirectories(copy.getParent());
-            Files.copy(file, copy);
+            any |= backupTo(path, set.resolve(path));
         }
-        if (set != null) {
+        if (any) {
             prune();
         }
     }

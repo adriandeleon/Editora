@@ -1,7 +1,8 @@
 # Settings sync
 
-Settings sync keeps four kinds of user data the same on every computer that connects to one Git
-repository of the user's: snippets, abbreviations, templates and the personal spell-check dictionary.
+Settings sync keeps five kinds of user data the same on every computer that connects to one Git
+repository of the user's: snippets, abbreviations, templates, the personal spell-check dictionary and
+the key-binding overrides.
 It is off by default. The rationale for the design is in
 [ADR 0012](../decisions/0012-settings-sync-git-transport.md).
 
@@ -13,15 +14,36 @@ It is off by default. The rationale for the design is in
 | Abbreviations | `abbreviations.json` | one abbreviation |
 | Templates | `templates/<id>.json` | the file |
 | Personal dictionary | `dictionary.txt` | one word |
+| Key bindings | none: part of `settings.json` (see below) | one chord of one keymap and platform |
 
 The repository has the same paths, plus `editora-sync.json` (`{"formatVersion": 1}`), `.gitattributes`
-(`* -text`) and a `README.md`. Nothing else is ever written to it: `SyncCategory.owns` decides which
-paths belong to a category, and a path outside the four is neither read nor pushed. `settings.json`,
-keymaps, macros, themes, plugins and session files are not synced. The `sync*` keys in `settings.json`
+(`* -text`) and a `README.md`; the key bindings are `keybindings.json` there. Nothing else is ever
+written to it: `SyncCategory.owns` decides which paths belong to a category, and a path outside the
+five is neither read nor pushed. The rest of `settings.json` (including which keymap is active),
+macros, themes, plugins and session files are not synced. The `sync*` keys in `settings.json`
 describe one installation's connection and must stay local if settings are synced later.
+
+## Key bindings
+
+A rebind is stored in `settings.json`: the active keymap's overrides in `keybindings` /
+`keybindingsMac`, the other keymaps' parked in `keymapKeybindings` / `keymapKeybindingsMac` (see
+`Settings.switchKeymap`). `sync/KeybindingsFile` renders exactly those four maps as the repository's
+`keybindings.json` — keymap, then platform (`windowsLinux`, `macOS`), then chord to command, sorted, a
+blank command being an unbind — and writes a merged file back into them. Overrides travel per keymap,
+so a computer running another keymap keeps them parked until it switches; which keymap is active stays
+each computer's own choice. Both platforms' maps are synced on every computer, as `settings.json`
+already holds both.
+
+`SettingsSync.LiveTarget` stands in for the file: it renders the text on the FX thread for a read,
+compares it for the "still what I read" check, backs the old text up as `keybindings.json` in the
+backup set, and on a write updates `Settings`, saves `settings.json` and rebuilds the shared keymap in
+every window (`WindowManager.reloadSharedKeymap`). That rebuild — after a rebind, a reset, a keymap
+switch or a hand-edited `settings.json` — calls `SettingsSync.keymapReloaded`, which marks sync dirty
+when the rendered overrides differ from the last ones seen.
 
 ## Pieces
 
+- `sync/KeybindingsFile` — pure: the key-binding maps of `Settings` as `keybindings.json` and back.
 - `sync/SyncMerge` — pure three-way merge of one file. Entries added, changed or removed on one side
   carry over; an entry changed differently on both sides keeps this machine's version and is reported.
   When only one side changed a file its text is taken whole, which keeps the comments of a snippet
@@ -73,8 +95,8 @@ instance of a config directory syncs. Rounds never overlap; a request during a r
 afterwards.
 
 `markDirty` is called from `WindowManager.broadcastSnippetsChanged` (with a window as origin),
-`broadcastUserDictionaryChanged`, `onSharedStoreChanged`, and from the Settings pages that save or
-delete a template or a dictionary word. A change made by hand-editing a file is picked up by the next
+`broadcastUserDictionaryChanged`, `onSharedStoreChanged`, from the Settings pages that save or
+delete a template or a dictionary word, and through `keymapReloaded` when the key bindings changed. A change made by hand-editing a file is picked up by the next
 timer round.
 
 The engine runs on the `settings-sync` thread. Writing the result happens on the FX thread
@@ -83,8 +105,8 @@ file at that moment; the "still what I read" check then catches an edit made dur
 ends it as `LOCAL_BUSY` and schedules another. After the write: snippets are re-read through
 `broadcastSnippetsChanged(null)`, the dictionary through `SharedConfig.reloadUserDictionary`,
 abbreviations through `SharedConfig.reloadAbbreviations` followed by `broadcastSettingsApplied`
-(each buffer holds a copy of the map), and open Settings windows refresh their Snippets and
-Templates pages.
+(each buffer holds a copy of the map), key bindings through `WindowManager.reloadSharedKeymap`, and
+open Settings windows refresh their Snippets, Templates and Keymaps pages.
 
 Automatic rounds report a failure once per kind, as a status line, and show the "Sync ⚠" status-bar
 segment until a round succeeds. They never open a dialog and never prompt for credentials. A round
@@ -116,5 +138,7 @@ credential helper or a missing gh are not touched. The Settings page names the a
   merge, a reload in `SettingsSync.reload`, a `markDirty` call where the store saves, and a setting.
 - A change to the repository layout that an older build would misread: bump
   `SyncEngine.FORMAT_VERSION`.
-- Tests: `SyncMergeTest` (pure), `SyncAccountTest` (real git, a stand-in gh), `SyncEngineTest` (two config directories and a bare repository, real
+- A category that is not a file of its own: override `read`, `current`, `write` and `backupTo` in
+  `SettingsSync.LiveTarget`, as the key bindings do.
+- Tests: `SyncMergeTest` and `KeybindingsFileTest` (pure), `SyncAccountTest` (real git, a stand-in gh), `SyncEngineTest` (two config directories and a bare repository, real
   git), `SettingsSyncFxTest` (a real window against a second machine).

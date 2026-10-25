@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Settings sync carries your shortcuts.** A new **Shortcuts** switch on Settings ▸ Sync (on by default) syncs
+  the key bindings you changed, in every keymap and for both Windows/Linux and macOS, as `keybindings.json` in the
+  sync repository. They merge chord by chord like snippets; which keymap each computer uses stays its own. A change
+  syncs shortly after you rebind, reset or switch keymaps. Settings schema 145→146, additive.
 - **Surround With** (`snippets.surround`, Code ▸ Surround With…; Ctrl+Alt+T / Cmd+Alt+T in the IntelliJ keymaps)
   lists only the snippets that wrap a selection and puts the selection inside the chosen one; with nothing
   selected it wraps the current line.

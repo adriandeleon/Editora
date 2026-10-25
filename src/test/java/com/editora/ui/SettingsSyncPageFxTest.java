@@ -321,13 +321,17 @@ class SettingsSyncPageFxTest {
                     this.<Label>control("syncStateLabel").getText());
 
             for (String name : List.of(
-                    "syncSnippetsCheck", "syncAbbreviationsCheck", "syncTemplatesCheck", "syncDictionaryCheck")) {
+                    "syncSnippetsCheck",
+                    "syncAbbreviationsCheck",
+                    "syncTemplatesCheck",
+                    "syncDictionaryCheck",
+                    "syncKeybindingsCheck")) {
                 CheckBox check = control(name);
                 assertTrue(check.isSelected(), name + " is on by default");
                 check.setSelected(false);
             }
             assertFalse(settings.isSyncSnippets() || settings.isSyncAbbreviations());
-            assertFalse(settings.isSyncTemplates() || settings.isSyncDictionary());
+            assertFalse(settings.isSyncTemplates() || settings.isSyncDictionary() || settings.isSyncKeybindings());
             this.<CheckBox>control("syncDictionaryCheck").setSelected(true);
             assertTrue(settings.isSyncDictionary());
 
