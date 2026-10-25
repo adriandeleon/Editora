@@ -402,6 +402,13 @@ class RunConfigToolbarFxTest {
      * and nothing opened. {@code combo.setValue} (the test above) never goes through the list, so it missed
      * this.
      */
+    /** The trace of {@code e}, for a failure message that says where it came from (CI only shows the message). */
+    private static String stackOf(Throwable e) {
+        var out = new java.io.StringWriter();
+        e.printStackTrace(new java.io.PrintWriter(out));
+        return out.toString();
+    }
+
     private void pickTheEditRowTwice(List<RunConfiguration> configs, String selected) throws Exception {
         setConfigs(configs);
         ComboBox<RunConfiguration> combo = combo();
@@ -443,7 +450,11 @@ class RunConfigToolbarFxTest {
                     uncaught.add(e);
                 }
                 FxTestSupport.drainFx();
-                assertEquals(List.of(), uncaught, "nothing thrown out of pick " + pick);
+                assertEquals(
+                        List.of(),
+                        uncaught,
+                        "nothing thrown out of pick " + pick
+                                + (uncaught.isEmpty() ? "" : ": " + stackOf(uncaught.get(0))));
                 assertEquals(java.util.Collections.nCopies(pick, selected), opened, "opened on pick " + pick);
                 assertEquals(selected, FxTestSupport.callOnFx(() -> nameOf(combo.getValue())), "selection put back");
                 assertEquals(

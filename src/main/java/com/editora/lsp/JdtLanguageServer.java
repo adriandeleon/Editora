@@ -80,4 +80,8 @@ interface JdtLanguageServer extends LanguageServer {
 
     @JsonRequest("java/inferSelection")
     CompletableFuture<JsonElement> inferSelection(Object params);
+
+    /** The clean-ups in {@code java.cleanup.actions} for one document: a {@code WorkspaceEdit}. */
+    @JsonRequest("java/cleanup")
+    CompletableFuture<JsonElement> cleanup(Object params);
 }

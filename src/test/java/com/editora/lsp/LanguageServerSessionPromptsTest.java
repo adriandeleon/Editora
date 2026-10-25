@@ -305,5 +305,15 @@ class LanguageServerSessionPromptsTest {
 
         assertNull(s.executeClientCommand(new ExecuteCommandParams("editor.action.other", List.of()))
                 .join());
+
+        // An Organize Imports run on save asks nothing: every ambiguous name is skipped.
+        asked.clear();
+        s.quietImportChoices.incrementAndGet();
+        Object quiet = s.executeClientCommand(
+                        new ExecuteCommandParams(LanguageServerSession.CHOOSE_IMPORTS, chooseImportsArguments()))
+                .join();
+        s.quietImportChoices.decrementAndGet();
+        assertEquals(List.of(), quiet);
+        assertEquals(List.of(), asked, "no picker on save");
     }
 }

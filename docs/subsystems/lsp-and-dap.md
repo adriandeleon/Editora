@@ -350,6 +350,26 @@ the agent against a real jdtls with `-Dlsp.probe.lombok=PATH`). `LspServerSettin
 vscode-java's `completion.favoriteStaticMembers` and the `compile.nullAnalysis` annotation lists, with mode
 `automatic`: vscode-java's `interactive` answers through a command only it implements.
 
+**A project's own preferences.** `JavaProjectSettings.forRoot(root)` reads IntelliJ's `ij_java_imports_layout`
+and import-on-demand counts from `.editorconfig` (`EditorConfig.rawFor`, which keeps keys Editora does not
+interpret) and the Eclipse formatter profile Spotless names (else `eclipse-formatter.xml` and friends at the root),
+and is merged into `settings.java` at `initialize` (`LspManager.withProjectSettings`) and in every push
+(`LanguageServerSession.pushConfiguration`). `JdtlsProjectStyleProbeTest` checks the star threshold, the profile
+and chain completion (`completion.chain.enabled`) against a real jdtls.
+
+**Lombok on request.** A root whose build declares Lombok, with no jar in the Maven/Gradle caches or in
+`<config>/plugins/lsp/lombok`, reports `onLombokMissing`; `LspCoordinator.offerLombok` asks once per root,
+downloads `InstallCatalog.LOMBOK` (pinned, SHA-256) with `InstallService.installLombok`, and restarts jdtls.
+
+**Actions on save.** `LspCoordinator.afterUserSave`, called by `FileWorkflowCoordinator` for explicit saves only,
+runs `LspManager.organizeImportsQuietly` (the session answers `chooseImports` with no choice while it runs) and/or
+Format Document, then saves once more when they changed the text (`Settings.javaOrganizeImportsOnSave`,
+`javaFormatOnSave`). Clean-ups go first (`javaCleanupOnSave`): `LspManager.cleanUpJava` sends jdtls's
+`java/cleanup` request, which applies the ids in `java.cleanup.actions` and answers a `WorkspaceEdit`. The ids
+(`Settings.javaCleanups`, filtered through `JavaCleanups.known`) reach the server in every configuration push.
+Editora does not use jdtls's own `java.saveActions.cleanup`, which needs `willSaveWaitUntil`; **Clean Up File**
+(`lsp.cleanUp`) sends the same request by hand.
+
 jdtls's "Javadoc comment" completion is offered only on a `/**` line that is already closed. In a Java
 buffer with the server on, the `*` that makes a line `/**` therefore inserts `* */` and requests completion
 (`EditorBuffer.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).

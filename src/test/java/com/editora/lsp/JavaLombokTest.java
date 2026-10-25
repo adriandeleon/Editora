@@ -75,4 +75,17 @@ class JavaLombokTest {
         assertTrue(JavaLombok.mentionsLombok("compileOnly 'org.projectlombok:lombok:1.18.34'"));
         assertFalse(JavaLombok.mentionsLombok("implementation 'com.google.guava:guava:33.0'"));
     }
+
+    @Test
+    void editorasOwnDownloadIsTheFallbackAfterTheBuildCaches() throws Exception {
+        Path project = Files.createDirectories(tmp.resolve("p"));
+        Files.writeString(project.resolve("pom.xml"), "<groupId>org.projectlombok</groupId>");
+        Path own = Files.createDirectories(tmp.resolve("editora/plugins/lsp/lombok"));
+        Files.writeString(own.resolve("lombok-1.18.48.jar"), "jar");
+        Files.writeString(own.resolve("lombok-1.18.48.jar.part"), "half");
+        assertEquals(own.resolve("lombok-1.18.48.jar"), JavaLombok.agentFor(project, tmp.resolve("home"), own));
+        Path cached = jar(".m2/repository/org/projectlombok/lombok/1.18.30/lombok-1.18.30.jar");
+        assertEquals(cached, JavaLombok.agentFor(project, tmp.resolve("home"), own), "the build's own version first");
+        assertNull(JavaLombok.agentFor(project, tmp.resolve("home2"), tmp.resolve("none")));
+    }
 }

@@ -235,6 +235,7 @@ final class MenuBarModel {
                                 submenu("menubar.code.refactor"),
                                 "lsp.formatDocument",
                                 "lsp.organizeImports",
+                                "lsp.cleanUp",
                                 SEPARATOR,
                                 "lsp.nextProblem",
                                 "lsp.previousProblem",

@@ -205,6 +205,20 @@ public final class InstallCatalog {
                     "1.23.2",
                     "e9d8c856856680427f096d156f02a414289985c930998fcb519ce5be39b42003"));
 
+    /**
+     * Lombok, downloaded on request for a project that declares it when no build has cached a jar yet
+     * ({@code JavaLombok} runs jdtls with it as a Java agent). Pinned by version and SHA-256 (checked against a
+     * copy verified by Central's SHA-1); stored under {@link #LOMBOK_SUBPATH}.
+     */
+    public static final JvmLspJar LOMBOK = mavenCentralJar(
+            "org.projectlombok",
+            "lombok",
+            "1.18.48",
+            "85477a4655ebb2c074a9099cfb749be454449fee564d4282610df1b85f7c508b");
+
+    /** Where Editora keeps its own Lombok jar, under the config dir. */
+    public static final String LOMBOK_SUBPATH = "plugins/lsp/lombok";
+
     /** A pinned Maven Central jar: {@code <MAVEN_CENTRAL>/<group as path>/<artifact>/<version>/<artifact>-<version>.jar}. Pure. */
     public static JvmLspJar mavenCentralJar(String groupId, String artifactId, String version, String sha256) {
         String file = artifactId + "-" + version + ".jar";

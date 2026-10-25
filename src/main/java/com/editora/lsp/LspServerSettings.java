@@ -201,7 +201,17 @@ final class LspServerSettings {
         // JDK internals (sun.*, com.sun.*, jdk.internal.*) filled completion and the import quick fixes.
         // favoriteStaticMembers: `assertEquals`, `mock` and the like are offered (and imported statically) without an
         // import, as IntelliJ's second completion does; jdtls has no list of its own.
-        java.put("completion", Map.of("filteredTypes", FILTERED_TYPES, "favoriteStaticMembers", FAVORITE_STATICS));
+        // chain: in an argument or an assignment, completion also offers a call chain that yields the expected type
+        // — `Collectors.toList()` inside `collect(` — as IntelliJ's second Smart Type completion does.
+        java.put(
+                "completion",
+                Map.of(
+                        "filteredTypes",
+                        FILTERED_TYPES,
+                        "favoriteStaticMembers",
+                        FAVORITE_STATICS,
+                        "chain",
+                        Map.of("enabled", true)));
         // Null analysis from the project's own annotations (JSpecify, javax, Spring, Eclipse), as IntelliJ's
         // @Nullable inspections. jdtls knows no annotation names unless sent, so it never ran; vscode-java's mode,
         // "interactive", asks through a command only vscode-java can run, so it is "automatic" here: on in a

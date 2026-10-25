@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Java: organize imports and format on save.** Two settings under Settings ▸ Code Completion ▸ Language server features: after you
+  save a Java file, jdtls organizes its imports and/or formats it, and the file is saved again when that changed
+  it, as IntelliJ's Actions on Save do. Both are off by default; autosave never runs them, and an ambiguous import
+  is left out rather than asked about. Settings schema 143→144, additive.
+- **Java: clean-ups.** **Code ▸ Clean Up File** applies the jdtls clean-ups chosen under Settings ▸ Code
+  Completion ▸ Language server features (add `@Override` and `@Deprecated`, drop redundant modifiers, qualify
+  members, add `final`, pattern-matching `instanceof`, switch expressions, lambdas, try-with-resources, text
+  blocks and more; 19 in all, four on by default). **Clean up on save (Java)** runs them after an explicit save,
+  before organizing imports and formatting.
+- **Java: Lombok on request.** A project whose build declares Lombok but has not downloaded it yet is offered
+  Lombok 1.18.48 from Maven Central (checked by SHA-256 into `plugins/lsp/lombok`); its Java server then restarts
+  with Lombok as its agent.
+- **Java: a project's own code style reaches jdtls.** IntelliJ's import settings in `.editorconfig`
+  (`ij_java_imports_layout`, `ij_java_class_count_to_use_import_on_demand`,
+  `ij_java_names_count_to_use_import_on_demand`) become jdtls's import order and `*` thresholds, and the Eclipse
+  formatter profile the build formats with (Spotless's `<eclipse><file>` or `eclipse().configFile(…)`, else an
+  `eclipse-formatter.xml` at the root) is what Format Document uses.
+- **Java: chain completion.** In an argument or assignment, completion also offers calls that produce the
+  expected type, such as `Collectors.toList()` inside `collect(`.
 - **Java: Extract Method, Variable and Field at the caret, Introduce Parameter, and a warning before a risky
   move.** Editora now declares jdtls's `inferSelectionSupport`: with nothing selected the extract actions are
   offered, and Editora asks the server which expressions are there and lets you pick one when there are several.

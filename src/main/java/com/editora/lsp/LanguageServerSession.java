@@ -904,6 +904,19 @@ final class LanguageServerSession implements LanguageClient {
         return pythonPath;
     }
 
+    /** jdtls's {@code java.cleanup.actions}: the clean-ups {@code java/cleanup} runs (Settings → Java clean-ups). */
+    private volatile List<String> javaCleanups = List.of();
+
+    /** Sets {@link #javaCleanups} and, for a running Java server, pushes them. */
+    void setJavaCleanups(List<String> cleanups) {
+        List<String> next = cleanups == null ? List.of() : List.copyOf(cleanups);
+        boolean changed = !next.equals(javaCleanups);
+        javaCleanups = next;
+        if (changed && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
     /** Sets {@link #javaOnTypeFormatting} and, for a running Java server, pushes the changed preference. */
     void setJavaOnTypeFormatting(boolean enabled) {
         boolean changed = javaOnTypeFormatting != enabled;
@@ -923,6 +936,14 @@ final class LanguageServerSession implements LanguageClient {
                 : LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde(), pythonPath);
         if (settings == null) {
             return;
+        }
+        if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && settings.get("java") instanceof Map<?, ?> javaMap) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> own = (Map<String, Object>) javaMap;
+            Map<String, Object> merged = JavaProjectSettings.merge(own, JavaProjectSettings.forRoot(root));
+            // The clean-ups java/cleanup runs; never jdtls's own on-save switch (Editora runs them after a save).
+            merged.put("cleanup", Map.of("actions", javaCleanups));
+            settings = Map.of("java", merged); // the project's own style, and the chosen clean-ups
         }
         try {
             server().getWorkspaceService()
@@ -2776,6 +2797,10 @@ final class LanguageServerSession implements LanguageClient {
     /** jdtls's {@code java.action.organizeImports.chooseImports}: which class each ambiguous name means. */
     static final String CHOOSE_IMPORTS = "java.action.organizeImports.chooseImports";
 
+    /** While positive, {@link #CHOOSE_IMPORTS} is answered with no choice: an Organize Imports run on save. */
+    final java.util.concurrent.atomic.AtomicInteger quietImportChoices =
+            new java.util.concurrent.atomic.AtomicInteger();
+
     /**
      * {@code workspace/executeClientCommand}: a command jdtls asks the client to carry out while it waits for the
      * answer (declared by {@code executeClientCommandSupport}). {@link #CHOOSE_IMPORTS} asks, for each simple name
@@ -2788,6 +2813,9 @@ final class LanguageServerSession implements LanguageClient {
         LspClientUi ui = clientUi;
         if (params == null || !CHOOSE_IMPORTS.equals(params.getCommand()) || ui == null || disposed) {
             return CompletableFuture.completedFuture(null);
+        }
+        if (quietImportChoices.get() > 0) {
+            return CompletableFuture.completedFuture(List.of()); // on save: an ambiguous name is skipped, not asked
         }
         List<ImportChoice> choices = ImportChoice.of(params.getArguments());
         List<Object> chosen = new java.util.concurrent.CopyOnWriteArrayList<>();

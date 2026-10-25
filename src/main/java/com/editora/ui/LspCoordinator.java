@@ -1347,6 +1347,13 @@ final class LspCoordinator {
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
         lspManager.setJdtlsWorkspaceBase(ops.jdtlsWorkspaceBase());
+        com.editora.config.ConfigManager config = ops.config();
+        lspManager.setLombokDir(
+                config == null
+                        ? null
+                        : config.getConfigDir().resolve(com.editora.install.InstallCatalog.LOMBOK_SUBPATH));
+        lspManager.setOnLombokMissing(this::offerLombok);
+        lspManager.setJavaCleanups(host.settings().getJavaCleanups());
         applyOnTypeFormatting();
         // The commands that actually launch: the global ones, with this project's overrides laid over them
         // when (and only when) its folder is trusted. Building this from the global settings alone meant a
@@ -3178,6 +3185,103 @@ final class LspCoordinator {
         }
     }
 
+    /** Buffers being saved again by {@link #afterUserSave}: that save does not start another round. */
+    private final java.util.Set<EditorBuffer> savingAfterActions =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /**
+     * Java actions on save (IntelliJ's Actions on Save): after an explicit save of a Java file served by jdtls,
+     * Organize Imports and/or Format Document run as the settings ask, and the file is saved again when they
+     * changed it. An ambiguous import is skipped, never asked about; typing in the meantime drops the step, as a
+     * stale answer would be wrong for the new text. Never on autosave.
+     */
+    void afterUserSave(EditorBuffer buffer) {
+        boolean cleanup = host.settings().isJavaCleanupOnSave();
+        boolean organize = host.settings().isJavaOrganizeImportsOnSave();
+        boolean format = host.settings().isJavaFormatOnSave();
+        Path path = buffer == null ? null : lspPath(buffer);
+        if (buffer == null
+                || path == null
+                || !(cleanup || organize || format)
+                || savingAfterActions.remove(buffer)
+                || !buffer.isEditable()
+                || !LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
+            return;
+        }
+        String saved = buffer.getContent();
+        Runnable formatThenSave = () -> {
+            if (!format || buffer.isDisposed()) {
+                saveIfActionsChanged(buffer, saved);
+                return;
+            }
+            String before = buffer.getContent();
+            lspManager.changeDocument(path, buffer.text()); // the formatter must see what Organize Imports left
+            com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
+            lspManager.formatDocument(path, indent.tabSize(), indent.insertSpaces(), edits -> {
+                if (!edits.isEmpty() && buffer.getContent().equals(before) && !buffer.isDisposed()) {
+                    buffer.applyLspEdits(edits);
+                }
+                saveIfActionsChanged(buffer, saved);
+            });
+        };
+        Runnable organizeThenRest = () -> {
+            if (!organize || buffer.isDisposed()) {
+                formatThenSave.run();
+                return;
+            }
+            lspManager.changeDocument(path, buffer.text()); // after a clean-up, Organize Imports sees its result
+            CodeArea area = buffer.getArea();
+            int last = Math.max(0, area.getParagraphs().size() - 1);
+            lspManager.organizeImportsQuietly(
+                    path, last, area.getParagraph(last).length(), outcome -> formatThenSave.run());
+        };
+        if (!cleanup) {
+            organizeThenRest.run();
+            return;
+        }
+        lspManager.cleanUpJava(path, outcome -> organizeThenRest.run());
+    }
+
+    /**
+     * {@code lsp.cleanUp} (LSP: Clean Up File): runs the clean-ups chosen in Settings on the active Java file now,
+     * as clean-up on save does — {@code @Override} added, redundant modifiers dropped and so on.
+     */
+    void cleanUpFile() {
+        EditorBuffer b = host.activeBuffer();
+        Path path = b == null ? null : lspPath(b);
+        if (b == null || path == null || !LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
+            host.setStatus(tr("status.lsp.unavailable"));
+            return;
+        }
+        if (!ops.activeEditable()) {
+            return;
+        }
+        if (host.settings().getJavaCleanups().isEmpty()) {
+            host.setStatus(tr("status.lsp.cleanupNoneChosen"));
+            return;
+        }
+        lspManager.changeDocument(path, b.text());
+        lspManager.cleanUpJava(
+                path,
+                outcome -> host.setStatus(tr(
+                        switch (outcome) {
+                            case ORGANIZED -> "status.lsp.cleanedUp";
+                            case UNCHANGED -> "status.lsp.cleanupNothing";
+                            case UNSUPPORTED, FAILED -> "status.lsp.cleanupFailed";
+                        })));
+    }
+
+    /** Saves {@code buffer} again when the actions on save changed what was saved, and nothing else did. */
+    private void saveIfActionsChanged(EditorBuffer buffer, String saved) {
+        if (buffer.isDisposed() || buffer.getContent().equals(saved) || !buffer.isDirty()) {
+            return;
+        }
+        savingAfterActions.add(buffer);
+        if (!ops.saveBuffer(buffer)) {
+            savingAfterActions.remove(buffer);
+        }
+    }
+
     /** The file whose save asked for {@link #projectRecheck}; the build goes to its project's server. */
     private @Nullable Path pendingProjectRecheck;
 
@@ -4239,6 +4343,58 @@ final class LspCoordinator {
         lspManager.cleanJavaWorkspace(path, deleted -> {
             host.setStatus(tr(deleted ? "status.lsp.javaWorkspaceCleaned" : "status.lsp.javaWorkspaceKept"));
             applyGating(); // reopen the project's files: the server starts again on a fresh workspace
+        });
+    }
+
+    /** Java roots already offered a Lombok download in this window. */
+    private final java.util.Set<Path> lombokOffered = new java.util.HashSet<>();
+
+    /** Asks whether to download Lombok for the project at a root; a field so a test can answer. */
+    java.util.function.Function<Path, java.util.concurrent.CompletableFuture<Boolean>> lombokAsker =
+            root -> new ServerPrompts()
+                    .chooseAction(
+                            LspServerRegistry.JAVA_SERVER_ID,
+                            org.eclipse.lsp4j.MessageType.Info,
+                            tr("dialog.lombok.missing", PathDisplay.fileName(root)),
+                            List.of(tr("dialog.lombok.download")))
+                    .thenApply(chosen -> tr("dialog.lombok.download").equals(chosen));
+
+    /** Downloads Lombok into a folder and returns the jar; a field so a test need not reach Maven Central. */
+    interface LombokInstaller {
+        Path install(Path dir) throws Exception;
+    }
+
+    LombokInstaller lombokInstaller = dir -> new com.editora.install.InstallService().installLombok(dir);
+
+    /**
+     * A project's build declares Lombok but no build has downloaded it yet, so jdtls started without it and every
+     * Lombok-generated member is an error: offer the pinned jar (once per root and window), and restart the Java
+     * server with it.
+     */
+    void offerLombok(Path root) {
+        com.editora.config.ConfigManager config = ops.config();
+        if (config == null || !lombokOffered.add(root)) {
+            return;
+        }
+        Path dir = config.getConfigDir().resolve(com.editora.install.InstallCatalog.LOMBOK_SUBPATH);
+        lombokAsker.apply(root).thenAccept(yes -> {
+            if (!Boolean.TRUE.equals(yes)) {
+                return;
+            }
+            javafx.application.Platform.runLater(() -> host.setStatus(tr("status.lombok.downloading")));
+            Thread.ofVirtual().name("lombok-download").start(() -> {
+                try {
+                    Path jar = lombokInstaller.install(dir);
+                    javafx.application.Platform.runLater(() -> {
+                        host.setStatus(tr("status.lombok.installed", jar.getFileName()));
+                        lspManager.restartServer(LspServerRegistry.JAVA_SERVER_ID);
+                        applyGating(); // the project's files reopen on a server that has the agent
+                    });
+                } catch (Exception e) {
+                    String why = String.valueOf(e.getMessage());
+                    javafx.application.Platform.runLater(() -> host.setError(tr("status.lombok.failed", why)));
+                }
+            });
         });
     }
 

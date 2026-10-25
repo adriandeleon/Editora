@@ -1337,4 +1337,157 @@ class LspCoordinatorCommandsFxTest {
         fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(jdk)));
         assertTrue(fx.host.errors.isEmpty(), "once");
     }
+
+    // --- Lombok on request (Java review gap) ---------------------------------------------------------
+
+    @Test
+    void aProjectMissingLombokIsOfferedItOnceAndItsServerRestartsWithIt() throws Exception {
+        fx.open("A.java", SOURCE);
+        Path config = java.nio.file.Files.createDirectories(root.resolve("config"));
+        fx.ops.configManager = new com.editora.config.ConfigManager(config);
+        List<Path> asked = new java.util.ArrayList<>();
+        fx.coordinator.lombokAsker = r -> {
+            asked.add(r);
+            return java.util.concurrent.CompletableFuture.completedFuture(asked.size() == 1);
+        };
+        List<Path> installedInto = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx.coordinator.lombokInstaller = dir -> {
+            installedInto.add(dir);
+            return dir.resolve("lombok-1.18.48.jar");
+        };
+        int sessions = fx.fakes.size();
+
+        fx.run(() -> fx.coordinator.offerLombok(root));
+        for (int i = 0;
+                i < 100 && !fx.host.statuses.contains(tr("status.lombok.installed", "lombok-1.18.48.jar"));
+                i++) {
+            Thread.sleep(20);
+            fx.settle();
+        }
+        fx.quiesce();
+        assertEquals(List.of(root), asked);
+        assertEquals(List.of(config.resolve("plugins/lsp/lombok")), installedInto, "into Editora's own folder");
+        assertTrue(fx.fakes.size() > sessions, "the Java server restarted to pick it up");
+
+        fx.run(() -> fx.coordinator.offerLombok(root));
+        assertEquals(1, asked.size(), "once per root");
+    }
+
+    @Test
+    void aDeclinedOrFailedLombokDownloadChangesNothingOrSaysWhy() throws Exception {
+        fx.open("A.java", SOURCE);
+        fx.ops.configManager =
+                new com.editora.config.ConfigManager(java.nio.file.Files.createDirectories(root.resolve("c")));
+        fx.coordinator.lombokAsker = r -> java.util.concurrent.CompletableFuture.completedFuture(true);
+        fx.coordinator.lombokInstaller = dir -> {
+            throw new java.io.IOException("offline");
+        };
+        fx.run(() -> fx.coordinator.offerLombok(root.resolve("p")));
+        for (int i = 0; i < 100 && fx.host.errors.isEmpty(); i++) {
+            Thread.sleep(20);
+            fx.settle();
+        }
+        assertEquals(tr("status.lombok.failed", "offline"), fx.host.lastError());
+    }
+
+    // --- Java actions on save -------------------------------------------------------------------------
+
+    private static final String UNTIDY =
+            "import java.util.List;\nimport java.util.Map;\n\nclass A {\n  List<String> l;\n}\n";
+
+    @Test
+    void organizeImportsAndFormatOnSaveTidyTheFileAndSaveItOnceMore() throws Exception {
+        EditorBuffer b = fx.open("A.java", UNTIDY);
+        fx.ops.saves = true;
+        fx.host.settings.setJavaOrganizeImportsOnSave(true);
+        fx.host.settings.setJavaFormatOnSave(true);
+        String uri = b.getPath().toUri().toString();
+        fx.server().rawHandler = raw -> "java/organizeImports".equals(raw.method())
+                ? com.google.gson.JsonParser.parseString("{\"changes\":{\"" + uri + "\":[{\"range\":{\"start\":"
+                        + "{\"line\":1,\"character\":0},\"end\":{\"line\":2,\"character\":0}},\"newText\":\"\"}]}}")
+                : null;
+        fx.server().formattingResponse =
+                List.of(new org.eclipse.lsp4j.TextEdit(new Range(new Position(3, 0), new Position(3, 2)), "    "));
+
+        fx.run(() -> fx.coordinator.afterUserSave(b));
+        fx.settle();
+
+        assertEquals(
+                "import java.util.List;\n\nclass A {\n    List<String> l;\n}\n", FxTestSupport.callOnFx(b::getContent));
+        assertEquals(List.of(b), fx.ops.saved, "saved again with the changes");
+        assertTrue(FakeLanguageServer.last(fx.server().rawRequests).method().equals("java/organizeImports"));
+
+        fx.run(() -> fx.coordinator.afterUserSave(b)); // the save it made reaches the hook again: no new round
+        assertEquals(1, fx.ops.saved.size());
+    }
+
+    @Test
+    void actionsOnSaveAreOffByDefaultAndAnUnchangedFileIsNotSavedAgain() throws Exception {
+        EditorBuffer b = fx.open("A.java", UNTIDY);
+        fx.ops.saves = true;
+        fx.run(() -> fx.coordinator.afterUserSave(b));
+        assertTrue(fx.server().rawRequests.isEmpty() && fx.server().formattings.isEmpty(), "off: nothing asked");
+
+        fx.host.settings.setJavaFormatOnSave(true);
+        fx.server().formattingResponse = List.of();
+        fx.run(() -> fx.coordinator.afterUserSave(b));
+        fx.settle();
+        assertEquals(1, fx.server().formattings.size(), "format only: no Organize Imports");
+        assertTrue(fx.ops.saved.isEmpty(), "nothing changed: no second save");
+    }
+
+    // --- Java clean-ups ------------------------------------------------------------------------------
+
+    private static final String OVERRIDES =
+            "class A {\n    public String toString() {\n        return \"a\";\n    }\n}\n";
+
+    private Object addOverride(EditorBuffer b) {
+        return com.google.gson.JsonParser.parseString(
+                "{\"changes\":{\"" + b.getPath().toUri() + "\":[{\"range\":{"
+                        + "\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":1,\"character\":0}},"
+                        + "\"newText\":\"    @Override\\n\"}]}}");
+    }
+
+    @Test
+    void cleanUpOnSaveRunsTheChosenCleanUpsAndSavesAgain() throws Exception {
+        EditorBuffer b = fx.open("A.java", OVERRIDES);
+        fx.ops.saves = true;
+        fx.host.settings.setJavaCleanupOnSave(true);
+        // What applySupport hands the manager; applySupport itself may restart the server mid-test.
+        fx.run(() -> fx.manager.setJavaCleanups(fx.host.settings.getJavaCleanups()));
+        fx.server().rawHandler = raw -> "java/cleanup".equals(raw.method()) ? addOverride(b) : null;
+
+        fx.run(() -> fx.coordinator.afterUserSave(b));
+        fx.settle();
+
+        assertTrue(FxTestSupport.callOnFx(b::getContent).contains("    @Override\n    public String toString()"));
+        assertEquals(List.of(b), fx.ops.saved);
+        assertEquals(
+                List.of("java/cleanup"),
+                fx.server().rawRequests.stream()
+                        .map(FakeLanguageServer.Raw::method)
+                        .toList(),
+                "clean-up only: no Organize Imports, no Format");
+    }
+
+    @Test
+    void cleanUpFileSaysWhatItDid() throws Exception {
+        EditorBuffer b = fx.open("A.java", OVERRIDES);
+        fx.host.settings.setJavaCleanups(List.of());
+        fx.run(() -> fx.coordinator.cleanUpFile());
+        assertEquals(tr("status.lsp.cleanupNoneChosen"), fx.host.lastStatus());
+
+        fx.host.settings.setJavaCleanups(List.of("addOverride"));
+        fx.run(() -> fx.manager.setJavaCleanups(fx.host.settings.getJavaCleanups()));
+        fx.server().rawHandler = raw -> null;
+        fx.run(() -> fx.coordinator.cleanUpFile());
+        fx.settle();
+        assertEquals(tr("status.lsp.cleanupNothing"), fx.host.lastStatus());
+
+        fx.server().rawHandler = raw -> "java/cleanup".equals(raw.method()) ? addOverride(b) : null;
+        fx.run(() -> fx.coordinator.cleanUpFile());
+        fx.settle();
+        assertEquals(tr("status.lsp.cleanedUp"), fx.host.lastStatus());
+        assertTrue(FxTestSupport.callOnFx(b::getContent).contains("@Override"));
+    }
 }

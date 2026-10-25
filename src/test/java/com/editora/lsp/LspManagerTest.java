@@ -679,6 +679,7 @@ class LspManagerTest {
             assertEquals("automatic", keys.get("java.configuration.updateBuildConfiguration"), "Java review C1");
             assertEquals(LspServerSettings.FAVORITE_STATICS, keys.get("java.completion.favoriteStaticMembers"));
             assertEquals("automatic", keys.get("java.compile.nullAnalysis.mode"));
+            assertEquals(Boolean.TRUE, keys.get("java.completion.chain.enabled"));
             assertEquals(LspServerSettings.NULLABLE, keys.get("java.compile.nullAnalysis.nullable"));
             assertEquals(LspServerSettings.NONNULL, keys.get("java.compile.nullAnalysis.nonnull"));
             assertEquals(LspServerSettings.NONNULL_BY_DEFAULT, keys.get("java.compile.nullAnalysis.nonnullbydefault"));
