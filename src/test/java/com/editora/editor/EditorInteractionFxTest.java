@@ -376,7 +376,7 @@ class EditorInteractionFxTest {
                     "command.lsp.codeActions",
                     "command.lsp.rename",
                     "command.lsp.formatDocument")) {
-                EditorFx.menuItem(menu.getItems(), tr(key)).fire();
+                EditorFx.menuItem(menu.getItems(), MenuTitles.of(tr(key))).fire(); // no "LSP:" in the LSP submenu
             }
             assertEquals(
                     List.of(

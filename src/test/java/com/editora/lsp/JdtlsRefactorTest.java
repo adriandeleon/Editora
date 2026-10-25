@@ -89,7 +89,9 @@ class JdtlsRefactorTest {
         assertEquals(
                 List.of("(default package)", "demo.other"),
                 packages.stream().map(JdtlsRefactor.Destination::label).toList());
-        assertEquals("/p/src/main/java/demo/other", packages.get(1).detail());
+        assertEquals(
+                java.nio.file.Path.of("/p/src/main/java/demo/other").toString(),
+                packages.get(1).detail());
         assertTrue(packages.get(1).raw().getAsJsonObject().has("uri"), "the node goes back verbatim");
     }
 
