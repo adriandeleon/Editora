@@ -66,6 +66,10 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
     private final Actions actions;
     private final Label summary = new Label();
     private final TreeView<Row> tree = new TreeView<>();
+    /** Bumped by every {@link #setReferences}, so a late preview fill for an older list is dropped. */
+    private long generation;
+    /** The folder a file header's location is shown relative to (the project), or null for the full parent. */
+    private @Nullable Path base;
 
     public ReferencesPanel(Actions actions) {
         this.actions = actions;
@@ -155,6 +159,17 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
 
     /** Rebuilds the tree, grouping {@code refs} by file (called on the FX thread). Selects the first row. */
     public void setReferences(List<Reference> refs) {
+        setReferences(refs, null, null);
+    }
+
+    /**
+     * As above, with the symbol the list is about ({@code area()}) in the summary and each file's folder,
+     * relative to {@code base}, on its header: two {@code Main.java} in different packages looked the same,
+     * and after a second search nothing said whose references these were (Java review B6).
+     */
+    public void setReferences(List<Reference> refs, @Nullable String symbol, @Nullable Path base) {
+        generation++;
+        this.base = base;
         Map<Path, List<Reference>> byFile = new LinkedHashMap<>();
         for (Reference r : refs) {
             byFile.computeIfAbsent(r.file(), k -> new ArrayList<>()).add(r);
@@ -176,10 +191,59 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
             root.getChildren().add(fileItem);
         }
         tree.setRoot(root);
-        summary.setText(refs.isEmpty() ? tr("references.none") : tr("references.summary", refs.size(), files.size()));
+        summary.setText(
+                refs.isEmpty()
+                        ? tr("references.none")
+                        : symbol == null || symbol.isBlank()
+                                ? tr("references.summary", refs.size(), files.size())
+                                : tr("references.summaryOf", refs.size(), symbol, files.size()));
         if (tree.getExpandedItemCount() > 0) {
             tree.getSelectionModel().select(0);
         }
+    }
+
+    /** The current list's generation, for {@link #fillPreviews}. */
+    public long generation() {
+        return generation;
+    }
+
+    /**
+     * Fills in the previews of rows that have none — files without a tab, read from disk off the FX thread —
+     * when the list is still {@code forGeneration}. {@code previewOf} answers a row's line, or empty.
+     */
+    public void fillPreviews(long forGeneration, java.util.function.Function<Reference, String> previewOf) {
+        if (forGeneration != generation) {
+            return;
+        }
+        for (TreeItem<Row> fileItem : tree.getRoot().getChildren()) {
+            for (TreeItem<Row> item : fileItem.getChildren()) {
+                Reference r = item.getValue().ref();
+                if (r == null || !r.preview().isEmpty()) {
+                    continue;
+                }
+                String preview = previewOf.apply(r);
+                if (preview != null && !preview.isEmpty()) {
+                    item.setValue(new Row(
+                            item.getValue().file(), new Reference(r.file(), r.line(), r.col(), preview, List.of())));
+                }
+            }
+        }
+    }
+
+    /**
+     * A file header's folder: relative to {@code base} when inside it, else the whole parent path; none without
+     * a base (a list not shown for a project). Pure.
+     */
+    static String folderOf(@Nullable Path file, @Nullable Path base) {
+        Path parent = file == null ? null : file.getParent();
+        if (parent == null || base == null) {
+            return "";
+        }
+        if (parent.startsWith(base)) {
+            Path rel = base.relativize(parent);
+            return rel.toString().isEmpty() ? "" : rel.toString().replace('\\', '/');
+        }
+        return parent.toString();
     }
 
     /**
@@ -276,8 +340,8 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Renders a file header (name + count) or a reference (line + syntax-colored preview). */
-    private static final class RowCell extends TreeCell<Row> {
+    /** Renders a file header (name + count + folder) or a reference (line + syntax-colored preview). */
+    private final class RowCell extends TreeCell<Row> {
         @Override
         protected void updateItem(Row row, boolean empty) {
             super.updateItem(row, empty);
@@ -304,7 +368,8 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
             } else {
                 int count =
                         getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
-                setText(row.file().getFileName() + "  (" + count + ")");
+                String folder = folderOf(row.file(), base);
+                setText(row.file().getFileName() + "  (" + count + ")" + (folder.isEmpty() ? "" : "  ·  " + folder));
                 setGraphic(FileIcons.forFileName(String.valueOf(row.file().getFileName())));
                 getStyleClass().add("search-file-row");
             }

@@ -127,6 +127,7 @@
   "C-c C-t": "view.toggleFold",
   "C-c w": "view.toggleWhitespace",
   "C-c t": "view.toggleToolbar",
+  "C-c S-t": "nav.relatedFile",
   "C-c s": "view.toggleStatusBar",
   "C-c b": "view.toggleTabBar",
   "C-c p": "view.toggleBreadcrumb",

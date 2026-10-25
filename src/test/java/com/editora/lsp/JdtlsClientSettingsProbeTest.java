@@ -14,7 +14,9 @@ import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.InlayHint;
+import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
@@ -366,6 +368,39 @@ class JdtlsClientSettingsProbeTest {
                                     JdtlsRefactor.extractArguments(null, selections.get(0))))))
                     .getAsJsonObject();
             assertNotNull(JdtlsRefactor.editOf(edit), "D7: the chosen expression extracts: " + edit);
+            // B12: the answer names the new method's place, so Editora can start Rename on it.
+            JdtlsRefactor.RenameAt renameAt = JdtlsRefactor.renameAt(edit);
+            record("B12 renameAt", String.valueOf(renameAt));
+            assertNotNull(renameAt, "B12: java/getRefactorEdit carries java.action.rename: " + edit.get("command"));
+
+            // B7: inside library source, hover and references are asked about its jdt:// URI on this session.
+            var definition = get(s.definition(app, pos(APP, "repeat(n)", 1)));
+            Location repeat = definition.isLeft() ? definition.getLeft().get(0) : null;
+            if (repeat == null
+                    && definition.getRight() != null
+                    && !definition.getRight().isEmpty()) {
+                var link = definition.getRight().get(0);
+                repeat = new Location(link.getTargetUri(), link.getTargetSelectionRange());
+            }
+            assertNotNull(repeat, "B7: String.repeat has a definition");
+            record("B7 definition", repeat.getUri() + " " + repeat.getRange().getStart());
+            assertTrue(repeat.getUri().startsWith("jdt:"), "B7: the definition is library source");
+            Position inLibrary = repeat.getRange().getStart();
+            Hover libraryHover = get(s.hover(repeat.getUri(), inLibrary));
+            String hoverText = LspManager.hoverText(libraryHover);
+            record("B7 hover", hoverText.lines().findFirst().orElse(""));
+            assertFalse(hoverText.isBlank(), "B7: hover answers inside library source");
+            var libraryRefs = get(s.references(repeat.getUri(), inLibrary));
+            record(
+                    "B7 references",
+                    libraryRefs.size() + ", in files: "
+                            + libraryRefs.stream()
+                                    .map(Location::getUri)
+                                    .filter(u -> u.startsWith("file:"))
+                                    .toList());
+            assertTrue(
+                    libraryRefs.stream().anyMatch(l -> l.getUri().endsWith("App.java")),
+                    "B7: references from library source find the project's call");
 
             // D10: Extract to field names where the field may be initialized.
             Position from = pos(APP, "prefix.repeat(n)", 0);
@@ -481,6 +516,23 @@ class JdtlsClientSettingsProbeTest {
                         get(s.rawRequest("java/move", JdtlsRefactor.withConfirmationToken(moveParams, token))));
                 assertNotNull(JdtlsRefactor.editOf(again), "D11: asking with the token applies: " + again);
             }
+
+            // A12: on a closed "/** */" line (what typing /** now leaves in Java) jdtls offers the Javadoc template.
+            String withDoc = APP.replace("    int twice() {", "    /** */\n    int twice() {");
+            s.didChange(app, withDoc);
+            var docItems = items(get(s.completion(app, pos(withDoc, "/** */", 3))));
+            record("A12 items", docItems.stream().map(CompletionItem::getLabel).toList());
+            CompletionItem javadoc = docItems.stream()
+                    .filter(i -> "Javadoc comment".equals(i.getLabel()))
+                    .findFirst()
+                    .orElse(null);
+            assertNotNull(javadoc, "A12: the Javadoc template is offered");
+            String template =
+                    javadoc.getTextEdit() != null && javadoc.getTextEdit().isLeft()
+                            ? javadoc.getTextEdit().getLeft().getNewText()
+                            : String.valueOf(javadoc.getInsertText());
+            record("A12 template", template);
+            assertTrue(template.contains("@return"), "A12: it documents twice()'s return");
         } finally {
             s.dispose();
         }

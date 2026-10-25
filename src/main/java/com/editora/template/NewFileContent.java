@@ -331,18 +331,21 @@ public final class NewFileContent {
      * {@code plainSrc} allows a leading {@code src} (the segments are then relative to a project root).
      */
     private static int sourceRootEnd(List<String> segments, boolean plainSrc) {
+        // src/<source set>/java: Maven's main and test, and Gradle's other source sets (integrationTest,
+        // testFixtures, jmh …), whose folders became part of the package (Java review C9).
         for (int i = segments.size() - 3; i >= 0; i--) {
             if (segments.get(i).equals("src")
-                    && (segments.get(i + 1).equals("main")
-                            || segments.get(i + 1).equals("test"))
+                    && isJavaIdentifier(segments.get(i + 1))
                     && segments.get(i + 2).equals("java")) {
                 return i + 3;
             }
         }
         if (plainSrc && !segments.isEmpty() && segments.get(0).equals("src")) {
-            boolean mavenLayout = segments.size() > 1
-                    && (segments.get(1).equals("main") || segments.get(1).equals("test"));
-            return mavenLayout ? -1 : 1;
+            boolean sourceSetLayout = segments.size() > 2 && segments.get(2).equals("java")
+                    || segments.size() > 1
+                            && (segments.get(1).equals("main")
+                                    || segments.get(1).equals("test"));
+            return sourceSetLayout ? -1 : 1;
         }
         return -1;
     }

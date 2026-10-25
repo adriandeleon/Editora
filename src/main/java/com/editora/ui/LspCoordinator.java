@@ -498,6 +498,14 @@ final class LspCoordinator {
             public void open(Path file, int line, int col) {
                 ops.openAndGoto(file, line, col);
             }
+
+            @Override
+            public void openLibrary(String uri, int line) {
+                Path anchor = hierarchyAnchor;
+                if (anchor != null) {
+                    openLibraryFrame(anchor, uri, line);
+                }
+            }
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setOnServerStatus(this::onServerStatus);
@@ -1094,14 +1102,12 @@ final class LspCoordinator {
     }
 
     private void showHierarchy(HierarchyPanel.Mode mode) {
-        EditorBuffer b = activeLspBuffer();
-        if (b == null) {
+        NavOrigin origin = navOrigin();
+        if (origin == null) {
             return;
         }
-        Path path = lspPath(b);
-        if (path == null) {
-            return;
-        }
+        EditorBuffer b = origin.buffer();
+        Path path = origin.anchor();
         boolean supported = mode == HierarchyPanel.Mode.CALLS
                 ? lspManager.supportsCallHierarchy(path)
                 : lspManager.supportsTypeHierarchy(path);
@@ -1112,9 +1118,9 @@ final class LspCoordinator {
         CodeArea area = b.getFocusedArea();
         long version = b.docVersion();
         long generation = ++navigationRequestGeneration;
-        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        syncForRequest(origin); // sync latest text before the request
         java.util.function.Consumer<List<com.editora.lsp.LspManager.HierarchyNode>> onRoots = roots -> {
-            if (!navigationRequestCurrent(b, path, version, generation)) {
+            if (!navigationRequestCurrent(b, origin.ownPath(), version, generation)) {
                 return;
             }
             if (roots.isEmpty()) {
@@ -1127,9 +1133,11 @@ final class LspCoordinator {
             ops.openHierarchyWindow();
         };
         if (mode == HierarchyPanel.Mode.CALLS) {
-            lspManager.prepareCallHierarchy(path, area.getCurrentParagraph(), area.getCaretColumn(), onRoots);
+            lspManager.prepareCallHierarchyAt(
+                    path, origin.libraryUri(), area.getCurrentParagraph(), area.getCaretColumn(), onRoots);
         } else {
-            lspManager.prepareTypeHierarchy(path, area.getCurrentParagraph(), area.getCaretColumn(), onRoots);
+            lspManager.prepareTypeHierarchyAt(
+                    path, origin.libraryUri(), area.getCurrentParagraph(), area.getCaretColumn(), onRoots);
         }
     }
 
@@ -3570,8 +3578,18 @@ final class LspCoordinator {
 
     /** Sends a {@code java/…} request that answers with an edit, applies it, and reports the outcome. */
     private void applyJdtlsEdit(Path path, LspManager.CodeActionItem item, String method, Object params) {
+        applyJdtlsEdit(path, item, method, params, null);
+    }
+
+    /** As above; {@code onRename} gets the place of the new name the server suggests renaming. */
+    private void applyJdtlsEdit(
+            Path path,
+            LspManager.CodeActionItem item,
+            String method,
+            Object params,
+            java.util.function.@Nullable Consumer<JdtlsRefactor.RenameAt> onRename) {
         beginReportedEdit();
-        lspManager.jdtlsApplyEdit(path, method, params, item.expectedDocuments(), (ok, refused) -> {
+        lspManager.jdtlsApplyEdit(path, method, params, item.expectedDocuments(), null, onRename, (ok, refused) -> {
             if (!ok && refused != null) {
                 host.setError(refused); // the server's own reason beats "could not apply"
                 return;
@@ -3655,7 +3673,8 @@ final class LspCoordinator {
                         path,
                         item,
                         "java/getRefactorEdit",
-                        refactorEdit(request, JdtlsRefactor.extractArguments(scope, selection)));
+                        refactorEdit(request, JdtlsRefactor.extractArguments(scope, selection)),
+                        at -> renameExtracted(path, at));
         if (!JdtlsRefactor.needsInferredSelection(request)) {
             chooseInitializeScope(item, JdtlsRefactor.initializedScopes(request), scope -> apply.accept(scope, null));
             return;
@@ -3686,6 +3705,25 @@ final class LspCoordinator {
                 });
     }
 
+    /**
+     * After an extract, Rename on the name the server picked ({@code d}, {@code getTotal}, {@code string}), as
+     * IntelliJ and vscode-java start an in-place rename there (Java review B12). Only in the file the
+     * refactoring started from, while it is still the active tab; the selection the edit left is cleared.
+     */
+    private void renameExtracted(Path path, JdtlsRefactor.RenameAt at) {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || !path.equals(lspPath(b)) || !path.equals(lspManager.pathForServerUri(path, at.uri()))) {
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        if (at.offset() < 0 || at.offset() + at.length() > area.getLength()) {
+            return;
+        }
+        area.moveTo(at.offset());
+        area.requestFollowCaret();
+        rename();
+    }
+
     /** Asks where a field is initialized when the server offers more than one place; none or one is not asked. */
     private void chooseInitializeScope(
             LspManager.CodeActionItem item, List<String> scopes, java.util.function.Consumer<@Nullable String> then) {
@@ -3714,6 +3752,8 @@ final class LspCoordinator {
                         host.setStatus(tr("status.lsp.refactorCancelled", item.title()));
                     }
                 },
+                null,
+                refactorPreview(item.title()),
                 (ok, refused) -> {
                     if (!ok && refused != null) {
                         host.setError(refused);
@@ -3902,8 +3942,70 @@ final class LspCoordinator {
                     host.setError(tr("status.lsp.refactorBadSignature"));
                     return;
                 }
-                applyJdtlsEdit(path, item, "java/getRefactorEdit", refactorEdit(request, arguments));
+                beginReportedEdit();
+                lspManager.jdtlsApplyEdit(
+                        path,
+                        "java/getRefactorEdit",
+                        refactorEdit(request, arguments),
+                        item.expectedDocuments(),
+                        null,
+                        null,
+                        refactorPreview(item.title()),
+                        (ok, why) -> {
+                            if (!ok && why != null) {
+                                host.setError(why);
+                                return;
+                            }
+                            reportEdit(
+                                    ok,
+                                    tr("status.lsp.codeActionApplied", item.title()),
+                                    tr("status.lsp.codeActionFailed", item.title()));
+                        });
             });
+        });
+    }
+
+    /**
+     * The preview step of a refactoring that changes files the user cannot see — Change Signature updating
+     * every caller, Move rewriting imports — which before applied unseen (Java review B20). The rename
+     * preview's card: each file ticked, untick to leave it out; an edit confined to this file applies at once.
+     */
+    private java.util.function.BiConsumer<
+                    com.editora.lsp.WorkspaceEditMapper.Mapped,
+                    java.util.function.Consumer<com.editora.lsp.WorkspaceEditMapper.Mapped>>
+            refactorPreview(String title) {
+        return (mapped, apply) -> withDiskView(resourcePaths(mapped), files -> {
+            if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped, workspaceDisk(files))) {
+                apply.accept(mapped);
+                return;
+            }
+            java.util.List<MultiSelectPicker.Item<Path>> rows = new java.util.ArrayList<>();
+            java.util.Set<Path> listed = new java.util.LinkedHashSet<>();
+            for (com.editora.lsp.RenamePreview.FileChange change :
+                    com.editora.lsp.RenamePreview.summarise(mapped, workspaceDisk(files))) {
+                rows.add(new MultiSelectPicker.Item<>(previewLabel(change), true, change.file()));
+                listed.add(change.file());
+            }
+            MultiSelectPicker.show(
+                    host.overlayHost(),
+                    tr(
+                            "lsp.refactor.previewTitle",
+                            title.replaceAll("\\.\\.\\.$|…$", ""),
+                            com.editora.lsp.RenamePreview.totalEdits(mapped),
+                            rows.size()),
+                    rows,
+                    keep -> {
+                        var kept = new java.util.LinkedHashSet<>(keep);
+                        com.editora.lsp.WorkspaceEditMapper.Mapped filtered = java.util.Objects.requireNonNull(
+                                com.editora.lsp.RenamePreview.filter(mapped, kept, listed),
+                                "filter is null only for a null edit");
+                        List<Path> covered = com.editora.lsp.RenamePreview.excludedButDeleted(filtered, kept, listed);
+                        if (!covered.isEmpty()) {
+                            editRefused(covered, tr("status.lsp.renameDeleteCoversKept", blockedFileNames(covered)));
+                            return;
+                        }
+                        apply.accept(filtered);
+                    });
         });
     }
 
@@ -4049,6 +4151,47 @@ final class LspCoordinator {
             return null;
         }
         return b;
+    }
+
+    /**
+     * Where a position request from the active tab goes: a workspace file to its own session, or a library
+     * ({@code jdt://}) source tab to the session that handed the source out, about its URI. Only Go to
+     * Definition did that; hover, references, implementation and the hierarchies said "No language server
+     * for this file" inside {@code ArrayList.java} (Java review B7). Null, with that status said, when neither.
+     */
+    private @Nullable NavOrigin navOrigin() {
+        EditorBuffer active = host.activeBuffer();
+        LibrarySource lib = active == null ? null : librarySources.get(active);
+        if (active != null
+                && lib != null
+                && lib.anchor() != null
+                && lib.uri() != null
+                && lspManager.isManaged(lib.anchor())) {
+            return new NavOrigin(active, lib.anchor(), lib.uri());
+        }
+        EditorBuffer b = activeLspBuffer();
+        Path path = b == null ? null : lspPath(b);
+        return b == null || path == null ? null : new NavOrigin(b, path, null);
+    }
+
+    /**
+     * A request's origin: the tab, the file whose session answers, and the {@code jdt://} URI asked about when
+     * the tab is library source (null for the file itself).
+     */
+    private record NavOrigin(
+            EditorBuffer buffer, Path anchor, @Nullable String libraryUri) {
+        /** The path {@link #navigationRequestCurrent} compares: none for a library tab. */
+        @Nullable
+        Path ownPath() {
+            return libraryUri == null ? anchor : null;
+        }
+    }
+
+    /** Sends the tab's latest text before a request (a library tab is read-only: nothing to send). */
+    private void syncForRequest(NavOrigin origin) {
+        if (origin.libraryUri() == null) {
+            lspManager.changeDocument(origin.anchor(), origin.buffer().text());
+        }
     }
 
     /** Reads a peeked file off the FX thread; peek is user-initiated, so one lazy thread is plenty. */
@@ -4299,7 +4442,10 @@ final class LspCoordinator {
             if (opened != null) {
                 libraryBuffers.put(uri, new java.lang.ref.WeakReference<>(opened));
                 librarySources.put(opened, new LibrarySource(uri, anchorPath)); // chain point (#684)
-                gotoInBuffer(opened, t.line(), t.character());
+                // jdtls's class-file range starts at the member's Javadoc: land on the declaration (B16).
+                int line = com.editora.lsp.JavadocSkip.declarationLine(content, t.line());
+                gotoInBuffer(opened, line, line == t.line() ? t.character() : -1);
+                host.setStatus(""); // the "Loading library source…" it said is over
                 onOpened.accept(opened);
             }
         });
@@ -4341,13 +4487,21 @@ final class LspCoordinator {
         });
     }
 
-    /** Moves {@code buffer}'s caret to a 0-based line/column (clamped) and scrolls it into view. */
+    /**
+     * Moves {@code buffer}'s caret to a 0-based line/column (clamped) and shows the line; a negative {@code col0}
+     * is the line's first non-blank character.
+     */
     private static void gotoInBuffer(EditorBuffer buffer, int line0, int col0) {
         CodeArea a = buffer.getFocusedArea();
         int par = Math.max(0, Math.min(line0, a.getParagraphs().size() - 1));
-        int col = Math.max(0, Math.min(col0, a.getParagraph(par).length()));
+        String text = a.getParagraph(par).getText();
+        int col = col0 >= 0
+                ? Math.min(col0, text.length())
+                : text.length() - text.stripLeading().length();
         a.moveTo(par, col);
-        a.requestFollowCaret();
+        // At the top below the pinned rows, as every jump shows its target; followed only, the line sat under the
+        // sticky header and a library tab's View Mode bar (Java review B16). A tab just opened anchors after layout.
+        buffer.jumps().reveal(a, par, false);
         a.requestFocus();
     }
 
@@ -4361,37 +4515,49 @@ final class LspCoordinator {
      * References tool window on what was counted — one row, or the empty list behind "0 references".
      */
     private void findReferences(boolean listAlways) {
-        EditorBuffer b = activeLspBuffer();
-        if (b == null) {
+        NavOrigin origin = navOrigin();
+        if (origin == null) {
             return;
         }
+        EditorBuffer b = origin.buffer();
         CodeArea area = b.getFocusedArea();
-        Path path = lspPath(b);
-        if (path == null) {
-            return;
-        }
+        Path path = origin.ownPath();
         long version = b.docVersion();
         long generation = ++navigationRequestGeneration;
-        lspManager.changeDocument(path, b.text()); // sync latest text before the request
-        lspManager.references(path, area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
-            if (!navigationRequestCurrent(b, path, version, generation)) {
-                return;
-            }
-            if (listAlways) {
-                showInReferencesWindow(targets);
-                return;
-            }
-            if (targets.isEmpty()) {
-                host.setStatus(tr("status.lsp.noReferences"));
-                return;
-            }
-            if (targets.size() == 1) {
-                LspManager.Target t = targets.get(0); // a lone reference: jump straight there (IDE behavior)
-                ops.openAndGoto(t.file(), t.line(), t.character());
-                return;
-            }
-            showInReferencesWindow(targets);
-        });
+        String symbol = wordAtCaret(area);
+        syncForRequest(origin); // sync latest text before the request
+        lspManager.referencesAt(
+                origin.anchor(),
+                origin.libraryUri(),
+                area.getCurrentParagraph(),
+                area.getCaretColumn(),
+                targets -> {
+                    if (!navigationRequestCurrent(b, path, version, generation)) {
+                        return;
+                    }
+                    if (listAlways) {
+                        showInReferencesWindow(targets, symbol);
+                        return;
+                    }
+                    if (targets.isEmpty()) {
+                        host.setStatus(tr("status.lsp.noReferences"));
+                        return;
+                    }
+                    if (targets.size() == 1) {
+                        LspManager.Target t = targets.get(0); // a lone reference: jump straight there (IDE behavior)
+                        ops.openAndGoto(t.file(), t.line(), t.character());
+                        return;
+                    }
+                    showInReferencesWindow(targets, symbol);
+                },
+                why -> {
+                    if (navigationRequestCurrent(b, path, version, generation)) {
+                        host.setError(
+                                "timeout".equals(why)
+                                        ? tr("status.lsp.referencesTimedOut")
+                                        : tr("status.lsp.referencesFailed", why));
+                    }
+                });
     }
 
     /**
@@ -4404,7 +4570,7 @@ final class LspCoordinator {
         withNavRequest(
                 "status.lsp.implementationUnsupported",
                 lspManager::supportsImplementation,
-                lspManager::implementation,
+                lspManager::implementationAt,
                 (anchor, targets) -> {
                     if (targets.isEmpty()) {
                         host.setStatus(tr("status.lsp.noImplementations"));
@@ -4436,7 +4602,7 @@ final class LspCoordinator {
         withNavRequest(
                 "status.lsp.typeDefinitionUnsupported",
                 lspManager::supportsTypeDefinition,
-                lspManager::typeDefinition,
+                lspManager::typeDefinitionAt,
                 (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noTypeDefinition"));
     }
 
@@ -4445,14 +4611,19 @@ final class LspCoordinator {
         withNavRequest(
                 "status.lsp.declarationUnsupported",
                 lspManager::supportsDeclaration,
-                lspManager::declaration,
+                lspManager::declarationAt,
                 (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noDeclaration"));
     }
 
     /** A position-to-targets request on {@link LspManager} (implementation / type definition / declaration). */
     @FunctionalInterface
     private interface NavRequest {
-        void run(Path file, int line, int character, Consumer<List<LspManager.Target>> cb);
+        void run(
+                Path anchor,
+                @Nullable String documentUri,
+                int line,
+                int character,
+                Consumer<List<LspManager.Target>> cb);
     }
 
     /**
@@ -4465,24 +4636,22 @@ final class LspCoordinator {
             java.util.function.Predicate<Path> supported,
             NavRequest request,
             java.util.function.BiConsumer<Path, List<LspManager.Target>> onTargets) {
-        EditorBuffer b = activeLspBuffer();
-        if (b == null) {
+        NavOrigin origin = navOrigin();
+        if (origin == null) {
             return;
         }
-        Path path = lspPath(b);
-        if (path == null) {
-            return;
-        }
+        Path path = origin.anchor();
         if (!supported.test(path)) {
             host.setStatus(tr(unsupportedKey));
             return;
         }
+        EditorBuffer b = origin.buffer();
         CodeArea area = b.getFocusedArea();
         long version = b.docVersion();
         long generation = ++navigationRequestGeneration;
-        lspManager.changeDocument(path, b.text()); // sync latest text before the request
-        request.run(path, area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
-            if (navigationRequestCurrent(b, path, version, generation)) {
+        syncForRequest(origin); // sync latest text before the request
+        request.run(path, origin.libraryUri(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (navigationRequestCurrent(b, origin.ownPath(), version, generation)) {
                 onTargets.accept(path, targets);
             }
         });
@@ -4527,18 +4696,61 @@ final class LspCoordinator {
 
     /** Fills the References tool window with {@code targets} (each must have a real path) and opens it. */
     private void showInReferencesWindow(List<LspManager.Target> targets) {
+        showInReferencesWindow(targets, null);
+    }
+
+    /** As above, naming the {@code symbol} the list is about in its summary. */
+    private void showInReferencesWindow(List<LspManager.Target> targets, @Nullable String symbol) {
         List<String> previews = previewLines(targets, f -> {
             EditorBuffer buffer = bufferForLspPath(f);
             return buffer == null ? null : buffer.getContent();
         });
         List<ReferencesPanel.Reference> refs = new java.util.ArrayList<>(targets.size());
+        java.util.Set<Path> unread = new java.util.LinkedHashSet<>();
         for (int i = 0; i < targets.size(); i++) {
             LspManager.Target t = targets.get(i);
             refs.add(new ReferencesPanel.Reference(
                     t.file(), t.line(), t.character(), previews.get(i), previewRuns(t, previews.get(i))));
+            if (previews.get(i).isEmpty() && t.file() != null && bufferForLspPath(t.file()) == null) {
+                unread.add(t.file());
+            }
         }
-        referencesPanel().setReferences(refs);
+        ReferencesPanel panel = referencesPanel();
+        panel.setReferences(refs, symbol, ops.lspProjectRoot());
         ops.openReferencesWindow();
+        if (!unread.isEmpty()) {
+            readPreviewsFromDisk(panel, panel.generation(), unread);
+        }
+    }
+
+    /** The largest file whose lines a References preview reads from disk. */
+    private static final long PREVIEW_READ_LIMIT = 4L * 1024 * 1024;
+
+    /**
+     * The previews of references into files without a tab, read off the FX thread (the Peek reader) and filled
+     * into the list when it is still the one shown. Before, those rows showed only {@code 13:19}, and in a
+     * real project most references are in closed files (Java review B6). Remote and huge files stay bare.
+     */
+    private void readPreviewsFromDisk(ReferencesPanel panel, long generation, java.util.Set<Path> files) {
+        PEEK_READ.submit(() -> {
+            java.util.Map<Path, String[]> lines = new java.util.HashMap<>();
+            for (Path f : files) {
+                try {
+                    if (!com.editora.vfs.Vfs.isRemote(f) && java.nio.file.Files.size(f) <= PREVIEW_READ_LIMIT) {
+                        lines.put(f, java.nio.file.Files.readString(f).split("\n", -1));
+                    }
+                } catch (java.io.IOException | RuntimeException unreadable) {
+                    // left without a preview, as before
+                }
+            }
+            if (lines.isEmpty()) {
+                return;
+            }
+            javafx.application.Platform.runLater(() -> panel.fillPreviews(generation, r -> {
+                String[] in = r.file() == null ? null : lines.get(r.file());
+                return in != null && r.line() >= 0 && r.line() < in.length ? in[r.line()].strip() : "";
+            }));
+        });
     }
 
     /**
@@ -4618,29 +4830,80 @@ final class LspCoordinator {
 
             @Override
             public void open(LspManager.WorkspaceSymbolMatch match) {
-                Path file = match.file();
-                if (file != null) {
-                    ops.openAndGoto(file, match.line(), match.character());
-                } else {
-                    openLibraryDefinition(
-                            anchor, new LspManager.Target(null, match.line(), match.character(), match.libraryUri()));
-                }
+                openWorkspaceSymbol(anchor, match);
             }
         });
         popup.show(seed);
     }
 
+    /** Opens a workspace-symbol match: its file, or a {@code jdt://} one as library source asked of {@code anchor}. */
+    private void openWorkspaceSymbol(Path anchor, LspManager.WorkspaceSymbolMatch match) {
+        Path file = match.file();
+        if (file != null) {
+            ops.openAndGoto(file, match.line(), match.character());
+        } else {
+            openLibraryDefinition(
+                    anchor, new LspManager.Target(null, match.line(), match.character(), match.libraryUri()));
+        }
+    }
+
+    /** The file or project a Java request goes through when no tab names one: the active file, else the project. */
+    private @Nullable Path javaAnchor() {
+        EditorBuffer b = host.activeBuffer();
+        Path own = b == null ? null : lspPath(b);
+        return own != null && lspManager.hasJavaSession(own) ? own : ops.lspProjectRoot();
+    }
+
+    /** Search Everywhere's JDK and dependency classes from jdtls (Java review E8); empty without a Java server. */
+    void libraryTypes(String query, java.util.function.Consumer<List<LspManager.WorkspaceSymbolMatch>> cb) {
+        Path anchor = javaAnchor();
+        if (anchor == null || query.isBlank()) {
+            cb.accept(List.of());
+            return;
+        }
+        lspManager.javaLibraryTypes(anchor, query, cb);
+    }
+
+    /**
+     * {@link #libraryTypes} as Search Everywhere rows: fuzzy-matched like the index's symbols, one point below an
+     * equal project match, so the project's own class is listed first.
+     */
+    void libraryTypeItems(
+            String query, java.util.function.Consumer<List<com.editora.search.SearchEverywhere.Item>> cb) {
+        libraryTypes(query, matches -> {
+            List<com.editora.search.SearchEverywhere.Item> out = new java.util.ArrayList<>();
+            for (LspManager.WorkspaceSymbolMatch m : matches) {
+                int score = com.editora.search.FuzzyMatch.scoreOf(m.name(), query);
+                if (score != com.editora.search.FuzzyMatch.NO_SCORE) {
+                    out.add(new com.editora.search.SearchEverywhere.Item(
+                            com.editora.search.SearchEverywhere.Kind.SYMBOL,
+                            m.name(),
+                            m.container().isEmpty() ? LspManager.classFileTitle(m.libraryUri()) : m.container(),
+                            score - 1,
+                            m));
+                }
+            }
+            cb.accept(out);
+        });
+    }
+
+    /** Opens a {@link #libraryTypes} match. */
+    void openLibraryType(LspManager.WorkspaceSymbolMatch match) {
+        Path anchor = javaAnchor();
+        if (anchor != null) {
+            openWorkspaceSymbol(anchor, match);
+        }
+    }
+
     void showHover() {
-        EditorBuffer b = activeLspBuffer();
-        if (b == null) {
+        NavOrigin origin = navOrigin();
+        if (origin == null) {
             return;
         }
+        EditorBuffer b = origin.buffer();
         CodeArea area = b.getFocusedArea();
-        Path path = lspPath(b);
-        if (path == null) {
-            return;
-        }
-        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        Path path = origin.ownPath();
+        syncForRequest(origin); // sync latest text before the request
         long generation = ++hoverGeneration;
         long version = b.docVersion();
         int caret = area.getCaretPosition();
@@ -4650,9 +4913,10 @@ final class LspCoordinator {
                 || generation != hoverGeneration
                 || version != b.docVersion()
                 || caret != area.getCaretPosition()
-                || !path.equals(lspPath(b));
-        lspManager.hover(
-                path,
+                || !java.util.Objects.equals(path, lspPath(b));
+        lspManager.hoverAt(
+                origin.anchor(),
+                origin.libraryUri(),
                 area.getCurrentParagraph(),
                 area.getCaretColumn(),
                 text -> {
@@ -4702,7 +4966,12 @@ final class LspCoordinator {
         // clamps + swallows, so a stale format silently corrupts the file (every line mis-formatted/shifted).
         // Snapshot the text and drop the reply if it changed, mirroring tryLspReindentLine's line guard.
         String snapshot = buffer.getContent();
-        lspManager.formatDocument(path, indent.tabSize(), indent.insertSpaces(), edits -> {
+        // A selection formats just its lines (textDocument/rangeFormatting), as IntelliJ's Reformat Code does;
+        // before, the whole file was reformatted under it (Java review A13).
+        CodeArea area = buffer.getFocusedArea();
+        var sel = area.getSelection();
+        boolean selectionOnly = sel.getLength() > 0 && lspManager.supportsRangeFormatting(path);
+        Consumer<List<com.editora.text.LspTextEdit>> onEdits = edits -> {
             if (buffer != host.activeBuffer()) {
                 return; // user switched tabs before the server replied
             }
@@ -4722,8 +4991,26 @@ final class LspCoordinator {
                 return;
             }
             buffer.applyLspEdits(edits);
-            host.setStatus(tr("status.lsp.formatted"));
-        });
+            host.setStatus(tr(selectionOnly ? "status.lsp.selectionFormatted" : "status.lsp.formatted"));
+        };
+        if (selectionOnly) {
+            int startLine = area.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                    .getMajor();
+            var end = area.offsetToPosition(sel.getEnd(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
+            // Whole lines; a selection ending at a line's start doesn't take that line.
+            int endLine = end.getMinor() == 0 && end.getMajor() > startLine ? end.getMajor() - 1 : end.getMajor();
+            lspManager.rangeFormatting(
+                    path,
+                    startLine,
+                    0,
+                    endLine,
+                    area.getParagraphLength(endLine),
+                    indent.tabSize(),
+                    indent.insertSpaces(),
+                    onEdits);
+        } else {
+            lspManager.formatDocument(path, indent.tabSize(), indent.insertSpaces(), onEdits);
+        }
     }
 
     /**
@@ -7015,11 +7302,24 @@ final class LspCoordinator {
             }
         });
 
+        showAtCaret(popup, area);
+    }
+
+    /**
+     * Shows {@code popup} under {@code area}'s caret line, or above it when it doesn't fit below (Java review
+     * A8: hover and signature help covered the line they describe near the window's bottom). The height is
+     * only known once shown, so it is moved after showing.
+     */
+    private static void showAtCaret(javafx.stage.PopupWindow popup, CodeArea area) {
         var bounds = area.getCaretBounds().orElse(null);
-        if (bounds != null) {
-            popup.show(area, bounds.getMinX(), bounds.getMaxY());
-        } else {
+        if (bounds == null) {
             popup.show(area, 0, 0);
+            return;
+        }
+        popup.show(area, bounds.getMinX(), bounds.getMaxY());
+        double top = com.editora.editor.completion.CaretPopupPlacement.top(bounds, popup.getHeight());
+        if (top < bounds.getMinY()) {
+            popup.setAnchorY(top);
         }
     }
 
@@ -7344,12 +7644,7 @@ final class LspCoordinator {
             }
         });
 
-        var bounds = area.getCaretBounds().orElse(null);
-        if (bounds != null) {
-            popup.show(area, bounds.getMinX(), bounds.getMaxY());
-        } else {
-            popup.show(area, 0, 0);
-        }
+        showAtCaret(popup, area);
     }
 
     /** Hides the signature-help popup if one is showing. */

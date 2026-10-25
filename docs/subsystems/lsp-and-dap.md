@@ -317,6 +317,27 @@ drives its command.
   `moveRefactoringConfirmationSupport` (jdtls 1.61 final and newer) a Move Instance Method that jdtls
   finds problems with answers `{errorMessage, confirmationToken}` and no edit; the user sees the problems
   and the move is asked again with the token only if they continue.
+  A `java/getRefactorEdit` answer can carry a `java.action.rename` command with `{uri, offset, length}` of
+  the name it picked, offsets in the edited document (`JdtlsRefactor.renameAt`); after an extract Editora
+  puts the caret there and starts Rename. Change Signature and Move pass a `preview` to
+  `LspManager.jdtlsApplyEdit`: the planned edit goes through the rename preview when it touches other
+  files, and only the ticked files are applied.
+
+### Library source tabs
+
+A `jdt://` definition opens as a read-only, path-less buffer (`LspCoordinator.openLibraryDefinition`),
+remembered in `librarySources` with the workspace file whose session produced it. Position requests from
+such a tab — definition, hover, references, implementation, type definition, declaration and both
+hierarchy prepares — go through `navOrigin()`: the anchor file's session, asked about the tab's `jdt://`
+URI (the `…At(anchor, documentUri, …)` methods of `LspManager`). jdtls resolves the URI itself, so no
+`didOpen` is sent. References into class files are dropped (the References window is file-based); a
+hierarchy node with a `jdt://` URI opens as library source. Search Everywhere's Symbols group adds
+jdtls's `workspace/symbol` types that live in `jdt://` (`LspManager.javaLibraryTypes`), as a second batch
+after the index's own (`SearchEverywherePopup.Ops.laterSymbols`).
+
+jdtls's "Javadoc comment" completion is offered only on a `/**` line that is already closed. In a Java
+buffer with the server on, the `*` that makes a line `/**` therefore inserts `* */` and requests completion
+(`EditorBuffer.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).
 
 ### jdtls preferences
 
@@ -389,8 +410,9 @@ instead of dropping it. `lspOffset` snaps a column inside a surrogate pair back 
 **What an edit destroys is shown, asked about, and kept.** `WorkspaceEditHazards` (pure) lists the deletes
 of existing paths and the creates/renames that replace an existing file. The rename preview shows them as
 rows that can be unticked (`RenamePreview.filter` drops an unticked one; `excludedButDeleted` refuses a
-ticked delete that covers an unticked row). An unpreviewed edit — code action, refactoring command,
-`workspace/applyEdit` — goes through `applyWorkspaceEditsConfirmed`, which asks before a recursive folder
+ticked delete that covers an unticked row); Change Signature and Move use the same preview. An unpreviewed
+edit — code action, other refactoring commands, `workspace/applyEdit` — goes through
+`applyWorkspaceEditsConfirmed`, which asks before a recursive folder
 delete or an overwrite. Before staging, each file about to be deleted or replaced is copied to Local
 History (`Ops.captureBeforeDestruction`, at most `MAX_CAPTURED_PER_EDIT` per edit); a failed copy refuses
 the edit.

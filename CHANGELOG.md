@@ -69,6 +69,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **LSP: Clean Java Workspace and Restart.** Stops the project's Java server, deletes its index and the classpath
   and source folders it worked out, and imports the project afresh — the cure for a stale or corrupt jdtls
   workspace, which Restart Language Servers kept and Clear Java Index Caches skipped while in use.
+- **Java: navigation inside library source.** In a JDK or dependency tab opened by Go to Definition, hover, Find
+  References, Go to Implementation / Type Definition / Declaration and the call and type hierarchies now work, asked
+  of the server that opened it; before, only Go to Definition did and the rest said "No language server for this
+  file". JDK and library nodes in the hierarchies open as library source too.
+- **Java: `/**` gives the declaration's Javadoc.** Typing `/**` above a method or class closes the comment and offers
+  jdtls's "Javadoc comment" template, with `@param`, `@return` and `@throws` for that declaration. Enter instead
+  still splits the comment as before.
+- **Java: rename what an extraction created.** After Extract Method, Variable, Constant or Field the caret is on the
+  name jdtls picked (`d`, `getTotal`) and Rename opens on it.
+- **Java: Search Everywhere finds JDK and library classes.** With a Java server running, `List`, `Assertions` and
+  the other classes the project's index cannot see are listed under Symbols after the project's own, and open as
+  library source.
+- **Format Document formats only the selection when there is one** (`textDocument/rangeFormatting`), whole lines,
+  as IntelliJ's Reformat Code does; before, the whole file was reformatted under a selection.
+- **Change Signature and Move show their files before applying.** When they change other files, the rename preview
+  lists them, ticked, and an unticked file is left alone; before, both applied unseen.
+- **Related File (test ⇄ subject) is in the Navigate menu**, and on `C-c S-t` (`C-c T`) in the Emacs keymap.
 
 ### Changed
 
@@ -85,6 +102,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already serves says that it starts a server of its own.
 - **Simple mode shows the language-server loading bar,** so a server importing a project in the background is
   visible.
+- **Fold All leaves a Java, Kotlin, Scala, Groovy or C# file's one top-level type open** and folds its members,
+  imports and comments, the outline IntelliJ's Collapse All gives; before, the file folded to a single line.
+- **Type Hierarchy on an interface opens on its subtypes,** the implementations, instead of an empty Supertypes view.
+- **The References window shows code for files without a tab,** read in the background, names each file's folder so
+  two `Main.java` can be told apart, and says what was searched ("5 references to area in 4 files"). It no
+  longer lists the declaration itself.
+- **Completion, quick-fix, hover and signature popups open above the caret line** when there is no room below it,
+  instead of being pushed up over the line being typed.
+- **Static methods and nested types are italic in their own colour,** as in IntelliJ; before, a language server's
+  `static` modifier gave them the constant colour, so `String.format` read like a field.
+- **Java: Generate hashCode() and equals() starts with every field ticked**, and Enter with nothing ticked in a
+  Generate list says so instead of closing silently. The list's rows are taller and it shows twelve at a time.
+- **Java: Move lists the test source folders' packages after the main ones,** so a main class is not moved into
+  `src/test` by picking the first of two identical package names.
 
 - **Refactor: the text model the editor shares with other packages moved to a new `com.editora.text`.** The LSP value types (`LspTextEdit`, `LspDiagnostic`, `SemanticToken`, `OccurrenceSpan`), `FoldRegions`, the search matcher with `CaseFold` and `SearchMatches`, all of language detection (`LanguageRegistry`, `LanguageNames`, `ConfigFileType`, `ShellFiles`, `ShellScripts`, `Shebang`, `Modeline`) and `EncryptedNames` leave the editor sub-packages, with 13 tests. `lsp`, `search`, `crypto`, `template` and `editops` no longer depend on the editor; `editor.language` is gone, its classes having no presentation in them. `text` has its own 0.95 coverage floor. Internal-only — no behavior, dependency, or `module-info` change.
 - **Refactor: the editor's toolkit-free helpers moved to the core packages they belong to.** `AceLabels`,
@@ -173,6 +204,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the row clicked and the row left no longer flash unstyled black text. Go to Line and the fold motions put a
   line above the view below the pinned headers instead of under them, a line already in view is not scrolled
   to, and a jump to the line just inside a method no longer lands under that method's own header.
+- **Java: Go to Definition into library source lands on the declaration,** shown below the sticky header, rather
+  than on the first line of its Javadoc, under the header; the status bar no longer stays on "Loading library source…" or reads "Editable"
+  for the read-only tab.
+- **Java: Find References says when it failed or timed out** ("the language server may still be indexing") instead
+  of "No references found".
+- **Java: completion matches the name, not the parameters.** Without a filter text from the server, `items.st`
+  offered `addAll(Collection<? extends Item> c)` and `equals(Object o)` because the parameter list was matched.
+- **Opening Problems keeps the caret line in view.** A bottom tool window opening scrolled the line being edited off
+  the screen.
+- **Problems no longer shows jdtls's numeric problem ids** (`[67108964]`), which linked nowhere.
+- **New Java files in Gradle source sets get the right package.** In `src/integrationTest/java` or
+  `src/testFixtures/java` the source-set folders became part of the package name.
+
 
 ## [0.24.0] - 2026-10-24
 

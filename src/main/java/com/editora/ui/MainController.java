@@ -1461,14 +1461,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setDeletePreparation(projectDeletes);
         panel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
         panel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
-        // A Java file or package folder renamed in the tree takes its class or package with it (Java review B15).
-        panel.setRenameParticipant((from, to, proceed) -> {
-            if (lspEnabled()) {
-                lspManager.willRenameFile(from, to, proceed);
-            } else {
-                proceed.accept(true);
-            }
-        });
+        panel.setRenameParticipant(lspManager::willRenameFile); // a .java file or package takes its class along (B15)
         panel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
         panel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         panel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
@@ -5902,32 +5895,19 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public java.util.List<com.editora.search.SearchEverywhere.Item> files(String query) {
-            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
-            for (IndexCoordinator.FileHit hit : indexCoordinator.searchFiles(query, 40)) {
-                String name = hit.file().getFileName().toString();
-                String parent = hit.relativePath().contains("/")
-                        ? hit.relativePath().substring(0, hit.relativePath().lastIndexOf('/'))
-                        : "";
-                out.add(new com.editora.search.SearchEverywhere.Item(
-                        com.editora.search.SearchEverywhere.Kind.FILE, name, parent, hit.score(), hit.file()));
-            }
-            return out;
+            return indexCoordinator.fileItems(query);
         }
 
         @Override
         public java.util.List<com.editora.search.SearchEverywhere.Item> symbols(String query) {
-            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
-            for (com.editora.index.SymbolIndex.Hit hit : indexCoordinator.searchSymbols(query, 40)) {
-                String container = hit.symbol().container();
-                String where = hit.file().getFileName() + ":" + (hit.symbol().line() + 1);
-                out.add(new com.editora.search.SearchEverywhere.Item(
-                        com.editora.search.SearchEverywhere.Kind.SYMBOL,
-                        hit.symbol().name(),
-                        container.isEmpty() ? where : container + " — " + where,
-                        hit.score(),
-                        hit));
-            }
-            return out;
+            return indexCoordinator.symbolItems(query);
+        }
+
+        @Override
+        public void laterSymbols(
+                String query,
+                java.util.function.Consumer<java.util.List<com.editora.search.SearchEverywhere.Item>> cb) {
+            lspCoordinator.libraryTypeItems(query, cb);
         }
 
         @Override
@@ -5957,6 +5937,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 case java.nio.file.Path file -> fileWorkflows.openPath(file);
                 case com.editora.index.SymbolIndex.Hit hit ->
                     openAndGoto(hit.file(), hit.symbol().line(), hit.symbol().column());
+                case com.editora.lsp.LspManager.WorkspaceSymbolMatch library -> lspCoordinator.openLibraryType(library);
                 default -> {
                     // Unreachable: every Item this window builds carries one of the three above.
                 }
@@ -6498,8 +6479,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.setDisplayName(title);
             buffer.setContent(content);
             buffer.setLanguageOverride(language);
+            buffer.setViewMode(true); // read-only library source; set first, or the status bar says "Editable" (B16)
             addBuffer(buffer, true);
-            buffer.setViewMode(true); // library source is for reading, not editing
             return buffer;
         }
 

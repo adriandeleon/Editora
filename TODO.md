@@ -59,6 +59,11 @@ A backlog of planned features and improvements. Unordered within each section.
       with request/state capture; passing follow-up runs do not establish a fix or root cause.
 - [ ] Track JDT LS's conflicting import proposal for a same-file class in broken source; rerun the
       strict live probe when evaluating server updates.
+- [ ] **Java LSP review (2026-10-24) leftovers after the fix pass (PR #1329):** Peek Definition inside a
+      library tab; repeated callees merged with a call-site count; Move's typed "New package…" row; Related
+      File's "Create test…" for a class without one; read/write marks in the References window; save actions,
+      favourite static members, formatter profile and the other jdtls settings in the review's gap list;
+      Lombok; a jdtls shared between windows (C12, a notice only today).
 
 ## Recently shipped
 - [x] **Commit options, bulk actions and the remaining Git items** — in the Commit window: Amend (names the
@@ -251,9 +256,9 @@ A backlog of planned features and improvements. Unordered within each section.
       Shapes read off jdtls 1.61 and pinned by the opt-in `JdtlsRefactorProbeTest`. Code lenses
       (`Settings.codeLens`, schema 108→109) ride the inlay mechanism at end of line; `JavaTestScanner`
       reports `Outer$Inner` targets.
-      *Not done: the rename jdtls proposes after an extract (`RefactorWorkspaceEdit.command`) is ignored;
-      the ambiguous-import chooser is not declared; a Change Signature preview. (`inferSelectionSupport`,
-      Introduce Parameter and the move confirmation followed in the Java LSP review's fix group 1.)*
+      *(The rename after an extract, the ambiguous-import chooser, a Change Signature preview,
+      `inferSelectionSupport`, Introduce Parameter and the move confirmation followed in the Java LSP
+      review's fix pass, PR #1329.)*
 - [x] **Go to Implementation / Type Definition / Declaration** (#735, #736) — the three navigation requests
       every registered server advertises and none of which Editora sent. `LspManager.requestDefinition`
       generalized into a shared `requestLocations` walk parameterized by which session method runs, so all

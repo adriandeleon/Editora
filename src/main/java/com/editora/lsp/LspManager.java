@@ -2573,7 +2573,16 @@ public final class LspManager {
             @Nullable Path file,
             int line,
             int col,
-            Object raw) {}
+            Object raw) {
+
+        /** The {@code jdt://} class-file URI of a JDK or library node (no file), opened as library source. */
+        public @Nullable String libraryUri() {
+            String uri = raw instanceof org.eclipse.lsp4j.CallHierarchyItem c
+                    ? c.getUri()
+                    : raw instanceof org.eclipse.lsp4j.TypeHierarchyItem t ? t.getUri() : null;
+            return file == null && uri != null && uri.startsWith("jdt:") ? uri : null;
+        }
+    }
 
     /** True if {@code file}'s server is ready and advertises call hierarchy (#682). */
     public boolean supportsCallHierarchy(Path file) {
@@ -2607,22 +2616,29 @@ public final class LspManager {
 
     /** The call-hierarchy anchor item(s) at a 0-based position, delivered on the FX thread (#682). */
     public void prepareCallHierarchy(Path file, int line, int character, Consumer<List<HierarchyNode>> cb) {
-        LanguageServerSession s = sessionFor(file);
+        prepareCallHierarchyAt(file, null, line, character, cb);
+    }
+
+    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    public void prepareCallHierarchyAt(
+            Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<HierarchyNode>> cb) {
+        LanguageServerSession s = sessionFor(anchor);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        s.prepareCallHierarchy(uri(file), new Position(line, character)).whenComplete((items, e) -> {
-            List<HierarchyNode> out = new ArrayList<>();
-            if (e == null && items != null) {
-                for (var i : items) {
-                    if (i != null) {
-                        out.add(callNode(i, s.uris()));
+        s.prepareCallHierarchy(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
+                .whenComplete((items, e) -> {
+                    List<HierarchyNode> out = new ArrayList<>();
+                    if (e == null && items != null) {
+                        for (var i : items) {
+                            if (i != null) {
+                                out.add(callNode(i, s.uris()));
+                            }
+                        }
                     }
-                }
-            }
-            Platform.runLater(() -> cb.accept(out));
-        });
+                    Platform.runLater(() -> cb.accept(out));
+                });
     }
 
     /** The callers ({@code incoming=true}) or callees of a call-hierarchy node's {@code raw} item. */
@@ -2661,22 +2677,29 @@ public final class LspManager {
 
     /** The type-hierarchy anchor item(s) at a 0-based position, delivered on the FX thread (#682). */
     public void prepareTypeHierarchy(Path file, int line, int character, Consumer<List<HierarchyNode>> cb) {
-        LanguageServerSession s = sessionFor(file);
+        prepareTypeHierarchyAt(file, null, line, character, cb);
+    }
+
+    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    public void prepareTypeHierarchyAt(
+            Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<HierarchyNode>> cb) {
+        LanguageServerSession s = sessionFor(anchor);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        s.prepareTypeHierarchy(uri(file), new Position(line, character)).whenComplete((items, e) -> {
-            List<HierarchyNode> out = new ArrayList<>();
-            if (e == null && items != null) {
-                for (var i : items) {
-                    if (i != null) {
-                        out.add(typeNode(i, s.uris()));
+        s.prepareTypeHierarchy(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
+                .whenComplete((items, e) -> {
+                    List<HierarchyNode> out = new ArrayList<>();
+                    if (e == null && items != null) {
+                        for (var i : items) {
+                            if (i != null) {
+                                out.add(typeNode(i, s.uris()));
+                            }
+                        }
                     }
-                }
-            }
-            Platform.runLater(() -> cb.accept(out));
-        });
+                    Platform.runLater(() -> cb.accept(out));
+                });
     }
 
     /** The supertypes ({@code supertypes=true}) or subtypes of a type-hierarchy node's {@code raw} item. */
@@ -3222,7 +3245,11 @@ public final class LspManager {
      * location, mapped to line 0).
      */
     public void workspaceSymbols(Path anchorFile, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
-        LanguageServerSession s = sessionFor(anchorFile);
+        workspaceSymbols(sessionFor(anchorFile), query, cb);
+    }
+
+    private static void workspaceSymbols(
+            @Nullable LanguageServerSession s, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
@@ -3243,6 +3270,31 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(out));
         });
     }
+
+    /**
+     * The JDK and dependency types ({@code jdt://}) matching {@code query}, from the Java server of the project
+     * holding {@code underRoot} — the classes the server-free index cannot see (Java review E8). Empty without
+     * one. Delivered on the FX thread.
+     */
+    public void javaLibraryTypes(@Nullable Path underRoot, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
+        LanguageServerSession s = javaSessionFor(underRoot);
+        if (s == null || s.capabilities() == null) { // none, or not initialized yet
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        workspaceSymbols(s, query, all -> {
+            List<WorkspaceSymbolMatch> types = new ArrayList<>();
+            for (WorkspaceSymbolMatch m : all) {
+                if (m.libraryUri() != null && LIBRARY_TYPE_KINDS.contains(m.kind())) {
+                    types.add(m);
+                }
+            }
+            cb.accept(types);
+        });
+    }
+
+    private static final java.util.Set<String> LIBRARY_TYPE_KINDS =
+            java.util.Set.of("class", "interface", "enum", "struct");
 
     /** Adds a {@code SymbolInformation} match (its location always carries a range). */
     private static void addSymbol(
@@ -3531,21 +3583,33 @@ public final class LspManager {
      * a user looks when hover does nothing (Maven review C2). Both callbacks run on the FX thread.
      */
     public void hover(Path file, int line, int character, Consumer<String> cb, Consumer<String> onFailure) {
-        LanguageServerSession s = sessionFor(file);
+        hoverAt(file, null, line, character, cb, onFailure);
+    }
+
+    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    public void hoverAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<String> cb,
+            Consumer<String> onFailure) {
+        LanguageServerSession s = sessionFor(anchor);
         if (s == null) {
             cb.accept("");
             return;
         }
-        s.hover(uri(file), new Position(line, character)).whenComplete((hover, error) -> {
-            var fault = error == null ? null : RequestErrorTracker.responseError(error);
-            if (fault != null && RequestErrorTracker.serverFault(fault.getCode())) {
-                String why = RequestErrorTracker.describe(fault);
-                Platform.runLater(() -> onFailure.accept(why));
-                return;
-            }
-            String text = error == null ? hoverText(hover) : "";
-            Platform.runLater(() -> cb.accept(text));
-        });
+        s.hover(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
+                .whenComplete((hover, error) -> {
+                    var fault = error == null ? null : RequestErrorTracker.responseError(error);
+                    if (fault != null && RequestErrorTracker.serverFault(fault.getCode())) {
+                        String why = RequestErrorTracker.describe(fault);
+                        Platform.runLater(() -> onFailure.accept(why));
+                        return;
+                    }
+                    String text = error == null ? hoverText(hover) : "";
+                    Platform.runLater(() -> cb.accept(text));
+                });
     }
 
     public void definition(Path file, int line, int character, Consumer<List<Target>> cb) {
@@ -3568,9 +3632,15 @@ public final class LspManager {
      * member at the caret. Delivers targets on the FX thread; empty when unsupported / on error.
      */
     public void implementation(Path file, int line, int character, Consumer<List<Target>> cb) {
+        implementationAt(file, null, line, character, cb);
+    }
+
+    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    public void implementationAt(
+            Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
         requestLocations(
-                sessionFor(file),
-                file == null ? null : uri(file),
+                sessionFor(anchor),
+                documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
                 line,
                 character,
                 LanguageServerSession::implementation,
@@ -3579,9 +3649,15 @@ public final class LspManager {
 
     /** Go to Type Definition ({@code textDocument/typeDefinition}, #736) — from a symbol to its type. */
     public void typeDefinition(Path file, int line, int character, Consumer<List<Target>> cb) {
+        typeDefinitionAt(file, null, line, character, cb);
+    }
+
+    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    public void typeDefinitionAt(
+            Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
         requestLocations(
-                sessionFor(file),
-                file == null ? null : uri(file),
+                sessionFor(anchor),
+                documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
                 line,
                 character,
                 LanguageServerSession::typeDefinition,
@@ -3590,9 +3666,15 @@ public final class LspManager {
 
     /** Go to Declaration ({@code textDocument/declaration}, #736). */
     public void declaration(Path file, int line, int character, Consumer<List<Target>> cb) {
+        declarationAt(file, null, line, character, cb);
+    }
+
+    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    public void declarationAt(
+            Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
         requestLocations(
-                sessionFor(file),
-                file == null ? null : uri(file),
+                sessionFor(anchor),
+                documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
                 line,
                 character,
                 LanguageServerSession::declaration,
@@ -4008,13 +4090,29 @@ public final class LspManager {
      * returns to the FX thread — no file I/O happens here.
      */
     private void applyWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis, Consumer<Boolean> done) {
+        applyWorkspaceEdit(edit, basis, null, done);
+    }
+
+    /**
+     * As above; {@code preview}, when given, sees the planned edit first and hands back what to apply (the files
+     * the user kept), or never answers when the user cancels.
+     */
+    private void applyWorkspaceEdit(
+            org.eclipse.lsp4j.WorkspaceEdit edit,
+            EditBasis basis,
+            java.util.function.@Nullable BiConsumer<WorkspaceEditMapper.Mapped, Consumer<WorkspaceEditMapper.Mapped>>
+                    preview,
+            Consumer<Boolean> done) {
         EditDraft draft = draftWorkspaceEdit(edit, basis);
         if (draft == null) {
             done.accept(false);
             return;
         }
+        Consumer<WorkspaceEditMapper.Mapped> apply = preview == null
+                ? mapped -> applyEditHandler.accept(mapped, done)
+                : mapped -> preview.accept(mapped, kept -> applyEditHandler.accept(kept, done));
         if (draft.closedTargets().isEmpty()) {
-            applyEditHandler.accept(draft.mapped(), done);
+            apply.accept(draft.mapped());
             return;
         }
         Thread.ofVirtual().name("lsp-edit-preimage").start(() -> {
@@ -4025,7 +4123,7 @@ public final class LspManager {
                     onEditBlocked.accept(plan.blocked());
                     done.accept(false);
                 } else {
-                    applyEditHandler.accept(plan.mapped(), done);
+                    apply.accept(plan.mapped());
                 }
             });
         });
@@ -4087,23 +4185,55 @@ public final class LspManager {
     }
 
     public void references(Path file, int line, int character, Consumer<List<Target>> cb) {
-        LanguageServerSession s = sessionFor(file);
+        references(file, line, character, cb, null);
+    }
+
+    /**
+     * As above; {@code onError} (when given) hears a failed or timed-out request instead of {@code cb} hearing an
+     * empty list — which read as "No references found" (Java review B13).
+     */
+    public void references(
+            Path file, int line, int character, Consumer<List<Target>> cb, @Nullable Consumer<String> onError) {
+        referencesAt(file, null, line, character, cb, onError);
+    }
+
+    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    public void referencesAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
+        LanguageServerSession s = sessionFor(anchor);
         if (s == null) {
             cb.accept(List.of());
             return;
         }
-        s.references(uri(file), new Position(line, character)).whenComplete((locations, error) -> {
-            List<Target> targets = new ArrayList<>();
-            if (error == null && locations != null) {
-                for (Location l : locations) {
-                    var range = l.getRange(); // guard against a server omitting the spec-required range
-                    if (range != null) {
-                        addTarget(targets, s.uris(), l.getUri(), range.getStart());
+        s.references(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
+                .whenComplete((locations, error) -> {
+                    if (error != null && onError != null) {
+                        Throwable cause =
+                                error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                                        ? error.getCause()
+                                        : error;
+                        String why = cause instanceof java.util.concurrent.TimeoutException
+                                ? "timeout"
+                                : String.valueOf(cause.getMessage());
+                        Platform.runLater(() -> onError.accept(why));
+                        return;
                     }
-                }
-            }
-            Platform.runLater(() -> cb.accept(targets));
-        });
+                    List<Target> targets = new ArrayList<>();
+                    if (error == null && locations != null) {
+                        for (Location l : locations) {
+                            var range = l.getRange(); // guard against a server omitting the spec-required range
+                            if (range != null) {
+                                addTarget(targets, s.uris(), l.getUri(), range.getStart());
+                            }
+                        }
+                    }
+                    Platform.runLater(() -> cb.accept(targets));
+                });
     }
 
     /**
@@ -4958,6 +5088,35 @@ public final class LspManager {
             Map<Path, String> expectedAtAction,
             java.util.function.@Nullable BiConsumer<String, Runnable> confirm,
             java.util.function.BiConsumer<Boolean, String> cb) {
+        jdtlsApplyEdit(file, method, params, expectedAtAction, confirm, null, cb);
+    }
+
+    /**
+     * As above; {@code onRename} gets the new name's place ({@link JdtlsRefactor#renameAt}) on the FX thread
+     * once an edit that carries one is applied.
+     */
+    public void jdtlsApplyEdit(
+            Path file,
+            String method,
+            Object params,
+            Map<Path, String> expectedAtAction,
+            java.util.function.@Nullable BiConsumer<String, Runnable> confirm,
+            java.util.function.@Nullable Consumer<JdtlsRefactor.RenameAt> onRename,
+            java.util.function.BiConsumer<Boolean, String> cb) {
+        jdtlsApplyEdit(file, method, params, expectedAtAction, confirm, onRename, null, cb);
+    }
+
+    /** As above; {@code preview} sees the planned edit before it is applied (see {@link #applyWorkspaceEdit}). */
+    public void jdtlsApplyEdit(
+            Path file,
+            String method,
+            Object params,
+            Map<Path, String> expectedAtAction,
+            java.util.function.@Nullable BiConsumer<String, Runnable> confirm,
+            java.util.function.@Nullable Consumer<JdtlsRefactor.RenameAt> onRename,
+            java.util.function.@Nullable BiConsumer<WorkspaceEditMapper.Mapped, Consumer<WorkspaceEditMapper.Mapped>>
+                    preview,
+            java.util.function.BiConsumer<Boolean, String> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(false, null));
@@ -4974,15 +5133,21 @@ public final class LspManager {
                 JsonObject again = JdtlsRefactor.withConfirmationToken(asked, token);
                 Platform.runLater(() -> confirm.accept(
                         refused == null ? "" : refused,
-                        () -> jdtlsApplyEdit(file, method, again, expectedAtAction, null, cb)));
+                        () -> jdtlsApplyEdit(file, method, again, expectedAtAction, null, onRename, preview, cb)));
                 return;
             }
             org.eclipse.lsp4j.WorkspaceEdit edit = asWorkspaceEdit(JdtlsRefactor.editOf(json));
+            JdtlsRefactor.RenameAt renameAt = onRename == null ? null : JdtlsRefactor.renameAt(json);
             Platform.runLater(() -> {
                 if (edit == null) {
                     cb.accept(false, refused);
                 } else {
-                    applyWorkspaceEdit(edit, expected, ok -> cb.accept(ok, refused));
+                    applyWorkspaceEdit(edit, expected, preview, ok -> {
+                        cb.accept(ok, refused);
+                        if (ok && renameAt != null && onRename != null) {
+                            onRename.accept(renameAt);
+                        }
+                    });
                 }
             });
         });
@@ -5649,7 +5814,7 @@ public final class LspManager {
         return name.isBlank() ? jdtUri : name;
     }
 
-    private static String hoverText(Hover hover) {
+    static String hoverText(Hover hover) {
         return HoverMarkdown.of(hover);
     }
 

@@ -77,6 +77,12 @@ final class SearchEverywherePopup {
 
         /** Opens {@code item}'s online documentation, if it has any. */
         void openDocs(Item item);
+
+        /**
+         * Symbols that arrive later than {@link #symbols} — a language server's answer — delivered to {@code cb}
+         * on the FX thread, at most once; none by default.
+         */
+        default void laterSymbols(String query, java.util.function.Consumer<List<Item>> cb) {}
     }
 
     private static final double CELL_HEIGHT = 26;
@@ -285,7 +291,23 @@ final class SearchEverywherePopup {
         }
         if (corpus && (scope.kind() == null || scope.kind() == Kind.SYMBOL)) {
             all.addAll(ops.symbols(scope.query()));
+            // The JDK's and the dependencies' classes come from jdtls, after the project's own (Java review E8).
+            ops.laterSymbols(scope.query(), later -> {
+                if (showing && !later.isEmpty() && scope.query().equals(currentQuery)) {
+                    List<Item> more = new ArrayList<>(all);
+                    more.addAll(later);
+                    show(scope, more, true);
+                }
+            });
         }
+        show(scope, all, false);
+    }
+
+    /** Groups and lists {@code all}; {@code keepSelection} keeps the row the user is on when it is still listed. */
+    private void show(Scope scope, List<Item> all, boolean keepSelection) {
+        boolean corpus = !scope.query().isEmpty();
+        Row selected = keepSelection ? list.getSelectionModel().getSelectedItem() : null;
+        boolean moved = keepSelection && list.getSelectionModel().getSelectedIndex() != cursorAtOpen;
         // With one source in play there is nothing to drown, so nothing is trimmed: a `>` search must not
         // return fewer commands than the palette would, and the empty query must list them all.
         boolean single = scope.kind() != null || !corpus;
@@ -302,7 +324,21 @@ final class SearchEverywherePopup {
         }
         rows.setAll(built);
         status.setText(built.isEmpty() ? tr("searchEverywhere.none") : "");
-        selectFirstItem();
+        int keep = moved && selected instanceof ItemRow was ? indexOfItem(was.item()) : -1;
+        if (keep >= 0) {
+            list.getSelectionModel().select(keep); // the user moved before the late rows came: stay there
+        } else {
+            selectFirstItem();
+        }
+    }
+
+    private int indexOfItem(Item item) {
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i) instanceof ItemRow r && r.item().equals(item)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private void selectFirstItem() {

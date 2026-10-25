@@ -63,6 +63,17 @@ public final class CommentContinuation {
         return null;
     }
 
+    /**
+     * Whether typing {@code *} here opens a Javadoc that should be closed at once: the line so far is
+     * {@code /*}, nothing follows the caret, and no {@code *}{@code /} below closes a comment already. jdtls
+     * offers its "Javadoc comment" template (the declaration's {@code @param}, {@code @return},
+     * {@code @throws}) only on a {@code /**} line that is closed, as VS Code's auto-close leaves it, so without
+     * this {@code /**} + Enter gave an empty comment (Java review A12).
+     */
+    public static boolean closesDocOpening(String text, int caret, String before, String after) {
+        return before.strip().equals("/*") && before.endsWith("/*") && after.isBlank() && !closedBelow(text, caret);
+    }
+
     /** Whether a {@code *}{@code /} follows the caret before any other comment opens. */
     private static boolean closedBelow(String text, int caret) {
         int close = text.indexOf("*/", caret);

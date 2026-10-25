@@ -183,7 +183,8 @@
 .text.sem-function  { -fx-fill: #8250df; }
 .text.sem-type      { -fx-fill: #953800; }
 .text.sem-macro     { -fx-fill: #953800; }
-.text.sem-constant  { -fx-fill: #0550ae; } /* readonly/static emphasis */
+.text.sem-constant  { -fx-fill: #0550ae; } /* a static final (readonly) variable or property */
+.text.sem-static { -fx-font-style: italic; } /* a static member: its own colour, in italics (Java review A14) */
 .text.sem-deprecated { -fx-fill: #6e7781; -fx-strikethrough: true; } /* TextMate can never do this */
 
 /* Matching-bracket highlight (combined with the bracket's token class, so it keeps its color). A

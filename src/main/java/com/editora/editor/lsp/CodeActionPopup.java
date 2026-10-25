@@ -225,7 +225,9 @@ public final class CodeActionPopup {
         list.setMaxWidth(w);
 
         double x = caretScreen.getMinX();
-        double y = caretScreen.getMaxY() + 2;
+        // Above the caret line when the list doesn't fit below it (Java review A8).
+        double y = com.editora.editor.completion.CaretPopupPlacement.top(
+                caretScreen, ((VBox) popup.getContent().get(0)).prefHeight(-1));
         if (popup.isShowing()) {
             popup.setAnchorX(x);
             popup.setAnchorY(y);

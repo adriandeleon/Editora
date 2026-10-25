@@ -78,7 +78,10 @@ class SemanticTokenMapperTest {
     @Test
     void readonlyOrStaticEmphasis() {
         assertEquals("sem-variable sem-constant", SemanticTokenMapper.cssClass("variable", bit(2), MODS));
-        assertEquals("sem-type sem-constant", SemanticTokenMapper.cssClass("class", bit(3), MODS));
+        assertEquals("sem-property sem-constant", SemanticTokenMapper.cssClass("property", bit(3), MODS));
+        // A static method or nested type keeps its colour, in italics (Java review A14).
+        assertEquals("sem-function sem-static", SemanticTokenMapper.cssClass("method", bit(3), MODS));
+        assertEquals("sem-type sem-static", SemanticTokenMapper.cssClass("class", bit(3), MODS));
     }
 
     @Test

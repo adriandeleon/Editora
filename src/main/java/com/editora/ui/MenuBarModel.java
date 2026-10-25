@@ -221,6 +221,7 @@ final class MenuBarModel {
                                 "lsp.gotoImplementation",
                                 "lsp.gotoTypeDefinition",
                                 "lsp.findReferences",
+                                "nav.relatedFile", // test ⇄ subject, palette-only before (Java review B21)
                                 SEPARATOR,
                                 "nav.aceJump",
                                 "bookmarks.jump")),

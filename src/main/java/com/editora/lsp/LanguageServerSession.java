@@ -1927,7 +1927,9 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        ReferenceParams params = new ReferenceParams(doc(uri), pos, new ReferenceContext(true));
+        // Usages only: with the declaration included, Find References on an unused symbol answered with the
+        // declaration alone, and the lone result was "jumped to" — the caret stayed put (Java review B5).
+        ReferenceParams params = new ReferenceParams(doc(uri), pos, new ReferenceContext(false));
         return bounded(server().getTextDocumentService().references(params));
     }
 

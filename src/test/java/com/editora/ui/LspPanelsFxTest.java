@@ -148,6 +148,45 @@ class LspPanelsFxTest {
     }
 
     @Test
+    void aSearchedSymbolIsNamedEachFileShowsItsFolderAndClosedFilesGetTheirLineLater() throws Exception {
+        ReferencesPanel panel = FxTestSupport.callOnFx(() -> new ReferencesPanel((file, line, col) -> {}));
+        show(panel);
+        Path other = Path.of("/proj/test/Alpha.java");
+        long generation = FxTestSupport.callOnFx(() -> {
+            panel.setReferences(
+                    List.of(
+                            new ReferencesPanel.Reference(ALPHA, 3, 1, ""),
+                            new ReferencesPanel.Reference(other, 0, 0, "x")),
+                    "area",
+                    Path.of("/proj"));
+            return panel.generation();
+        });
+        layout(panel);
+        Label summary = FxTestSupport.field(panel, "summary");
+        assertEquals(tr("references.summaryOf", 2, "area", 2), FxTestSupport.callOnFx(summary::getText));
+
+        FxTestSupport.runOnFx(() -> {
+            panel.fillPreviews(generation - 1, r -> "stale");
+            panel.fillPreviews(generation, r -> r.line() == 3 ? "  return area();" : "ignored");
+        });
+        layout(panel);
+        assertEquals(
+                List.of("Alpha.java  (1)  ·  src", "4:2  return area();", "Alpha.java  (1)  ·  test", "1:1  x"),
+                FxTestSupport.callOnFx(() -> cellTexts(panel, ".tree-cell")),
+                "same-named files are told apart by folder; only a row without a preview is filled (B6)");
+    }
+
+    @Test
+    void aFoldersPlaceIsRelativeToTheProject() {
+        assertEquals("src/main", ReferencesPanel.folderOf(Path.of("/p/src/main/A.java"), Path.of("/p")));
+        assertEquals("", ReferencesPanel.folderOf(Path.of("/p/A.java"), Path.of("/p")));
+        assertEquals(
+                Path.of("/elsewhere").toString(),
+                ReferencesPanel.folderOf(Path.of("/elsewhere/A.java"), Path.of("/p")));
+        assertEquals("", ReferencesPanel.folderOf(Path.of("/p/src/A.java"), null));
+    }
+
+    @Test
     void referencesAreGroupedByFileAndOrderedByPosition() throws Exception {
         List<Opened> opened = new ArrayList<>();
         ReferencesPanel panel = FxTestSupport.callOnFx(
@@ -266,6 +305,47 @@ class LspPanelsFxTest {
         public void open(Path file, int line, int col) {
             opened.add(new Opened(file, line, col));
         }
+
+        final List<String> openedLibrary = new ArrayList<>();
+
+        @Override
+        public void openLibrary(String uri, int line) {
+            openedLibrary.add(uri + "@" + line);
+        }
+    }
+
+    @Test
+    void anInterfaceOpensOnSubtypesAndALibraryNodeOpensAsLibrarySource() throws Exception {
+        String jdt = "jdt://contents/java.base/java.util/List.class?=demo";
+        var item = new org.eclipse.lsp4j.TypeHierarchyItem(
+                "List",
+                org.eclipse.lsp4j.SymbolKind.Interface,
+                jdt,
+                new org.eclipse.lsp4j.Range(),
+                new org.eclipse.lsp4j.Range());
+        RecordingLoader loader = new RecordingLoader();
+        loader.children.put(
+                "Shape", List.of(new LspManager.HierarchyNode("List", "java.util", "interface", null, 90, 17, item)));
+        HierarchyPanel panel = FxTestSupport.callOnFx(() -> new HierarchyPanel(loader));
+        show(panel);
+        TreeView<LspManager.HierarchyNode> tree = FxTestSupport.field(panel, "tree");
+        FxTestSupport.runOnFx(() -> {
+            panel.setRoots(
+                    HierarchyPanel.Mode.TYPES,
+                    List.of(new LspManager.HierarchyNode("Shape", "demo", "interface", ALPHA, 2, 4, "Shape")));
+            assertTrue(
+                    loader.asked.contains("Shape:secondary"), "an interface's hierarchy opens on its subtypes (B19)");
+            tree.getSelectionModel().select(1);
+            tree.fireEvent(key(KeyCode.ENTER, false));
+            assertEquals(List.of(jdt + "@90"), loader.openedLibrary, "a JDK node opens as library source");
+            assertTrue(loader.opened.isEmpty());
+        });
+        layout(panel);
+        assertTrue(
+                FxTestSupport.callOnFx(() -> cellTexts(panel, ".tree-cell"))
+                        .get(1)
+                        .startsWith("List  —  java.util  ·  "),
+                "a library node names its class file");
     }
 
     @Test

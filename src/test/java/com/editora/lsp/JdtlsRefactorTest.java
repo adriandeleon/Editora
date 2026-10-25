@@ -149,6 +149,23 @@ class JdtlsRefactorTest {
     }
 
     @Test
+    void testRootPackagesAreListedAfterTheMainOnes() {
+        var packages = JdtlsRefactor.packages(
+                json(
+                        "{\"destinations\":["
+                                + "{\"displayName\":\"com.example\",\"path\":\"/p/src/test/java/com/example\"},"
+                                + "{\"displayName\":\"com.example\",\"path\":\"/p/src/main/java/com/example\"},"
+                                + "{\"displayName\":\"app\",\"path\":\"/p/src/main/java/app\",\"isParentOfSelectedFile\":true}]}"),
+                true);
+        assertEquals(
+                List.of("/p/src/main/java/app", "/p/src/main/java/com/example", "/p/src/test/java/com/example"),
+                packages.stream().map(JdtlsRefactor.Destination::detail).toList(),
+                "the current package, then main, then test (B20)");
+        assertTrue(JdtlsRefactor.inTestRoot("C:\\p\\src\\test\\java"));
+        assertFalse(JdtlsRefactor.inTestRoot("/home/test/p/src/main/java"));
+    }
+
+    @Test
     void moveParamsCarryTheDestinationOnlyWhenThereIsOne() {
         var ask = JdtlsRefactor.moveParams("moveResource", "file:///a/App.java", null, null);
         assertEquals("[\"file:///a/App.java\"]", ask.get("sourceUris").toString());
@@ -340,6 +357,21 @@ class JdtlsRefactorTest {
         assertEquals(List.of("Field declaration", "Current method"), JdtlsRefactor.initializedScopes(request));
         assertTrue(JdtlsRefactor.initializedScopes(request("extractVariable", SELECTED, "{}"))
                 .isEmpty());
+    }
+
+    @Test
+    void anExtractNamesWhereToRenameTheNewName() {
+        assertEquals(
+                new JdtlsRefactor.RenameAt("file:///p/App.java", 120, 8),
+                JdtlsRefactor.renameAt(json("{\"edit\":{\"changes\":{}},\"command\":{\"title\":\"Rename\","
+                        + "\"command\":\"java.action.rename\",\"arguments\":[{\"uri\":\"file:///p/App.java\","
+                        + "\"offset\":120,\"length\":8}]}}")));
+        assertNull(JdtlsRefactor.renameAt(json("{\"edit\":{\"changes\":{}}}")));
+        assertNull(JdtlsRefactor.renameAt(json("{\"command\":{\"command\":\"java.other\",\"arguments\":[{}]}}")));
+        assertNull(JdtlsRefactor.renameAt(json("{\"command\":{\"command\":\"java.action.rename\",\"arguments\":[]}}")));
+        assertNull(JdtlsRefactor.renameAt(
+                json("{\"command\":{\"command\":\"java.action.rename\",\"arguments\":[{\"uri\":\"u\"}]}}")));
+        assertNull(JdtlsRefactor.renameAt(null));
     }
 
     @Test

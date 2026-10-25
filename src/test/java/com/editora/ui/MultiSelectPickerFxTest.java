@@ -119,7 +119,7 @@ class MultiSelectPickerFxTest {
             assertEquals(List.of(true, false, true), s.ticks());
             assertEquals(0, s.list().getSelectionModel().getSelectedIndex());
             assertEquals(Boolean.TRUE, s.card().getProperties().get("editora.ownsKeys"), "C-n/C-p stay with the card");
-            assertEquals(28.0 * 3 + 16, s.list().getPrefHeight(), "the list hugs a short member list");
+            assertEquals(30.0 * 3 + 4, s.list().getPrefHeight(), "the list hugs a short member list");
             s.stage().close();
         });
     }
@@ -132,7 +132,7 @@ class MultiSelectPickerFxTest {
                 many.add(new Item<>("f" + i, false, "F" + i));
             }
             Shown s = show(many);
-            assertEquals(360, s.list().getPrefHeight());
+            assertEquals(30.0 * 12 + 4, s.list().getPrefHeight(), "twelve rows show; the rest scroll");
             s.stage().close();
         });
     }
@@ -174,7 +174,7 @@ class MultiSelectPickerFxTest {
     }
 
     @Test
-    void enterWithNothingTickedIsACancel() throws Exception {
+    void enterWithNothingTickedSaysSoAndKeepsTheCard() throws Exception {
         FxTestSupport.runOnFx(() -> {
             Shown s = show(members());
             s.link("Select none").fire();
@@ -183,7 +183,14 @@ class MultiSelectPickerFxTest {
             s.press(KeyCode.ENTER);
 
             assertTrue(s.accepted().isEmpty(), "an empty member list is never generated");
-            assertFalse(s.host().isShowing());
+            assertTrue(s.host().isShowing(), "closing silently read as done (Java review B9)");
+            assertTrue(
+                    s.card().lookupAll(".label").stream()
+                            .anyMatch(n -> com.editora.i18n.Messages.tr("picker.nothingSelected")
+                                    .equals(((javafx.scene.control.Label) n).getText())),
+                    "the hint says why nothing happened");
+            s.press(KeyCode.ESCAPE);
+            assertFalse(s.host().isShowing(), "Esc still cancels");
             s.stage().close();
         });
     }

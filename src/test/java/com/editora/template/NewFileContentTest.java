@@ -134,6 +134,14 @@ class NewFileContentTest {
         assertEquals("demo", NewFileContent.packageFor(Path.of("/w/proj/src/test/java/demo")));
         // The source root itself is the default package.
         assertEquals("", NewFileContent.packageFor(Path.of("/w/proj/src/main/java")));
+        // Gradle's other source sets are source roots too (Java review C9).
+        Path root = Path.of("/w/proj");
+        assertEquals("com.acme", NewFileContent.packageFor(Path.of("/w/proj/src/integrationTest/java/com/acme"), root));
+        assertEquals("fx", NewFileContent.packageFor(Path.of("/w/proj/src/testFixtures/java/fx"), root));
+        assertEquals("bench", NewFileContent.packageFor(Path.of("/w/proj/src/jmh/java/bench"), root));
+        assertEquals(
+                "com.acme", NewFileContent.packageFor(Path.of("/w/proj/app/src/integrationTest/java/com/acme"), root));
+        assertEquals("", NewFileContent.packageFor(Path.of("/w/proj/src/jmh/java"), root));
     }
 
     @Test

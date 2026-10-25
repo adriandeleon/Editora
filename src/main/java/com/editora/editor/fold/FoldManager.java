@@ -75,6 +75,8 @@ public final class FoldManager {
 
     private Map<Integer, Region> byStart = Map.of();
     private String language = "plaintext";
+    /** Languages whose file is usually one top-level type, kept open by Fold All. */
+    private static final Set<String> TYPE_BODY_LANGUAGES = Set.of("java", "kotlin", "scala", "groovy", "csharp");
     /** Supersedes debounced background detections when the text/language/region sources change again. */
     private long recomputeGeneration;
     /** The generation the last scan (synchronous or in flight) was made for; a debounced pass for it is redundant. */
@@ -1062,7 +1064,11 @@ public final class FoldManager {
     public void foldAll() {
         settleRegions();
         int topPar = firstVisiblePar();
+        int lines = area.getParagraphs().size();
         for (Region r : regions) {
+            if (wholeFileBody(r, lines)) {
+                continue; // a Java class's body: folded, the file read as five lines (Java review A19)
+            }
             if (!isCollapsed(r.startLine())) {
                 area.foldParagraphs(r.startLine(), r.endLine());
                 shadeHeader(r.startLine(), true);
@@ -1072,6 +1078,28 @@ public final class FoldManager {
         if (!restoring) {
             foldStateChanged();
         }
+    }
+
+    /**
+     * Whether {@code r} is an outermost region spanning most of the file and holding others — a Java or Kotlin
+     * file's one top-level type (only in {@link #TYPE_BODY_LANGUAGES}: a JSON file's root object still folds). Fold All leaves it open and folds what is inside it, the outline IntelliJ's
+     * Collapse All gives.
+     */
+    private boolean wholeFileBody(Region r, int lines) {
+        if (!TYPE_BODY_LANGUAGES.contains(language) || lines <= 0 || r.endLine() - r.startLine() + 1 < lines * 0.8) {
+            return false;
+        }
+        boolean holdsOthers = false;
+        for (Region other : regions) {
+            if (other == r) {
+                continue;
+            }
+            if (other.startLine() <= r.startLine() && other.endLine() >= r.endLine()) {
+                return false; // not outermost
+            }
+            holdsOthers |= other.startLine() > r.startLine() && other.endLine() <= r.endLine();
+        }
+        return holdsOthers;
     }
 
     public void unfoldAll() {

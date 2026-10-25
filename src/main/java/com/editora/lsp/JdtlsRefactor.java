@@ -170,6 +170,48 @@ public final class JdtlsRefactor {
         return token == null || token.isBlank() ? null : token;
     }
 
+    /** Where a refactoring's new name sits in the edited document: a character offset and length. */
+    public record RenameAt(String uri, int offset, int length) {}
+
+    /**
+     * The new name a {@code java/getRefactorEdit} answer asks to rename: its {@code command} is
+     * {@code java.action.rename} with a {@code {uri, offset, length}} argument, offsets in the document as
+     * edited. vscode-java starts an inline rename there; without it every extract kept the server's name
+     * ({@code d}, {@code getTotal}) (Java review B12). Null when there is none.
+     */
+    public static @Nullable RenameAt renameAt(@Nullable JsonElement response) {
+        if (response == null || !response.isJsonObject()) {
+            return null;
+        }
+        JsonElement command = response.getAsJsonObject().get("command");
+        if (command == null || !command.isJsonObject()) {
+            return null;
+        }
+        JsonObject c = command.getAsJsonObject();
+        JsonElement args = c.get("arguments");
+        if (!"java.action.rename".equals(string(c, "command"))
+                || args == null
+                || !args.isJsonArray()
+                || args.getAsJsonArray().isEmpty()
+                || !args.getAsJsonArray().get(0).isJsonObject()) {
+            return null;
+        }
+        JsonObject at = args.getAsJsonArray().get(0).getAsJsonObject();
+        String uri = string(at, "uri");
+        JsonElement offset = at.get("offset");
+        JsonElement length = at.get("length");
+        if (uri == null
+                || offset == null
+                || length == null
+                || !offset.isJsonPrimitive()
+                || !length.isJsonPrimitive()
+                || !offset.getAsJsonPrimitive().isNumber()
+                || !length.getAsJsonPrimitive().isNumber()) {
+            return null;
+        }
+        return new RenameAt(uri, offset.getAsInt(), length.getAsInt());
+    }
+
     /** {@code params} (a {@code java/move} parameter) asked again with {@code token}. */
     public static JsonObject withConfirmationToken(JsonObject params, String token) {
         JsonObject out = params.deepCopy();
@@ -244,7 +286,23 @@ public final class JdtlsRefactor {
                 out.add(d);
             }
         }
+        // jdtls lists each source root's packages in turn, main and test mixed by name; test roots go last, so
+        // a main class isn't moved into src/test by picking the first of two "com.example.geo" (Java review B20).
+        out.sort(java.util.Comparator.comparingInt(d -> isCurrent(d) ? 0 : inTestRoot(d.detail()) ? 2 : 1));
         return out;
+    }
+
+    private static boolean isCurrent(Destination d) {
+        return d.raw().isJsonObject() && bool(d.raw().getAsJsonObject(), "isParentOfSelectedFile");
+    }
+
+    /** Whether a package's path lies in a Maven/Gradle test root ({@code src/test/java}, {@code src/test/kotlin}). */
+    static boolean inTestRoot(@Nullable String path) {
+        if (path == null) {
+            return false;
+        }
+        String p = path.replace('\\', '/');
+        return p.contains("/src/test/") || p.endsWith("/src/test");
     }
 
     /** The parameters and fields an instance method can move to ({@code name : Type}). */

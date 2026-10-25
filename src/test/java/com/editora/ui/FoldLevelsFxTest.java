@@ -86,6 +86,18 @@ class FoldLevelsFxTest {
     }
 
     @Test
+    void foldAllKeepsAJavaFilesTypeBodyOpen() throws Exception {
+        EditorBuffer b = addJavaBuffer();
+
+        run("view.foldAll");
+        assertFalse(collapsed(b, 0), "the class spanning the file stays open (Java review A19)");
+        assertTrue(collapsed(b, 1), "its method is folded");
+
+        run("view.unfoldAll");
+        closeActiveTab(b);
+    }
+
+    @Test
     void recursiveFoldAndUnfoldCoverTheWholeNest() throws Exception {
         EditorBuffer b = addJavaBuffer();
         caretTo(b, 0); // inside the outer region
