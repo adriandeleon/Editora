@@ -547,6 +547,24 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
         configurations.add(params);
     }
 
+    /** What {@code workspace/willRenameFiles} answers (null: no edit). */
+    public volatile org.eclipse.lsp4j.WorkspaceEdit willRenameResponse;
+
+    @Override
+    public CompletableFuture<org.eclipse.lsp4j.WorkspaceEdit> willRenameFiles(
+            org.eclipse.lsp4j.RenameFilesParams params) {
+        return CompletableFuture.completedFuture(willRenameResponse);
+    }
+
+    /** Every file event the client sent, as "Type uri". */
+    public List<String> fileEvents() {
+        List<String> out = new ArrayList<>();
+        for (DidChangeWatchedFilesParams p : new ArrayList<>(watchedFiles)) {
+            p.getChanges().forEach(e -> out.add(e.getType() + " " + e.getUri()));
+        }
+        return out;
+    }
+
     @Override
     public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) {
         watchedFiles.add(params);

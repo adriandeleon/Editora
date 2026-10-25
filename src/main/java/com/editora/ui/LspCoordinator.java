@@ -6554,6 +6554,7 @@ final class LspCoordinator {
         commitRenames(staged);
         commitCreates(creates);
         commitDeletes(deletes);
+        lspManager.notifyWatchedFiles(resourceEvents(staged, creates, deletes));
         if (!orphaned.isEmpty()) {
             tabsNotRemapped(orphaned);
         }
@@ -6638,12 +6639,39 @@ final class LspCoordinator {
             commitCreates(creates);
             commitDeletes(deletes);
             transaction.journal.close();
+            lspManager.notifyWatchedFiles(resourceEvents(renames, creates, deletes));
         });
         if (!orphaned.isEmpty()) {
             tabsNotRemapped(orphaned); // the text is edited and the file moved; never call that "applied"
         }
         afterWorkspaceEdit(mapped, buffers, before, openBeforeEdit.get(mapped));
         done.accept(orphaned.isEmpty());
+    }
+
+    /**
+     * What the server hears of the files an edit created, moved or deleted on disk. A server reads a file it has
+     * not got open from disk only when told it changed, and a folder nobody watches tells it nothing (BN1).
+     */
+    private static java.util.List<com.editora.lsp.LspManager.WatchedFile> resourceEvents(
+            java.util.List<StagedRename> renames,
+            java.util.List<StagedCreate> creates,
+            java.util.List<StagedDelete> deletes) {
+        java.util.List<com.editora.lsp.LspManager.WatchedFile> out = new java.util.ArrayList<>();
+        for (StagedRename r : renames) {
+            out.add(new com.editora.lsp.LspManager.WatchedFile(
+                    r.rename().from(), com.editora.lsp.LspManager.WatchedKind.DELETED));
+            out.add(new com.editora.lsp.LspManager.WatchedFile(
+                    r.rename().to(), com.editora.lsp.LspManager.WatchedKind.CREATED));
+        }
+        for (StagedCreate c : creates) {
+            out.add(new com.editora.lsp.LspManager.WatchedFile(
+                    c.operation().file(), com.editora.lsp.LspManager.WatchedKind.CREATED));
+        }
+        for (StagedDelete d : deletes) {
+            out.add(new com.editora.lsp.LspManager.WatchedFile(
+                    d.operation().file(), com.editora.lsp.LspManager.WatchedKind.DELETED));
+        }
+        return out;
     }
 
     // --- after an edit: save, close what it opened, remember it for Undo (Java review B1, B2, B18) -------------
@@ -6726,19 +6754,75 @@ final class LspCoordinator {
                     java.util.List.copyOf(mapped.renames()),
                     java.util.List.copyOf(created));
         }
+        java.util.List<com.editora.lsp.LspManager.WatchedFile> written = new java.util.ArrayList<>();
         for (EditorBuffer b : touched) {
             boolean opened = openBefore != null && !openBefore.contains(b);
             if (!resources && !opened) {
                 continue; // an open file the user can see stays as it is: they save it
             }
             Path path = b.getPath();
+            boolean unmanaged = path != null && !lspManager.isManaged(path); // a background tab is never opened on it
             boolean saved = b.isDirty() && ops.saveBuffer(b);
+            if (saved && unmanaged && path != null) {
+                written.add(new com.editora.lsp.LspManager.WatchedFile(
+                        path, com.editora.lsp.LspManager.WatchedKind.CHANGED));
+            }
             if ((saved || !b.isDirty())
                     && opened
                     && (path == null || !created.contains(path.toAbsolutePath().normalize()))) {
                 ops.closeBackgroundBuffer(b); // a created file (an extracted interface) stays open to be seen
             }
         }
+        // A file the server does not have open keeps its old text there until it hears the file changed: the next
+        // rename skipped it and Find References missed it (re-review BN1).
+        lspManager.notifyWatchedFiles(written);
+    }
+
+    /**
+     * The Project tree's rename participant (B15): the edits jdtls wants for a rename go in first — the class
+     * renamed with its {@code .java} file, the package lines and imports of a moved folder — then the tree moves
+     * the file. Once it has, those edits are finished like any refactoring's: saved, so the project on disk
+     * compiles, recorded with the move so Undo takes both back, and told to the server (re-review BN3).
+     */
+    void willRenameFile(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
+        AppliedEdit previous = lastApplied;
+        lspManager.willRenameFile(from, to, ok -> {
+            proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
+            AppliedEdit edit = lastApplied;
+            if (ok
+                    && edit != null
+                    && edit != previous
+                    && !java.nio.file.Files.exists(from)
+                    && java.nio.file.Files.exists(to)) {
+                treeRenamed(edit, from, to);
+            }
+        });
+    }
+
+    private void treeRenamed(AppliedEdit edit, Path from, Path to) {
+        Path f = from.toAbsolutePath().normalize();
+        Path t = to.toAbsolutePath().normalize();
+        java.util.List<EditedFile> files = new java.util.ArrayList<>();
+        for (EditedFile e : edit.files()) {
+            Path p = e.path().toAbsolutePath().normalize();
+            Path now = p.startsWith(f) ? t.resolve(f.relativize(p)) : e.path();
+            files.add(new EditedFile(now, e.before(), e.after()));
+            EditorBuffer b = ops.bufferForPath(now);
+            if (b != null && b.isDirty() && b.getContent().equals(e.after())) {
+                ops.saveBuffer(b);
+            }
+        }
+        if (java.nio.file.Files.isDirectory(t)) {
+            lastApplied = null; // a folder cannot be moved back as one: rename it back, and jdtls edits again
+        } else {
+            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames =
+                    new java.util.ArrayList<>(edit.renames());
+            renames.add(new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false));
+            lastApplied = new AppliedEdit(java.util.List.copyOf(files), java.util.List.copyOf(renames), edit.created());
+        }
+        lspManager.notifyWatchedFiles(java.util.List.of(
+                new com.editora.lsp.LspManager.WatchedFile(from, com.editora.lsp.LspManager.WatchedKind.DELETED),
+                new com.editora.lsp.LspManager.WatchedFile(to, com.editora.lsp.LspManager.WatchedKind.CREATED)));
     }
 
     /** What the user chose when Undo met a buffer the last refactoring edited. */

@@ -1461,7 +1461,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setDeletePreparation(projectDeletes);
         panel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
         panel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
-        panel.setRenameParticipant(lspManager::willRenameFile); // a .java file or package takes its class along (B15)
+        panel.setRenameParticipant(lspCoordinator::willRenameFile); // a class goes with its file (B15)
         panel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
         panel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         panel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
