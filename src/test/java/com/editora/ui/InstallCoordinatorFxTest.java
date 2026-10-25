@@ -76,7 +76,6 @@ class InstallCoordinatorFxTest {
         boolean typstCli;
         int redetected;
         final List<String> stopped = new ArrayList<>();
-        final List<String> restarted = new ArrayList<>();
 
         Window(Path configDir) {
             this.configDir = configDir;
@@ -115,11 +114,6 @@ class InstallCoordinatorFxTest {
         @Override
         public void stopServer(String serverId) {
             stopped.add(serverId);
-        }
-
-        @Override
-        public void restartServer(String serverId) {
-            restarted.add(serverId);
         }
     }
 
@@ -351,7 +345,7 @@ class InstallCoordinatorFxTest {
 
     /**
      * Doctor's Update: a server that is found is installed again at the pinned version, stopped while its folder is
-     * replaced and started again on the new copy, and the new copy's receipt names the pin.
+     * replaced and re-detected after (which starts it on the new copy), and the new copy's receipt names the pin.
      */
     @Test
     void updateReplacesAServerThatIsThereAndRestartsIt() throws Exception {
@@ -371,7 +365,7 @@ class InstallCoordinatorFxTest {
                     InstallCatalog.LEMMINX_MAVEN_VERSION,
                     com.editora.install.InstallReceipt.read(dest).version());
             assertEquals(List.of("maven-pom"), rig.window.stopped);
-            assertEquals(List.of("maven-pom"), rig.window.restarted);
+            assertEquals(1, rig.window.redetected, "the re-applied support starts it again on the new copy");
         }
     }
 

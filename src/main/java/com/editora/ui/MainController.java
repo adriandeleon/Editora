@@ -2759,11 +2759,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public void restartServer(String serverId) {
-                lspCoordinator.restartServer(serverId);
-            }
-
-            @Override
             public boolean lspAvailable(String serverId) {
                 return lspCoordinator.isServerAvailable(serverId);
             }
@@ -6983,27 +6978,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public void installServer(String serverId, java.util.function.Consumer<Boolean> onDone) {
-                    installCoordinator.installServer(serverId, onDone);
-                }
-
-                @Override
-                public void installLang(
-                        com.editora.install.InstallCatalog.Lang lang, java.util.function.Consumer<Boolean> onDone) {
-                    installCoordinator.installSupport(lang, onDone);
-                }
-
-                @Override
-                public void installTypstCli(java.util.function.Consumer<Boolean> onDone) {
-                    installCoordinator.installTypstCli(onDone);
-                }
-
-                @Override
-                public void installTool(String toolId, java.util.function.Consumer<Boolean> onDone) {
-                    installCoordinator.installTools(java.util.List.of(toolId), onDone);
-                }
-
-                @Override
                 public void installServer(
                         String serverId, boolean update, java.util.function.Consumer<Boolean> onDone) {
                     installCoordinator.installServer(serverId, update, onDone);
@@ -7018,13 +6992,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public void installTool(String toolId, boolean update, java.util.function.Consumer<Boolean> onDone) {
-                    installCoordinator.installTools(java.util.List.of(toolId), update, onDone);
+                public void installTypstCli(java.util.function.Consumer<Boolean> onDone) {
+                    installCoordinator.installTypstCli(onDone);
                 }
 
                 @Override
-                public java.nio.file.Path configDir() {
-                    return config.getConfigDir();
+                public void installTool(String toolId, boolean update, java.util.function.Consumer<Boolean> onDone) {
+                    installCoordinator.installTools(java.util.List.of(toolId), update, onDone);
                 }
 
                 @Override

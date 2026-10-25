@@ -3171,21 +3171,13 @@ final class LspCoordinator {
 
     /**
      * Stops {@code serverId} while its install is replaced (Doctor's Update), so it does not run on — or, on
-     * Windows, hold open — the files being swapped out. {@link #restartServer} starts it again afterwards.
+     * Windows, hold open — the files being swapped out. The settings apply after the install starts it again, on
+     * the new copy, as the files it serves are re-gated.
      */
     void stopServer(String serverId) {
+        failingServers.remove(serverId); // the new copy gets a fresh chance
         clearDiagnosticsForServer(serverId); // before shutdown: after it, nothing would re-publish an empty list
         lspManager.shutdownServer(serverId);
-    }
-
-    /**
-     * Starts {@code serverId} afresh on the files it serves, on the copy an update just put in place. Call after
-     * the settings apply that follows an install (it clears the given-up servers).
-     */
-    void restartServer(String serverId) {
-        failingServers.remove(serverId);
-        lspManager.restartServer(serverId);
-        applyGating();
     }
 
     /** Restarts every running server, clears diagnostics, then re-gates each buffer ({@code lsp.restartServers}). */

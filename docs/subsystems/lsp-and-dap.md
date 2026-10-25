@@ -886,7 +886,7 @@ install …@latest`, rustup, the GitHub `releases/latest` archives).
   what it prints for `--version` (clojure-lsp, ShellCheck, shfmt). Older than the pin, or a copy from before
   receipts whose files say nothing (the Kotlin server), is a warning with **Update**
   (`DoctorCheck.outdated`): the same installer with `update = true`, which reinstalls the pinned step even though
-  a server is found, stops the running server first and restarts it on the new copy. A plain Install also
+  a server is found and stops the running server first; the settings apply after the install starts it on the new copy. A plain Install also
   replaces Editora's copy that is known to be older (`InstallCoordinator.editoraCopyOutdated`, files only — it
   runs on the FX thread). The user's own older server gets the warning too, and Update switches it to Editora's
   copy; a ShellCheck/shfmt path set in Settings gets only the warning.

@@ -84,35 +84,20 @@ final class DoctorCoordinator {
             return null;
         }
 
-        void installServer(String serverId, Consumer<Boolean> onDone);
+        /** Installs {@code serverId}; {@code update} (Doctor's Update) also replaces a copy older than its pin. */
+        void installServer(String serverId, boolean update, Consumer<Boolean> onDone);
 
-        void installLang(InstallCatalog.Lang lang, Consumer<Boolean> onDone);
+        /** Installs {@code lang}'s support; {@code update} also reinstalls its pinned steps. */
+        void installLang(InstallCatalog.Lang lang, boolean update, Consumer<Boolean> onDone);
 
         void installTypstCli(Consumer<Boolean> onDone);
 
-        /** Installs a pinned command-line tool ({@code shellcheck}/{@code shfmt}). */
-        default void installTool(String toolId, Consumer<Boolean> onDone) {
-            onDone.accept(false);
-        }
-
-        /** As {@link #installServer(String, Consumer)}; {@code update} also replaces a copy older than its pin. */
-        default void installServer(String serverId, boolean update, Consumer<Boolean> onDone) {
-            installServer(serverId, onDone);
-        }
-
-        /** As {@link #installLang(InstallCatalog.Lang, Consumer)}; {@code update} also replaces pinned steps. */
-        default void installLang(InstallCatalog.Lang lang, boolean update, Consumer<Boolean> onDone) {
-            installLang(lang, onDone);
-        }
-
-        /** As {@link #installTool(String, Consumer)}; {@code update} also replaces a copy older than its pin. */
+        /**
+         * Installs a pinned command-line tool ({@code shellcheck}/{@code shfmt}); {@code update} also replaces a
+         * copy older than its pin.
+         */
         default void installTool(String toolId, boolean update, Consumer<Boolean> onDone) {
-            installTool(toolId, onDone);
-        }
-
-        /** The config dir Editora installs into ({@code plugins/…}), or null when the window cannot say. */
-        default @Nullable Path configDir() {
-            return null;
+            onDone.accept(false);
         }
 
         /**
@@ -616,7 +601,7 @@ final class DoctorCoordinator {
                         .withSettings("debug")
                         .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.JAVASCRIPT.name());
                 PinnedVersions.Pin jsPin = PinnedVersions.forStep("js-debug").orElse(null);
-                Path config = ops.configDir();
+                Path config = host.configDir();
                 specs.add(probe(jsDebug, base -> {
                     var server = DebugAdapterLocator.locateJsDebugServer(jsPath, home);
                     if (server.isEmpty()) {
@@ -914,7 +899,7 @@ final class DoctorCoordinator {
         boolean configured = ops.lspServerCommandSet(serverId);
         String failing = ops.lspServerFailure(serverId);
         PinnedVersions.Pin pin = PinnedVersions.forServer(serverId).orElse(null);
-        Path config = ops.configDir();
+        Path config = host.configDir();
         return probe(row, base -> {
             if (argv.isEmpty()) {
                 // No command at all (an uninstalled maven-pom): say that, not "not found on PATH" (review A3).
@@ -1016,7 +1001,7 @@ final class DoctorCoordinator {
         List<String> argv = List.of(command);
         boolean needed = needs.shellOpen();
         PinnedVersions.Pin pin = PinnedVersions.forStep(toolId).orElse(null);
-        Path config = ops.configDir();
+        Path config = host.configDir();
         // A bare name is the copy on PATH, which Editora's own replaces once installed; a path is the user's choice.
         boolean fromPath = command.indexOf('/') < 0 && command.indexOf('\\') < 0;
         return probe(row, base -> {

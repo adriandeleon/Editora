@@ -243,10 +243,22 @@ public final class PinnedVersions {
         return false;
     }
 
+    /**
+     * {@code p} with its links resolved, so two spellings of one folder compare equal (macOS's {@code /var} is
+     * {@code /private/var}; Windows may hand out short {@code RUNNER~1} names). A path that does not exist yet is
+     * resolved through its nearest existing parent.
+     */
     private static Path canonical(Path p) {
         Path abs = p.toAbsolutePath().normalize();
+        Path existing = abs;
+        while (existing != null && !Files.exists(existing)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return abs;
+        }
         try {
-            return Files.exists(abs) ? abs.toRealPath() : abs;
+            return existing.toRealPath().resolve(existing.relativize(abs));
         } catch (IOException e) {
             return abs;
         }

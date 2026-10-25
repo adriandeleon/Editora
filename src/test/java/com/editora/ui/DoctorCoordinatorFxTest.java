@@ -34,10 +34,16 @@ class DoctorCoordinatorFxTest {
 
     private static final class FakeHost extends CoordinatorHostStub {
         final Settings settings = new Settings();
+        java.nio.file.Path config;
 
         @Override
         public Settings settings() {
             return settings;
+        }
+
+        @Override
+        public java.nio.file.Path configDir() {
+            return config;
         }
     }
 
@@ -54,7 +60,7 @@ class DoctorCoordinatorFxTest {
         boolean updateAsked;
         List<String> servers = List.of("java", "json");
         java.util.Map<String, List<String>> argv = new java.util.HashMap<>();
-        java.nio.file.Path config;
+        java.nio.file.Path config; // handed to the FakeHost: the config dir comes from the window's host
 
         @Override
         public com.editora.mermaid.MermaidService mermaidService() {
@@ -92,17 +98,6 @@ class DoctorCoordinatorFxTest {
         }
 
         @Override
-        public java.nio.file.Path configDir() {
-            return config;
-        }
-
-        @Override
-        public void installServer(String serverId, boolean update, Consumer<Boolean> onDone) {
-            updateAsked = update;
-            installServer(serverId, onDone);
-        }
-
-        @Override
         public boolean lspServerEnabled(String serverId) {
             return true;
         }
@@ -113,13 +108,14 @@ class DoctorCoordinatorFxTest {
         }
 
         @Override
-        public void installServer(String serverId, Consumer<Boolean> onDone) {
+        public void installServer(String serverId, boolean update, Consumer<Boolean> onDone) {
             installedServer = serverId;
+            updateAsked = update;
             onDone.accept(true);
         }
 
         @Override
-        public void installLang(InstallCatalog.Lang lang, Consumer<Boolean> onDone) {
+        public void installLang(InstallCatalog.Lang lang, boolean update, Consumer<Boolean> onDone) {
             installedLang = lang;
             onDone.accept(true);
         }
@@ -247,7 +243,9 @@ class DoctorCoordinatorFxTest {
     }
 
     private static DoctorCheck groovyRow(FakeOps ops) throws Exception {
-        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(new FakeHost(), ops));
+        FakeHost host = new FakeHost();
+        host.config = ops.config;
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
         List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
         return spec(specs, "lsp.groovy").probe().get();
     }

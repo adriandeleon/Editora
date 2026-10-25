@@ -57,11 +57,11 @@ final class InstallCoordinator {
             return false;
         }
 
-        /** Stops a running server whose install is about to be replaced (an update). */
+        /**
+         * Stops a running server whose install is about to be replaced (an update); the {@link
+         * #reapplyToolSupport} that follows the install starts it again on whichever copy is then in place.
+         */
         default void stopServer(String serverId) {}
-
-        /** Starts a server again on its replaced install, once support has been re-applied. */
-        default void restartServer(String serverId) {}
     }
 
     private final CoordinatorHost host;
@@ -158,7 +158,6 @@ final class InstallCoordinator {
                             host.setStatus(tr("status.install.failed", langName(lang)));
                             alert(Alert.AlertType.ERROR, result.message());
                         }
-                        replaced.forEach(ops::restartServer);
                         onResult.accept(result.ok());
                     });
         });
@@ -252,7 +251,6 @@ final class InstallCoordinator {
                             host.setStatus(tr("status.install.failed", serverName(serverId)));
                             alert(Alert.AlertType.ERROR, result.message());
                         }
-                        replaced.forEach(ops::restartServer);
                         onResult.accept(result.ok());
                     });
         });
@@ -454,7 +452,8 @@ final class InstallCoordinator {
 
     /**
      * The servers that {@code steps} reinstall while they run (an update, or an outdated copy Install replaces):
-     * they are stopped first, so none runs on files being swapped out, and started again on the new copy.
+     * they are stopped first, so none runs on files being swapped out; the support re-applied afterwards starts
+     * them again.
      */
     private List<String> runningServersOf(List<Step> steps) {
         return steps.stream()

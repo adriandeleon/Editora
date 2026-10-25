@@ -208,4 +208,26 @@ class PinnedVersionsTest {
         assertFalse(PinnedVersions.anyInside(List.of(dir + "-other/x"), dir), "a sibling folder is not inside");
         assertFalse(PinnedVersions.anyInside(List.of(dir.toString()), null));
     }
+
+    /**
+     * One folder reached two ways — as macOS's {@code /var} is {@code /private/var} — still matches, for a file
+     * inside it that does not exist yet as well as for one that does.
+     */
+    @Test
+    void aFolderReachedThroughALinkIsStillTheSameFolder() throws IOException {
+        Path realDir = Files.createDirectories(config.resolve("real/plugins/lsp/groovy"));
+        Path link = config.resolve("linked");
+        try {
+            Files.createSymbolicLink(link, config.resolve("real"));
+        } catch (IOException | UnsupportedOperationException e) {
+            org.junit.jupiter.api.Assumptions.abort("symbolic links are not available here: " + e);
+        }
+        Path viaLink = link.resolve("plugins/lsp/groovy");
+
+        assertTrue(
+                PinnedVersions.anyInside(List.of(viaLink.resolve("not-yet.jar").toString()), realDir));
+        assertTrue(
+                PinnedVersions.anyInside(List.of(realDir.resolve("not-yet.jar").toString()), viaLink));
+        assertTrue(PinnedVersions.anyInside(List.of(viaLink + "/*"), realDir));
+    }
 }

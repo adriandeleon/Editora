@@ -148,12 +148,12 @@ class DoctorCatalogFxTest {
         }
 
         @Override
-        public void installServer(String serverId, Consumer<Boolean> onDone) {
+        public void installServer(String serverId, boolean update, Consumer<Boolean> onDone) {
             onDone.accept(true);
         }
 
         @Override
-        public void installLang(InstallCatalog.Lang lang, Consumer<Boolean> onDone) {
+        public void installLang(InstallCatalog.Lang lang, boolean update, Consumer<Boolean> onDone) {
             onDone.accept(true);
         }
 
