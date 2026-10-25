@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A Clojure debugging sample.** `samples/debug/clojure/` is the same shelf as a small standalone Clojure CLI
+  project (four namespaces, a script, six green clojure.test tests) with a `break here` comment at every spot
+  worth a breakpoint: a `loop/recur` whose bindings change on every pass, an anonymous fn, a recursion, three
+  named worker threads, a caught and an uncaught exception, and a script's top-level forms. `clojure -M:run`
+  and `clojure -M:test` run it outside Editora.
 - **Complete Statement** (`edit.completeStatement`, Code ▸ Complete Statement; Ctrl+Shift+Enter / Cmd+Shift+Enter in
   the IntelliJ keymaps), as IntelliJ's Complete Current Statement: in Java, C, C++, C#, JavaScript, TypeScript, PHP
   and Kotlin it closes the line's open string and brackets, adds the `;` (not in Kotlin) or the `{ }` block a
