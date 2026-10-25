@@ -420,6 +420,35 @@ class NavigationCoordinatorFxTest {
         }
     }
 
+    /** A class with no test is offered one, created where Maven and Gradle look for it (Java review B21). */
+    @Test
+    void relatedFileOffersToCreateTheMissingTestOfAClass(@TempDir Path dir) throws Exception {
+        Path shape = dir.resolve("src/main/java/demo/Shape.java");
+        Files.createDirectories(shape.getParent());
+        Files.writeString(shape, "package demo;\n\nclass Shape {}\n");
+        Path test = dir.resolve("src/test/java/demo/ShapeTest.java");
+        try (WindowRig w = new WindowRig()) {
+            NavigationCoordinator nav = nav(w);
+            List<Path> asked = new java.util.ArrayList<>();
+            w.open(shape);
+
+            nav.createTestConfirmer = t -> asked.add(t) && false; // declined
+            FxTestSupport.runOnFx(
+                    () -> nav.openRelated(shape, com.editora.search.RelatedFiles.candidates("Shape.java")));
+            assertEquals(List.of(test), asked);
+            assertEquals(tr("status.related.none", "Shape.java"), w.status());
+            assertFalse(Files.exists(test));
+
+            nav.createTestConfirmer = t -> true;
+            FxTestSupport.runOnFx(
+                    () -> nav.openRelated(shape, com.editora.search.RelatedFiles.candidates("Shape.java")));
+            w.await("the new test is opened", () -> w.isActive(test));
+            String source = Files.readString(test);
+            assertTrue(source.startsWith("package demo;\n"), source);
+            assertTrue(source.contains("class ShapeTest {"), source);
+        }
+    }
+
     @Test
     void goToLineTakesALineOrLineAndColumnClampsThemAndRejectsNonsense(@TempDir Path dir) throws Exception {
         Path file = Files.writeString(dir.resolve("lines.txt"), numbered(20));

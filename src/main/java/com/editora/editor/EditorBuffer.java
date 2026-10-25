@@ -9091,7 +9091,8 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea;
         int from = a.getSelection().getLength() > 0 ? a.getSelection().getStart() : a.getCaretPosition();
         int to = a.getSelection().getLength() > 0 ? a.getSelection().getEnd() : from;
-        startSnippet(a, snippet, from, to);
+        int[] range = to > from ? SnippetTyping.wrappedRange(a.getText(), from, to) : new int[] {from, to};
+        startSnippet(a, snippet, range[0], range[1]);
         a.requestFocus();
     }
 

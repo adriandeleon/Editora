@@ -107,6 +107,7 @@
   "f6": "lsp.move",
   "C-f6": "lsp.changeSignature",
   "C-M-S-t": "lsp.refactorThis",
+  "C-M-t": "snippets.insert",
   "C-o": "lsp.overrideMethods",
   "C-M-insert": "file.new"
 }

@@ -59,6 +59,28 @@ class SnippetIndentAndLineEndingFxTest {
         }));
     }
 
+    /** Insert Snippet over selected lines wraps them: Surround With, IntelliJ's Ctrl+Alt+T (Java review gap). */
+    @Test
+    void aBlockSnippetWrapsTheSelectedLinesAtTheirIndent() throws Exception {
+        String content =
+                "class A {\n    void m() {\n        a();\n        if (x) {\n            b();\n        }\n    }\n}\n";
+        String out = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setContent(content);
+            b.setLanguageOverride("java");
+            int from = content.indexOf("        a();"); // whole lines, from the start of the first
+            int to = content.indexOf("    }\n}");
+            b.getArea().selectRange(from, to); // a(); … the inner if's closing brace and its line break
+            b.insertSnippet(
+                    new Snippet("try", "try", "try {\n\t${1:$TM_SELECTED_TEXT}\n} finally {\n\t$0\n}", "", "java"));
+            return b.getArea().getText();
+        });
+        assertEquals(
+                "class A {\n    void m() {\n        try {\n            a();\n            if (x) {\n                b();\n            }\n"
+                        + "        } finally {\n            \n        }\n    }\n}\n",
+                out);
+    }
+
     @Test
     void aTabIndentedBufferKeepsTheTabs() throws Exception {
         assertEquals("a:\n\tb: 1\nkey:\n\tsubkey: value", FxTestSupport.callOnFx(() -> {

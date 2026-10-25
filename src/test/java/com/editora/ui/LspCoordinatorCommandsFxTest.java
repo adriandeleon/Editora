@@ -422,18 +422,28 @@ class LspCoordinatorCommandsFxTest {
     }
 
     @Test
-    void peekReportsNoDefinitionAndFallsBackToOpeningALibraryClass() throws Exception {
+    void peekReportsNoDefinitionAndPeeksALibraryClassInPlace() throws Exception {
         fx.open("A.java", SOURCE);
         fx.server().definitionResponse = List.of();
         fx.run(() -> fx.coordinator.peekDefinition());
         assertEquals(tr("status.lsp.noDefinition"), fx.host.lastStatus());
 
-        // A class file has no file to read a snippet out of: peek degrades to opening it.
-        fx.server().rawResponse = "package java.lang;\n";
-        fx.server().definitionResponse = List.of(location(JDT_STRING, 0, 0));
+        // A class file's source is asked of the server and peeked like any file (Java review B7); no tab opens.
+        fx.server().rawResponse = "package java.lang;\n\npublic final class String {}\n";
+        fx.server().definitionResponse = List.of(location(JDT_STRING, 2, 0));
         fx.run(() -> fx.coordinator.peekDefinition());
-        assertEquals(1, fx.ops.readOnlyDocs.size());
-        assertFalse(fx.host.overlay.isShowing());
+        assertTrue(fx.ops.readOnlyDocs.isEmpty(), "peeked, not opened");
+        assertTrue(fx.host.overlay.isShowing(), "the peek window is up");
+        assertEquals(
+                JDT_STRING,
+                ((org.eclipse.lsp4j.TextDocumentIdentifier)
+                                FakeLanguageServer.last(fx.server().rawRequests).params())
+                        .getUri());
+
+        fx.server().rawResponse = null; // the server has no source for it
+        FxTestSupport.runOnFx(() -> fx.host.overlay.hide());
+        fx.run(() -> fx.coordinator.peekDefinition());
+        assertEquals(tr("status.lsp.libraryUnavailable"), fx.host.lastStatus());
     }
 
     // --- hierarchy (#682) ------------------------------------------------------------------------------
@@ -1285,5 +1295,43 @@ class LspCoordinatorCommandsFxTest {
                 String.valueOf(fx.host.statuses));
         assertFalse(FxTestSupport.callOnFx(b::isLspActive), "its tabs are no longer served");
         assertEquals("unknownMethod", LspCoordinator.methodLabel("unknownMethod"));
+    }
+
+    // --- project-level problems after an import (Java review C19) ------------------------------------
+
+    @Test
+    void anImportIsBuiltOnceSoProjectProblemsArriveAndAreSaid() throws Exception {
+        fx.open("A.java", SOURCE);
+        fx.server().rawRequests.clear();
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "OK"));
+        fx.run(() -> fx.coordinator.buildAfterImport()); // what the import timer runs
+        fx.run(() -> fx.coordinator.buildAfterImport());
+        assertEquals(
+                List.of("java/buildWorkspace"),
+                fx.server().rawRequests.stream()
+                        .map(FakeLanguageServer.Raw::method)
+                        .toList(),
+                "one quiet build per root, however many projects report");
+
+        var jdk = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.WARNING,
+                "Build path specifies execution environment JavaSE-1.8.",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(jdk)));
+        assertEquals(
+                tr("status.lsp.projectProblem", root.getFileName().toString(), jdk.message()),
+                fx.host.lastError(),
+                "a problem of the project, not a file, is said");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> fx.coordinator.problems()).containsKey(fx.ops.canonicalize(root)),
+                "and listed although no tab shows the folder");
+        fx.host.errors.clear();
+        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(jdk)));
+        assertTrue(fx.host.errors.isEmpty(), "once");
     }
 }

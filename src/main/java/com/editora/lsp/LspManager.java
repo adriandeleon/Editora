@@ -1451,6 +1451,10 @@ public final class LspManager {
                 }
                 startCommand = JavaServerEnvironment.withJavaExecutable(
                         startCommand, serverJava.executable(), JavaServerEnvironment::isJdtlsLauncher);
+                startCommand = JavaLombok.withAgent(
+                        startCommand,
+                        JavaLombok.agentFor(root, Path.of(System.getProperty("user.home"))),
+                        JavaServerEnvironment::isJdtlsLauncher);
             }
             Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
                     ? astroTypeScriptSdk(root, sdkCeiling, startCommand)
@@ -2565,7 +2569,8 @@ public final class LspManager {
     // --- Call / type hierarchy (#682) ----------------------------------------------------------
 
     /** One hierarchy row: display fields + a navigable position ({@code file} null for a non-file URI,
-     *  e.g. a JDK class) + the opaque lsp4j item ({@code raw}) used to expand its children. */
+     *  e.g. a JDK class) + the opaque lsp4j item ({@code raw}) used to expand its children; {@code calls} is how
+     *  many call sites the row stands for (a callee called twice is one row, Java review B19). */
     public record HierarchyNode(
             String name,
             String detail,
@@ -2573,7 +2578,17 @@ public final class LspManager {
             @Nullable Path file,
             int line,
             int col,
-            Object raw) {
+            Object raw,
+            int calls) {
+
+        public HierarchyNode(
+                String name, String detail, String kindName, @Nullable Path file, int line, int col, Object raw) {
+            this(name, detail, kindName, file, line, col, raw, 1);
+        }
+
+        HierarchyNode withCalls(int calls) {
+            return new HierarchyNode(name, detail, kindName, file, line, col, raw, calls);
+        }
 
         /** The {@code jdt://} class-file URI of a JDK or library node (no file), opened as library source. */
         public @Nullable String libraryUri() {
@@ -2654,11 +2669,12 @@ public final class LspManager {
                 if (e == null && calls != null) {
                     for (var c : calls) {
                         if (c != null && c.getFrom() != null) {
-                            out.add(callNode(c.getFrom(), s.uris()));
+                            out.add(callNode(c.getFrom(), s.uris()).withCalls(callSites(c.getFromRanges())));
                         }
                     }
                 }
-                Platform.runLater(() -> cb.accept(out));
+                List<HierarchyNode> merged = mergeCalls(out);
+                Platform.runLater(() -> cb.accept(merged));
             });
         } else {
             s.outgoingCalls(item).whenComplete((calls, e) -> {
@@ -2666,13 +2682,33 @@ public final class LspManager {
                 if (e == null && calls != null) {
                     for (var c : calls) {
                         if (c != null && c.getTo() != null) {
-                            out.add(callNode(c.getTo(), s.uris()));
+                            out.add(callNode(c.getTo(), s.uris()).withCalls(callSites(c.getFromRanges())));
                         }
                     }
                 }
-                Platform.runLater(() -> cb.accept(out));
+                List<HierarchyNode> merged = mergeCalls(out);
+                Platform.runLater(() -> cb.accept(merged));
             });
         }
+    }
+
+    private static int callSites(@Nullable List<?> ranges) {
+        return ranges == null || ranges.isEmpty() ? 1 : ranges.size();
+    }
+
+    /**
+     * One row per called (or calling) member, its call sites added up, in first-seen order. jdtls lists a member
+     * once per call, so {@code append(String)} called twice was two rows that went to the same place. Pure.
+     */
+    static List<HierarchyNode> mergeCalls(List<HierarchyNode> nodes) {
+        Map<String, HierarchyNode> byTarget = new java.util.LinkedHashMap<>();
+        for (HierarchyNode n : nodes) {
+            String key = n.name() + "\u0000" + n.detail() + "\u0000" + n.file() + "\u0000" + n.libraryUri() + "\u0000"
+                    + n.line() + ":" + n.col();
+            HierarchyNode seen = byTarget.get(key);
+            byTarget.put(key, seen == null ? n : seen.withCalls(seen.calls() + n.calls()));
+        }
+        return List.copyOf(byTarget.values());
     }
 
     /** The type-hierarchy anchor item(s) at a 0-based position, delivered on the FX thread (#682). */
@@ -3624,7 +3660,12 @@ public final class LspManager {
      */
     public void definitionAt(
             Path anchorFile, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
-        requestDefinition(sessionFor(anchorFile), documentUri, line, character, cb);
+        requestDefinition(
+                sessionFor(anchorFile),
+                documentUri != null ? documentUri : anchorFile == null ? null : uri(anchorFile),
+                line,
+                character,
+                cb);
     }
 
     /**

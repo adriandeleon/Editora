@@ -193,7 +193,11 @@ public final class SnippetParser {
             // after a literal '$': "$$this" is how VS Code snippets spell "$this" (there an unknown variable
             // inserts its bare name), so the second dollar is not repeated.
             boolean afterDollar = c.pos > 0 && s.charAt(c.pos - 1) == '$';
-            c.out.append(val != null ? val : afterDollar ? s.substring(n, j) : s.substring(c.pos, j));
+            if (val != null) {
+                appendValue(c, val);
+            } else {
+                c.out.append(afterDollar ? s.substring(n, j) : s.substring(c.pos, j));
+            }
             c.pos = j;
             return true;
         }
@@ -371,10 +375,10 @@ public final class SnippetParser {
         if (j < s.length() && s.charAt(j) == '/') {
             SnippetTransform.Parsed p = SnippetTransform.parseAt(s, j + 1);
             if (p != null) {
-                c.out.append(p.transform().apply(value == null ? "" : value));
+                appendValue(c, p.transform().apply(value == null ? "" : value));
                 c.pos = p.end();
             } else { // malformed: the plain value, and the rest of the construct is dropped rather than typed
-                c.out.append(value == null ? "" : value);
+                appendValue(c, value == null ? "" : value);
                 int close = findBraceClose(s, i);
                 c.pos = close < 0 ? s.length() : close + 1;
             }
@@ -383,7 +387,7 @@ public final class SnippetParser {
         if (j < s.length() && s.charAt(j) == ':') {
             c.pos = j + 1;
             if (value != null && !value.isEmpty()) {
-                c.out.append(value);
+                appendValue(c, value);
                 int close = findBraceClose(s, j); // skip the default
                 c.pos = close < 0 ? s.length() : close + 1;
             } else {
@@ -395,9 +399,32 @@ public final class SnippetParser {
             return true;
         }
         int end = (j < s.length() && s.charAt(j) == '}') ? j + 1 : j;
-        c.out.append(value == null ? s.substring(c.pos, end) : value); // unknown: kept as written, see tryDollar
+        if (value == null) {
+            c.out.append(s.substring(c.pos, end)); // unknown: kept as written, see tryDollar
+        } else {
+            appendValue(c, value);
+        }
         c.pos = end;
         return true;
+    }
+
+    /**
+     * Appends a variable's value; the continuation lines of a multi-line one (a selection, the clipboard) take
+     * the indentation of the body line it sits on, as VS Code adjusts them — {@code "\t$TM_SELECTED_TEXT"}
+     * wrapping two selected lines put the second one level shallower than the first.
+     */
+    private static void appendValue(Ctx c, String value) {
+        if (value.indexOf('\n') < 0) {
+            c.out.append(value);
+            return;
+        }
+        int lineStart = c.out.lastIndexOf("\n") + 1;
+        int k = lineStart;
+        while (k < c.out.length() && (c.out.charAt(k) == ' ' || c.out.charAt(k) == '\t')) {
+            k++;
+        }
+        String indent = c.out.substring(lineStart, k);
+        c.out.append(indent.isEmpty() ? value : value.replace("\n", "\n" + indent));
     }
 
     /** Appends one leaf occurrence's text (value, transformed when {@code transform != null}) and records

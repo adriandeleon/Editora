@@ -517,6 +517,19 @@ class JdtlsClientSettingsProbeTest {
                 assertNotNull(JdtlsRefactor.editOf(again), "D11: asking with the token applies: " + again);
             }
 
+            // B20: Move into a package that does not exist yet: the folder is created, announced, and named by URI.
+            Path fresh = src.resolve("fresh");
+            Files.createDirectories(fresh);
+            s.didChangeWatchedFiles(List.of(new org.eclipse.lsp4j.FileEvent(
+                    fresh.toUri().toString(), org.eclipse.lsp4j.FileChangeType.Created)));
+            JsonObject toFresh = JdtlsRefactor.moveParams("moveResource", useUri, null, null);
+            toFresh.addProperty("destination", fresh.toUri().toString());
+            JsonElement moved = LspManager.asJson(get(s.rawRequest("java/move", toFresh)));
+            record("B20 move to a new package", moved);
+            assertNotNull(JdtlsRefactor.editOf(moved), "B20: jdtls moves into the new folder: " + moved);
+            assertTrue(String.valueOf(moved).contains("\"newText\":\"demo.fresh\""), "B20: the package line follows");
+            assertTrue(String.valueOf(moved).contains("demo/fresh/UseShape.java"), "B20: the file moves into it");
+
             // A12: on a closed "/** */" line (what typing /** now leaves in Java) jdtls offers the Javadoc template.
             String withDoc = APP.replace("    int twice() {", "    /** */\n    int twice() {");
             s.didChange(app, withDoc);

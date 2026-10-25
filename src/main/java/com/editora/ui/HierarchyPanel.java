@@ -204,7 +204,7 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
             String where = n.file() != null
                     ? "  ·  " + n.file().getFileName() + ":" + (n.line() + 1)
                     : n.libraryUri() != null ? "  ·  " + LspManager.classFileTitle(n.libraryUri()) : "";
-            setText(n.name() + detail + where);
+            setText(n.name() + (n.calls() > 1 ? "  ×" + n.calls() : "") + detail + where);
         }
     }
 }

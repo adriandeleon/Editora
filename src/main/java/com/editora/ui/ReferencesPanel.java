@@ -47,14 +47,44 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
      * {@code runs} is the same preview cut into syntax-styled pieces (see {@link #previewRuns}); empty when
      * the line's highlighting is unknown, and the preview then shows as plain text.
      */
-    public record Reference(@Nullable Path file, int line, int col, String preview, List<Run> runs) {
+    public record Reference(@Nullable Path file, int line, int col, String preview, List<Run> runs, boolean write) {
         public Reference {
             runs = runs == null ? List.of() : List.copyOf(runs);
+        }
+
+        public Reference(@Nullable Path file, int line, int col, String preview, List<Run> runs) {
+            this(file, line, col, preview, runs, false);
         }
 
         public Reference(Path file, int line, int col, String preview) {
             this(file, line, col, preview, List.of());
         }
+    }
+
+    /**
+     * Whether the occurrence of a {@code length}-character name at {@code col} of {@code line} (the whole source
+     * line) writes it: assigned ({@code =}, {@code +=} … but not {@code ==}), or incremented or decremented,
+     * before or after. A text rule, as jdtls's references carry no kind; IntelliJ marks these rows the same way
+     * (Java review B6). Pure.
+     */
+    static boolean writes(@Nullable String line, int col, int length) {
+        if (line == null || col < 0 || length <= 0 || col + length > line.length()) {
+            return false;
+        }
+        String before = line.substring(0, col).stripTrailing();
+        if (before.endsWith("++") || before.endsWith("--")) {
+            return true;
+        }
+        String after = line.substring(col + length).stripLeading();
+        if (after.startsWith("++") || after.startsWith("--")) {
+            return true;
+        }
+        for (String op : List.of(">>>=", "<<=", ">>=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=")) {
+            if (after.startsWith(op)) {
+                return true;
+            }
+        }
+        return after.startsWith("=") && !after.startsWith("==");
     }
 
     /** A piece of a preview and the editor syntax classes ({@code keyword}, {@code string}, …) it carries. */
@@ -70,6 +100,8 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
     private long generation;
     /** The folder a file header's location is shown relative to (the project), or null for the full parent. */
     private @Nullable Path base;
+    /** The symbol the list is about, whose length tells a write from a read in a late-filled preview. */
+    private @Nullable String symbol;
 
     public ReferencesPanel(Actions actions) {
         this.actions = actions;
@@ -170,6 +202,7 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
     public void setReferences(List<Reference> refs, @Nullable String symbol, @Nullable Path base) {
         generation++;
         this.base = base;
+        this.symbol = symbol;
         Map<Path, List<Reference>> byFile = new LinkedHashMap<>();
         for (Reference r : refs) {
             byFile.computeIfAbsent(r.file(), k -> new ArrayList<>()).add(r);
@@ -209,9 +242,10 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
 
     /**
      * Fills in the previews of rows that have none — files without a tab, read from disk off the FX thread —
-     * when the list is still {@code forGeneration}. {@code previewOf} answers a row's line, or empty.
+     * when the list is still {@code forGeneration}. {@code lineOf} answers a row's whole source line, or empty;
+     * a row that writes the symbol is marked from it.
      */
-    public void fillPreviews(long forGeneration, java.util.function.Function<Reference, String> previewOf) {
+    public void fillPreviews(long forGeneration, java.util.function.Function<Reference, String> lineOf) {
         if (forGeneration != generation) {
             return;
         }
@@ -221,10 +255,13 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
                 if (r == null || !r.preview().isEmpty()) {
                     continue;
                 }
-                String preview = previewOf.apply(r);
-                if (preview != null && !preview.isEmpty()) {
+                String line = lineOf.apply(r);
+                String preview = line == null ? "" : line.strip();
+                if (!preview.isEmpty()) {
+                    boolean write = symbol != null && writes(line, r.col(), symbol.length());
                     item.setValue(new Row(
-                            item.getValue().file(), new Reference(r.file(), r.line(), r.col(), preview, List.of())));
+                            item.getValue().file(),
+                            new Reference(r.file(), r.line(), r.col(), preview, List.of(), write)));
                 }
             }
         }
@@ -354,7 +391,8 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
             }
             if (row.ref() != null) {
                 Reference r = row.ref();
-                String position = (r.line() + 1) + ":" + (r.col() + 1);
+                String position =
+                        (r.line() + 1) + ":" + (r.col() + 1) + (r.write() ? "  " + tr("references.write") : "");
                 String preview = r.preview() == null ? "" : r.preview().strip();
                 if (preview.isEmpty() || r.runs().isEmpty()) {
                     setText(position + (preview.isEmpty() ? "" : "  " + preview));

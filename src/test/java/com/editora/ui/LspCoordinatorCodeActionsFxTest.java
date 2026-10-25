@@ -437,6 +437,38 @@ class LspCoordinatorCodeActionsFxTest {
         assertTrue(fx.server().executedCommands.isEmpty(), "the refactoring command is not one the server executes");
     }
 
+    /** Move into a package that does not exist yet: typed, its folder created, named by URI (Java review B20). */
+    @Test
+    void moveFileOffersANewPackageAndCreatesItsFolder() throws Exception {
+        Path current = root.resolve("src").resolve("demo");
+        String packages = "{\"destinations\":[{\"displayName\":\"demo\",\"uri\":\"" + current.toUri()
+                + "\",\"path\":" + new com.google.gson.JsonPrimitive(current.toString())
+                + ",\"project\":\"p\",\"isDefaultPackage\":false,\"isParentOfSelectedFile\":true},"
+                + "{\"displayName\":\"demo.other\",\"uri\":\"file:///p/demo/other\",\"path\":\"/p/demo/other\","
+                + "\"project\":\"p\",\"isDefaultPackage\":false,\"isParentOfSelectedFile\":false}]}";
+        offer(refactoring("Move 'A.java'", JdtlsRefactor.MOVE_FILE, null));
+        answers.put("java/getMoveDestinations", json(packages));
+        JsonObject wrapped = new JsonObject();
+        wrapped.add("edit", insertAtTop("package demo.fresh;\n"));
+        answers.put("java/move", wrapped);
+
+        runAction("Move 'A.java'");
+        List<String> rows = FxTestSupport.callOnFx(fx::pickerRows);
+        assertEquals(2, rows.size(), String.valueOf(rows));
+        assertTrue(rows.get(1).contains("label=" + tr("picker.refactor.newPackage")), "the last row types a package");
+        fx.run(() -> fx.choose(1));
+        fx.run(() -> fx.lastPrompt().onAccept().accept("not a package!"));
+        assertEquals(tr("status.lsp.refactorBadPackage", "not a package!"), fx.host.lastError());
+
+        fx.run(() -> fx.lastPrompt().onAccept().accept(" demo.fresh "));
+        Path fresh = root.resolve("src").resolve("demo").resolve("fresh");
+        assertTrue(java.nio.file.Files.isDirectory(fresh), "the package's folder is created under the source root");
+        JsonObject move = lastRawParams();
+        assertEquals("moveResource", move.get("moveKind").getAsString());
+        assertEquals(fresh.toUri().toString(), move.get("destination").getAsString());
+        assertEquals("package demo.fresh;\n" + SOURCE, content());
+    }
+
     @Test
     void aMoveWithNowhereToGoOrRefusedByTheServerIsAnError() throws Exception {
         offer(refactoring("Move 'A.java'", JdtlsRefactor.MOVE_FILE, null));

@@ -82,6 +82,46 @@ public final class RelatedFiles {
      * <p>The suffix must leave something behind: a file actually named {@code Test.java} is a subject in
      * its own right, not a test of the empty string.
      */
+    /**
+     * Where the JUnit test of {@code javaFile} goes when it has none: the same package under the matching
+     * {@code src/test/java} — {@code src/main/java/com/acme/Shape.java} gives
+     * {@code src/test/java/com/acme/ShapeTest.java}. Null for a file that is a test already, is not Java, or is
+     * not under {@code src/main/java} (Java review B21: Related File had nothing to offer a class with no test).
+     */
+    public static java.nio.file.@Nullable Path testFor(java.nio.file.@Nullable Path javaFile) {
+        if (javaFile == null || javaFile.getFileName() == null) {
+            return null;
+        }
+        String name = javaFile.getFileName().toString();
+        if (!name.endsWith(".java") || name.length() <= ".java".length()) {
+            return null;
+        }
+        String base = name.substring(0, name.length() - ".java".length());
+        if (testSubject(base) != null || base.equals("package-info") || base.equals("module-info")) {
+            return null;
+        }
+        java.nio.file.Path parent = javaFile.getParent();
+        // The innermost src/main/java: a module's own, not an outer folder that happens to be named so.
+        for (java.nio.file.Path p = parent; p != null; p = p.getParent()) {
+            java.nio.file.Path main = p.getParent();
+            java.nio.file.Path src = main == null ? null : main.getParent();
+            if (p.getFileName() != null
+                    && p.getFileName().toString().equals("java")
+                    && main != null
+                    && main.getFileName() != null
+                    && main.getFileName().toString().equals("main")
+                    && src != null
+                    && src.getFileName() != null
+                    && src.getFileName().toString().equals("src")) {
+                return src.resolve("test")
+                        .resolve("java")
+                        .resolve(p.relativize(parent))
+                        .resolve(base + "Test.java");
+            }
+        }
+        return null;
+    }
+
     public static @Nullable String testSubject(String base) {
         if (base == null) {
             return null;

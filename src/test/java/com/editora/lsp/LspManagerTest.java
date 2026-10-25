@@ -677,6 +677,11 @@ class LspManagerTest {
             assertEquals(Boolean.TRUE, keys.get("java.referencesCodeLens.enabled"));
             assertEquals("all", keys.get("java.implementationCodeLens"));
             assertEquals("automatic", keys.get("java.configuration.updateBuildConfiguration"), "Java review C1");
+            assertEquals(LspServerSettings.FAVORITE_STATICS, keys.get("java.completion.favoriteStaticMembers"));
+            assertEquals("automatic", keys.get("java.compile.nullAnalysis.mode"));
+            assertEquals(LspServerSettings.NULLABLE, keys.get("java.compile.nullAnalysis.nullable"));
+            assertEquals(LspServerSettings.NONNULL, keys.get("java.compile.nullAnalysis.nonnull"));
+            assertEquals(LspServerSettings.NONNULL_BY_DEFAULT, keys.get("java.compile.nullAnalysis.nonnullbydefault"));
         }
         assertEquals(Boolean.FALSE, flatten("java", init).get("java.autobuild.enabled"), "init keeps autobuild off");
     }
@@ -881,5 +886,20 @@ class LspManagerTest {
         assertTrue(CodeActionKinds.matches("refactor.extract.function", "refactor.extract"));
         assertFalse(CodeActionKinds.matches("refactor.extracted", "refactor.extract"));
         assertEquals(CodeActionKinds.Group.ASSIST, CodeActionKinds.group(""));
+    }
+
+    @Test
+    void repeatedCallsToOneMemberAreOneRowWithTheirCount() {
+        java.nio.file.Path a = java.nio.file.Path.of("/p/A.java");
+        var append = new LspManager.HierarchyNode("append(String)", "StringBuilder", "method", null, 90, 4, "x1");
+        var appendAgain =
+                new LspManager.HierarchyNode("append(String)", "StringBuilder", "method", null, 90, 4, "x2", 2);
+        var report = new LspManager.HierarchyNode("report()", "demo.A", "method", a, 3, 8, "x3");
+        var merged = LspManager.mergeCalls(java.util.List.of(append, report, appendAgain));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("append(String)x3", "report()x1"),
+                merged.stream().map(n -> n.name() + "x" + n.calls()).toList(),
+                "first-seen order; the call sites add up (Java review B19)");
+        org.junit.jupiter.api.Assertions.assertSame(append.raw(), merged.get(0).raw(), "the first item expands");
     }
 }
