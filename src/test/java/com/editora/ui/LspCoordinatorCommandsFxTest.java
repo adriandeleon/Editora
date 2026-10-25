@@ -1796,6 +1796,19 @@ class LspCoordinatorCommandsFxTest {
     }
 
     @Test
+    void aFilesPackageLineIsReadFromDiskWhileItsBufferIsStillEmpty() throws Exception {
+        Path hello =
+                java.nio.file.Files.createDirectories(root.resolve("src/demo")).resolve("Hello.java");
+        java.nio.file.Files.writeString(hello, "/* licence */\npackage demo;\n\nclass Hello {}\n");
+        assertEquals(
+                "demo",
+                com.editora.dap.JavaSourceRootFix.declaredPackage(LspCoordinator.packageSource("", hello)),
+                "the server is chosen before the text loads (third review CT4)");
+        assertEquals("typed", LspCoordinator.packageSource("typed", hello), "a loaded buffer is read as it is");
+        assertEquals("", LspCoordinator.packageSource("", root.resolve("missing.java")));
+    }
+
+    @Test
     void aLooseJavaFileIsRootedWhereItsPackageSays() throws Exception {
         java.nio.file.Files.createDirectories(root.resolve("src/demo"));
         EditorBuffer b = fx.open("src/demo/Hello.java", "package demo;\n\nclass Hello {}\n");

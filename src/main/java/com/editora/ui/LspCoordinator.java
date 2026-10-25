@@ -2692,7 +2692,7 @@ final class LspCoordinator {
             // A loose `package demo;` file in …/src/demo is rooted where its package says, not in its own folder,
             // where jdtls expected the default package and marked every declaration (re-review C6).
             Path implied = com.editora.dap.JavaSourceRootFix.sourceRoot(
-                    file, com.editora.dap.JavaSourceRootFix.declaredPackage(buffer.getContent()));
+                    file, com.editora.dap.JavaSourceRootFix.declaredPackage(packageSource(buffer.getContent(), file)));
             if (implied != null && !com.editora.lsp.RootResolver.isBroadRoot(implied)) {
                 return implied;
             }
@@ -2702,6 +2702,24 @@ final class LspCoordinator {
             return com.editora.lsp.RootResolver.javaBuildRoot(resolved, ops.lspProjectRoot());
         }
         return resolved;
+    }
+
+    /**
+     * The text to read a file's {@code package} line from: the buffer's, or the start of the file on disk while
+     * the buffer is still empty. A file's server is chosen as it opens, before its text has loaded, so the loose
+     * root fix only ever saw an empty buffer outside its own test (third review CT4).
+     */
+    static String packageSource(String content, Path file) {
+        if (!content.isBlank()) {
+            return content;
+        }
+        try (java.io.Reader in = java.nio.file.Files.newBufferedReader(file)) {
+            char[] head = new char[16 * 1024]; // a package line comes before any code, after the licence header
+            int n = in.read(head);
+            return n <= 0 ? "" : new String(head, 0, n);
+        } catch (java.io.IOException | RuntimeException e) {
+            return content;
+        }
     }
 
     /** Library files already put in View mode once (Enable Editing then sticks). */
