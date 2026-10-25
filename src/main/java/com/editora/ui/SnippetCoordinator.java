@@ -35,7 +35,8 @@ final class SnippetCoordinator {
     interface Ops {
         void openPath(Path file);
 
-        void showPicker();
+        /** Shows the snippet picker titled {@code title}; {@code onCancelled} runs if it closes with no choice. */
+        void showPicker(String title, Runnable onCancelled);
 
         /** The active project's root, or null. */
         @Nullable
@@ -138,6 +139,10 @@ final class SnippetCoordinator {
 
     /** Opens the snippet picker for the active buffer's language (plus global snippets). */
     void showPicker() {
+        showPicker(tr("nav.snippets.title"), () -> {});
+    }
+
+    private void showPicker(String title, Runnable onCancelled) {
         EditorBuffer b = host.activeBuffer();
         if (b == null) {
             return;
@@ -152,9 +157,10 @@ final class SnippetCoordinator {
         if (com.editora.snippet.SurroundSnippets.forSelection(all, area.getText(), sel.getStart(), sel.getEnd())
                 .isEmpty()) {
             host.setStatus(tr("status.noSurroundSnippets")); // none would keep the selection
+            onCancelled.run();
             return;
         }
-        ops.showPicker();
+        ops.showPicker(title, onCancelled);
     }
 
     /**
@@ -167,14 +173,22 @@ final class SnippetCoordinator {
             return;
         }
         var area = b.getFocusedArea();
-        if (area.getSelection().getLength() == 0) {
-            String text = area.getText();
-            int caret = area.getCaretPosition();
-            int ls = text.lastIndexOf('\n', caret - 1) + 1;
-            int le = text.indexOf('\n', caret);
+        int anchor = area.getAnchor();
+        int caret = area.getCaretPosition();
+        String text = area.getText();
+        var sel = area.getSelection();
+        boolean multiLine = sel.getLength() > 0
+                && text.substring(sel.getStart(), sel.getEnd()).contains("\n");
+        if (sel.getLength() == 0 || multiLine) {
+            // the caret's line; a selection over several lines takes the whole lines it touches (AT5)
+            int from = sel.getLength() == 0 ? caret : sel.getStart();
+            int to = sel.getLength() == 0 ? caret : Math.max(sel.getStart(), sel.getEnd() - 1);
+            int ls = text.lastIndexOf('\n', from - 1) + 1;
+            int le = text.indexOf('\n', to);
             area.selectRange(ls, le < 0 ? text.length() : le + 1);
         }
-        showPicker();
+        // titled for what it does, and Esc gives back the caret and selection it had (third review ET2)
+        showPicker(tr("nav.snippets.surroundTitle"), () -> area.selectRange(anchor, caret));
     }
 
     /** Opens (creating from a template if needed) the user snippet file for the active language. */

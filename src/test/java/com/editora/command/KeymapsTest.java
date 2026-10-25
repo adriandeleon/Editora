@@ -287,6 +287,10 @@ class KeymapsTest {
         assertEquals("lsp.generate", ideaMac.get("Cmd-n"));
         assertEquals("file.new", ideaMac.get("C-Cmd-n"));
         assertEquals("nav.back", ideaMac.get("Cmd-["));
+        // Insert Live Template's chord gives Insert Snippet its own key back (third review ET5)
+        assertEquals("snippets.insert", ideaMac.get("Cmd-j"));
+        assertEquals(
+                "snippets.insert", load("/com/editora/keymaps/intellij.json").get("C-j"));
 
         for (String id : List.of("cua", "sublime", "vscode")) {
             for (String suffix : List.of(".json", ".mac.json")) {

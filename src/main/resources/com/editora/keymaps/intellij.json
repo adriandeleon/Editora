@@ -111,5 +111,6 @@
   "C-M-S-t": "lsp.refactorThis",
   "C-M-t": "snippets.surround",
   "C-o": "lsp.overrideMethods",
-  "C-M-insert": "file.new"
+  "C-M-insert": "file.new",
+  "C-j": "snippets.insert"
 }

@@ -114,5 +114,6 @@
   "C-enter": "lsp.generate",
   "C-i": "lsp.overrideMethods",
   "Cmd-[": "nav.back",
-  "Cmd-]": "nav.forward"
+  "Cmd-]": "nav.forward",
+  "Cmd-j": "snippets.insert"
 }

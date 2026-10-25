@@ -3677,9 +3677,12 @@ final class LspCoordinator {
         public java.util.concurrent.CompletableFuture<String> quickPick(
                 String serverId, @Nullable String placeHolder, List<PickItem> items) {
             var answer = new java.util.concurrent.CompletableFuture<String>();
+            // The question goes in the title: as the field's placeholder it hid while the field had focus, so a
+            // run of import choices asked nothing anyone could see (third review AT4).
+            String question = placeHolder == null || placeHolder.isBlank() ? null : placeHolder;
             QuickOpen<PickItem> picker = new QuickOpen<>(
-                    serverLabel(serverId),
-                    placeHolder == null || placeHolder.isBlank() ? tr("palette.setting.pick") : placeHolder,
+                    question == null ? serverLabel(serverId) : question + "  ·  " + serverLabel(serverId),
+                    question == null ? tr("palette.setting.pick") : question,
                     () -> items,
                     PickItem::label,
                     item -> item.description() == null ? "" : item.description(),
@@ -5811,7 +5814,10 @@ final class LspCoordinator {
             List<LspManager.CodeActionItem> items =
                     com.editora.lsp.CodeActionKinds.arrange(all, item -> keep.test(serverId, item));
             if (items.isEmpty()) {
-                host.setStatus(loneCommand == null ? tr(emptyKey) : tr(emptyKey, tr("command." + loneCommand)));
+                host.setStatus(
+                        loneCommand == null
+                                ? tr(emptyKey)
+                                : tr(emptyKey, com.editora.editor.MenuTitles.of(tr("command." + loneCommand))));
                 return;
             }
             // Inline Method rewrites every call and deletes the method: it is chosen from its one-row list, never
