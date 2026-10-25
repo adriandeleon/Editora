@@ -237,7 +237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines) and closes a new block when the next `}` belongs to the enclosing one.
 - **Java: Smart Type completion** finds the type behind a qualifier (`String s = user.`), in a ternary branch and
   at a varargs argument.
-- **Java: the project's code style follows `.editorconfig` and formatter-profile changes** without a restart, and the quiet
+- **Java: the project's code style follows `.editorconfig` changes** without a restart (a changed formatter profile is
+  sent under a new name, but in a full window still applies only after Restart Language Servers), and the quiet
   import chooser answers only for the document it was raised for. jdtls's bundle reload no longer logs an error
   on every start.
 - **Java: Clean Java Workspace wins against another window's restart**, and a window joining a ready shared server

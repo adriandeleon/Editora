@@ -72,7 +72,7 @@ public final class JavaProjectSettings {
         Path formatter = formatterProfile(root);
         if (formatter != null) {
             Map<String, Object> settings = new HashMap<>();
-            settings.put("url", formatter.toUri().toString());
+            settings.put("url", contentAddressed(formatter).toUri().toString());
             String profile = profileName(formatter);
             if (profile != null) {
                 settings.put("profile", profile);
@@ -80,6 +80,37 @@ public final class JavaProjectSettings {
             java.put("format", Map.of("settings", settings));
         }
         return java;
+    }
+
+    /**
+     * A copy of {@code profile} named by its content, or {@code profile} itself when it cannot be made. jdtls
+     * reads a formatter profile again only when {@code java.format.settings.url} changes, so an edited profile at
+     * the same path kept formatting the old way until a restart (third review AN5); the same content keeps its
+     * name, so an unchanged profile is not re-read.
+     */
+    static Path contentAddressed(Path profile) {
+        try {
+            byte[] bytes = java.nio.file.Files.readAllBytes(profile);
+            String hash = java.util.HexFormat.of()
+                    .formatHex(
+                            java.security.MessageDigest.getInstance("SHA-256").digest(bytes))
+                    .substring(0, 16);
+            Path dir = Path.of(System.getProperty("java.io.tmpdir"), "editora-formatter-profiles");
+            java.nio.file.Files.createDirectories(dir);
+            Path copy = dir.resolve(hash + ".xml");
+            if (!java.nio.file.Files.exists(copy)) {
+                Path part = java.nio.file.Files.createTempFile(dir, hash, ".part");
+                java.nio.file.Files.write(part, bytes);
+                java.nio.file.Files.move(
+                        part,
+                        copy,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            }
+            return copy;
+        } catch (java.io.IOException | java.security.NoSuchAlgorithmException | RuntimeException e) {
+            return profile;
+        }
     }
 
     /** jdtls 1.63's own import order and on-demand thresholds ({@code Preferences}), for a key a project dropped. */
