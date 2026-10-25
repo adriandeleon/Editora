@@ -1842,7 +1842,8 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(null);
         }
         var params = new org.eclipse.lsp4j.RenameParams(doc(uri), pos, newName);
-        return bounded(server().getTextDocumentService().rename(params)).exceptionally(t -> null);
+        // A refusal fails the future: its message is the reason the user is shown (re-review BN9).
+        return bounded(server().getTextDocumentService().rename(params));
     }
 
     /** Notifies the server of external file changes ({@code workspace/didChangeWatchedFiles}) so its

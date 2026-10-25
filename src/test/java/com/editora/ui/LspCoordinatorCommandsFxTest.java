@@ -261,6 +261,78 @@ class LspCoordinatorCommandsFxTest {
     }
 
     @Test
+    void aLibraryClassFromGoToSymbolOpensOnItsDeclarationNotItsPackageLine() throws Exception {
+        fx.open("A.java", SOURCE);
+        fx.ops.readOnlyOpener = this::libraryBuffer;
+        fx.server().rawResponse = "package java.lang;\n\n/**\n * Strings.\n */\npublic final class String {\n}\n";
+
+        fx.run(() -> fx.coordinator.openLibraryType(new com.editora.lsp.LspManager.WorkspaceSymbolMatch(
+                "String", "java.lang", "class", null, 0, 0, JDT_STRING)));
+
+        EditorBuffer library = fx.ops.readOnlyDocs.get(0).buffer();
+        assertEquals(
+                5,
+                (int) FxTestSupport.callOnFx(() -> library.getFocusedArea().getCurrentParagraph()),
+                "jdtls places it at line 0 (re-review BN7)");
+    }
+
+    @Test
+    void theRightClickMenusOwnCommandsRunTheirActions() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        java.util.function.Consumer<String> run = FxTestSupport.field(b, "lspCommand");
+        fx.run(() -> run.accept("lsp.peekDefinition")); // what it shows is peekDefinition's own tests' business
+        fx.run(() -> run.accept("lsp.refactorThis"));
+        fx.run(() -> run.accept("lsp.generate"));
+        fx.host.statuses.clear();
+        fx.run(() -> run.accept("lsp.unknown"));
+        assertTrue(fx.host.statuses.isEmpty() && fx.host.errors.isEmpty(), "an id it does not know does nothing");
+    }
+
+    @Test
+    void aNewDefaultJdkWhileJdtlsRunsSaysToRestart() throws Exception {
+        fx.open("A.java", SOURCE);
+        fx.host.settings.setMavenJdkHome("/jdk/re-review");
+        fx.run(() -> fx.coordinator.applyOnTypeFormatting());
+        assertEquals(tr("status.lsp.javaJdkChanged"), fx.host.lastStatus(), "re-review CN7");
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.applyOnTypeFormatting());
+        assertTrue(fx.host.statuses.isEmpty(), "unchanged: nothing to say");
+    }
+
+    @Test
+    void aPreviewRowSaysWhereAMovedFileGoesRelativeToTheProject() throws Exception {
+        fx.ops.projectRoot = fx.root;
+        Path from = fx.root.resolve("src/a/Strings.java");
+        Path moved = fx.root.resolve("src/b/Strings.java");
+        String row = fx.coordinator.previewLabel(new com.editora.lsp.RenamePreview.FileChange(from, 1, moved));
+        assertTrue(row.startsWith(Path.of("src/a/Strings.java").toString()), row);
+        assertTrue(
+                row.endsWith(
+                        tr("lsp.rename.movesTo", Path.of("src/b/Strings.java").toString())),
+                "BN8: " + row);
+        String renamed = fx.coordinator.previewLabel(
+                new com.editora.lsp.RenamePreview.FileChange(from, 0, fx.root.resolve("src/a/Text.java")));
+        assertTrue(renamed.endsWith(tr("lsp.rename.movesTo", "Text.java")), renamed);
+
+        Path impl = fx.root.resolve("src/a/Impl.java");
+        var target = new com.editora.lsp.LspManager.Target(impl, 4, 0);
+        assertEquals("Impl.java", LspCoordinator.implementationLabel(target));
+        assertEquals(Path.of("src/a/Impl.java") + ":5", LspCoordinator.implementationDetail(target, fx.root));
+        assertEquals(impl + ":5", LspCoordinator.implementationDetail(target, null));
+    }
+
+    @Test
+    void foldingTheSaveActionsLeavesAHistoryItCannotReadAlone() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setContent("class A {}\n");
+            b.getArea().appendText("// typed\n");
+            LspCoordinator.foldIntoOneUndo(b, "something else entirely");
+            assertEquals("class A {}\n// typed\n", b.getContent(), "steps that do not lead back are redone");
+        });
+    }
+
+    @Test
     void aLibraryDefinitionOpensItsSourceReadOnlyAtTheLine() throws Exception {
         fx.open("A.java", SOURCE);
         fx.ops.readOnlyOpener = this::libraryBuffer;

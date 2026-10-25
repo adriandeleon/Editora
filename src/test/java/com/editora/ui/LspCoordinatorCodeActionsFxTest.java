@@ -899,6 +899,43 @@ class LspCoordinatorCodeActionsFxTest {
     }
 
     @Test
+    void aRenameTheServerRefusesSaysWhy() throws Exception {
+        fx.caret(buffer, 1, 10);
+        fx.run(() -> fx.coordinator.rename());
+        fx.server().failEverything = true;
+        fx.run(() -> fx.lastPrompt().onAccept().accept("total"));
+        assertEquals(
+                tr("status.lsp.renameFailedWhy", "total", "simulated transport failure"),
+                fx.host.lastStatus(),
+                "re-review BN9");
+    }
+
+    @Test
+    void inlineDoesNotOfferMakeStaticAndGenerateListsOnlyGenerators() throws Exception {
+        CodeAction makeStatic = new CodeAction("Make Static");
+        makeStatic.setKind("refactor.inline");
+        CodeAction inline = new CodeAction("Inline Method");
+        inline.setKind("refactor.inline");
+        inline.setEdit(new WorkspaceEdit(
+                Map.of(buffer.getPath().toUri().toString(), List.of(new TextEdit(range(0, 0, 0), "// inlined\n")))));
+        offer(makeStatic, inline);
+        fx.run(() -> fx.coordinator.refactoring("refactor.inline", "lsp.inline"));
+        assertEquals(
+                tr("status.lsp.codeActionApplied", "Inline Method"), fx.host.lastStatus(), "EN6: the lone one runs");
+
+        CodeAction toString = new CodeAction("Generate toString()");
+        toString.setKind("source.generate.toString");
+        CodeAction organize = new CodeAction("Organize imports");
+        organize.setKind("source.organizeImports");
+        offer(toString, organize);
+        fx.run(() -> fx.coordinator.generateActions());
+        assertTrue(
+                fx.host.statuses.stream()
+                        .noneMatch(st -> st.equals(tr("status.lsp.codeActionApplied", "Organize imports"))),
+                "BN6: Organize imports is not a generator");
+    }
+
+    @Test
     void prepareRenameSuppliesThePlaceholderOrRefuses() throws Exception {
         fx.capabilities.setRenameProvider(Either.forRight(new RenameOptions(true)));
         fx.caret(buffer, 1, 10);
