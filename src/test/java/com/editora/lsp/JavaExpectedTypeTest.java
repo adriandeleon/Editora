@@ -137,4 +137,24 @@ class JavaExpectedTypeTest {
         assertNull(at("for (String s : |"), "a for-each colon is no branch");
         assertNull(at("switch (k) {\n    case A:|"), "nor is a label");
     }
+
+    @Test
+    void aTypeVariableIsBoundToWhatTheDeclarationExpects() {
+        String listOf = "    List<String> l = List.of(n";
+        assertEquals("List<String>", JavaExpectedType.declaredTarget(listOf, listOf.length()));
+        assertEquals(List.of("String"), JavaExpectedType.bindTypeVariables(List.of("E"), "List<String>"));
+        assertEquals(
+                List.of("String", "String[]"), JavaExpectedType.bindTypeVariables(List.of("T", "T[]"), "List<String>"));
+        assertEquals(List.of("String"), JavaExpectedType.bindTypeVariables(List.of("T"), "String"), "requireNonNull");
+        assertEquals(List.of("Object"), JavaExpectedType.bindTypeVariables(List.of("E"), null), "take(Set.of(");
+        assertEquals(List.of("Object"), JavaExpectedType.bindTypeVariables(List.of("V"), "Map<String, Integer>"));
+        assertEquals(
+                List.of("int"),
+                JavaExpectedType.bindTypeVariables(List.of("int"), "List<String>"),
+                "a real type stays");
+        String plain = "    take(java.util.Set.of(n";
+        assertEquals(null, JavaExpectedType.declaredTarget(plain, plain.length()));
+        org.junit.jupiter.api.Assertions.assertTrue(JavaExpectedType.isTypeVariable("E"));
+        org.junit.jupiter.api.Assertions.assertFalse(JavaExpectedType.isTypeVariable("Item"));
+    }
 }

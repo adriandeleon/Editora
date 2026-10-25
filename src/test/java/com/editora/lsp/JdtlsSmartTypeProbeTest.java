@@ -56,6 +56,7 @@ class JdtlsSmartTypeProbeTest {
                     Shape shape = c
                     String t = name.t
                     String f = String.format("%d", c
+                    List<String> l = List.of(n
                     return s;
                 }
             }
@@ -173,6 +174,17 @@ class JdtlsSmartTypeProbeTest {
             assertEquals(List.of("Object", "Object[]"), varargs);
             List<String> elements = kept(s, uri, "format(\"%d\", c", varargs);
             assertTrue(elements.contains("count"), "an int is an Object: " + elements);
+
+            // A generic parameter: List.of's E is bound to the declaration's element type (third review AT1).
+            var of = SignatureFormat.resolve(get(s.signatureHelp(uri, position("List.of(n"), null, false, null)));
+            assertNotNull(of, "signature help inside List.of(");
+            List<String> raw = JavaExpectedType.parameterTypes(of.label().substring(of.paramStart(), of.paramEnd()));
+            String line = "                    List<String> l = List.of(n";
+            List<String> bound =
+                    JavaExpectedType.bindTypeVariables(raw, JavaExpectedType.declaredTarget(line, line.length()));
+            assertEquals("String", bound.get(0), raw + " → " + bound);
+            List<String> generic = kept(s, uri, "List.of(n", bound);
+            assertTrue(generic.contains("name"), "not only null: " + generic);
 
             // return: the enclosing method's type.
             assertEquals(

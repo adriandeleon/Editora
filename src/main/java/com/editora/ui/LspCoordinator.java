@@ -8241,7 +8241,11 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.smartTypeUnknown"));
                 b.triggerCompletion();
             } else {
-                showSmartType(b, parameter, expected.afterNew());
+                showSmartType(
+                        b,
+                        com.editora.lsp.JavaExpectedType.bindTypeVariables(
+                                parameter, com.editora.lsp.JavaExpectedType.declaredTarget(area.getText(), caret)),
+                        expected.afterNew());
             }
         });
     }

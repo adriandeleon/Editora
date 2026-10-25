@@ -151,6 +151,55 @@ public final class JavaExpectedType {
         return List.of(type);
     }
 
+    private static final java.util.regex.Pattern TYPE_VARIABLE =
+            java.util.regex.Pattern.compile("[A-Z][A-Z0-9]?(\\[\\])?");
+
+    /** {@code T}, {@code E}, {@code K2}, or such with {@code []}: a generic method's type variable, not a type. */
+    public static boolean isTypeVariable(String type) {
+        return TYPE_VARIABLE.matcher(type.strip()).matches();
+    }
+
+    private static final java.util.regex.Pattern DECLARATION = java.util.regex.Pattern.compile(
+            "^\\s*(?:final\\s+)?([A-Za-z_][\\w.]*(?:<.*>)?(?:\\[\\])*)\\s+[A-Za-z_]\\w*\\s*=[^;=]*$");
+
+    /** The declared type of the variable the caret's line assigns ({@code List<String> l = List.of(}), or null. */
+    public static @Nullable String declaredTarget(String text, int caret) {
+        int from = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
+        var m = DECLARATION.matcher(text.substring(from, Math.min(caret, text.length())));
+        return m.find() ? m.group(1).strip() : null;
+    }
+
+    /**
+     * {@code types} with each type variable bound: to the declared target's single type argument
+     * ({@code List<String> l = List.of(} → {@code String}), to the target itself when it has none
+     * ({@code String r = requireNonNull(} → {@code String}), else to {@code Object}. Signature help names
+     * {@code List.of}'s parameter {@code E}, which no item's type is, so only {@code null} was kept (third
+     * review AT1).
+     */
+    public static List<String> bindTypeVariables(List<String> types, @Nullable String target) {
+        String bound = "Object";
+        if (target != null) {
+            int lt = target.indexOf('<');
+            if (lt < 0) {
+                bound = target;
+            } else if (target.endsWith(">")) {
+                String args = target.substring(lt + 1, target.length() - 1).strip();
+                int depth = 0;
+                boolean single = true;
+                for (char ch : args.toCharArray()) {
+                    depth += ch == '<' ? 1 : ch == '>' ? -1 : 0;
+                    single &= !(ch == ',' && depth == 0);
+                }
+                bound = single && !args.startsWith("?") ? args : "Object";
+            }
+        }
+        java.util.List<String> out = new java.util.ArrayList<>(types.size());
+        for (String t : types) {
+            out.add(isTypeVariable(t) ? (t.endsWith("[]") ? bound + "[]" : bound) : t);
+        }
+        return out;
+    }
+
     /**
      * Where the qualifier ending at the {@code .} at {@code dot} begins: identifiers, calls, indexes, literals
      * and the chain they make ({@code users.get(0).name.}), also across lines.
