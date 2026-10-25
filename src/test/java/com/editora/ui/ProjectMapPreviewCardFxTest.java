@@ -457,7 +457,7 @@ class ProjectMapPreviewCardFxTest {
     }
 
     @Test
-    void theCardIsDraggedByItsTitleBarAndStaysInsideThePanel(@TempDir Path dir) throws Exception {
+    void theCardIsDraggedByItsTitleBarPastThePanelEdges(@TempDir Path dir) throws Exception {
         Path file = Files.writeString(dir.resolve("a.txt"), "x");
         try (Rig r = new Rig()) {
             List<String> calls = new ArrayList<>();
@@ -481,14 +481,17 @@ class ProjectMapPreviewCardFxTest {
                 assertEquals(150, r.card.getLayoutX());
                 assertEquals(130, r.card.getLayoutY());
 
+                // Like a column, the card goes wherever it is dragged: off the canvas in view, too.
                 javafx.event.Event.fireEvent(
                         bar, mouse(MouseEvent.MOUSE_DRAGGED, MouseButton.PRIMARY, 5000, 5000, true));
-                assertEquals(HOST_W - r.card.getWidth() - ProjectMapPreview.EDGE_MARGIN, r.card.getLayoutX());
-                assertEquals(HOST_H - r.card.getHeight() - ProjectMapPreview.EDGE_MARGIN, r.card.getLayoutY());
+                assertEquals(4600, r.card.getLayoutX());
+                assertEquals(4600, r.card.getLayoutY());
                 javafx.event.Event.fireEvent(
                         bar, mouse(MouseEvent.MOUSE_DRAGGED, MouseButton.PRIMARY, -5000, -5000, true));
-                assertEquals(ProjectMapPreview.EDGE_MARGIN, r.card.getLayoutX());
-                assertEquals(ProjectMapPreview.EDGE_MARGIN, r.card.getLayoutY());
+                assertEquals(-5400, r.card.getLayoutX());
+                assertEquals(-5400, r.card.getLayoutY());
+                assertEquals(700, r.card.getWidth(), "a card out of view keeps its size");
+                assertEquals(300, r.card.getHeight());
 
                 // A press that starts on one of the bar's buttons is that button's click, not a drag.
                 double x = r.card.getLayoutX();
@@ -501,7 +504,7 @@ class ProjectMapPreviewCardFxTest {
     }
 
     @Test
-    void theGripResizesTheCardBetweenItsMinimumAndTheRoomThereIs(@TempDir Path dir) throws Exception {
+    void theGripResizesTheCardBetweenItsMinimumAndThePanelSize(@TempDir Path dir) throws Exception {
         Path file = Files.writeString(dir.resolve("a.txt"), "x");
         try (Rig r = new Rig()) {
             FxTestSupport.runOnFx(() -> {
@@ -530,12 +533,15 @@ class ProjectMapPreviewCardFxTest {
 
                 javafx.event.Event.fireEvent(
                         grip, mouse(MouseEvent.MOUSE_DRAGGED, MouseButton.PRIMARY, 9000, 9000, true));
-                assertEquals(HOST_W - 100 - ProjectMapPreview.EDGE_MARGIN, r.card.getWidth(), "up to the panel's edge");
-                assertEquals(HOST_H - 100 - ProjectMapPreview.EDGE_MARGIN, r.card.getHeight());
+                assertEquals(
+                        HOST_W - 2 * ProjectMapPreview.EDGE_MARGIN,
+                        r.card.getWidth(),
+                        "up to the panel's size; past its edge is fine");
+                assertEquals(HOST_H - 2 * ProjectMapPreview.EDGE_MARGIN, r.card.getHeight());
 
                 r.card.constrainTo(500, 400);
                 assertEquals(500 - 2 * ProjectMapPreview.EDGE_MARGIN, r.card.getWidth(), "a shrunken panel shrinks it");
-                assertEquals(ProjectMapPreview.EDGE_MARGIN, r.card.getLayoutX());
+                assertEquals(100, r.card.getLayoutX(), "but does not move it: it stays where it is on the canvas");
                 double width = r.card.getWidth();
                 r.card.constrainTo(0, 0);
                 assertEquals(width, r.card.getWidth(), "a panel with no size yet constrains nothing");

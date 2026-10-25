@@ -290,13 +290,10 @@ final class ProjectMapNotePreview extends StackPane {
             return;
         }
         double margin = ProjectMapPreview.EDGE_MARGIN;
-        double w = ProjectMapPreview.boundedSize(preferredWidth, MIN_WIDTH, width - margin * 2);
-        double h = ProjectMapPreview.boundedSize(preferredHeight, MIN_HEIGHT, height - margin * 2);
-        resizeRelocate(
-                ProjectMapPreview.clamp(getLayoutX(), margin, Math.max(margin, width - w - margin)),
-                ProjectMapPreview.clamp(getLayoutY(), margin, Math.max(margin, height - h - margin)),
-                w,
-                h);
+        // Only the size: the card sits on the canvas, which may have it partly or wholly out of view.
+        resize(
+                ProjectMapPreview.boundedSize(preferredWidth, MIN_WIDTH, width - margin * 2),
+                ProjectMapPreview.boundedSize(preferredHeight, MIN_HEIGHT, height - margin * 2));
     }
 
     void dispose() {
@@ -325,19 +322,12 @@ final class ProjectMapNotePreview extends StackPane {
         event.consume();
     }
 
+    /** Follows the pointer anywhere, as a column header drag does: panning brings the card back into view. */
     private void dragged(MouseEvent event) {
-        if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
+        if (!event.isPrimaryButtonDown()) {
             return;
         }
-        double x = dragLayoutX + event.getScreenX() - dragScreenX;
-        double y = dragLayoutY + event.getScreenY() - dragScreenY;
-        relocate(
-                Math.max(
-                        ProjectMapPreview.EDGE_MARGIN,
-                        Math.min(x, parent.getWidth() - getWidth() - ProjectMapPreview.EDGE_MARGIN)),
-                Math.max(
-                        ProjectMapPreview.EDGE_MARGIN,
-                        Math.min(y, parent.getHeight() - getHeight() - ProjectMapPreview.EDGE_MARGIN)));
+        relocate(dragLayoutX + event.getScreenX() - dragScreenX, dragLayoutY + event.getScreenY() - dragScreenY);
         event.consume();
     }
 
@@ -360,11 +350,11 @@ final class ProjectMapNotePreview extends StackPane {
         preferredWidth = ProjectMapPreview.boundedSize(
                 resizeWidth + event.getScreenX() - resizeScreenX,
                 MIN_WIDTH,
-                Math.max(1, parent.getWidth() - getLayoutX() - margin));
+                Math.max(1, parent.getWidth() - margin * 2));
         preferredHeight = ProjectMapPreview.boundedSize(
                 resizeHeight + event.getScreenY() - resizeScreenY,
                 MIN_HEIGHT,
-                Math.max(1, parent.getHeight() - getLayoutY() - margin));
+                Math.max(1, parent.getHeight() - margin * 2));
         resize(preferredWidth, preferredHeight);
         event.consume();
     }
