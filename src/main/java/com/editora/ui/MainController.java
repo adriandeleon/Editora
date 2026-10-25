@@ -6986,9 +6986,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void installLang(
                         com.editora.install.InstallCatalog.Lang lang,
-                        boolean update,
+                        @Nullable String updateStep,
                         java.util.function.Consumer<Boolean> onDone) {
-                    installCoordinator.installSupport(lang, update, onDone);
+                    installCoordinator.installSupport(lang, updateStep, onDone);
                 }
 
                 @Override

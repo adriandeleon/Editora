@@ -495,6 +495,35 @@ class InstallCoordinatorFxTest {
         }
     }
 
+    /**
+     * Update on a bundle's row (Doctor's {@code updateStep}) installs that step again although the bundle is all
+     * there — and only that step: here jdtls, not the debugger beside it. The running server is stopped first.
+     */
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the tarball is extracted by a POSIX tar; the launcher is jdtls.bat there
+    void updatingOneStepOfABundleReinstallsOnlyThatStep() throws Exception {
+        assumeTrue(onPath("tar"), "tar is not installed");
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "update jdtls");
+            rig.window.lsp.add("java");
+            rig.window.dap.add("java");
+            rig.web.serve(
+                    InstallCatalog.JDTLS_TARBALL_URL,
+                    TestArchives.tar()
+                            .executable("bin/jdtls", "launcher")
+                            .file("plugins/launcher.jar", "jar")
+                            .gz());
+
+            FxTestSupport.runOnFx(() -> rig.coordinator.installSupport(Lang.JAVA, "jdtls", rig.outcomes::add));
+            rig.settle();
+
+            assertEquals(List.of(true), rig.outcomes, String.valueOf(rig.alerts));
+            assertTrue(Files.isExecutable(rig.dir("plugins/lsp/java/bin/jdtls")));
+            assertEquals(List.of(InstallCatalog.JDTLS_TARBALL_URL), rig.web.requests(), "the debugger is not fetched");
+            assertEquals(List.of("java"), rig.window.stopped);
+        }
+    }
+
     /** A failure in the first tool stops the run: no later download, nothing saved, nothing re-detected. */
     @Test
     @DisabledOnOs(OS.WINDOWS)

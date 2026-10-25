@@ -106,14 +106,15 @@ final class InstallCoordinator {
      * already running, or it failed). Used by the editor banner to clear its spinner + hide on success.
      */
     void installSupport(Lang lang, java.util.function.Consumer<Boolean> onResult) {
-        installSupport(lang, false, onResult);
+        installSupport(lang, null, onResult);
     }
 
     /**
-     * As {@link #installSupport(Lang, java.util.function.Consumer)}; {@code update} (Doctor's Update) also
-     * reinstalls the steps whose version Editora pins, whatever the copy there says, so they hold the pinned one.
+     * As {@link #installSupport(Lang, java.util.function.Consumer)}; {@code updateStep} (Doctor's Update) is a step
+     * to install again although it is there — an outdated pinned server, or one a newer release exists for — so it
+     * ends up with the pinned or the latest version.
      */
-    void installSupport(Lang lang, boolean update, java.util.function.Consumer<Boolean> onResult) {
+    void installSupport(Lang lang, @Nullable String updateStep, java.util.function.Consumer<Boolean> onResult) {
         if (installing.contains(lang)) {
             host.setStatus(tr("status.install.inProgress"));
             onResult.accept(false);
@@ -121,8 +122,7 @@ final class InstallCoordinator {
         }
         List<Step> all = InstallCatalog.steps(lang);
         List<Step> missing = all.stream()
-                .filter(s -> !stepInstalled(s)
-                        || (update && PinnedVersions.forStep(s.id()).isPresent()))
+                .filter(s -> !stepInstalled(s) || s.id().equals(updateStep))
                 .toList();
         if (missing.isEmpty()) {
             host.setStatus(tr("status.install.already", langName(lang)));
@@ -453,7 +453,8 @@ final class InstallCoordinator {
     }
 
     /**
-     * The servers that {@code steps} reinstall while they run (an update, or an outdated copy Install replaces):
+     * The servers that {@code steps} reinstall while they run (an update, or an outdated copy Install replaces) —
+     * those of a step whose server is detected ({@link InstallCatalog#serversOfStep}):
      * they are stopped first, so none runs on files being swapped out; the support re-applied afterwards starts
      * them again.
      */
@@ -471,10 +472,7 @@ final class InstallCoordinator {
 
     private List<String> runningServersOf(List<Step> steps) {
         return steps.stream()
-                .map(s -> PinnedVersions.forStep(s.id())
-                        .map(PinnedVersions.Pin::serverId)
-                        .orElse(null))
-                .filter(java.util.Objects::nonNull)
+                .flatMap(s -> InstallCatalog.serversOfStep(s.id()).stream())
                 .filter(ops::lspAvailable)
                 .distinct()
                 .toList();

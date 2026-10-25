@@ -26,11 +26,11 @@ import org.jspecify.annotations.Nullable;
  * Three-way merge of one synced file: what this machine last synced ({@code base}), what it holds now
  * ({@code mine}) and what the repository holds ({@code theirs}). Pure.
  *
- * <p>The merge unit is the entry — one snippet, one abbreviation, one template, one dictionary word — so two
- * machines that each added or removed different entries of the same file both keep their work. An entry
- * changed differently on both sides is a conflict and this machine's version wins; the other version stays in
- * the repository's history. When only one side changed the file, that side's text is taken whole, which
- * keeps a snippet file's comments.
+ * <p>The merge unit is the entry — one snippet, one abbreviation, one template, one dictionary word, one key
+ * binding — so two machines that each added or removed different entries of the same file both keep their
+ * work. An entry changed differently on both sides is a conflict and this machine's version wins; the other
+ * version stays in the repository's history. When only one side changed the file, that side's text is taken
+ * whole, which keeps a snippet file's comments.
  *
  * <p>A file that cannot be read on either side, or that a newer Editora wrote in a format this build does not
  * know, is {@linkplain Skip skipped}: neither copy is touched.
@@ -219,6 +219,17 @@ public final class SyncMerge {
             case SNIPPETS -> {
                 return SnippetFileMerge.apply(mine.text(), fromTheirs);
             }
+            case KEYBINDINGS -> {
+                Map<String, String> entries = new LinkedHashMap<>(mine.entries());
+                fromTheirs.forEach((name, command) -> {
+                    if (command == null) {
+                        entries.remove(name);
+                    } else {
+                        entries.put(name, command);
+                    }
+                });
+                return KeybindingsFile.text(entries);
+            }
             default -> {
                 return mine.text(); // a template is one entry: a file changed on both sides is a conflict
             }
@@ -277,6 +288,15 @@ public final class SyncMerge {
                 }
                 return new Parsed(text, Map.of("", MAPPER.writeValueAsString(tree)), null);
             }
+            case KEYBINDINGS -> {
+                Map<String, String> entries;
+                try {
+                    entries = KeybindingsFile.entries(text);
+                } catch (KeybindingsFile.NewerFormatException e) {
+                    throw new NewerFormatException();
+                }
+                return entries.isEmpty() ? Parsed.ABSENT : new Parsed(KeybindingsFile.text(entries), entries, null);
+            }
             default -> throw new IOException("unknown category");
         }
     }
@@ -297,13 +317,17 @@ public final class SyncMerge {
         return !s.isEmpty() && s.charAt(0) == '﻿' ? s.substring(1) : s;
     }
 
-    /** How an entry is named in a report: the word, the abbreviation, {@code java: sysout}, the template id. */
+    /**
+     * How an entry is named in a report: the word, the abbreviation, {@code java: sysout}, the template id,
+     * {@code emacs: C-x C-s}.
+     */
     private static String label(SyncCategory category, String path, String name) {
         String file = path.substring(path.lastIndexOf('/') + 1);
         String stem = file.contains(".") ? file.substring(0, file.lastIndexOf('.')) : file;
         return switch (category) {
             case SNIPPETS -> stem + ": " + name;
             case TEMPLATES -> stem;
+            case KEYBINDINGS -> KeybindingsFile.label(name);
             default -> name;
         };
     }

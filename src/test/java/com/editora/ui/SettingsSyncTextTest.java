@@ -144,6 +144,7 @@ class SettingsSyncTextTest {
         assertEquals(tr("settings.sync.abbreviations"), SettingsSync.categoryName("ABBREVIATIONS"));
         assertEquals(tr("settings.sync.templates"), SettingsSync.categoryName("TEMPLATES"));
         assertEquals(tr("settings.sync.dictionary"), SettingsSync.categoryName("DICTIONARY"));
+        assertEquals(tr("settings.sync.keybindings"), SettingsSync.categoryName("KEYBINDINGS"));
         assertEquals("SOMETHING_NEWER", SettingsSync.categoryName("SOMETHING_NEWER"), "an unknown one by its name");
     }
 }

@@ -80,20 +80,34 @@ public record DoctorCheck(
     }
 
     /**
-     * Resolved working but older than the version Editora installs and is tested with ({@code PinnedVersions}): a
-     * warning whose {@link Install} action the pane offers as Update, which replaces it with the pinned one.
+     * Resolved but needing its install again — older than the version Editora installs and is tested with
+     * ({@code PinnedVersions}), or installed without what it needs (a TypeScript server with no tsserver): a warning
+     * whose {@link Install} action the pane offers as Update.
      */
     public DoctorCheck outdated(String detail, String tipKey, String... tipArgs) {
-        DoctorCheck warned = warn(detail, tipKey, tipArgs);
+        return withUpdate(warn(detail, tipKey, tipArgs));
+    }
+
+    /**
+     * Resolved healthy, with a newer release of it published than the {@code installed} one ({@code latest}, as
+     * Check for Newer Versions found): OK, but its {@link Install} action is offered as Update, which installs the
+     * latest release.
+     */
+    public DoctorCheck newer(String detail, String installed, String latest) {
+        return withUpdate(
+                withOutcome(DoctorStatus.OK, detail, "doctor.tip.newerAvailable", List.of(installed, latest)));
+    }
+
+    private DoctorCheck withUpdate(DoctorCheck resolved) {
         return new DoctorCheck(
                 id,
                 sectionKey,
                 label,
                 command,
-                warned.status(),
-                warned.detail(),
-                warned.tipKey(),
-                warned.tipArgs(),
+                resolved.status(),
+                resolved.detail(),
+                resolved.tipKey(),
+                resolved.tipArgs(),
                 install,
                 installArg,
                 settingsKey,

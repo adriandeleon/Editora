@@ -492,7 +492,8 @@ public final class SyncEngine {
             # Editora settings sync
 
             This repository is written by the Editora text editor's settings sync. It holds the
-            snippets, abbreviations, templates and personal dictionary words of the computers connected to it.
+            snippets, abbreviations, templates, personal dictionary words and changed key bindings of the
+            computers connected to it.
 
             Editing a file here by hand is fine: every connected computer picks the change up on its next sync.
             Keep this repository private - snippets and templates can contain private text.
