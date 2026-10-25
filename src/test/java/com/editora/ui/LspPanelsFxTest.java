@@ -400,7 +400,7 @@ class LspPanelsFxTest {
         layout(panel);
 
         assertEquals(List.of("go:primary"), loader.asked, "only the anchor's children are fetched up front");
-        assertEquals(tr("hierarchy.summary", 1), FxTestSupport.callOnFx(summary::getText));
+        assertEquals("", FxTestSupport.callOnFx(summary::getText), "no \"1 item\" over the anchor's callers (BT6)");
         assertEquals(
                 List.of("go  —  demo.A  ·  Alpha.java:3", "caller  —  demo.B  ·  beta.java:12", "library"),
                 FxTestSupport.callOnFx(() -> cellTexts(panel, ".tree-cell")),

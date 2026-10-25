@@ -693,8 +693,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public void showPicker() {
-                navigation.snippetPalette.show(stage);
+            public void showPicker(String title, Runnable onCancelled) {
+                navigation.showSnippetPalette(title, onCancelled, stage);
             }
 
             @Override

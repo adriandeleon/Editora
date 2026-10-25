@@ -174,4 +174,38 @@ class ProjectPanelMoveFxTest {
         assertEquals("written since the move", Files.readString(root.resolve("a.txt")));
         assertEquals("moved", Files.readString(sub.resolve("a.txt")), "the moved file stays where it is");
     }
+
+    /**
+     * A drag-move asks the rename participant first, as a tree rename does, so a moved {@code .java} file has
+     * its package line and its users' imports edited by jdtls; Undo Move asks again on the way back; a move the
+     * participant refuses is not made (Java review 3, BT1).
+     */
+    @Test
+    void aDragMoveAndItsUndoGoThroughTheRenameParticipant(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("A.java"), "package x;");
+        Files.writeString(root.resolve("B.java"), "package x;");
+        Path sub = Files.createDirectory(root.resolve("sub"));
+        Panel p = panel(root);
+        List<Rename> asked = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> p.panel().setRenameParticipant((from, to, proceed) -> {
+            asked.add(new Rename(from, to));
+            proceed.accept(!from.getFileName().toString().equals("B.java")); // refuses B
+        }));
+
+        move(p.panel(), List.of(root.resolve("A.java"), root.resolve("B.java")), sub);
+
+        assertEquals(
+                List.of(
+                        new Rename(root.resolve("A.java"), sub.resolve("A.java")),
+                        new Rename(root.resolve("B.java"), sub.resolve("B.java"))),
+                asked);
+        assertTrue(Files.exists(sub.resolve("A.java")));
+        assertTrue(Files.exists(root.resolve("B.java")), "the refused move is not made");
+
+        asked.clear();
+        FxTestSupport.runOnFx(p.panel()::undoLastMove);
+        assertEquals(
+                List.of(new Rename(sub.resolve("A.java"), root.resolve("A.java"))), asked, "asked on the way back too");
+        assertTrue(Files.exists(root.resolve("A.java")));
+    }
 }

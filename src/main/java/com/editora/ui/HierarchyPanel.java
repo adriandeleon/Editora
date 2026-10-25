@@ -145,7 +145,8 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
             root.getChildren().add(lazyItem(n));
         }
         tree.setRoot(root);
-        summary.setText(tr("hierarchy.summary", roots.size()));
+        // One root is the symbol asked about: "1 item" over its three callers counted the wrong thing (BT6)
+        summary.setText(roots.size() > 1 ? tr("hierarchy.summary", roots.size()) : "");
         if (!root.getChildren().isEmpty()) {
             root.getChildren().get(0).setExpanded(true); // fetch the anchor's children right away
             tree.getSelectionModel().select(0);

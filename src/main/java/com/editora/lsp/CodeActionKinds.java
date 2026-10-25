@@ -43,6 +43,11 @@ public final class CodeActionKinds {
         return Group.ASSIST;
     }
 
+    /** jdtls's Inline Method (English only, as all its titles): it rewrites every call and deletes the method. */
+    public static boolean isInlineMethod(String title) {
+        return title.strip().toLowerCase(java.util.Locale.ROOT).startsWith("inline method");
+    }
+
     /** jdtls's Make Static, which it offers with kind {@code refactor.inline}; its titles are English only. */
     public static boolean isMakeStatic(String title) {
         return title.strip().toLowerCase(java.util.Locale.ROOT).startsWith("make static");

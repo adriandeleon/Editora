@@ -44,6 +44,16 @@ public final class MultiSelectPicker {
      * Wide enough for the longest row, within {@link #MIN_WIDTH}–{@link #MAX_WIDTH}: a rename preview's paths
      * were cut off at a fixed 520 px (Java review B10).
      */
+    /** The card width that fits {@code rows} as styled (checkbox, gaps, scrollbar and padding), within bounds. */
+    static double fittedWidth(List<CheckBox> rows, double current) {
+        double widest = 0;
+        for (CheckBox row : rows) {
+            row.applyCss();
+            widest = Math.max(widest, row.prefWidth(-1));
+        }
+        return widest <= 0 ? current : Math.max(current, Math.min(MAX_WIDTH, widest + 64));
+    }
+
     static <T> double cardWidth(List<Item<T>> items) {
         double widest = 0;
         for (Item<T> it : items) {
@@ -142,5 +152,8 @@ public final class MultiSelectPicker {
             }
         });
         host.show(card, () -> list.requestFocus(), () -> {});
+        // The first width measured the labels in the default font; the rows are drawn in the app's, wider one, so
+        // paths were still cut off (third review B10). Once styled, fit the card to the rows as drawn.
+        javafx.application.Platform.runLater(() -> card.setPrefWidth(fittedWidth(boxes, card.getPrefWidth())));
     }
 }

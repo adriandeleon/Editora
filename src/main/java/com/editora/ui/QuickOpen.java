@@ -79,6 +79,8 @@ public class QuickOpen<T> {
     private @Nullable Consumer<T> onPreview;
 
     private @Nullable Runnable onPreviewCancelled;
+
+    private final Label header = new Label();
     /** Whether this showing ended in a choice — so cancelling restores and choosing does not. */
     private boolean chosen;
 
@@ -153,6 +155,16 @@ public class QuickOpen<T> {
      * user moved to. Firing on open would yank the editor somewhere the instant the picker appears, before
      * any intent has been expressed.
      */
+    /** The title over the list: one picker serves two commands (Insert Snippet, Surround With — ET2). */
+    public void setTitle(String title) {
+        header.setText(title);
+    }
+
+    /** Runs {@code onCancelled} when the picker is dismissed without choosing (the caret put back — ET2). */
+    public void setOnCancelled(Runnable onCancelled) {
+        this.onPreviewCancelled = onCancelled;
+    }
+
     public void setPreview(Consumer<T> onPreview, Runnable onCancelled) {
         this.onPreview = onPreview;
         this.onPreviewCancelled = onCancelled;
@@ -209,7 +221,7 @@ public class QuickOpen<T> {
         // Emacs caret movement + basic editing in the query field. Registered after onKey so the picker's own
         // list navigation (C-n/C-p/C-g) consumes those chords first and the keymap yields to it (isConsumed).
         com.editora.command.TextInputKeymap.installShared(input);
-        Label header = new Label(title);
+        header.setText(title);
         header.getStyleClass().add("palette-title");
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, header, input, list, hint);

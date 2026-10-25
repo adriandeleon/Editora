@@ -2485,30 +2485,60 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             onStatus.accept(tr("project.moveCancelled"));
             return;
         }
-        List<Move> done = new ArrayList<>();
+        List<Move> planned = new ArrayList<>();
         for (Path src : movable) {
-            Path dest = targetDir.resolve(src.getFileName());
-            try {
-                Files.move(src, dest);
-            } catch (IOException ex) {
-                showError(tr("project.moveError", src.getFileName(), ex.getMessage()));
-                skipped++;
-                continue;
+            planned.add(new Move(src, targetDir.resolve(src.getFileName())));
+        }
+        int alreadySkipped = skipped;
+        moveThrough(planned, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
+            int moved = done.size();
+            if (moved > 0) {
+                lastMove = List.copyOf(done);
+                markLocalChange();
+                refreshAfterChange();
             }
-            mapView.pathRenamed(src, dest);
-            onFileRenamed.accept(src, dest); // update the open buffer(s) for a moved file / under a moved dir
-            done.add(new Move(src, dest));
+            int notMoved = alreadySkipped + failed;
+            onStatus.accept(
+                    notMoved == 0
+                            ? tr("project.moved", moved, targetDir.getFileName())
+                            : tr("project.movedSome", moved, notMoved));
+        });
+    }
+
+    /**
+     * Moves {@code moves[i…]} one after another, each through the rename participant first: a {@code .java} file
+     * or package folder moved by drag-and-drop is a Move refactoring, its package line and the imports of its
+     * users edited by jdtls, as a tree rename is (Java review 3, BT1). The next move waits for the last one's
+     * edits, which must land before jdtls is asked again. {@code finish} gets the moves made and the count that
+     * failed or were refused.
+     */
+    private void moveThrough(
+            List<Move> moves,
+            int i,
+            List<Move> done,
+            int[] failed,
+            java.util.function.BiConsumer<List<Move>, Integer> finish) {
+        if (i >= moves.size()) {
+            finish.accept(done, failed[0]);
+            return;
         }
-        int moved = done.size();
-        if (moved > 0) {
-            lastMove = List.copyOf(done);
-            markLocalChange();
-            refreshAfterChange();
-        }
-        onStatus.accept(
-                skipped == 0
-                        ? tr("project.moved", moved, targetDir.getFileName())
-                        : tr("project.movedSome", moved, skipped));
+        Move m = moves.get(i);
+        renameParticipant.willRename(m.from(), m.to(), ok -> {
+            if (!ok) {
+                failed[0]++;
+            } else {
+                try {
+                    Files.move(m.from(), m.to());
+                    mapView.pathRenamed(m.from(), m.to());
+                    onFileRenamed.accept(m.from(), m.to()); // the open buffer(s) of a moved file / under a moved dir
+                    done.add(m);
+                } catch (IOException ex) {
+                    showError(tr("project.moveError", m.from().getFileName(), ex.getMessage()));
+                    failed[0]++;
+                }
+            }
+            moveThrough(moves, i + 1, done, failed, finish);
+        });
     }
 
     /** Whether there is a drag-move to take back (the tree menu offers "Undo Move" while there is). */
@@ -2528,8 +2558,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (moves.isEmpty()) {
             return;
         }
-        int restored = 0;
         int stuck = 0;
+        List<Move> back = new ArrayList<>();
         for (int i = moves.size() - 1; i >= 0; i--) {
             Move move = moves.get(i);
             Path parent = move.from().getParent();
@@ -2538,24 +2568,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     || parent == null
                     || !Files.isDirectory(parent)) {
                 stuck++;
-                continue;
+            } else {
+                back.add(new Move(move.to(), move.from())); // moved back as moved: jdtls edits the packages back
             }
-            try {
-                Files.move(move.to(), move.from());
-            } catch (IOException ex) {
-                stuck++;
-                continue;
+        }
+        int alreadyStuck = stuck;
+        moveThrough(back, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
+            if (!done.isEmpty()) {
+                markLocalChange();
+                refreshAfterChange();
             }
-            mapView.pathRenamed(move.to(), move.from());
-            onFileRenamed.accept(move.to(), move.from());
-            restored++;
-        }
-        if (restored > 0) {
-            markLocalChange();
-            refreshAfterChange();
-        }
-        onStatus.accept(
-                stuck == 0 ? tr("project.moveUndone", restored) : tr("project.moveUndoneSome", restored, stuck));
+            int notBack = alreadyStuck + failed;
+            onStatus.accept(
+                    notBack == 0
+                            ? tr("project.moveUndone", done.size())
+                            : tr("project.moveUndoneSome", done.size(), notBack));
+        });
     }
 
     /** The files to act on for a cell action: the whole multi-selection when {@code clicked} is part of it,

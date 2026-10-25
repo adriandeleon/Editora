@@ -216,11 +216,23 @@ class CompleteStatementTest {
         String in = "class A {\n    void f() {\n        if (ready) {|\n    }\n}\n";
         assertEquals("class A {\n    void f() {\n        if (ready) {\n            |\n        }\n    }\n}\n", java(in));
         String lambda = "    void f() {\n        names.forEach(n -> {|\n    }\n";
-        assertEquals("    void f() {\n        names.forEach(n -> {\n            |\n        }\n    }\n", java(lambda));
+        assertEquals(
+                "    void f() {\n        names.forEach(n -> {\n            |\n        });\n    }\n",
+                java(lambda),
+                "a block inside a call closes the call too (third review AN9)");
     }
 
     @Test
     void anAnnotationsOpenParenthesisIsClosed() {
         assertEquals("    @SuppressWarnings(\"x\")\n    |", java("    @SuppressWarnings(\"x\"|"));
+    }
+
+    @Test
+    void aHalfTypedLineIsNotContinuedIntoTheNextStatement() {
+        // third review AT3: the caret stayed below the next statement, which was taken for a continuation
+        assertEquals(
+                "    String s = name.\n    |\n    int other = 1;\n",
+                java("    String s = name.|\n    int other = 1;\n"));
+        assertEquals("    int x = a +\n    |\n    return x;\n", java("    int x = a +|\n    return x;\n"));
     }
 }

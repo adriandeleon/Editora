@@ -407,9 +407,15 @@ jdtls tracks a file only through `didOpen` or `workspace/didChangeWatchedFiles`.
 writes a file with no tab (`WorkspaceFileOperations` saves it straight to disk), a file the edit creates,
 and a Project-tree rename are each announced with `didChangeWatchedFiles` (`LspCoordinator.resourceEvents`,
 `afterWorkspaceEdit`); without it the next rename skipped the file and left it broken. A Project-tree rename of
-a `.java` file goes through `workspace/willRenameFiles` first (`LspCoordinator.willRenameFile`): the edit the
+a `.java` file, and each file of a drag-move (`ProjectPanel.moveThrough`, also Undo Move), goes through
+`workspace/willRenameFiles` first (`LspCoordinator.willRenameFile`); jdtls rewrites a moved file's package only
+for a target package it knows: the edit the
 server answers is applied and saved, and the move is recorded with it, so Undo Last Refactoring moves the
-file back and reverts the edit together. A folder rename is applied but not undoable as one.
+file back and reverts the edit together. A folder rename is applied but not undoable as one. Saving a Java file
+the server does not have open (a deferred tab) sends `didChangeWatchedFiles` CHANGED. A formatter profile is
+pushed as a content-addressed copy (`JavaProjectSettings.contentAddressed`), since jdtls reads
+`java.format.settings.url` again only when it changes. `LspManager.holdForInstall` stops a server in every window
+while Doctor's Update swaps its folder, and no window starts it until `releaseAfterInstall`.
 
 ### jdtls preferences
 
@@ -422,7 +428,7 @@ reads dotted keys through the nested maps, so `description: true` resolved to no
 sent), `inlayHints.parameterNames.enabled = all` with `suppressWhenSameNameNumbered` plus
 `variableTypes` and `parameterTypes` (hints are requested only while the setting is on, and
 `InlayHintFilter` applies Editora's literals/all mode), and `symbols.includeSourceMethodDeclarations`.
-`completion.filteredTypes` is the Settings value `javaExcludedTypes` (vscode-java's list plus `java.awt.*` by
+`completion.filteredTypes` is the Settings value `javaExcludedTypes` (vscode-java's list, which includes `java.awt.*`, by
 default). jdtls applies it to completion and quick fixes only, so `SymbolRanking` drops the same library types
 from Go to Symbol and Search Everywhere, ranks an exact name first and a library class nested in another last.
 `java.completion.importOrder`, the star thresholds and the formatter profile come from the project

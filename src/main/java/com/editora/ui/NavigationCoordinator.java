@@ -256,6 +256,13 @@ final class NavigationCoordinator {
         fileFinder = new FileFinder(this::finderStartDir, this::findFileChosen);
     }
 
+    /** Shows the snippet picker under {@code title}; {@code onCancelled} runs when it closes with no choice. */
+    void showSnippetPalette(String title, Runnable onCancelled, javafx.stage.Window owner) {
+        snippetPalette.setTitle(title);
+        snippetPalette.setOnCancelled(onCancelled);
+        snippetPalette.show(owner);
+    }
+
     /** Start directory for the keyboard file finder: the active file's folder, else this window's project, else home. */
     @Nullable
     Path finderStartDir() {

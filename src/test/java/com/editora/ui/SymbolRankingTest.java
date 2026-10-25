@@ -27,16 +27,29 @@ class SymbolRankingTest {
         var cow = library("CopyOnWriteArrayList", "java.util.concurrent");
         var exact = library("ArrayList", "java.util");
         List<WorkspaceSymbolMatch> ranked = WorkspaceSymbolPopup.rankByName(List.of(nested, cow, exact), "ArrayList");
-        assertEquals(List.of(exact, cow, nested), ranked);
+        assertEquals(List.of(exact, nested, cow), ranked, "an exact nested name above a partial match (BT3)");
         assertTrue(SymbolRanking.score(library("Assertions", "org.junit.jupiter.api"), "Assertions")
                 > SymbolRanking.score(library("AssertionStatusDirectives", "java.lang"), "Assertions"));
         assertTrue(SymbolRanking.nestedLibraryType(nested));
         assertFalse(SymbolRanking.nestedLibraryType(exact));
         assertFalse(SymbolRanking.nestedLibraryType(project("Shape")), "the project's own types are not demoted");
-        assertEquals(
-                SymbolRanking.score(library("ArrayList", "java.util"), "Arrays.ArrayList"),
-                com.editora.search.FuzzyMatch.scoreOf("ArrayList", "Arrays.ArrayList"),
+        assertTrue(
+                SymbolRanking.score(nested, "Arrays.ArrayList") > SymbolRanking.score(exact, "Arrays.ArrayList"),
                 "a dotted query asks for the nested one");
+    }
+
+    @Test
+    void aDottedQueryFindsTheNestedTypeFirst() {
+        var entry = library("Entry", "java.util.Map");
+        var entrySet = library("EntrySet", "java.util.IdentityHashMap");
+        var shaded = library("Entry", "org.junit.shadow.parsers.concurrent");
+        assertEquals(List.of(entry, entrySet), WorkspaceSymbolPopup.rankByName(List.of(entrySet, entry), "Map.Entry"));
+        List<WorkspaceSymbolMatch> forEntry =
+                WorkspaceSymbolPopup.rankByName(List.of(entrySet, entry, shaded), "Entry");
+        assertTrue(
+                forEntry.indexOf(entry) < forEntry.indexOf(entrySet), "Map.Entry above a partial match: " + forEntry);
+        assertEquals("Map.Entry", SymbolRanking.qualifiedTail(entry));
+        assertEquals("Entry", SymbolRanking.qualifiedTail(shaded));
     }
 
     @Test

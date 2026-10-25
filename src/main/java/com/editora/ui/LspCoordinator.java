@@ -904,7 +904,10 @@ final class LspCoordinator {
         forEachCrashedBuffer(serverId, root, b -> {
             b.setLspActive(false);
             clearDiagnostics(lspPath(b));
-            syncBufferWhenShown(b);
+            // At once, shown or not: deferred, a background tab's problems left the Problems window until it was
+            // next shown (third review CT9). The server is already starting for the other window.
+            deferredLsp.remove(b);
+            syncBuffer(b);
         });
         updateStatusBar();
     }
@@ -1226,7 +1229,17 @@ final class LspCoordinator {
             for (LspDiagnostic d : listed) {
                 if (d.severity().ordinal() <= LspDiagnostic.Severity.WARNING.ordinal()
                         && announcedProjectProblems.add(key + "\u0000" + d.message())) {
-                    host.setError(tr("status.lsp.projectProblem", PathDisplay.fileName(file), d.message()));
+                    // the project's folder name, not "pom.xml"; a warning is not said as an error (CT8)
+                    Path project = java.nio.file.Files.isDirectory(file) ? file : file.getParent();
+                    String text = tr(
+                            "status.lsp.projectProblem",
+                            project == null ? PathDisplay.fileName(file) : PathDisplay.fileName(project),
+                            d.message());
+                    if (d.severity() == LspDiagnostic.Severity.ERROR) {
+                        host.setError(text);
+                    } else {
+                        host.setStatus(text);
+                    }
                     break;
                 }
             }
@@ -2679,7 +2692,7 @@ final class LspCoordinator {
             // A loose `package demo;` file in …/src/demo is rooted where its package says, not in its own folder,
             // where jdtls expected the default package and marked every declaration (re-review C6).
             Path implied = com.editora.dap.JavaSourceRootFix.sourceRoot(
-                    file, com.editora.dap.JavaSourceRootFix.declaredPackage(buffer.getContent()));
+                    file, com.editora.dap.JavaSourceRootFix.declaredPackage(packageSource(buffer.getContent(), file)));
             if (implied != null && !com.editora.lsp.RootResolver.isBroadRoot(implied)) {
                 return implied;
             }
@@ -2689,6 +2702,24 @@ final class LspCoordinator {
             return com.editora.lsp.RootResolver.javaBuildRoot(resolved, ops.lspProjectRoot());
         }
         return resolved;
+    }
+
+    /**
+     * The text to read a file's {@code package} line from: the buffer's, or the start of the file on disk while
+     * the buffer is still empty. A file's server is chosen as it opens, before its text has loaded, so the loose
+     * root fix only ever saw an empty buffer outside its own test (third review CT4).
+     */
+    static String packageSource(String content, Path file) {
+        if (!content.isBlank()) {
+            return content;
+        }
+        try (java.io.Reader in = java.nio.file.Files.newBufferedReader(file)) {
+            char[] head = new char[16 * 1024]; // a package line comes before any code, after the licence header
+            int n = in.read(head);
+            return n <= 0 ? "" : new String(head, 0, n);
+        } catch (java.io.IOException | RuntimeException e) {
+            return content;
+        }
     }
 
     /** Library files already put in View mode once (Enable Editing then sticks). */
@@ -3188,23 +3219,33 @@ final class LspCoordinator {
         return settle;
     }
 
-    /** Servers whose project did not import cleanly since the last restart or reload: never "ready" over that. */
+    /** Servers whose project did not import since the last restart, reload or clean: never "ready" over that. */
     private final java.util.Set<String> importFailed = new java.util.HashSet<>();
+
+    /** Servers whose project imported with build problems (a missing dependency): ready, but said so. */
+    private final java.util.Set<String> importWarned = new java.util.HashSet<>();
 
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
         if (line != null) {
             String server = line.serverId() == null ? "LSP" : serverProgram(line.serverId());
+            String id = String.valueOf(line.serverId());
             if (line.problem()) {
-                // The reason is in the server's log only (a Gradle exception), and Problems often has nothing
-                // to show: say the reason here, never jdtls's raw "WARNING" (re-review CN2, CN9).
-                importFailed.add(String.valueOf(line.serverId()));
+                // jdtls says WARNING both for an import that threw (a Gradle build that does not run: it logs the
+                // exception) and for one that worked with build problems (a missing Maven artifact: nothing
+                // logged). Only the first is "did not import" (re-review CN2, third review CT2); its reason is in
+                // the log only, so it is said here.
                 String reason = lspManager.lastServerError(line.serverId());
-                host.setError(
-                        reason == null
-                                ? tr("status.lsp.importProblem", server)
-                                : tr("status.lsp.importProblemWhy", server, reason));
-            } else if (line.ready() && importFailed.contains(String.valueOf(line.serverId()))) {
+                if (reason == null) {
+                    importWarned.add(id);
+                    host.setStatus(tr("status.lsp.importProblem", server));
+                } else {
+                    importFailed.add(id);
+                    host.setError(tr("status.lsp.importProblemWhy", server, reason.replaceFirst("[.\\s]+$", "")));
+                }
+            } else if (line.ready() && importFailed.contains(id)) {
                 host.setError(tr("status.lsp.readyImportFailed", server)); // not "Loaded and ready" over it
+            } else if (line.ready() && importWarned.remove(id)) {
+                host.setStatus(tr("status.lsp.readyWithProblems", server));
             } else {
                 host.setStatus(
                         line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
@@ -3228,6 +3269,7 @@ final class LspCoordinator {
         startBlocked.clear();
         failingServers.clear();
         importFailed.clear();
+        importWarned.clear();
         statusNarrator.forget(null);
         lspManager.restartAll(); // a Java server shared with another window restarts for both
         clearAllDiagnostics();
@@ -3258,6 +3300,11 @@ final class LspCoordinator {
                 pendingProjectRecheck = path;
                 projectRecheck.playFromStart();
             }
+        } else if (path != null && path.toString().endsWith(".java") && lspManager.hasJavaSession(path)) {
+            // A tab jdtls never opened (restored, or open across a restart, and not shown since): without this the
+            // server kept its old text, and the next rename skipped the file (Java review 3, BT2).
+            lspManager.notifyWatchedFiles(java.util.List.of(
+                    new com.editora.lsp.LspManager.WatchedFile(path, com.editora.lsp.LspManager.WatchedKind.CHANGED)));
         }
     }
 
@@ -3630,9 +3677,12 @@ final class LspCoordinator {
         public java.util.concurrent.CompletableFuture<String> quickPick(
                 String serverId, @Nullable String placeHolder, List<PickItem> items) {
             var answer = new java.util.concurrent.CompletableFuture<String>();
+            // The question goes in the title: as the field's placeholder it hid while the field had focus, so a
+            // run of import choices asked nothing anyone could see (third review AT4).
+            String question = placeHolder == null || placeHolder.isBlank() ? null : placeHolder;
             QuickOpen<PickItem> picker = new QuickOpen<>(
-                    serverLabel(serverId),
-                    placeHolder == null || placeHolder.isBlank() ? tr("palette.setting.pick") : placeHolder,
+                    question == null ? serverLabel(serverId) : question + "  ·  " + serverLabel(serverId),
+                    question == null ? tr("palette.setting.pick") : question,
                     () -> items,
                     PickItem::label,
                     item -> item.description() == null ? "" : item.description(),
@@ -3836,7 +3886,7 @@ final class LspCoordinator {
                             superChosen,
                             ok -> reportEdit(
                                     ok,
-                                    tr("status.lsp.codeActionApplied", item.title()),
+                                    tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                                     tr("status.lsp.codeActionFailed", item.title())));
                 };
                 if (candidates.isEmpty()) {
@@ -3907,7 +3957,7 @@ final class LspCoordinator {
             }
             reportEdit(
                     ok,
-                    tr("status.lsp.codeActionApplied", item.title()),
+                    tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                     tr("status.lsp.codeActionFailed", item.title()));
         });
     }
@@ -4046,7 +4096,7 @@ final class LspCoordinator {
                 item.title(),
                 tr("picker.refactor.initializeIn"),
                 scopes,
-                LspCoordinator::scopeLabel,
+                LspCoordinator::initializeScopeLabel, // jdtls's scope names, translated (third review DN5)
                 s -> "",
                 then::accept);
     }
@@ -4066,6 +4116,12 @@ final class LspCoordinator {
      * of an edit; the user sees them and the move is applied only if they continue.
      */
     private void applyJdtlsMove(Path path, LspManager.CodeActionItem item, com.google.gson.JsonObject params) {
+        applyJdtlsMove(path, item, params, () -> {});
+    }
+
+    /** As above; {@code onApplied} runs once the move is applied. */
+    private void applyJdtlsMove(
+            Path path, LspManager.CodeActionItem item, com.google.gson.JsonObject params, Runnable onApplied) {
         beginReportedEdit();
         lspManager.jdtlsApplyEdit(
                 path,
@@ -4086,9 +4142,12 @@ final class LspCoordinator {
                         host.setError(refused);
                         return;
                     }
+                    if (ok) {
+                        onApplied.run();
+                    }
                     reportEdit(
                             ok,
-                            tr("status.lsp.codeActionApplied", item.title()),
+                            tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                             tr("status.lsp.codeActionFailed", item.title()));
                 });
     }
@@ -4191,7 +4250,12 @@ final class LspCoordinator {
             lspManager.notifyWatchedFiles(List.of(new LspManager.WatchedFile(folder, LspManager.WatchedKind.CREATED)));
             com.google.gson.JsonObject params = JdtlsRefactor.moveParams("moveResource", source, null, null);
             params.addProperty("destination", folder.toUri().toString());
-            applyJdtlsMove(path, item, params);
+            AppliedEdit before = lastApplied;
+            applyJdtlsMove(path, item, params, () -> {
+                if (lastApplied != null && lastApplied != before) {
+                    newPackageFolders.put(lastApplied, new Path[] {folder, root}); // undo takes the folder back too
+                }
+            });
         });
     }
 
@@ -4270,7 +4334,14 @@ final class LspCoordinator {
     private void extractInterface(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
         lspManager.jdtlsRequest(path, "java/checkExtractInterfaceStatus", request.params(), status -> {
             List<JdtlsGenerate.Candidate> members = JdtlsRefactor.interfaceMembers(status);
-            List<JdtlsRefactor.Destination> packages = JdtlsRefactor.interfacePackages(status);
+            List<JdtlsRefactor.Destination> offered = JdtlsRefactor.interfacePackages(status);
+            List<JdtlsRefactor.Destination> mainOnly = JdtlsRefactor.inTestRoot(path.toString())
+                    ? offered
+                    : offered.stream()
+                            .filter(d -> !JdtlsRefactor.inTestRoot(d.detail()))
+                            .toList();
+            // main code's interface is not offered src/test/java, as Move already does (third review BT4)
+            List<JdtlsRefactor.Destination> packages = mainOnly.isEmpty() ? offered : mainOnly;
             if (members.isEmpty() || packages.isEmpty()) {
                 host.setStatus(tr("status.lsp.generateNothing", item.title()));
                 return;
@@ -4339,7 +4410,7 @@ final class LspCoordinator {
                             }
                             reportEdit(
                                     ok,
-                                    tr("status.lsp.codeActionApplied", item.title()),
+                                    tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                                     tr("status.lsp.codeActionFailed", item.title()));
                         });
             });
@@ -4466,11 +4537,20 @@ final class LspCoordinator {
      * notification, so the only observable result is fresh diagnostics arriving.
      */
     void reloadProject() {
+        boolean failed = importFailed.remove(LspServerRegistry.JAVA_SERVER_ID);
         importFailed.clear(); // the import runs again: its outcome is said afresh
+        importWarned.clear();
         EditorBuffer b = host.activeBuffer(); // a pom.xml tab counts, whichever server (if any) edits it
         Path path = b == null ? null : lspPath(b);
         if (path == null) {
             host.setStatus(tr("status.lsp.unavailable"));
+            return;
+        }
+        if (failed && lspManager.hasJavaSession(path)) {
+            // An import that threw made no Java project, so java/projectConfigurationUpdate updated nothing:
+            // Problems emptied and no file was checked again (third review CT1). Start the server over instead.
+            restartJavaServer(path);
+            host.setStatus(tr("status.lsp.projectReimporting"));
             return;
         }
         if (lspManager.reloadProjectConfiguration(path)) {
@@ -4511,10 +4591,67 @@ final class LspCoordinator {
         correctedSourceRoots.clear();
         builtAfterImport.clear(); // the fresh import builds again
         announcedProjectProblems.clear();
+        importFailed.clear(); // the fresh import says its own outcome (third review CT3)
+        importWarned.clear();
+        java.util.List<EditorBuffer> java = javaBuffersOf(path);
+        clearProjectProblems(); // the dead server's "project:1" entries would stay for good
         lspManager.cleanJavaWorkspace(path, deleted -> {
             host.setStatus(tr(deleted ? "status.lsp.javaWorkspaceCleaned" : "status.lsp.javaWorkspaceKept"));
-            applyGating(); // reopen the project's files: the server starts again on a fresh workspace
+            applyGating();
+            // Reopen the project's files now, not when each tab is next shown: run from a pom.xml or build.gradle
+            // tab, nothing started the server again (third review CT5).
+            reopenNow(java);
         });
+    }
+
+    /** Restarts {@code path}'s Java server in this window, its open Java files reopened on the new one. */
+    private void restartJavaServer(Path path) {
+        java.util.List<EditorBuffer> java = javaBuffersOf(path);
+        statusNarrator.forget(LspServerRegistry.JAVA_SERVER_ID);
+        clearProjectProblems();
+        stopServer(LspServerRegistry.JAVA_SERVER_ID);
+        applyGating();
+        reopenNow(java);
+    }
+
+    /**
+     * The open Java files of {@code path}'s project: those its Java server has open, else, from a build file,
+     * the {@code .java} files under the build file's folder.
+     */
+    private java.util.List<EditorBuffer> javaBuffersOf(Path path) {
+        java.util.List<EditorBuffer> out = new java.util.ArrayList<>();
+        Path dir = path.getParent();
+        host.forEachBuffer(b -> {
+            Path p = lspPath(b);
+            if (p == null) {
+                return;
+            }
+            boolean served = LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(p));
+            boolean underBuildFile = dir != null && p.toString().endsWith(".java") && p.startsWith(dir);
+            if (served || underBuildFile) {
+                out.add(b);
+            }
+        });
+        return out;
+    }
+
+    /** Syncs {@code buffers} at once, shown or not: their server starts (or they join it) now. */
+    private void reopenNow(java.util.List<EditorBuffer> buffers) {
+        for (EditorBuffer b : buffers) {
+            if (!b.isDisposed()) {
+                deferredLsp.remove(b);
+                syncBuffer(b);
+            }
+        }
+    }
+
+    /** Drops the Problems entries of projects (rather than files): their server is going away. */
+    private void clearProjectProblems() {
+        for (Path p : java.util.List.copyOf(problems.keySet())) {
+            if (LspManager.projectLevel(p) && bufferForLspPath(p) == null) {
+                clearDiagnostics(p);
+            }
+        }
     }
 
     /** Java roots already offered a Lombok download in this window. */
@@ -5063,12 +5200,18 @@ final class LspCoordinator {
                     // The References window is keyed by file and a library target has none: list them all in a
                     // picker instead of opening one unexplained class (re-review BN4).
                     java.nio.file.Path base = ops.lspProjectRoot();
+                    List<String> excluded = lspManager.javaFilteredTypes();
+                    List<LspManager.Target> listed = targets.stream() // no sun.awt.util.IdentityArrayList (BN4)
+                            .filter(t -> t.file() != null
+                                    || !SymbolRanking.excluded(
+                                            libraryPackage(t) + "." + implementationLabel(t), excluded))
+                            .toList();
                     pickOne(
                             symbol == null
                                     ? tr("picker.implementations.title")
                                     : tr("picker.implementations.of", symbol),
                             tr("picker.implementations.prompt"),
-                            targets,
+                            listed.isEmpty() ? targets : listed,
                             t -> implementationLabel(t),
                             t -> implementationDetail(t, base),
                             chosen -> openTarget(anchor, chosen));
@@ -5081,7 +5224,7 @@ final class LspCoordinator {
             return t.file().getFileName().toString();
         }
         String title = LspManager.classFileTitle(t.classFileUri());
-        return title.endsWith(".class") ? title.substring(0, title.length() - ".class".length()) : title;
+        return title.replaceFirst("\\.(class|java)$", "");
     }
 
     /** Where it is: the library class's package, or the file relative to the project, with its line. */
@@ -5093,6 +5236,14 @@ final class LspCoordinator {
                     : file.toString();
             return where + ":" + (t.line() + 1);
         }
+        // the line tells apart the classes one file holds: AbstractList's SubList, its iterators (third review BN4)
+        String pkg = libraryPackage(t);
+        String line = tr("structure.line", t.line() + 1);
+        return pkg.isEmpty() ? line : pkg + "  ·  " + line;
+    }
+
+    /** The package of a library target's class file ({@code java.util}), or "". */
+    static String libraryPackage(LspManager.Target t) {
         String uri = t.classFileUri() == null ? "" : t.classFileUri();
         int q = uri.indexOf('?');
         String path = q >= 0 ? uri.substring(0, q) : uri;
@@ -5684,10 +5835,18 @@ final class LspCoordinator {
             List<LspManager.CodeActionItem> items =
                     com.editora.lsp.CodeActionKinds.arrange(all, item -> keep.test(serverId, item));
             if (items.isEmpty()) {
-                host.setStatus(loneCommand == null ? tr(emptyKey) : tr(emptyKey, tr("command." + loneCommand)));
+                host.setStatus(
+                        loneCommand == null
+                                ? tr(emptyKey)
+                                : tr(emptyKey, com.editora.editor.MenuTitles.of(tr("command." + loneCommand))));
                 return;
             }
-            if (loneCommand != null && items.size() == 1) {
+            // Inline Method rewrites every call and deletes the method: it is chosen from its one-row list, never
+            // run by the chord alone (third review ET1).
+            if (loneCommand != null
+                    && items.size() == 1
+                    && !com.editora.lsp.CodeActionKinds.isInlineMethod(
+                            items.get(0).title())) {
                 applyChosenAction(path, items, codeActionRow(items.get(0)));
                 return;
             }
@@ -5698,6 +5857,11 @@ final class LspCoordinator {
                     items.stream().map(LspCoordinator::codeActionRow).toList(),
                     chosen -> applyChosenAction(path, items, chosen));
         });
+    }
+
+    /** An action's title without the "…" of a row that asks more: "Applied: Move 'Strings'" (BT7). */
+    static String bareTitle(String title) {
+        return title.strip().replaceFirst("(\\.\\.\\.|…)$", "");
     }
 
     /** The popup's row for {@code item}: its title, and a word for its group instead of the raw LSP kind (A17). */
@@ -5845,13 +6009,15 @@ final class LspCoordinator {
                 applied,
                 ok -> reportEdit(
                         ok,
-                        tr("status.lsp.codeActionApplied", applied.title()),
-                        lspManager.lastCodeActionFailure() == null // the server's reason when it gave one (BN9)
-                                ? tr("status.lsp.codeActionFailed", applied.title())
-                                : tr(
+                        tr("status.lsp.codeActionApplied", bareTitle(applied.title())),
+                        lspManager.lastCodeActionFailure() != null // the server's reason when it gave one (BN9)
+                                ? tr(
                                         "status.lsp.codeActionFailedWhy",
                                         applied.title(),
-                                        lspManager.lastCodeActionFailure())));
+                                        lspManager.lastCodeActionFailure())
+                                : lspManager.lastCodeActionEmpty() // resolved to no change at all (ET1)
+                                        ? tr("status.lsp.codeActionNoChange", applied.title())
+                                        : tr("status.lsp.codeActionFailed", applied.title())));
     }
 
     /**
@@ -7093,6 +7259,8 @@ final class LspCoordinator {
         lspManager.notifyWatchedFiles(java.util.List.of(
                 new com.editora.lsp.LspManager.WatchedFile(from, com.editora.lsp.LspManager.WatchedKind.DELETED),
                 new com.editora.lsp.LspManager.WatchedFile(to, com.editora.lsp.LspManager.WatchedKind.CREATED)));
+        // the saves above said "Saved /the/whole/path"; the rename is what happened (BT7)
+        host.setStatus(tr("status.renamedTo", PathDisplay.fileName(to)));
     }
 
     /** What the user chose when Undo met a buffer the last refactoring edited. */
@@ -7231,9 +7399,33 @@ final class LspCoordinator {
             undoingEdit = false;
             if (ok) {
                 lastApplied = null;
+                Path[] made = newPackageFolders.remove(edit);
+                if (made != null) {
+                    removeEmptyFolders(made[0], made[1]); // Move ▸ New package's folder goes with it (BT4)
+                }
             }
             reportEdit(ok, tr("status.lsp.refactoringUndone", files), tr("status.lsp.refactoringUndoFailed"));
         });
+    }
+
+    /** Folders Move ▸ New package created, by the refactoring that filled them, with their source root. */
+    private final Map<AppliedEdit, Path[]> newPackageFolders = new java.util.IdentityHashMap<>();
+
+    /** Deletes {@code folder} and its parents up to (not including) {@code root} while they are empty. */
+    static void removeEmptyFolders(Path folder, Path root) {
+        @Nullable Path at = folder.toAbsolutePath().normalize();
+        Path stop = root.toAbsolutePath().normalize();
+        while (at != null && at.startsWith(stop) && !at.equals(stop)) {
+            try (var entries = java.nio.file.Files.list(at)) {
+                if (entries.findAny().isPresent()) {
+                    return;
+                }
+                java.nio.file.Files.delete(at);
+            } catch (java.io.IOException | RuntimeException e) {
+                return;
+            }
+            at = at.getParent();
+        }
     }
 
     /** The position just past the end of {@code text}, in LSP's UTF-16 units. */
@@ -8121,7 +8313,11 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.smartTypeUnknown"));
                 b.triggerCompletion();
             } else {
-                showSmartType(b, parameter, expected.afterNew());
+                showSmartType(
+                        b,
+                        com.editora.lsp.JavaExpectedType.bindTypeVariables(
+                                parameter, com.editora.lsp.JavaExpectedType.declaredTarget(area.getText(), caret)),
+                        expected.afterNew());
             }
         });
     }

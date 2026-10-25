@@ -335,7 +335,7 @@ public class Settings {
     /** Types jdtls never offers in completion or imports ({@code java.completion.filteredTypes}). */
     private java.util.List<String> javaExcludedTypes = new java.util.ArrayList<>(DEFAULT_JAVA_EXCLUDED_TYPES);
 
-    /** vscode-java's list with {@code java.awt.*} (for {@code List}): {@code LspServerSettings.FILTERED_TYPES}. */
+    /** vscode-java's default list, {@code java.awt.*} (for {@code List}) included: {@code LspServerSettings.FILTERED_TYPES}. */
     public static final java.util.List<String> DEFAULT_JAVA_EXCLUDED_TYPES =
             java.util.List.of("java.awt.*", "com.sun.*", "sun.*", "jdk.*", "org.graalvm.*", "io.micrometer.shaded.*");
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */

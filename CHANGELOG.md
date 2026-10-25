@@ -27,8 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lists only the snippets that wrap a selection and puts the selection inside the chosen one; with nothing
   selected it wraps the current line.
 - **Java: Excluded types** (Settings ▸ Code Completion ▸ Language server features): the packages and types
-  completion, auto-import, Go to Symbol and Search Everywhere leave out. The default is vscode-java's list plus
-  `java.awt.*`. Settings schema 144→145, additive.
+  completion, auto-import, Go to Symbol and Search Everywhere leave out. The default is vscode-java's list,
+  which includes `java.awt.*`. Settings schema 144→145, additive.
 - **Go to Implementation lists library implementations.** When an implementation lives in the JDK or a dependency,
   every implementation is listed in a picker with its package, instead of one being opened with no word of the
   others.
@@ -176,6 +176,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **IntelliJ keymap: Ctrl+J / ⌘J is Insert Snippet** (IntelliJ's Insert Live Template), which lost its only chord
+  when Ctrl+Alt+T became Surround With.
+- **Menus drop the palette's category prefixes** ("Edit:", "Go:", "Snippet:") where the rest still says what the
+  row does, as they already dropped "LSP:".
+- **Completion matches camel humps first:** `vO` puts `valueOf` first and `st` finds `toString`; two typed
+  letters no longer match letters scattered through a name.
+
 - **IntelliJ keymap (macOS): ⌘N is Generate in the editor**, as in IntelliJ, and New in the Project tree; New File
   moves to ⌃⌘N. ⌃I is Override/Implement Methods, and ⌘[ / ⌘] go back and forward. On Linux and Windows,
   Alt+Insert is New in the Project tree too.
@@ -241,6 +248,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java: dragging a `.java` file or package in the Project tree moves the class**: its package line and the
+  imports of its users are updated, and Undo Move takes both back. It used to move the file only, and the project
+  stopped compiling.
+- **Java: a file open in a tab the server has not opened yet** (restored from the last session, or open across a
+  restart) is announced when you save it, so the next rename finds it.
+- **Java: after a failed Gradle import, Reload Project Configuration imports again.** It restarts the server
+  instead of updating a project that does not exist. A Maven project with an unresolved dependency is "loaded, but
+  the build has problems", not "did not import"; Clean Java Workspace forgets the failure; run from a `pom.xml` or
+  `build.gradle` tab it starts the server again; and the reason no longer carries a stray " PM".
+- **Java: "Initialize the field in" shows its choices translated**, not as message keys.
+- **Java: Inline Method is chosen from its list**, not run by Ctrl+Alt+N alone, and an action the server cannot
+  apply says so.
+- **Java: a loose `package demo;` file is rooted where its package says** as it opens, not only after its text has
+  loaded: no wrong-package errors and no extra server per package folder.
+- **Java: Smart Type completion fills a generic parameter** (`List.of(`, `Optional.of(`, `requireNonNull(`) from
+  the declaration's type instead of offering only `null`.
+- **Java: Go to Symbol ranks `Map.Entry` sensibly**: nested library types sit below an exact top-level match, not
+  below everything, and "Map.Entry" finds it first.
+- **Java: the implementation picker names each row's line**, and leaves out the excluded types.
+- **Surround With is titled for what it does**, Esc gives back the caret and selection, and a selection over
+  several lines wraps the lines it touches.
+- **Complete Statement** closes a call around a lambda block (`});`) and leaves a half-typed line where it is.
+- **Doctor's Update stops the server in every window** while it replaces the install.
+- **Smaller fixes:** the rename and move preview fits its rows; the import chooser asks its question in its title;
+  Problems groups project problems under "Project"; the Hierarchy window's count; status lines after a tree rename
+  and a Move; plurals in "the rename left 1 new error"; Portuguese terms.
+
 - **Java: refactorings no longer leave the language server behind.** A file a rename or move wrote without a tab
   is announced to jdtls, so the next rename finds it; a file it creates is announced too.
 - **Java: renaming or moving a file in the Project tree saves and undoes as one refactoring.** The class is renamed
@@ -251,7 +285,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines) and closes a new block when the next `}` belongs to the enclosing one.
 - **Java: Smart Type completion** finds the type behind a qualifier (`String s = user.`), in a ternary branch and
   at a varargs argument.
-- **Java: the project's code style follows `.editorconfig` and formatter changes** without a restart, and the quiet
+- **Java: the project's code style follows `.editorconfig` changes** without a restart (a changed formatter profile is
+  sent under a new name, but in a full window still applies only after Restart Language Servers), and the quiet
   import chooser answers only for the document it was raised for. jdtls's bundle reload no longer logs an error
   on every start.
 - **Java: Clean Java Workspace wins against another window's restart**, and a window joining a ready shared server
@@ -327,9 +362,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listed only `additionalTextEdits`, so the popup showed the return type and nothing else.
 - **Java: signature help shows the method's Javadoc.** The setting was sent as `java.signatureHelp.description`;
   jdtls reads `java.signatureHelp.description.enabled`.
-- **Java: completion and import quick fixes no longer offer JDK internals** (`sun.*`, `com.sun.*`, `jdk.*`),
-  nor `java.awt.*`, `java.beans.*`, `Hashtable` or `Vector`. jdtls installs its type filter only when the client
-  sends one; Editora now sends vscode-java's list.
+- **Java: completion and import quick fixes no longer offer JDK internals** (`sun.*`, `com.sun.*`, `jdk.*`) or
+  `java.awt.*`. jdtls installs its type filter only when the client sends one; Editora now sends vscode-java's list,
+  editable as Excluded types.
 - **Java: inlay hints follow the "all arguments" mode and show inferred types.** jdtls filtered parameter-name
   hints to literals on its own, so the "all" mode changed nothing; it now sends every name and Editora's filter
   applies the mode. `var` declarations and lambda parameters get their inferred type, hints for numbered names

@@ -70,10 +70,26 @@ class JavaProjectSettingsTest {
                         "settings",
                         Map.of(
                                 "url",
-                                root.resolve("build-tools/style.xml").toUri().toString(),
+                                JavaProjectSettings.contentAddressed(root.resolve("build-tools/style.xml"))
+                                        .toUri()
+                                        .toString(),
                                 "profile",
                                 "Acme")),
                 java.get("format"));
+    }
+
+    /** An edited profile gets a new URL, which is what makes jdtls read it again (third review AN5). */
+    @Test
+    void anEditedProfileIsSentUnderANewNameAndAnUnchangedOneUnderTheSame() throws Exception {
+        Path profile = root.resolve("eclipse-formatter.xml");
+        Files.writeString(profile, PROFILE);
+        Path first = JavaProjectSettings.contentAddressed(profile);
+        assertEquals(first, JavaProjectSettings.contentAddressed(profile), "unchanged: the same name");
+        assertEquals(PROFILE, Files.readString(first));
+        Files.writeString(profile, PROFILE.replace("Acme", "Acme2"));
+        Path second = JavaProjectSettings.contentAddressed(profile);
+        assertTrue(!second.equals(first), "edited: a new name");
+        assertTrue(Files.readString(second).contains("Acme2"));
     }
 
     @Test

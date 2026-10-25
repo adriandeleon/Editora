@@ -2904,7 +2904,9 @@ final class LanguageServerSession implements LanguageClient {
                 .findFirst()
                 .orElse("")
                 .strip();
-        line = line.replaceFirst("^[A-Z][a-z]{2} \\d{1,2}, \\d{4},? \\d{1,2}:\\d{2}:\\d{2}\\s*(?:[AP]M)?\\s*", "");
+        // JDK 20+ puts a narrow no-break space (U+202F) before AM/PM, which \\s does not match (third review CT7)
+        line = line.replaceFirst(
+                "^[A-Z][a-z]{2} \\d{1,2}, \\d{4},? \\d{1,2}:\\d{2}:\\d{2}[\\s\\u202F]*(?:[AP]M)?[\\s\\u202F]*", "");
         return line.length() > 300 ? line.substring(0, 300) + "…" : line;
     }
 

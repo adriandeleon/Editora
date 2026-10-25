@@ -219,4 +219,16 @@ class MultiSelectPickerFxTest {
             assertEquals(1000, MultiSelectPicker.cardWidth(List.of(new Item<>(path.repeat(5), true, 1))), 0.01);
         });
     }
+
+    @Test
+    void aStyledRowWiderThanTheFirstGuessWidensTheCard() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            CheckBox row = new CheckBox("x".repeat(80));
+            row.setStyle("-fx-font-size: 20px;");
+            new Scene(new StackPane(row));
+            double fitted = MultiSelectPicker.fittedWidth(List.of(row), 520);
+            assertTrue(fitted > 520 && fitted <= 1000, "measured as drawn (third review B10): " + fitted);
+            assertEquals(700, MultiSelectPicker.fittedWidth(List.of(new CheckBox("a")), 700), 0.01, "never narrower");
+        });
+    }
 }

@@ -217,6 +217,21 @@ class JdtlsProjectStyleProbeTest {
             String formatted = applied(APP, edits);
             System.out.println("PROBE formatted = " + formatted.replace("\n", "\\n"));
             assertTrue(formatted.contains("long go()\n    {"), "the profile's next-line method brace");
+            // The profile edited and saved: the push names a new copy, and jdtls formats the new way with no
+            // restart (third review AN5; an unchanged URL was never read again).
+            Path style = project.resolve("style.xml");
+            Files.writeString(style, Files.readString(style).replace("value=\"next_line\"", "value=\"end_of_line\""));
+            s.refreshProjectSettings();
+            String reformatted = "";
+            int attempts = 0;
+            for (int attempt = 0; attempt < 20 && !reformatted.contains("long go() {"); attempt++) {
+                attempts++;
+                Thread.sleep(300);
+                reformatted = applied(APP, get(s.formatting(app, new org.eclipse.lsp4j.FormattingOptions(4, true))));
+            }
+            System.out.println("PROBE reformatted = " + reformatted.replace("\n", "\\n"));
+            System.out.println("PROBE reformat attempts = " + attempts);
+            assertTrue(reformatted.contains("long go() {"), "the edited profile's end-of-line brace");
             // Clean-ups (java/cleanup) run the actions pushed in java.cleanup.actions.
             String shape = src.resolve("Shape.java").toUri().toString();
             s.didOpen(shape, "java", SHAPE);

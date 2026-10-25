@@ -461,6 +461,17 @@ class JdtlsClientSettingsProbeTest {
             var renamed = get(s.willRenameFiles(helper, assistant));
             record("B15 willRenameFiles", renamed);
             assertTrue(String.valueOf(renamed).contains("Assistant"), "B15: the class is renamed with its file");
+            // BT1 (third review): dragging Helper.java into another package folder is a move, and jdtls rewrites its
+            // package line. The target package must be one jdtls knows: a folder it has not heard of gets no edit.
+            Files.createDirectories(src.resolve("sub"));
+            Files.writeString(src.resolve("sub/Marker.java"), "package demo.sub;\n\nclass Marker {}\n");
+            s.didChangeWatchedFiles(List.of(new org.eclipse.lsp4j.FileEvent(
+                    src.resolve("sub/Marker.java").toUri().toString(), org.eclipse.lsp4j.FileChangeType.Created)));
+            Thread.sleep(2000);
+            var movedHelper = get(s.willRenameFiles(
+                    helper, src.resolve("sub/Helper.java").toUri().toString()));
+            record("BT1 willRenameFiles move", movedHelper);
+            assertTrue(String.valueOf(movedHelper).contains("demo.sub"), "BT1: a moved file's package line follows it");
 
             // C7: with autobuild off, an error in an unopened file caused by an edit is only found by a build, and
             // only an incremental build after the fix clears it (what Editora now runs after a save while

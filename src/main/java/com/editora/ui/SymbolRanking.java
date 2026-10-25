@@ -16,20 +16,35 @@ final class SymbolRanking {
     /** Added to a name that is the whole query: {@code Assertions} above {@code AssertionStatusDirectives}. */
     static final int EXACT_NAME_BONUS = 1000;
 
-    /** Taken from a library class nested in another ({@code Arrays.ArrayList}) unless the query has a dot. */
-    static final int NESTED_LIBRARY_PENALTY = 2 * EXACT_NAME_BONUS; // below every other match, exact or not
+    /**
+     * Taken from a library class nested in another ({@code Arrays.ArrayList}) unless the query has a dot. Half the
+     * exact bonus: an exact nested name ({@code Map.Entry} for "Entry") stays above partial matches but below an
+     * exact top-level one. Burying every nested type below everything hid {@code Map.Entry} (third review BT3).
+     */
+    static final int NESTED_LIBRARY_PENALTY = EXACT_NAME_BONUS / 2;
 
     private SymbolRanking() {}
 
     /** {@code name}'s score for {@code query}, or {@link FuzzyMatch#NO_SCORE}; pure. */
     static int score(WorkspaceSymbolMatch m, String query) {
+        if (query.contains(".")) {
+            // "Map.Entry": matched, and exact, against the enclosing type and the name together (BT3)
+            String qualified = qualifiedTail(m);
+            int score = FuzzyMatch.scoreOf(qualified, query);
+            return score == FuzzyMatch.NO_SCORE ? score : score + exactNameBonus(qualified, query);
+        }
         int score = FuzzyMatch.scoreOf(m.name(), query);
         if (score == FuzzyMatch.NO_SCORE) {
             return score;
         }
-        return score
-                + exactNameBonus(m.name(), query)
-                - (nestedLibraryType(m) && !query.contains(".") ? NESTED_LIBRARY_PENALTY : 0);
+        return score + exactNameBonus(m.name(), query) - (nestedLibraryType(m) ? NESTED_LIBRARY_PENALTY : 0);
+    }
+
+    /** {@code Map.Entry} for {@code Entry} in {@code java.util.Map}; {@code List} for one in a package. */
+    static String qualifiedTail(WorkspaceSymbolMatch m) {
+        String c = m.container();
+        String last = c.substring(c.lastIndexOf('.') + 1);
+        return !last.isEmpty() && Character.isUpperCase(last.charAt(0)) ? last + "." + m.name() : m.name();
     }
 
     /** {@link #EXACT_NAME_BONUS} when {@code name} is the query (case aside), else 0. */

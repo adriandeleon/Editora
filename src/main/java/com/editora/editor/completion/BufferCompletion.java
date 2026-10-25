@@ -1827,7 +1827,7 @@ public final class BufferCompletion {
                                                 a.getParagraph(a.getCurrentParagraph())
                                                         .getText()
                                                         .substring(0, a.getCaretColumn())))
-                                == 3)) {
+                                == CompletionEngine.NO_MATCH_TIER)) {
             hideCompletion();
             return false;
         }

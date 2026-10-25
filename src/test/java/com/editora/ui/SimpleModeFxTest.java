@@ -125,8 +125,8 @@ class SimpleModeFxTest {
                             .flatMap(m -> m.getItems().stream())
                             .anyMatch(i -> !MainMenuBar.displayTextOf(i).isBlank()
                                     && MainMenuBar.displayTextOf(i)
-                                            .startsWith(
-                                                    com.editora.i18n.Messages.tr("command.view.toggleSimpleMode")))),
+                                            .startsWith(com.editora.editor.MenuTitles.of(
+                                                    com.editora.i18n.Messages.tr("command.view.toggleSimpleMode"))))),
                     "the Simple-mode menu offers the way back out");
         } finally {
             FxTestSupport.runOnFx(() -> {
