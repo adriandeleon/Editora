@@ -49,7 +49,8 @@ class DebugExceptionTogglesFxTest {
     }
 
     /** The Run menu's item for {@code title}, as the user reads it once the menu has opened. */
-    private String runMenuItem(MainController c, String title) throws Exception {
+    private String runMenuItem(MainController c, String paletteTitle) throws Exception {
+        String title = com.editora.editor.MenuTitles.of(paletteTitle); // a menu row drops "Debug:" (ET3)
         return FxTestSupport.callOnFx(() -> {
             MainMenuBar menuBar = FxTestSupport.field(c, "menuBar");
             menuBar.refreshEnablement(); // what opening a menu does
