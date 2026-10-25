@@ -3886,7 +3886,7 @@ final class LspCoordinator {
                             superChosen,
                             ok -> reportEdit(
                                     ok,
-                                    tr("status.lsp.codeActionApplied", item.title()),
+                                    tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                                     tr("status.lsp.codeActionFailed", item.title())));
                 };
                 if (candidates.isEmpty()) {
@@ -3957,7 +3957,7 @@ final class LspCoordinator {
             }
             reportEdit(
                     ok,
-                    tr("status.lsp.codeActionApplied", item.title()),
+                    tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                     tr("status.lsp.codeActionFailed", item.title()));
         });
     }
@@ -4116,6 +4116,12 @@ final class LspCoordinator {
      * of an edit; the user sees them and the move is applied only if they continue.
      */
     private void applyJdtlsMove(Path path, LspManager.CodeActionItem item, com.google.gson.JsonObject params) {
+        applyJdtlsMove(path, item, params, () -> {});
+    }
+
+    /** As above; {@code onApplied} runs once the move is applied. */
+    private void applyJdtlsMove(
+            Path path, LspManager.CodeActionItem item, com.google.gson.JsonObject params, Runnable onApplied) {
         beginReportedEdit();
         lspManager.jdtlsApplyEdit(
                 path,
@@ -4136,9 +4142,12 @@ final class LspCoordinator {
                         host.setError(refused);
                         return;
                     }
+                    if (ok) {
+                        onApplied.run();
+                    }
                     reportEdit(
                             ok,
-                            tr("status.lsp.codeActionApplied", item.title()),
+                            tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                             tr("status.lsp.codeActionFailed", item.title()));
                 });
     }
@@ -4241,7 +4250,12 @@ final class LspCoordinator {
             lspManager.notifyWatchedFiles(List.of(new LspManager.WatchedFile(folder, LspManager.WatchedKind.CREATED)));
             com.google.gson.JsonObject params = JdtlsRefactor.moveParams("moveResource", source, null, null);
             params.addProperty("destination", folder.toUri().toString());
-            applyJdtlsMove(path, item, params);
+            AppliedEdit before = lastApplied;
+            applyJdtlsMove(path, item, params, () -> {
+                if (lastApplied != null && lastApplied != before) {
+                    newPackageFolders.put(lastApplied, new Path[] {folder, root}); // undo takes the folder back too
+                }
+            });
         });
     }
 
@@ -4320,7 +4334,14 @@ final class LspCoordinator {
     private void extractInterface(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
         lspManager.jdtlsRequest(path, "java/checkExtractInterfaceStatus", request.params(), status -> {
             List<JdtlsGenerate.Candidate> members = JdtlsRefactor.interfaceMembers(status);
-            List<JdtlsRefactor.Destination> packages = JdtlsRefactor.interfacePackages(status);
+            List<JdtlsRefactor.Destination> offered = JdtlsRefactor.interfacePackages(status);
+            List<JdtlsRefactor.Destination> mainOnly = JdtlsRefactor.inTestRoot(path.toString())
+                    ? offered
+                    : offered.stream()
+                            .filter(d -> !JdtlsRefactor.inTestRoot(d.detail()))
+                            .toList();
+            // main code's interface is not offered src/test/java, as Move already does (third review BT4)
+            List<JdtlsRefactor.Destination> packages = mainOnly.isEmpty() ? offered : mainOnly;
             if (members.isEmpty() || packages.isEmpty()) {
                 host.setStatus(tr("status.lsp.generateNothing", item.title()));
                 return;
@@ -4389,7 +4410,7 @@ final class LspCoordinator {
                             }
                             reportEdit(
                                     ok,
-                                    tr("status.lsp.codeActionApplied", item.title()),
+                                    tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                                     tr("status.lsp.codeActionFailed", item.title()));
                         });
             });
@@ -5838,6 +5859,11 @@ final class LspCoordinator {
         });
     }
 
+    /** An action's title without the "…" of a row that asks more: "Applied: Move 'Strings'" (BT7). */
+    static String bareTitle(String title) {
+        return title.strip().replaceFirst("(\\.\\.\\.|…)$", "");
+    }
+
     /** The popup's row for {@code item}: its title, and a word for its group instead of the raw LSP kind (A17). */
     private static com.editora.editor.lsp.CodeAction codeActionRow(LspManager.CodeActionItem item) {
         String label = item.kind().isBlank()
@@ -5983,7 +6009,7 @@ final class LspCoordinator {
                 applied,
                 ok -> reportEdit(
                         ok,
-                        tr("status.lsp.codeActionApplied", applied.title()),
+                        tr("status.lsp.codeActionApplied", bareTitle(applied.title())),
                         lspManager.lastCodeActionFailure() != null // the server's reason when it gave one (BN9)
                                 ? tr(
                                         "status.lsp.codeActionFailedWhy",
@@ -7233,6 +7259,8 @@ final class LspCoordinator {
         lspManager.notifyWatchedFiles(java.util.List.of(
                 new com.editora.lsp.LspManager.WatchedFile(from, com.editora.lsp.LspManager.WatchedKind.DELETED),
                 new com.editora.lsp.LspManager.WatchedFile(to, com.editora.lsp.LspManager.WatchedKind.CREATED)));
+        // the saves above said "Saved /the/whole/path"; the rename is what happened (BT7)
+        host.setStatus(tr("status.renamedTo", PathDisplay.fileName(to)));
     }
 
     /** What the user chose when Undo met a buffer the last refactoring edited. */
@@ -7371,9 +7399,33 @@ final class LspCoordinator {
             undoingEdit = false;
             if (ok) {
                 lastApplied = null;
+                Path[] made = newPackageFolders.remove(edit);
+                if (made != null) {
+                    removeEmptyFolders(made[0], made[1]); // Move ▸ New package's folder goes with it (BT4)
+                }
             }
             reportEdit(ok, tr("status.lsp.refactoringUndone", files), tr("status.lsp.refactoringUndoFailed"));
         });
+    }
+
+    /** Folders Move ▸ New package created, by the refactoring that filled them, with their source root. */
+    private final Map<AppliedEdit, Path[]> newPackageFolders = new java.util.IdentityHashMap<>();
+
+    /** Deletes {@code folder} and its parents up to (not including) {@code root} while they are empty. */
+    static void removeEmptyFolders(Path folder, Path root) {
+        @Nullable Path at = folder.toAbsolutePath().normalize();
+        Path stop = root.toAbsolutePath().normalize();
+        while (at != null && at.startsWith(stop) && !at.equals(stop)) {
+            try (var entries = java.nio.file.Files.list(at)) {
+                if (entries.findAny().isPresent()) {
+                    return;
+                }
+                java.nio.file.Files.delete(at);
+            } catch (java.io.IOException | RuntimeException e) {
+                return;
+            }
+            at = at.getParent();
+        }
     }
 
     /** The position just past the end of {@code text}, in LSP's UTF-16 units. */

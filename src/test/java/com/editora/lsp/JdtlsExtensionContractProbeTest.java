@@ -102,7 +102,8 @@ class JdtlsExtensionContractProbeTest {
             record("definition", defs);
             var refs = get(s.references(uri, pos(SOURCE, "greet(String", 2)));
             record("references", refs.size());
-            assertTrue(refs.size() >= 2);
+            // the fixture's one call to greet: Editora asks without the declaration (third review DT2)
+            assertTrue(refs.size() == 1, "references: " + refs);
             var library = get(s.definition(uri, pos(SOURCE, "ArrayList<String>", 2)));
             record("libraryDefinition", library);
             if (library.isLeft() && !library.getLeft().isEmpty()) {

@@ -47,7 +47,27 @@ class CompletionSessionTest {
         assertEquals(
                 java.util.List.of(hidden, folded, fuzzy),
                 CompletionEngine.filterLsp(java.util.List.of(fuzzy, folded, hidden), "pr"));
-        assertEquals(3, CompletionEngine.matchTier(hidden, "irr"));
+        assertEquals(CompletionEngine.NO_MATCH_TIER, CompletionEngine.matchTier(hidden, "irr"));
+    }
+
+    @Test
+    void camelHumpsComeBeforeLooseSubsequences() {
+        var caseOrder = Completion.lsp("CASE_INSENSITIVE_ORDER", "CASE_INSENSITIVE_ORDER", "");
+        var copy = Completion.lsp("copyValueOf", "copyValueOf", "");
+        var valueOf = Completion.lsp("valueOf", "valueOf", "");
+        assertEquals(
+                java.util.List.of(valueOf, copy),
+                CompletionEngine.filterLsp(java.util.List.of(caseOrder, copy, valueOf), "vO"),
+                "humps from the start first, then further in; no loose match for two letters (third review AT2)");
+        var stream = Completion.lsp("stream", "stream", "");
+        var addFirst = Completion.lsp("addFirst", "addFirst", "");
+        var toString = Completion.lsp("toString", "toString", "");
+        assertEquals(
+                java.util.List.of(stream, toString),
+                CompletionEngine.filterLsp(java.util.List.of(addFirst, stream, toString), "st"));
+        var hashCode = Completion.lsp("hashCode", "hashCode", "");
+        assertEquals(CompletionEngine.NO_MATCH_TIER, CompletionEngine.matchTier(hashCode, "ad"));
+        assertEquals(4, CompletionEngine.matchTier(hashCode, "hCd"), "three letters: a loose match still counts");
     }
 
     @Test

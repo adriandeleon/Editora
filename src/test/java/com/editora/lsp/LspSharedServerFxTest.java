@@ -127,6 +127,28 @@ class LspSharedServerFxTest {
         assertEquals(2, servers.get(0).opened.size(), "both windows' documents are open on it");
     }
 
+    /**
+     * Doctor's Update replaces the install folder: the server stops in every window, and none starts it again
+     * until the install is done (third review CT6). It stopped only in the window that clicked Update.
+     */
+    @Test
+    void anInstallStopsTheServerInEveryWindowAndHoldsItUntilDone() throws Exception {
+        Path one = javaFile("A.java");
+        Path two = javaFile("B.java");
+        a.openDocument(one, root, "java", "class A {}");
+        b.openDocument(two, root, "java", "class B {}");
+        try {
+            LspManager.holdForInstall("java");
+            assertFalse(a.isManaged(one) || b.isManaged(two), "stopped in both windows");
+            a.openDocument(one, root, "java", "class A {}");
+            assertFalse(a.isManaged(one), "nothing starts on a folder being replaced");
+        } finally {
+            LspManager.releaseAfterInstall("java");
+        }
+        a.openDocument(one, root, "java", "class A {}");
+        assertTrue(a.isManaged(one), "starts again once the install is done");
+    }
+
     @Test
     void aFileOpenInBothWindowsIsOpenedOnceAndClosedWithTheLastWindow() throws Exception {
         Path f = javaFile("A.java");

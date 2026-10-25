@@ -105,6 +105,28 @@ public final class LspManager {
      */
     private static final Map<String, LanguageServerSession> SHARED_SERVERS = new ConcurrentHashMap<>();
 
+    /** Every window's manager, so an install can stop a server in all of them (third review CT6). */
+    private static final java.util.Set<LspManager> MANAGERS =
+            java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>()));
+
+    /** Servers whose install is being replaced: no window starts one until it is done. */
+    private static final java.util.Set<String> HELD_FOR_INSTALL = ConcurrentHashMap.newKeySet();
+
+    /** Stops {@code serverId} in every window and holds new starts until {@link #releaseAfterInstall}. FX thread. */
+    public static void holdForInstall(String serverId) {
+        HELD_FOR_INSTALL.add(serverId);
+        java.util.List<LspManager> all;
+        synchronized (MANAGERS) {
+            all = java.util.List.copyOf(MANAGERS);
+        }
+        all.forEach(m -> m.shutdownServer(serverId));
+    }
+
+    /** Lets {@code serverId} start again after its install. */
+    public static void releaseAfterInstall(String serverId) {
+        HELD_FOR_INSTALL.remove(serverId);
+    }
+
     private volatile Map<String, LanguageServerSession> sharedServers = SHARED_SERVERS;
 
     /** This window's client on each session it uses: the primary one on a session it started. */
@@ -223,6 +245,7 @@ public final class LspManager {
     private volatile @Nullable Path jdtlsWorkspaceBase;
 
     public LspManager(BiConsumer<Path, List<LspDiagnostic>> onDiagnostics, BiConsumer<String, String> onStatus) {
+        MANAGERS.add(this);
         this.onDiagnostics = onDiagnostics == null ? (p, d) -> {} : onDiagnostics;
         this.onStatus = onStatus == null ? (t, m) -> {} : onStatus;
         // The augmented PATH (a login shell, to recover nvm/fnm/asdf dirs) is warmed by configure(): at once
@@ -1532,6 +1555,9 @@ public final class LspManager {
         LanguageServerSession cached = sessionsByRoot.get(key);
         if (cached != null) {
             return cached;
+        }
+        if (HELD_FOR_INSTALL.contains(serverId)) {
+            return null; // its folder is being replaced: started again once the install is done (CT6)
         }
         LspServerRegistry.ServerSpec spec = LspServerRegistry.specFor(languageId, commands);
         if (spec == null) {
@@ -5218,6 +5244,7 @@ public final class LspManager {
      * ever stop. After this, {@link #openDocument}, {@link #configure} and {@link #detect} do nothing.
      */
     public void close() {
+        MANAGERS.remove(this);
         closed = true;
         enabled = false;
         closeRootWatchers();

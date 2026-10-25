@@ -141,13 +141,14 @@ final class InstallCoordinator {
             installing.add(lang);
             host.setStatus(tr("status.install.installing", langName(lang)));
             List<String> replaced = runningServersOf(plan.runnable());
-            replaced.forEach(ops::stopServer);
+            stopWhileReplaced(replaced);
             service.install(
                     plan.runnable(),
                     ops.configDir(),
                     id -> host.setStatus(tr("status.install.installingTool", id)),
                     result -> {
                         installing.remove(lang);
+                        replaced.forEach(com.editora.lsp.LspManager::releaseAfterInstall);
                         if (result.ok()) {
                             postInstall(lang);
                             host.setStatus(doneMessage(lang, plan));
@@ -234,10 +235,11 @@ final class InstallCoordinator {
             installingServers.add(serverId);
             host.setStatus(tr("status.install.installing", serverName(serverId)));
             List<String> replaced = runningServersOf(steps);
-            replaced.forEach(ops::stopServer);
+            stopWhileReplaced(replaced);
             service.install(
                     steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
                         installingServers.remove(serverId);
+                        replaced.forEach(com.editora.lsp.LspManager::releaseAfterInstall);
                         if (result.ok()) {
                             if (result.installedCommand() != null) {
                                 applyServerCommand(host.settings(), serverId, result.installedCommand());
@@ -455,6 +457,18 @@ final class InstallCoordinator {
      * they are stopped first, so none runs on files being swapped out; the support re-applied afterwards starts
      * them again.
      */
+    /**
+     * Stops {@code serverIds} while their install folder is swapped: here, and in every other window, which kept
+     * running the old copy's deleted jars, or restarted it from the folder mid-swap (third review CT6). No window
+     * starts them again until the install is done.
+     */
+    private void stopWhileReplaced(List<String> serverIds) {
+        for (String id : serverIds) {
+            com.editora.lsp.LspManager.holdForInstall(id); // every window's sessions stop, and none starts
+            ops.stopServer(id); // this window's diagnostics cleared too
+        }
+    }
+
     private List<String> runningServersOf(List<Step> steps) {
         return steps.stream()
                 .map(s -> PinnedVersions.forStep(s.id())

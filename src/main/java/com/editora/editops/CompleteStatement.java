@@ -160,7 +160,7 @@ public final class CompleteStatement {
             if (atStatementEnd && s.endedFirstCode >= 0 && s.endedFirstCode < ls) { // a statement of several lines
                 return lineAfter(le, leading(text, TextNav.lineStart(text, s.endedFirstCode)));
             }
-            return emptyHead(text, s, le, enterAt, caret, unit);
+            return emptyHead(text, s, le, enterAt, caret, unit, style);
         }
         Open enclosing =
                 s.stack.stream().filter(Open::statementBrace).findFirst().orElse(null);
@@ -240,6 +240,11 @@ public final class CompleteStatement {
             if (depth == 0 && braces == 0 && !pending && CONTINUES.indexOf(text.charAt(next)) < 0) {
                 return last;
             }
+            if (depth == 0 && braces == 0 && CONTINUES.indexOf(text.charAt(next)) < 0 && startsStatement(text, next)) {
+                // `String s = name.` above `int other = 1;`: a half-typed line, not one the next statement goes
+                // on — completing past it lost the user's place (third review AT3)
+                return last;
+            }
             int lineEnd = text.indexOf('\n', next);
             lineEnd = lineEnd < 0 ? text.length() : lineEnd;
             int lastCode = -1;
@@ -290,6 +295,17 @@ public final class CompleteStatement {
             }
             pending = endsUnfinished(text, lastCode);
         }
+    }
+
+    private static final java.util.regex.Pattern STATEMENT_START = java.util.regex.Pattern.compile(
+            "(?:(?:return|throw|if|for|while|do|switch|try|var|final|this|super|yield|assert|break|continue)\\b"
+                    + "|[A-Za-z_][\\w.]*(?:<[^;=]*>)?(?:\\[\\])*\\s+[A-Za-z_]\\w*\\s*[=;])");
+
+    /** Whether the line starting at {@code at} is a statement of its own: a keyword one, or a declaration. */
+    private static boolean startsStatement(String text, int at) {
+        int lineEnd = text.indexOf('\n', at);
+        String line = text.substring(at, lineEnd < 0 ? text.length() : lineEnd);
+        return STATEMENT_START.matcher(line).lookingAt();
     }
 
     /** The next code character at or after {@code from} (past whitespace and comments), or -1. */
@@ -361,12 +377,28 @@ public final class CompleteStatement {
 
     /** No statement on the line: open the body of a `{` it ends in, or of an empty `{}`, else a new line. */
     private static Indenter.TabEdit emptyHead(
-            String text, Scan s, int le, IntFunction<Indenter.EnterEdit> enterAt, int caret, String unit) {
+            String text, Scan s, int le, IntFunction<Indenter.EnterEdit> enterAt, int caret, String unit, Style style) {
         Open top = s.stack.peek();
         int ls = TextNav.lineStart(text, caret);
         if (top != null && top.statementBrace && top.pos == s.lastCode && top.pos >= ls) {
             String body = "\n" + top.indent + unit;
-            String close = closedLater(text, le, top.indent) ? "" : "\n" + top.indent + "}";
+            // A block inside a call (`names.forEach(n -> {`) closes the call too: `});` (third review AN9)
+            StringBuilder call = new StringBuilder();
+            boolean first = true;
+            for (Open o : s.stack) {
+                if (first) {
+                    first = false;
+                    continue;
+                }
+                if (o.ch == '{') {
+                    break;
+                }
+                call.append(o.ch == '(' ? ')' : ']');
+            }
+            if (call.length() > 0 && style == Style.SEMICOLON) {
+                call.append(';');
+            }
+            String close = closedLater(text, le, top.indent) ? "" : "\n" + top.indent + "}" + call;
             int at = le + body.length();
             return new Indenter.TabEdit(le, le, body + close, at, at);
         }

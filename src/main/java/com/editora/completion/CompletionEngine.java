@@ -157,17 +157,23 @@ public final class CompletionEngine {
         if (prefix == null) prefix = "";
         List<Completion> exact = new ArrayList<>();
         List<Completion> folded = new ArrayList<>();
+        List<Completion> humpsFromStart = new ArrayList<>();
+        List<Completion> humps = new ArrayList<>();
         List<Completion> fuzzy = new ArrayList<>();
         for (Completion item : ordered) {
             String query = filterQuery(item, prefix, line, column, beforeCaret);
             switch (matchTier(item, query)) {
                 case 0 -> exact.add(item);
                 case 1 -> folded.add(item);
-                case 2 -> fuzzy.add(item);
+                case 2 -> humpsFromStart.add(item);
+                case 3 -> humps.add(item);
+                case 4 -> fuzzy.add(item);
                 default -> {}
             }
         }
         exact.addAll(folded);
+        exact.addAll(humpsFromStart);
+        exact.addAll(humps);
         exact.addAll(fuzzy);
         return exact;
     }
@@ -183,17 +189,56 @@ public final class CompletionEngine {
         return prefix;
     }
 
-    /** filterText is authoritative when supplied; a decorated label must not exclude a valid candidate. */
+    /** {@link #matchTier}'s answer for an item the typed text does not match at all. */
+    public static final int NO_MATCH_TIER = 5;
+
+    /**
+     * How well {@code prefix} matches {@code item}: 0 a prefix, 1 a prefix in another case, 2 camel humps from the
+     * start ({@code vO} → {@code valueOf}), 3 camel humps further in ({@code st} → {@code toString}), 4 any other
+     * subsequence (only for three typed characters or more), else {@link #NO_MATCH_TIER}. A plain subsequence
+     * tier put {@code CASE_INSENSITIVE_ORDER} first for {@code vO} and {@code hashCode} under {@code ad} (third
+     * review AT2). filterText is authoritative when supplied; a decorated label must not exclude a valid candidate.
+     */
     public static int matchTier(Completion item, String prefix) {
         String text = item.filterText();
-        if (text == null) return 3;
+        if (text == null) return NO_MATCH_TIER;
         if (text.startsWith(prefix)) return 0;
         if (text.regionMatches(true, 0, prefix, 0, prefix.length())) return 1;
+        if (prefix.isEmpty() || text.length() > 200) return NO_MATCH_TIER;
+        if (humps(text, 0, prefix, 0, false, true)) return 2;
+        if (humps(text, 0, prefix, 0, false, false)) return 3;
+        if (prefix.length() < 3) return NO_MATCH_TIER;
         int matched = 0;
         for (int i = 0; i < text.length() && matched < prefix.length(); i++) {
             if (Character.toLowerCase(text.charAt(i)) == Character.toLowerCase(prefix.charAt(matched))) matched++;
         }
-        return matched == prefix.length() ? 2 : 3;
+        return matched == prefix.length() ? 4 : NO_MATCH_TIER;
+    }
+
+    /**
+     * Whether {@code q[qi…]} matches {@code t[ti…]} with every character at a word or hump start, or right after the
+     * character before it matched; {@code fromStart}: the first one at index 0.
+     */
+    private static boolean humps(String t, int ti, String q, int qi, boolean contiguous, boolean fromStart) {
+        if (qi == q.length()) {
+            return true;
+        }
+        for (int i = ti; i < t.length(); i++) {
+            if (fromStart && qi == 0 && i > 0) {
+                return false;
+            }
+            char c = t.charAt(i);
+            char prev = i == 0 ? ' ' : t.charAt(i - 1);
+            boolean start = i == 0
+                    || !Character.isLetterOrDigit(prev)
+                    || (Character.isUpperCase(c) && !Character.isUpperCase(prev));
+            if ((start || (contiguous && i == ti))
+                    && Character.toLowerCase(c) == Character.toLowerCase(q.charAt(qi))
+                    && humps(t, i + 1, q, qi + 1, true, fromStart)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
