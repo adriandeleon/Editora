@@ -407,9 +407,15 @@ jdtls tracks a file only through `didOpen` or `workspace/didChangeWatchedFiles`.
 writes a file with no tab (`WorkspaceFileOperations` saves it straight to disk), a file the edit creates,
 and a Project-tree rename are each announced with `didChangeWatchedFiles` (`LspCoordinator.resourceEvents`,
 `afterWorkspaceEdit`); without it the next rename skipped the file and left it broken. A Project-tree rename of
-a `.java` file goes through `workspace/willRenameFiles` first (`LspCoordinator.willRenameFile`): the edit the
+a `.java` file, and each file of a drag-move (`ProjectPanel.moveThrough`, also Undo Move), goes through
+`workspace/willRenameFiles` first (`LspCoordinator.willRenameFile`); jdtls rewrites a moved file's package only
+for a target package it knows: the edit the
 server answers is applied and saved, and the move is recorded with it, so Undo Last Refactoring moves the
-file back and reverts the edit together. A folder rename is applied but not undoable as one.
+file back and reverts the edit together. A folder rename is applied but not undoable as one. Saving a Java file
+the server does not have open (a deferred tab) sends `didChangeWatchedFiles` CHANGED. A formatter profile is
+pushed as a content-addressed copy (`JavaProjectSettings.contentAddressed`), since jdtls reads
+`java.format.settings.url` again only when it changes. `LspManager.holdForInstall` stops a server in every window
+while Doctor's Update swaps its folder, and no window starts it until `releaseAfterInstall`.
 
 ### jdtls preferences
 

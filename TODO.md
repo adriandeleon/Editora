@@ -61,6 +61,11 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Java LSP third review (2026-10-25) fix-next list** — drag-moves and never-opened tabs reach jdtls; failed
+      imports recoverable; the scope picker regression; Inline Method; loose-file roots; Smart Type generics;
+      ranking and pickers; Surround With, Ctrl+J and menu prefixes; small fixes. Left open: an edited formatter
+      profile applies in a full window only after a restart (the protocol-level probe passes); renaming from a
+      `package` line; Update's Windows fallback when a held file blocks the swap.
 - [x] **Java LSP re-review (2026-10-25) fix-next list** — all eleven groups: refactorings announce the files they
       write and Project-tree renames undo as one; Move ▸ New package's real folder; Complete Statement and
       Smart Type gaps; Surround With and Generate narrowed; live project settings and excluded types; the shared
