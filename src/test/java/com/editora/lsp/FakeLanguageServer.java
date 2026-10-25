@@ -467,7 +467,11 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
             return failed();
         }
         var resolver = codeActionResolver;
-        return CompletableFuture.completedFuture(resolver == null ? unresolved : resolver.apply(unresolved));
+        try { // a resolver that throws is a server answering with an error
+            return CompletableFuture.completedFuture(resolver == null ? unresolved : resolver.apply(unresolved));
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     public final List<CompletionItem> resolvedCompletions = new ArrayList<>();
@@ -545,6 +549,24 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public void didChangeConfiguration(DidChangeConfigurationParams params) {
         configurations.add(params);
+    }
+
+    /** What {@code workspace/willRenameFiles} answers (null: no edit). */
+    public volatile org.eclipse.lsp4j.WorkspaceEdit willRenameResponse;
+
+    @Override
+    public CompletableFuture<org.eclipse.lsp4j.WorkspaceEdit> willRenameFiles(
+            org.eclipse.lsp4j.RenameFilesParams params) {
+        return CompletableFuture.completedFuture(willRenameResponse);
+    }
+
+    /** Every file event the client sent, as "Type uri". */
+    public List<String> fileEvents() {
+        List<String> out = new ArrayList<>();
+        for (DidChangeWatchedFilesParams p : new ArrayList<>(watchedFiles)) {
+            p.getChanges().forEach(e -> out.add(e.getType() + " " + e.getUri()));
+        }
+        return out;
     }
 
     @Override

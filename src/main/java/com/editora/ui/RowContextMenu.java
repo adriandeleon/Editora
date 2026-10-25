@@ -65,6 +65,19 @@ final class RowContextMenu {
         });
     }
 
+    /** The selected row's cell on screen, scrolled into view first; null when nothing is selected. */
+    static @Nullable Bounds selectedRowOnScreen(Control control) {
+        int index = selectedIndex(control);
+        IndexedCell<?> cell = cellFor(control, index);
+        if (cell == null && index >= 0) {
+            scrollTo(control, index);
+            control.applyCss();
+            control.layout();
+            cell = cellFor(control, index);
+        }
+        return cell == null ? null : cell.localToScreen(cell.getBoundsInLocal());
+    }
+
     /** How far in from the row's left edge the menu opens: past the disclosure arrow, never off a narrow row. */
     static double anchorX(double rowWidth) {
         return Math.max(0, Math.min(rowWidth / 4, 48));

@@ -142,11 +142,39 @@ final class SnippetCoordinator {
         if (b == null) {
             return;
         }
-        if (manager.forLanguage(b.snippetLanguage(b.getLanguage())).isEmpty()) {
+        var all = manager.forLanguage(b.snippetLanguage(b.getLanguage()));
+        if (all.isEmpty()) {
             host.setStatus(tr("status.noSnippets"));
             return;
         }
+        var area = b.getFocusedArea();
+        var sel = area.getSelection();
+        if (com.editora.snippet.SurroundSnippets.forSelection(all, area.getText(), sel.getStart(), sel.getEnd())
+                .isEmpty()) {
+            host.setStatus(tr("status.noSurroundSnippets")); // none would keep the selection
+            return;
+        }
         ops.showPicker();
+    }
+
+    /**
+     * Surround With (IntelliJ's Ctrl+Alt+T): the snippets that wrap the selection, or with none, the caret's
+     * line — not the whole list, where Enter on the first row replaced the line with {@code main} (AN4).
+     */
+    void surround() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || !b.isEditable()) {
+            return;
+        }
+        var area = b.getFocusedArea();
+        if (area.getSelection().getLength() == 0) {
+            String text = area.getText();
+            int caret = area.getCaretPosition();
+            int ls = text.lastIndexOf('\n', caret - 1) + 1;
+            int le = text.indexOf('\n', caret);
+            area.selectRange(ls, le < 0 ? text.length() : le + 1);
+        }
+        showPicker();
     }
 
     /** Opens (creating from a template if needed) the user snippet file for the active language. */

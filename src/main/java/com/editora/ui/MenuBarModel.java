@@ -233,6 +233,7 @@ final class MenuBarModel {
                         List.of(
                                 "lsp.codeActions",
                                 "lsp.generate",
+                                "lsp.overrideMethods", // a generator, as IntelliJ's Code menu has it (BN6)
                                 submenu("menubar.code.refactor"),
                                 "lsp.formatDocument",
                                 "lsp.organizeImports",
@@ -249,6 +250,7 @@ final class MenuBarModel {
                                 "lsp.typeHierarchy",
                                 SEPARATOR,
                                 "snippets.insert",
+                                "snippets.surround",
                                 "edit.expandAbbrev"),
                         List.of(new MenuSpec(
                                 "menubar.code.refactor",
@@ -265,8 +267,6 @@ final class MenuBarModel {
                                         "lsp.extractMethod",
                                         "lsp.introduceParameter",
                                         "lsp.inline",
-                                        SEPARATOR,
-                                        "lsp.overrideMethods",
                                         SEPARATOR,
                                         "lsp.undoRefactoring")))),
                 new MenuSpec(

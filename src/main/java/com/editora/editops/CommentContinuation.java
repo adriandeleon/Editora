@@ -45,7 +45,9 @@ public final class CommentContinuation {
         if (DOC_OPEN.matcher(before).matches()) {
             String body = "\n" + indent + " * ";
             if (after.strip().startsWith("*/")) {
-                return new Indenter.EnterEdit(body + "\n" + indent + " ", body.length()); // `/**|*/`
+                // `/**|*/`, or `/**| */` as the auto-close leaves it: the space already there aligns the closer (AN6)
+                String pad = after.startsWith(" ") || after.startsWith("\t") ? "" : " ";
+                return new Indenter.EnterEdit(body + "\n" + indent + pad, body.length());
             }
             if (after.isBlank() && !closedBelow(text, caret)) {
                 return new Indenter.EnterEdit(body + "\n" + indent + " */", body.length());

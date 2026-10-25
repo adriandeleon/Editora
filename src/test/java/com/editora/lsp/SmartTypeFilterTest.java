@@ -100,4 +100,27 @@ class SmartTypeFilterTest {
         assertEquals(-1, SmartTypeFilter.relevance(bare));
         assertEquals(List.of(), SmartTypeFilter.filter(List.of(bare), "Shape", false));
     }
+
+    @Test
+    void aVarargsArgumentTakesAnElementOrTheArray() {
+        List<Completion> items = List.of(
+                item("count", CompletionIconKind.FIELD, "int", 82),
+                item("args", CompletionIconKind.VARIABLE, "Object[]", 70),
+                item("run() : void", CompletionIconKind.METHOD, "void", 47));
+        assertEquals(
+                List.of("count", "args"), labels(SmartTypeFilter.filter(items, List.of("Object", "Object[]"), false)));
+    }
+
+    @Test
+    void lambdaProposalsStayForAFunctionalTarget() {
+        List<Completion> items = List.of(
+                item("() ->", CompletionIconKind.SNIPPET, "", 60),
+                item("String::valueOf", CompletionIconKind.METHOD, "String", 60),
+                item("task", CompletionIconKind.FIELD, "Runnable", 82));
+        assertEquals(
+                List.of("() ->", "String::valueOf", "task"), labels(SmartTypeFilter.filter(items, "Runnable", false)));
+        assertEquals(List.of(), labels(SmartTypeFilter.filter(items.subList(0, 1), "String", false)));
+        assertEquals(true, SmartTypeFilter.functional("Shape"), "a project type may be a functional interface");
+        assertEquals(false, SmartTypeFilter.functional("List"));
+    }
 }

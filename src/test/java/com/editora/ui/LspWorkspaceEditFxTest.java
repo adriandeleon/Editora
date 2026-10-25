@@ -66,6 +66,7 @@ class LspWorkspaceEditFxTest {
     Path root;
 
     private LspManager manager;
+    private List<com.editora.lsp.FakeLanguageServer> fakes;
     private LspCoordinator coordinator;
     private FakeHost host;
     private FakeOps ops;
@@ -140,7 +141,13 @@ class LspWorkspaceEditFxTest {
             try {
                 EditorBuffer b = new EditorBuffer();
                 b.setPath(file);
-                b.setContent(Files.readString(file));
+                byte[] bytes = Files.readAllBytes(file);
+                b.setContent(new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+                // Loaded as the window loads a file: the edit's disk check compares against this snapshot.
+                b.setDiskSnapshot(
+                        Files.getLastModifiedTime(file).toMillis(),
+                        bytes.length,
+                        FileWorkflowCoordinator.fingerprint(bytes));
                 host.buffers.add(b);
                 open.put(file.toAbsolutePath().normalize(), b);
                 return b;
@@ -257,7 +264,7 @@ class LspWorkspaceEditFxTest {
     @BeforeEach
     void setUp() throws Exception {
         manager = new LspManager((f, d) -> {}, (t, m) -> {});
-        LspTestHooks.useFakeSessions(manager);
+        fakes = LspTestHooks.useFakeSessions(manager);
         manager.configure(true, Map.of("java", "jdtls"));
         host = new FakeHost();
         ops = new FakeOps();
@@ -579,6 +586,7 @@ class LspWorkspaceEditFxTest {
         EditorBuffer a = openBuffer("A.java", "class A { B b; }\n");
         Path b = root.resolve("B.java");
         Files.writeString(b, "class B {}\n");
+        manager.openDocument(a.getPath(), root, "java", "class A { B b; }\n"); // A is open on the server, B is not
         var we = new WorkspaceEdit();
         we.setDocumentChanges(
                 List.of(Either.forLeft(edit(a.getPath(), 0, 10, 11, "C")), Either.forLeft(edit(b, 0, 6, 7, "C"))));
@@ -587,6 +595,10 @@ class LspWorkspaceEditFxTest {
 
         assertEquals("class C {}\n", Files.readString(b));
         assertEquals(List.of(b), ops.closed);
+        assertEquals(
+                List.of("Changed " + b.toUri()),
+                fakes.get(0).fileEvents(),
+                "the server hears of the file it has not got open, or keeps its old text (re-review BN1)");
         assertEquals(List.of(b), ops.saved, "the open file the user sees is left for them to save");
         assertTrue(FxTestSupport.callOnFx(a::isDirty));
         assertEquals(
@@ -1616,5 +1628,84 @@ class LspWorkspaceEditFxTest {
         try (var files = Files.list(journals)) {
             assertEquals(1, files.count(), "\"not now\" keeps the journal for the next project open");
         }
+    }
+
+    /** A file an edit creates is announced to the server once it is on disk (re-review BN1). */
+    @Test
+    void aFileAnEditCreatesIsAnnouncedToTheServer() throws Exception {
+        useControlledCoordinator(LspCoordinator.WorkspaceFileOperations.SYSTEM, Runnable::run);
+        EditorBuffer a = openBuffer("A.java", "class A {}\n");
+        manager.openDocument(a.getPath(), root, "java", "class A {}\n");
+        Path created = root.resolve("AInterface.java");
+        var we = new WorkspaceEdit();
+        we.setDocumentChanges(List.of(
+                Either.forRight(new org.eclipse.lsp4j.CreateFile(created.toUri().toString())),
+                Either.forLeft(edit(a.getPath(), 0, 8, 8, "implements AInterface "))));
+
+        assertTrue(apply(we));
+
+        assertTrue(Files.exists(created));
+        assertTrue(
+                fakes.get(0).fileEvents().contains("Created " + created.toUri()),
+                fakes.get(0).fileEvents().toString());
+    }
+
+    /**
+     * A Project-tree rename of an open file: the edits jdtls wants go in, the tree moves the file, and then the
+     * whole of it is saved, undone as one, and told to the server (re-review BN3).
+     */
+    @Test
+    void aProjectTreeRenameIsSavedAndUndoneAsOneRefactoring() throws Exception {
+        ops.host = host;
+        EditorBuffer circle = openBuffer("Circle.java", "class Circle {}\n");
+        Path canvas = root.resolve("Canvas.java");
+        Files.writeString(canvas, "class Canvas { Circle c; }\n");
+        // Written well before the request, as a real file is: one modified in the same moment counts as changed since.
+        Files.setLastModifiedTime(
+                canvas, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 60_000));
+        Path from = circle.getPath();
+        Path to = root.resolve("Disk.java");
+        var caps = LspTestHooks.caps();
+        var fileOps = new org.eclipse.lsp4j.FileOperationsServerCapabilities();
+        fileOps.setWillRename(new org.eclipse.lsp4j.FileOperationOptions(List.of(
+                new org.eclipse.lsp4j.FileOperationFilter(new org.eclipse.lsp4j.FileOperationPattern("**/*.java")))));
+        var workspace = new org.eclipse.lsp4j.WorkspaceServerCapabilities();
+        workspace.setFileOperations(fileOps);
+        caps.setWorkspace(workspace);
+        fakes = LspTestHooks.useFakeSessions(manager, caps);
+        manager.openDocument(from, root, "java", "class Circle {}\n");
+        var rename = new WorkspaceEdit();
+        rename.setDocumentChanges(
+                List.of(Either.forLeft(edit(from, 0, 6, 12, "Disk")), Either.forLeft(edit(canvas, 0, 15, 21, "Disk"))));
+        fakes.get(0).willRenameResponse = rename;
+
+        var proceeded = new CompletableFuture<Boolean>();
+        FxTestSupport.runOnFx(() -> coordinator.willRenameFile(from, to, ok -> {
+            try { // what the Project tree does: move the file, then point its tab at the new path
+                Files.move(from, to);
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            ops.fileRenamed(from, to);
+            proceeded.complete(ok);
+        }));
+        assertTrue(proceeded.get(10, java.util.concurrent.TimeUnit.SECONDS), () -> "refused: " + host.error);
+        FxTestSupport.drainFx();
+
+        assertEquals("class Disk {}\n", Files.readString(to), "the renamed file is saved with its new class name");
+        assertEquals("class Canvas { Disk c; }\n", Files.readString(canvas));
+        assertFalse(FxTestSupport.callOnFx(circle::isDirty));
+        var applied = FxTestSupport.callOnFx(coordinator::lastAppliedEdit);
+        assertEquals(List.of(new WorkspaceEditMapper.FileRename(from, to, false)), applied.renames());
+        assertTrue(fakes.get(0).fileEvents().containsAll(List.of("Deleted " + from.toUri(), "Created " + to.toUri())));
+
+        FxTestSupport.runOnFx(coordinator::undoRefactoring);
+        for (int i = 0; i < 100 && !"class Circle {}\n".equals(Files.exists(from) ? Files.readString(from) : ""); i++) {
+            Thread.sleep(20); // the inverse edit commits on the workspace executor
+            FxTestSupport.drainFx();
+        }
+        assertTrue(Files.exists(from) && !Files.exists(to), "Undo moves the file back");
+        assertEquals("class Circle {}\n", Files.readString(from));
+        assertEquals("class Canvas { Circle c; }\n", Files.readString(canvas));
     }
 }

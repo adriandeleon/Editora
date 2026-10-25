@@ -2,7 +2,8 @@
   "Cmd-s": "file.save",
   "Cmd-S-s": "file.saveAs",
   "Cmd-S-o": "file.find",
-  "Cmd-n": "file.new",
+  "Cmd-n": "lsp.generate",
+  "C-Cmd-n": "file.new",
   "Cmd-w": "buffer.close",
   "Cmd-z": "edit.undo",
   "Cmd-S-z": "edit.redo",
@@ -85,7 +86,6 @@
   "S-f6": "lsp.rename",
   "S-f2": "lsp.previousProblem",
   "Cmd-f1": "lsp.problemAtCaret",
-  "C-enter": "lsp.generate",
   "M-Cmd-l": "lsp.formatDocument",
   "C-M-o": "lsp.organizeImports",
   "Cmd-o": "lsp.gotoSymbol",
@@ -109,6 +109,10 @@
   "f6": "lsp.move",
   "Cmd-f6": "lsp.changeSignature",
   "C-t": "lsp.refactorThis",
-  "M-Cmd-t": "snippets.insert",
-  "C-o": "lsp.overrideMethods"
+  "M-Cmd-t": "snippets.surround",
+  "C-o": "lsp.overrideMethods",
+  "C-enter": "lsp.generate",
+  "C-i": "lsp.overrideMethods",
+  "Cmd-[": "nav.back",
+  "Cmd-]": "nav.forward"
 }

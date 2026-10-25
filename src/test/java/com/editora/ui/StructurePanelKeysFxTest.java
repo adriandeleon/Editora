@@ -75,7 +75,8 @@ class StructurePanelKeysFxTest {
                         4,
                         List.of(
                                 new SymbolNode("alpha", null, "method", 1, 1, List.of()),
-                                new SymbolNode("beta(int)", null, "method", 2, 2, List.of()),
+                                new SymbolNode(
+                                        "beta(int)", " : void", "method", 2, 2, List.of()), // as jdtls sends it (BN5)
                                 new SymbolNode("gamma", "(a) : List", "method", 3, 3, List.of()))),
                 new SymbolNode("zeta", null, "field", 5, 5, List.of()),
                 new SymbolNode("apple", "x: Int", "function", 6, 6, List.of()),

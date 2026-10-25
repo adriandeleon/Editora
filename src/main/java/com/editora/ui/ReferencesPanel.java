@@ -200,6 +200,12 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
      * and after a second search nothing said whose references these were (Java review B6).
      */
     public void setReferences(List<Reference> refs, @Nullable String symbol, @Nullable Path base) {
+        setReferences(refs, symbol, base, false);
+    }
+
+    /** As above; {@code implementations} says "2 implementations of area()" over Go to Implementation's list. */
+    public void setReferences(
+            List<Reference> refs, @Nullable String symbol, @Nullable Path base, boolean implementations) {
         generation++;
         this.base = base;
         this.symbol = symbol;
@@ -228,8 +234,15 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
                 refs.isEmpty()
                         ? tr("references.none")
                         : symbol == null || symbol.isBlank()
-                                ? tr("references.summary", refs.size(), files.size())
-                                : tr("references.summaryOf", refs.size(), symbol, files.size()));
+                                ? tr(
+                                        implementations ? "implementations.summary" : "references.summary",
+                                        refs.size(),
+                                        files.size())
+                                : tr(
+                                        implementations ? "implementations.summaryOf" : "references.summaryOf",
+                                        refs.size(),
+                                        symbol,
+                                        files.size()));
         if (tree.getExpandedItemCount() > 0) {
             tree.getSelectionModel().select(0);
         }

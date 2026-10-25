@@ -89,7 +89,9 @@ class JdtlsRefactorTest {
         assertEquals(
                 List.of("(default package)", "demo.other"),
                 packages.stream().map(JdtlsRefactor.Destination::label).toList());
-        assertEquals("/p/src/main/java/demo/other", packages.get(1).detail());
+        assertEquals(
+                java.nio.file.Path.of("/p/src/main/java/demo/other").toString(),
+                packages.get(1).detail());
         assertTrue(packages.get(1).raw().getAsJsonObject().has("uri"), "the node goes back verbatim");
     }
 
@@ -149,17 +151,31 @@ class JdtlsRefactorTest {
     }
 
     @Test
-    void aNewPackageGoesUnderTheCurrentPackagesSourceRoot() {
+    void aNewPackageGoesUnderTheCurrentPackagesSourceRootOnDisk() {
+        // jdtls's `path` is the Eclipse workspace path (project name first), never a folder on disk (re-review BN2)
+        java.nio.file.Path root =
+                java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "geo", "src", "main", "java");
+        String uri = root.resolve("com/acme").toUri().toString();
         assertEquals(
-                java.nio.file.Path.of("/p/src/main/java").toString(),
-                JdtlsRefactor.currentSourceRoot(json("{\"destinations\":[{\"displayName\":\"com.acme\","
-                        + "\"path\":\"/p/src/main/java/com/acme\",\"isParentOfSelectedFile\":true}]}")));
+                root.toString(),
+                JdtlsRefactor.currentSourceRoot(json("{\"destinations\":[{\"displayName\":\"com.acme\",\"uri\":\"" + uri
+                        + "\",\"path\":\"/geo-demo/src/main/java/com/acme\",\"isParentOfSelectedFile\":true}]}")));
         assertEquals(
-                "/p/src/main/java",
+                root.toString(),
                 JdtlsRefactor.currentSourceRoot(
-                        json(
-                                "{\"destinations\":[{\"displayName\":\"(default package)\","
-                                        + "\"path\":\"/p/src/main/java\",\"isDefaultPackage\":true,\"isParentOfSelectedFile\":true}]}")));
+                        json("{\"destinations\":[{\"displayName\":\"(default package)\",\"uri\":\""
+                                + root.toUri() + "\",\"path\":\"/geo-demo/src/main/java\",\"isDefaultPackage\":true,"
+                                + "\"isParentOfSelectedFile\":true}]}")));
+        assertNull(
+                JdtlsRefactor.currentSourceRoot(json("{\"destinations\":[{\"displayName\":\"com.acme\","
+                        + "\"path\":\"/geo-demo/src/main/java/com/acme\",\"isParentOfSelectedFile\":true}]}")),
+                "no uri: no guess from the workspace path");
+        var pkg = JdtlsRefactor.packages(
+                        json("{\"destinations\":[{\"displayName\":\"com.acme\",\"uri\":\"" + uri
+                                + "\",\"path\":\"/geo-demo/src/main/java/com/acme\"}]}"),
+                        false)
+                .get(0);
+        assertEquals(root.resolve("com/acme").toString(), pkg.detail(), "the picker shows the folder on disk");
         assertNull(JdtlsRefactor.currentSourceRoot(json("{\"destinations\":[]}")));
         assertTrue(JdtlsRefactor.isPackageName("com.acme.geo"));
         assertFalse(JdtlsRefactor.isPackageName("com..acme"));

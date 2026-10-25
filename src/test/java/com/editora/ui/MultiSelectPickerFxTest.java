@@ -208,4 +208,15 @@ class MultiSelectPickerFxTest {
             s.stage().close();
         });
     }
+
+    @Test
+    void theCardIsAsWideAsItsLongestRowWithinBounds() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(520, MultiSelectPicker.cardWidth(List.of(new Item<>("id", true, 1))), 0.01);
+            String path = "src/main/java/com/example/geometry/shapes/Shape.java  ·  1 change  ·  moves to Figure.java";
+            double wide = MultiSelectPicker.cardWidth(List.of(new Item<>(path, true, 1)));
+            assertTrue(wide > 520 && wide <= 1000, "a rename preview's path is not cut off at 520 px (B10): " + wide);
+            assertEquals(1000, MultiSelectPicker.cardWidth(List.of(new Item<>(path.repeat(5), true, 1))), 0.01);
+        });
+    }
 }

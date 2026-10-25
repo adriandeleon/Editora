@@ -54,6 +54,8 @@ class JdtlsSmartTypeProbeTest {
                     String s = n
                     take(c);
                     Shape shape = c
+                    String t = name.t
+                    String f = String.format("%d", c
                     return s;
                 }
             }
@@ -70,6 +72,11 @@ class JdtlsSmartTypeProbeTest {
     }
 
     private static List<String> kept(LanguageServerSession s, String uri, String marker, String type) throws Exception {
+        return kept(s, uri, marker, List.of(type));
+    }
+
+    private static List<String> kept(LanguageServerSession s, String uri, String marker, List<String> type)
+            throws Exception {
         List<CompletionItem> items = List.of();
         for (int attempt = 0;
                 attempt < 20 && items.isEmpty();
@@ -148,6 +155,24 @@ class JdtlsSmartTypeProbeTest {
             assertTrue(shapes.contains("circle"), shapes.toString());
             assertFalse(shapes.contains("caption"), shapes.toString());
             assertFalse(shapes.contains("chars"), shapes.toString());
+
+            // After a dot: the members whose type fits what the declaration expects (re-review AN3).
+            assertEquals(
+                    "String",
+                    JavaExpectedType.at(SMART, SMART.indexOf("name.t") + 6).type());
+            List<String> members = kept(s, uri, "String t = name.t", "String");
+            assertTrue(members.stream().anyMatch(l -> l.startsWith("trim")), members.toString());
+            assertFalse(members.stream().anyMatch(l -> l.startsWith("toCharArray")), members.toString());
+
+            // A varargs argument: an element, or the array (re-review AN2).
+            var fmt =
+                    SignatureFormat.resolve(get(s.signatureHelp(uri, position("format(\"%d\", c"), null, false, null)));
+            assertNotNull(fmt, "signature help inside format(");
+            List<String> varargs =
+                    JavaExpectedType.parameterTypes(fmt.label().substring(fmt.paramStart(), fmt.paramEnd()));
+            assertEquals(List.of("Object", "Object[]"), varargs);
+            List<String> elements = kept(s, uri, "format(\"%d\", c", varargs);
+            assertTrue(elements.contains("count"), "an int is an Object: " + elements);
 
             // return: the enclosing method's type.
             assertEquals(

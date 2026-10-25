@@ -54,4 +54,13 @@ class InlayHintPositionTest {
     void emptyInputYieldsNoHints() {
         assertEquals(List.of(), LspCoordinator.toInlayHints(List.of()));
     }
+
+    @Test
+    void theServersPaddingIsKeptBesideTheLabel() {
+        var lambda = new com.editora.lsp.LspManager.InlayHintSpan(41, 57, "String", false, false, true);
+        var both = new com.editora.lsp.LspManager.InlayHintSpan(1, 2, "x:", true, true, true);
+        List<EditorBuffer.InlayHint> out = LspCoordinator.toInlayHints(List.of(lambda, both));
+        assertEquals("String ", out.get(1).label(), "\"String s ->\", not \"Strings ->\" (re-review DN2)");
+        assertEquals(" x: ", out.get(0).label());
+    }
 }

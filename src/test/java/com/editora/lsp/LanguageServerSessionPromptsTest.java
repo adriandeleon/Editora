@@ -308,12 +308,22 @@ class LanguageServerSessionPromptsTest {
 
         // An Organize Imports run on save asks nothing: every ambiguous name is skipped.
         asked.clear();
-        s.quietImportChoices.incrementAndGet();
+        s.quietImportChoices.add("file:///p/Other.java");
+        s.executeClientCommand(new ExecuteCommandParams(LanguageServerSession.CHOOSE_IMPORTS, chooseImportsArguments()))
+                .join();
+        assertEquals(2, asked.size(), "another file saving quietly does not silence this one (re-review AN8)");
+        asked.clear();
+        s.quietImportChoices.add("file:///p/Ambig.java");
         Object quiet = s.executeClientCommand(
                         new ExecuteCommandParams(LanguageServerSession.CHOOSE_IMPORTS, chooseImportsArguments()))
                 .join();
-        s.quietImportChoices.decrementAndGet();
+        s.quietImportChoices.clear();
         assertEquals(List.of(), quiet);
         assertEquals(List.of(), asked, "no picker on save");
+        assertEquals(
+                List.of(),
+                s.executeClientCommand(new ExecuteCommandParams(LanguageServerSession.RELOAD_BUNDLES, List.of()))
+                        .join(),
+                "jdtls's bundle question gets the list it expects (CN6)");
     }
 }

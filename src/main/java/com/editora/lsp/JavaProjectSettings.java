@@ -82,6 +82,39 @@ public final class JavaProjectSettings {
         return java;
     }
 
+    /** jdtls 1.63's own import order and on-demand thresholds ({@code Preferences}), for a key a project dropped. */
+    static final List<String> JDTLS_IMPORT_ORDER = List.of("java", "javax", "org", "com");
+
+    static final int JDTLS_STAR_THRESHOLD = 99;
+
+    /**
+     * {@code project} with jdtls's defaults for the import keys it leaves out. A push without a key keeps the
+     * value jdtls last had, so a layout removed from {@code .editorconfig} stayed in force until a restart (re-review
+     * DN4); the defaults put it back. (A formatter profile removed cannot be taken back this way: jdtls ignores an
+     * empty {@code java.format.settings.url}.)
+     */
+    static Map<String, Object> withJdtlsDefaults(Map<String, Object> project) {
+        Map<String, Object> out = new HashMap<>(project);
+        Map<String, Object> defaults = new HashMap<>();
+        put(defaults, "completion", "importOrder", JDTLS_IMPORT_ORDER);
+        defaults.put(
+                "sources",
+                Map.of(
+                        "organizeImports",
+                        Map.of("starThreshold", JDTLS_STAR_THRESHOLD, "staticStarThreshold", JDTLS_STAR_THRESHOLD)));
+        return merge(defaults, out);
+    }
+
+    /** Whether a change to {@code file} can change what {@link #forRoot} reads: its style or build files. */
+    public static boolean isStyleSource(java.nio.file.Path file) {
+        String name = file.getFileName() == null ? "" : file.getFileName().toString();
+        return name.equals(".editorconfig")
+                || name.equals("pom.xml")
+                || name.startsWith("build.gradle")
+                || name.endsWith(".xml") // a formatter profile can be named anything
+                || name.endsWith(".prefs");
+    }
+
     @SuppressWarnings("unchecked")
     private static void put(Map<String, Object> java, String group, String key, Object value) {
         ((Map<String, Object>) java.computeIfAbsent(group, k -> new HashMap<String, Object>())).put(key, value);

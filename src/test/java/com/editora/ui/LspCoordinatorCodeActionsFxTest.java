@@ -188,6 +188,21 @@ class LspCoordinatorCodeActionsFxTest {
     }
 
     @Test
+    void aRefusedActionSaysWhyTheServerRefused() throws Exception {
+        offer(new CodeAction("Inline Method"));
+        fx.server().codeActionResolver = a -> {
+            throw new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                    new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                            -32603, "Cannot inline abstract methods", null));
+        };
+        runAction("Inline Method");
+        assertEquals(
+                tr("status.lsp.codeActionFailedWhy", "Inline Method", "Cannot inline abstract methods"),
+                fx.host.lastStatus(),
+                "not just \"Could not apply\" (re-review BN9)");
+    }
+
+    @Test
     void anActionThatDoesNothingIsReportedAsFailed() throws Exception {
         offer(new CodeAction("Hollow"));
         runAction("Hollow");
@@ -440,9 +455,10 @@ class LspCoordinatorCodeActionsFxTest {
     /** Move into a package that does not exist yet: typed, its folder created, named by URI (Java review B20). */
     @Test
     void moveFileOffersANewPackageAndCreatesItsFolder() throws Exception {
-        Path current = root.resolve("src").resolve("demo");
+        Path current = java.nio.file.Files.createDirectories(root.resolve("src").resolve("demo"));
+        // As jdtls answers: `uri` is the folder on disk, `path` the Eclipse workspace path (re-review BN2).
         String packages = "{\"destinations\":[{\"displayName\":\"demo\",\"uri\":\"" + current.toUri()
-                + "\",\"path\":" + new com.google.gson.JsonPrimitive(current.toString())
+                + "\",\"path\":\"/p/src/demo\""
                 + ",\"project\":\"p\",\"isDefaultPackage\":false,\"isParentOfSelectedFile\":true},"
                 + "{\"displayName\":\"demo.other\",\"uri\":\"file:///p/demo/other\",\"path\":\"/p/demo/other\","
                 + "\"project\":\"p\",\"isDefaultPackage\":false,\"isParentOfSelectedFile\":false}]}";
@@ -880,6 +896,43 @@ class LspCoordinatorCodeActionsFxTest {
         fx.run(() -> fx.lastPrompt().onAccept().accept("total"));
         assertEquals(tr("status.lsp.renameFailed", "total"), fx.host.lastStatus());
         assertEquals(SOURCE, content());
+    }
+
+    @Test
+    void aRenameTheServerRefusesSaysWhy() throws Exception {
+        fx.caret(buffer, 1, 10);
+        fx.run(() -> fx.coordinator.rename());
+        fx.server().failEverything = true;
+        fx.run(() -> fx.lastPrompt().onAccept().accept("total"));
+        assertEquals(
+                tr("status.lsp.renameFailedWhy", "total", "simulated transport failure"),
+                fx.host.lastStatus(),
+                "re-review BN9");
+    }
+
+    @Test
+    void inlineDoesNotOfferMakeStaticAndGenerateListsOnlyGenerators() throws Exception {
+        CodeAction makeStatic = new CodeAction("Make Static");
+        makeStatic.setKind("refactor.inline");
+        CodeAction inline = new CodeAction("Inline Method");
+        inline.setKind("refactor.inline");
+        inline.setEdit(new WorkspaceEdit(
+                Map.of(buffer.getPath().toUri().toString(), List.of(new TextEdit(range(0, 0, 0), "// inlined\n")))));
+        offer(makeStatic, inline);
+        fx.run(() -> fx.coordinator.refactoring("refactor.inline", "lsp.inline"));
+        assertEquals(
+                tr("status.lsp.codeActionApplied", "Inline Method"), fx.host.lastStatus(), "EN6: the lone one runs");
+
+        CodeAction toString = new CodeAction("Generate toString()");
+        toString.setKind("source.generate.toString");
+        CodeAction organize = new CodeAction("Organize imports");
+        organize.setKind("source.organizeImports");
+        offer(toString, organize);
+        fx.run(() -> fx.coordinator.generateActions());
+        assertTrue(
+                fx.host.statuses.stream()
+                        .noneMatch(st -> st.equals(tr("status.lsp.codeActionApplied", "Organize imports"))),
+                "BN6: Organize imports is not a generator");
     }
 
     @Test

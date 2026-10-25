@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 144;
+    public static final int SCHEMA_VERSION = 145;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -332,6 +332,12 @@ public class Settings {
     /** Clean-ups that only state what the code already means: on by default once clean-up is switched on. */
     public static final java.util.List<String> DEFAULT_JAVA_CLEANUPS =
             java.util.List.of("addOverride", "addDeprecated", "redundantModifiers", "redundantSuperCall");
+    /** Types jdtls never offers in completion or imports ({@code java.completion.filteredTypes}). */
+    private java.util.List<String> javaExcludedTypes = new java.util.ArrayList<>(DEFAULT_JAVA_EXCLUDED_TYPES);
+
+    /** vscode-java's list with {@code java.awt.*} (for {@code List}): {@code LspServerSettings.FILTERED_TYPES}. */
+    public static final java.util.List<String> DEFAULT_JAVA_EXCLUDED_TYPES =
+            java.util.List.of("java.awt.*", "com.sun.*", "sun.*", "jdk.*", "org.graalvm.*", "io.micrometer.shaded.*");
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
     private boolean editorConfigSupport = true;
     /** Highlight configured patterns (TODO/FIXME/…) in the editor + list them in the TODO tool window. */
@@ -1962,6 +1968,15 @@ public class Settings {
     public void setJavaCleanups(java.util.List<String> javaCleanups) {
         this.javaCleanups =
                 javaCleanups == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(javaCleanups);
+    }
+
+    public java.util.List<String> getJavaExcludedTypes() {
+        return javaExcludedTypes == null ? java.util.List.of() : javaExcludedTypes;
+    }
+
+    public void setJavaExcludedTypes(java.util.List<String> javaExcludedTypes) {
+        this.javaExcludedTypes =
+                javaExcludedTypes == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(javaExcludedTypes);
     }
 
     public void setLspOnTypeFormatting(boolean lspOnTypeFormatting) {

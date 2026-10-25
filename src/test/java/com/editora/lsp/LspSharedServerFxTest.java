@@ -325,6 +325,46 @@ class LspSharedServerFxTest {
         return name;
     }
 
+    @Test
+    void anotherWindowsRestartWaitsForCleanJavaWorkspaceToDelete() throws Exception {
+        Path base = root.resolve("jdtls-workspaces");
+        a.setJdtlsWorkspaceBase(base);
+        b.setJdtlsWorkspaceBase(base);
+        Path project = Files.createDirectories(root.resolve("proj"));
+        Path f = project.resolve("A.java");
+        Files.writeString(f, "class A {}");
+        a.openDocument(f, project, "java", "class A {}");
+        b.openDocument(f, project, "java", "class A {}");
+
+        var cleaned = new CompletableFuture<Boolean>();
+        var waited = new CompletableFuture<Boolean>();
+        Platform.runLater(() -> {
+            a.cleanJavaWorkspace(f, cleaned::complete);
+            waited.complete(LspManager.pendingExitForTest("java", project) != null);
+        });
+        assertTrue(waited.get(10, TimeUnit.SECONDS), "every start on the project waits for the clean (re-review CN1)");
+        assertTrue(cleaned.get(10, TimeUnit.SECONDS), "deleted");
+        awaitFx(() -> LspManager.pendingExitForTest("java", project) == null, "the wait to end with the clean");
+    }
+
+    @Test
+    void aWindowJoiningAReadyServerIsToldItIsReady() throws Exception {
+        Path f = javaFile("A.java");
+        a.openDocument(f, root, "java", "class A {}");
+        List<String> statuses = new CopyOnWriteArrayList<>();
+        LspManager c = new LspManager((file, list) -> {}, (type, msg) -> statuses.add(type));
+        try {
+            c.setSessionStarterForTest(
+                    session -> session.attachForTest(new FakeLanguageServer(), new ServerCapabilities()));
+            c.configure(true, Map.of("java", "jdtls"));
+            a.shareServersForTest(c);
+            c.openDocument(f, root, "java", "class A {}");
+            awaitFx(() -> statuses.contains("ServiceReady"), "the joining window to hear the server is ready (CN5)");
+        } finally {
+            c.shutdownAll();
+        }
+    }
+
     private static LspClientUi ui(List<String> asked) {
         return new LspClientUi() {
             @Override

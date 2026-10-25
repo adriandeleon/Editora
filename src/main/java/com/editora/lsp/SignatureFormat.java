@@ -38,7 +38,34 @@ public final class SignatureFormat {
         String label = sig.getLabel();
         int[] span = activeParamSpan(sig, help.getActiveParameter(), label);
         String doc = documentationOf(sig);
+        String paramDoc = activeParamDocumentation(sig, help.getActiveParameter());
+        if (!paramDoc.isBlank()) {
+            // jdtls 1.62+ moves each @param into its parameter: "the greeting text" never showed (re-review D2)
+            String name = span[1] > span[0] ? label.substring(span[0], span[1]) : "";
+            String line = name.isEmpty() ? paramDoc.strip() : "`" + name + "` — " + paramDoc.strip();
+            doc = doc.isBlank() ? line : line + "\n\n" + doc;
+        }
         return new Active(label, span[0], span[1], doc, index, sigs.size());
+    }
+
+    /** The active parameter's own documentation, or "". */
+    private static String activeParamDocumentation(SignatureInformation sig, @Nullable Integer helpActiveParam) {
+        List<ParameterInformation> params = sig.getParameters();
+        Integer active = sig.getActiveParameter() != null ? sig.getActiveParameter() : helpActiveParam;
+        int idx = active == null ? 0 : active;
+        if (params == null || idx < 0 || idx >= params.size() || params.get(idx) == null) {
+            return "";
+        }
+        var d = params.get(idx).getDocumentation();
+        if (d == null) {
+            return "";
+        }
+        if (d.isLeft()) {
+            return d.getLeft() == null ? "" : d.getLeft();
+        }
+        return d.getRight() == null || d.getRight().getValue() == null
+                ? ""
+                : d.getRight().getValue();
     }
 
     /** The active parameter's [start,end) within {@code label}, or {0,0} when unknown. */

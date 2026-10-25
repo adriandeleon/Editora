@@ -136,6 +136,28 @@ public final class SmartTypeFilter {
 
     /** The items that fit {@code expected}, in their order. */
     public static List<Completion> filter(List<Completion> items, String expected, boolean afterNew) {
+        return filter(items, List.of(expected), afterNew);
+    }
+
+    /**
+     * The items that fit any of {@code expected} — a varargs argument takes an element or the array (AN2) — in
+     * their order.
+     */
+    public static List<Completion> filter(List<Completion> items, List<String> expected, boolean afterNew) {
+        List<Completion> out = new ArrayList<>();
+        java.util.Set<Completion> kept = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (String e : expected) {
+            kept.addAll(filterOne(items, e, afterNew));
+        }
+        for (Completion c : items) {
+            if (kept.contains(c)) {
+                out.add(c);
+            }
+        }
+        return out;
+    }
+
+    private static List<Completion> filterOne(List<Completion> items, String expected, boolean afterNew) {
         String to = erasure(expected);
         if (to.isEmpty() || "void".equals(to)) {
             return List.of();
@@ -158,6 +180,9 @@ public final class SmartTypeFilter {
 
     private static boolean keeps(Completion c, String to, boolean afterNew, Map<CompletionIconKind, Long> weakest) {
         CompletionIconKind kind = c.iconKind();
+        if (c.label().contains("->") || c.label().contains("::")) {
+            return functional(to); // jdtls's lambda and method-reference proposals (AN3)
+        }
         String name = erasure(name(c));
         if (kind == CompletionIconKind.KEYWORD) {
             return switch (name) {
@@ -195,6 +220,28 @@ public final class SmartTypeFilter {
         String label = c.label();
         int paren = label.indexOf('(');
         return (paren < 0 ? label : label.substring(0, paren)).strip();
+    }
+
+    /**
+     * Whether a lambda can stand for {@code to}: a JDK functional interface, or a type of the project's, which
+     * may be one. Not a class or interface of the JDK that is not functional, a primitive or an array.
+     */
+    static boolean functional(String to) {
+        if (PRIMITIVES.contains(to) || to.endsWith("[]")) {
+            return false;
+        }
+        if (Set.of("Runnable", "Callable", "Comparator", "Thread.UncaughtExceptionHandler")
+                        .contains(to)
+                || to.endsWith("Function")
+                || to.endsWith("Supplier")
+                || to.endsWith("Consumer")
+                || to.endsWith("Predicate")
+                || to.endsWith("Operator")
+                || to.endsWith("Listener")
+                || to.endsWith("Handler")) {
+            return true;
+        }
+        return !SUPERTYPES.containsKey(to);
     }
 
     /** {@code java.util.List<String>[]} → {@code List[]}: no package, no type arguments. */

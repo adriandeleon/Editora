@@ -813,7 +813,7 @@ final class IndexCoordinator {
                     com.editora.search.SearchEverywhere.Kind.SYMBOL,
                     hit.symbol().name(),
                     container.isEmpty() ? where : container + " — " + where,
-                    hit.score(),
+                    hit.score() + SymbolRanking.exactNameBonus(hit.symbol().name(), query), // as library rows (EN2)
                     hit));
         }
         return out;

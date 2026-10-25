@@ -270,17 +270,14 @@ final class LspServerSettings {
             "org.springframework.lang.NonNullApi",
             "org.jspecify.annotations.NullMarked");
 
-    /** vscode-java's {@code java.completion.filteredTypes} default: types never offered or imported. */
-    static final java.util.List<String> FILTERED_TYPES = java.util.List.of(
-            "java.awt.*",
-            "com.sun.*",
-            "sun.*",
-            "jdk.*",
-            "org.graalvm.*",
-            "io.micrometer.shaded.*",
-            "java.beans.*",
-            "java.util.Hashtable",
-            "java.util.Vector");
+    /**
+     * The default {@code java.completion.filteredTypes}, types never offered or imported: vscode-java's
+     * (and jdtls's own) list, with {@code java.awt.*} for {@code List} (Java review A9). Settings edits it
+     * ({@code javaExcludedTypes}). {@code java.beans.*}, {@code Vector} and {@code Hashtable} were in it once
+     * without a decision, and their imports could then not be made at all (re-review DN1).
+     */
+    public static final java.util.List<String> FILTERED_TYPES =
+            java.util.List.of("java.awt.*", "com.sun.*", "sun.*", "jdk.*", "org.graalvm.*", "io.micrometer.shaded.*");
 
     /**
      * jdtls's {@code workspace/configuration} question for a document's indentation, asked before every code

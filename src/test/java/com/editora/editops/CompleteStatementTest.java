@@ -178,4 +178,49 @@ class CompleteStatementTest {
         assertEquals(CompleteStatement.Style.NO_SEMICOLON, CompleteStatement.styleFor("kotlin"));
         assertNull(CompleteStatement.styleFor("python"));
     }
+
+    // --- statements that go on below the caret's line (re-review AN1) ---
+
+    @Test
+    void aStatementThatGoesOnBelowIsCompletedWhereItEndsNotSplit() {
+        String chain = "    List<String> up = names.stream()|\n        .map(String::trim)\n        .toList();\n";
+        assertEquals(
+                "    List<String> up = names.stream()\n        .map(String::trim)\n        .toList();\n    |\n",
+                java(chain),
+                "a complete chain gets a new line after it, not a ; in the middle");
+        assertEquals(
+                "    List<String> up = names.stream()\n        .toList();|\n",
+                java("    List<String> up = names.stream()|\n        .toList()\n"),
+                "an incomplete one gets its ; at the end");
+        assertEquals(
+                "    String q = ready ? \"a\"\n        : \"b\";\n    |\n",
+                java("    String q = ready ? \"a\"|\n        : \"b\";\n"));
+        assertEquals("    foo(a,\n        b);\n    |\n", java("    foo(a,|\n        b);\n"));
+        assertEquals(
+                "    String s = \"a\" +\n        \"b\";\n    |\n", java("    String s = \"a\" +|\n        \"b\";\n"));
+        assertEquals(
+                "    if (a\n        && b) {\n        |\n    }\n",
+                java("    if (a|\n        && b) {\n    }\n"),
+                "a header that goes on opens its block where it ends");
+    }
+
+    @Test
+    void anOpenBracketThatNoLaterLineClosesIsStillClosedHere() {
+        assertEquals("    foo(a);|\n    bar();\n", java("    foo(a|\n    bar();\n"));
+    }
+
+    // --- braces and parentheses left open (re-review AN9) ---
+
+    @Test
+    void aBlockOpenedOnAMethodsLastLineGetsItsOwnClosingBrace() {
+        String in = "class A {\n    void f() {\n        if (ready) {|\n    }\n}\n";
+        assertEquals("class A {\n    void f() {\n        if (ready) {\n            |\n        }\n    }\n}\n", java(in));
+        String lambda = "    void f() {\n        names.forEach(n -> {|\n    }\n";
+        assertEquals("    void f() {\n        names.forEach(n -> {\n            |\n        }\n    }\n", java(lambda));
+    }
+
+    @Test
+    void anAnnotationsOpenParenthesisIsClosed() {
+        assertEquals("    @SuppressWarnings(\"x\")\n    |", java("    @SuppressWarnings(\"x\"|"));
+    }
 }

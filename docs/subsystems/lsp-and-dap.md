@@ -401,6 +401,16 @@ jdtls's "Javadoc comment" completion is offered only on a `/**` line that is alr
 buffer with the server on, the `*` that makes a line `/**` therefore inserts `* */` and requests completion
 (`EditorBuffer.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).
 
+### Files written behind the server's back
+
+jdtls tracks a file only through `didOpen` or `workspace/didChangeWatchedFiles`. A workspace edit that
+writes a file with no tab (`WorkspaceFileOperations` saves it straight to disk), a file the edit creates,
+and a Project-tree rename are each announced with `didChangeWatchedFiles` (`LspCoordinator.resourceEvents`,
+`afterWorkspaceEdit`); without it the next rename skipped the file and left it broken. A Project-tree rename of
+a `.java` file goes through `workspace/willRenameFiles` first (`LspCoordinator.willRenameFile`): the edit the
+server answers is applied and saved, and the move is recorded with it, so Undo Last Refactoring moves the
+file back and reverts the edit together. A folder rename is applied but not undoable as one.
+
 ### jdtls preferences
 
 jdtls's defaults assume vscode-java, which sends its own `package.json` defaults; several features stay
@@ -412,6 +422,14 @@ reads dotted keys through the nested maps, so `description: true` resolved to no
 sent), `inlayHints.parameterNames.enabled = all` with `suppressWhenSameNameNumbered` plus
 `variableTypes` and `parameterTypes` (hints are requested only while the setting is on, and
 `InlayHintFilter` applies Editora's literals/all mode), and `symbols.includeSourceMethodDeclarations`.
+`completion.filteredTypes` is the Settings value `javaExcludedTypes` (vscode-java's list plus `java.awt.*` by
+default). jdtls applies it to completion and quick fixes only, so `SymbolRanking` drops the same library types
+from Go to Symbol and Search Everywhere, ranks an exact name first and a library class nested in another last.
+`java.completion.importOrder`, the star thresholds and the formatter profile come from the project
+(`JavaProjectSettings`, `.editorconfig` or the Eclipse profile) over jdtls's own defaults, and are pushed again
+when one of those files is saved or changes on disk (`LspManager.projectStyleChanged`). jdtls's
+`_java.reloadBundles.command` client command is answered with an empty list; anything else got `null`, which
+jdtls logs as an error on every start.
 jdtls also asks `workspace/configuration` for `java.format.tabSize` / `insertSpaces` per document before
 every code action; the session answers from the document's recorded indent, so quick fixes and generated
 members follow the file. The completion `resolveSupport` lists `documentation`: jdtls computes an item's
@@ -419,6 +437,10 @@ Javadoc in `completionItem/resolve` only for a client that lists it. The opt-in
 `JdtlsClientSettingsProbeTest` checks each of these against a real jdtls
 (`./mvnw test -Dtest=JdtlsClientSettingsProbeTest -Dgroups=probe -Dlsp.probe=true`, and
 `-Dlsp.probe.jdtls=PATH` for another server).
+
+A package node from `java/getMoveDestinations` carries two paths: `path` is the Eclipse workspace path
+(`/geo-demo/src/main/java/com/example`) and `uri` the folder on disk. Only `uri` names a real folder, so
+`JdtlsRefactor.folderOf` reads it, and Move ▸ New package… builds its folder under the source root it gives.
 
 `LspCoordinator.runGeneratePrompt` / `runRefactorCommand` intercept these before `applyCodeAction`;
 `LspManager.jdtlsRequest` / `jdtlsApplyEdit` send the custom requests, which must be registered on

@@ -148,23 +148,43 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(0, fx.ops.referencesWindowOpened);
         assertEquals(new Position(1, 9), fx.server().implementations.get(0).getPosition());
 
-        // Several: the file-backed ones are listed, a library one (no path) is left out.
-        fx.server().implementationResponse = List.of(at(impl, 1, 7), location(JDT_STRING, 5, 0), at(other, 0, 6));
+        // Several in files: the References window, titled as implementations (re-review BN9).
+        fx.server().implementationResponse = List.of(at(impl, 1, 7), at(other, 0, 6));
         fx.run(() -> fx.coordinator.gotoImplementation());
         assertEquals(1, fx.ops.referencesWindowOpened);
         assertEquals(1, fx.ops.jumps.size(), "several implementations do not jump on their own");
         Label summary = FxTestSupport.field(fx.coordinator.referencesPanel(), "summary");
-        assertEquals(tr("references.summary", 2, 2), FxTestSupport.callOnFx(summary::getText));
+        String text = FxTestSupport.callOnFx(summary::getText);
+        assertTrue(text.startsWith("2 implementations of "), text);
+        assertTrue(text.endsWith(" in 2 files"), text);
+
+        // A library one among them: every one is listed in a picker, the library class by its name (BN4).
+        fx.server().implementationResponse = List.of(at(impl, 1, 7), location(JDT_STRING, 5, 0), at(other, 0, 6));
+        fx.run(() -> fx.coordinator.gotoImplementation());
+        assertEquals(3, FxTestSupport.callOnFx(fx::pickerRows).size());
+        assertEquals(1, fx.ops.referencesWindowOpened, "not the References window, which would drop it");
+        FxTestSupport.runOnFx(() -> fx.choose(2));
+        fx.settle();
+        assertEquals(new LspCoordinatorFixture.Jump(other, 0, 6), fx.ops.jumps.get(fx.ops.jumps.size() - 1));
+
+        fx.server().failEverything = true; // an error is not "No implementations found" (B13)
+        fx.run(() -> fx.coordinator.gotoImplementation());
+        assertTrue(
+                fx.host
+                        .lastError()
+                        .startsWith(tr("status.lsp.navigationFailed", "").strip()),
+                fx.host.lastError());
+        fx.server().failEverything = false;
 
         fx.server().implementationResponse = List.of();
         fx.run(() -> fx.coordinator.gotoImplementation());
         assertEquals(tr("status.lsp.noImplementations"), fx.host.lastStatus());
     }
 
-    /** Every implementation lives inside a dependency: there is no file list to show, so the first one is
-     *  opened as library source. */
+    /** Every implementation lives inside a dependency: a picker names them all, and the chosen one opens as
+     *  library source (re-review BN4: it opened the first with no word of the others). */
     @Test
-    void implementationsOnlyInsideLibrariesOpenTheFirstAsLibrarySource() throws Exception {
+    void implementationsOnlyInsideLibrariesAreListedAndTheChosenOneOpens() throws Exception {
         fx.capabilities.setImplementationProvider(Either.forLeft(true));
         fx.open("A.java", SOURCE);
         fx.server().rawResponse = "package java.lang;\nfinal class String {}\n";
@@ -172,6 +192,16 @@ class LspCoordinatorCommandsFxTest {
                 List.of(location(JDT_STRING, 1, 0), location("jdt://contents/x/Other.class", 0, 0));
 
         fx.run(() -> fx.coordinator.gotoImplementation());
+        assertEquals(2, FxTestSupport.callOnFx(fx::pickerRows).size());
+        assertEquals(
+                "String",
+                LspCoordinator.implementationLabel(new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING)));
+        assertEquals(
+                "java.lang",
+                LspCoordinator.implementationDetail(
+                        new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING), null));
+        FxTestSupport.runOnFx(() -> fx.choose(0));
+        fx.settle();
 
         assertEquals(0, fx.ops.referencesWindowOpened);
         assertEquals(1, fx.ops.readOnlyDocs.size());
@@ -228,6 +258,78 @@ class LspCoordinatorCommandsFxTest {
         library.setContent(doc.content());
         fx.show(library);
         return library;
+    }
+
+    @Test
+    void aLibraryClassFromGoToSymbolOpensOnItsDeclarationNotItsPackageLine() throws Exception {
+        fx.open("A.java", SOURCE);
+        fx.ops.readOnlyOpener = this::libraryBuffer;
+        fx.server().rawResponse = "package java.lang;\n\n/**\n * Strings.\n */\npublic final class String {\n}\n";
+
+        fx.run(() -> fx.coordinator.openLibraryType(new com.editora.lsp.LspManager.WorkspaceSymbolMatch(
+                "String", "java.lang", "class", null, 0, 0, JDT_STRING)));
+
+        EditorBuffer library = fx.ops.readOnlyDocs.get(0).buffer();
+        assertEquals(
+                5,
+                (int) FxTestSupport.callOnFx(() -> library.getFocusedArea().getCurrentParagraph()),
+                "jdtls places it at line 0 (re-review BN7)");
+    }
+
+    @Test
+    void theRightClickMenusOwnCommandsRunTheirActions() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        java.util.function.Consumer<String> run = FxTestSupport.field(b, "lspCommand");
+        fx.run(() -> run.accept("lsp.peekDefinition")); // what it shows is peekDefinition's own tests' business
+        fx.run(() -> run.accept("lsp.refactorThis"));
+        fx.run(() -> run.accept("lsp.generate"));
+        fx.host.statuses.clear();
+        fx.run(() -> run.accept("lsp.unknown"));
+        assertTrue(fx.host.statuses.isEmpty() && fx.host.errors.isEmpty(), "an id it does not know does nothing");
+    }
+
+    @Test
+    void aNewDefaultJdkWhileJdtlsRunsSaysToRestart() throws Exception {
+        fx.open("A.java", SOURCE);
+        fx.host.settings.setMavenJdkHome("/jdk/re-review");
+        fx.run(() -> fx.coordinator.applyOnTypeFormatting());
+        assertEquals(tr("status.lsp.javaJdkChanged"), fx.host.lastStatus(), "re-review CN7");
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.applyOnTypeFormatting());
+        assertTrue(fx.host.statuses.isEmpty(), "unchanged: nothing to say");
+    }
+
+    @Test
+    void aPreviewRowSaysWhereAMovedFileGoesRelativeToTheProject() throws Exception {
+        fx.ops.projectRoot = fx.root;
+        Path from = fx.root.resolve("src/a/Strings.java");
+        Path moved = fx.root.resolve("src/b/Strings.java");
+        String row = fx.coordinator.previewLabel(new com.editora.lsp.RenamePreview.FileChange(from, 1, moved));
+        assertTrue(row.startsWith(Path.of("src/a/Strings.java").toString()), row);
+        assertTrue(
+                row.endsWith(
+                        tr("lsp.rename.movesTo", Path.of("src/b/Strings.java").toString())),
+                "BN8: " + row);
+        String renamed = fx.coordinator.previewLabel(
+                new com.editora.lsp.RenamePreview.FileChange(from, 0, fx.root.resolve("src/a/Text.java")));
+        assertTrue(renamed.endsWith(tr("lsp.rename.movesTo", "Text.java")), renamed);
+
+        Path impl = fx.root.resolve("src/a/Impl.java");
+        var target = new com.editora.lsp.LspManager.Target(impl, 4, 0);
+        assertEquals("Impl.java", LspCoordinator.implementationLabel(target));
+        assertEquals(Path.of("src/a/Impl.java") + ":5", LspCoordinator.implementationDetail(target, fx.root));
+        assertEquals(impl + ":5", LspCoordinator.implementationDetail(target, null));
+    }
+
+    @Test
+    void foldingTheSaveActionsLeavesAHistoryItCannotReadAlone() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setContent("class A {}\n");
+            b.getArea().appendText("// typed\n");
+            LspCoordinator.foldIntoOneUndo(b, "something else entirely");
+            assertEquals("class A {}\n// typed\n", b.getContent(), "steps that do not lead back are redone");
+        });
     }
 
     @Test
@@ -775,6 +877,16 @@ class LspCoordinatorCommandsFxTest {
 
         fx.server().rawResponse = 2; // WITH_ERROR: not "Project built" (Java review C15)
         fx.run(() -> fx.coordinator.buildWorkspace());
+        assertEquals(
+                tr("status.lsp.buildWorkspaceNotImported"),
+                fx.host.lastError(),
+                "errors and not one problem: the project did not import (CN2)");
+        var file = fx.root.resolve("A.java");
+        FxTestSupport.runOnFx(() -> fx.coordinator.onDiagnostics(
+                file,
+                List.of(new com.editora.text.LspDiagnostic(
+                        0, 0, 0, 5, com.editora.text.LspDiagnostic.Severity.ERROR, "x", null, "jdtls"))));
+        fx.run(() -> fx.coordinator.buildWorkspace());
         assertEquals(tr("status.lsp.buildWorkspaceErrors"), fx.host.lastError());
 
         fx.server().failEverything = true;
@@ -1305,6 +1417,11 @@ class LspCoordinatorCommandsFxTest {
         fx.server().rawRequests.clear();
         fx.run(() -> fx.coordinator.buildAfterImport());
         assertTrue(fx.server().rawRequests.isEmpty(), "a folder without a build file is not built (Debug compiles it)");
+        Files.writeString(root.resolve("build.gradle"), "plugins { id 'java' }\n");
+        fx.run(() -> fx.coordinator.buildAfterImport());
+        assertTrue(
+                fx.server().rawRequests.isEmpty(), "nor a Gradle build unasked: it would write bin/ (re-review CN3)");
+        Files.delete(root.resolve("build.gradle"));
         Files.writeString(root.resolve("pom.xml"), "<project/>");
         fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "OK"));
         fx.run(() -> fx.coordinator.buildAfterImport()); // what the import timer runs
@@ -1419,6 +1536,13 @@ class LspCoordinatorCommandsFxTest {
 
         fx.run(() -> fx.coordinator.afterUserSave(b)); // the save it made reaches the hook again: no new round
         assertEquals(1, fx.ops.saved.size());
+
+        // One Undo gives back what the user saved, not "organized but not formatted" (re-review AN7).
+        FxTestSupport.runOnFx(() -> b.getArea().getUndoManager().undo());
+        assertEquals(UNTIDY, FxTestSupport.callOnFx(b::getContent));
+        FxTestSupport.runOnFx(() -> b.getArea().getUndoManager().redo());
+        assertEquals(
+                "import java.util.List;\n\nclass A {\n    List<String> l;\n}\n", FxTestSupport.callOnFx(b::getContent));
     }
 
     @Test
@@ -1606,5 +1730,45 @@ class LspCoordinatorCommandsFxTest {
         });
         fx.run(() -> fx.coordinator.smartTypeCompletion());
         assertEquals(tr("status.lsp.smartTypeJavaOnly"), fx.host.lastStatus());
+    }
+
+    // --- a failed import says why (re-review CN2, CN9) -----------------------------------------------
+
+    private void awaitError(String expected) throws Exception {
+        for (int i = 0; i < 200 && !expected.equals(fx.host.lastError()); i++) {
+            Thread.sleep(10);
+            fx.settle();
+        }
+        assertEquals(expected, fx.host.lastError());
+    }
+
+    @Test
+    void aFailedImportSaysWhyAndIsNotThenCalledReady() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(
+                fx.manager,
+                b.getPath(),
+                "Oct 25, 2026, 11:02:14 AM Could not find method thisIsNotAConfiguration() for arguments [x:y:1]\n\tat …");
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "WARNING"));
+        awaitError(tr(
+                "status.lsp.importProblemWhy",
+                "jdtls",
+                "Could not find method thisIsNotAConfiguration() for arguments [x:y:1]"));
+        assertFalse(fx.host.lastError().contains("(WARNING)"), "jdtls's raw word is not shown");
+
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ServiceReady", "ServiceReady"));
+        awaitError(tr("status.lsp.readyImportFailed", "jdtls"));
+    }
+
+    @Test
+    void aLooseJavaFileIsRootedWhereItsPackageSays() throws Exception {
+        java.nio.file.Files.createDirectories(root.resolve("src/demo"));
+        EditorBuffer b = fx.open("src/demo/Hello.java", "package demo;\n\nclass Hello {}\n");
+        assertEquals(
+                root.resolve("src").toAbsolutePath().normalize(),
+                LspTestHooks.sessionRoot(fx.manager, b.getPath())
+                        .toAbsolutePath()
+                        .normalize(),
+                "not src/demo, where jdtls expected the default package (re-review C6)");
     }
 }

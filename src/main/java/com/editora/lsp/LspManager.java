@@ -294,14 +294,50 @@ public final class LspManager {
     /**
      * The JDK the user chose in Settings (Build Tools ▸ Default JDK, "" for none). A Java server started after
      * this marks it as its default runtime and runs Gradle on it, and runs on it itself when the launcher's own
-     * Java is older than jdtls needs. A running server keeps what it started with.
+     * Java is older than jdtls needs. A running server keeps what it started with; true when one does and the
+     * value changed.
      */
-    public void setJavaDefaultJdk(@Nullable String home) {
-        javaDefaultJdk = home == null ? "" : home;
+    public boolean setJavaDefaultJdk(@Nullable String home) {
+        String next = home == null ? "" : home;
+        boolean changed = !next.equals(javaDefaultJdk);
+        javaDefaultJdk = next;
+        String prefix = sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID);
+        // true: a running Java server keeps the old one until it restarts (re-review CN7)
+        return changed && sessionsByRoot.keySet().stream().anyMatch(k -> k.startsWith(prefix));
     }
 
     /** The clean-ups jdtls's {@code java/cleanup} runs ({@code java.cleanup.actions}); every Java session gets them. */
     private volatile List<String> javaCleanups = List.of();
+
+    /** The types jdtls never offers or imports (Settings → Java); every Java session gets them. */
+    private volatile List<String> javaFilteredTypes = LspServerSettings.FILTERED_TYPES;
+
+    public void setJavaFilteredTypes(List<String> types) {
+        javaFilteredTypes = types == null ? List.of() : List.copyOf(types);
+        for (LanguageServerSession session : sessionsByRoot.values()) {
+            if (LspServerRegistry.JAVA_SERVER_ID.equals(session.serverId())) {
+                session.setJavaFilteredTypes(javaFilteredTypes);
+            }
+        }
+    }
+
+    /**
+     * The last error {@code serverId}'s servers logged (its first line), or null: what a failed import was really
+     * about, which jdtls says only in its log (re-review CN2).
+     */
+    public @Nullable String lastServerError(@Nullable String serverId) {
+        for (LanguageServerSession s : sessionsByRoot.values()) {
+            if (s.serverId().equals(serverId) && s.lastErrorLog() != null) {
+                return s.lastErrorLog();
+            }
+        }
+        return null;
+    }
+
+    /** {@link #setJavaFilteredTypes}'s list, which library results of symbol searches honour too (EN2). */
+    public List<String> javaFilteredTypes() {
+        return javaFilteredTypes;
+    }
 
     public void setJavaCleanups(List<String> cleanups) {
         javaCleanups = JavaCleanups.known(cleanups);
@@ -1081,10 +1117,14 @@ public final class LspManager {
     }
 
     /** How long a restarted session waits for the one it replaces to finish exiting. */
-    private static final long PRIOR_EXIT_WAIT_MILLIS = 8_000;
+    private static final long PRIOR_EXIT_WAIT_MILLIS = 20_000;
 
-    /** Session key → the exit of a session that was deliberately disposed and has not gone yet. */
-    private final Map<String, CompletableFuture<Void>> exiting = new ConcurrentHashMap<>();
+    /**
+     * Session key → the exit of a session that was deliberately disposed and has not gone yet, or a Clean Java
+     * Workspace still deleting its workspace. Per process: another window sharing the server restarts on the
+     * same key, and must wait for both (re-review CN1).
+     */
+    private static final Map<String, CompletableFuture<Void>> exiting = new ConcurrentHashMap<>();
 
     /**
      * Disposes a session on purpose (restart, disable, idle eviction, window close) and keeps what it held
@@ -1133,6 +1173,11 @@ public final class LspManager {
         }
     }
 
+    /** TEST SEAM — what a start on {@code serverId}/{@code root} waits for first, or null (CN1). */
+    static @Nullable CompletableFuture<Void> pendingExitForTest(String serverId, Path root) {
+        return exiting.get(sessionKey(serverId, root));
+    }
+
     /** TEST SEAM — the session serving {@code file}, so a test can play the server's side of it. */
     @Nullable
     LanguageServerSession sessionForTest(Path file) {
@@ -1155,6 +1200,16 @@ public final class LspManager {
      * Whether {@code serverId} already runs for {@code root} and has finished its handshake: a file opened into
      * it starts nothing, so there is no "starting" to announce (Java review C18).
      */
+    /**
+     * Whether a session for {@code (serverId, root)} exists, started or still starting: a second file opened
+     * while jdtls starts said "Starting…" again (Java review C18).
+     */
+    public boolean hasSession(String serverId, Path root) {
+        String key = sessionKey(serverId, root);
+        return sessionsByRoot.containsKey(key)
+                || (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && sharedServers.containsKey(key));
+    }
+
     public boolean isRunning(String serverId, Path root) {
         String key = sessionKey(serverId, root);
         LanguageServerSession s = sessionsByRoot.get(key);
@@ -1431,13 +1486,9 @@ public final class LspManager {
         clientOf.put(session, client);
         ensureRootWatcher(session.root());
         if (session.isInitialized()) {
-            // Ready before this window came: its documents' gates and data are due now, not at a status that
-            // was said before it joined.
-            Platform.runLater(() -> {
-                if (!closed) {
-                    onRefreshRequested.refreshRequested("capabilities", session);
-                }
-            });
+            // Ready before this window came: it hears so now — its status bar says "Loaded and ready" instead of
+            // a stale progress line, and its documents' gates and data are refreshed (re-review CN5).
+            client.status.accept("ServiceReady", null);
         }
         return session;
     }
@@ -1515,6 +1566,7 @@ public final class LspManager {
         configureClient(session.primaryClient(), key, session);
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         session.setJavaCleanups(javaCleanups);
+        session.setJavaFilteredTypes(javaFilteredTypes);
         session.setBashIde(bashIde);
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);
@@ -2548,6 +2600,25 @@ public final class LspManager {
                 s.didChangeWatchedFiles(events);
             }
         }
+        changes.stream().map(WatchedFile::file).filter(f -> f != null).forEach(this::projectStyleChanged);
+    }
+
+    /**
+     * {@code file} changed (saved here, or seen by a watcher): when it is one the project's Java style is read
+     * from, the Java servers whose project holds it get the style again (re-review AN5).
+     */
+    public void projectStyleChanged(Path file) {
+        if (file == null || !JavaProjectSettings.isStyleSource(file)) {
+            return;
+        }
+        Path at = file.toAbsolutePath().normalize();
+        for (Map.Entry<String, LanguageServerSession> e : sessionsByRoot.entrySet()) {
+            LanguageServerSession s = e.getValue();
+            if (e.getKey().startsWith(sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID))
+                    && at.startsWith(s.root().toAbsolutePath().normalize())) {
+                s.refreshProjectSettings();
+            }
+        }
     }
 
     /** Pure: the {@code FileEvent}s for the changes under {@code root} (path-component containment). */
@@ -2586,11 +2657,24 @@ public final class LspManager {
      * named — whereas a {@code : String} type hint is information the source does not otherwise carry and
      * must survive every mode.
      */
-    public record InlayHintSpan(int line, int col, String label, boolean parameter) {
+    public record InlayHintSpan(
+            int line, int col, String label, boolean parameter, boolean paddingLeft, boolean paddingRight) {
 
         /** A parameter hint — the dominant kind, and what a server omitting the kind is assumed to mean. */
         public InlayHintSpan(int line, int col, String label) {
             this(line, col, label, true);
+        }
+
+        public InlayHintSpan(int line, int col, String label, boolean parameter) {
+            this(line, col, label, parameter, false, false);
+        }
+
+        /**
+         * The label as drawn, with the space the server asked for on either side: jdtls's lambda type hint
+         * ({@code paddingRight}) read "Strings -> …" without it (re-review DN2).
+         */
+        public String paddedLabel() {
+            return (paddingLeft ? " " : "") + label + (paddingRight ? " " : "");
         }
     }
 
@@ -2747,7 +2831,9 @@ public final class LspManager {
                                 h.getPosition().getLine(),
                                 h.getPosition().getCharacter(),
                                 label,
-                                isParameterHint(h.getKind(), label)));
+                                isParameterHint(h.getKind(), label),
+                                Boolean.TRUE.equals(h.getPaddingLeft()),
+                                Boolean.TRUE.equals(h.getPaddingRight())));
                     }
                 }
             }
@@ -3109,19 +3195,30 @@ public final class LspManager {
      */
     public void previewRename(
             Path file, int line, int character, String newName, Consumer<WorkspaceEditMapper.Mapped> cb) {
+        previewRename(file, line, character, newName, (mapped, why) -> cb.accept(mapped));
+    }
+
+    /** As above, with the server's reason when it refused the rename ("Rename to x failed" said nothing — BN9). */
+    public void previewRename(
+            Path file,
+            int line,
+            int character,
+            String newName,
+            java.util.function.BiConsumer<WorkspaceEditMapper.@Nullable Mapped, @Nullable String> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
-            Platform.runLater(() -> cb.accept(null));
+            Platform.runLater(() -> cb.accept(null, null));
             return;
         }
         EditBasis basis = editBasis(s);
         s.rename(uri(file), new Position(line, character), newName).whenComplete((edit, e) -> {
             EditPlan plan = e != null || edit == null ? EditPlan.REFUSED : planWorkspaceEdit(edit, basis);
+            String why = e == null ? null : failureReason(e);
             Platform.runLater(() -> {
                 if (!plan.blocked().isEmpty()) {
                     onEditBlocked.accept(plan.blocked());
                 }
-                cb.accept(plan.mapped());
+                cb.accept(plan.mapped(), why);
             });
         });
     }
@@ -3908,13 +4005,25 @@ public final class LspManager {
     /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
     public void implementationAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
+        implementationAt(anchor, documentUri, line, character, cb, null);
+    }
+
+    /** As above; {@code onError} (when given) hears a failed or timed-out request (Java review B13). */
+    public void implementationAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
         requestLocations(
                 sessionFor(anchor),
                 documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
                 line,
                 character,
                 LanguageServerSession::implementation,
-                cb);
+                cb,
+                onError);
     }
 
     /** Go to Type Definition ({@code textDocument/typeDefinition}, #736) — from a symbol to its type. */
@@ -3925,13 +4034,25 @@ public final class LspManager {
     /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
     public void typeDefinitionAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
+        typeDefinitionAt(anchor, documentUri, line, character, cb, null);
+    }
+
+    /** As above; {@code onError} (when given) hears a failed or timed-out request (Java review B13). */
+    public void typeDefinitionAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
         requestLocations(
                 sessionFor(anchor),
                 documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
                 line,
                 character,
                 LanguageServerSession::typeDefinition,
-                cb);
+                cb,
+                onError);
     }
 
     /** Go to Declaration ({@code textDocument/declaration}, #736). */
@@ -3942,13 +4063,25 @@ public final class LspManager {
     /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
     public void declarationAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
+        declarationAt(anchor, documentUri, line, character, cb, null);
+    }
+
+    /** As above; {@code onError} (when given) hears a failed or timed-out request (Java review B13). */
+    public void declarationAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
         requestLocations(
                 sessionFor(anchor),
                 documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
                 line,
                 character,
                 LanguageServerSession::declaration,
-                cb);
+                cb,
+                onError);
     }
 
     /** True if {@code file}'s server is ready and advertises {@code implementationProvider} (#735). */
@@ -4002,7 +4135,7 @@ public final class LspManager {
             int line,
             int character,
             Consumer<List<Target>> cb) {
-        requestLocations(s, documentUri, line, character, LanguageServerSession::definition, cb);
+        requestLocations(s, documentUri, line, character, LanguageServerSession::definition, cb, null);
     }
 
     private void requestLocations(
@@ -4011,12 +4144,18 @@ public final class LspManager {
             int line,
             int character,
             LocationRequest request,
-            Consumer<List<Target>> cb) {
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
         if (s == null || documentUri == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
         request.run(s, documentUri, new Position(line, character)).whenComplete((result, error) -> {
+            if (error != null && onError != null) {
+                String why = failureReason(error); // not an empty list, which reads as "none found" (B13)
+                Platform.runLater(() -> onError.accept(why));
+                return;
+            }
             List<Target> targets = new ArrayList<>();
             if (error == null && result != null) {
                 if (result.isLeft()) {
@@ -4220,6 +4359,7 @@ public final class LspManager {
      * {@code cb} gets overall success on the FX thread.
      */
     public void applyCodeAction(Path file, Object raw, Consumer<Boolean> cb) {
+        lastCodeActionFailure = null;
         LanguageServerSession s = sessionFor(file);
         // No request time: an edit already inside this action was computed at some earlier, unknown moment,
         // so nothing can show a closed file is still what the server saw.
@@ -4241,6 +4381,9 @@ public final class LspManager {
             return;
         }
         s.resolveCodeAction(action).whenComplete((resolved, error) -> {
+            if (error != null) {
+                lastCodeActionFailure = failureReason(error);
+            }
             org.eclipse.lsp4j.CodeAction use = error == null && resolved != null ? resolved : action;
             Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), expected, cb));
         });
@@ -4267,14 +4410,26 @@ public final class LspManager {
             return; // do not let concurrent commands share or overwrite each other's stale-edit guard
         }
         executeCommand(file, command.getCommand(), command.getArguments(), (result, error) -> {
+            if (error != null) {
+                lastCodeActionFailure = failureReason(error);
+            }
             pendingApplyExpected.remove(session, pending);
             Boolean applied = pending.applied().get();
             cb.accept(error == null && !Boolean.FALSE.equals(applied));
         });
     }
 
+    /** Why the last code action failed to apply, when the server said; or null. */
+    private volatile @Nullable String lastCodeActionFailure;
+
+    /** The server's reason for the last failed code action, or null ("Could not apply: Inline Method" — BN9). */
+    public @Nullable String lastCodeActionFailure() {
+        return lastCodeActionFailure;
+    }
+
     /** Applies a code action together with the request-time snapshots captured when it was listed. */
     public void applyCodeAction(Path file, CodeActionItem item, Consumer<Boolean> cb) {
+        lastCodeActionFailure = null;
         if (item == null) {
             Platform.runLater(() -> cb.accept(false));
             return;
@@ -4300,6 +4455,9 @@ public final class LspManager {
             return;
         }
         s.resolveCodeAction(action).whenComplete((resolved, error) -> {
+            if (error != null) {
+                lastCodeActionFailure = failureReason(error);
+            }
             org.eclipse.lsp4j.CodeAction use = error == null && resolved != null ? resolved : action;
             Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), basis, cb));
         });
@@ -4454,6 +4612,14 @@ public final class LspManager {
         }));
     }
 
+    /** Why a request failed, as {@code onError} callbacks hear it: {@code "timeout"}, or the server's message. */
+    static String failureReason(Throwable error) {
+        Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                ? error.getCause()
+                : error;
+        return cause instanceof java.util.concurrent.TimeoutException ? "timeout" : String.valueOf(cause.getMessage());
+    }
+
     public void references(Path file, int line, int character, Consumer<List<Target>> cb) {
         references(file, line, character, cb, null);
     }
@@ -4483,13 +4649,7 @@ public final class LspManager {
         s.references(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
                 .whenComplete((locations, error) -> {
                     if (error != null && onError != null) {
-                        Throwable cause =
-                                error instanceof java.util.concurrent.CompletionException && error.getCause() != null
-                                        ? error.getCause()
-                                        : error;
-                        String why = cause instanceof java.util.concurrent.TimeoutException
-                                ? "timeout"
-                                : String.valueOf(cause.getMessage());
+                        String why = failureReason(error);
                         Platform.runLater(() -> onError.accept(why));
                         return;
                     }
@@ -5158,6 +5318,24 @@ public final class LspManager {
         openDocumentDiagnosticsOnly = openDocumentsOnly;
     }
 
+    /**
+     * Whether diagnostics on {@code file} are the project's rather than one file's: on its folder (jdtls: the
+     * expected JDK is missing, the compliance level does not match) or its build file. They are listed whatever
+     * Problems shows, so they must not be dropped with the closed files' (re-review C19, CN2).
+     */
+    public static boolean projectLevel(@Nullable Path file) {
+        if (file == null || com.editora.vfs.Vfs.isRemote(file)) {
+            return false;
+        }
+        String name = file.getFileName() == null ? "" : file.getFileName().toString();
+        return name.equals("pom.xml")
+                || name.equals("build.gradle")
+                || name.equals("build.gradle.kts")
+                || name.equals("settings.gradle")
+                || name.equals("settings.gradle.kts")
+                || java.nio.file.Files.isDirectory(file);
+    }
+
     private void onPublishDiagnostics(LanguageServerSession source, org.eclipse.lsp4j.PublishDiagnosticsParams params) {
         if (source == null || source.isDisposed()) {
             return;
@@ -5176,7 +5354,7 @@ public final class LspManager {
         if (!buildCaptures.isEmpty()) {
             captureBuildErrors(source, file, DiagnosticMapper.map(params.getDiagnostics()));
         }
-        if (sourceUri == null && openDocumentDiagnosticsOnly) {
+        if (sourceUri == null && openDocumentDiagnosticsOnly && !projectLevel(file)) {
             // Nobody shows a file that is not open here, and a server publishes for its whole project
             // (jdtls: once per file on import). Dropped on this, the reader, thread: each one used to
             // cost the FX thread a queued task, a search of the tabs and a path resolution to learn that.
@@ -5739,8 +5917,20 @@ public final class LspManager {
         disposeDeliberately(key, s);
         String exitedKey = key;
         Path workspace = base.resolve(name);
+        // Every start on this key — this window's reopen, and another window's that shared the server — waits
+        // for the clean, not only for the process: the other window restarted at once and took the workspace
+        // before it could be deleted, so the clean became a plain restart (re-review CN1).
+        CompletableFuture<Void> priorExit = exiting.getOrDefault(key, CompletableFuture.completedFuture(null));
+        CompletableFuture<Void> cleaned = new CompletableFuture<>();
+        exiting.put(key, cleaned);
         Thread.ofVirtual().name("jdtls-clean").start(() -> {
-            awaitPriorExit(exitedKey);
+            try {
+                priorExit.get(PRIOR_EXIT_WAIT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                LOG.log(java.util.logging.Level.FINE, "the Java server had not exited yet", e);
+            }
             boolean deleted = false;
             for (int attempt = 0; attempt < 50 && !deleted; attempt++) {
                 if (claimedJdtlsWorkspaces.add(name)) {
@@ -5760,6 +5950,8 @@ public final class LspManager {
                 }
             }
             boolean result = deleted;
+            cleaned.complete(null);
+            exiting.remove(exitedKey, cleaned);
             Platform.runLater(() -> done.accept(result));
         });
     }
@@ -6005,9 +6197,10 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(OrganizeOutcome.FAILED));
             return;
         }
-        s.quietImportChoices.incrementAndGet();
+        String quiet = s.uris().toWire(uri(file));
+        s.quietImportChoices.add(quiet);
         organizeJavaImports(s, file, lastLine, lastChar, outcome -> {
-            s.quietImportChoices.decrementAndGet();
+            s.quietImportChoices.remove(quiet);
             cb.accept(outcome);
         });
     }
