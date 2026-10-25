@@ -3,7 +3,7 @@ package com.editora.office;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.editor.MarkdownDocInfo;
+import com.editora.editor.markdown.MarkdownDocInfo;
 import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.footnotes.FootnoteReference;
@@ -18,6 +18,7 @@ import org.commonmark.node.Node;
 import org.commonmark.node.SoftLineBreak;
 import org.commonmark.node.StrongEmphasis;
 import org.commonmark.node.Text;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A single styled run of inline text — the shared, pure (no-toolkit, unit-tested) intermediate the
@@ -35,9 +36,9 @@ public record InlineRun(
         boolean strike,
         boolean underline,
         boolean code,
-        String href,
-        String image,
-        String latex,
+        @Nullable String href,
+        @Nullable String image,
+        @Nullable String latex,
         boolean highlight,
         int script) {
 
@@ -49,9 +50,9 @@ public record InlineRun(
             boolean strike,
             boolean underline,
             boolean code,
-            String href,
-            String image,
-            String latex) {
+            @Nullable String href,
+            @Nullable String image,
+            @Nullable String latex) {
         this(text, bold, italic, strike, underline, code, href, image, latex, false, 0);
     }
 
@@ -67,7 +68,13 @@ public record InlineRun(
 
     /** A run of text (no picture). */
     public InlineRun(
-            String text, boolean bold, boolean italic, boolean strike, boolean underline, boolean code, String href) {
+            String text,
+            boolean bold,
+            boolean italic,
+            boolean strike,
+            boolean underline,
+            boolean code,
+            @Nullable String href) {
         this(text, bold, italic, strike, underline, code, href, null, null);
     }
 
@@ -145,7 +152,14 @@ public record InlineRun(
     }
 
     private static void collect(
-            Node n, boolean b, boolean i, boolean s, boolean u, boolean code, String href, List<InlineRun> out) {
+            Node n,
+            boolean b,
+            boolean i,
+            boolean s,
+            boolean u,
+            boolean code,
+            @Nullable String href,
+            List<InlineRun> out) {
         if (n instanceof Text t) {
             out.add(new InlineRun(t.getLiteral(), b, i, s, u, code, href));
         } else if (n instanceof Code c) {
@@ -170,7 +184,9 @@ public record InlineRun(
             }
         } else if (n instanceof MarkdownMath.Inline math) {
             // A formula the parser recognised (as the preview's does): the LaTeX exactly as written.
-            out.add(new InlineRun(MarkdownMath.source(math), b, i, s, u, code, href, null, math.getLatex()));
+            // source() is null only for a node that is not math
+            String source = java.util.Objects.requireNonNullElse(MarkdownMath.source(math), "");
+            out.add(new InlineRun(source, b, i, s, u, code, href, null, math.getLatex()));
         } else if (n instanceof com.editora.markdown.MarkdownEmoji.Emoji emoji) {
             out.add(new InlineRun(emoji.getEmoji(), b, i, s, u, code, href)); // the character, not ":name:"
         } else if (n instanceof com.editora.markdown.MarkdownMarks.Highlight) {
@@ -199,7 +215,14 @@ public record InlineRun(
     }
 
     private static void children(
-            Node n, boolean b, boolean i, boolean s, boolean u, boolean code, String href, List<InlineRun> out) {
+            Node n,
+            boolean b,
+            boolean i,
+            boolean s,
+            boolean u,
+            boolean code,
+            @Nullable String href,
+            List<InlineRun> out) {
         for (Node c = n.getFirstChild(); c != null; c = c.getNext()) {
             collect(c, b, i, s, u, code, href, out);
         }
@@ -241,7 +264,7 @@ public record InlineRun(
      * display {@code $$…$$} — its LaTeX; else null (so the caller renders it as a normal paragraph). The
      * rule every renderer shares: {@link MarkdownDocInfo#blockFormula}.
      */
-    public static String soleDisplayMath(Node block) {
+    public static @Nullable String soleDisplayMath(Node block) {
         return MarkdownDocInfo.blockFormula(block);
     }
 

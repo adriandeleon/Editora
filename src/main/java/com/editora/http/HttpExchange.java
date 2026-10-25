@@ -2,6 +2,8 @@ package com.editora.http;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One executed request/response pair: the {@code label} (method + URL) and the fully <b>resolved</b> request
  * ({@code method}/{@code url}/{@code headers}/{@code requestBody}, with {@code {{vars}}} already substituted)
@@ -19,7 +21,7 @@ public record HttpExchange(
         List<String[]> headers,
         String requestBody,
         HttpResult result,
-        Details details) {
+        @Nullable Details details) {
 
     /** {@code details} may be null for a request that was never built (it is then {@link Details#NONE}). */
     public HttpExchange {
@@ -46,13 +48,13 @@ public record HttpExchange(
      *                        whatever is kept of it; in memory only, never saved
      */
     public record Details(
-            String bodyFile,
+            @Nullable String bodyFile,
             List<FormPart> formParts,
-            String digestUser,
-            String digestPass,
+            @Nullable String digestUser,
+            @Nullable String digestPass,
             boolean followRedirects,
-            String httpVersion,
-            String finalUrl,
+            @Nullable String httpVersion,
+            @Nullable String finalUrl,
             boolean noLog,
             List<String> secretValues) {
 
@@ -65,19 +67,19 @@ public record HttpExchange(
 
         /** Details with no secret values (an entry restored from disk, a request that read none). */
         public Details(
-                String bodyFile,
+                @Nullable String bodyFile,
                 List<FormPart> formParts,
-                String digestUser,
-                String digestPass,
+                @Nullable String digestUser,
+                @Nullable String digestPass,
                 boolean followRedirects,
-                String httpVersion,
-                String finalUrl,
+                @Nullable String httpVersion,
+                @Nullable String finalUrl,
                 boolean noLog) {
             this(bodyFile, formParts, digestUser, digestPass, followRedirects, httpVersion, finalUrl, noLog, List.of());
         }
 
         /** A copy that records where the response finally came from. */
-        public Details withFinalUrl(String url) {
+        public Details withFinalUrl(@Nullable String url) {
             return new Details(
                     bodyFile,
                     formParts,
@@ -126,5 +128,10 @@ public record HttpExchange(
                 || requestBody.startsWith("(binary body from ");
     }
 
-    public record FormPart(String name, String value, String file, String filename, String contentType) {}
+    public record FormPart(
+            @Nullable String name,
+            @Nullable String value,
+            @Nullable String file,
+            @Nullable String filename,
+            @Nullable String contentType) {}
 }

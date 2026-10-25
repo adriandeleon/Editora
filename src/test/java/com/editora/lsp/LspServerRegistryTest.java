@@ -269,8 +269,20 @@ class LspServerRegistryTest {
         // No built-in command — the install recipe writes the java -cp launcher into Settings.
         assertEquals("", LspServerRegistry.defaultCommandFor("maven-pom"));
         assertEquals(List.of("pom.xml", ".git"), LspServerRegistry.rootMarkersForServer("maven-pom"));
+        // Tiered: the nearest pom first, then the repository (the coordinator then widens to the reactor root).
+        assertEquals(
+                List.of(List.of("pom.xml"), List.of(".git")), LspServerRegistry.rootMarkerTiersForServer("maven-pom"));
         // The plain XML server is unchanged and distinct from the Maven server.
         assertEquals("xml", LspServerRegistry.serverIdFor("xml"));
+    }
+
+    @Test
+    void displayNamesCoverTheServersWhoseProgramNameSaysTheWrongThing() {
+        assertEquals("lemminx", LspServerRegistry.displayNameFor("xml"), "not lemminx-linux-x86_64");
+        assertEquals("lemminx-maven", LspServerRegistry.displayNameFor("maven-pom"), "not java");
+        assertEquals("jdtls", LspServerRegistry.displayNameFor("java"));
+        assertNull(LspServerRegistry.displayNameFor("go"), "gopls is its own right name");
+        assertNull(LspServerRegistry.displayNameFor(null));
     }
 
     @Test
@@ -302,7 +314,8 @@ class LspServerRegistryTest {
     void pythonKeepsItsServerInTheLargeFileTier() {
         assertTrue(LspServerRegistry.lspAllowedForSize("python", true, 12_000));
         assertFalse(LspServerRegistry.lspAllowedForSize("python", true, 50_000));
-        assertFalse(LspServerRegistry.lspAllowedForSize("java", true, 12_000));
+        assertTrue(LspServerRegistry.lspAllowedForSize("java", true, 12_000), "Java keeps jdtls to 50,000 lines (C16)");
+        assertFalse(LspServerRegistry.lspAllowedForSize("typescript", true, 12_000));
         assertTrue(LspServerRegistry.lspAllowedForSize("java", false, 12_000), "below the tier: always");
     }
 }

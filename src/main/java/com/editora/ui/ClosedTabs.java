@@ -5,6 +5,8 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The files whose tabs the user closed in one window, newest first, for Buffer: Reopen Closed Tab. Bounded;
  * closing a file again moves it to the top rather than listing it twice. Kept in memory only — a window that
@@ -29,7 +31,7 @@ final class ClosedTabs {
     }
 
     /** Records that {@code path}'s tab was closed with the caret at {@code caret}. */
-    void closed(Path path, int caret) {
+    void closed(@Nullable Path path, int caret) {
         if (path == null) {
             return;
         }

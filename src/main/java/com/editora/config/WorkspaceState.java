@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Persisted workspace/session state (not user preferences): collapsed fold regions and tool-window
@@ -62,8 +63,16 @@ public class WorkspaceState {
      * <p>v21 → v22 added {@code deployments} (where a project is copied to run on another machine) and a run
      * configuration's {@code deployment} ("Run on"). Additive; absent means none, and every configuration runs
      * here, as before.
+     *
+     * <p>v22 → v23 added {@code buildCustomHistory} (the last freeform build-tool task strings, per tool). Additive;
+     * absent means an empty prompt, as before.
+     *
+     * <p>v23 → v24 added {@code projectMapWindowBounds}: the Project Map now always opens in a window of its own,
+     * and this is where that window was. Additive; absent means a large window centred on the editor window.
+     * {@code projectViewMode} keeps its values, but "MAP" now means the Map window was open — so a workspace that
+     * last showed the Map shows it again, in its window.
      */
-    public static final int SCHEMA_VERSION = 22;
+    public static final int SCHEMA_VERSION = 24;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -162,8 +171,13 @@ public class WorkspaceState {
     private String selectedRunConfig = "";
     /** Last Project Map flow direction; blank/unknown values fall back to left-to-right. Additive in v11. */
     private String projectMapFlow = DEFAULT_PROJECT_MAP_FLOW;
-    /** Which Project view this workspace last showed: "TREE" or "MAP". Additive in v13; missing means Tree. */
+    /**
+     * "MAP" while the Project Map's window is open, else "TREE" (v24; before it, which view the Project tool
+     * window showed). Additive in v13; missing means Tree.
+     */
     private String projectViewMode = PROJECT_VIEW_TREE;
+    /** Where the Project Map's window was: x, y, width, height. Additive in v24; empty means not yet placed. */
+    private List<Double> projectMapWindowBounds = new ArrayList<>();
     /** Project Map "Keep current zoom" when a column opens. Additive in v13; on by default. */
     private boolean projectMapKeepZoom = true;
     /** Project Map "Focus new column". Additive in v13; on by default. */
@@ -172,6 +186,9 @@ public class WorkspaceState {
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
     private String httpEnvironment = "";
+
+    /** The last "Run custom…" strings per build tool id ({@code maven}, {@code gradle}, …), newest first. */
+    private Map<String, List<String>> buildCustomHistory = new LinkedHashMap<>();
     /**
      * The Python interpreter picked for this project (an absolute path, or one relative to the project root,
      * optionally with arguments), or "" to detect it — see {@code run.PythonInterpreters}. Additive in v18.
@@ -202,7 +219,7 @@ public class WorkspaceState {
     private List<OpenFile> openFiles = new ArrayList<>();
 
     /** The editor-area split tree; null when unsplit (and for any session saved before groups existed). */
-    private EditorGroupLayout editorLayout;
+    private @Nullable EditorGroupLayout editorLayout;
     /** Absolute path of the tab that was active at last exit ("" if none/untitled). */
     private String activeFile = "";
 
@@ -493,7 +510,7 @@ public class WorkspaceState {
     }
 
     /** The deployment called {@code name}, or null. */
-    public Deployment deployment(String name) {
+    public @Nullable Deployment deployment(String name) {
         if (name == null || name.isBlank()) {
             return null;
         }
@@ -527,6 +544,15 @@ public class WorkspaceState {
 
     public void setProjectViewMode(String projectViewMode) {
         this.projectViewMode = PROJECT_VIEW_MAP.equals(projectViewMode) ? PROJECT_VIEW_MAP : PROJECT_VIEW_TREE;
+    }
+
+    public List<Double> getProjectMapWindowBounds() {
+        return projectMapWindowBounds;
+    }
+
+    public void setProjectMapWindowBounds(List<Double> projectMapWindowBounds) {
+        this.projectMapWindowBounds =
+                projectMapWindowBounds == null ? new ArrayList<>() : new ArrayList<>(projectMapWindowBounds);
     }
 
     public boolean isProjectMapKeepZoom() {
@@ -590,6 +616,37 @@ public class WorkspaceState {
         this.httpEnvironment = httpEnvironment == null ? "" : httpEnvironment;
     }
 
+    /** How many custom build strings are kept per tool. */
+    public static final int BUILD_CUSTOM_HISTORY_SIZE = 10;
+
+    public Map<String, List<String>> getBuildCustomHistory() {
+        return buildCustomHistory;
+    }
+
+    public void setBuildCustomHistory(Map<String, List<String>> buildCustomHistory) {
+        this.buildCustomHistory = buildCustomHistory == null ? new LinkedHashMap<>() : buildCustomHistory;
+    }
+
+    /** The remembered custom strings of {@code toolId}, newest first (never null). */
+    public List<String> buildCustomHistory(String toolId) {
+        List<String> list = buildCustomHistory.get(toolId);
+        return list == null ? List.of() : List.copyOf(list);
+    }
+
+    /** Moves {@code text} to the front of {@code toolId}'s history (deduplicated, capped). */
+    public void rememberBuildCustom(String toolId, String text) {
+        if (toolId == null || text == null || text.isBlank()) {
+            return;
+        }
+        List<String> list = new ArrayList<>(buildCustomHistory(toolId));
+        list.remove(text);
+        list.add(0, text);
+        while (list.size() > BUILD_CUSTOM_HISTORY_SIZE) {
+            list.remove(list.size() - 1);
+        }
+        buildCustomHistory.put(toolId, list);
+    }
+
     public boolean isZenMode() {
         return zenMode;
     }
@@ -634,11 +691,11 @@ public class WorkspaceState {
      * The editor area's split layout, or {@code null} when it was a single group — which is also what an
      * older session file yields, so the unsplit case needs no migration. See {@link EditorGroupLayout}.
      */
-    public EditorGroupLayout getEditorLayout() {
+    public @Nullable EditorGroupLayout getEditorLayout() {
         return editorLayout;
     }
 
-    public void setEditorLayout(EditorGroupLayout editorLayout) {
+    public void setEditorLayout(@Nullable EditorGroupLayout editorLayout) {
         this.editorLayout = editorLayout;
     }
 

@@ -15,6 +15,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -54,7 +56,7 @@ final class PassphrasePrompt {
             OverlayHost host,
             String title,
             String message,
-            String note,
+            @Nullable String note,
             String okLabel,
             Attempt attempt,
             Runnable onCancel) {

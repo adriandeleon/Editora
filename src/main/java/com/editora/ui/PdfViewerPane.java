@@ -23,12 +23,13 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 
-import com.editora.editor.PreviewImageLoader;
 import com.editora.editor.TabContent;
+import com.editora.editor.markdown.PreviewImageLoader;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -62,15 +63,15 @@ public final class PdfViewerPane implements TabContent {
      */
     private static final double FIT_INSET = 28;
 
-    private final Path path;
+    private final @Nullable Path path;
     private final String title;
     private final BorderPane root = new BorderPane();
     private final ImageView imageView = new ImageView();
     private final ScrollPane scroll = new ScrollPane();
     private final Label zoomLabel = new Label();
     private final Label pageLabel = new Label();
-    private Button prevButton;
-    private Button nextButton;
+    private final Button prevButton = button("◀", tr("pdfviewer.prevPage"), () -> showPage(this.currentPage - 1));
+    private final Button nextButton = button("▶", tr("pdfviewer.nextPage"), () -> showPage(this.currentPage + 1));
     private Node toolbar;
 
     /** Single daemon thread: loads the document + rasterizes pages (PDDocument is not thread-safe). */
@@ -84,12 +85,12 @@ public final class PdfViewerPane implements TabContent {
     private volatile boolean disposed;
 
     // Touched only on the exec thread once loaded.
-    private PDDocument document;
-    private PDFRenderer renderer;
+    private @Nullable PDDocument document;
+    private @Nullable PDFRenderer renderer;
 
     private int pageCount;
     private int currentPage; // 0-based; FX thread
-    private Image image;
+    private @Nullable Image image;
     private double zoom = 1.0;
     private boolean fitMode = true;
 
@@ -98,11 +99,10 @@ public final class PdfViewerPane implements TabContent {
 
     private double lastFitViewH = -1;
 
-    public PdfViewerPane(Path path) {
+    public PdfViewerPane(@Nullable Path path) {
         this.path = path;
-        this.title = path.getFileName() == null
-                ? path.toString()
-                : path.getFileName().toString();
+        Path name = path == null ? null : path.getFileName();
+        this.title = name == null ? String.valueOf(path) : name.toString();
         root.getStyleClass().add("pdf-viewer");
         build();
         load();
@@ -135,8 +135,6 @@ public final class PdfViewerPane implements TabContent {
     }
 
     private Node buildToolbar() {
-        prevButton = button("◀", tr("pdfviewer.prevPage"), () -> showPage(currentPage - 1));
-        nextButton = button("▶", tr("pdfviewer.nextPage"), () -> showPage(currentPage + 1));
         pageLabel.getStyleClass().add("pdf-viewer-page");
         Button out = button("−", tr("imageviewer.zoomOut"), () -> setZoom(zoom / ZOOM_STEP));
         Button in = button("+", tr("imageviewer.zoomIn"), () -> setZoom(zoom * ZOOM_STEP));
@@ -238,7 +236,11 @@ public final class PdfViewerPane implements TabContent {
 
     /** Rasterizes {@code index} to a JavaFX image (on the exec thread; RGB → white page background). */
     private Image renderToImage(int index) throws java.io.IOException {
-        BufferedImage bi = renderer.renderImageWithDPI(index, RENDER_DPI, ImageType.RGB);
+        PDFRenderer r = renderer;
+        if (r == null) {
+            throw new IllegalStateException("no PDF document loaded");
+        }
+        BufferedImage bi = r.renderImageWithDPI(index, RENDER_DPI, ImageType.RGB);
         return PreviewImageLoader.toFxImage(bi);
     }
 
@@ -375,7 +377,7 @@ public final class PdfViewerPane implements TabContent {
         exec.shutdown();
     }
 
-    public Path getPath() {
+    public @Nullable Path getPath() {
         return path;
     }
 

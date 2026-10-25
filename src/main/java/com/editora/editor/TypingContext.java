@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import java.util.Collection;
 
+import com.editora.editops.RegexLiterals;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional;
 

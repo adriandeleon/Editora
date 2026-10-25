@@ -31,7 +31,7 @@ import com.editora.config.PathKeys;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GrammarRegistry;
+import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editorconfig.EditorConfig;
 import com.editora.editorconfig.EditorConfigProperties;
 import com.editora.i18n.Messages;
@@ -46,6 +46,7 @@ import com.editora.template.TemplateNames;
 import com.editora.template.TemplateOutput;
 import com.editora.template.TemplateRegistry;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -76,8 +77,10 @@ final class TemplateCoordinator {
         ProjectManager projects();
 
         /** This window's project, or null (none, or Projects switched off). */
+        @Nullable
         Project windowProject();
 
+        @Nullable
         WindowManager windowManager();
 
         boolean projectsEnabled();
@@ -88,6 +91,7 @@ final class TemplateCoordinator {
 
         void setError(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         Tab addBuffer(EditorBuffer buffer);
@@ -120,7 +124,17 @@ final class TemplateCoordinator {
         this.host = host;
     }
 
+    @Nullable
     TemplateRegistry templates;
+
+    /** The registry, which the window sets right after building this coordinator. */
+    private TemplateRegistry templates() {
+        TemplateRegistry registry = templates;
+        if (registry == null) {
+            throw new IllegalStateException("the template registry is not set");
+        }
+        return registry;
+    }
 
     /** Opens a just-created project on its primary file; replaceable so a test need not build a window. */
     java.util.function.BiConsumer<Project, TemplateOutput.Target> openProject = this::openProjectWindow;
@@ -148,7 +162,7 @@ final class TemplateCoordinator {
      * of the deciding — what the typed name means, where it lands, what goes in it — is the pure
      * {@link NewFileContent}, so this method only prompts, writes and reports.
      */
-    void newFileOfType(Path dir, NewFileType type) {
+    void newFileOfType(@Nullable Path dir, NewFileType type) {
         if (dir == null || type == null) {
             return;
         }
@@ -203,7 +217,7 @@ final class TemplateCoordinator {
     }
 
     /** The message for a refused name: each reason says what to change, not just "not valid". */
-    static String refusalMessage(NewFileContent.Refusal refusal, String input) {
+    static String refusalMessage(NewFileContent.@Nullable Refusal refusal, String input) {
         String typed = input == null ? "" : input.strip();
         return switch (refusal == null ? NewFileContent.Refusal.INVALID_NAME : refusal) {
             case INVALID_NAME -> tr("status.newfile.invalidName");
@@ -252,7 +266,7 @@ final class TemplateCoordinator {
      * folder context: a single-file template becomes an unsaved buffer unless a folder is typed, and a
      * multi-file template asks for the folder. Non-null = the wizard's folder is pre-filled with it.
      */
-    void newFromTemplate(Path targetDir) {
+    void newFromTemplate(@Nullable Path targetDir) {
         pickTemplate(tr("template.picker.title"), t -> true, t -> beginTemplate(t, targetDir, null));
     }
 
@@ -270,7 +284,7 @@ final class TemplateCoordinator {
     }
 
     private void pickTemplate(String title, Predicate<Template> filter, Consumer<Template> onChoose) {
-        TemplateRegistry.Loaded loaded = templates.load();
+        TemplateRegistry.Loaded loaded = templates().load();
         List<Template> all = loaded.templates().stream().filter(filter).toList();
         if (all.isEmpty()) {
             host.setStatus(tr("status.noTemplates"));
@@ -330,7 +344,7 @@ final class TemplateCoordinator {
     // --- New from template: the file wizard -------------------------------------------------------
 
     /** Asks for the folder and the template's variables, then applies; applies directly when there is nothing to ask. */
-    void beginTemplate(Template t, Path targetDir, Consumer<Path> onCreated) {
+    void beginTemplate(Template t, @Nullable Path targetDir, @Nullable Consumer<Path> onCreated) {
         List<TemplateEngine.TemplateVar> vars =
                 TemplateEngine.promptedVariables(t, new TemplateEngine.Context(windowProject() != null));
         // Fast path: a variable-less, single-file template invoked with no folder context (palette / toolbar)
@@ -476,7 +490,8 @@ final class TemplateCoordinator {
      * context, else the active project's root. With neither, a relative path has nothing sensible to be
      * relative to and is refused (null) rather than landing beside whatever file happens to be open.
      */
-    Path resolveFolder(String typed, Path context) {
+    @Nullable
+    Path resolveFolder(String typed, @Nullable Path context) {
         String home = System.getProperty("user.home");
         Path base = context;
         if (base == null) {
@@ -501,7 +516,7 @@ final class TemplateCoordinator {
     }
 
     /** Where a folder chooser opens: the typed folder or its nearest existing ancestor, else the context. */
-    java.io.File folderChooserDir(String current, Path context) {
+    java.io.@Nullable File folderChooserDir(String current, @Nullable Path context) {
         Path p = current == null || current.isBlank() ? null : resolveFolder(current.strip(), context);
         if (p == null) {
             p = context != null ? context : defaultNewDir();
@@ -607,7 +622,7 @@ final class TemplateCoordinator {
     }
 
     /** The typed location as an absolute folder, or null when it is blank or relative. */
-    private static Path projectParent(String typed) {
+    private static @Nullable Path projectParent(String typed) {
         String s = typed == null ? "" : typed.strip();
         if (s.isEmpty() || !isAbsoluteInput(s)) {
             return null;
@@ -664,6 +679,9 @@ final class TemplateCoordinator {
                     reporter.failed(refused);
                     return;
                 }
+                if (done == null) {
+                    return; // written whenever nothing was refused
+                }
                 finish(t, done, reporter, false, created -> {
                     Project project = host.projects().createOrGet(name, created.dir());
                     host.projects().save();
@@ -686,7 +704,8 @@ final class TemplateCoordinator {
      * Renders {@code t} with {@code answers} and creates the file(s) with no form in front: failures go to
      * the error status, and files that already exist are kept while the missing ones are created.
      */
-    void applyTemplate(Template t, Path targetDir, Map<String, String> answers, Consumer<Path> onCreated) {
+    void applyTemplate(
+            Template t, @Nullable Path targetDir, Map<String, String> answers, @Nullable Consumer<Path> onCreated) {
         apply(t, targetDir, answers, onCreated, new Reporter() {
             @Override
             public void done() {}
@@ -708,7 +727,12 @@ final class TemplateCoordinator {
      * is refused — it never falls back to a folder nobody chose); with a folder, the plan is computed and
      * checked before anything is written.
      */
-    void apply(Template t, Path targetDir, Map<String, String> answers, Consumer<Path> onCreated, Reporter reporter) {
+    void apply(
+            Template t,
+            @Nullable Path targetDir,
+            Map<String, String> answers,
+            @Nullable Consumer<Path> onCreated,
+            Reporter reporter) {
         if (targetDir == null) {
             if (t.isMultiFile()) {
                 reporter.failed(tr("template.wizard.folderRequired"));
@@ -745,7 +769,7 @@ final class TemplateCoordinator {
 
     /** FX thread: refuse, ask about existing files, or hand the plan to the writer. */
     private void afterPlan(
-            Template t, TemplateOutput.Plan plan, Object key, Consumer<Path> onCreated, Reporter reporter) {
+            Template t, TemplateOutput.Plan plan, Object key, @Nullable Consumer<Path> onCreated, Reporter reporter) {
         if (plan.refused()) {
             reporter.failed(tr("status.templatePathEscape", plan.refusedPath()));
             return;
@@ -783,20 +807,19 @@ final class TemplateCoordinator {
             TemplateOutput.Outcome outcome,
             Reporter reporter,
             boolean openHere,
-            Consumer<TemplateOutput.Outcome> onCreated) {
+            @Nullable Consumer<TemplateOutput.Outcome> onCreated) {
         String where = host.homeCollapsed(outcome.dir().toString());
         if (!outcome.created().isEmpty()) {
             refreshTree();
         }
-        if (outcome.failed()) {
+        TemplateOutput.Target failedAt = outcome.failedAt();
+        if (failedAt != null) { // outcome.failed()
             reporter.failed(
                     outcome.created().isEmpty()
-                            ? tr(
-                                    "status.templateWriteFailed",
-                                    outcome.failedAt().relative() + ": " + outcome.error())
+                            ? tr("status.templateWriteFailed", failedAt.relative() + ": " + outcome.error())
                             : tr(
                                     "status.template.partialFailure",
-                                    outcome.failedAt().relative(),
+                                    failedAt.relative(),
                                     outcome.error(),
                                     names(outcome.created())));
             return;
@@ -851,7 +874,11 @@ final class TemplateCoordinator {
     }
 
     private TemplateOutput.Request request(
-            Template t, Path dir, Map<String, String> answers, String projectName, Path projectRoot) {
+            Template t,
+            @Nullable Path dir,
+            Map<String, String> answers,
+            @Nullable String projectName,
+            @Nullable Path projectRoot) {
         return new TemplateOutput.Request(
                 t,
                 dir,
@@ -864,7 +891,7 @@ final class TemplateCoordinator {
     }
 
     /** The project's {@code .editorconfig} rules for a file about to be created, or null when off. */
-    private EditorConfigProperties editorConfigFor(Path file) {
+    private @Nullable EditorConfigProperties editorConfigFor(Path file) {
         if (!host.config().getSettings().isEditorConfigSupport()) {
             return null;
         }
@@ -880,7 +907,7 @@ final class TemplateCoordinator {
      * template's language, and restores {@code summary} — the open reports "Opened …" when it lands, and
      * that must not be the last word on what a template just created.
      */
-    void openAndPlaceCaret(Path target, int caret, Template language, String summary) {
+    void openAndPlaceCaret(Path target, int caret, @Nullable Template language, @Nullable String summary) {
         host.fileWorkflows().openThen(target, () -> {
             EditorBuffer b = host.activeBuffer();
             if (b == null || b.getPath() == null) {
@@ -905,7 +932,7 @@ final class TemplateCoordinator {
      * Editora has one for and the file name alone did not already select it (a {@code Jenkinsfile} template
      * that says {@code "language": "groovy"}).
      */
-    private static void applyLanguage(EditorBuffer b, Template t) {
+    private static void applyLanguage(EditorBuffer b, @Nullable Template t) {
         String language = t == null || t.language() == null ? "" : t.language().strip();
         if (needsLanguageOverride(language, b.getLanguage(), hasGrammar(language))) {
             b.setLanguageOverride(language.toLowerCase(java.util.Locale.ROOT));
@@ -940,7 +967,7 @@ final class TemplateCoordinator {
      * This window's project. Not the {@code ProjectManager}'s active one: that is the window opened last, and a new
      * file's folder, {@code ${projectName}} and a new project's location followed it into another project.
      */
-    private Project windowProject() {
+    private @Nullable Project windowProject() {
         return host.windowProject();
     }
 
@@ -951,6 +978,7 @@ final class TemplateCoordinator {
     }
 
     /** The root of the registered project that contains {@code dir} (the innermost one), or null. */
+    @Nullable
     Path projectRootFor(Path dir) {
         if (dir == null || host.projects() == null) {
             return null;
@@ -961,10 +989,11 @@ final class TemplateCoordinator {
             if (p.root().isBlank()) {
                 continue;
             }
-            if (!p.contains(abs)) {
+            Path rootPath = p.rootPath();
+            if (rootPath == null || !p.contains(abs)) { // contains() needs a root
                 continue;
             }
-            Path root = p.rootPath().toAbsolutePath().normalize();
+            Path root = rootPath.toAbsolutePath().normalize();
             if (best == null || root.getNameCount() > best.getNameCount()) {
                 best = root;
             }
@@ -973,6 +1002,7 @@ final class TemplateCoordinator {
     }
 
     /** The folder a "new in folder" action defaults to: the active file's dir, else project root, else home. */
+    @Nullable
     Path defaultNewDir() {
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.getPath() != null && b.getPath().getParent() != null) {
@@ -989,7 +1019,7 @@ final class TemplateCoordinator {
 
     /** {@code template.reload}: re-reads every source and reports the files that had to be skipped. */
     void reloadTemplates() {
-        TemplateRegistry.Loaded loaded = templates.load();
+        TemplateRegistry.Loaded loaded = templates().load();
         if (loaded.problems().isEmpty()) {
             host.setStatus(tr("status.templatesReloaded"));
         } else {
@@ -1041,17 +1071,17 @@ final class TemplateCoordinator {
     }
 
     List<EditRow> editRows() {
-        TemplateRegistry.Loaded loaded = templates.load();
+        TemplateRegistry.Loaded loaded = templates().load();
         Map<Path, TemplateRegistry.Problem> broken = new LinkedHashMap<>();
         for (TemplateRegistry.Problem p : loaded.problems()) {
             broken.put(p.file(), p);
         }
         Map<String, Template> userById = new LinkedHashMap<>();
-        for (Template t : templates.userTemplates()) {
+        for (Template t : templates().userTemplates()) {
             userById.put(t.id(), t);
         }
         List<EditRow> rows = new ArrayList<>();
-        for (Path file : templates.userFiles()) {
+        for (Path file : templates().userFiles()) {
             String fileName = file.getFileName().toString();
             String id = fileName.substring(0, fileName.lastIndexOf('.'));
             TemplateRegistry.Problem problem = broken.get(file);
@@ -1075,7 +1105,7 @@ final class TemplateCoordinator {
 
     private void customize(Template t) {
         try {
-            openTemplateFile(templates.duplicateToUser(t));
+            openTemplateFile(templates().duplicateToUser(t));
         } catch (IOException e) {
             host.setError(tr("status.templateOpenFailed", e.getMessage()));
         }
@@ -1085,12 +1115,12 @@ final class TemplateCoordinator {
     private void newUserTemplate() {
         try {
             Set<String> taken =
-                    templates.load().templates().stream().map(Template::id).collect(Collectors.toSet());
+                    templates().load().templates().stream().map(Template::id).collect(Collectors.toSet());
             String id = "my-template";
-            for (int n = 2; taken.contains(id) || Files.exists(templates.userFile(id)); n++) {
+            for (int n = 2; taken.contains(id) || Files.exists(templates().userFile(id)); n++) {
                 id = "my-template-" + n;
             }
-            Path file = templates.userDir().resolve(id + ".json");
+            Path file = templates().userDir().resolve(id + ".json");
             Files.createDirectories(file.getParent());
             Files.writeString(file, USER_TEMPLATE_EXAMPLE, java.nio.file.StandardOpenOption.CREATE_NEW);
             openTemplateFile(file);

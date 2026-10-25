@@ -7,8 +7,8 @@ import java.nio.file.Path;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import com.editora.editor.MarkdownDocInfo;
-import com.editora.editor.PreviewImageLoader;
+import com.editora.editor.markdown.MarkdownDocInfo;
+import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.office.DocxWriter;
 import com.editora.office.OdtWriter;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;

@@ -10,6 +10,8 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Decodes a response body by its {@code Content-Encoding}. The JDK client hands the body over exactly as it
  * arrived, so a server answering {@code Accept-Encoding: gzip} — a header every browser-copied cURL command
@@ -48,15 +50,15 @@ public final class ContentDecoding {
      * The decoded stream, and the encoding left undecoded (null when everything was decoded); {@code tooManyLayers}
      * when it was left undecoded because it lists more than {@link #MAX_LAYERS} codings.
      */
-    public record Decoded(InputStream stream, String undecoded, boolean tooManyLayers) {
+    public record Decoded(InputStream stream, @Nullable String undecoded, boolean tooManyLayers) {
 
-        public Decoded(InputStream stream, String undecoded) {
+        public Decoded(InputStream stream, @Nullable String undecoded) {
             this(stream, undecoded, false);
         }
     }
 
     /** Wraps {@code in} with decoders for {@code contentEncoding} (a header value, may be null). */
-    public static Decoded decode(InputStream in, String contentEncoding) {
+    public static Decoded decode(InputStream in, @Nullable String contentEncoding) {
         List<String> codings = new ArrayList<>();
         if (contentEncoding != null) {
             for (String c : contentEncoding.split(",")) {
@@ -129,7 +131,7 @@ public final class ContentDecoding {
      */
     private static InputStream lazy(InputStream in, String coding) {
         return new InputStream() {
-            private InputStream decoder;
+            private @Nullable InputStream decoder;
 
             private InputStream decoder() throws IOException {
                 if (decoder == null) {

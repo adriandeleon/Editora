@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.stream.Stream;
 
 import com.editora.config.PathKeys;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Where {@code git clone} should put the repository, from what was typed in the clone form.
@@ -23,16 +24,18 @@ import com.editora.config.PathKeys;
  * @param errorKey the message key saying why not ({@code null} on success); its one argument is {@link #shown}
  * @param shown the path (or the raw text) to name in that message
  */
-record CloneDestination(Path path, String errorKey, String shown) {
+record CloneDestination(@Nullable Path path, @Nullable String errorKey, String shown) {
 
     boolean ok() {
         return path != null;
     }
 
     /** Resolves and validates the target without touching the disk beyond reading it. */
-    static CloneDestination resolve(String text, Path base, String userHome) {
+    static CloneDestination resolve(String text, @Nullable Path base, @Nullable String userHome) {
         String typed = text == null ? "" : text.strip();
-        Path target = PathKeys.resolveUserInputOn(typed, base, userHome);
+        // No home (a host that did not say): "~" names nothing, as resolveUserInputOn has it on a host.
+        boolean noHome = userHome == null && (typed.equals("~") || typed.startsWith("~/"));
+        Path target = noHome ? null : PathKeys.resolveUserInputOn(typed, base, userHome == null ? "" : userHome);
         if (target == null || target.getParent() == null) {
             return new CloneDestination(null, "status.clone.invalidDest", typed);
         }
@@ -47,12 +50,14 @@ record CloneDestination(Path path, String errorKey, String shown) {
     }
 
     /** {@link #resolve}, then creates the folders above the target when they are missing. */
-    static CloneDestination prepare(String text, Path base, String userHome) {
+    static CloneDestination prepare(String text, @Nullable Path base, @Nullable String userHome) {
         CloneDestination destination = resolve(text, base, userHome);
-        if (!destination.ok()) {
+        Path target = destination.path();
+        // resolve() only returns a path that has a parent
+        Path parent = target == null ? null : target.getParent();
+        if (parent == null) {
             return destination;
         }
-        Path parent = destination.path().getParent();
         try {
             Files.createDirectories(parent);
         } catch (IOException | SecurityException e) {

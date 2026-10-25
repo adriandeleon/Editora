@@ -8,6 +8,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A banner above the editor: a message, one action button, a dismiss button and a busy spinner — the
  * IntelliJ-style strip the "install language support?" offer and the shell line-ending notice use. Generic
@@ -20,8 +22,8 @@ final class NoticeBar {
     private final Button action = new Button();
     private final Button dismiss;
     private final ProgressIndicator progress = new ProgressIndicator();
-    private Runnable onAction;
-    private Runnable onDismiss;
+    private @Nullable Runnable onAction;
+    private @Nullable Runnable onDismiss;
 
     NoticeBar(String dismissLabel, String... styleClasses) {
         message.getStyleClass().add("lsp-install-title");

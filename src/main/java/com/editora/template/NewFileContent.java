@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The pure half of "New ▸ &lt;type&gt;": turns the name the user typed into a path to create, works
  * out the Java package the target folder implies, and renders the type's initial contents.
@@ -53,7 +55,7 @@ public final class NewFileContent {
     }
 
     /** The outcome of {@link #decide}: exactly one of {@code plan} / {@code refusal} is non-null. */
-    public record Decision(Plan plan, Refusal refusal) {
+    public record Decision(@Nullable Plan plan, @Nullable Refusal refusal) {
         static Decision refuse(Refusal why) {
             return new Decision(null, why);
         }
@@ -123,7 +125,7 @@ public final class NewFileContent {
      * The path to create, or null when {@code input} is unusable (blank after trimming is <em>not</em>
      * unusable — it falls back to the type's suggested name). {@link #decide} also says why.
      */
-    public static Plan plan(NewFileType type, String input, String basePackage) {
+    public static @Nullable Plan plan(NewFileType type, String input, String basePackage) {
         return decide(type, input, basePackage).plan();
     }
 
@@ -277,6 +279,19 @@ public final class NewFileContent {
      * The Java package {@code dir} implies with no project to bound the search: only the conventional
      * {@code src/main/java} and {@code src/test/java} markers count. See {@link #packageFor(Path, Path)}.
      */
+    /** A JUnit 5 test class for Related File's Create Test (the bundled "JUnit 5 Test" template's body). */
+    public static String junitTest(String packageName, String className) {
+        return (packageName.isEmpty() ? "" : "package " + packageName + ";\n\n")
+                + "import org.junit.jupiter.api.Test;\n\n"
+                + "import static org.junit.jupiter.api.Assertions.assertEquals;\n\n"
+                + "class " + className + " {\n\n"
+                + "    @Test\n"
+                + "    void works() {\n"
+                + "        assertEquals(2, 1 + 1);\n"
+                + "    }\n"
+                + "}\n";
+    }
+
     public static String packageFor(Path dir) {
         return packageFor(dir, null);
     }
@@ -297,7 +312,7 @@ public final class NewFileContent {
      * right-clicked. A folder whose name isn't a Java identifier ({@code my-notes}) ends the walk with
      * what precedes it, since the rest cannot be a package.
      */
-    public static String packageFor(Path dir, Path projectRoot) {
+    public static String packageFor(@Nullable Path dir, @Nullable Path projectRoot) {
         if (dir == null) {
             return "";
         }
@@ -305,7 +320,7 @@ public final class NewFileContent {
         Path root = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
         boolean bounded = root != null && abs.startsWith(root);
         List<String> segments = new ArrayList<>();
-        for (Path part : bounded ? root.relativize(abs) : abs) {
+        for (Path part : root != null && bounded ? root.relativize(abs) : abs) {
             if (!part.toString().isEmpty()) {
                 segments.add(part.toString());
             }
@@ -329,18 +344,21 @@ public final class NewFileContent {
      * {@code plainSrc} allows a leading {@code src} (the segments are then relative to a project root).
      */
     private static int sourceRootEnd(List<String> segments, boolean plainSrc) {
+        // src/<source set>/java: Maven's main and test, and Gradle's other source sets (integrationTest,
+        // testFixtures, jmh …), whose folders became part of the package (Java review C9).
         for (int i = segments.size() - 3; i >= 0; i--) {
             if (segments.get(i).equals("src")
-                    && (segments.get(i + 1).equals("main")
-                            || segments.get(i + 1).equals("test"))
+                    && isJavaIdentifier(segments.get(i + 1))
                     && segments.get(i + 2).equals("java")) {
                 return i + 3;
             }
         }
         if (plainSrc && !segments.isEmpty() && segments.get(0).equals("src")) {
-            boolean mavenLayout = segments.size() > 1
-                    && (segments.get(1).equals("main") || segments.get(1).equals("test"));
-            return mavenLayout ? -1 : 1;
+            boolean sourceSetLayout = segments.size() > 2 && segments.get(2).equals("java")
+                    || segments.size() > 1
+                            && (segments.get(1).equals("main")
+                                    || segments.get(1).equals("test"));
+            return sourceSetLayout ? -1 : 1;
         }
         return -1;
     }

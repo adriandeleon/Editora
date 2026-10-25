@@ -11,6 +11,8 @@ import java.util.function.Supplier;
 
 import javafx.application.Platform;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Runs a Doctor check list off the FX thread (the {@code GitService} idiom: daemon pool + generation
  * guard + {@link Platform#runLater} delivery). Each {@link CheckSpec}'s probe executes on a small fixed
@@ -28,7 +30,8 @@ public final class DoctorService {
      * One check to run: the {@code CHECKING} (or terminal {@code DISABLED}) row shown immediately, and the
      * blocking probe producing the resolved row — {@code null} for a terminal row that needs no probe.
      */
-    public record CheckSpec(DoctorCheck placeholder, Supplier<DoctorCheck> probe) {}
+    public record CheckSpec(
+            DoctorCheck placeholder, @Nullable Supplier<DoctorCheck> probe) {}
 
     private final ExecutorService pool = Executors.newFixedThreadPool(POOL_SIZE, r -> {
         Thread t = new Thread(r, "doctor");
@@ -68,7 +71,8 @@ public final class DoctorService {
                 }
                 DoctorCheck resolved;
                 try {
-                    resolved = spec.probe().get();
+                    resolved = java.util.Objects.requireNonNull(spec.probe(), "live specs have a probe")
+                            .get();
                 } catch (RuntimeException e) {
                     // A probe must never sink the run; surface the failure as a missing row with the reason.
                     resolved = spec.placeholder().missing("doctor.tip.probeFailed", String.valueOf(e.getMessage()));

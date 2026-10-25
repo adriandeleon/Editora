@@ -3,6 +3,8 @@ package com.editora.markdown;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The link under a caret as something to edit: where it is, its text and where it points — and the edits
  * the link tools make of it (retarget, remove, inline ⇄ reference). Pure.
@@ -25,7 +27,13 @@ public final class MarkdownLinks {
      * @param label the reference label, or null for an inline link
      * @param image whether it starts with {@code !}
      */
-    public record Link(int start, int end, String text, String destination, String label, boolean image) {
+    public record Link(
+            int start,
+            int end,
+            String text,
+            String destination,
+            @Nullable String label,
+            boolean image) {
         public boolean isReference() {
             return label != null;
         }
@@ -37,7 +45,7 @@ public final class MarkdownLinks {
     private MarkdownLinks() {}
 
     /** The link whose span contains {@code caret} (ends included), or null. */
-    public static Link at(String text, int caret) {
+    public static @Nullable Link at(String text, int caret) {
         int ls = text.lastIndexOf('\n', caret - 1) + 1;
         int le = text.indexOf('\n', caret);
         le = le < 0 ? text.length() : le;
@@ -113,7 +121,7 @@ public final class MarkdownLinks {
         return -1;
     }
 
-    private static Matcher definitionMatch(String text, String label) {
+    private static @Nullable Matcher definitionMatch(String text, String label) {
         Matcher m = DEFINITION.matcher(text);
         while (m.find()) {
             if (normal(m.group(1)).equals(normal(label))) {
@@ -158,22 +166,23 @@ public final class MarkdownLinks {
      * place and its definition is pointed at the new destination. The caret ends behind the link.
      */
     public static MarkdownEdit set(
-            String text, Link link, int selStart, int selEnd, String linkText, String destination) {
+            String text, @Nullable Link link, int selStart, int selEnd, String linkText, String destination) {
         String dest = destination == null ? "" : destination.strip();
         if (link == null) {
             String made = inline(linkText, dest, false);
             return new MarkdownEdit(selStart, selEnd, made, selStart + made.length(), selStart + made.length());
         }
-        if (!link.isReference()) {
+        String label = link.label();
+        if (label == null) {
             String made = inline(linkText, dest, link.image());
             return new MarkdownEdit(
                     link.start(), link.end(), made, link.start() + made.length(), link.start() + made.length());
         }
         // Reference: rewrite the use and its definition, which may be on either side of it.
-        String use = (link.image() ? "!" : "") + "[" + MarkdownInline.escapeUnbalancedBrackets(linkText) + "]["
-                + link.label() + "]";
-        Matcher def = definitionMatch(text, link.label());
-        String line = "[" + link.label() + "]: " + MarkdownImagePaste.destination(dest);
+        String use = (link.image() ? "!" : "") + "[" + MarkdownInline.escapeUnbalancedBrackets(linkText) + "][" + label
+                + "]";
+        Matcher def = definitionMatch(text, label);
+        String line = "[" + label + "]: " + MarkdownImagePaste.destination(dest);
         if (def == null) {
             String tail = text.substring(link.end()).stripTrailing();
             String made = use + tail + "\n\n" + line;
@@ -207,7 +216,7 @@ public final class MarkdownLinks {
      * after the last line, {@code n} being the label an existing definition of the same destination already
      * has, else the next unused number. Returns {@code null} for a link that is a reference already.
      */
-    public static MarkdownEdit toReference(String text, Link link) {
+    public static @Nullable MarkdownEdit toReference(String text, Link link) {
         if (link.isReference()) {
             return null;
         }
@@ -246,9 +255,10 @@ public final class MarkdownLinks {
      * Turns the reference {@code link} into an inline one; its definition goes too when no other link uses
      * it. Returns {@code null} for an inline link and for a label that is not defined.
      */
-    public static MarkdownEdit toInline(String text, Link link) {
-        Matcher def = link.isReference() ? definitionMatch(text, link.label()) : null;
-        if (def == null) {
+    public static @Nullable MarkdownEdit toInline(String text, Link link) {
+        String label = link.label();
+        Matcher def = label == null ? null : definitionMatch(text, label);
+        if (label == null || def == null) {
             return null;
         }
         String made = inline(link.text(), link.destination(), link.image());
@@ -257,7 +267,7 @@ public final class MarkdownLinks {
         String rest =
                 text.substring(0, link.start()) + " ".repeat(link.end() - link.start()) + text.substring(link.end());
         rest = rest.substring(0, def.start()) + " ".repeat(def.end() - def.start()) + rest.substring(def.end());
-        boolean shared = Pattern.compile("\\[" + Pattern.quote(link.label()) + "\\]", Pattern.CASE_INSENSITIVE)
+        boolean shared = Pattern.compile("\\[" + Pattern.quote(label) + "\\]", Pattern.CASE_INSENSITIVE)
                 .matcher(rest)
                 .find();
         if (shared) {

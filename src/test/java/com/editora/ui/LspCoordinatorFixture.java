@@ -20,8 +20,8 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.config.Settings;
-import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.lsp.CodeAction;
 import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
@@ -132,6 +132,29 @@ final class LspCoordinatorFixture implements AutoCloseable {
         final List<Boolean> loading = new ArrayList<>();
         final List<String> statusBarLabels = new ArrayList<>();
         final List<String> commands = new ArrayList<>();
+        /** Buffers the coordinator saved; a save succeeds (and marks the buffer clean) only when {@link #saves} is on. */
+        final List<EditorBuffer> saved = new ArrayList<>();
+
+        boolean saves;
+
+        @Override
+        public boolean saveBuffer(EditorBuffer buffer) {
+            if (!saves) {
+                return false;
+            }
+            saved.add(buffer);
+            buffer.markClean();
+            return true;
+        }
+
+        /** The config the coordinator reads Editora's folders from; null as in a window without one. */
+        com.editora.config.ConfigManager configManager;
+
+        @Override
+        public com.editora.config.ConfigManager config() {
+            return configManager;
+        }
+
         final List<EditorBuffer> selected = new ArrayList<>();
         int referencesWindowOpened;
         int hierarchyWindowOpened;

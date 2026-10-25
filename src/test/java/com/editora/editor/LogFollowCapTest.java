@@ -1,5 +1,6 @@
 package com.editora.editor;
 
+import com.editora.editor.logviewer.LogView;
 import com.editora.logviewer.LogTail;
 import org.junit.jupiter.api.Test;
 

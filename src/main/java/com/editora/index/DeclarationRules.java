@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The per-language patterns {@link DeclarationScanner} matches declarations with.
  *
@@ -36,7 +38,11 @@ final class DeclarationRules {
      * signature shape on top of it just rejects real declarations: Python's {@code def render(self):}
      * ends in a colon and Ruby's {@code def run!} ends in the name itself.
      */
-    record Rule(Pattern pattern, SymbolKind kind, boolean needsSignatureShape, String mustContain) {
+    record Rule(
+            Pattern pattern,
+            SymbolKind kind,
+            boolean needsSignatureShape,
+            @Nullable String mustContain) {
 
         Rule(Pattern pattern, SymbolKind kind, boolean needsSignatureShape) {
             this(pattern, kind, needsSignatureShape, null);

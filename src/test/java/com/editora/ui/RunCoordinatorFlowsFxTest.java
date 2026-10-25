@@ -13,6 +13,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -253,6 +254,26 @@ class RunCoordinatorFlowsFxTest {
             gradleRuns.add(r.toString());
         }
 
+        /** Which tool's executable was asked for, from which root ({@code maven@proj}). */
+        final List<String> buildExecutables = new ArrayList<>();
+
+        /** The user declined to trust the project's wrapper: the gate answers null and nothing may run. */
+        boolean refuseTrust;
+
+        @Override
+        public List<String> buildExecutable(com.editora.build.BuildTool tool, Path root) {
+            buildExecutables.add(tool.id() + "@" + root.getFileName());
+            return refuseTrust ? null : List.of(fakeMvn.toString());
+        }
+
+        /** What the Maven tasks tree's toggles add to a task (profiles, its reactor switch). */
+        List<String> toggles = List.of();
+
+        @Override
+        public List<String> mavenToggleArgs() {
+            return toggles;
+        }
+
         final List<String> httpRuns = new ArrayList<>();
 
         @Override
@@ -267,6 +288,10 @@ class RunCoordinatorFlowsFxTest {
     private RunCoordinator run;
     private Path jdk;
     private String java;
+    /** The stand-in build tool {@link Ops#buildExecutable} hands out: logs its argv, writes a classpath. */
+    private Path fakeMvn;
+    /** What the stand-in was run with, one line per run; absent when it never ran. */
+    private Path mvnLog;
 
     private static final String PATH_SEP = System.getProperty("path.separator");
 
@@ -277,7 +302,56 @@ class RunCoordinatorFlowsFxTest {
         host = new Host();
         ops = new Ops();
         ops.javaRoot = project;
+        fakeMvn = standInBuildTool(project);
+        mvnLog = project.resolve("mvn.log");
         run = FxTestSupport.callOnFx(() -> new RunCoordinator(host, ops));
+    }
+
+    /**
+     * A build tool that records its command line (and {@code JAVA_HOME}) in {@code mvn.log}, writes
+     * {@code /repo/dep.jar} as the dependency classpath when asked for one, fails with Maven's wording while
+     * {@code mvn.fail} exists, and dawdles while {@code mvn.slow} exists.
+     */
+    private static Path standInBuildTool(Path project) throws Exception {
+        Path exe = project.resolve("fake-mvn");
+        Files.writeString(
+                exe,
+                "#!/bin/sh\n"
+                        + "echo \"$* JAVA_HOME=$JAVA_HOME\" >> \"" + project.resolve("mvn.log") + "\"\n"
+                        + "echo \"build: $*\"\n"
+                        + "if [ -f \"" + project.resolve("mvn.slow") + "\" ]; then sleep 20; fi\n"
+                        + "if [ -f \"" + project.resolve("mvn.noreactor") + "\" ]; then case \" $* \" in *' -pl '*)\n"
+                        + "  echo '[ERROR] Could not find the selected project in the reactor: modules/b' >&2\n"
+                        + "  exit 1;; esac; fi\n"
+                        + "if [ -f \"" + project.resolve("mvn.fail") + "\" ]; then\n"
+                        + "  echo '[ERROR] Failed to execute goal demo:compile: boom' >&2\n"
+                        + "  echo '[ERROR] -> [Help 1]' >&2\n"
+                        + "  exit 1\n"
+                        + "fi\n"
+                        + "for a in \"$@\"; do case \"$a\" in -Dmdep.outputFile=*) printf '/repo/dep.jar' > \"${a#-Dmdep.outputFile=}\";; esac; done\n");
+        Files.setPosixFilePermissions(exe, PosixFilePermissions.fromString("rwxr-xr-x"));
+        return exe;
+    }
+
+    /** A {@code java} that only reports the JVM's "no such main class" error, the way an unbuilt project does. */
+    private static String standInJavaWithoutClasses(Path home) throws Exception {
+        Path bin = Files.createDirectories(home.resolve("bin"));
+        Path exe = bin.resolve("java");
+        Files.writeString(
+                exe,
+                "#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then exit 0; fi\n"
+                        + "echo 'Error: Could not find or load main class demo.App' >&2\n"
+                        + "echo 'Caused by: java.lang.ClassNotFoundException: demo.App' >&2\nexit 1\n");
+        Files.setPosixFilePermissions(exe, PosixFilePermissions.fromString("rwxr-xr-x"));
+        return exe.toString();
+    }
+
+    private List<String> buildRuns() throws Exception {
+        return Files.exists(mvnLog) ? Files.readAllLines(mvnLog) : List.of();
+    }
+
+    private static RunConfiguration javaConfigWithStep(String name, String mainClass, String beforeLaunch) {
+        return new RunConfiguration(name, "java", "", mainClass, "", "", "", "", "", beforeLaunch, "");
     }
 
     @AfterEach
@@ -348,6 +422,12 @@ class RunCoordinatorFlowsFxTest {
             boolean header = !text.isEmpty() && output.getStyleOfChar(0).contains("run-command");
             return header ? text.substring(text.indexOf('\n') + 1) : text;
         });
+    }
+
+    /** The whole console, muted notices included. */
+    private String rawConsole() throws Exception {
+        CodeArea output = FxTestSupport.field(run.panel(), "output");
+        return FxTestSupport.callOnFx(output::getText);
     }
 
     private String panelStatus() throws Exception {
@@ -1094,7 +1174,6 @@ class RunCoordinatorFlowsFxTest {
                 "package demo;\npublic class App {\n  public static void main(String[] args) {}\n}\n",
                 false);
         ops.maven = true;
-        ops.mavenClasspath = List.of("/repo/dep.jar", "/proj/target/classes");
         ops.programArgs.put("App.java", "x y");
 
         FxTestSupport.runOnFx(() -> {
@@ -1104,21 +1183,310 @@ class RunCoordinatorFlowsFxTest {
         awaitStatus(tr("status.run.ok"));
 
         assertEquals(List.of("App.java"), ops.saved, "the edited file is saved before Maven compiles it");
-        assertEquals(List.of(jdk.toString()), ops.mavenJdks, "the classpath is resolved under the selected JDK");
-        String shown = console();
-        assertTrue(shown.contains("java -cp /repo/dep.jar" + PATH_SEP + "/proj/target/classes demo.App x y\n"), shown);
+        // The resolution runs in the Run console with the tasks tree's Maven (review D3), the selected JDK as
+        // its JAVA_HOME, the runtime scope only (review D6), and its own status while it runs (review D4).
+        assertEquals(List.of("maven@" + project.getFileName()), ops.buildExecutables);
+        List<String> builds = buildRuns();
+        assertEquals(1, builds.size(), builds.toString());
         assertTrue(
-                statuses().contains(tr("status.run.resolvingClasspath")),
+                builds.get(0).startsWith("-q compile dependency:build-classpath -Dmdep.includeScope=runtime "),
+                builds.get(0));
+        assertTrue(builds.get(0).endsWith(" JAVA_HOME=" + jdk), builds.get(0));
+        String shown = console();
+        String classes = project.resolve("target").resolve("classes").toString();
+        assertTrue(shown.contains("java -cp " + classes + PATH_SEP + "/repo/dep.jar demo.App x y\n"), shown);
+        assertTrue(
+                statuses().contains(tr("status.run.resolveClasspath", "App")),
                 statuses().toString());
 
+        // A failure keeps Maven's first [ERROR] line in the status and its whole output in the console.
         clearLog();
-        ops.mavenClasspath = List.of();
+        Files.writeString(project.resolve("mvn.fail"), "");
         FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
-        awaitStatus(tr("status.run.resolveFailed"));
+        awaitStatus(
+                tr("status.run.resolveClasspathFailed", "App", "[ERROR] Failed to execute goal demo:compile: boom"));
+        assertTrue(console().contains("[ERROR] -> [Help 1]\n"), console());
+        assertFalse(console().contains("java -cp"), "nothing was launched: " + console());
+        Files.delete(project.resolve("mvn.fail"));
 
         clearLog();
         FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.Elsewhere")); // not a main of this file
         assertEquals(List.of(tr("status.run.noMainInFile")), statuses());
+    }
+
+    /** The reactor's root pom, listing {@code modules/b}; the folder {@code modules} has no pom of its own. */
+    private Path reactorModule() throws Exception {
+        Files.writeString(
+                project.resolve("pom.xml"),
+                "<project><artifactId>root</artifactId><packaging>pom</packaging>"
+                        + "<modules><module>modules/b</module></modules></project>");
+        Path b = Files.createDirectories(project.resolve("modules").resolve("b"));
+        Files.writeString(b.resolve("pom.xml"), "<project><artifactId>b</artifactId></project>");
+        return b;
+    }
+
+    /**
+     * A module its reactor lists builds from the root with {@code -pl -am}, with the tasks tree's profiles
+     * but not its reactor switch (reviews D5, D13); when Maven's reactor disagrees, the module builds alone.
+     */
+    @Test
+    void withoutJdtlsAModuleBuildsFromItsReactorAndAloneWhenMavenRefusesTheSelection() throws Exception {
+        host.settings.setMavenJdkHome(jdk.toString());
+        Path b = reactorModule();
+        ops.javaRoot = b;
+        ops.maven = true;
+        ops.toggles = List.of("-f", project.resolve("pom.xml").toString(), "-pl", "app", "-am", "-Pdev");
+        open(
+                "modules/b/src/main/java/demo/App.java",
+                "package demo;\npublic class App {\n  public static void main(String[] a) {}\n}\n",
+                false);
+
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(tr("status.run.ok"));
+        List<String> builds = buildRuns();
+        assertEquals(1, builds.size(), builds.toString());
+        assertTrue(builds.get(0).startsWith("-q -pl modules/b -am compile dependency:build-classpath "), builds.get(0));
+        assertTrue(
+                builds.get(0).contains(" -Pdev JAVA_HOME="),
+                "the tree's profile, not its reactor switch: " + builds.get(0));
+        assertFalse(builds.get(0).contains("-pl app"), builds.get(0));
+        String classes = b.resolve("target").resolve("classes").toString();
+        assertTrue(console().contains("java -cp " + classes + PATH_SEP + "/repo/dep.jar demo.App"), console());
+
+        // Maven's reactor does not hold the module: built alone, and the program still runs.
+        Files.writeString(project.resolve("mvn.noreactor"), "");
+        clearLog();
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(tr("status.run.ok"));
+        builds = buildRuns();
+        assertEquals(3, builds.size(), builds.toString());
+        assertTrue(builds.get(1).contains("-pl modules/b"), builds.get(1));
+        assertTrue(builds.get(2).startsWith("-q compile dependency:build-classpath "), "alone: " + builds.get(2));
+        assertTrue(builds.get(2).contains(" -Pdev "), "the profile stays: " + builds.get(2));
+        assertTrue(console().contains("java -cp " + classes), console());
+
+        // The retry's console says what happened; a failing retry keeps its output.
+        Files.writeString(project.resolve("mvn.fail"), "");
+        clearLog();
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(
+                tr("status.run.resolveClasspathFailed", "App", "[ERROR] Failed to execute goal demo:compile: boom"));
+        String shown = rawConsole(); // the retry's notice is the console's first (muted) line
+        assertTrue(shown.contains(tr("run.console.mavenReactorRetry", "b")), shown);
+        assertTrue(shown.contains(tr("run.console.mavenSingleModule")), shown);
+        assertFalse(shown.contains("java -cp"), shown);
+        assertEquals(5, buildRuns().size(), "the reactor attempt, then the module alone");
+    }
+
+    /** A saved configuration resolves its own module — by projectName — not the routing file's (review D12). */
+    @Test
+    void withoutJdtlsAConfigurationResolvesTheModuleItNamesNotTheRoutingFiles() throws Exception {
+        host.settings.setMavenJdkHome(jdk.toString());
+        Path b = reactorModule();
+        Files.createDirectories(b.resolve("src/main/java/demo"));
+        Files.writeString(b.resolve("src/main/java/demo/BMain.java"), "package demo;\npublic class BMain {}\n");
+        ops.javaRoot = project; // the active file is the root module's
+        ops.maven = true;
+        open("src/main/java/demo/Other.java", "package demo;\npublic class Other {}\n", false);
+
+        FxTestSupport.runOnFx(
+                () -> run.runConfig(new RunConfiguration("B", "java", "", "demo.BMain", "b", "", "", "", "", "", "")));
+        awaitStatus(tr("status.run.ok"));
+        List<String> builds = buildRuns();
+        assertEquals(1, builds.size(), builds.toString());
+        assertTrue(builds.get(0).startsWith("-q -pl modules/b -am compile "), "b's reactor plan: " + builds.get(0));
+        String classes = b.resolve("target").resolve("classes").toString();
+        assertTrue(console().contains("java -cp " + classes + PATH_SEP + "/repo/dep.jar demo.BMain\n"), console());
+        assertTrue(console().contains("cwd=" + b.toRealPath()), "blank working directory = the module: " + console());
+
+        // By the main class's source file when the name matches nothing.
+        clearLog();
+        FxTestSupport.runOnFx(
+                () -> run.runConfig(new RunConfiguration("B2", "java", "", "demo.BMain", "", "", "", "", "", "", "")));
+        awaitStatus(tr("status.run.ok"));
+        assertTrue(
+                buildRuns().get(1).startsWith("-q -pl modules/b -am compile "),
+                buildRuns().get(1));
+    }
+
+    /** A second ▶ during the resolution is refused, and Stop ends it with nothing launched (review D8). */
+    @Test
+    void withoutJdtlsTheResolutionIsBusyAndStoppable() throws Exception {
+        host.settings.setMavenJdkHome(jdk.toString());
+        open(
+                "src/main/java/demo/App.java",
+                "package demo;\npublic class App {\n  public static void main(String[] a) {}\n}\n",
+                false);
+        ops.maven = true;
+        Files.writeString(project.resolve("mvn.slow"), "");
+
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(tr("status.run.resolveClasspath", "App"));
+        awaitConsole("build: -q compile");
+        assertTrue(FxTestSupport.callOnFx(run::isRunning), "the step counts as running");
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(tr("status.run.busy"));
+        assertEquals(1, buildRuns().size(), "one resolution, not two");
+
+        FxTestSupport.runOnFx(run::stopRun);
+        awaitStatus(tr("status.run.resolveClasspathStopped", "App"));
+        assertFalse(console().contains("java -cp"), console());
+        assertFalse(FxTestSupport.callOnFx(run::isRunning));
+    }
+
+    /** The trust gate's "no" is final: no wrapper, and no quiet fallback to PATH Maven either. */
+    @Test
+    void aDeclinedTrustLaunchesNothing() throws Exception {
+        open(
+                "src/main/java/demo/App.java",
+                "package demo;\npublic class App {\n  public static void main(String[] a) {}\n}\n",
+                false);
+        ops.maven = true;
+        ops.refuseTrust = true;
+
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        FxTestSupport.drainFx();
+        assertEquals(List.of(), buildRuns());
+        assertEquals("", console());
+        assertEquals(List.of(), statuses(), "the gate itself says why");
+
+        ops.jdtls = true; // the build before a jdtls launch is gated the same way
+        ops.mainClasses = List.of(new JavaMainClass(
+                "demo.App",
+                "proj",
+                project.resolve("src/main/java/demo/App.java").toString()));
+        ops.launchInfo = new JavaLaunchInfo(java, List.of(), List.of("/c/classes"), null);
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        FxTestSupport.drainFx();
+        assertEquals(List.of(), buildRuns());
+        assertEquals("", console());
+    }
+
+    // --- the build before a jdtls launch (review D2) ---------------------------------------------------
+
+    @Test
+    void throughJdtlsAMavenProjectIsCompiledBeforeTheLaunchUnlessTurnedOff() throws Exception {
+        host.settings.setMavenJdkHome(jdk.toString());
+        open("src/main/java/demo/App.java", "package demo;\npublic class App {}\n", false);
+        ops.jdtls = true;
+        ops.maven = true;
+        ops.mainClasses = List.of(new JavaMainClass(
+                "demo.App",
+                "proj",
+                project.resolve("src/main/java/demo/App.java").toString()));
+        ops.launchInfo = new JavaLaunchInfo(java, List.of(), List.of("/c/classes"), null);
+
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(tr("status.run.ok"));
+
+        List<String> builds = buildRuns();
+        assertEquals(1, builds.size(), builds.toString());
+        assertTrue(builds.get(0).startsWith("-q compile JAVA_HOME=" + jdk), "the project's JDK: " + builds.get(0));
+        assertEquals(List.of("maven@" + project.getFileName()), ops.buildExecutables, "the tasks tree's Maven");
+        List<String> statuses = statuses();
+        assertTrue(
+                statuses.indexOf(tr("status.run.buildBeforeLaunch", "App"))
+                        < statuses.indexOf(tr("status.run.started", "App")),
+                "the build precedes the launch: " + statuses);
+        assertTrue(console().contains("java -cp /c/classes demo.App\n"), console());
+
+        // A failed build aborts the launch, with Maven's error in the status.
+        clearLog();
+        Files.writeString(project.resolve("mvn.fail"), "");
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(
+                tr("status.run.buildBeforeLaunchFailed", "App", "[ERROR] Failed to execute goal demo:compile: boom"));
+        assertFalse(console().contains("java -cp"), "nothing was launched: " + console());
+        Files.delete(project.resolve("mvn.fail"));
+        Files.delete(mvnLog);
+
+        // Turned off, the launch runs what target/classes holds, as before.
+        clearLog();
+        host.settings.setBuildBeforeRun(false);
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(List.of(), buildRuns(), "no build");
+        assertTrue(console().contains("java -cp /c/classes demo.App\n"), console());
+    }
+
+    /** Without the build, the JVM's "could not find main class" gets the hint to build (review D15). */
+    @Test
+    void throughJdtlsAnUnbuiltProjectsFailureSaysToBuild() throws Exception {
+        host.settings.setBuildBeforeRun(false);
+        open("src/main/java/demo/App.java", "package demo;\npublic class App {}\n", false);
+        ops.jdtls = true;
+        ops.maven = true;
+        ops.mainClasses = List.of(new JavaMainClass("demo.App", "proj", ""));
+        ops.launchInfo = new JavaLaunchInfo(
+                standInJavaWithoutClasses(project.resolve("jdk-empty")), List.of(), List.of("/c/classes"), null);
+
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(tr("status.run.exit", 1));
+        String shown = console();
+        assertTrue(shown.contains("Error: Could not find or load main class demo.App\n"), shown);
+        assertEquals(
+                1, shown.split(Pattern.quote(tr("run.console.buildHint")), -1).length - 1, "the hint, once: " + shown);
+    }
+
+    @Test
+    void throughJdtlsATestClassIsBuiltWithTestCompileAndAGradleProjectWithCompileJava() throws Exception {
+        open("src/test/java/demo/Probe.java", "package demo;\npublic class Probe {}\n", false);
+        ops.jdtls = true;
+        ops.maven = true;
+        ops.mainClasses = List.of(new JavaMainClass(
+                "demo.Probe",
+                "proj",
+                project.resolve("src/test/java/demo/Probe.java").toString()));
+        ops.launchInfo = new JavaLaunchInfo(java, List.of(), List.of("/c/test-classes"), null);
+
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.Probe"));
+        awaitStatus(tr("status.run.ok"));
+        assertTrue(
+                buildRuns().get(0).startsWith("-q test-compile "), buildRuns().toString());
+
+        clearLog();
+        Files.delete(mvnLog);
+        ops.maven = false;
+        ops.gradle = true;
+        ops.mainClasses = List.of(new JavaMainClass(
+                "demo.App",
+                "proj",
+                project.resolve("src/main/java/demo/App.java").toString()));
+        FxTestSupport.runOnFx(() -> run.runMainClassNamed("demo.App"));
+        awaitStatus(tr("status.run.ok"));
+        assertTrue(buildRuns().get(0).startsWith("-q compileJava "), buildRuns().toString());
+        assertEquals("gradle@" + project.getFileName(), ops.buildExecutables.get(ops.buildExecutables.size() - 1));
+    }
+
+    /** A configuration's own step is the build: never doubled. A symbolic one runs the tree's Maven (review D3). */
+    @Test
+    void aConfigurationsOwnBeforeLaunchStepReplacesTheAutomaticBuild() throws Exception {
+        open("src/main/java/demo/App.java", "package demo;\npublic class App {}\n", false);
+        ops.jdtls = true;
+        ops.maven = true;
+        ops.mainClasses = List.of(new JavaMainClass(
+                "demo.App",
+                "proj",
+                project.resolve("src/main/java/demo/App.java").toString()));
+        ops.launchInfo = new JavaLaunchInfo(java, List.of(), List.of("/c/classes"), null);
+
+        FxTestSupport.runOnFx(
+                () -> run.runConfig(javaConfigWithStep("App", "demo.App", "maven:compile resources:resources")));
+        awaitStatus(tr("status.run.ok"));
+        List<String> builds = buildRuns();
+        assertEquals(1, builds.size(), "the symbolic step, and no automatic build after it: " + builds);
+        assertTrue(builds.get(0).startsWith("-q compile resources:resources "), builds.get(0));
+        assertEquals(List.of("maven@" + project.getFileName()), ops.buildExecutables);
+        assertTrue(console().contains("java -cp /c/classes demo.App\n"), console());
+
+        clearLog();
+        Files.delete(mvnLog);
+        FxTestSupport.runOnFx(() -> run.runConfig(javaConfigWithStep("Own", "demo.App", "sh -c \"echo own step\"")));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(List.of(), buildRuns(), "a plain command is the user's build; Maven is not run as well");
+        assertTrue(
+                statuses().contains(tr("status.run.beforeLaunch", "Own")),
+                statuses().toString());
     }
 
     @Test
@@ -1231,16 +1599,31 @@ class RunCoordinatorFlowsFxTest {
         host.settings.setMavenJdkHome(jdk.toString());
         open("src/main/java/demo/App.java", "package demo;\npublic class App {}\n", false);
         ops.maven = true;
-        ops.mavenClasspath = List.of("/proj/target/classes");
 
         FxTestSupport.runOnFx(() -> run.runConfig(javaConfig("App", "demo.App", "", "")));
         awaitStatus(tr("status.run.ok"));
-        assertTrue(console().contains("java -Dmode=test -cp /proj/target/classes demo.App one two three\n"), console());
+        String classes = project.resolve("target").resolve("classes").toString();
+        assertTrue(
+                console()
+                        .contains("java -Dmode=test -cp " + classes + PATH_SEP
+                                + "/repo/dep.jar demo.App one two three\n"),
+                console());
+        assertTrue(
+                buildRuns().get(0).endsWith(" JAVA_HOME=" + jdk), "the classpath is resolved under the selected JDK");
 
         clearLog();
-        ops.mavenClasspath = null;
+        Files.writeString(project.resolve("mvn.fail"), "");
         FxTestSupport.runOnFx(() -> run.runConfig(javaConfig("App", "demo.App", "", "")));
-        assertEquals(List.of(tr("status.run.resolvingClasspath"), tr("status.run.resolveFailed")), statuses());
+        awaitStatus(
+                tr("status.run.resolveClasspathFailed", "App", "[ERROR] Failed to execute goal demo:compile: boom"));
+        assertEquals(
+                List.of(
+                        tr("status.run.resolveClasspath", "App"),
+                        tr(
+                                "status.run.resolveClasspathFailed",
+                                "App",
+                                "[ERROR] Failed to execute goal demo:compile: boom")),
+                statuses());
     }
 
     @Test

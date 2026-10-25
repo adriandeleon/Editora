@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The catalog of customizable main-toolbar items and the shipped default arrangement.
  *
@@ -43,12 +45,12 @@ public final class ToolbarCatalog {
     public static final java.util.Set<String> SPECIAL_WIDGET_IDS = java.util.Set.of("toolbar.recent");
 
     /** A customizable toolbar item. {@code commandId} is null for a non-command widget (the Recent button). */
-    public record Item(String id, String iconKey, String commandId) {}
+    public record Item(String id, String iconKey, @Nullable String commandId) {}
 
     // Insertion order defines the "Available items" ordering in the Settings page.
     private static final Map<String, Item> ITEMS = new LinkedHashMap<>();
 
-    private static void add(String id, String iconKey, String commandId) {
+    private static void add(String id, String iconKey, @Nullable String commandId) {
         ITEMS.put(id, new Item(id, iconKey, commandId));
     }
 
@@ -92,7 +94,7 @@ public final class ToolbarCatalog {
     }
 
     /** The item with this id, or {@code null} if unknown. */
-    public static Item item(String id) {
+    public static @Nullable Item item(String id) {
         return ITEMS.get(id);
     }
 

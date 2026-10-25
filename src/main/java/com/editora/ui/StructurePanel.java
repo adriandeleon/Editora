@@ -1,14 +1,10 @@
 package com.editora.ui;
 
-import java.util.ArrayDeque;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -23,11 +19,13 @@ import javafx.scene.control.IndexedCell;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.control.skin.VirtualFlow;
+import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -36,17 +34,19 @@ import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.FoldRegions.Region;
-import com.editora.editor.TextMateHighlighter.Symbol;
+import com.editora.editor.fold.NarrowLines;
 import com.editora.lsp.SymbolNode;
 import com.editora.search.FuzzyMatch;
+import com.editora.text.FoldRegions.Region;
+import com.editora.ui.StructureNode.SyntaxRun;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
 /**
  * Tool window content showing the active editor's foldable-region hierarchy as a collapsible tree,
- * mirroring the code/text folding model ({@link com.editora.editor.FoldRegions}). A search box at the
+ * mirroring the code/text folding model ({@link com.editora.text.FoldRegions}). A search box at the
  * top fuzzy-filters the tree, and selecting an entry navigates the editor caret to that line.
  *
  * <p>The panel marks itself with the {@code editora.ownsKeys} property so the scene-level key
@@ -72,19 +72,62 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         KIND
     }
 
+    /**
+     * Narrowing, as the editing coordinator does it (status messages included); wired by MainController. Lines
+     * are document lines: the outline keeps the whole file's numbering while the buffer is narrowed.
+     */
+    interface NarrowActions {
+        /**
+         * Narrows to {@code block} when it holds document line {@code line} (the picked row's own block), else to
+         * the innermost foldable region of the whole document holding the line; false when there is none.
+         */
+        boolean narrowToFoldRegion(EditorBuffer buffer, int line, @Nullable Region block);
+
+        /** Shows the whole file again; a no-op for a buffer that is not narrowed. */
+        void widen(EditorBuffer buffer);
+    }
+
     private final TextField filterField = new TextField();
     private final TreeView<StructureNode> tree = new TreeView<>();
     private final ComboBox<SortMode> sortCombo = new ComboBox<>();
     private final MenuButton kindFilter = new MenuButton();
 
-    private EditorBuffer buffer;
-    private MarkerActions markerActions;
+    private @Nullable EditorBuffer buffer;
+    private @Nullable MarkerActions markerActions;
+    private @Nullable NarrowActions narrowActions;
+    /**
+     * Whether the attached buffer is in fold mode: picking a symbol narrows the editor to its foldable block. The
+     * mode belongs to the buffer it was turned on for ({@link #foldModes} remembers the others' across tab
+     * switches) and ends when that buffer is widened by any means.
+     */
+    private boolean foldMode;
+
+    private final java.util.Set<EditorBuffer> foldModes =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    private final ToggleButton narrowFold = new ToggleButton();
+    /**
+     * The whole file's outline while the buffer is narrowed, in document lines. The fold manager and the
+     * highlighter then only know the region the area holds, so this is computed from {@code getContent()} off
+     * the FX thread ({@link #refreshNarrowedOutline}); null while the buffer is whole.
+     */
+    private @Nullable List<StructureNode> narrowedRoots;
+
+    private int narrowedOutlineGeneration;
+    /** Whether the selected row was picked by the user, as opposed to left selected by a rebuild. */
+    private boolean userPicked;
+
+    private java.util.function.BooleanSupplier simpleMode = () -> false;
+    private java.util.function.Function<String, @Nullable String> chordFor = id -> null;
+    private static final javafx.css.PseudoClass NARROWED_ELSEWHERE =
+            javafx.css.PseudoClass.getPseudoClass("narrowed-elsewhere");
+    private static final javafx.css.PseudoClass OUT_OF_REACH = javafx.css.PseudoClass.getPseudoClass("out-of-reach");
+
     private List<StructureNode> roots = List.of();
     /**
      * The LSP document-symbol outline for the active buffer, or {@code null} to use the TextMate/fold
      * heuristic. {@link #setLspSymbols} pushes it (an empty list means "LSP served, but no symbols").
      */
-    private List<SymbolNode> lspSymbols;
+    private @Nullable List<SymbolNode> lspSymbols;
 
     private SortMode sortMode = SortMode.POSITION;
     /** Symbol kinds toggled off in the kind filter (session-only). */
@@ -122,9 +165,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     // The server outline is only fetched while something shows it. With the window closed the coordinator
     // reports each skipped refresh here (lspSymbolsStale); the outline is asked for again when the window
     // opens or the Jump to Structure picker reads it.
-    private java.util.function.Consumer<EditorBuffer> lspSymbolsRequester;
+    private java.util.function.@Nullable Consumer<EditorBuffer> lspSymbolsRequester;
     private boolean lspSymbolsStale;
-    private Runnable onHiddenOutlineChanged;
+    private @Nullable Runnable onHiddenOutlineChanged;
 
     /** Sets how a stale server outline is re-requested (for the attached buffer). */
     void setLspSymbolsRequester(java.util.function.Consumer<EditorBuffer> requester) {
@@ -139,6 +182,21 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     /** Whether the tool window is open, i.e. the outline is on screen and worth keeping current. */
     boolean showsOutline() {
         return visible();
+    }
+
+    /**
+     * The language server's outline of {@code file} when it is this panel's buffer and the server served one —
+     * what the Project Map's structure column of an open file shows — else null (the heuristic is used).
+     */
+    @Nullable
+    List<SymbolNode> serverSymbolsFor(Path file) {
+        EditorBuffer attached = buffer;
+        Path path = attached == null ? null : attached.getPath();
+        return path != null
+                        && lspSymbols != null
+                        && path.toAbsolutePath().normalize().equals(file)
+                ? lspSymbols
+                : null;
     }
 
     /**
@@ -190,6 +248,16 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         });
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
+        // Narrow to fold region: one toggle at the end of the sort/kind row (the search field keeps its width). A
+        // click turns fold mode on and narrows to the picked symbol's block; a second click widens. It is lit
+        // while this panel narrowed the buffer; narrowed some other way (C-x n n), an amber border says so.
+        narrowFold.setGraphic(Icons.foldRegion());
+        narrowFold.getStyleClass().addAll("structure-narrow-fold", "flat");
+        narrowFold.setAccessibleText(tr("structure.narrow.fold"));
+        narrowFold.setFocusTraversable(false);
+        narrowFold.setOnAction(e -> toggleFoldMode());
+        refreshNarrowTooltips();
+        syncNarrowToggle();
         HBox.setHgrow(filterField, Priority.ALWAYS);
         HBox filterBar = new HBox(6, filterField, clearFilter);
         filterBar.getStyleClass().add("project-filter-bar");
@@ -219,12 +287,16 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             rebuild();
         });
 
-        // Kind filter: a dropdown of the kinds present in the current outline, each toggleable.
-        kindFilter.setText(tr("structure.filter.kinds"));
+        // Kind filter: a dropdown of the kinds present in the current outline, each toggleable. Icon only: its
+        // label never fit beside the sort combo at the window's default width ("Filter b…"), the tooltip has it.
         kindFilter.getStyleClass().add("structure-kind-filter");
         kindFilter.setGraphic(Icons.find());
+        kindFilter.setTooltip(new Tooltip(tr("structure.filter.kinds")));
+        kindFilter.setAccessibleText(tr("structure.filter.kinds"));
 
-        HBox toolbar = new HBox(4, sortCombo, kindFilter);
+        javafx.scene.layout.Region toolbarSpacer = new javafx.scene.layout.Region();
+        HBox.setHgrow(toolbarSpacer, Priority.ALWAYS);
+        HBox toolbar = new HBox(4, sortCombo, kindFilter, toolbarSpacer, narrowFold);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.getStyleClass().add("structure-toolbar");
 
@@ -235,16 +307,25 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         VBox.setVgrow(tree, Priority.ALWAYS);
 
         // Navigate as soon as the selection changes (keyboard, search, or single click), but only
-        // for user-driven changes — not while the tree is rebuilt — and without stealing focus.
+        // for user-driven changes — not while the tree is rebuilt — and without stealing focus. A selection
+        // never narrows or widens: arrow keys, the filter field and a right-click all move it, and a text swap
+        // on each of those (the undo history goes with it) is not what browsing an outline should cost.
         tree.getSelectionModel().selectedItemProperty().addListener((obs, old, now) -> {
             if (!suppressNavigation) {
+                userPicked = true;
                 navigateTo(now, false);
             }
         });
-        // A double-click activates: navigate and move focus into the editor.
+        // A click on a row is an activation: in fold mode it narrows to that row; a double-click also
+        // moves focus into the editor.
         tree.setOnMouseClicked(e -> {
-            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
+            if (e.getButton() != MouseButton.PRIMARY) {
+                return;
+            }
+            if (e.getClickCount() == 2) {
                 navigateSelected();
+            } else if (e.getClickCount() == 1 && foldMode && rowClick(e)) {
+                narrowToSelected();
             }
         });
 
@@ -254,7 +335,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** A flat structure entry for the keyboard "Jump to Structure" picker. */
-    public record Outline(String label, String kind, int line) {}
+    public record Outline(String label, @Nullable String kind, int line) {}
 
     /** The current structure as a flat, document-order list (for the Jump-to-Structure picker). */
     public List<Outline> outline() {
@@ -272,8 +353,20 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (buffer == null) {
             return new ArrayList<>(); // mutable: sortNodes sorts roots in place (a diff/Welcome tab has no buffer)
         }
+        if (buffer.isNarrowed()) {
+            // The area holds the region, so its regions and symbols describe only that; the outline stays the
+            // whole file's (the mode's "pick another symbol" needs the others on screen). The first fill is
+            // synchronous, the refreshes after edits are not (refreshNarrowedOutline).
+            if (narrowedRoots == null) {
+                narrowedRoots = StructureOutline.build(
+                        StructureOutline.Source.document(buffer).analyzed());
+            }
+            return narrowedRoots;
+        }
         // LSP-served file: precise hierarchy + kinds; fallback: fold-region nesting + TextMate-scope names.
-        return lspSymbols != null ? fromLsp(lspSymbols) : buildNodes();
+        return lspSymbols != null
+                ? StructureOutline.fromLsp(lspSymbols)
+                : StructureOutline.build(StructureOutline.Source.area(buffer));
     }
 
     private static void collectOutline(List<StructureNode> nodes, List<Outline> out) {
@@ -286,14 +379,19 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** Attaches to a buffer (or {@code null}), rebuilding the tree and watching it for region changes. */
-    public void attach(EditorBuffer buffer) {
+    public void attach(@Nullable EditorBuffer buffer) {
         if (this.buffer != null) {
-            this.buffer.getFoldManager().setOnRegionsChanged(null);
-            this.buffer.setOnSymbolsChanged(null);
+            this.buffer.getFoldManager().setOnRegionsChanged(() -> {});
+            this.buffer.setOnSymbolsChanged(() -> {});
         }
         this.buffer = buffer;
         this.lspSymbols = null; // start with the heuristic; MainController pushes LSP symbols if available
         this.lspSymbolsStale = false;
+        narrowedRoots = null;
+        narrowedOutlineGeneration++;
+        userPicked = false;
+        foldMode = buffer != null && buffer.isNarrowed() && foldModes.contains(buffer);
+        syncNarrowToggle();
         if (buffer == null) {
             rebuild();
             return;
@@ -346,20 +444,33 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         };
     }
 
-    private ContextMenu markerMenu(StructureNode node) {
-        if (markerActions == null || buffer == null || buffer.getPath() == null || node == null || node.line() < 0) {
+    private @Nullable ContextMenu markerMenu(StructureNode node) {
+        MarkerActions actions = markerActions;
+        if (actions == null || buffer == null || buffer.getPath() == null || node == null || node.line() < 0) {
             return null;
+        }
+        int areaLine = areaLine(node.line());
+        if (areaLine < 0) {
+            return null; // out of the narrowed region: the marks live in the area's lines
         }
         MenuItem bookmark = new MenuItem(tr("editmenu.addBookmark"));
         bookmark.setGraphic(Icons.bookmark());
-        bookmark.setOnAction(e -> markerActions.addBookmark(buffer, node.line()));
+        bookmark.setOnAction(e -> {
+            if (buffer != null) {
+                actions.addBookmark(buffer, areaLine);
+            }
+        });
 
         MenuItem note = new MenuItem(tr("editmenu.addNote"));
         note.setGraphic(Icons.notes());
-        note.setDisable(!markerActions.personalNotesEnabled());
-        note.setOnAction(e -> markerActions.addPersonalNote(buffer, node.line()));
+        note.setDisable(!actions.personalNotesEnabled());
+        note.setOnAction(e -> {
+            if (buffer != null) {
+                actions.addPersonalNote(buffer, areaLine);
+            }
+        });
         ContextMenu menu = new ContextMenu(bookmark, note);
-        menu.setOnShowing(e -> note.setDisable(!markerActions.personalNotesEnabled()));
+        menu.setOnShowing(e -> note.setDisable(!actions.personalNotesEnabled()));
         return menu;
     }
 
@@ -392,6 +503,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
             default -> {
                 if (!e.isControlDown()) {
+                    if (tree.isFocused()
+                            && e.getCode() == KeyCode.F
+                            && !e.isAltDown()
+                            && !e.isMetaDown()
+                            && !e.isShiftDown()) {
+                        toggleFoldMode();
+                        e.consume();
+                    }
                     return;
                 }
                 switch (e.getCode()) {
@@ -450,7 +569,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private VirtualFlow<?> virtualFlow() {
+    private @Nullable VirtualFlow<?> virtualFlow() {
         Node node = tree.lookup(".virtual-flow");
         return node instanceof VirtualFlow<?> flow ? flow : null;
     }
@@ -508,32 +627,253 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         navigateSelected();
     }
 
-    /** Activates the current selection: navigates and moves focus into the editor. */
+    /** Activates the current selection: navigates and moves focus into the editor (in fold mode, narrows to it). */
     private void navigateSelected() {
-        navigateTo(tree.getSelectionModel().getSelectedItem(), true);
+        TreeItem<StructureNode> item = tree.getSelectionModel().getSelectedItem();
+        if (foldMode && buffer != null && narrowToSelected()) {
+            buffer.getArea().requestFocus();
+            return;
+        }
+        navigateTo(item, true);
     }
 
-    /** Moves the editor caret to {@code item}'s region, optionally focusing the editor. */
+    // --- Narrowing ---
+
+    /** Installs the narrowing actions; without them the toggle is disabled. */
+    void setNarrowActions(NarrowActions actions) {
+        narrowActions = actions;
+        syncNarrowToggle();
+    }
+
+    /** Whether Simple UI mode is on: the toggle is hidden there (the chords and the banner still work). */
+    public void setSimpleMode(java.util.function.BooleanSupplier simpleMode) {
+        this.simpleMode = simpleMode;
+        syncNarrowToggle();
+    }
+
+    /** How the toggle's tooltip learns the chords bound to a command (null when it is unbound). */
+    void setChordLookup(java.util.function.Function<String, @Nullable String> chordFor) {
+        this.chordFor = chordFor;
+        refreshNarrowTooltips();
+    }
+
+    /** Re-reads what the toggle depends on besides the buffer (Simple mode, the keymap). */
+    public void refreshChrome() {
+        refreshNarrowTooltips();
+        syncNarrowToggle();
+    }
+
+    /** Whether the attached buffer is in fold mode (tests). */
+    boolean foldMode() {
+        return foldMode;
+    }
+
+    /** Structure: Toggle Narrow to Fold Region — as clicking the toggle. */
+    public void toggleFoldCommand() {
+        toggleFoldMode();
+    }
+
+    /**
+     * The toggle was clicked. In fold mode it widens and ends the mode; otherwise it narrows to the row the user
+     * picked (the caret's line when the selected row was only left there by a rebuild) and turns the mode on. A
+     * narrowing that found nothing (the status bar said why) leaves the toggle off.
+     */
+    private void toggleFoldMode() {
+        EditorBuffer b = buffer;
+        NarrowActions actions = narrowActions;
+        if (b != null && actions != null) {
+            if (foldMode && b.isNarrowed()) {
+                foldMode = false;
+                foldModes.remove(b);
+                actions.widen(b);
+            } else {
+                foldMode = true;
+                StructureNode row = userPicked ? selectedNodeValue() : null;
+                if (row != null ? narrowTo(row) : narrowAtCaret()) {
+                    foldModes.add(b);
+                } else {
+                    foldMode = false;
+                    foldModes.remove(b);
+                }
+            }
+        }
+        syncNarrowToggle();
+    }
+
+    /** In fold mode, narrows the editor to the selected row; false when there is none or nothing to narrow to. */
+    private boolean narrowToSelected() {
+        StructureNode row = selectedNodeValue();
+        return row != null && narrowTo(row);
+    }
+
+    /** Narrows to {@code row}'s block, and puts the caret on the row. */
+    private boolean narrowTo(StructureNode row) {
+        EditorBuffer b = buffer;
+        NarrowActions actions = narrowActions;
+        if (b == null || actions == null || row.line() < 0) {
+            return false;
+        }
+        boolean ok = actions.narrowToFoldRegion(b, row.line(), row.region());
+        if (ok) {
+            int line = areaLine(row.line());
+            if (line >= 0) {
+                b.getArea().moveTo(line, 0);
+                b.getArea().requestFollowCaret();
+            }
+        }
+        return ok;
+    }
+
+    private boolean narrowAtCaret() {
+        EditorBuffer b = buffer;
+        NarrowActions actions = narrowActions;
+        if (b == null || actions == null) {
+            return false;
+        }
+        int docLine = b.getArea().getCurrentParagraph() + b.narrowFirstLine();
+        return actions.narrowToFoldRegion(b, docLine, null);
+    }
+
+    /**
+     * The buffer narrowed or widened, by this panel or by anything else: the toggle follows the buffer, and the
+     * outline stays the whole file's (document lines) either way. Widening leaves the shown outline alone: it
+     * already is the whole file's, and the fold manager's fresh scan rebuilds it shortly if it differs.
+     */
+    void narrowChanged(EditorBuffer changed) {
+        if (changed != buffer) {
+            return;
+        }
+        if (buffer != null && !buffer.isNarrowed()) {
+            foldMode = false;
+            foldModes.remove(buffer);
+            narrowedRoots = null;
+            narrowedOutlineGeneration++;
+        } else if (buffer != null) {
+            if (narrowedRoots == null && modelShown) {
+                narrowedRoots = roots; // what the tree shows: the whole file's outline, a moment ago
+            }
+            refreshNarrowedOutline();
+        }
+        syncNarrowToggle();
+        tree.refresh(); // rows outside the region are muted
+    }
+
+    /**
+     * Recomputes the whole file's outline off the FX thread and shows it if it changed. Called for every
+     * fold/symbol notification while narrowed (one per settled edit): the region's own regions and symbols
+     * are no use to a whole-file outline, and a synchronous whole-file scan on each would be the jank the
+     * fold manager's own scan avoids.
+     */
+    private void refreshNarrowedOutline() {
+        EditorBuffer b = buffer;
+        if (b == null || !b.isNarrowed()) {
+            return;
+        }
+        int generation = ++narrowedOutlineGeneration;
+        StructureOutline.Source source = StructureOutline.Source.document(b);
+        Thread.ofVirtual().name("editora-structure-outline").start(() -> {
+            List<StructureNode> nodes = StructureOutline.build(source.analyzed());
+            Platform.runLater(() -> {
+                if (generation != narrowedOutlineGeneration || buffer != b || !b.isNarrowed()) {
+                    return;
+                }
+                narrowedRoots = nodes;
+                rebuild(true);
+            });
+        });
+    }
+
+    /** The tip, then the keys: the panel's own letter (and the command's chord when one is bound), the editor's. */
+    private void refreshNarrowTooltips() {
+        String chord = chordFor.apply("structure.narrowFold");
+        String keys = chord == null || chord.isBlank() ? "f" : chord + " · f";
+        StringBuilder text = new StringBuilder(tr("structure.narrow.fold.tip"))
+                .append('\n')
+                .append(tr("structure.narrow.keys", keys));
+        String editorChord = chordFor.apply("edit.narrowToFoldRegion");
+        if (editorChord != null && !editorChord.isBlank()) {
+            text.append('\n').append(tr("structure.narrow.editorKeys", editorChord));
+        }
+        Tooltip tip = new Tooltip(text.toString());
+        tip.setShowDelay(javafx.util.Duration.millis(400));
+        narrowFold.setTooltip(tip);
+    }
+
+    private void syncNarrowToggle() {
+        boolean shown = !simpleMode.getAsBoolean();
+        narrowFold.setVisible(shown);
+        narrowFold.setManaged(shown);
+        narrowFold.setDisable(buffer == null || narrowActions == null || !buffer.canNarrow());
+        boolean narrowed = buffer != null && buffer.isNarrowed();
+        narrowFold.setSelected(narrowed && foldMode);
+        narrowFold.pseudoClassStateChanged(NARROWED_ELSEWHERE, narrowed && !foldMode);
+    }
+
+    /**
+     * The area line of document line {@code docLine}: the line itself while the buffer is whole, its place in
+     * the region while narrowed, or -1 when the line is not in the area (out of the region, or past the end).
+     */
+    private int areaLine(int docLine) {
+        if (buffer == null || docLine < 0) {
+            return -1;
+        }
+        int lines = buffer.getArea().getParagraphs().size();
+        if (!buffer.isNarrowed()) {
+            return docLine < lines ? docLine : -1;
+        }
+        return NarrowLines.toRegionLine(buffer.narrowFirstLine(), lines, docLine);
+    }
+
+    /** Whether a mouse event landed on a row's own cell (not its disclosure arrow, not the empty space below). */
+    private boolean rowClick(javafx.scene.input.MouseEvent e) {
+        if (!(e.getTarget() instanceof Node target)) {
+            return tree.getSelectionModel().getSelectedItem() != null; // a synthetic event: the selected row
+        }
+        for (Node p = target; p != null; p = p.getParent()) {
+            if (p.getStyleClass().contains("tree-disclosure-node")) {
+                return false;
+            }
+            if (p instanceof TreeCell<?> cell) {
+                return !cell.isEmpty()
+                        && cell.getTreeItem() == tree.getSelectionModel().getSelectedItem();
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Moves the editor caret to {@code item}'s line, optionally focusing the editor. Rows carry document lines:
+     * while narrowed, a selection (arrow keys, the filter) only reaches rows inside the region, and an
+     * activation (Enter, a double-click) of a row outside it widens first, as a jump from outside does in Emacs.
+     */
     private void navigateTo(TreeItem<StructureNode> item, boolean focusEditor) {
         if (item == null || item.getValue() == null || buffer == null) {
             return;
         }
         CodeArea area = buffer.getArea();
         EditorBuffer targetBuffer = buffer;
-        int line = item.getValue().line();
-        if (line < 0 || line >= area.getParagraphs().size()) {
-            return;
+        int docLine = item.getValue().line();
+        int line = areaLine(docLine);
+        boolean widened = false;
+        if (line < 0) {
+            if (!focusEditor || docLine < 0 || !buffer.isNarrowed()) {
+                return;
+            }
+            if (narrowActions != null) {
+                narrowActions.widen(buffer);
+            } else {
+                buffer.widen();
+            }
+            widened = true;
+            line = areaLine(docLine);
+            if (line < 0) {
+                return;
+            }
         }
         area.moveTo(line, 0);
-        // Anchor the target at the top of the usable viewport, below any sticky-scroll rows (deferred
-        // until layout is ready).
-        Platform.runLater(() -> {
-            try {
-                targetBuffer.showParagraphAtTopClearOfStickyScroll(area, line);
-            } catch (RuntimeException ignored) {
-                // Viewport not ready; ignore.
-            }
-        });
+        // Anchor the target at the top of the usable viewport, below any sticky-scroll rows, in this pulse (a
+        // widen just swapped the text in: that one waits for the layout).
+        targetBuffer.jumps().reveal(area, line, widened);
         if (focusEditor) {
             area.requestFocus();
         }
@@ -552,6 +892,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      * really differs.
      */
     private void rebuildIfChanged() {
+        syncNarrowToggle(); // a buffer that finished loading since attach() can be narrowed now
+        if (buffer != null && buffer.isNarrowed()) {
+            refreshNarrowedOutline(); // the area's regions and symbols describe the region, not the file
+            return;
+        }
         rebuild(true);
     }
 
@@ -575,6 +920,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // A rebuild rebuilds the tree (applyFilter selects row 0); that must not move the editor caret,
         // and it should keep the user on the symbol they had selected rather than snapping to the top.
         StructureNode prevSelection = selectedNodeValue();
+        boolean wasPicked = userPicked;
         suppressNavigation = true;
         try {
             applyFilter(filterField.getText());
@@ -582,6 +928,13 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         } finally {
             suppressNavigation = false;
         }
+        // Row 0 is selected by default; only a row the user chose (and that survived) is a narrowing target.
+        StructureNode now = selectedNodeValue();
+        userPicked = wasPicked
+                && prevSelection != null
+                && now != null
+                && now.line() == prevSelection.line()
+                && java.util.Objects.equals(now.label(), prevSelection.label());
     }
 
     /** Whether the tree currently shows {@link #roots} for the attached buffer. */
@@ -613,14 +966,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** The {@link StructureNode} currently selected in the tree (a real symbol with a line), or {@code null}. */
-    private StructureNode selectedNodeValue() {
+    private @Nullable StructureNode selectedNodeValue() {
         TreeItem<StructureNode> sel = tree.getSelectionModel().getSelectedItem();
         StructureNode v = sel == null ? null : sel.getValue();
         return v != null && v.line() >= 0 ? v : null;
     }
 
     /** Re-selects the tree row matching {@code target} (by line + label) after a rebuild; no-op if absent. */
-    private void reselect(StructureNode target) {
+    private void reselect(@Nullable StructureNode target) {
         if (target == null || tree.getRoot() == null) {
             return;
         }
@@ -630,7 +983,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private static TreeItem<StructureNode> findItem(TreeItem<StructureNode> node, StructureNode target) {
+    private static @Nullable TreeItem<StructureNode> findItem(TreeItem<StructureNode> node, StructureNode target) {
         StructureNode v = node.getValue();
         if (v != null && v.line() == target.line() && java.util.Objects.equals(v.label(), target.label())) {
             return node;
@@ -648,7 +1001,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      * Pushes the LSP document-symbol outline for {@code forBuffer} (or {@code null} to use the heuristic). A
      * no-op if the active buffer changed since the request was issued (a stale async result).
      */
-    public void setLspSymbols(EditorBuffer forBuffer, List<SymbolNode> symbols) {
+    public void setLspSymbols(EditorBuffer forBuffer, @Nullable List<SymbolNode> symbols) {
         if (forBuffer != buffer) {
             return;
         }
@@ -667,20 +1020,6 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Converts the LSP symbol tree into structure nodes (region-less; navigation uses the symbol line). */
-    private static List<StructureNode> fromLsp(List<SymbolNode> symbols) {
-        List<StructureNode> out = new ArrayList<>();
-        for (SymbolNode s : symbols) {
-            if (s == null) {
-                continue;
-            }
-            StructureNode node = new StructureNode(null, s.name(), s.kind(), Math.max(0, s.line()), s.detail());
-            node.children().addAll(fromLsp(s.children()));
-            out.add(node);
-        }
-        return out;
-    }
-
     /**
      * Fills each node's doc from the leading comment above its declaration line, read from the buffer text.
      * Works for both the LSP and heuristic outlines (either way a node carries the declaration's line).
@@ -689,6 +1028,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (buffer == null || nodes.isEmpty()) {
             return;
         }
+        // Rows carry document lines, and getContent() is the whole file whether or not the buffer is narrowed.
         List<String> lines = List.of(buffer.getContent().split("\n", -1));
         attachDocs(nodes, lines);
     }
@@ -720,7 +1060,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             attachHeadingStyle(nodes);
             return;
         }
-        attachSyntaxStyles(buffer.getArea(), nodes);
+        attachSyntaxStyles(buffer.getArea(), buffer.narrowFirstLine(), nodes);
     }
 
     private static void attachHeadingStyle(List<StructureNode> nodes) {
@@ -730,16 +1070,17 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private static void attachSyntaxStyles(CodeArea area, List<StructureNode> nodes) {
+    private static void attachSyntaxStyles(CodeArea area, int base, List<StructureNode> nodes) {
         for (StructureNode node : nodes) {
-            attachSyntaxStyles(area, node);
-            attachSyntaxStyles(area, node.children());
+            attachSyntaxStyles(area, base, node);
+            attachSyntaxStyles(area, base, node.children());
         }
     }
 
-    private static void attachSyntaxStyles(CodeArea area, StructureNode node) {
+    /** {@code base}: the document line the area's line 0 is (a narrowed region); rows carry document lines. */
+    private static void attachSyntaxStyles(CodeArea area, int base, StructureNode node) {
         String label = node.label() == null ? "" : node.label();
-        int line = node.line();
+        int line = node.line() - base;
         if (line < 0 || line >= area.getParagraphs().size()) {
             node.setNameRuns(List.of(fallbackRun(label, node.kind())));
             return;
@@ -766,14 +1107,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return signature > 0 ? value.substring(0, signature).strip() : value;
     }
 
-    private static SyntaxRun fallbackRun(String text, String kind) {
+    private static SyntaxRun fallbackRun(String text, @Nullable String kind) {
         String fallback = syntaxStyleForKind(kind);
         return new SyntaxRun(text, fallback == null ? List.of() : List.of(fallback));
     }
 
     /** Maps the server's compact label back onto source tokens so every run keeps its own syntax classes. */
     private static List<SyntaxRun> styledDisplayRuns(
-            CodeArea area, int line, String display, String sourceLine, int sourceStart, String kind) {
+            CodeArea area, int line, String display, String sourceLine, int sourceStart, @Nullable String kind) {
         List<SyntaxRun> runs = new ArrayList<>();
         int displayAt = 0;
         int sourceAt = sourceStart;
@@ -855,7 +1196,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** Finds a Java/C-family prefix return type, or a Kotlin/TypeScript/Rust suffix return type. */
-    private static SourceSlice returnTypeSource(String sourceLine, int nameColumn, String kind) {
+    private static @Nullable SourceSlice returnTypeSource(String sourceLine, int nameColumn, @Nullable String kind) {
         if (!StructureCell.isCallable(kind) || "constructor".equals(kind)) {
             return null;
         }
@@ -1009,8 +1350,6 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return -1;
     }
 
-    private record SyntaxRun(String text, List<String> styles) {}
-
     private record SourceSlice(String text, int column) {}
 
     private static boolean isSyntaxNameStyle(String style) {
@@ -1042,7 +1381,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** Syntax-token fallback for an LSP/TextMate outline kind when no styled source character is available. */
-    static String syntaxStyleForKind(String kind) {
+    static @Nullable String syntaxStyleForKind(@Nullable String kind) {
         return switch (kind == null ? "" : kind) {
             case "class",
                     "enum",
@@ -1132,457 +1471,6 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return Character.toUpperCase(kind.charAt(0)) + kind.substring(1);
     }
 
-    private List<StructureNode> buildNodes() {
-        CodeArea area = buffer.getArea();
-        if (buffer.isMarkdown()) {
-            return markdownHeadingNodes(area.getText());
-        }
-        if (buffer.isTypst()) {
-            return typstHeadingNodes(area.getText());
-        }
-        if (buffer.isHttpFile()) {
-            return httpRequestNodes(area.getText());
-        }
-        int paras = area.getParagraphs().size();
-        List<Region> regions =
-                new ArrayList<>(new LinkedHashSet<>(buffer.getFoldManager().regions()));
-        if ("clojure".equals(buffer.getLanguage())) {
-            return clojureFormNodes(area.getText(), regions);
-        }
-        // Sort so each region precedes the regions it contains: by start asc, then by end desc.
-        regions.sort(Comparator.comparingInt(Region::startLine)
-                .thenComparing(Comparator.comparingInt(Region::endLine).reversed()));
-
-        // Name/kind come from the TextMate symbols on (or, for Allman braces, just above) each region's
-        // header. Regions with no symbol are control-flow/anonymous blocks and are dropped (declutter).
-        Map<Integer, Symbol> symbolByLine = new HashMap<>();
-        for (Symbol s : buffer.symbols()) {
-            symbolByLine.putIfAbsent(s.line(), s);
-        }
-        boolean haveSymbols = !symbolByLine.isEmpty();
-        boolean brace = isBraceLanguage(buffer.getLanguage());
-        if (haveSymbols && "python".equals(buffer.getLanguage())) {
-            // Python nests by indentation, as Python does: a one-line `def f(): ...` folds nothing but is still
-            // structure. Each node takes the block its header opens (sorted outermost-first per start line).
-            Map<Integer, Region> blockByLine = new HashMap<>();
-            for (Region r : regions) {
-                blockByLine.putIfAbsent(r.startLine(), r);
-            }
-            return symbolNodes(area, symbolByLine, paras, blockByLine);
-        }
-        if (regions.isEmpty() && haveSymbols) {
-            // No delimiter folding for this language (python, ruby, shell, lua, yaml, ini …): there are no
-            // regions to hang the symbols on, and the outline used to come out empty. Nest by indentation.
-            return symbolNodes(area, symbolByLine, paras, Map.of());
-        }
-
-        List<StructureNode> rootNodes = new ArrayList<>();
-        Deque<StructureNode> stack = new ArrayDeque<>();
-        for (Region r : regions) {
-            if (r.startLine() < 0 || r.startLine() >= paras) {
-                continue;
-            }
-            StructureNode node = nodeFor(area, r, symbolByLine, haveSymbols, brace);
-            if (node == null) {
-                continue; // no symbol: skip this region (its kept descendants nest under the nearest kept ancestor)
-            }
-            while (!stack.isEmpty() && !contains(stack.peek().region(), r)) {
-                stack.pop();
-            }
-            if (stack.isEmpty()) {
-                rootNodes.add(node);
-            } else {
-                stack.peek().children().add(node);
-            }
-            stack.push(node);
-        }
-        if (rootNodes.isEmpty() && haveSymbols) {
-            // Regions, but none headed by a symbol — say only `# region` markers in a language whose blocks
-            // do not fold: the symbols are still the structure (one marker used to empty the outline).
-            return symbolNodes(area, symbolByLine, paras, Map.of());
-        }
-        String language = buffer.getLanguage();
-        if (language != null && (language.startsWith("javascript") || language.startsWith("typescript"))) {
-            addFoldlessSymbols(rootNodes, symbolByLine, paras);
-        }
-        return rootNodes;
-    }
-
-    /**
-     * Adds the symbols no region is headed by — a one-line method ({@code get(key) { return x; }}), a one-line
-     * arrow function ({@code const twice = (x) => x * 2;}) — as leaves under the innermost node whose block holds
-     * their line. In JavaScript those are most declarations, and the outline used to leave every one of them out.
-     */
-    private static void addFoldlessSymbols(
-            List<StructureNode> rootNodes, Map<Integer, Symbol> symbolByLine, int paras) {
-        java.util.Set<Integer> used = new java.util.HashSet<>();
-        collectLines(rootNodes, used);
-        boolean added = false;
-        for (Map.Entry<Integer, Symbol> e : symbolByLine.entrySet()) {
-            int line = e.getKey();
-            if (used.contains(line)
-                    || line < 0
-                    || line >= paras
-                    || "tag".equals(e.getValue().kind())) {
-                continue; // a JSX element (`<p>`) is markup, not a declaration
-            }
-            List<StructureNode> siblings = rootNodes;
-            for (boolean deeper = true; deeper; ) {
-                deeper = false;
-                for (StructureNode n : siblings) {
-                    if (n.region() != null
-                            && n.region().startLine() < line
-                            && line <= n.region().endLine()) {
-                        siblings = n.children();
-                        deeper = true;
-                        break;
-                    }
-                }
-            }
-            siblings.add(
-                    new StructureNode(null, e.getValue().name(), e.getValue().kind(), line));
-            added = true;
-        }
-        if (added) {
-            sortByLine(rootNodes);
-        }
-    }
-
-    private static void collectLines(List<StructureNode> nodes, java.util.Set<Integer> out) {
-        for (StructureNode n : nodes) {
-            out.add(n.line());
-            collectLines(n.children(), out);
-        }
-    }
-
-    private static void sortByLine(List<StructureNode> nodes) {
-        nodes.sort(Comparator.comparingInt(StructureNode::line));
-        for (StructureNode n : nodes) {
-            sortByLine(n.children());
-        }
-    }
-
-    /**
-     * Builds a node for a region: its label/kind from the TextMate symbol on the header line (or, for
-     * brace languages, the signature on the nearest non-blank lines above the {@code &#123;}). Returns
-     * {@code null} when no symbol is found and a grammar is active (declutter). Without symbols (no
-     * grammar) it falls back to the header-line text, keeping every region.
-     */
-    private StructureNode nodeFor(
-            CodeArea area, Region r, Map<Integer, Symbol> symbolByLine, boolean haveSymbols, boolean brace) {
-        int start = r.startLine();
-        if (haveSymbols) {
-            Symbol symbol = symbolByLine.get(start);
-            int line = start;
-            // Only look above when the delimiter is on its own line (Allman style). Looking above every
-            // brace-backed fold lets an inner `if (...) {` reuse its enclosing method's symbol and lets
-            // `} else {` pick up the preceding call expression, producing outlines such as
-            // ifLsp() -> ifLsp() -> run(). A non-standalone opening brace belongs to its own header line;
-            // without a definition symbol there, the region is control flow/anonymous and is not structure.
-            if (symbol == null
-                    && brace
-                    && standaloneOpeningBrace(area.getParagraph(start).getText())) {
-                int probe = start - 1;
-                int examined = 0;
-                while (probe >= 0 && examined < 3) {
-                    String t = area.getParagraph(probe).getText().trim();
-                    if (!t.isEmpty()) {
-                        examined++;
-                        Symbol up = symbolByLine.get(probe);
-                        if (up != null) {
-                            symbol = up;
-                            line = probe;
-                            break;
-                        }
-                    }
-                    probe--;
-                }
-            } else if (symbol == null && brace) {
-                // A signature wrapped over several lines: the name is on the line that opened the
-                // parameter list, the region starts on the line that closes it (`String language) {`).
-                int opener = signatureStartLine(i -> area.getParagraph(i).getText(), start);
-                if (opener >= 0 && symbolByLine.get(opener) != null) {
-                    symbol = symbolByLine.get(opener);
-                    line = opener;
-                }
-            }
-            if (symbol == null) {
-                return null;
-            }
-            return new StructureNode(r, symbol.name(), symbol.kind(), line);
-        }
-        // No grammar/symbols: keep the old header-text label and show every region.
-        String text = area.getParagraph(start).getText().trim();
-        return new StructureNode(r, text.isEmpty() ? tr("structure.line", start + 1) : text, null, start);
-    }
-
-    /** How far above a block's opening line the start of its wrapped signature is looked for. */
-    private static final int MAX_SIGNATURE_LINES = 40;
-
-    /**
-     * The line that opened the parameter list which {@code braceLine} closes, or -1 when {@code braceLine}
-     * does not close one. Only a header with more {@code )} than {@code (} qualifies, so an ordinary
-     * {@code if (x) &#123;} or a lambda argument never borrows the symbol of a line above it.
-     */
-    static int signatureStartLine(java.util.function.IntFunction<String> lineText, int braceLine) {
-        String header = lineText.apply(braceLine);
-        int balance = parenBalance(header);
-        if (balance >= 0 || header.strip().startsWith("}")) {
-            return -1;
-        }
-        for (int line = braceLine - 1; line >= 0 && braceLine - line <= MAX_SIGNATURE_LINES; line--) {
-            balance += parenBalance(lineText.apply(line));
-            if (balance >= 0) {
-                return line;
-            }
-        }
-        return -1;
-    }
-
-    private static int parenBalance(String line) {
-        int balance = 0;
-        for (int i = 0; i < line.length(); i++) {
-            char c = line.charAt(i);
-            if (c == '(') {
-                balance++;
-            } else if (c == ')') {
-                balance--;
-            }
-        }
-        return balance;
-    }
-
-    /** An outline built from the symbols alone, nested by each symbol line's indentation. */
-    private static List<StructureNode> symbolNodes(
-            CodeArea area, Map<Integer, Symbol> symbolByLine, int paras, Map<Integer, Region> blockByLine) {
-        List<StructureNode> rootNodes = new ArrayList<>();
-        Deque<StructureNode> stack = new ArrayDeque<>();
-        Deque<Integer> indents = new ArrayDeque<>();
-        for (int line : new java.util.TreeSet<>(symbolByLine.keySet())) {
-            if (line < 0 || line >= paras) {
-                continue;
-            }
-            Symbol symbol = symbolByLine.get(line);
-            String text = area.getParagraph(line).getText();
-            int indent = text.length() - text.stripLeading().length();
-            while (!indents.isEmpty() && indents.peek() >= indent) {
-                indents.pop();
-                stack.pop();
-            }
-            StructureNode node = new StructureNode(blockByLine.get(line), symbol.name(), symbol.kind(), line);
-            if (stack.isEmpty()) {
-                rootNodes.add(node);
-            } else {
-                stack.peek().children().add(node);
-            }
-            stack.push(node);
-            indents.push(indent);
-        }
-        return rootNodes;
-    }
-
-    /** Whether an Allman-style opening delimiter may take its declaration symbol from a preceding line. */
-    static boolean standaloneOpeningBrace(String line) {
-        if (line == null) {
-            return false;
-        }
-        String stripped = line.strip();
-        return stripped.equals("{") || stripped.startsWith("{ //") || stripped.startsWith("{/*");
-    }
-
-    /** Builds the heading outline for a Markdown buffer (ATX/Setext), nested by heading level. */
-    private static List<StructureNode> markdownHeadingNodes(String text) {
-        List<StructureNode> roots = new ArrayList<>();
-        Deque<StructureNode> stack = new ArrayDeque<>();
-        Deque<Integer> levels = new ArrayDeque<>();
-        for (com.editora.markdown.MarkdownOutline.Heading h : com.editora.markdown.MarkdownOutline.headings(text)) {
-            String title = com.editora.markdown.MarkdownText.plain(h.title()) // "**Bold** `x`" reads "Bold x"
-                    .replaceAll("\\s+", " ");
-            StructureNode node =
-                    new StructureNode(null, title.isBlank() ? tr("common.untitled") : title, "heading", h.line());
-            while (!levels.isEmpty() && levels.peek() >= h.level()) {
-                stack.pop();
-                levels.pop();
-            }
-            if (stack.isEmpty()) {
-                roots.add(node);
-            } else {
-                stack.peek().children().add(node);
-            }
-            stack.push(node);
-            levels.push(h.level());
-        }
-        return roots;
-    }
-
-    /**
-     * One node per request of a {@code .http} file: its name (when it has one) and method + URL. Its own
-     * "request" kind: as a "method" it got the function icon and a trailing {@code ()} ({@code GET /slow()}).
-     */
-    private static List<StructureNode> httpRequestNodes(String text) {
-        List<StructureNode> roots = new ArrayList<>();
-        for (com.editora.http.HttpFile.Request r : com.editora.http.HttpFile.parse(text)) {
-            String call = r.method() + " " + r.url();
-            String label = r.name() == null || r.name().isBlank() ? call : r.name() + " — " + call;
-            roots.add(new StructureNode(null, label, HTTP_REQUEST_KIND, r.startLine()));
-        }
-        return roots;
-    }
-
-    /**
-     * One node per top-level Clojure definition — {@code ns}, {@code def}/{@code defonce}, {@code defn},
-     * {@code defmacro}, {@code defmulti}, {@code deftest}, {@code defprotocol}, {@code defrecord}/{@code deftype}
-     * — read by the server-free declaration scanner. The Clojure grammar names none of them (it emits no
-     * {@code entity.name.*} scope), so the TextMate path found no structure in a Clojure file at all. Each node
-     * takes the fold region its form opens, when the form spans lines.
-     */
-    static List<StructureNode> clojureFormNodes(String text, List<Region> regions) {
-        Map<Integer, Region> formByLine = new HashMap<>();
-        for (Region r : regions) {
-            formByLine.merge(r.startLine(), r, (a, b) -> a.endLine() >= b.endLine() ? a : b); // the outermost
-        }
-        List<StructureNode> roots = new ArrayList<>();
-        List<Integer> lineStarts = new ArrayList<>(List.of(0));
-        for (int i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
-            lineStarts.add(i + 1);
-        }
-        for (com.editora.index.Symbol s : com.editora.index.DeclarationScanner.scan(text, "clojure")) {
-            String kind = switch (s.kind()) {
-                case MODULE -> "namespace";
-                case INTERFACE -> "interface";
-                case TYPE, ENUM -> "struct";
-                case VARIABLE, FIELD -> "variable";
-                case FUNCTION, METHOD -> "function";
-            };
-            String params = "function".equals(kind) && s.line() < lineStarts.size()
-                    ? clojureParams(
-                            text,
-                            lineStarts.get(s.line()) + s.column() + s.name().length())
-                    : "";
-            roots.add(new StructureNode(formByLine.get(s.line()), s.name(), kind, s.line(), params));
-        }
-        return roots;
-    }
-
-    /** How far past a Clojure definition's name its parameter vector is looked for. */
-    private static final int MAX_CLOJURE_PARAMS_REACH = 400;
-
-    /**
-     * The parameter vector of the Clojure {@code defn}/{@code defmacro} whose name ends at {@code from} —
-     * {@code [x y]}, past a docstring and an attribute map — whitespace collapsed; {@code ""} for a multi-arity
-     * definition or none within reach. Shown in place of the {@code ()} every other function gets.
-     */
-    static String clojureParams(String text, int from) {
-        int n = Math.min(text.length(), from + MAX_CLOJURE_PARAMS_REACH);
-        int i = skipClojureSpace(text, from, n);
-        if (i < n && text.charAt(i) == '"') { // the docstring
-            for (i++; i < n && text.charAt(i) != '"'; i++) {
-                if (text.charAt(i) == '\\') {
-                    i++;
-                }
-            }
-            i = skipClojureSpace(text, i + 1, n);
-        }
-        if (i < n && text.charAt(i) == '{') { // an attribute map
-            int depth = 0;
-            for (; i < n; i++) {
-                char c = text.charAt(i);
-                depth += c == '{' ? 1 : c == '}' ? -1 : 0;
-                if (depth == 0) {
-                    break;
-                }
-            }
-            i = skipClojureSpace(text, i + 1, n);
-        }
-        if (i >= n || text.charAt(i) != '[') {
-            return "";
-        }
-        int depth = 0;
-        for (int j = i; j < n; j++) {
-            char c = text.charAt(j);
-            if (c == '[' || c == '{' || c == '(') {
-                depth++;
-            } else if (c == ']' || c == '}' || c == ')') {
-                if (--depth == 0) {
-                    return text.substring(i, j + 1).replaceAll("\\s+", " ");
-                }
-            }
-        }
-        return "";
-    }
-
-    private static int skipClojureSpace(String text, int i, int n) {
-        while (i < n && (Character.isWhitespace(text.charAt(i)) || text.charAt(i) == ',')) {
-            i++;
-        }
-        return i;
-    }
-
-    /** The Structure kind of a {@code .http} request (its icon: {@link StructureIcons}). */
-    static final String HTTP_REQUEST_KIND = "request";
-
-    /**
-     * Builds the heading outline for a Typst buffer, nested by level — the Markdown branch's twin.
-     *
-     * <p>Without it a {@code .typ} file fell through to the generic fold-region path, which for Typst meant
-     * its brace pairs labelled by whatever TextMate symbol sat on the header line: a report with three
-     * sections showed one entry reading {@code #align()}. Sections are what a Typst document is navigated
-     * by, and nothing else in the outline was worth keeping alongside them.
-     */
-    private static List<StructureNode> typstHeadingNodes(String text) {
-        List<StructureNode> roots = new ArrayList<>();
-        Deque<StructureNode> stack = new ArrayDeque<>();
-        Deque<Integer> levels = new ArrayDeque<>();
-        var outline = com.editora.typst.TypstOutline.scan(text);
-
-        // Headings and bindings are merged by line so the outline reads in document order, and each
-        // binding nests under whichever section it is written in — a #let below "= Setup" belongs to it.
-        // A binding above the first heading stays at the root, which is where such definitions live.
-        record Entry(int line, int level, String label, String kind) {}
-        List<Entry> entries = new ArrayList<>();
-        for (var h : outline.headings()) {
-            entries.add(
-                    new Entry(h.line(), h.level(), h.title().isBlank() ? tr("common.untitled") : h.title(), "heading"));
-        }
-        for (var b : outline.bindings()) {
-            // Level 0 = "not a section": it never becomes a parent and never closes one.
-            entries.add(new Entry(b.line(), 0, b.name(), "let".equals(b.kind()) ? "function" : "property"));
-        }
-        entries.sort(java.util.Comparator.comparingInt(Entry::line));
-
-        for (Entry e : entries) {
-            StructureNode node = new StructureNode(null, e.label(), e.kind(), e.line());
-            if (e.level() > 0) {
-                while (!levels.isEmpty() && levels.peek() >= e.level()) {
-                    stack.pop();
-                    levels.pop();
-                }
-            }
-            if (stack.isEmpty()) {
-                roots.add(node);
-            } else {
-                stack.peek().children().add(node);
-            }
-            if (e.level() > 0) {
-                stack.push(node);
-                levels.push(e.level());
-            }
-        }
-        return roots;
-    }
-
-    /** Languages whose folds are brace-delimited (Allman braces put the signature above the start line). */
-    private static boolean isBraceLanguage(String language) {
-        return switch (language == null ? "" : language) {
-            case "java", "json", "c", "cpp", "rust", "go", "kotlin", "groovy", "scala", "csharp", "css" -> true;
-            default -> false;
-        };
-    }
-
-    private static boolean contains(Region outer, Region inner) {
-        return outer.startLine() <= inner.startLine() && outer.endLine() >= inner.endLine();
-    }
-
     private void applyFilter(String query) {
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
         TreeItem<StructureNode> root = new TreeItem<>(null);
@@ -1605,7 +1493,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** Builds a tree item for {@code node}, keeping it if it matches the query or has a matching descendant. */
-    private TreeItem<StructureNode> toItem(StructureNode node, String q) {
+    private @Nullable TreeItem<StructureNode> toItem(StructureNode node, String q) {
         List<TreeItem<StructureNode>> childItems = new ArrayList<>();
         for (StructureNode child : node.children()) {
             TreeItem<StructureNode> ci = toItem(child, q);
@@ -1625,10 +1513,19 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     private final class StructureCell extends TreeCell<StructureNode> {
+        /**
+         * The item whose tooltip and graphic this cell holds. A selection change makes JavaFX run
+         * {@code updateItem} again for the same item, from the cell's layout — after that pulse's CSS pass — so
+         * a graphic rebuilt there painted its text unstyled, in black, for one frame: the row clicked and the
+         * row left both blinked on every click.
+         */
+        private @Nullable StructureNode shown;
+
         @Override
         protected void updateItem(StructureNode item, boolean empty) {
             super.updateItem(item, empty);
             if (empty || item == null) {
+                shown = null;
                 setText(null);
                 setGraphic(null);
                 setTooltip(null);
@@ -1636,17 +1533,23 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 setOnContextMenuRequested(null);
                 return;
             }
+            boolean same = item == shown;
+            shown = item;
             // Show the cleaned leading doc comment (if any) as a hover tooltip.
-            if (item.doc() != null && !item.doc().isEmpty()) {
-                Tooltip tip = new Tooltip(item.doc());
-                tip.setWrapText(true);
-                tip.setMaxWidth(480);
-                tip.setShowDelay(javafx.util.Duration.millis(400));
-                setTooltip(tip);
-            } else {
-                setTooltip(null);
+            if (!same) {
+                if (item.doc() != null && !item.doc().isEmpty()) {
+                    Tooltip tip = new Tooltip(item.doc());
+                    tip.setWrapText(true);
+                    tip.setMaxWidth(480);
+                    tip.setShowDelay(javafx.util.Duration.millis(400));
+                    setTooltip(tip);
+                } else {
+                    setTooltip(null);
+                }
             }
             boolean real = item.kind() != null && item.line() >= 0;
+            pseudoClassStateChanged(
+                    OUT_OF_REACH, real && buffer != null && buffer.isNarrowed() && areaLine(item.line()) < 0);
             setContextMenu(real ? markerMenu(item) : null);
             setOnContextMenuRequested(
                     real
@@ -1657,6 +1560,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             if (!real) {
                 setText(item.label());
                 setGraphic(null);
+                return;
+            }
+            if (same && getGraphic() != null) {
                 return;
             }
             String sig = signature(item);
@@ -1723,83 +1629,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return d.startsWith("(") ? d : "(" + d + ")";
         }
 
-        private static boolean isCallable(String kind) {
+        private static boolean isCallable(@Nullable String kind) {
             return "method".equals(kind) || "function".equals(kind) || "constructor".equals(kind);
-        }
-    }
-
-    /** A node in the structure tree: a foldable region, its symbol label/kind, the line to navigate to, an
-     *  optional detail (the LSP signature, e.g. {@code (String x) : void}), syntax-styled label and return
-     *  runs, an optional doc comment (the cleaned leading comment above the declaration), and children. */
-    private static final class StructureNode {
-        private final Region region;
-        private final String label;
-        private final String kind;
-        private final int line;
-        private final String detail;
-        private List<SyntaxRun> nameRuns = List.of();
-        private List<SyntaxRun> returnRuns = List.of();
-        private String doc = ""; // filled by attachDocs() from the buffer text; "" when none
-        private final List<StructureNode> children = new ArrayList<>();
-
-        StructureNode(Region region, String label, String kind, int line) {
-            this(region, label, kind, line, "");
-        }
-
-        StructureNode(Region region, String label, String kind, int line, String detail) {
-            this.region = region;
-            this.label = label;
-            this.kind = kind;
-            this.line = line;
-            this.detail = detail == null ? "" : detail;
-        }
-
-        Region region() {
-            return region;
-        }
-
-        String label() {
-            return label;
-        }
-
-        String kind() {
-            return kind;
-        }
-
-        int line() {
-            return line;
-        }
-
-        String detail() {
-            return detail;
-        }
-
-        List<SyntaxRun> nameRuns() {
-            return nameRuns;
-        }
-
-        void setNameRuns(List<SyntaxRun> runs) {
-            nameRuns = runs == null ? List.of() : List.copyOf(runs);
-        }
-
-        List<SyntaxRun> returnRuns() {
-            return returnRuns;
-        }
-
-        void setReturnRuns(List<SyntaxRun> runs) {
-            returnRuns = runs == null ? List.of() : List.copyOf(runs);
-        }
-
-        String doc() {
-            return doc;
-        }
-
-        void setDoc(String doc) {
-            this.doc = doc == null ? "" : doc;
-        }
-
-        List<StructureNode> children() {
-            return children;
         }
     }
 }

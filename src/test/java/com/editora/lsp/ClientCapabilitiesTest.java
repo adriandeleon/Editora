@@ -86,6 +86,10 @@ class ClientCapabilitiesTest {
         assertTrue(
                 resolve.getProperties().contains("additionalTextEdits"),
                 "additionalTextEdits must be resolvable — that is the auto-import payload");
+        assertTrue(
+                resolve.getProperties().contains("documentation"),
+                "jdtls computes an item's Javadoc in resolve only when documentation is listed (Java review A1)");
+        assertFalse(resolve.getProperties().contains("detail"), "detail stays eager: the rows' type column");
     }
 
     // --- the features whose absence is invisible ----------------------------------------------------

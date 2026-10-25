@@ -19,6 +19,10 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseEvent;
 import javafx.stage.Stage;
 
+import com.editora.editor.debug.DebugHover;
+import com.editora.editor.http.HttpHooks;
+import com.editora.editor.markdown.MarkdownMenus;
+import com.editora.editor.markdown.MermaidLintHover;
 import com.editora.i18n.Messages;
 import com.editora.markdown.MarkdownLint;
 import com.editora.mermaid.MaidOutput;
@@ -632,7 +636,8 @@ class EditorInteractionFxTest {
             Stage stage = EditorFx.show(mermaid, 600, 300);
             mermaid.setMermaidLintEnabled(true);
             mermaid.getArea().fireEvent(mouseAt(mermaid, 2, false, false));
-            Tooltip tip = EditorFx.field(mermaid, "lintTooltip");
+            Tooltip tip = MermaidLintHover.tooltipOf(mermaid.getArea());
+
             assertNotNull(tip, "hovering the squiggle shows a tooltip");
             assertTrue(tip.isShowing());
             assertEquals("Unknown diagram type\nSecond problem", tip.getText());

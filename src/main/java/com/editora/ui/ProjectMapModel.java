@@ -18,8 +18,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
-import com.editora.editor.LanguageRegistry;
 import com.editora.search.FuzzyMatch;
+import com.editora.text.LanguageRegistry;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Filesystem/model half of the Project Map. The JavaFX view asks for a bounded snapshot off the FX thread,
@@ -72,31 +73,32 @@ final class ProjectMapModel {
 
     record Entry(
             Path path,
-            Path parent,
+            @Nullable Path parent,
             int depth,
             boolean directory,
             long size,
             long modifiedMillis,
             boolean symbolicLink,
-            Placeholder placeholder) {
+            @Nullable Placeholder placeholder,
+            @Nullable Symbol symbol) {
         Entry {
             path = normalize(path);
             parent = normalize(parent);
         }
 
-        Entry(Path path, Path parent, int depth, boolean directory) {
+        Entry(Path path, @Nullable Path parent, int depth, boolean directory) {
             this(path, parent, depth, directory, -1, -1, false);
         }
 
         Entry(
                 Path path,
-                Path parent,
+                @Nullable Path parent,
                 int depth,
                 boolean directory,
                 long size,
                 long modifiedMillis,
                 boolean symbolicLink) {
-            this(path, parent, depth, directory, size, modifiedMillis, symbolicLink, null);
+            this(path, parent, depth, directory, size, modifiedMillis, symbolicLink, null, null);
         }
 
         /**
@@ -105,7 +107,17 @@ final class ProjectMapModel {
          * act on folders must check {@link #isPlaceholder()} first.
          */
         static Entry placeholder(Path parent, int depth, Placeholder placeholder) {
-            return new Entry(parent.resolve(PLACEHOLDER_NAME), parent, depth, true, -1, -1, false, placeholder);
+            return new Entry(parent.resolve(PLACEHOLDER_NAME), parent, depth, true, -1, -1, false, placeholder, null);
+        }
+
+        /**
+         * A row of a file's structure column: one declaration of the file (or of the declaration that is
+         * {@code parent}). Its path is made up — {@code symbol.file()} followed by one segment per declaration
+         * down to this one (see {@link ProjectMapStructure}) — and never exists on disk. It is not a directory,
+         * so no file-management action applies to it; callers that act on files must check {@link #isSymbol()}.
+         */
+        static Entry symbol(Path path, Path parent, int depth, Symbol symbol) {
+            return new Entry(path, parent, depth, false, -1, -1, false, null, symbol);
         }
 
         boolean isPlaceholder() {
@@ -116,14 +128,49 @@ final class ProjectMapModel {
             return placeholder != null && placeholder.kind() == PlaceholderKind.MORE;
         }
 
+        boolean isSymbol() {
+            return symbol != null;
+        }
+
+        /** A real file: not a folder, a placeholder row or a declaration. */
+        boolean isFile() {
+            return !directory && symbol == null;
+        }
+
         String name() {
             if (placeholder != null) {
                 return placeholder.label();
+            }
+            if (symbol != null) {
+                return symbol.label();
             }
             Path fileName = path == null ? null : path.getFileName();
             return fileName == null ? String.valueOf(path) : fileName.toString();
         }
     }
+
+    /**
+     * One declaration of a file as a structure row shows it.
+     *
+     * @param file the file it is declared in
+     * @param label what the Structure tool window calls it ({@code bar(int)}, a heading's text)
+     * @param kind the Structure kind ({@code method}, {@code class}, {@code heading}…), or null
+     * @param line the 0-based line it is declared on (where Open puts the caret)
+     * @param startLine the 0-based first line of what its card shows: the block, with its doc comment and
+     *     annotations
+     * @param endLine the 0-based last line of what its card shows
+     * @param block the fold block that Open Narrowed narrows the editor to, or null when it has none
+     * @param branches whether it holds declarations of its own (it opens a column, like a folder)
+     */
+    record Symbol(
+            Path file,
+            String label,
+            @Nullable String kind,
+            int line,
+            int startLine,
+            int endLine,
+            com.editora.text.FoldRegions.@Nullable Region block,
+            boolean branches) {}
 
     record Filters(
             String query,
@@ -150,14 +197,14 @@ final class ProjectMapModel {
     }
 
     /** Stable identity for one column. Several independently expanded parents can own columns at one depth. */
-    record ColumnId(int depth, Path parent) {
+    record ColumnId(int depth, @Nullable Path parent) {
         ColumnId {
             parent = normalize(parent);
         }
     }
 
     /** One Miller-style column containing the children of exactly one parent directory. */
-    record Column(int depth, Path parent, List<Entry> entries, int totalEntries) {
+    record Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries) {
         Column {
             parent = normalize(parent);
             entries = entries == null ? List.of() : List.copyOf(entries);
@@ -295,7 +342,7 @@ final class ProjectMapModel {
      *
      * @return the snapshot, or {@code null} when {@code request.cancelled()} turned true part-way
      */
-    static Snapshot load(Request request) {
+    static @Nullable Snapshot load(Request request) {
         Path root = request.root();
         if (root == null) {
             return Snapshot.EMPTY;
@@ -432,7 +479,7 @@ final class ProjectMapModel {
         return new Snapshot(result, directories, skipped, capped, pinnedRequested, pinnedLoaded);
     }
 
-    private static Entry entry(Item item, Path parent, int depth) {
+    private static Entry entry(Item item, @Nullable Path parent, int depth) {
         return new Entry(
                 item.path(), parent, depth, item.directory(), item.size(), item.modifiedMillis(), item.symbolicLink());
     }
@@ -445,7 +492,7 @@ final class ProjectMapModel {
      * Toggles one directory independently. Opening a sibling retains existing branches; closing a directory
      * removes its own descendant columns without affecting its siblings.
      */
-    static Set<Path> toggleExpansion(Path root, Set<Path> expanded, Path directory) {
+    static Set<Path> toggleExpansion(@Nullable Path root, Set<Path> expanded, @Nullable Path directory) {
         Path normalizedRoot = normalize(root);
         Path normalizedDirectory = normalize(directory);
         if (normalizedRoot == null || normalizedDirectory == null || !normalizedDirectory.startsWith(normalizedRoot)) {
@@ -467,7 +514,7 @@ final class ProjectMapModel {
     }
 
     /** Returns the directories that must be expanded to reveal every matching file beneath {@code root}. */
-    static Set<Path> expandedAncestors(Path root, List<Path> matches) {
+    static Set<Path> expandedAncestors(@Nullable Path root, List<Path> matches) {
         Path normalizedRoot = normalize(root);
         if (normalizedRoot == null || matches == null || matches.isEmpty()) {
             return Set.of();
@@ -530,10 +577,16 @@ final class ProjectMapModel {
         for (var group : grouped.entrySet()) {
             ColumnId id = group.getKey();
             int depth = id.depth();
-            // The placeholder row ("+N more", "Empty folder") always closes its column.
+            // The placeholder row ("+N more", "Empty folder") always closes its column. A structure column
+            // keeps the order its declarations are written in (the sort is stable).
+            boolean structure = group.getValue().stream().anyMatch(Entry::isSymbol);
+            java.util.Comparator<Entry> order = java.util.Comparator.comparing(Entry::isPlaceholder);
             List<Entry> all = group.getValue().stream()
-                    .sorted(java.util.Comparator.comparing(Entry::isPlaceholder)
-                            .thenComparing(ProjectPathOrder.directoriesFirst(Entry::directory, Entry::name)))
+                    .sorted(
+                            structure
+                                    ? order
+                                    : order.thenComparing(
+                                            ProjectPathOrder.directoriesFirst(Entry::directory, Entry::name)))
                     .toList();
             if (depth > 0 && id.parent() != null && !visible.contains(id.parent())) {
                 continue;
@@ -543,8 +596,10 @@ final class ProjectMapModel {
             boolean showHidden = showHiddenByColumn == null || showHiddenByColumn.getOrDefault(id, true);
             List<Entry> shown = all.stream()
                     .filter(entry -> depth == 0 || entry.parent() == null || visible.contains(entry.parent()))
-                    .filter(entry ->
-                            entry.isPlaceholder() || showHidden || !entry.name().startsWith("."))
+                    .filter(entry -> entry.isPlaceholder()
+                            || entry.isSymbol()
+                            || showHidden
+                            || !entry.name().startsWith("."))
                     .filter(entry -> entry.isPlaceholder()
                             || normalizedQuery.isEmpty()
                             || FuzzyMatch.of(entry.name(), normalizedQuery) != null)
@@ -553,7 +608,8 @@ final class ProjectMapModel {
             // The directory's real child count: the loaded rows plus what a "+N more" row stands for.
             int total = 0;
             for (Entry entry : all) {
-                total += entry.isPlaceholder() ? entry.placeholder().remaining() : 1;
+                Placeholder placeholder = entry.placeholder();
+                total += placeholder != null ? placeholder.remaining() : 1; // entry.isPlaceholder()
             }
             result.add(new Column(depth, id.parent(), shown, total));
         }
@@ -564,7 +620,7 @@ final class ProjectMapModel {
      * One attribute read per path; a symbolic link costs a second one to learn whether it leads to a folder.
      * {@code null} when the path cannot be read at all.
      */
-    private static Item stat(Path path) {
+    private static @Nullable Item stat(Path path) {
         try {
             BasicFileAttributes attributes =
                     Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
@@ -622,7 +678,7 @@ final class ProjectMapModel {
      * inside a collapsed folder still lights every ancestor up to the root, so a status chip shows which
      * collapsed folders hold its files. Path arithmetic only; nothing is read from disk.
      */
-    static Set<Path> emphasized(List<Entry> entries, Set<Path> directMatches, Path root) {
+    static Set<Path> emphasized(List<Entry> entries, Set<Path> directMatches, @Nullable Path root) {
         Set<Path> result = new HashSet<>();
         if (entries == null || directMatches == null || directMatches.isEmpty()) {
             return result;
@@ -675,7 +731,7 @@ final class ProjectMapModel {
      * Moves every path at or under {@code from} to the same place under {@code to}; other paths are returned
      * unchanged. Used to carry map state (expansion, limits, selection) across an in-app rename or move.
      */
-    static Path remap(Path path, Path from, Path to) {
+    static @Nullable Path remap(Path path, Path from, Path to) {
         Path normalized = normalize(path);
         Path source = normalize(from);
         Path target = normalize(to);
@@ -691,7 +747,7 @@ final class ProjectMapModel {
      * file drops out with everything beneath it, so recreating the name later does not reopen old columns.
      * Folders beneath one that could not be read are kept as they were.
      */
-    static Set<Path> pruneExpansion(Path root, Set<Path> expanded, Snapshot snapshot) {
+    static Set<Path> pruneExpansion(@Nullable Path root, Set<Path> expanded, Snapshot snapshot) {
         Path normalizedRoot = normalize(root);
         Set<Path> result = new HashSet<>();
         if (normalizedRoot == null || expanded == null || snapshot == null) {
@@ -829,8 +885,8 @@ final class ProjectMapModel {
         if (filter == null || filter == TypeFilter.ALL) {
             return true;
         }
-        if (entry.directory()) {
-            return false; // folders are retained as ancestor context for matching files
+        if (!entry.isFile()) {
+            return false; // folders (and declarations) are retained as context for matching files
         }
         return classify(entry.name()) == filter;
     }
@@ -839,7 +895,7 @@ final class ProjectMapModel {
      * The children of {@code directory}, each with its attributes, or {@code null} when it cannot be listed.
      * One attribute read per child (two for a symbolic link) serves both the ordering and the row.
      */
-    private static List<Item> listDirectory(Path directory, boolean showHidden) {
+    private static @Nullable List<Item> listDirectory(Path directory, boolean showHidden) {
         List<Item> result = new ArrayList<>();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
             for (Path child : stream) {
@@ -856,7 +912,7 @@ final class ProjectMapModel {
         return result;
     }
 
-    static Path normalize(Path path) {
+    static @Nullable Path normalize(@Nullable Path path) {
         return path == null ? null : path.toAbsolutePath().normalize();
     }
 }

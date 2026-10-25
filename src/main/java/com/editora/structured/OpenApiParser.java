@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Detects and shallow-parses an OpenAPI 3 / Swagger 2 document (a JSON/YAML tree) into an
@@ -194,7 +195,7 @@ public final class OpenApiParser {
         return n != null && n.isTextual();
     }
 
-    private static String text(JsonNode obj, String field) {
+    private static @Nullable String text(JsonNode obj, String field) {
         if (obj == null) {
             return null;
         }

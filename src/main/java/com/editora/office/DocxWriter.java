@@ -12,8 +12,8 @@ import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
 
-import com.editora.editor.MarkdownDocInfo;
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownDocInfo;
+import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.markdown.MarkdownMath;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.Borders;
@@ -43,6 +43,7 @@ import org.commonmark.node.Node;
 import org.commonmark.node.OrderedList;
 import org.commonmark.node.Paragraph;
 import org.commonmark.node.ThematicBreak;
+import org.jspecify.annotations.Nullable;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBookmark;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBorder;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTHyperlink;
@@ -83,16 +84,18 @@ public final class DocxWriter {
     /** What every block needs: the document, where pictures resolve, and the heading bookmarks. */
     private record Ctx(
             XWPFDocument doc,
-            Path baseDir,
-            List<String> mmdc,
+            @Nullable Path baseDir,
+            @Nullable List<String> mmdc,
             DocxScaffold scaffold,
             Map<Heading, String> anchors,
             Map<String, String> bookmarks) {}
 
-    public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
+    public static void write(String markdown, @Nullable Path baseDir, @Nullable List<String> mmdc, Path out)
+            throws IOException {
         // The preview's parse (math is nodes), with alerts and definition lists as blocks this writer knows.
         Node ast = com.editora.markdown.MarkdownExportTree.lower(
-                MarkdownRenderer.parseForRender(markdown), com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
+                MarkdownRenderer.parseForRender(markdown),
+                com.editora.editor.markdown.MarkdownHtmlExport.wikiPaths(baseDir));
         try (XWPFDocument doc = new XWPFDocument()) {
             Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
             Map<String, String> bookmarks = new HashMap<>();
@@ -119,7 +122,7 @@ public final class DocxWriter {
     }
 
     /** The file name without its extension — the title of a document that states none. */
-    static String fileTitle(Path out) {
+    static @Nullable String fileTitle(Path out) {
         if (out == null || out.getFileName() == null) {
             return null;
         }
@@ -432,12 +435,14 @@ public final class DocxWriter {
 
     /** Creates one styled run carrying {@code text} (reusing {@code ir}'s styling/link). */
     private static XWPFRun emitTextRun(
-            Ctx ctx, XWPFParagraph p, InlineRun ir, String text, boolean forceBold, int size) {
-        XWPFRun r = linkRun(ctx, p, ir.href());
-        boolean link = r != null;
-        if (link) {
-            r.setColor(LINK_COLOR);
-            r.setUnderline(UnderlinePatterns.SINGLE);
+            Ctx ctx, XWPFParagraph p, InlineRun ir, @Nullable String text, boolean forceBold, int size) {
+        XWPFRun linked = linkRun(ctx, p, ir.href());
+        boolean link = linked != null;
+        XWPFRun r;
+        if (linked != null) {
+            linked.setColor(LINK_COLOR);
+            linked.setUnderline(UnderlinePatterns.SINGLE);
+            r = linked;
         } else {
             r = p.createRun();
         }
@@ -476,7 +481,7 @@ public final class DocxWriter {
      * A hyperlink run for {@code href}, or null when the text is to be written plain: no link, a link to a
      * heading this document does not have, or a scheme a document must not carry live.
      */
-    private static XWPFRun linkRun(Ctx ctx, XWPFParagraph p, String href) {
+    private static @Nullable XWPFRun linkRun(Ctx ctx, XWPFParagraph p, @Nullable String href) {
         if (href == null || href.isBlank()) {
             return null;
         }
@@ -503,7 +508,7 @@ public final class DocxWriter {
     }
 
     /** Embeds {@code png} as an inline picture sized to roughly the line height; null when it can't decode. */
-    private static XWPFRun embedInlineMath(XWPFParagraph p, byte[] png, boolean display) {
+    private static @Nullable XWPFRun embedInlineMath(XWPFParagraph p, byte @Nullable [] png, boolean display) {
         if (png == null) {
             return null;
         }
@@ -534,7 +539,7 @@ public final class DocxWriter {
         return c instanceof Image && c.getNext() == null;
     }
 
-    private static void embedImage(XWPFParagraph p, Image img, Path baseDir) {
+    private static void embedImage(XWPFParagraph p, Image img, @Nullable Path baseDir) {
         byte[] bytes = OfficeImages.load(img.getDestination(), baseDir);
         String alt = InlineRun.textOf(img);
         String fallback = alt.isEmpty() ? img.getDestination() : alt;
@@ -546,7 +551,7 @@ public final class DocxWriter {
     }
 
     /** Puts raster {@code bytes} into {@code run}, scaled to the page; false when they cannot be decoded. */
-    private static boolean pictureInto(XWPFRun run, byte[] bytes, String name) {
+    private static boolean pictureInto(XWPFRun run, byte @Nullable [] bytes, String name) {
         if (bytes == null) {
             return false;
         }
@@ -575,7 +580,7 @@ public final class DocxWriter {
      * no bytes or they cannot be decoded, so the caller's fallback (the block as text) is not preceded by an
      * empty paragraph.
      */
-    private static boolean embedBlock(XWPFDocument doc, byte[] bytes) {
+    private static boolean embedBlock(XWPFDocument doc, byte @Nullable [] bytes) {
         if (bytes == null) {
             return false;
         }
@@ -592,7 +597,7 @@ public final class DocxWriter {
      * back) when {@code bytes} is null or undecodable. When {@code altOnFail} is non-null a failed embed
      * writes it as italic text and still returns true (used by image embedding, which has its own fallback).
      */
-    private static boolean embedBytes(XWPFParagraph p, byte[] bytes, String altOnFail) {
+    private static boolean embedBytes(XWPFParagraph p, byte @Nullable [] bytes, @Nullable String altOnFail) {
         if (bytes == null) {
             return false;
         }

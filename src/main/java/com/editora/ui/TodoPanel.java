@@ -27,6 +27,7 @@ import com.editora.todo.TodoColors;
 import com.editora.todo.TodoGrouping;
 import com.editora.todo.TodoMatch;
 import com.editora.todo.TodoService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -64,7 +65,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         void refresh();
 
         /** Sets (or clears, when {@code priority} is null) the match's {@code (priority)} in the source. */
-        void setPriority(Path file, TodoMatch match, String priority);
+        void setPriority(Path file, TodoMatch match, @Nullable String priority);
 
         /** Rewrites the match's keyword to {@code DONE} (mark done) or back to a live keyword (reopen). */
         void setKeyword(Path file, TodoMatch match, String keyword);
@@ -74,7 +75,10 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     }
 
     /** A tree row: a group header ({@code match == null}) or a single match under it. */
-    private record Row(String header, Path file, TodoMatch match) {}
+    private record Row(
+            @Nullable String header,
+            @Nullable Path file,
+            @Nullable TodoMatch match) {}
 
     private final Actions actions;
     private final Label summary = new Label();
@@ -83,10 +87,10 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     private final TextField filterField = new TextField();
     private final TreeView<Row> tree = new TreeView<>();
 
-    private TodoService.Outcome lastOutcome;
-    private Path activeFile;
+    private TodoService.@Nullable Outcome lastOutcome;
+    private @Nullable Path activeFile;
     /** Notified when the user changes the "Group by" dimension, so the coordinator can persist it. */
-    private java.util.function.Consumer<TodoGrouping.GroupBy> onGroupByChanged;
+    private java.util.function.@Nullable Consumer<TodoGrouping.GroupBy> onGroupByChanged;
 
     public TodoPanel(Actions actions) {
         this.actions = actions;
@@ -117,7 +121,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
             }
 
             @Override
-            public TodoGrouping.GroupBy fromString(String s) {
+            public TodoGrouping.@Nullable GroupBy fromString(String s) {
                 return null;
             }
         });
@@ -178,7 +182,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     }
 
     /** Sets the displayed scan-scope folder. */
-    public void setScope(String display, String fullPath) {
+    public void setScope(String display, @Nullable String fullPath) {
         scopeLabel.setText(display == null ? "" : display);
         scopeLabel.setTooltip(fullPath == null || fullPath.isBlank() ? null : new Tooltip(fullPath));
     }
@@ -252,8 +256,10 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
             return;
         }
         Row row = item.getValue();
-        if (row.match() != null) {
-            actions.openMatch(row.file(), row.match().line(), row.match().col());
+        TodoMatch match = row.match();
+        Path file = row.file();
+        if (match != null && file != null) { // a match row always carries its file
+            actions.openMatch(file, match.line(), match.col());
         } else {
             item.setExpanded(!item.isExpanded());
         }
@@ -266,8 +272,11 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     }
 
     /** Sets the active file so its group sorts to the top under "group by file". Re-sorts without re-scanning. */
-    public void setActiveFile(Path normalizedActive) {
-        if (com.editora.config.PathKeys.samePath(activeFile, normalizedActive)) {
+    public void setActiveFile(@Nullable Path normalizedActive) {
+        Path current = activeFile;
+        if (current == null
+                ? normalizedActive == null
+                : normalizedActive != null && com.editora.config.PathKeys.samePath(current, normalizedActive)) {
             return;
         }
         activeFile = normalizedActive;
@@ -378,21 +387,22 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                 setContextMenu(null);
                 return;
             }
-            if (row.match() == null) {
+            TodoMatch match = row.match();
+            if (match == null) {
                 setContextMenu(null);
                 renderHeader(row);
             } else {
-                renderMatch(row);
-                setContextMenu(row.match().parsed() == null ? null : buildMatchMenu(row));
+                renderMatch(row, match);
+                com.editora.todo.TodoComment parsed = match.parsed();
+                Path file = row.file(); // a match row always carries its file
+                setContextMenu(parsed == null || file == null ? null : buildMatchMenu(file, match, parsed));
             }
         }
 
         /** Edit menu for a structured match: Mark Done / Reopen, set priority, edit description. */
-        private javafx.scene.control.ContextMenu buildMatchMenu(Row row) {
-            TodoMatch m = row.match();
-            Path file = row.file();
-            boolean done =
-                    com.editora.todo.TodoPatterns.DONE_KEYWORD.equals(m.parsed().keyword());
+        private javafx.scene.control.ContextMenu buildMatchMenu(
+                Path file, TodoMatch m, com.editora.todo.TodoComment parsed) {
+            boolean done = com.editora.todo.TodoPatterns.DONE_KEYWORD.equals(parsed.keyword());
             javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
 
             // Mark Done overwrites the keyword, and nothing records what it was — so reopening cannot know
@@ -439,8 +449,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
             }
         }
 
-        private void renderMatch(Row row) {
-            TodoMatch m = row.match();
+        private void renderMatch(Row row, TodoMatch m) {
             TextFlow flow = new TextFlow();
             flow.getStyleClass().add("todo-row-flow");
             var parsed = m.parsed();
@@ -449,13 +458,9 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                 if (parsed.hasTag()) {
                     addRun(flow, " [" + parsed.tag() + "]", TodoColors.TAG_COLOR, false, true);
                 }
-                if (parsed.hasPriority()) {
-                    addRun(
-                            flow,
-                            " (" + parsed.priority() + ")",
-                            TodoColors.priorityColor(parsed.priority()),
-                            false,
-                            false);
+                String priority = parsed.priority();
+                if (priority != null) { // hasPriority()
+                    addRun(flow, " (" + priority + ")", TodoColors.priorityColor(priority), false, false);
                 }
                 if (!parsed.description().isEmpty()) {
                     addRun(flow, " " + parsed.description(), null, false, false);
@@ -469,7 +474,8 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
             setGraphic(flow);
         }
 
-        private static Text addRun(TextFlow flow, String s, String colorWeb, boolean bold, boolean underline) {
+        private static Text addRun(
+                TextFlow flow, String s, @Nullable String colorWeb, boolean bold, boolean underline) {
             Text t = new Text(s);
             t.getStyleClass().add("todo-run");
             String style = "";
@@ -487,7 +493,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
             return t;
         }
 
-        private static String fileLabel(Path p) {
+        private static String fileLabel(@Nullable Path p) {
             if (p == null) {
                 return "";
             }

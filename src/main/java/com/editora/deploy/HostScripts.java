@@ -4,6 +4,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The few POSIX {@code sh} scripts a deploy runs on the host, and the reading of what they print. Each is run
  * as {@code sh -c <script> editora-deploy <args…>}, so a path is always an argument and never part of the
@@ -105,7 +107,7 @@ public final class HostScripts {
     public record RemoteFile(long size, long seconds) {}
 
     /** {@link #listing}'s output, or null when it is not that (the script did not run, or failed). */
-    public static Listing parseListing(String output) {
+    public static @Nullable Listing parseListing(String output) {
         if (output == null) {
             return null;
         }

@@ -3,8 +3,8 @@ package com.editora.ui;
 import java.util.function.Consumer;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.ShellScripts;
 import com.editora.editorconfig.EditorConfigCharset;
+import com.editora.text.ShellScripts;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -26,7 +26,7 @@ final class ShellFileNotice {
             EditorBuffer buffer, String fileName, String lineEnding, String charset, Consumer<String> status) {
         String head = buffer.getArea().getText(0, Math.min(buffer.getArea().getLength(), 256));
         boolean shell = "shell".equals(buffer.getLanguage()) || ShellScripts.isShellScript(fileName, head);
-        ShellScripts.Problem problem = ShellScripts.problem(shell ? "shell" : null, lineEnding, charset);
+        ShellScripts.Problem problem = ShellScripts.problem(shell ? "shell" : "", lineEnding, charset);
         if (problem == ShellScripts.Problem.NONE) {
             buffer.hideFileNotice();
             return;

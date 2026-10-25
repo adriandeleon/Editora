@@ -12,6 +12,11 @@ import javafx.scene.layout.BackgroundFill;
 import javafx.scene.layout.CornerRadii;
 import javafx.scene.paint.Color;
 
+import com.editora.editor.completion.SnippetFieldOverlay;
+import com.editora.editor.debug.InlineValuesOverlay;
+import com.editora.editor.lsp.LspDiagnosticOverlay;
+import com.editora.editor.markdown.MarkdownLintOverlay;
+import com.editora.editor.search.SearchHighlightOverlay;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

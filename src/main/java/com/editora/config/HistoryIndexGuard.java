@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import com.editora.history.HistoryBlobStore;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decides whether the Local History index on disk can be trusted as the complete list of live revisions.
@@ -66,7 +67,7 @@ final class HistoryIndexGuard {
      * The names of the index backups beside {@code index} (see {@link #backupPresent}), or {@code null} when
      * the folder cannot be listed.
      */
-    static Set<String> backupNames(Path index) {
+    static @Nullable Set<String> backupNames(Path index) {
         Path dir = index.getParent();
         if (dir == null || !Files.isDirectory(dir)) {
             return Set.of();
@@ -115,7 +116,7 @@ final class HistoryIndexGuard {
      * Refusing all collection while any backup existed kept those bodies safe too, but for good: one damaged
      * write, and no limit freed disk space and no purge removed content in any later session.
      */
-    static BackupHashes backupHashes(Path index) {
+    static @Nullable BackupHashes backupHashes(Path index) {
         Set<String> names = backupNames(index);
         if (names == null) {
             return null;

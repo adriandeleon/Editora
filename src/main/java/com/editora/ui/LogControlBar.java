@@ -19,6 +19,7 @@ import javafx.util.Duration;
 
 import com.editora.logviewer.LogFilter;
 import com.editora.logviewer.LogLevel;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -133,7 +134,7 @@ public class LogControlBar extends HBox {
     }
 
     /** Shows {@code min}/{@code text} as the active filter (without reporting it back). */
-    public void showFilter(LogLevel min, String text) {
+    public void showFilter(@Nullable LogLevel min, @Nullable String text) {
         showing = true;
         try {
             level.getSelectionModel().select(Math.max(0, LEVELS.indexOf(min)));
@@ -166,7 +167,7 @@ public class LogControlBar extends HBox {
     }
 
     /** The pattern as typed, or {@code null} when empty. Not trimmed: a pattern may be about its spaces. */
-    public String patternText() {
+    public @Nullable String patternText() {
         String text = pattern.getText();
         return text == null || text.isEmpty() ? null : text;
     }

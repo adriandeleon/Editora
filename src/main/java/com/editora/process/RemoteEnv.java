@@ -4,6 +4,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a host's <em>login shell</em> sets up, learned once per connection. A command started over SSH gets a
  * bare environment: no version-manager directories on {@code PATH}, usually no locale at all. The same gap a
@@ -19,7 +21,12 @@ import java.util.Map;
  * @param profile the other variables the login profile sets ({@code JAVA_HOME}, {@code MAVEN_OPTS},
  *     {@code GOPATH}, …) that a plain command over SSH would not have
  */
-public record RemoteEnv(String path, String home, String os, Map<String, String> locale, Map<String, String> profile) {
+public record RemoteEnv(
+        @Nullable String path,
+        @Nullable String home,
+        @Nullable String os,
+        Map<String, String> locale,
+        Map<String, String> profile) {
 
     public static final RemoteEnv UNKNOWN = new RemoteEnv(null, null, null, Map.of(), Map.of());
 
@@ -191,7 +198,7 @@ public record RemoteEnv(String path, String home, String os, Map<String, String>
         return Map.copyOf(out);
     }
 
-    private static String blankToNull(String value) {
+    private static @Nullable String blankToNull(String value) {
         return value.isBlank() ? null : value;
     }
 }

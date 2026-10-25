@@ -7,6 +7,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure, unit-tested path-identity + store-keying helpers extracted from {@code MainController}. These decide
@@ -28,7 +29,7 @@ public final class PathKeys {
      * where an absolute {@code /srv/app} names the host's folder, not this machine's). {@code userHome} is
      * the home folder there.
      */
-    public static Path resolveUserInputOn(String input, Path baseDir, String userHome) {
+    public static @Nullable Path resolveUserInputOn(String input, @Nullable Path baseDir, @Nullable String userHome) {
         if (baseDir == null || baseDir.getFileSystem() == java.nio.file.FileSystems.getDefault()) {
             return resolveUserInput(input, baseDir, userHome);
         }
@@ -56,7 +57,7 @@ public final class PathKeys {
      * {@code userHome}; a relative path resolves against {@code baseDir} (the current file's folder, else the
      * project root / home); the result is normalized. Pure so it's unit-tested without the toolkit.
      */
-    public static Path resolveUserInput(String input, Path baseDir, String userHome) {
+    public static @Nullable Path resolveUserInput(String input, @Nullable Path baseDir, @Nullable String userHome) {
         if (input == null) {
             return null;
         }
@@ -186,7 +187,7 @@ public final class PathKeys {
     }
 
     /** The canonical string key for a buffer path, or {@code ""} for a null path (the notes-store key). */
-    public static String canonicalKey(Path p) {
+    public static String canonicalKey(@Nullable Path p) {
         return p == null ? "" : canonical(p).toString();
     }
 
@@ -215,7 +216,7 @@ public final class PathKeys {
      * A null-safe, provider-safe {@code Path.equals}: {@code Objects.equals(a, b)} that answers {@code false}
      * instead of throwing when the two paths are on different file systems (a remote tab next to a local one).
      */
-    public static boolean samePath(Path a, Path b) {
+    public static boolean samePath(@Nullable Path a, @Nullable Path b) {
         if (a == null || b == null) {
             return a == b;
         }
@@ -257,7 +258,7 @@ public final class PathKeys {
      * So a hash match is only trusted when the candidate's own file is <b>gone</b> from disk, which is what
      * a rename actually looks like; {@code stillExists} decides that (injected so this stays pure).
      */
-    public static String findKeyByIdentity(
+    public static @Nullable String findKeyByIdentity(
             Map<String, List<PersonalNote>> map, FileIdentity id, Predicate<String> stillExists) {
         return findKeyByIdentity(map, id, id == null ? () -> "" : id::hash, stillExists);
     }
@@ -268,7 +269,7 @@ public final class PathKeys {
      * lookup — a file opened while notes exist for others — never needs it: it is asked for only when a stored
      * note's file is gone and had the same size (equal bytes have equal sizes) and a hash to compare with.
      */
-    public static String findKeyByIdentity(
+    public static @Nullable String findKeyByIdentity(
             Map<String, List<PersonalNote>> map,
             FileIdentity id,
             Supplier<String> hash,

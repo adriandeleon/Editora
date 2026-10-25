@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -57,7 +59,7 @@ public final class ResponseRedirects {
      * A {@link Verdict} plus, when known, the exact bytes that were preserved: the replace then only happens
      * while the file still holds them.
      */
-    public record Decision(Verdict verdict, byte[] expectedBytes) {
+    public record Decision(Verdict verdict, byte @Nullable [] expectedBytes) {
 
         public Decision {
             verdict = verdict == null ? Verdict.REFUSED_NOT_PRESERVED : verdict;
@@ -111,7 +113,7 @@ public final class ResponseRedirects {
      */
     static void write(
             List<HttpFile.Redirect> redirects,
-            Path baseDir,
+            @Nullable Path baseDir,
             int status,
             byte[] body,
             boolean truncated,
@@ -261,7 +263,7 @@ public final class ResponseRedirects {
      * the rename happens only while the target still holds them. The rename replaces the directory entry, so
      * a symbolic link swapped in since the containment check is replaced, never followed.
      */
-    private static boolean replace(Path target, byte[] expected, byte[] body) throws IOException {
+    private static boolean replace(Path target, byte @Nullable [] expected, byte[] body) throws IOException {
         if (target.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
             // A remote (SFTP) folder: the shared writer knows that provider's staging and rename rules.
             return expected == null
@@ -325,7 +327,7 @@ public final class ResponseRedirects {
      * Why {@code path} (substituted) cannot name a file to save to, or null: it ends in a folder separator, or
      * it holds a line break or another control character (a variable whose value ran over a line). Pure.
      */
-    static String unusablePath(String path) {
+    static @Nullable String unusablePath(String path) {
         if (path.endsWith("/") || path.endsWith("\\")) {
             return tr("http.warn.redirectPath.folder");
         }

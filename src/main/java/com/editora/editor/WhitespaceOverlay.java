@@ -11,6 +11,7 @@ import javafx.scene.text.Font;
 import javafx.scene.text.TextAlignment;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A transparent overlay that draws "hidden character" markers — {@code ·} for spaces, {@code →} for
@@ -36,7 +37,7 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
     static boolean uniformPath = true;
 
     /** Test seam: when set, every marker painted is also recorded here as {@code {glyph, x, y}}. */
-    static java.util.List<double[]> markersForTest;
+    static java.util.@Nullable List<double[]> markersForTest;
 
     /** How many columns past its first one a line is measured at to derive the cell advance. */
     private static final int UNIFORM_SPAN = 512;
@@ -68,7 +69,7 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
 
     private Font font = Font.font("monospace", 14);
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
-    private WhitespaceOverlay follower;
+    private @Nullable WhitespaceOverlay follower;
 
     WhitespaceOverlay(CodeArea area) {
         this.area = area;
@@ -287,14 +288,16 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
             if (c != ' ' && c != '\t') {
                 continue; // a non-whitespace gap; the next marker re-queries (contiguity broken)
             }
-            boolean adjacent = c == ' ' && prev != null && i == prevIndex + 1 && !prevTab;
+            // The previous marker when this space directly follows it (no tab between), else null.
+            Bounds adjacent = c == ' ' && i == prevIndex + 1 && !prevTab ? prev : null;
             Bounds local;
-            if (adjacent && !Double.isNaN(advance)) {
-                local = new BoundingBox(prev.getMinX() + advance, prev.getMinY(), prev.getWidth(), prev.getHeight());
+            if (adjacent != null && !Double.isNaN(advance)) {
+                local = new BoundingBox(
+                        adjacent.getMinX() + advance, adjacent.getMinY(), adjacent.getWidth(), adjacent.getHeight());
             } else {
                 local = charBounds(paragraph, i);
-                if (adjacent && local != null && local.getMinY() == prev.getMinY()) {
-                    advance = local.getMinX() - prev.getMinX();
+                if (adjacent != null && local != null && local.getMinY() == adjacent.getMinY()) {
+                    advance = local.getMinX() - adjacent.getMinX();
                 }
             }
             if (local == null) {
@@ -486,13 +489,13 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
         return new int[] {Math.max(0, left - 2), Math.min(len - 1, right + 2)};
     }
 
-    private Bounds charBounds(int paragraph, int column) {
+    private @Nullable Bounds charBounds(int paragraph, int column) {
         LAYOUT_QUERIES_FOR_TEST.incrementAndGet();
         int abs = area.getAbsolutePosition(paragraph, column);
         return toLocal(area.getCharacterBoundsOnScreen(abs, abs + 1).orElse(null));
     }
 
-    private Bounds toLocal(Bounds screen) {
+    private @Nullable Bounds toLocal(@Nullable Bounds screen) {
         return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

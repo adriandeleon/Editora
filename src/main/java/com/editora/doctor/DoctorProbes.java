@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The Doctor's subprocess/PATH probes — <b>blocking</b>, run only on {@link DoctorService}'s daemon pool,
@@ -133,11 +134,11 @@ public final class DoctorProbes {
         return cmd;
     }
 
-    private static ProcessRunner.Result runSafe(List<String> argv) {
+    private static ProcessRunner.@Nullable Result runSafe(List<String> argv) {
         return runSafe(argv, Map.of());
     }
 
-    private static ProcessRunner.Result runSafe(List<String> argv, Map<String, String> extraEnv) {
+    private static ProcessRunner.@Nullable Result runSafe(List<String> argv, Map<String, String> extraEnv) {
         try {
             return ProcessRunner.run(null, TIMEOUT, argv, extraEnv);
         } catch (RuntimeException e) {

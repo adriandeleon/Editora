@@ -6,6 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The multi-step operation a repository is in the middle of — a merge, rebase, cherry-pick or revert that
  * stopped (usually on a conflict) and now waits for the user to continue, skip or abort it — or
@@ -111,6 +113,7 @@ public record GitOperation(Kind kind, int step, int total, String message) {
         boolean exists(String name);
 
         /** The text of {@code name}, or {@code null} when it cannot be read. */
+        @Nullable
         String read(String name);
     }
 
@@ -157,7 +160,7 @@ public record GitOperation(Kind kind, int step, int total, String message) {
     }
 
     /** {@link #detect(Probe)} over the real directory {@code gitDir}; {@link #NONE} for a null one. */
-    public static GitOperation detect(Path gitDir) {
+    public static GitOperation detect(@Nullable Path gitDir) {
         if (gitDir == null) {
             return NONE;
         }
@@ -168,7 +171,7 @@ public record GitOperation(Kind kind, int step, int total, String message) {
             }
 
             @Override
-            public String read(String name) {
+            public @Nullable String read(String name) {
                 Path file = gitDir.resolve(name);
                 try {
                     if (!Files.isRegularFile(file) || Files.size(file) > MAX_MESSAGE_BYTES) {
@@ -184,7 +187,7 @@ public record GitOperation(Kind kind, int step, int total, String message) {
     }
 
     /** Which sequencer command a todo list is for: its first instruction is {@code pick} or {@code revert}. */
-    static Kind sequencerKind(String todo) {
+    static Kind sequencerKind(@Nullable String todo) {
         if (todo == null) {
             return Kind.NONE;
         }
@@ -210,7 +213,7 @@ public record GitOperation(Kind kind, int step, int total, String message) {
      * paths as {@code #} comment lines for an editor to strip, and a message passed with {@code -m} is not
      * stripped, so they are removed here. Pure.
      */
-    static String cleanMessage(String raw) {
+    static String cleanMessage(@Nullable String raw) {
         if (raw == null) {
             return "";
         }
@@ -223,7 +226,7 @@ public record GitOperation(Kind kind, int step, int total, String message) {
         return String.join("\n", kept).strip();
     }
 
-    private static int number(String text) {
+    private static int number(@Nullable String text) {
         if (text == null) {
             return 0;
         }

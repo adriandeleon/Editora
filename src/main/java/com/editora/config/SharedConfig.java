@@ -27,6 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The <em>shared</em>, app-wide half of the configuration: preferences ({@link Settings}) plus the
@@ -46,7 +47,7 @@ public class SharedConfig {
      * Legacy TOML reader used only for the one-time {@code settings.toml} migration — so it is built only
      * when that file is actually there to read, not on every launch.
      */
-    private TomlMapper legacyToml;
+    private @Nullable TomlMapper legacyToml;
     /** Pretty JSON for preferences and the bucketed stores. */
     private final ObjectMapper json = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
@@ -92,7 +93,7 @@ public class SharedConfig {
 
     private final HistoryService historyService;
     /** This process's claim on the config dir ({@code null} until {@link #claimInstance()}). */
-    private volatile InstanceLock instanceLock;
+    private volatile @Nullable InstanceLock instanceLock;
 
     private final DocumentWriteSequencer documentWrites = new DocumentWriteSequencer();
     /** Orders blob collection against index publications: a collection is queued while this is held. */
@@ -125,11 +126,11 @@ public class SharedConfig {
     private final ProjectManager projects;
 
     /** The histories every window adds to; created on first use (see {@link #recentFiles()}). */
-    private RecentFiles recentFiles;
+    private @Nullable RecentFiles recentFiles;
 
-    private SearchHistory searchHistory;
-    private AgentSessionHistory agentSessions;
-    private HttpResponseHistory httpHistory;
+    private @Nullable SearchHistory searchHistory;
+    private @Nullable AgentSessionHistory agentSessions;
+    private @Nullable HttpResponseHistory httpHistory;
 
     /**
      * Whether the Local History index in memory can be collected against — false when it was lost, lists
@@ -147,15 +148,20 @@ public class SharedConfig {
     private final Set<Path> writeProtected = ConcurrentHashMap.newKeySet();
 
     /** Bookkeeping fields: they change without any window having something to re-apply. */
-    private static final List<String> SETTINGS_BOOKKEEPING = List.of("lastUpdateCheckEpoch", "dismissedUpdateVersion");
+    private static final List<String> SETTINGS_BOOKKEEPING = List.of(
+            "lastUpdateCheckEpoch",
+            "dismissedUpdateVersion",
+            "latestReleaseVersion",
+            "latestReleaseUrl",
+            "lastUpdateCheckOkEpoch");
     /** The serialized preferences every window last applied, or {@code null} until {@link #markSettingsApplied}. */
-    private JsonNode appliedSettings;
+    private @Nullable JsonNode appliedSettings;
 
-    private byte[] appliedSettingsBytes;
+    private byte @Nullable [] appliedSettingsBytes;
     /** The export in progress, if any (see {@link #exportConfigAsync}). */
-    private java.util.concurrent.CompletableFuture<Path> runningExport;
+    private java.util.concurrent.@Nullable CompletableFuture<Path> runningExport;
     /** Where an export lands; {@code null} means the user's home directory (see {@link #exportDirectory}). */
-    private volatile Path exportDirectory;
+    private volatile @Nullable Path exportDirectory;
 
     private Consumer<ConfigManager> onSettingsChanged = origin -> {};
     private volatile Runnable onStoreChanged = () -> {};
@@ -325,7 +331,7 @@ public class SharedConfig {
      * window holds, and returns its issues. A file that cannot be read (half-typed JSON, a newer schema) leaves
      * the settings as they are and returns null; its problem is reported like one found at startup.
      */
-    public List<SettingsFileCheck.Issue> reloadSettings() {
+    public @Nullable List<SettingsFileCheck.Issue> reloadSettings() {
         Path file = getSettingsFile();
         List<ConfigLoadProblem> problems = new ArrayList<>();
         try {
@@ -448,8 +454,11 @@ public class SharedConfig {
             @Override
             public void write(Path file, ConfigWriter.BytesSupplier bytes) {
                 if (!writeProtected.contains(file)) {
-                    writer.enqueue(
-                            file, () -> sync.write(file, bytes.get(), schema, null) ? null : ConfigWriter.UNCHANGED);
+                    writer.enqueue(file, () -> {
+                        byte[] mine = bytes.get();
+                        // Null from the list's supplier means what it means to the queue: nothing to write.
+                        return mine == null || sync.write(file, mine, schema, null) ? null : ConfigWriter.UNCHANGED;
+                    });
                 }
             }
 
@@ -504,7 +513,7 @@ public class SharedConfig {
      * the copy exists. When the record cannot be read or written the answer is "not yet": repeating a notice
      * is better than never giving it.
      */
-    private boolean alreadyReported(Path copy) {
+    private boolean alreadyReported(@Nullable Path copy) {
         if (copy == null) {
             return false;
         }
@@ -582,7 +591,7 @@ public class SharedConfig {
      * window's palette command or key binding reaches the others without each command having to remember to
      * broadcast it.
      */
-    void enqueueSettings(ConfigManager origin) {
+    void enqueueSettings(@Nullable ConfigManager origin) {
         byte[] bytes = settingsBytes();
         if (!writeProtected.contains(getSettingsFile())) {
             enqueueStore(getSettingsFile(), bytes, ConfigSchema.SETTINGS);
@@ -735,7 +744,7 @@ public class SharedConfig {
     }
 
     /** The AI keys' vault once {@link #useSecretStore} ran; null keeps them in {@code settings.json}. */
-    private volatile ApiKeyVault apiKeys;
+    private volatile @Nullable ApiKeyVault apiKeys;
 
     /**
      * Keeps the AI providers' API keys in {@code store} (the system keychain), moving any that {@code settings.json}
@@ -1157,7 +1166,7 @@ public class SharedConfig {
     }
 
     /** The command configured for {@code tool} on the host of connection {@code id}, or null (its PATH). */
-    public String remoteTool(String id, String tool) {
+    public @Nullable String remoteTool(String id, String tool) {
         return connectionStore.tool(id, tool);
     }
 
@@ -1596,7 +1605,7 @@ public class SharedConfig {
      * project that did not change ({@link HistoryStore#snapshot}), the hashes it refers to are already
      * counted ({@link HistoryHashLedger}), and serializing happens on the writer thread.
      */
-    public void saveHistory(Consumer<Boolean> completion) {
+    public void saveHistory(@Nullable Consumer<Boolean> completion) {
         HistoryStore store = historyStore;
         HistoryStore.Snapshot snapshot = store.snapshot();
         long publication = store.ledger().publish();
@@ -1639,7 +1648,7 @@ public class SharedConfig {
             long publication,
             ConfigWriter.WriteOutcome outcome,
             boolean[] sawDisk,
-            Consumer<Boolean> completion) {
+            @Nullable Consumer<Boolean> completion) {
         boolean durable = outcome == ConfigWriter.WriteOutcome.WRITTEN;
         synchronized (historyPublicationLock) {
             if (durable) {

@@ -11,8 +11,9 @@ import java.util.function.Predicate;
 
 import com.editora.config.Breakpoint;
 import com.editora.dap.DapModels;
-import com.editora.editor.BreakpointManager;
+import com.editora.editor.debug.BreakpointManager;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The breakpoints of files with no open tab, as a debug session is told them at its start: read from the
@@ -28,7 +29,7 @@ final class ClosedFileBreakpoints {
 
     /** Reads a file's lines (over SFTP for a remote one; this runs off the FX thread) for re-anchoring, or {@code null} when it can't be used as-is (unreadable,
      *  too large, or non-UTF-8) — the caller then falls back to the stored line indices. */
-    static List<String> readLinesOrNull(Path p) {
+    static @Nullable List<String> readLinesOrNull(Path p) {
         try {
             if (!Files.isReadable(p) || Files.size(p) > MAX_BREAKPOINT_FILE_BYTES) {
                 return null;
@@ -52,7 +53,7 @@ final class ClosedFileBreakpoints {
             Map<String, List<Breakpoint>> map,
             Set<String> openPaths,
             Predicate<Path> isLocal,
-            Function<Path, List<String>> readLines) {
+            Function<Path, @Nullable List<String>> readLines) {
         List<DapModels.FileBreakpoints> out = new ArrayList<>();
         if (map == null) {
             return out;

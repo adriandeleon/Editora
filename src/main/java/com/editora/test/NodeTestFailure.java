@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A failed node:test (or other TAP) result's detail, read from the YAML block TAP puts under it — or from the
  * lines the spec reporter prints under a failure. Pure.
@@ -24,7 +26,13 @@ import java.util.regex.Pattern;
  * @param line its 1-based line, or 0
  * @param suite whether the block is a suite's ({@code type: 'suite'}), whose row is not a test
  */
-public record NodeTestFailure(String message, String type, String stack, String file, int line, boolean suite) {
+public record NodeTestFailure(
+        @Nullable String message,
+        @Nullable String type,
+        @Nullable String stack,
+        @Nullable String file,
+        int line,
+        boolean suite) {
 
     private static final Pattern KEY = Pattern.compile("^([A-Za-z_][\\w-]*):\\s?(.*)$");
     private static final Pattern LOCATION = Pattern.compile("^(.+?):(\\d+)(?::\\d+)?$");
@@ -39,7 +47,7 @@ public record NodeTestFailure(String message, String type, String stack, String 
     }
 
     /** Reads a YAML diagnostic block (the lines between {@code ---} and {@code ...}, as printed). */
-    public static NodeTestFailure fromYaml(List<String> lines, String testName) {
+    public static NodeTestFailure fromYaml(List<String> lines, @Nullable String testName) {
         Map<String, String> values = yamlValues(lines);
         String message = firstNonBlank(values.get("error"), values.get("message"));
         String type = firstNonBlank(values.get("name"), values.get("code"));
@@ -152,7 +160,7 @@ public record NodeTestFailure(String message, String type, String stack, String 
         return i;
     }
 
-    private static String firstNonBlank(String a, String b) {
+    private static @Nullable String firstNonBlank(@Nullable String a, @Nullable String b) {
         return a != null && !a.isBlank() ? a : b != null && !b.isBlank() ? b : null;
     }
 

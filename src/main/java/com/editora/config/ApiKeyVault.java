@@ -9,6 +9,7 @@ import java.util.logging.Logger;
 import com.editora.ai.AiProvider;
 import com.editora.secrets.SecretStore;
 import com.editora.secrets.SecretStoreException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Where the AI providers' API keys live: the system keychain when one answers, else {@code settings.json}.
@@ -40,7 +41,7 @@ public final class ApiKeyVault {
     private final Map<AiProvider, String> keys = new ConcurrentHashMap<>();
     private volatile Storage storage;
     private volatile String failure = "";
-    private volatile Settings settings;
+    private volatile @Nullable Settings settings;
 
     private ApiKeyVault(SecretStore store, Storage storage) {
         this.store = store;

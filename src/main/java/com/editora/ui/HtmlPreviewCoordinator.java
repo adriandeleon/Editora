@@ -9,6 +9,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.web.Browsers;
 import com.editora.web.Browsers.Browser;
 import com.editora.web.HtmlPreviewService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -24,7 +25,7 @@ final class HtmlPreviewCoordinator {
     private final CoordinatorHost host;
     private final HtmlPreviewService service;
     private List<Browser> browsers = List.of();
-    private QuickOpen<Browser> browserPalette; // built lazily on first "Open in…"
+    private @Nullable QuickOpen<Browser> browserPalette; // built lazily on first "Open in…"
 
     HtmlPreviewCoordinator(CoordinatorHost host) {
         this.host = host;
@@ -65,8 +66,9 @@ final class HtmlPreviewCoordinator {
 
     /** The debounced edit pulse reloads the browser, but only while this file is the one currently served. */
     void onBufferEdited(EditorBuffer buffer) {
-        if (isEnabled() && service.isPreviewing(buffer.getPath())) {
-            service.updateText(buffer.getPath(), buffer.getContent());
+        Path path = buffer.getPath();
+        if (isEnabled() && path != null && service.isPreviewing(path)) {
+            service.updateText(path, buffer.getContent());
             service.notifyChanged();
         }
     }

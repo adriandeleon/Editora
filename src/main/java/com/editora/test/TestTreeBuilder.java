@@ -1,5 +1,7 @@
 package com.editora.test;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Merges a {@link ParsedSuite} into the results tree. Idempotent: re-merging the same suite (the JVM final
  * sweep re-reads files already seen live) upserts by stable id rather than duplicating, and a streaming tool's
@@ -61,7 +63,7 @@ public final class TestTreeBuilder {
      * suite row had no class at all, and the Test Results row menu — Go to Test Class, Rerun This Class,
      * Debug This Class — never opened on one.
      */
-    static String suiteClassName(ParsedSuite suite) {
+    static @Nullable String suiteClassName(ParsedSuite suite) {
         String shared = null;
         for (ParsedTest test : suite.tests()) {
             String cls = test.className();
@@ -90,6 +92,7 @@ public final class TestTreeBuilder {
         node.setDurationMs(test.durationMs());
         node.setClassName(test.className());
         node.setMethodName(test.methodName());
+        node.setRetries(test.retries());
         // Only overwrite optional detail when the delta carries it, so a later RUNNING→PASSED delta that omits
         // the failure text does not wipe an earlier failure captured for the same id.
         if (test.failureType() != null) {

@@ -7,6 +7,7 @@ import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CentralVersionsTest {
@@ -72,10 +73,104 @@ class CentralVersionsTest {
         assertTrue(CentralVersions.upgradesOnly(current, latest).isEmpty());
     }
 
+    /**
+     * The downgrade Update Versions used to propose: Guava {@code 33.0.0-jre → r09}. Caught twice over —
+     * by Maven's ordering (a number beats a qualifier) and by the leading-number guard.
+     */
+    @Test
+    void neverOffersAnAlphabeticVersionAgainstANumberedOne() {
+        String guava = "com.google.guava:guava";
+        assertTrue(CentralVersions.upgradesOnly(Map.of(guava, "33.0.0-jre"), Map.of(guava, "r09"))
+                .isEmpty());
+        assertEquals(
+                Map.of(guava, "33.7.2-jre"),
+                CentralVersions.upgradesOnly(Map.of(guava, "33.0.0-jre"), Map.of(guava, "33.7.2-jre")));
+    }
+
+    @Test
+    void isUpgradeRequiresNewerByMavensRulesAndNoSmallerLeadingNumber() {
+        assertTrue(CentralVersions.isUpgrade("3.0.0-M9", "3.0.0"));
+        assertFalse(CentralVersions.isUpgrade("3.0.0", "3.0.0-M9"));
+        assertTrue(CentralVersions.isUpgrade("5.13.4", "6.0.0"));
+        assertTrue(CentralVersions.isUpgrade("1.78", "1.78.1"));
+        assertFalse(CentralVersions.isUpgrade("1.78.1", "1.78"));
+        assertFalse(CentralVersions.isUpgrade("2.0.0.Final", "2.0.0"), "the same version is not an upgrade");
+        assertFalse(CentralVersions.isUpgrade("33.0.0-jre", "r09"));
+        assertTrue(CentralVersions.isUpgrade("r09", "10.0"), "from an alphabetic version, any numbered one is up");
+        // A qualifier-only candidate can be "newer" by text (unknown qualifiers sort high) — the guard says no.
+        assertFalse(CentralVersions.isUpgrade("1.0", "zzz"));
+    }
+
+    /**
+     * Seen in the fix pass's own probe: with the semver comparator gone, {@code ${surefire.version}} ranked
+     * below {@code 3.6.0} and the preview offered to overwrite the property reference with a literal.
+     */
+    @Test
+    void aPropertyRangeOrKeywordVersionIsNeverUpgraded() {
+        for (String now : List.of("${surefire.version}", "[2.0,3.0)", "(,1.0]", "LATEST", "RELEASE", "", " ")) {
+            assertFalse(CentralVersions.isUpgrade(now, "3.6.0"), now + " must be left alone");
+            assertTrue(
+                    CentralVersions.upgradesOnly(Map.of(SUREFIRE, now), Map.of(SUREFIRE, "3.6.0"))
+                            .isEmpty(),
+                    now);
+        }
+        assertFalse(CentralVersions.isUpgrade("3.5.0", "${latest}"), "nor is one written");
+        assertTrue(CentralVersions.isPlainVersion("3.6.0"));
+        assertTrue(CentralVersions.isPlainVersion("33.7.2-jre"));
+        assertTrue(CentralVersions.isPlainVersion("2.0.0.Final"));
+        assertTrue(CentralVersions.isPlainVersion("r09"), "a literal, if an odd one: the guards decide, not this");
+    }
+
     /** A plugin with no version in the pom is not ours to pin — see PomEdits.setPluginVersions. */
     @Test
     void ignoresArtifactsWithNoCurrentVersion() {
         assertTrue(CentralVersions.upgradesOnly(Map.of(), Map.of(COMPILER, "3.14.0"))
                 .isEmpty());
+    }
+
+    @Test
+    void theParallelLookupAnswersInCoordinateOrderAndStopsAfterTheRepositoryProvesUnreachable() throws Exception {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(3);
+        try {
+            Map<String, String> answers =
+                    CentralVersions.latest(List.of(COMPILER, "nope:nope", SUREFIRE, "bad"), REPO, pool, () -> false);
+            assertEquals(List.of(COMPILER, SUREFIRE), List.copyOf(answers.keySet()));
+            assertEquals("3.14.0", answers.get(COMPILER));
+
+            // The first connect failure stops the rest: nothing after it is asked.
+            java.util.List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+            Function<String, String> down = path -> {
+                asked.add(path);
+                throw new CentralVersions.Unreachable("no route");
+            };
+            java.util.concurrent.ExecutorService one = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                assertTrue(CentralVersions.latest(List.of(COMPILER, SUREFIRE, "g:a", "g:b"), down, one, () -> false)
+                        .isEmpty());
+                assertEquals(1, asked.size(), "one failure is the answer for all: " + asked);
+            } finally {
+                one.shutdownNow();
+            }
+
+            // Cancelled before it ran: no lookups at all, and an empty (not failed) answer.
+            java.util.List<String> askedAfterCancel = new java.util.concurrent.CopyOnWriteArrayList<>();
+            assertTrue(CentralVersions.latest(
+                            List.of(COMPILER, SUREFIRE),
+                            path -> {
+                                askedAfterCancel.add(path);
+                                return REPO.apply(path);
+                            },
+                            pool,
+                            () -> true)
+                    .isEmpty());
+            assertTrue(askedAfterCancel.isEmpty());
+            // No pool: the sequential form.
+            assertEquals(
+                    "3.14.0",
+                    CentralVersions.latest(List.of(COMPILER), REPO, null, () -> false)
+                            .get(COMPILER));
+        } finally {
+            pool.shutdownNow();
+        }
     }
 }

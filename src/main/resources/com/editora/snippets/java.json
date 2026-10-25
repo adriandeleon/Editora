@@ -271,7 +271,7 @@
     "prefix": "if",
     "body": [
       "if (${1:condition}) {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "}"
     ],
     "description": "if statement"
@@ -280,7 +280,7 @@
     "prefix": "ifelse",
     "body": [
       "if (${1:condition}) {",
-      "\t$2",
+      "\t${2:$TM_SELECTED_TEXT}",
       "} else {",
       "\t$0",
       "}"
@@ -294,7 +294,7 @@
     ],
     "body": [
       "if (${1:value} == null) {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "}"
     ],
     "description": "if the value is null"
@@ -306,7 +306,7 @@
     ],
     "body": [
       "if (${1:value} != null) {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "}"
     ],
     "description": "if the value is not null"
@@ -350,7 +350,7 @@
     "prefix": "fori",
     "body": [
       "for (int ${1:i} = 0; $1 < ${2:n}; $1++) {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "}"
     ],
     "description": "Indexed for loop"
@@ -359,7 +359,7 @@
     "prefix": "forr",
     "body": [
       "for (int ${1:i} = ${2:n} - 1; $1 >= 0; $1--) {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "}"
     ],
     "description": "Indexed for loop, counting down"
@@ -371,7 +371,7 @@
     ],
     "body": [
       "for (${1:var} ${2:item} : ${3:items}) {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "}"
     ],
     "description": "Enhanced for loop"
@@ -391,7 +391,7 @@
     "prefix": "while",
     "body": [
       "while (${1:condition}) {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "}"
     ],
     "description": "while loop"
@@ -400,7 +400,7 @@
     "prefix": "dowhile",
     "body": [
       "do {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "} while (${1:condition});"
     ],
     "description": "do/while loop"
@@ -409,7 +409,7 @@
     "prefix": "try_catch",
     "body": [
       "try {",
-      "\t$1",
+      "\t${1:$TM_SELECTED_TEXT}",
       "} catch (${2:Exception} ${3:e}) {",
       "\t${0:throw new RuntimeException($3);}",
       "}"
@@ -420,7 +420,7 @@
     "prefix": "try_finally",
     "body": [
       "try {",
-      "\t$1",
+      "\t${1:$TM_SELECTED_TEXT}",
       "} finally {",
       "\t$0",
       "}"
@@ -434,7 +434,7 @@
     ],
     "body": [
       "try (var ${1:in} = ${2:Files.newBufferedReader(path)}) {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "}"
     ],
     "description": "try-with-resources block"
@@ -453,7 +453,7 @@
     "prefix": "synchronized",
     "body": [
       "synchronized (${1:this}) {",
-      "\t$0",
+      "\t${TM_SELECTED_TEXT}$0",
       "}"
     ],
     "description": "synchronized block"

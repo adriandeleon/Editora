@@ -6,6 +6,8 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The runtime a launched program runs under — "Java 25.0.3 (Temurin)", "Python 3.13.5", "Node.js 22.11.0" —
  * as the Run and Debug tool windows show it beside their state.
@@ -89,7 +91,7 @@ public record RuntimeVersion(String label, String detail) {
      * executable is not one this knows (a plain {@code sh}, a native binary, an empty command). An npm
      * script reports the {@code node} beside its {@code npm} (or on PATH, for a bare {@code npm}).
      */
-    public static Probe probeFor(List<String> launch) {
+    public static @Nullable Probe probeFor(List<String> launch) {
         if (launch == null
                 || launch.isEmpty()
                 || launch.get(0) == null
@@ -133,7 +135,7 @@ public record RuntimeVersion(String label, String detail) {
      * Reads a probe's combined output (stderr then stdout: {@code java -version} and Python 2 print to
      * stderr). Returns {@code null} when it names no version — a missing executable, a non-GNU {@code make}.
      */
-    public static RuntimeVersion parse(Probe probe, String output) {
+    public static @Nullable RuntimeVersion parse(Probe probe, String output) {
         if (probe == null || output == null || output.isBlank()) {
             return null;
         }
@@ -162,7 +164,7 @@ public record RuntimeVersion(String label, String detail) {
      * ({@code java.vendor.version}) and the install ({@code java.home}); the banner after it is the tooltip.
      * A JVM that ignores the flag still prints the banner, whose quoted version is the fallback.
      */
-    private static RuntimeVersion parseJava(String output) {
+    private static @Nullable RuntimeVersion parseJava(String output) {
         String version = null;
         String vendorVersion = null;
         String home = null;
@@ -196,7 +198,7 @@ public record RuntimeVersion(String label, String detail) {
     }
 
     /** "Temurin-25.0.3+9" → "Temurin", "GraalVM CE 21.0.2+13.1" → "GraalVM CE"; null when there is none. */
-    static String distribution(String vendorVersion) {
+    static @Nullable String distribution(@Nullable String vendorVersion) {
         if (vendorVersion == null || vendorVersion.isBlank()) {
             return null;
         }
@@ -209,7 +211,7 @@ public record RuntimeVersion(String label, String detail) {
     }
 
     /** {@code Python 3.13.5}; a PyPy says both, as {@code PyPy 7.3.17 (Python 3.10.14)}. */
-    private static RuntimeVersion parsePython(String output, String executable) {
+    private static @Nullable RuntimeVersion parsePython(String output, String executable) {
         Matcher python = PYTHON_VERSION.matcher(output);
         if (!python.find()) {
             return null;
@@ -222,7 +224,7 @@ public record RuntimeVersion(String label, String detail) {
     }
 
     /** {@code Groovy 5.1.3 (Java 25.0.4)}: the JVM it runs on matters as much as Groovy's own version. */
-    private static RuntimeVersion parseGroovy(String output, String executable) {
+    private static @Nullable RuntimeVersion parseGroovy(String output, String executable) {
         for (String line : output.split("\\R")) {
             Matcher m = GROOVY_VERSION.matcher(line.strip());
             if (m.find()) {
@@ -238,7 +240,7 @@ public record RuntimeVersion(String label, String detail) {
      * ({@code Scala CLI version: 1.18.0} / {@code Scala version (default): 3.9.0}); an old {@code scala} runner's
      * {@code Scala code runner version 2.13.16 …} reads {@code Scala 2.13.16}.
      */
-    private static RuntimeVersion parseScala(String output, String executable) {
+    private static @Nullable RuntimeVersion parseScala(String output, String executable) {
         String cli = null;
         String scala = null;
         for (String line : output.split("\\R")) {
@@ -259,7 +261,7 @@ public record RuntimeVersion(String label, String detail) {
     }
 
     /** {@code Kotlin 2.4.21 (Java 25.0.4)}, from {@code info: kotlinc-jvm 2.4.21 (JRE 25.0.4+7-LTS)}. */
-    private static RuntimeVersion parseKotlin(String output, String executable) {
+    private static @Nullable RuntimeVersion parseKotlin(String output, String executable) {
         String[] version = KotlinRun.compilerVersion(output);
         if (version == null) {
             return null; // not the Kotlin compiler (JetBrains' toolchain CLI prints something else)
@@ -269,7 +271,7 @@ public record RuntimeVersion(String label, String detail) {
     }
 
     /** A runtime whose first matching line holds its version; the tooltip names the executable asked. */
-    private static RuntimeVersion simple(String output, Pattern pattern, String prefix, String executable) {
+    private static @Nullable RuntimeVersion simple(String output, Pattern pattern, String prefix, String executable) {
         for (String line : output.split("\\R")) {
             Matcher m = pattern.matcher(line.strip());
             if (m.find()) {
@@ -293,7 +295,7 @@ public record RuntimeVersion(String label, String detail) {
         return lines;
     }
 
-    private static String detail(List<String> banner, String location) {
+    private static String detail(List<String> banner, @Nullable String location) {
         List<String> lines = new ArrayList<>(banner);
         if (location != null && !location.isBlank()) {
             lines.add(location);

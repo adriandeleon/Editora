@@ -6,7 +6,7 @@
 
     <groupId>com.editora</groupId>
     <artifactId>editora</artifactId>
-    <version>0.23.1-SNAPSHOT</version>
+    <version>0.24.1-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>Editora</name>
@@ -548,10 +548,11 @@
                                 <arg>--add-exports</arg>
                                 <arg>javafx.graphics/com.sun.glass.ui=com.editora</arg>
                                 <!-- NullAway only: every other Error Prone check is off. OnlyNullMarked leaves a
-                                     package unchecked until its package-info.java says @NullMarked. -->
+                                     package unchecked until its package-info.java says @NullMarked. Fields FXMLLoader
+                                     injects (@FXML) are not checked for initialization. -->
                                 <arg>-XDcompilePolicy=simple</arg>
                                 <arg>--should-stop=ifError=FLOW</arg>
-                                <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:JSpecifyMode=true</arg>
+                                <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true -XepOpt:NullAway:JSpecifyMode=true -XepOpt:NullAway:ExcludedFieldAnnotations=javafx.fxml.FXML</arg>
                             </compilerArgs>
                             <annotationProcessorPaths>
                                 <path>
@@ -691,6 +692,7 @@
                                     <element>PACKAGE</element>
                                     <includes>
                                         <include>com.editora.csv</include>
+                                        <include>com.editora.text</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -756,6 +758,7 @@
                                     <element>PACKAGE</element>
                                     <includes>
                                         <include>com.editora.editor</include>
+                                        <include>com.editora.editor.*</include>
                                         <include>com.editora.editorconfig</include>
                                         <include>com.editora.http</include>
                                         <include>com.editora.index</include>

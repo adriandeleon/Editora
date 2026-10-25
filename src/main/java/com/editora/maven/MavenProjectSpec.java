@@ -2,6 +2,8 @@ package com.editora.maven;
 
 import java.nio.file.Path;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Everything the wizard collected: which archetype to generate from, the new project's coordinates, and the
  * folder to generate into. Pure — {@link #firstProblem()} is what gates the form's OK button.
@@ -14,7 +16,7 @@ public record MavenProjectSpec(
         String artifactId,
         String version,
         String packageName,
-        Path parentDir) {
+        @Nullable Path parentDir) {
 
     public MavenProjectSpec {
         groupId = groupId == null ? "" : groupId.strip();
@@ -24,7 +26,7 @@ public record MavenProjectSpec(
     }
 
     /** Where the generated project will be, per {@code archetype:generate}'s own naming. */
-    public Path projectDir() {
+    public @Nullable Path projectDir() {
         return MavenCoordinates.projectDir(parentDir, artifactId);
     }
 
@@ -32,7 +34,7 @@ public record MavenProjectSpec(
      * The first thing wrong with this spec as an i18n key suffix, or {@code null} when it is usable.
      * Returned as a key rather than a message so {@code maven/} stays free of the message catalog.
      */
-    public String firstProblem() {
+    public @Nullable String firstProblem() {
         if (archetype == null) {
             return "archetype";
         }

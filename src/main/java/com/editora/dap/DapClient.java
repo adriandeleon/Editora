@@ -53,6 +53,7 @@ import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One Debug Adapter Protocol session over a TCP socket to the Microsoft java-debug adapter (started inside
@@ -109,7 +110,7 @@ public final class DapClient implements IDebugProtocolClient {
 
         void onError(String message);
 
-        default void onTransportClosed(Throwable error) {
+        default void onTransportClosed(@Nullable Throwable error) {
             onTerminated();
         }
 
@@ -146,33 +147,33 @@ public final class DapClient implements IDebugProtocolClient {
 
     private final Host host;
     /** The root session this client is a child of, or null when it is the root (or a plain session). */
-    private final DapClient root;
+    private final @Nullable DapClient root;
     /** Root only: the live child sessions, in the order the adapter asked for them. */
     private final List<DapClient> children = new java.util.concurrent.CopyOnWriteArrayList<>();
     /** Root only: the child inspection/control requests are addressed to — the one that last stopped. */
-    private volatile DapClient focus;
+    private volatile @Nullable DapClient focus;
     /** The port and adapter id of a socket transport, so a child can join the same adapter. */
     private volatile int port = -1;
 
-    private volatile String adapterId;
+    private volatile @Nullable String adapterId;
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "dap-session");
         t.setDaemon(true);
         return t;
     });
 
-    private Socket socket;
+    private @Nullable Socket socket;
     /** The adapter subprocess for stdio transports (debugpy); null for socket transports. Killed on dispose. */
-    private Process adapterProcess;
+    private @Nullable Process adapterProcess;
 
-    private IDebugProtocolServer server;
+    private @Nullable IDebugProtocolServer server;
     private volatile boolean disposed;
     /** The breakpoints to install when the adapter signals {@code initialized} (snapshot taken on the FX
      *  thread at session start, so this never reads UI state off-thread). */
     private volatile List<DapModels.FileBreakpoints> initialBreakpoints = List.of();
     /** Exception-breakpoint filter ids (e.g. {@code uncaught}/{@code caught}). */
     /** The chosen exception filters; null for the adapter's own defaults ({@link #defaultExceptionFilters}). */
-    private volatile List<String> exceptionFilters;
+    private volatile @Nullable List<String> exceptionFilters;
     /** True once the adapter's {@code initialized} event installed the configuration (breakpoints +
      *  exception filters). Before that, a filter change only updates the field — {@link #initialized}
      *  will read it. After it, a change must be sent on the wire itself. */
@@ -263,7 +264,7 @@ public final class DapClient implements IDebugProtocolClient {
      * exception breakpoints mid-session silently does nothing while the UI reports it took effect.
      * Fire-and-forget, mirroring {@link #sendSetBreakpoints}.
      */
-    public void setExceptionFilters(List<String> filters) {
+    public void setExceptionFilters(@Nullable List<String> filters) {
         this.exceptionFilters = filters == null ? null : List.copyOf(filters);
         for (DapClient child : children) {
             child.setExceptionFilters(filters); // each session holds its own exception configuration
@@ -280,7 +281,7 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     /** The adapter's {@code initialize} capabilities (kept for feature gating, e.g. Jump to Line). */
-    private volatile Capabilities capabilities;
+    private volatile @Nullable Capabilities capabilities;
 
     /**
      * The exception filters in force: the chosen ones, or — none chosen — those the adapter marks
@@ -296,7 +297,7 @@ public final class DapClient implements IDebugProtocolClient {
         return exceptionFilterOptions(capabilities);
     }
 
-    static List<DapModels.ExceptionFilterOption> exceptionFilterOptions(Capabilities caps) {
+    static List<DapModels.ExceptionFilterOption> exceptionFilterOptions(@Nullable Capabilities caps) {
         if (caps == null || caps.getExceptionBreakpointFilters() == null) {
             return List.of();
         }
@@ -337,7 +338,7 @@ public final class DapClient implements IDebugProtocolClient {
      * {@code dapDebugServer.js} (spawned by {@link DapManager}, which sets {@link #adapterProcess} via
      * {@link #setAdapterProcess} so it is killed on {@link #dispose}).
      */
-    public CompletableFuture<Capabilities> connect(int port, String adapterId) {
+    public CompletableFuture<Capabilities> connect(int port, @Nullable String adapterId) {
         try {
             if (disposed) {
                 return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
@@ -417,7 +418,7 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     /** The ordered writer to the adapter; null until connected. */
-    private volatile com.editora.lsp.AsyncPipeWriter writer;
+    private volatile com.editora.lsp.@Nullable AsyncPipeWriter writer;
 
     /** How long {@link #dispose} lets a queued {@code disconnect} reach the adapter before closing. */
     private static final long DISCONNECT_FLUSH_MILLIS = 250;
@@ -493,7 +494,7 @@ public final class DapClient implements IDebugProtocolClient {
      * offer, and declaring it would make debugpy route subprocesses through a request we could not serve.
      */
     private static InitializeRequestArguments initArgs(
-            String adapterId, boolean startDebugging, boolean runInTerminal) {
+            @Nullable String adapterId, boolean startDebugging, boolean runInTerminal) {
         InitializeRequestArguments a = new InitializeRequestArguments();
         a.setSupportsStartDebuggingRequest(startDebugging);
         a.setClientID("editora");
@@ -537,6 +538,15 @@ public final class DapClient implements IDebugProtocolClient {
         }
     }
 
+    /** The adapter proxy; set by {@link #connect} / {@link #connectStdio} before any request is sent. */
+    private IDebugProtocolServer server() {
+        IDebugProtocolServer s = server;
+        if (s == null) {
+            throw new IllegalStateException("Debug adapter is not connected");
+        }
+        return s;
+    }
+
     private static <T> CompletableFuture<T> timed(CompletableFuture<T> future) {
         return withTimeout(future, REQUEST_TIMEOUT);
     }
@@ -547,12 +557,12 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** Sends the {@code launch} request (body from {@link LaunchConfig#launch}). */
     public CompletableFuture<Void> launch(Map<String, Object> args) {
-        return timed(server.launch(args));
+        return timed(server().launch(args));
     }
 
     /** Sends the {@code attach} request (body from {@link LaunchConfig#attach}). */
     public CompletableFuture<Void> attach(Map<String, Object> args) {
-        return timed(server.attach(args));
+        return timed(server().attach(args));
     }
 
     // --- IDebugProtocolClient events (launcher reader thread) -----------------------------------
@@ -579,10 +589,10 @@ public final class DapClient implements IDebugProtocolClient {
                 if (!filters.isEmpty()) {
                     SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
                     ex.setFilters(filters.toArray(new String[0]));
-                    ignore(timed(server.setExceptionBreakpoints(ex)));
+                    ignore(timed(server().setExceptionBreakpoints(ex)));
                 }
             }
-            ignore(timed(server.configurationDone(new ConfigurationDoneArguments())));
+            ignore(timed(server().configurationDone(new ConfigurationDoneArguments())));
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "configuration phase failed", e);
         }
@@ -625,7 +635,10 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** The body of java-debug's {@code usernotification} event (not part of the protocol). */
     public static final class UserNotification {
+        @Nullable
         String notificationType;
+
+        @Nullable
         String message;
     }
 
@@ -856,7 +869,7 @@ public final class DapClient implements IDebugProtocolClient {
             }
 
             @Override
-            public void onTransportClosed(Throwable error) {
+            public void onTransportClosed(@Nullable Throwable error) {
                 childEnded(child);
             }
 
@@ -1011,7 +1024,7 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     /** What the adapter said when it refused a request, or null when the failure is not an answer at all. */
-    private static String adapterMessage(Throwable error) {
+    private static @Nullable String adapterMessage(Throwable error) {
         for (Throwable t = error; t != null; t = t.getCause()) {
             if (t instanceof org.eclipse.lsp4j.jsonrpc.ResponseErrorException refused) {
                 String message = refused.getResponseError() == null
@@ -1052,7 +1065,7 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     /** Pure: the type and message of an {@code exceptionInfo} answer; null when it names neither. */
-    static DapModels.ExceptionInfo exceptionInfo(ExceptionInfoResponse r) {
+    static DapModels.@Nullable ExceptionInfo exceptionInfo(ExceptionInfoResponse r) {
         if (r == null) {
             return null;
         }
@@ -1090,7 +1103,7 @@ public final class DapClient implements IDebugProtocolClient {
         if (session != this) {
             return session.threads();
         }
-        return timed(server.threads()).thenApply(r -> {
+        return timed(server().threads()).thenApply(r -> {
             List<DapModels.ThreadInfo> out = new ArrayList<>();
             if (r != null && r.getThreads() != null) {
                 for (org.eclipse.lsp4j.debug.Thread t : r.getThreads()) {
@@ -1134,7 +1147,7 @@ public final class DapClient implements IDebugProtocolClient {
         // (so the guard never applied to Java), and per the protocol an adapter that does not page ignores them.
         a.setStartFrame(0);
         a.setLevels(STACK_FRAME_LIMIT);
-        return timed(server.stackTrace(a)).thenApply(r -> {
+        return timed(server().stackTrace(a)).thenApply(r -> {
             List<DapModels.StackFrameInfo> out = new ArrayList<>();
             if (r != null && r.getStackFrames() != null) {
                 for (StackFrame f : r.getStackFrames()) {
@@ -1167,7 +1180,7 @@ public final class DapClient implements IDebugProtocolClient {
      * <frozen importlib>} — and on Windows those are not even legal paths: one such frame used to fail the
      * whole {@code stackTrace} response, leaving every stop with an empty call stack.
      */
-    static Path sourcePath(Source source) {
+    static @Nullable Path sourcePath(Source source) {
         return sourcePath(source, DapPaths.LOCAL);
     }
 
@@ -1176,13 +1189,13 @@ public final class DapClient implements IDebugProtocolClient {
      * {@code jdt://contents/java.base/java.lang/String.class?…} for a JDK or library class — else null. Kept as
      * the adapter sent it: made into a {@link Path} it loses a slash and can no longer be asked for its text.
      */
-    static String sourceUri(Source source) {
+    static @Nullable String sourceUri(Source source) {
         String path = source == null ? null : source.getPath();
         return path != null && path.startsWith("jdt://") ? path : null;
     }
 
     /** As {@link #sourcePath(Source)}, for an adapter that names files by {@code paths}. */
-    static Path sourcePath(Source source, DapPaths paths) {
+    static @Nullable Path sourcePath(Source source, DapPaths paths) {
         return source == null || source.getPath() == null ? null : paths.fromAdapter(source.getPath());
     }
 
@@ -1193,7 +1206,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         ScopesArguments a = new ScopesArguments();
         a.setFrameId(frameId);
-        return timed(server.scopes(a)).thenApply(r -> {
+        return timed(server().scopes(a)).thenApply(r -> {
             List<DapModels.ScopeInfo> out = new ArrayList<>();
             if (r != null && r.getScopes() != null) {
                 for (Scope s : r.getScopes()) {
@@ -1215,7 +1228,7 @@ public final class DapClient implements IDebugProtocolClient {
      * reported. {@code count <= 0} asks for everything, as {@link #variables(int)} does.
      */
     public CompletableFuture<List<DapModels.VariableInfo>> variables(
-            int variablesReference, String filter, int start, int count) {
+            int variablesReference, @Nullable String filter, int start, int count) {
         DapClient session = target();
         if (session != this) {
             return session.variables(variablesReference, filter, start, count);
@@ -1231,7 +1244,7 @@ public final class DapClient implements IDebugProtocolClient {
             a.setStart(Math.max(0, start));
             a.setCount(count);
         }
-        return timed(server.variables(a)).thenApply(r -> {
+        return timed(server().variables(a)).thenApply(r -> {
             List<DapModels.VariableInfo> out = new ArrayList<>();
             if (r != null && r.getVariables() != null) {
                 for (Variable v : r.getVariables()) {
@@ -1262,7 +1275,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setExpression(expression);
         a.setFrameId(frameId);
         a.setContext(context);
-        return timed(server.evaluate(a)).thenApply(r -> r == null ? null : r.getResult());
+        return timed(server().evaluate(a)).thenApply(r -> r == null ? null : r.getResult());
     }
 
     /** Like {@link #evaluate} but keeps the full response: result + expandable children reference + type
@@ -1276,7 +1289,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setExpression(expression);
         a.setFrameId(frameId);
         a.setContext(context);
-        return timed(server.evaluate(a))
+        return timed(server().evaluate(a))
                 .thenApply(r -> r == null
                         ? null
                         : new DapModels.EvalResult(
@@ -1296,7 +1309,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setVariablesReference(variablesReference);
         a.setName(name);
         a.setValue(value);
-        return timed(server.setVariable(a)).thenApply(r -> r == null ? value : r.getValue());
+        return timed(server().setVariable(a)).thenApply(r -> r == null ? value : r.getValue());
     }
 
     /**
@@ -1311,7 +1324,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         ContinueArguments a = new ContinueArguments();
         a.setThreadId(threadId);
-        return timed(server.continue_(a))
+        return timed(server().continue_(a))
                 .thenApply(r -> r == null || !Boolean.FALSE.equals(r.getAllThreadsContinued()));
     }
 
@@ -1324,7 +1337,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         org.eclipse.lsp4j.debug.PauseArguments a = new org.eclipse.lsp4j.debug.PauseArguments();
         a.setThreadId(threadId);
-        ignore(timed(server.pause(a)));
+        ignore(timed(server().pause(a)));
     }
 
     /** Asks the adapter for the goto targets at {@code line} (0-based) of {@code file}; the first
@@ -1340,7 +1353,7 @@ public final class DapClient implements IDebugProtocolClient {
         org.eclipse.lsp4j.debug.GotoTargetsArguments a = new org.eclipse.lsp4j.debug.GotoTargetsArguments();
         a.setSource(source);
         a.setLine(line + 1); // DAP is 1-based
-        return timed(server.gotoTargets(a)).thenApply(r -> {
+        return timed(server().gotoTargets(a)).thenApply(r -> {
             List<Integer> ids = new ArrayList<>();
             if (r != null && r.getTargets() != null) {
                 for (org.eclipse.lsp4j.debug.GotoTarget t : r.getTargets()) {
@@ -1361,7 +1374,7 @@ public final class DapClient implements IDebugProtocolClient {
         org.eclipse.lsp4j.debug.GotoArguments a = new org.eclipse.lsp4j.debug.GotoArguments();
         a.setThreadId(threadId);
         a.setTargetId(targetId);
-        return timed(server.goto_(a));
+        return timed(server().goto_(a));
     }
 
     public CompletableFuture<Void> next(int threadId) {
@@ -1371,7 +1384,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         NextArguments a = new NextArguments();
         a.setThreadId(threadId);
-        return timed(server.next(a));
+        return timed(server().next(a));
     }
 
     public CompletableFuture<Void> stepIn(int threadId) {
@@ -1381,7 +1394,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         StepInArguments a = new StepInArguments();
         a.setThreadId(threadId);
-        return timed(server.stepIn(a));
+        return timed(server().stepIn(a));
     }
 
     public CompletableFuture<Void> stepOut(int threadId) {
@@ -1391,7 +1404,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         StepOutArguments a = new StepOutArguments();
         a.setThreadId(threadId);
-        return timed(server.stepOut(a));
+        return timed(server().stepOut(a));
     }
 
     /**
@@ -1424,7 +1437,7 @@ public final class DapClient implements IDebugProtocolClient {
      * Marks the session ended and queues the {@code disconnect}; null when it already was. The returned
      * future is the {@code disconnect}'s answer (an already-completed one when there was none to send).
      */
-    private CompletableFuture<Void> beginDispose(boolean background) {
+    private @Nullable CompletableFuture<Void> beginDispose(boolean background) {
         if (disposed) {
             return null;
         }
@@ -1499,7 +1512,7 @@ public final class DapClient implements IDebugProtocolClient {
      * closes its end, and the read returns end-of-stream), then close on a daemon thread, waited for only so
      * long. A close that does hang leaks one parked thread instead of freezing the window.
      */
-    static void closeSocket(Socket socket) {
+    static void closeSocket(@Nullable Socket socket) {
         if (socket == null) {
             return;
         }
@@ -1579,14 +1592,17 @@ public final class DapClient implements IDebugProtocolClient {
     // --- Java code changes and frame control: hot code replace, restart frame, smart step into ---------------
 
     /** The connection's generic endpoint, for java-debug's requests outside the protocol; null until connected. */
-    private volatile org.eclipse.lsp4j.jsonrpc.RemoteEndpoint endpoint;
+    private volatile org.eclipse.lsp4j.jsonrpc.@Nullable RemoteEndpoint endpoint;
 
     /** How long a {@code redefineClasses} may take: java-debug first waits for jdtls's build jobs to finish. */
     private static final Duration REDEFINE_TIMEOUT = Duration.ofSeconds(90);
 
     /** The body of java-debug's {@code hotcodereplace} event (not part of the protocol). */
     public static final class HotCodeReplaceNotice {
+        @Nullable
         String changeType;
+
+        @Nullable
         String message;
     }
 
@@ -1606,7 +1622,9 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** The body of java-debug's {@code redefineClasses} answer. */
     public static final class RedefineClassesBody {
-        String[] changedClasses;
+        String @Nullable [] changedClasses;
+
+        @Nullable
         String errorMessage;
     }
 
@@ -1646,7 +1664,8 @@ public final class DapClient implements IDebugProtocolClient {
     static DapModels.CodeReplace codeReplace(Object body) {
         if (body instanceof RedefineClassesBody b) {
             return new DapModels.CodeReplace(
-                    b.changedClasses == null ? List.of() : java.util.Arrays.asList(b.changedClasses), b.errorMessage);
+                    b.changedClasses == null ? List.of() : java.util.Arrays.asList(b.changedClasses),
+                    b.errorMessage == null ? "" : b.errorMessage);
         }
         com.google.gson.JsonElement json = body instanceof com.google.gson.JsonElement el
                 ? el
@@ -1686,7 +1705,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         org.eclipse.lsp4j.debug.RestartFrameArguments a = new org.eclipse.lsp4j.debug.RestartFrameArguments();
         a.setFrameId(frameId);
-        return timed(server.restartFrame(a));
+        return timed(server().restartFrame(a));
     }
 
     /** Whether the adapter can list the calls on a line to step into ({@code stepInTargets}). */
@@ -1703,7 +1722,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         org.eclipse.lsp4j.debug.StepInTargetsArguments a = new org.eclipse.lsp4j.debug.StepInTargetsArguments();
         a.setFrameId(frameId);
-        return timed(server.stepInTargets(a)).thenApply(r -> {
+        return timed(server().stepInTargets(a)).thenApply(r -> {
             List<DapModels.StepTarget> out = new ArrayList<>();
             if (r != null && r.getTargets() != null) {
                 for (org.eclipse.lsp4j.debug.StepInTarget t : r.getTargets()) {
@@ -1726,7 +1745,7 @@ public final class DapClient implements IDebugProtocolClient {
         StepInArguments a = new StepInArguments();
         a.setThreadId(threadId);
         a.setTargetId(targetId);
-        return timed(server.stepIn(a));
+        return timed(server().stepIn(a));
     }
 
     // --- completions (follow-up 5: completion in the evaluate field, watch prompt and breakpoint condition) ----
@@ -1751,7 +1770,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setText(text == null ? "" : text);
         a.setColumn(Math.max(0, column) + 1);
         a.setLine(1);
-        return timed(server.completions(a)).thenApply(r -> {
+        return timed(server().completions(a)).thenApply(r -> {
             List<DapModels.CompletionTarget> out = new ArrayList<>();
             if (r != null && r.getTargets() != null) {
                 for (org.eclipse.lsp4j.debug.CompletionItem t : r.getTargets()) {

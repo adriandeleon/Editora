@@ -32,12 +32,17 @@ class BuildDebugTest {
         assertFalse(BuildDebug.JDWP_AGENT.contains("*"));
     }
 
+    /** The Boot plugin is read from the pom's build, not sniffed from its text (review D11). */
     @Test
-    void springBootMavenPomSniff() {
-        assertTrue(
+    void springBootMavenPomIsAParseNotASniff() {
+        assertTrue(BuildDebug.isSpringBootMavenPom("<project><build><plugins><plugin>"
+                + "<artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build></project>"));
+        assertFalse(BuildDebug.isSpringBootMavenPom("<project><!-- spring-boot-maven-plugin --></project>"));
+        assertFalse(
                 BuildDebug.isSpringBootMavenPom("<plugin><artifactId>spring-boot-maven-plugin</artifactId></plugin>"));
         assertFalse(BuildDebug.isSpringBootMavenPom("<project/>"));
         assertFalse(BuildDebug.isSpringBootMavenPom(null));
+        assertTrue(BuildDebug.BANNER_TIMEOUT_SECONDS >= 30);
     }
 
     @Test

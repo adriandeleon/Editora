@@ -14,6 +14,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -97,7 +99,7 @@ public final class HttpVars {
             reasons.putIfAbsent(reference, reason == null ? "" : reason);
         }
 
-        void addAll(Unresolved other) {
+        void addAll(@Nullable Unresolved other) {
             if (other != null) {
                 other.reasons.forEach(this::add);
                 secretReads.addAll(other.secretReads);
@@ -192,6 +194,7 @@ public final class HttpVars {
             return values.containsKey(name);
         }
 
+        @Nullable
         String value(String name, Unresolved sink) {
             if (sink != null) {
                 sink.addAll(missing.get(name));
@@ -216,8 +219,8 @@ public final class HttpVars {
             Map<String, String> envVars,
             List<String[]> fileVars,
             ZonedDateTime now,
-            CapturedResponses captured,
-            Path dir) {
+            @Nullable CapturedResponses captured,
+            @Nullable Path dir) {
         return scope(envVars, fileVars, now, captured, dir, false);
     }
 
@@ -229,8 +232,8 @@ public final class HttpVars {
             Map<String, String> envVars,
             List<String[]> fileVars,
             ZonedDateTime now,
-            CapturedResponses captured,
-            Path dir,
+            @Nullable CapturedResponses captured,
+            @Nullable Path dir,
             boolean dry) {
         Map<String, String> raw = envVars == null ? Map.of() : envVars;
         Map<String, String> globals = captured == null ? Map.of() : captured.globals();
@@ -271,10 +274,11 @@ public final class HttpVars {
             Map<String, String> values,
             Map<String, Unresolved> missing,
             ZonedDateTime now,
-            Path dir,
+            @Nullable Path dir,
             boolean dry,
             Set<String> session) {
 
+        @Nullable
         String resolve(String key, Set<String> inProgress) {
             if (values.containsKey(key)) {
                 return values.get(key);
@@ -337,7 +341,12 @@ public final class HttpVars {
      * {@code unresolved} (when non-null) with the reason. Values are inserted as is, never re-scanned.
      */
     public static String substitute(
-            String text, Scope scope, ZonedDateTime now, CapturedResponses captured, Path dir, Unresolved unresolved) {
+            String text,
+            Scope scope,
+            ZonedDateTime now,
+            @Nullable CapturedResponses captured,
+            @Nullable Path dir,
+            Unresolved unresolved) {
         Scope s = scope == null ? Scope.of(Map.of()) : scope;
         return expand(text, s::has, s::value, now, captured, dir, unresolved);
     }
@@ -349,6 +358,7 @@ public final class HttpVars {
 
     @FunctionalInterface
     private interface Value {
+        @Nullable
         String value(String name, Unresolved sink);
     }
 
@@ -357,8 +367,8 @@ public final class HttpVars {
             Has has,
             Value value,
             ZonedDateTime now,
-            CapturedResponses captured,
-            Path dir,
+            @Nullable CapturedResponses captured,
+            @Nullable Path dir,
             Unresolved sink) {
         if (text == null || text.isEmpty()) {
             return text == null ? "" : text;
@@ -385,8 +395,8 @@ public final class HttpVars {
             Has has,
             Value value,
             ZonedDateTime now,
-            CapturedResponses captured,
-            Path dir,
+            @Nullable CapturedResponses captured,
+            @Nullable Path dir,
             Unresolved sink) {
         String[] reason = new String[1];
         if (DynamicVars.isSecretSource(name)) {

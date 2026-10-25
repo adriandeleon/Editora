@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.editora.process.ExecTarget;
 import com.editora.process.ExecTargets;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The containers folders of this machine are bound to, shared by every window: the {@link ExecTargets}
@@ -21,9 +22,11 @@ public final class ContainerBindings implements ExecTargets.Resolver {
     /** What the engine is asked; replaceable in tests. */
     public interface Lookup {
         /** {@code inspect} of a container, or null. */
+        @Nullable
         ContainerInfo inspect(String container);
 
         /** The running dev container started for {@code folder}, or null. */
+        @Nullable
         String devContainerFor(Path folder);
 
         /** The engine that runs commands in what it found. */
@@ -43,12 +46,12 @@ public final class ContainerBindings implements ExecTargets.Resolver {
     public static Lookup lookup(ContainerEngine engine) {
         return new Lookup() {
             @Override
-            public ContainerInfo inspect(String container) {
+            public @Nullable ContainerInfo inspect(String container) {
                 return engine.inspect(container);
             }
 
             @Override
-            public String devContainerFor(Path folder) {
+            public @Nullable String devContainerFor(Path folder) {
                 return engine.devContainerFor(folder);
             }
 
@@ -64,7 +67,7 @@ public final class ContainerBindings implements ExecTargets.Resolver {
      * folder's running dev container. Null, and any earlier binding of the folder forgotten, when there is
      * none or it does not mount the folder. Asks the engine: call it off the FX thread.
      */
-    public ContainerExecTarget bind(Path folder, String named, Lookup lookup) {
+    public @Nullable ContainerExecTarget bind(Path folder, String named, Lookup lookup) {
         Path key = folder.toAbsolutePath().normalize();
         String container = named != null && !named.isBlank() ? named.strip() : lookup.devContainerFor(key);
         ContainerInfo info = container == null ? null : lookup.inspect(container);
@@ -83,13 +86,13 @@ public final class ContainerBindings implements ExecTargets.Resolver {
     }
 
     /** The container {@code folder} is bound to, or null. No I/O. */
-    public ContainerExecTarget boundTo(Path folder) {
+    public @Nullable ContainerExecTarget boundTo(Path folder) {
         return folder == null ? null : byFolder.get(folder.toAbsolutePath().normalize());
     }
 
     /** The target of the bound folder that holds {@code path} (the deepest), or null. No I/O. */
     @Override
-    public ExecTarget forPath(Path path) {
+    public @Nullable ExecTarget forPath(Path path) {
         Path abs = path.toAbsolutePath().normalize();
         ContainerExecTarget best = null;
         int depth = -1;

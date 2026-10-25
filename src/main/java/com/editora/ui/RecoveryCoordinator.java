@@ -19,12 +19,13 @@ import javafx.scene.control.Tab;
 
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
+import com.editora.editops.LineEndings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LineEndings;
 import com.editora.recovery.RecoveryPolicy;
 import com.editora.recovery.RecoveryRecord;
 import com.editora.recovery.RecoveryService;
 import com.editora.recovery.RecoveryStore;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -53,15 +54,24 @@ final class RecoveryCoordinator {
     /** What recovery remembers about one open buffer. */
     private static final class Tracked {
         final String id = UUID.randomUUID().toString();
+
+        @Nullable
         ChangeListener<Boolean> dirtyListener;
         /** Document version at the previous tick: differs from the current one while the user is typing. */
         long seenVersion = -1;
 
         boolean copied;
         long copiedVersion;
+
+        @Nullable
         String copiedLineEnding;
+
+        @Nullable
         String copiedCharset;
+
+        @Nullable
         Path copiedPath;
+
         long copiedAtNanos;
         boolean toldTooLarge;
     }
@@ -82,8 +92,8 @@ final class RecoveryCoordinator {
             hostError(tr("status.recovery.writeFailed", String.valueOf(e.getMessage())));
         }
     });
-    private RecoveryService service;
-    private RecoveryOfferWindow offer;
+    private @Nullable RecoveryService service;
+    private @Nullable RecoveryOfferWindow offer;
     private boolean closed;
     /** Asks before discarding {@code n} records; replaced in tests, where a dialog cannot be answered. */
     IntPredicate confirmDiscard = this::askDiscard;
@@ -105,7 +115,7 @@ final class RecoveryCoordinator {
     }
 
     /** Connects this window to the process's recovery service. */
-    void attach(RecoveryService service) {
+    void attach(@Nullable RecoveryService service) {
         if (service == null || this.service != null || closed) {
             return;
         }
@@ -123,6 +133,7 @@ final class RecoveryCoordinator {
      * records then wait for the next ordinary launch.
      */
     void offerLeftovers() {
+        RecoveryService service = this.service;
         if (service == null || closed) {
             return;
         }
@@ -162,7 +173,7 @@ final class RecoveryCoordinator {
     // --- tracking open buffers ---
 
     /** A buffer got a tab in this window. Idempotent (a tab moved between editor groups is added again). */
-    void track(EditorBuffer buffer) {
+    void track(@Nullable EditorBuffer buffer) {
         if (closed || buffer == null || tracked.containsKey(buffer)) {
             return;
         }
@@ -227,6 +238,15 @@ final class RecoveryCoordinator {
         if (offer != null) {
             offer.close();
         }
+    }
+
+    /** The service: attached before any copy is taken or any record is offered. */
+    private RecoveryService service() {
+        RecoveryService attached = service;
+        if (attached == null) {
+            throw new IllegalStateException("crash recovery is not attached to this window");
+        }
+        return attached;
     }
 
     // --- taking copies ---
@@ -323,22 +343,23 @@ final class RecoveryCoordinator {
         // The String is the buffer's own cached snapshot of this document version when one exists; encoding
         // and writing happen on the service's thread.
         String text = buffer.getContent();
-        service.save(new RecoveryRecord(
-                state.id,
-                path == null ? null : com.editora.vfs.Vfs.toStorableString(path),
-                buffer.getTitle(),
-                path == null ? buffer.getDisplayName() : null,
-                buffer.getEffectiveCharset(),
-                files.writesBom(buffer),
-                buffer.getLineEnding(),
-                disk.modifiedMillis(),
-                disk.size(),
-                disk.fingerprint(),
-                System.currentTimeMillis(),
-                Math.clamp(buffer.getArea().getCaretPosition(), 0, text.length()),
-                windowKey.get(),
-                text,
-                buffer.getUserCharset() != null));
+        service()
+                .save(new RecoveryRecord(
+                        state.id,
+                        path == null ? null : com.editora.vfs.Vfs.toStorableString(path),
+                        buffer.getTitle(),
+                        path == null ? buffer.getDisplayName() : null,
+                        buffer.getEffectiveCharset(),
+                        files.writesBom(buffer),
+                        buffer.getLineEnding(),
+                        disk.modifiedMillis(),
+                        disk.size(),
+                        disk.fingerprint(),
+                        System.currentTimeMillis(),
+                        Math.clamp(buffer.getArea().getCaretPosition(), 0, text.length()),
+                        windowKey.get(),
+                        text,
+                        buffer.getUserCharset() != null));
         state.copied = true;
         state.copiedVersion = buffer.docVersion();
         state.copiedLineEnding = buffer.getLineEnding();
@@ -398,6 +419,7 @@ final class RecoveryCoordinator {
         offer.show(host.window());
     }
 
+    @Nullable
     RecoveryOfferWindow offerForTest() {
         return offer;
     }
@@ -417,22 +439,25 @@ final class RecoveryCoordinator {
     /** Opens each record's text as an unsaved tab. Nothing is written to the user's files. */
     void restore(List<RecoveryStore.Entry> entries) {
         for (RecoveryStore.Entry entry : new ArrayList<>(entries)) {
+            RecoveryService service = service();
             service.read(entry)
                     .whenComplete((record, error) -> Platform.runLater(() -> {
                         if (closed || !service.unresolved().contains(entry)) {
                             return; // the window went away, or a second click already restored this one
                         }
-                        if (error != null || record == null || record.text() == null) {
+                        String text = record == null ? null : record.text();
+                        if (error != null || record == null || text == null) {
                             host.setError(tr(
                                     "status.recovery.readFailed", entry.record().title()));
                             return; // the record stays where it is, and stays listed
                         }
-                        restoreInto(entry, record);
+                        restoreInto(entry, record, text);
                     }));
         }
     }
 
-    private void restoreInto(RecoveryStore.Entry entry, RecoveryRecord record) {
+    /** {@code text} is the record's text, which a record restored here always has. */
+    private void restoreInto(RecoveryStore.Entry entry, RecoveryRecord record, String text) {
         Path path = null;
         if (record.path() != null) {
             try {
@@ -443,35 +468,35 @@ final class RecoveryCoordinator {
             if (path == null) {
                 // A remote file whose connection is not open (or a path this system cannot express): the
                 // text still comes back, as an untitled buffer the user can save where they want.
-                restoredAsNew(entry, record, null, tr("status.recovery.restoredAsUntitled", record.title()));
+                restoredAsNew(entry, record, text, null, tr("status.recovery.restoredAsUntitled", record.title()));
                 return;
             }
         }
         Tab openTab = path == null ? null : files.host().tabForPath(path);
         if (openTab == null) {
-            restoredAsNew(entry, record, path, tr("status.recovery.restored", record.title()));
+            restoredAsNew(entry, record, text, path, tr("status.recovery.restored", record.title()));
             return;
         }
         EditorBuffer open = files.host().ensureBuffer(openTab); // a restored tab not built yet gets its editor now
         if (open == null) {
             // The file is showing in a viewer tab (image, hex): there is no editor buffer to put text in.
-            restoredAsNew(entry, record, null, tr("status.recovery.restoredAsUntitled", record.title()));
+            restoredAsNew(entry, record, text, null, tr("status.recovery.restoredAsUntitled", record.title()));
             return;
         }
         // The file is already open — typically reopened by the session restore. Wait for its text, then put
         // the recovered text on top of it as one undoable edit. If the load fails the tab goes away and the
         // record stays listed.
         files.afterBufferLoad(open, () -> {
-            if (closed || open.isDisposed() || !service.unresolved().contains(entry)) {
+            if (closed || open.isDisposed() || !service().unresolved().contains(entry)) {
                 return;
             }
-            if (open.isDirty() && open.getContent().equals(record.text())) {
+            if (open.isDirty() && open.getContent().equals(text)) {
                 finish(entry, open, tr("status.recovery.restored", record.title()));
             } else if (open.isDirty() || !open.isEditable() || open.isTruncatedLoad() || open.isLogFollowing()) {
                 // It has unsaved changes of its own (or cannot take text): never overwrite those.
-                restoredAsNew(entry, record, null, tr("status.recovery.restoredBeside", record.title()));
+                restoredAsNew(entry, record, text, null, tr("status.recovery.restoredBeside", record.title()));
             } else {
-                open.replaceWholeDocument(record.text());
+                open.replaceWholeDocument(text);
                 applyLineEnding(open, record.lineEnding());
                 keepChosenCharset(open, record);
                 Tab tab = files.host().tabForBuffer(open);
@@ -486,7 +511,8 @@ final class RecoveryCoordinator {
     }
 
     /** Opens the text in a new tab: bound to {@code path} when given, otherwise untitled. */
-    private void restoredAsNew(RecoveryStore.Entry entry, RecoveryRecord record, Path path, String status) {
+    private void restoredAsNew(
+            RecoveryStore.Entry entry, RecoveryRecord record, String text, @Nullable Path path, String status) {
         EditorBuffer buffer = new EditorBuffer();
         if (path != null) {
             buffer.setPath(path);
@@ -501,7 +527,6 @@ final class RecoveryCoordinator {
         if (record.charset() != null) {
             buffer.setDetectedCharset(record.charset());
         }
-        String text = record.text();
         boolean longLine =
                 FileWorkflowCoordinator.textStats(text).maxLineLength() >= FileWorkflowCoordinator.LONG_LINE_FILE_CHARS;
         if (longLine || text.length() >= EditorBuffer.LARGE_FILE_BYTES) {
@@ -557,6 +582,7 @@ final class RecoveryCoordinator {
      * only when that copy is on disk, so there is no moment at which a second crash would lose the text.
      */
     private void finish(RecoveryStore.Entry entry, EditorBuffer buffer, String status) {
+        RecoveryService service = service();
         service.unresolved().remove(entry);
         Tracked state = tracked.get(buffer);
         boolean dirty = buffer.dirtyProperty().get();
@@ -579,6 +605,7 @@ final class RecoveryCoordinator {
         if (chosen.isEmpty() || !confirmDiscard.test(chosen.size())) {
             return;
         }
+        RecoveryService service = service();
         for (RecoveryStore.Entry entry : chosen) {
             if (!service.unresolved().remove(entry)) {
                 continue;

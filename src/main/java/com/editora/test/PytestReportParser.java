@@ -8,6 +8,7 @@ import java.util.Map;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.xml.sax.InputSource;
@@ -70,22 +71,22 @@ public final class PytestReportParser {
         Element skipped = first(tc, "skipped");
         if (failure != null) {
             status = TestStatus.FAILED;
-            type = attr(failure, "type", null);
-            message = attr(failure, "message", null);
+            type = attrOrNull(failure, "type");
+            message = attrOrNull(failure, "message");
             trace = text(failure);
         } else if (error != null) {
             status = TestStatus.ERROR;
-            type = attr(error, "type", null);
-            message = attr(error, "message", null);
+            type = attrOrNull(error, "type");
+            message = attrOrNull(error, "message");
             trace = text(error);
         } else if (skipped != null) {
             status = TestStatus.SKIPPED;
-            message = attr(skipped, "message", null);
+            message = attrOrNull(skipped, "message");
         }
         String out = text(first(tc, "system-out"));
         String err = text(first(tc, "system-err"));
         String captured = out == null ? err : err == null ? out : out + "\n" + err;
-        String file = attr(tc, "file", null);
+        String file = attrOrNull(tc, "file");
         int line = 0;
         try {
             line = Integer.parseInt(attr(tc, "line", "-1")) + 1; // xunit1 lines are 0-based
@@ -104,7 +105,7 @@ public final class PytestReportParser {
      * @param className the report's {@code classname}: the dotted module, plus the class when there is one
      * @param name the test's name, or null for a suite row
      */
-    public static String nodeId(String file, String className, String name) {
+    public static @Nullable String nodeId(@Nullable String file, @Nullable String className, @Nullable String name) {
         if (file == null || file.isBlank()) {
             return null;
         }
@@ -146,7 +147,7 @@ public final class PytestReportParser {
         return out;
     }
 
-    private static Element first(Element parent, String tag) {
+    private static @Nullable Element first(Element parent, String tag) {
         List<Element> all = children(parent, tag);
         return all.isEmpty() ? null : all.get(0);
     }
@@ -155,7 +156,11 @@ public final class PytestReportParser {
         return el != null && el.hasAttribute(name) ? el.getAttribute(name) : fallback;
     }
 
-    private static String text(Element el) {
+    private static @Nullable String attrOrNull(Element el, String name) {
+        return el != null && el.hasAttribute(name) ? el.getAttribute(name) : null;
+    }
+
+    private static @Nullable String text(@Nullable Element el) {
         if (el == null || el.getTextContent() == null) {
             return null;
         }

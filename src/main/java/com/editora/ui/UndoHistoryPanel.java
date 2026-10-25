@@ -16,7 +16,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.UndoHistory;
+import com.editora.editor.undo.UndoHistory;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -31,7 +32,7 @@ public class UndoHistoryPanel extends VBox implements ToolWindowContent {
             DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private final ListView<UndoHistory.Checkpoint> list = new ListView<>();
-    private EditorBuffer buffer;
+    private @Nullable EditorBuffer buffer;
 
     public UndoHistoryPanel() {
         getStyleClass().add("undo-history-panel");
@@ -54,7 +55,7 @@ public class UndoHistoryPanel extends VBox implements ToolWindowContent {
     }
 
     /** Attaches to a buffer (or {@code null}); seeds a baseline checkpoint and refreshes live on edits. */
-    public void attach(EditorBuffer newBuffer) {
+    public void attach(@Nullable EditorBuffer newBuffer) {
         if (buffer != null) {
             buffer.setOnUndoHistoryChanged(null);
         }

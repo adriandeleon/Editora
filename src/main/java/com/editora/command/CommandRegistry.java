@@ -7,26 +7,28 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
+
 /** Central registry of all commands, keyed by id. Insertion order is preserved for the palette. */
 public class CommandRegistry {
 
     private final Map<String, Command> commands = new LinkedHashMap<>();
 
     /** Notified with each command id that actually ran (after the command executes). Null = no listener. */
-    private Consumer<String> executionListener;
+    private @Nullable Consumer<String> executionListener;
 
     /** Notified with each outermost command id just before it runs; see {@link #setStartListener}. */
-    private Consumer<String> startListener;
+    private @Nullable Consumer<String> startListener;
 
     /** Run before and after each outermost command; see {@link #setBoundaryHook}. Null = none. */
-    private Runnable boundaryHook;
+    private @Nullable Runnable boundaryHook;
 
     /** Reentrancy depth of {@link #run}: the listener fires only for the outermost call, so a command that
      *  synchronously delegates to another records what the user invoked, not the internal decomposition. */
     private int runDepth;
 
     /** Brackets each outermost run; see {@link #setRunScope}. Null = none. */
-    private Function<String, Runnable> runScope;
+    private @Nullable Function<String, @Nullable Runnable> runScope;
 
     public void register(Command command) {
         commands.put(command.id(), command);
@@ -73,7 +75,7 @@ public class CommandRegistry {
      * it is where "an edit command reveals the caret" lives, rather than in each handler. The follow-up does
      * not run when the command throws.
      */
-    public void setRunScope(Function<String, Runnable> scope) {
+    public void setRunScope(Function<String, @Nullable Runnable> scope) {
         this.runScope = scope;
     }
 

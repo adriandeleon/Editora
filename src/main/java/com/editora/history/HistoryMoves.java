@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.editora.config.HistoryRevision;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure: what happens to the Local File History index when a file changes its path. The index is keyed by
@@ -117,7 +118,7 @@ public final class HistoryMoves {
     }
 
     /** {@code key} as it reads after the rename, or null when it is neither {@code oldKey} nor below it. */
-    public static String renamed(String key, String oldKey, String newKey, String separator) {
+    public static @Nullable String renamed(String key, String oldKey, String newKey, String separator) {
         if (key == null || oldKey == null || newKey == null) {
             return null;
         }
@@ -139,7 +140,7 @@ public final class HistoryMoves {
 
     /** Both lists as one history of {@code path}: newest first, a revision present in both listed once. */
     private static List<HistoryRevision> merged(
-            String path, List<HistoryRevision> arriving, List<HistoryRevision> present) {
+            String path, List<HistoryRevision> arriving, @Nullable List<HistoryRevision> present) {
         Set<HistoryRevision> all = new LinkedHashSet<>();
         for (HistoryRevision revision : arriving) {
             all.add(at(path, revision));

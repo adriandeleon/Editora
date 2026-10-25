@@ -9,7 +9,8 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 
-import com.editora.editor.LanguageRegistry;
+import com.editora.text.LanguageRegistry;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Maps a file name to a small monochrome glyph reflecting its type, shown wherever a file icon
@@ -423,8 +424,8 @@ public final class FileIcons {
      */
     static boolean isEncryptedWithInnerType(String fileName) {
         return fileName != null
-                && com.editora.editor.EncryptedNames.extensionOf(fileName) != null
-                && !com.editora.editor.EncryptedNames.languageName(fileName).equals(fileName);
+                && com.editora.text.EncryptedNames.extensionOf(fileName) != null
+                && !com.editora.text.EncryptedNames.languageName(fileName).equals(fileName);
     }
 
     /** {@code glyph} with a small lock at its lower right: the file is encrypted. */
@@ -476,7 +477,7 @@ public final class FileIcons {
      * @param letter the one-character indicator, or {@code null}/blank for an unchanged file (then the
      *     glyph is returned unwrapped, so a clean row keeps exactly the layout it had before)
      */
-    public static Node withStatusLetter(Node icon, String letter) {
+    public static Node withStatusLetter(Node icon, @Nullable String letter) {
         if (letter == null || letter.isBlank()) {
             return icon;
         }
@@ -501,7 +502,7 @@ public final class FileIcons {
         if (fileName == null) {
             return "generic";
         }
-        fileName = com.editora.editor.EncryptedNames.languageName(fileName); // notes.md.gpg: a Markdown glyph
+        fileName = com.editora.text.EncryptedNames.languageName(fileName); // notes.md.gpg: a Markdown glyph
         String base = fileName;
         int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
         if (slash >= 0) {

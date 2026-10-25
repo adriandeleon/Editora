@@ -145,7 +145,7 @@ public final class Gpg {
      * Decrypts {@code message}. {@code passphrase} null lets gpg-agent ask (its pinentry); otherwise it is
      * handed over by loopback. The status says who signed it, when it was signed.
      */
-    public Outcome decrypt(byte[] message, char[] passphrase, ProcessRunner.Cancellation cancel) {
+    public Outcome decrypt(byte[] message, char @Nullable [] passphrase, ProcessRunner.@Nullable Cancellation cancel) {
         List<String> args = new ArrayList<>(passphraseArgs(passphrase));
         args.addAll(List.of("--output", "-", "--decrypt"));
         return run(args, withPassphrase(passphrase, message), passphrase == null, cancel);
@@ -170,7 +170,7 @@ public final class Gpg {
     }
 
     /** Encrypts {@code plain} with a passphrase only. */
-    public Outcome encryptSymmetric(byte[] plain, char[] passphrase, boolean armor) {
+    public Outcome encryptSymmetric(byte[] plain, char @Nullable [] passphrase, boolean armor) {
         List<String> args = new ArrayList<>(passphraseArgs(passphrase));
         args.add("--yes");
         if (armor) {
@@ -184,7 +184,8 @@ public final class Gpg {
      * Decrypts into {@code output} — the user's explicit choice of a plain file, for content too large or not
      * text enough for the editor. Reads {@code input} (a local file) when given, else {@code message} on stdin.
      */
-    public Outcome decryptToFile(Path input, byte[] message, Path output, char[] passphrase) {
+    public Outcome decryptToFile(
+            @Nullable Path input, byte @Nullable [] message, Path output, char @Nullable [] passphrase) {
         List<String> args = new ArrayList<>(passphraseArgs(passphrase));
         args.addAll(List.of("--yes", "--output", output.toString(), "--decrypt"));
         if (input != null && passphrase == null) {
@@ -206,7 +207,7 @@ public final class Gpg {
     }
 
     /** Wraps {@code text} in a clear-text signature by {@code signer} (null: gpg's default key). */
-    public Outcome clearSign(byte[] text, String signer, char[] passphrase) {
+    public Outcome clearSign(byte[] text, @Nullable String signer, char @Nullable [] passphrase) {
         List<String> args = new ArrayList<>(passphraseArgs(passphrase));
         addSigner(args, signer);
         args.addAll(List.of("--output", "-", "--clearsign"));
@@ -214,7 +215,7 @@ public final class Gpg {
     }
 
     /** A detached signature over {@code data} by {@code signer} (null: gpg's default key). */
-    public Outcome detachSign(byte[] data, String signer, char[] passphrase, boolean armor) {
+    public Outcome detachSign(byte[] data, @Nullable String signer, char @Nullable [] passphrase, boolean armor) {
         List<String> args = new ArrayList<>(passphraseArgs(passphrase));
         addSigner(args, signer);
         if (armor) {
@@ -248,11 +249,11 @@ public final class Gpg {
         return run(List.of("--import"), keys, false, null);
     }
 
-    private static List<String> passphraseArgs(char[] passphrase) {
+    private static List<String> passphraseArgs(char @Nullable [] passphrase) {
         return passphrase == null ? List.of() : List.of("--pinentry-mode", "loopback", "--passphrase-fd", "0");
     }
 
-    private static void addSigner(List<String> args, String signer) {
+    private static void addSigner(List<String> args, @Nullable String signer) {
         if (signer != null && !signer.isBlank()) {
             args.add("--local-user");
             args.add(signer);
@@ -263,7 +264,7 @@ public final class Gpg {
      * stdin for a loopback run: the passphrase's UTF-8, a newline, then the data. gpg reads the first line as the
      * passphrase and the rest as its input.
      */
-    static byte[] withPassphrase(char[] passphrase, byte[] data) {
+    static byte @Nullable [] withPassphrase(char @Nullable [] passphrase, byte @Nullable [] data) {
         if (passphrase == null) {
             return data;
         }

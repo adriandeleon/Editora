@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Best-effort parser for <a href="https://testanything.org">TAP</a> output — the only common denominator for
  * npm test runners (jest/mocha/vitest/node:test all differ; several can emit TAP with a reporter flag). Parses
@@ -40,8 +42,8 @@ public final class TapParser implements TestResultParser {
     private final java.util.Map<String, Integer> occurrences = new java.util.HashMap<>();
 
     private int unnamed;
-    private String lastName;
-    private TestStatus lastStatus;
+    private @Nullable String lastName;
+    private @Nullable TestStatus lastStatus;
     private boolean inYaml;
     private final java.util.List<String> yaml = new java.util.ArrayList<>();
     private boolean sawSubtests;

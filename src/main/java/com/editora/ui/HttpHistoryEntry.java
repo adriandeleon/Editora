@@ -12,6 +12,7 @@ import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpResult;
 import com.editora.http.HttpTests;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One row of the response view's History: the {@link HttpExchange}, the request's {@code name} (its
@@ -29,7 +30,7 @@ import com.editora.http.HttpTests;
  */
 record HttpHistoryEntry(
         HttpExchange exchange,
-        String name,
+        @Nullable String name,
         int requestIndex,
         long at,
         boolean bodyDropped,
@@ -37,9 +38,9 @@ record HttpHistoryEntry(
         boolean noLog,
         boolean bodyCut,
         long landedAt,
-        String urlTemplate,
-        String fingerprint,
-        String environment) {
+        @Nullable String urlTemplate,
+        @Nullable String fingerprint,
+        @Nullable String environment) {
 
     /** At most this many characters of bodies are kept across one panel's history (about 100 MB). */
     static final long MAX_BODY_BYTES = 100L * 1024 * 1024;
@@ -53,7 +54,7 @@ record HttpHistoryEntry(
     /** An entry whose environment is not known. */
     HttpHistoryEntry(
             HttpExchange exchange,
-            String name,
+            @Nullable String name,
             int requestIndex,
             long at,
             boolean bodyDropped,
@@ -61,8 +62,8 @@ record HttpHistoryEntry(
             boolean noLog,
             boolean bodyCut,
             long landedAt,
-            String urlTemplate,
-            String fingerprint) {
+            @Nullable String urlTemplate,
+            @Nullable String fingerprint) {
         this(
                 exchange,
                 name,
@@ -81,7 +82,7 @@ record HttpHistoryEntry(
     /** An entry that lands now, of a request not known by its text. */
     HttpHistoryEntry(
             HttpExchange exchange,
-            String name,
+            @Nullable String name,
             int requestIndex,
             long at,
             boolean bodyDropped,
@@ -105,7 +106,7 @@ record HttpHistoryEntry(
     /** A live entry: nothing of its body was cut by the saved history. */
     HttpHistoryEntry(
             HttpExchange exchange,
-            String name,
+            @Nullable String name,
             int requestIndex,
             long at,
             boolean bodyDropped,
@@ -126,11 +127,11 @@ record HttpHistoryEntry(
     /** {@link #ran(HttpExchange, HttpFile.Parsed, int, long, boolean)}, run in {@code environment} ({@code ""}: none). */
     static HttpHistoryEntry ran(
             HttpExchange exchange,
-            HttpFile.Parsed request,
+            HttpFile.@Nullable Parsed request,
             int requestIndex,
             long at,
             boolean noLog,
-            String environment) {
+            @Nullable String environment) {
         return new HttpHistoryEntry(
                 exchange,
                 request == null ? null : request.name(),
@@ -271,7 +272,8 @@ record HttpHistoryEntry(
         boolean binary = r.binary() || binaryNotKept;
         String body = binary || bodyDropped ? "" : HttpSecretMask.mask(r.body(), secrets);
         String kept = HttpResponseHistory.cappedBody(body);
-        HttpExchange.Details d = exchange.details();
+        HttpExchange.Details given = exchange.details();
+        HttpExchange.Details d = given == null ? HttpExchange.Details.NONE : given; // what HttpExchange makes of null
         List<HttpResponseHistory.FormField> fields = new ArrayList<>();
         for (HttpExchange.FormPart p : d.formParts()) {
             fields.add(new HttpResponseHistory.FormField(
@@ -292,12 +294,13 @@ record HttpHistoryEntry(
         for (String w : r.warnings() == null ? List.<String>of() : r.warnings()) {
             warnings.add(HttpSecretMask.mask(w, secrets));
         }
+        String url = HttpSecretMask.mask(exchange.url(), secrets); // non-null in, non-null out
         return new HttpResponseHistory.Response(
                 at,
                 name,
                 requestIndex,
                 exchange.method(),
-                HttpSecretMask.mask(exchange.url(), secrets),
+                url == null ? exchange.url() : url,
                 HttpSecretMask.maskValues(HttpResponseHistory.maskedHeaders(exchange.headers()), secrets),
                 HttpResponseHistory.cappedBody(HttpSecretMask.mask(exchange.requestBody(), secrets)),
                 r.status(),
@@ -322,7 +325,7 @@ record HttpHistoryEntry(
     }
 
     /** {@code tests} as saved, with {@code secrets} masked in every text; null when nothing ran. */
-    static HttpResponseHistory.Tests storedTests(HttpTests tests, List<String> secrets) {
+    static HttpResponseHistory.@Nullable Tests storedTests(HttpTests tests, List<String> secrets) {
         if (tests == null || tests.isEmpty()) {
             return null;
         }
@@ -340,7 +343,7 @@ record HttpHistoryEntry(
     }
 
     /** Saved test results back in memory; {@link HttpTests#NONE} for none (or an entry from before schema 4). */
-    static HttpTests restoredTests(HttpResponseHistory.Tests stored) {
+    static HttpTests restoredTests(HttpResponseHistory.@Nullable Tests stored) {
         if (stored == null) {
             return HttpTests.NONE;
         }
@@ -348,7 +351,10 @@ record HttpHistoryEntry(
         if (stored.tests() != null) {
             for (HttpResponseHistory.TestResult t : stored.tests()) {
                 if (t != null) {
-                    tests.add(new HttpTests.Test(t.name(), t.passed(), t.message()));
+                    String testName = t.name(); // Test makes null "" (an older file may lack either)
+                    String message = t.message();
+                    tests.add(new HttpTests.Test(
+                            testName == null ? "" : testName, t.passed(), message == null ? "" : message));
                 }
             }
         }
@@ -412,7 +418,7 @@ record HttpHistoryEntry(
                 s.environment());
     }
 
-    private static java.nio.charset.Charset charset(String name) {
+    private static java.nio.charset.Charset charset(@Nullable String name) {
         try {
             return name == null ? StandardCharsets.UTF_8 : java.nio.charset.Charset.forName(name);
         } catch (RuntimeException unknown) {
@@ -420,7 +426,7 @@ record HttpHistoryEntry(
         }
     }
 
-    private static HttpExchange.Details details(HttpResponseHistory.Sent sent) {
+    private static HttpExchange.Details details(HttpResponseHistory.@Nullable Sent sent) {
         if (sent == null) {
             return HttpExchange.Details.NONE;
         }
@@ -443,7 +449,7 @@ record HttpHistoryEntry(
                 false);
     }
 
-    private static List<String[]> pairs(List<HttpResponseHistory.Header> headers) {
+    private static List<String[]> pairs(@Nullable List<HttpResponseHistory.Header> headers) {
         List<String[]> out = new ArrayList<>();
         if (headers != null) {
             for (HttpResponseHistory.Header h : headers) {

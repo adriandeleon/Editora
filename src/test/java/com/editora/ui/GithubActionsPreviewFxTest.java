@@ -8,7 +8,7 @@ import javafx.scene.Parent;
 import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
 
-import com.editora.editor.GithubActionsPreview;
+import com.editora.editor.structured.GithubActionsPreview;
 import com.editora.ghactions.Workflow;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

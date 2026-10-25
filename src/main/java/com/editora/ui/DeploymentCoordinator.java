@@ -28,6 +28,7 @@ import com.editora.deploy.Deployer;
 import com.editora.editor.EditorBuffer;
 import com.editora.process.ExecTarget;
 import com.editora.process.ExecTargets;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -44,6 +45,7 @@ final class DeploymentCoordinator {
         ConfigManager config();
 
         /** This window's project root (local), or null. */
+        @Nullable
         Path projectRoot();
 
         /**
@@ -59,13 +61,15 @@ final class DeploymentCoordinator {
 
         void setError(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         /** The configuration selected in the run toolbar, or null. */
+        @Nullable
         RunConfiguration selectedRunConfiguration();
 
         /** Opens the Deployments editor on {@code name} (null: whatever it shows). */
-        void editDeployments(String name);
+        void editDeployments(@Nullable String name);
 
         /** Opens a diff of {@code local} against {@code deployed} ({@code hostLabel} names the right side). */
         void compare(Path local, Path deployed, String hostLabel);
@@ -83,7 +87,7 @@ final class DeploymentCoordinator {
 
         void line(String text);
 
-        void ended(boolean ok, String message);
+        void ended(boolean ok, @Nullable String message);
     }
 
     /**
@@ -144,7 +148,7 @@ final class DeploymentCoordinator {
      * {@code console} is told {@link Console#ended} exactly once, also when the deploy never started (with a
      * null message: the status bar says why).
      */
-    void deployThen(String name, Console console, Consumer<Deployed> then) {
+    void deployThen(String name, Console console, @Nullable Consumer<Deployed> then) {
         Path localRoot = host.projectRoot();
         if (localRoot == null) {
             host.setStatus(tr("status.deploy.needsLocalProject"));
@@ -192,9 +196,9 @@ final class DeploymentCoordinator {
         String home;
         try {
             Path h = target.homeDir();
-            home = h == null ? null : target.toTargetPath(h);
+            home = h == null ? "" : target.toTargetPath(h);
         } catch (Exception e) {
-            home = null;
+            home = "";
         }
         Path manifest = manifestFile(paths.localRoot(), d);
         Deployer.Request request =
@@ -225,7 +229,11 @@ final class DeploymentCoordinator {
     }
 
     private void finish(
-            Deployment d, DeployPaths paths, Deployer.Outcome outcome, Console console, Consumer<Deployed> then) {
+            Deployment d,
+            DeployPaths paths,
+            Deployer.Outcome outcome,
+            Console console,
+            @Nullable Consumer<Deployed> then) {
         busy = false;
         switch (outcome.status()) {
             case OK -> {
@@ -247,9 +255,9 @@ final class DeploymentCoordinator {
                 host.setStatus(tr("status.deploy.cancelled", d.name()));
             }
             case REFUSED -> {
-                String why = tr(
-                        "deploy.root." + outcome.rootProblem().name().toLowerCase(java.util.Locale.ROOT),
-                        d.remoteRoot());
+                // Deployer refuses only with a problem named
+                DeployRoot.Problem problem = java.util.Objects.requireNonNull(outcome.rootProblem());
+                String why = tr("deploy.root." + problem.name().toLowerCase(java.util.Locale.ROOT), d.remoteRoot());
                 console.ended(false, why);
                 host.setStatus(tr("status.deploy.refused", d.name(), why));
                 host.editDeployments(d.name());
@@ -295,7 +303,7 @@ final class DeploymentCoordinator {
             }
 
             @Override
-            public void ended(boolean ok, String message) {
+            public void ended(boolean ok, @Nullable String message) {
                 // finish() puts the outcome on the status bar
             }
         };
@@ -343,7 +351,7 @@ final class DeploymentCoordinator {
     }
 
     /** The Deployments editor on {@code name} (null: the first). */
-    void editDeployments(String name) {
+    void editDeployments(@Nullable String name) {
         if (host.projectRoot() == null) {
             host.setStatus(tr("status.deploy.needsLocalProject"));
             return;
@@ -435,7 +443,7 @@ final class DeploymentCoordinator {
                     }
 
                     @Override
-                    public void ended(boolean ok, String message) {
+                    public void ended(boolean ok, @Nullable String message) {
                         if (!ok) {
                             saveUploadsOff.add(name); // until a Deploy Now or a run succeeds: not a login on every save
                         }

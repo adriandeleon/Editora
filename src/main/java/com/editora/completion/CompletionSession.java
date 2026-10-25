@@ -1,5 +1,7 @@
 package com.editora.completion;
 
+import org.jspecify.annotations.Nullable;
+
 /** Tracks only a growing/shrinking identifier suffix. Any other edit invalidates request coordinates. */
 public final class CompletionSession {
     private final int start;
@@ -11,7 +13,7 @@ public final class CompletionSession {
     private int caret;
     private long version;
     private boolean valid = true;
-    private CompletionResult result;
+    private @Nullable CompletionResult result;
 
     public CompletionSession(int caret, int line, int column, String prefix, long version) {
         this.start = caret - prefix.length();
@@ -66,7 +68,7 @@ public final class CompletionSession {
         return column;
     }
 
-    public CompletionResult result() {
+    public @Nullable CompletionResult result() {
         return result;
     }
 
@@ -75,7 +77,7 @@ public final class CompletionSession {
     }
 
     /** Rebase the suffix end; the replacement start must remain in the unchanged prefix. */
-    public Completion.ReplaceRange range(Completion.ReplaceRange range) {
+    public Completion.@Nullable ReplaceRange range(Completion.@Nullable ReplaceRange range) {
         if (range == null || !range.hasEnd()) return range;
         if (range.endLine() != line || range.endCharacter() < column) return range;
         return new Completion.ReplaceRange(

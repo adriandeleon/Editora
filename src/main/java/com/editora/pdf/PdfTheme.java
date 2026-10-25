@@ -4,6 +4,8 @@ import java.awt.Color;
 import java.util.Collection;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The fixed <b>light</b> (GitHub "Primer Light") palette used for PDF export, mirroring the editor's
  * {@code styles/syntax.css} default theme. PDFs always export light regardless of the app's editor
@@ -53,7 +55,7 @@ public final class PdfTheme {
     private PdfTheme() {}
 
     /** The color for a token's style classes (first known class wins), or {@link #DEFAULT_FG}. */
-    public static Color colorFor(Collection<String> styleClasses) {
+    public static Color colorFor(@Nullable Collection<String> styleClasses) {
         if (styleClasses != null) {
             for (String c : styleClasses) {
                 Color color = TOKEN.get(c);
@@ -66,7 +68,7 @@ public final class PdfTheme {
     }
 
     /** Whether the token should render bold (keywords/headings/bold markup). */
-    public static boolean bold(Collection<String> styleClasses) {
+    public static boolean bold(@Nullable Collection<String> styleClasses) {
         return styleClasses != null
                 && (styleClasses.contains("keyword")
                         || styleClasses.contains("heading")
@@ -74,7 +76,7 @@ public final class PdfTheme {
     }
 
     /** Whether the token should render italic (comments/regex/italic markup). */
-    public static boolean italic(Collection<String> styleClasses) {
+    public static boolean italic(@Nullable Collection<String> styleClasses) {
         return styleClasses != null
                 && (styleClasses.contains("comment")
                         || styleClasses.contains("regexp")

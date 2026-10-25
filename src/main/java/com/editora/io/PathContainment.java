@@ -5,6 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * "Is this path really inside that folder?" — answered on the <b>canonical</b> paths, not the spelled ones.
  *
@@ -43,7 +45,7 @@ public final class PathContainment {
      * Whether {@code target}'s canonical location is {@code root}'s canonical location or below it. False for
      * a null argument and for anything that cannot be vouched for (a dangling link, an unreadable parent).
      */
-    public static boolean isWithin(Path root, Path target) {
+    public static boolean isWithin(@Nullable Path root, Path target) {
         if (root == null || target == null) {
             return false;
         }

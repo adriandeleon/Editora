@@ -22,7 +22,6 @@ import javafx.application.Platform;
 
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
-import com.editora.editor.LspDiagnostic;
 import com.editora.lsp.LspManager;
 import com.editora.process.ExecSpec;
 import com.editora.process.ExecTarget;
@@ -33,6 +32,7 @@ import com.editora.process.ProcessRunner;
 import com.editora.process.RemoteProcess;
 import com.editora.run.RunService;
 import com.editora.search.RemoteFiles;
+import com.editora.text.LspDiagnostic;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.RemoteFileSystems;
 import org.junit.jupiter.api.Tag;

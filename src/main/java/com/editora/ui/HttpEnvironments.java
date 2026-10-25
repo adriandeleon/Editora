@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 import com.editora.http.HttpEnv;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -37,16 +38,24 @@ final class HttpEnvironments {
      * Both env files of one folder as read ({@code null} for a file that is absent or unreadable); a {@code null}
      * {@code dir} has none.
      */
-    record EnvFiles(Path dir, String publicJson, String privateJson) {
+    record EnvFiles(
+            @Nullable Path dir,
+            @Nullable String publicJson,
+            @Nullable String privateJson) {
 
         /** The variables of {@code environment}, merged as JetBrains does (see {@link HttpEnv#merged}). */
         Map<String, String> variables(String environment) {
-            return HttpEnv.merged(publicJson, privateJson, environment);
+            return HttpEnv.merged(orBlank(publicJson), orBlank(privateJson), environment);
         }
 
         /** The environment names of both files, public first, then private-only ones. */
         List<String> names() {
-            return HttpEnv.environmentNames(publicJson, privateJson);
+            return HttpEnv.environmentNames(orBlank(publicJson), orBlank(privateJson));
+        }
+
+        /** An absent file as HttpEnv reads it: a blank one contributes nothing, the same as none. */
+        private static String orBlank(@Nullable String json) {
+            return json == null ? "" : json;
         }
 
         /**
@@ -56,11 +65,11 @@ final class HttpEnvironments {
          */
         List<String> problems() {
             List<String> out = new java.util.ArrayList<>();
-            String pub = HttpEnv.problem(publicJson);
+            String pub = publicJson == null ? null : HttpEnv.problem(publicJson);
             if (pub != null) {
                 out.add(tr("http.env.unreadable", HttpEnv.PUBLIC_FILE, pub));
             }
-            String priv = HttpEnv.problem(privateJson);
+            String priv = privateJson == null ? null : HttpEnv.problem(privateJson);
             if (priv != null) {
                 out.add(tr("http.env.unreadable", HttpEnv.PRIVATE_FILE, priv));
             }
@@ -69,7 +78,7 @@ final class HttpEnvironments {
     }
 
     /** Reads both env files of {@code dir} (none when {@code dir} is null). */
-    static EnvFiles read(Path dir) {
+    static EnvFiles read(@Nullable Path dir) {
         if (dir == null) {
             return new EnvFiles(null, null, null);
         }
@@ -81,7 +90,7 @@ final class HttpEnvironments {
      * The folder whose env files apply to a buffer: for a saved file, {@link #envDir(Path, Path)} of its folder;
      * for an untitled one ({@code file == null}), the project root, else null.
      */
-    static Path forFile(Path file, Path projectRoot) {
+    static @Nullable Path forFile(@Nullable Path file, @Nullable Path projectRoot) {
         if (file == null) {
             return projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
         }
@@ -90,7 +99,7 @@ final class HttpEnvironments {
     }
 
     /** {@link #envDir(Path, Path, Path, Predicate)} against the real file system and the user's home folder. */
-    static Path envDir(Path dir, Path projectRoot) {
+    static @Nullable Path envDir(Path dir, @Nullable Path projectRoot) {
         String home = System.getProperty("user.home");
         return envDir(dir, projectRoot, home == null || home.isBlank() ? null : Path.of(home), Files::exists);
     }
@@ -101,7 +110,7 @@ final class HttpEnvironments {
      * files, if any appear later, are then used). {@code home} is never used as a parent, and neither is the
      * file-system root.
      */
-    static Path envDir(Path dir, Path projectRoot, Path home, Predicate<Path> exists) {
+    static @Nullable Path envDir(Path dir, @Nullable Path projectRoot, @Nullable Path home, Predicate<Path> exists) {
         if (dir == null) {
             return null;
         }
@@ -129,7 +138,7 @@ final class HttpEnvironments {
      * The nearest of {@code start} and its parents that is a repository's root, or null. The home folder and the
      * file-system root do not count (a home folder kept under Git is not a project).
      */
-    static Path repositoryRoot(Path start, Path home, Predicate<Path> exists) {
+    static @Nullable Path repositoryRoot(Path start, @Nullable Path home, Predicate<Path> exists) {
         for (Path d = start; d != null && d.getParent() != null && !d.equals(home); d = d.getParent()) {
             for (String marker : VCS_MARKERS) {
                 if (exists.test(d.resolve(marker))) {
@@ -145,7 +154,7 @@ final class HttpEnvironments {
         return remembered != null && !remembered.isEmpty() && names.contains(remembered) ? remembered : "";
     }
 
-    private static String readOrNull(Path file) {
+    private static @Nullable String readOrNull(Path file) {
         if (file == null || !Files.isRegularFile(file)) {
             return null;
         }

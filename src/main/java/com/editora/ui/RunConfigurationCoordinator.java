@@ -13,6 +13,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.config.ConfigManager;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -53,21 +54,24 @@ final class RunConfigurationCoordinator {
 
         void setError(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         boolean save(EditorBuffer buffer);
 
         void requestSave();
 
-        String programArgsFor(Path path);
+        String programArgsFor(@Nullable Path path);
 
+        @Nullable
         String suggestedMainClass();
 
         /** A configuration for the active Python or shell script, or null. */
-        default com.editora.config.RunConfiguration suggestedScriptConfiguration() {
+        default com.editora.config.@Nullable RunConfiguration suggestedScriptConfiguration() {
             return null;
         }
 
+        @Nullable
         Path windowProjectRoot();
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
@@ -114,8 +118,9 @@ final class RunConfigurationCoordinator {
      * <b>identity</b>, never by name — a real configuration a user happens to name "Edit Configurations…"
      * must still behave like a configuration.
      *
-     * <p>It is not a selectable value. Choosing it reverts the selection and opens Settings, so
-     * {@code host.runConfigCombo().getValue()} is never the sentinel by the time anything reads it.
+     * <p>It is not a selectable value. Choosing it reverts the selection (on the next pulse) and opens the
+     * Run Configurations window; until that revert runs the combo holds it, so {@link #selectedRunConfig}
+     * reads it as no selection.
      */
     static final com.editora.config.RunConfiguration EDIT_CONFIGS_ROW =
             new com.editora.config.RunConfiguration("", "", "", "", "", "");
@@ -142,6 +147,7 @@ final class RunConfigurationCoordinator {
     }
 
     /** Project root the makefile probe last ran for, so it runs once per root rather than per refresh. */
+    @Nullable
     Path makefileProbedRoot;
 
     /** Whether {@link #makefileProbedRoot} holds a makefile — the cached answer for that root. */
@@ -249,7 +255,7 @@ final class RunConfigurationCoordinator {
             }
 
             @Override
-            public com.editora.config.RunConfiguration fromString(String s) {
+            public com.editora.config.@Nullable RunConfiguration fromString(String s) {
                 return null; // not editable
             }
         });
@@ -262,15 +268,24 @@ final class RunConfigurationCoordinator {
                 return;
             }
             if (now == EDIT_CONFIGS_ROW) {
-                // Put the real selection back first, so nothing downstream — the Run buttons, the persisted
-                // selectedRunConfig, a launch — ever sees the sentinel as the chosen configuration.
-                revertingRunConfigRow = true;
-                try {
-                    host.runConfigCombo().setValue(was == EDIT_CONFIGS_ROW ? null : was);
-                } finally {
-                    revertingRunConfigRow = false;
-                }
-                editRunConfigs();
+                // Put the real selection back, so nothing downstream — the Run buttons, the persisted
+                // selectedRunConfig, a launch — ever sees the sentinel as the chosen configuration. Later, not
+                // here: this runs inside the popup list's own selection change, and reverting to null (no
+                // configurations yet) emptied that selection under the click. JavaFX's ListViewBehavior then
+                // threw IndexOutOfBoundsException and the list stayed on this row, so picking it again was no
+                // change and the editor never reopened (RunConfigToolbarFxTest).
+                javafx.application.Platform.runLater(() -> {
+                    if (host.runConfigCombo().getValue() != EDIT_CONFIGS_ROW) {
+                        return; // a refresh already replaced it
+                    }
+                    revertingRunConfigRow = true;
+                    try {
+                        host.runConfigCombo().setValue(was == EDIT_CONFIGS_ROW ? null : was);
+                    } finally {
+                        revertingRunConfigRow = false;
+                    }
+                    editRunConfigs();
+                });
                 return;
             }
             host.config().getWorkspaceState().setSelectedRunConfig(now == null ? "" : now.name());
@@ -342,8 +357,8 @@ final class RunConfigurationCoordinator {
         // own ListView is a listener on them: a combo whose items shrink under a selection in flight is the
         // shape that makes JavaFX's ListViewBehavior read a stale added-range and throw
         // IndexOutOfBoundsException out to the uncaught handler (reproduced against JavaFX 26 in
-        // ComboItemsMutationFxTest). Whether that is the crash seen in the wild is unproven — this closes the
-        // one place in the app carrying the shape.
+        // ComboItemsMutationFxTest). The crash seen in the wild turned out to be the Edit row's revert emptying
+        // the selection mid-click (see setupRunConfigCombo); this still closes the other place with the shape.
         List<com.editora.config.RunConfiguration> rows = new ArrayList<>(configs);
         rows.add(EDIT_CONFIGS_ROW);
         host.runConfigCombo().getItems().setAll(rows);
@@ -474,8 +489,10 @@ final class RunConfigurationCoordinator {
     }
 
     /** The configuration the toolbar's Run/Debug buttons act on, or null with nothing selected. */
-    com.editora.config.RunConfiguration selectedRunConfig() {
-        return host.runConfigCombo() == null ? null : host.runConfigCombo().getValue();
+    com.editora.config.@Nullable RunConfiguration selectedRunConfig() {
+        com.editora.config.RunConfiguration value =
+                host.runConfigCombo() == null ? null : host.runConfigCombo().getValue();
+        return value == EDIT_CONFIGS_ROW ? null : value; // the Edit row, until its revert runs
     }
 
     /** Runs the selected configuration. The button chooses the verb; the configuration never does. */
@@ -506,7 +523,7 @@ final class RunConfigurationCoordinator {
         EditorBuffer b = host.activeBuffer();
         // A Python or shell script saves as a script configuration (it used to say "Open a Java file").
         com.editora.config.RunConfiguration script = host.suggestedScriptConfiguration();
-        if (script != null) {
+        if (script != null && b != null) { // a suggestion is only made for the active buffer's file
             String args = host.programArgsFor(b.getPath());
             host.promptText(tr("run.config.saveTitle"), tr("run.config.saveName"), script.name(), name -> {
                 if (name == null || name.isBlank()) {
@@ -683,21 +700,35 @@ final class RunConfigurationCoordinator {
             java.nio.file.Path init = com.editora.process.ExecTargets.runsHere(root)
                     ? com.editora.build.GradleDebugInit.write(List.of(task))
                     : null;
-            gradle.runTask(com.editora.build.BuildDebug.gradleDebugArgs(task, init), List.of());
+            gradle.runTask(
+                    init == null
+                            ? com.editora.build.BuildDebug.gradleDebugArgs(task)
+                            : com.editora.build.BuildDebug.gradleDebugArgs(task, init),
+                    List.of());
             return;
         }
         BuildCoordinator maven = detectedBuildCoordinator(BuildTool.MAVEN);
-        if (maven != null
-                && com.editora.build.BuildDebug.isSpringBootMavenPom(readTextOrEmpty(root.resolve("pom.xml")))) {
+        // The Boot plugin is read from the effective build — plugins, pluginManagement, profiles, the parents
+        // on disk — not sniffed from the text (review D11).
+        com.editora.maven.PomBuildConfig pom = maven == null
+                ? com.editora.maven.PomBuildConfig.DEFAULTS
+                : com.editora.build.BuildDebug.springBootConfig(root);
+        if (maven != null && pom.springBoot()) {
             armDebugAttach(maven, routing);
             host.setStatus(tr("status.debug.viaBuildStarting"));
             maven.runTask(com.editora.build.BuildDebug.mavenSpringBootDebugArgs(), List.of());
+            if (pom.springBootJvmArguments() != null) {
+                // An explicit <jvmArguments> in the pom beats the -D the launch passes: the app starts
+                // without the agent. Said after the launch, whose own status would overwrite it (review D14).
+                host.setStatus(tr("status.debug.viaBuildJvmArgsConfigured", pom.springBootJvmArguments()));
+            }
             return;
         }
         host.setStatus(tr("status.debug.viaBuildUnsupported"));
     }
 
     /** The enabled+detected build coordinator for {@code tool}, or null. */
+    @Nullable
     BuildCoordinator detectedBuildCoordinator(BuildTool tool) {
         for (BuildCoordinator c : host.buildCoordinators()) {
             if (c.tool() == tool && c.isEnabled() && c.isDetected()) {
@@ -711,13 +742,28 @@ final class RunConfigurationCoordinator {
     void armDebugAttach(BuildCoordinator c, java.nio.file.Path routing) {
         // Every banner of the run is attached (one at a time — see DebugCoordinator.attachToPort), and Stop on
         // the session ends the run (review A4, D11); the coordinator drops the watcher when the run is over.
+        boolean[] seen = {false};
         c.setOutputWatcher((line, stderr) -> {
             int port = com.editora.test.TestDebug.jdwpPort(line);
             if (port > 0) {
+                seen[0] = true;
                 host.debugCoordinator().attachToPort(routing, "localhost", port, c::stop);
             }
         });
+        // No banner after a while with the build still running: the app most likely started without the
+        // agent (a pom's own <jvmArguments>, a run task that is not the app's). Say so and name the way out.
+        javafx.animation.PauseTransition wait =
+                new javafx.animation.PauseTransition(javafx.util.Duration.seconds(bannerTimeoutSeconds));
+        wait.setOnFinished(e -> {
+            if (!seen[0] && c.isRunning()) {
+                host.setStatus(tr("status.debug.viaBuildNoBanner", bannerTimeoutSeconds));
+            }
+        });
+        wait.play();
     }
+
+    /** How long {@link #armDebugAttach} waits for a banner; a test shortens it. */
+    int bannerTimeoutSeconds = com.editora.build.BuildDebug.BANNER_TIMEOUT_SECONDS;
 
     static String readTextOrEmpty(java.nio.file.Path f) {
         try {

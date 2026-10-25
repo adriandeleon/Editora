@@ -12,6 +12,8 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Decides which Python runs a file — the one answer Run, run configurations, Debug and the Python language
  * server all use, so a script cannot work under Debug and fail under Run, or show red imports that run fine.
@@ -61,7 +63,8 @@ public final class PythonInterpreters {
      * A resolved interpreter: {@code command} is the argv prefix (the executable, then any arguments the
      * user gave it); {@code venv} is the environment folder when the interpreter lives in one.
      */
-    public record PythonInterpreter(List<String> command, Source source, Path venv) {
+    public record PythonInterpreter(
+            List<String> command, Source source, @Nullable Path venv) {
         public PythonInterpreter {
             command = List.copyOf(command);
             if (command.isEmpty()) {
@@ -109,8 +112,8 @@ public final class PythonInterpreters {
      * @param onPath the absolute path of a bare command name found on PATH, if any
      */
     public record Inputs(
-            Path file,
-            Path projectRoot,
+            @Nullable Path file,
+            @Nullable Path projectRoot,
             String configured,
             String projectChoice,
             String setting,
@@ -127,8 +130,8 @@ public final class PythonInterpreters {
 
         /** Local inputs: the real file system and {@code onPath}, this JVM's environment and OS. */
         public static Inputs local(
-                Path file,
-                Path projectRoot,
+                @Nullable Path file,
+                @Nullable Path projectRoot,
                 String configured,
                 String projectChoice,
                 String setting,
@@ -158,12 +161,12 @@ public final class PythonInterpreters {
 
     /** Resolves for a local file with the real file system, environment, OS and augmented PATH. */
     public static PythonInterpreter resolveLocal(
-            Path file, Path projectRoot, String configured, String projectChoice, String setting) {
+            @Nullable Path file, @Nullable Path projectRoot, String configured, String projectChoice, String setting) {
         return resolve(Inputs.local(
                 file, projectRoot, configured, projectChoice, setting, PythonInterpreters::onAugmentedPath));
     }
 
-    private static Path userHome() {
+    private static @Nullable Path userHome() {
         String home = System.getProperty("user.home", "");
         try {
             return home.isBlank() ? null : Path.of(home).toAbsolutePath().normalize();
@@ -292,7 +295,8 @@ public final class PythonInterpreters {
      * {@link #NO_PROJECT_LEVELS} folders, or below the home folder: an environment in the home folder itself
      * is never taken for a loose script.
      */
-    public static Optional<Path> findProjectVenv(Path file, Path projectRoot, Predicate<Path> isFile, boolean windows) {
+    public static Optional<Path> findProjectVenv(
+            @Nullable Path file, @Nullable Path projectRoot, Predicate<Path> isFile, boolean windows) {
         Path dir = file == null ? projectRoot : file.getParent();
         Path stop = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
         Path home = projectRoot == null ? userHome() : null;
@@ -327,7 +331,7 @@ public final class PythonInterpreters {
      * and any direct sub-folder that is an environment (a {@code .venv-py312} next to {@code .venv}), in a
      * stable order. Filesystem-touching (lists one directory).
      */
-    public static List<Path> listVenvs(Path root, boolean windows) {
+    public static List<Path> listVenvs(@Nullable Path root, boolean windows) {
         if (root == null) {
             return List.of();
         }
@@ -350,7 +354,7 @@ public final class PythonInterpreters {
     }
 
     /** The environment folder an interpreter path lives in ({@code …/.venv/bin/python} → {@code …/.venv}). */
-    static Path venvOf(Path executable, Predicate<Path> isFile) {
+    static @Nullable Path venvOf(Path executable, Predicate<Path> isFile) {
         Path bin = executable.getParent();
         Path root = bin == null ? null : bin.getParent();
         if (root != null && isFile.test(root.resolve("pyvenv.cfg"))) {
@@ -403,7 +407,7 @@ public final class PythonInterpreters {
      * (the src layout), so {@code from pkg import x} works from a file deep in the package. Empty with no
      * project. Pure apart from one directory check.
      */
-    public static List<String> pythonPathEntries(Path projectRoot, Predicate<Path> isDirectory) {
+    public static List<String> pythonPathEntries(@Nullable Path projectRoot, Predicate<Path> isDirectory) {
         if (projectRoot == null) {
             return List.of();
         }

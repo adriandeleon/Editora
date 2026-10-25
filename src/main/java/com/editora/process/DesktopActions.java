@@ -7,6 +7,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Desktop OS integration: reveal a file/folder in the native file manager, or open a terminal at a
  * folder. The per-OS argv construction is <em>pure</em> (the OS is injected), so it's unit-tested;
@@ -36,7 +38,7 @@ public final class DesktopActions {
      * working-directory parameter, which no shell parses, so there is nothing to inject into. {@code null}
      * means the child inherits the app's working directory.
      */
-    public record Command(List<String> argv, Path workingDir) {}
+    public record Command(List<String> argv, @Nullable Path workingDir) {}
 
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "desktop-actions");
@@ -128,7 +130,7 @@ public final class DesktopActions {
      * the user's shell, and one forced into the C locale shows their file names as {@code ?} and breaks
      * every non-ASCII keystroke.
      */
-    static ProcessBuilder processBuilder(List<String> argv, Path workingDir) {
+    static ProcessBuilder processBuilder(List<String> argv, @Nullable Path workingDir) {
         ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(argv));
         ProcessRunner.applyUserEnv(pb);
         if (workingDir != null) {
@@ -140,7 +142,7 @@ public final class DesktopActions {
         return pb;
     }
 
-    private static void launch(List<String> argv, Path workingDir, Consumer<String> onError) {
+    private static void launch(List<String> argv, @Nullable Path workingDir, Consumer<String> onError) {
         EXEC.submit(() -> {
             try {
                 BusyExecutable.start(processBuilder(argv, workingDir));

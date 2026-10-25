@@ -3,6 +3,7 @@ package com.editora.git;
 import java.util.Locale;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure classification of a finished git command from its exit code and output, for the cases where a
@@ -37,7 +38,7 @@ public enum GitOutcome {
         return result.cancelled() ? CANCELLED : of(result.exit(), result.out(), result.err());
     }
 
-    public static GitOutcome of(int exit, String out, String err) {
+    public static GitOutcome of(int exit, String out, @Nullable String err) {
         if (exit == 0) {
             return OK;
         }

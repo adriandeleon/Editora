@@ -26,6 +26,7 @@ import com.editora.git.GitSafety;
 import com.editora.git.GitService;
 import com.editora.git.GitWorktrees;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -92,7 +93,7 @@ final class GitBranchCoordinator {
     }
 
     /** The active repository root, or null after reporting that there is none. */
-    private Path rootOrReport() {
+    private @Nullable Path rootOrReport() {
         return git().reportIfNoRepo() ? null : git().repoRoot();
     }
 
@@ -197,7 +198,7 @@ final class GitBranchCoordinator {
      * Lists the refs of {@code kinds} in {@code root} and hands the picked one to {@code onPick}. The branch
      * named {@code exclude} (the current one, for commands that cannot act on it) is left out.
      */
-    private void pickRef(Path root, String title, Set<RefKind> kinds, String exclude, Consumer<Ref> onPick) {
+    private void pickRef(Path root, String title, Set<RefKind> kinds, @Nullable String exclude, Consumer<Ref> onPick) {
         service().branches(root, branches -> {
             List<Ref> refs = new ArrayList<>();
             if (kinds.contains(RefKind.LOCAL)) {
@@ -350,7 +351,7 @@ final class GitBranchCoordinator {
         GitRemotes.RemoteBranch target = GitRemotes.split(remoteBranch, remoteNames);
         String[] args =
                 target == null ? new String[0] : GitService.deleteRemoteBranchArgs(target.remote(), target.branch());
-        if (root == null || args.length == 0) {
+        if (root == null || target == null || args.length == 0) {
             ui().setError(tr("status.git.unsafeRef", nz(remoteBranch)));
             return;
         }
@@ -899,8 +900,10 @@ final class GitBranchCoordinator {
     }
 
     /** The manager that is up, for the tests that drive it. */
+    @Nullable
     GitManagerOverlay<GitRemotes.Remote> remotesManager;
 
+    @Nullable
     GitManagerOverlay<GitWorktrees.Worktree> worktreesManager;
 
     /** {@code git.remotes}: the remotes manager — list with URL, add, rename, set URL, fetch, prune, remove. */
@@ -1158,7 +1161,7 @@ final class GitBranchCoordinator {
      * it, where git would resolve a relative path and the new tree would show up as untracked files of the
      * old one. {@code null} for text that is no path. Pure.
      */
-    static Path worktreeTarget(Path root, String typed) {
+    static @Nullable Path worktreeTarget(Path root, String typed) {
         if (typed == null || typed.isBlank()) {
             return null;
         }

@@ -9,6 +9,7 @@ import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 
 import com.editora.i18n.Messages;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The line at the foot of a printed text page: the document's name on the left, "Page n of N" on the
@@ -31,17 +32,17 @@ public final class PageFooter {
 
     private final String name;
 
-    private PageFooter(String name) {
+    private PageFooter(@Nullable String name) {
         this.name = name == null ? "" : name.strip();
     }
 
     /** A footer naming {@code documentName} (null or blank: the page number only). */
-    public static PageFooter of(String documentName) {
+    public static PageFooter of(@Nullable String documentName) {
         return new PageFooter(documentName);
     }
 
     /** {@link #of} when {@code enabled}, else null — which every layout reads as "no footer". */
-    public static PageFooter of(String documentName, boolean enabled) {
+    public static @Nullable PageFooter of(@Nullable String documentName, boolean enabled) {
         return enabled ? of(documentName) : null;
     }
 

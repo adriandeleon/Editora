@@ -9,7 +9,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 import javax.imageio.ImageIO;
 
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.mermaid.Mermaid;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;

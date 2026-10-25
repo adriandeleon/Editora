@@ -16,6 +16,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The on-disk record of a workspace edit's filesystem transaction, so one that was interrupted can be
  * found and put back.
@@ -42,11 +44,11 @@ public final class WorkspaceEditJournal {
     /** Journals of transactions running in this process, and ones already shown to the user. */
     private static final Set<Path> CLAIMED = ConcurrentHashMap.newKeySet();
 
-    private final Path file;
+    private final @Nullable Path file;
     private boolean started;
     private boolean broken;
 
-    private WorkspaceEditJournal(Path file) {
+    private WorkspaceEditJournal(@Nullable Path file) {
         this.file = file;
     }
 
@@ -54,7 +56,7 @@ public final class WorkspaceEditJournal {
      * A journal for one transaction, kept in {@code directory}. Nothing is written until the first move is
      * recorded. With a null directory the journal records nothing.
      */
-    public static WorkspaceEditJournal begin(Path directory) {
+    public static WorkspaceEditJournal begin(@Nullable Path directory) {
         if (directory == null) {
             return new WorkspaceEditJournal(null);
         }
@@ -69,7 +71,7 @@ public final class WorkspaceEditJournal {
     }
 
     /** {@code file} is about to be created; an existing file there is first moved to {@code backup} (or null). */
-    public void creating(Path file, Path backup) {
+    public void creating(Path file, @Nullable Path backup) {
         append("CREATE", file, backup);
     }
 
@@ -113,7 +115,7 @@ public final class WorkspaceEditJournal {
         }
     }
 
-    private synchronized void append(String kind, Path... paths) {
+    private synchronized void append(String kind, @Nullable Path... paths) {
         if (file == null || broken) {
             return;
         }
@@ -150,7 +152,11 @@ public final class WorkspaceEditJournal {
     // --- recovery -------------------------------------------------------------------------------------
 
     /** One recorded move. Unused paths are null. */
-    private record Entry(String kind, Path first, Path second, Path third) {}
+    private record Entry(
+            String kind,
+            @Nullable Path first,
+            @Nullable Path second,
+            @Nullable Path third) {}
 
     /** What a restore did. */
     public record Restored(List<Path> restored, List<Path> leftInPlace) {}
@@ -282,7 +288,7 @@ public final class WorkspaceEditJournal {
             return new Restored(List.copyOf(restored), left);
         }
 
-        private static void moveBack(Path from, Path to, List<Path> restored) {
+        private static void moveBack(@Nullable Path from, @Nullable Path to, List<Path> restored) {
             if (from == null || to == null || !Files.exists(from) || Files.exists(to)) {
                 return;
             }
@@ -378,7 +384,7 @@ public final class WorkspaceEditJournal {
         }
     }
 
-    private static Interrupted read(Path journal) {
+    private static @Nullable Interrupted read(Path journal) {
         List<String> lines;
         try {
             lines = Files.readAllLines(journal, StandardCharsets.UTF_8);
@@ -419,7 +425,7 @@ public final class WorkspaceEditJournal {
         }
     }
 
-    private static Path path(String field) {
+    private static @Nullable Path path(String field) {
         if (field.equals("-")) {
             return null;
         }

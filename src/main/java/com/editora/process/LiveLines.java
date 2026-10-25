@@ -2,6 +2,8 @@ package com.editora.process;
 
 import java.io.ByteArrayOutputStream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Splits one of a child's output streams into lines <em>as they arrive</em>, for {@link ProcessRunner}'s
  * live variant: a {@code git clone} of a large repository runs for minutes, and a transcript that only
@@ -22,7 +24,7 @@ final class LiveLines {
     private final ProcessRunner.LiveOutput sink;
     private final ByteArrayOutputStream line = new ByteArrayOutputStream();
     /** The transient line just delivered at a CR, until the byte after it says whether that was a CRLF. */
-    private String afterCr;
+    private @Nullable String afterCr;
 
     LiveLines(ProcessRunner.LiveOutput sink) {
         this.sink = sink;
@@ -78,8 +80,14 @@ final class LiveLines {
      * A command run live with progress captures every overwritten update in its stderr, which is not what an
      * error message should quote.
      */
-    static String collapseCarriageReturns(String text) {
-        if (text == null || text.indexOf('\r') < 0) {
+    static @Nullable String collapseCarriageReturns(@Nullable String text) {
+        return text == null ? null : collapsed(text);
+    }
+
+    /** {@link #collapseCarriageReturns} for text that is there. */
+    static String collapsed(String text) {
+        if (text.indexOf('\r') < 0) {
+
             return text;
         }
         StringBuilder sb = new StringBuilder(text.length());

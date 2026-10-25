@@ -9,6 +9,304 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Complete Statement** (`edit.completeStatement`, Code ▸ Complete Statement; Ctrl+Shift+Enter / Cmd+Shift+Enter in
+  the IntelliJ keymaps), as IntelliJ's Complete Current Statement: in Java, C, C++, C#, JavaScript, TypeScript, PHP
+  and Kotlin it closes the line's open string and brackets, adds the `;` (not in Kotlin) or the `{ }` block a
+  control header, type or method needs, and leaves the caret where the next code goes. A finished statement gets a
+  new line below; other languages get Insert Line Below. Every caret, one undo step.
+- **Java: Smart Type completion** (`lsp.smartTypeCompletion`, Edit menu; Ctrl+Shift+Space in the IntelliJ keymaps),
+  as IntelliJ's: the completion list holds only what fits the type expected at the caret. The type comes from a
+  declaration (`String s = `), an assignment, `return` (the method's return type), a condition (`if (`, `&&`) or
+  a call's argument (signature help). Fields, variables and methods of a fitting type stay, `null` for an object
+  and `true`/`false` for a boolean; after `new`, the classes that implement the type. Where the code states no
+  type the full list opens, and the status bar says so.
+- **One Java server per project, whichever windows it is open in.** A second window on a Java project joins the
+  jdtls the first one runs instead of starting another, which imported the project again on a second
+  workspace and used as much memory again (about 1.5 GB). Both windows see its diagnostics; a question the
+  server asks goes to the window you are working in. Closing one window leaves the server to the other, and
+  Restart Language Servers in either restarts it for both.
+- **Java: organize imports and format on save.** Two settings under Settings ▸ Code Completion ▸ Language server features: after you
+  save a Java file, jdtls organizes its imports and/or formats it, and the file is saved again when that changed
+  it, as IntelliJ's Actions on Save do. Both are off by default; autosave never runs them, and an ambiguous import
+  is left out rather than asked about. Settings schema 143→144, additive.
+- **Java: clean-ups.** **Code ▸ Clean Up File** applies the jdtls clean-ups chosen under Settings ▸ Code
+  Completion ▸ Language server features (add `@Override` and `@Deprecated`, drop redundant modifiers, qualify
+  members, add `final`, pattern-matching `instanceof`, switch expressions, lambdas, try-with-resources, text
+  blocks and more; 19 in all, four on by default). **Clean up on save (Java)** runs them after an explicit save,
+  before organizing imports and formatting.
+- **Java: Lombok on request.** A project whose build declares Lombok but has not downloaded it yet is offered
+  Lombok 1.18.48 from Maven Central (checked by SHA-256 into `plugins/lsp/lombok`); its Java server then restarts
+  with Lombok as its agent.
+- **Java: a project's own code style reaches jdtls.** IntelliJ's import settings in `.editorconfig`
+  (`ij_java_imports_layout`, `ij_java_class_count_to_use_import_on_demand`,
+  `ij_java_names_count_to_use_import_on_demand`) become jdtls's import order and `*` thresholds, and the Eclipse
+  formatter profile the build formats with (Spotless's `<eclipse><file>` or `eclipse().configFile(…)`, else an
+  `eclipse-formatter.xml` at the root) is what Format Document uses.
+- **Java: chain completion.** In an argument or assignment, completion also offers calls that produce the
+  expected type, such as `Collectors.toList()` inside `collect(`.
+- **Java: Extract Method, Variable and Field at the caret, Introduce Parameter, and a warning before a risky
+  move.** Editora now declares jdtls's `inferSelectionSupport`: with nothing selected the extract actions are
+  offered, and Editora asks the server which expressions are there and lets you pick one when there are several.
+  Introduce Parameter is offered as its own refactoring. Extract to Field and Convert Local to Field ask where
+  to initialize the field when there is a choice. A Move Instance Method that jdtls finds problems with (jdtls
+  1.61 final and newer) now shows those problems and moves only if you continue; before, it was applied anyway.
+- **Java: Go to Symbol in Workspace finds methods and JDK or library types.** jdtls was never asked for method
+  symbols, and its matches inside JDK or dependency classes (`jdt://`) were dropped. They are listed after the
+  project's own, labelled with their module or jar, and open as library source.
+
+- **File structure in the Project Map.** A file row whose language the Structure tool window can outline
+  (Java, Python, JavaScript/TypeScript, Kotlin, Markdown headings, Typst, `.http` requests, Clojure, poms…)
+  gets a Structure icon before its preview eye. It opens a column of the file's declarations, the way a
+  folder's chevron opens its children; a declaration that holds others — a class's members, a heading's
+  subsections — has a chevron of its own and opens a further column, and a file with one top-level type opens
+  its members straight away. Clicking a declaration opens a floating preview card of only its lines: its block
+  with the doc comment and annotations above it, numbered as the file numbers them (in the narrowed amber),
+  coloured as in the editor, sized to fit, and titled "App.java › add()". Open goes to the declaration; Open
+  Narrowed, in the card's and the row's menu, opens the file narrowed to the declaration's fold block, as the
+  Structure window's Narrow to fold region does. Several declarations of one file can be open side by side
+  under the usual eight-card limit. The columns and cards follow edits: an open file's unsaved text is what is
+  outlined (with the language server's symbols when the Structure window has them), a closed file is read
+  again when it changes on disk, and a card whose declaration was removed keeps its last lines and says so.
+  The arrow along the flow opens a file's structure, Enter on a declaration opens its card, and the columns
+  are part of Print and PDF output. Nothing about it is remembered across restarts.
+- **About says whether Editora is up to date.** Under the version, the About panel now reads "You are up to date."
+  or "Update available: X.Y.Z" (a link to that release), then when the last check answered and a **Check now**
+  link that asks GitHub again and updates the panel in place, failures included. Before any check has answered it
+  says so instead of claiming anything. The answer is kept in the preferences (`latestReleaseVersion`,
+  `latestReleaseUrl`, `lastUpdateCheckOkEpoch`; settings schema 142→143, additive), so it survives a restart: the
+  status-bar update notice now also comes back after a restart until the release is opened or installed, instead
+  of waiting for the next day's check.
+
+- **Java: Undo Last Refactoring.** A rename, move or other refactoring that changed several files can be undone in
+  all of them at once: Undo in one of its files asks whether to undo it everywhere, and **LSP: Undo Last
+  Refactoring** does it from the palette. Renamed files move back and created ones are removed. Before, Undo
+  reverted one file and left the rest of the project renamed.
+- **Java: renaming a `.java` file or a package folder in the Project tree renames the class or package.** The
+  tree asks jdtls (`workspace/willRenameFiles`) for the edits first, so references, `package` lines and imports
+  follow; before, the class kept its old name and the project stopped compiling.
+
+- **Java: Generate, Refactor This and a command per refactoring.** **LSP: Generate…** lists the generators
+  (getters/setters, constructors, toString, equals/hashCode, overrides, delegates), **LSP: Refactor This…** the
+  refactorings at the caret, and Extract Variable / Constant / Field / Method, Introduce Parameter, Inline, Move,
+  Change Signature and Override/Implement Methods each have a command that runs the one jdtls offers there. They
+  are in a new **Code ▸ Refactor** submenu; before, all of them were reachable only through the quick-fix list.
+- **Next / Previous Problem and Show Problem at Caret.** Jump between the file's errors (warnings when there
+  are none) and read the one under the caret without the mouse.
+- **The "IntelliJ IDEA" keymap uses IntelliJ's Java chords:** Alt+Enter for quick fixes, Shift+F6 Rename,
+  F2/Shift+F2 next/previous problem, Ctrl+F1 problem at caret, Alt+Insert Generate, Ctrl+Alt+L/O format and
+  organize imports, Ctrl+N / Ctrl+Alt+Shift+N symbols, Ctrl+Alt+B implementations, Ctrl+Shift+B type,
+  Ctrl+H / Ctrl+Alt+H hierarchies, Ctrl+P parameter info, Ctrl+Alt+V/C/F/M/P/N, F6 Move, Ctrl+F6 Change
+  Signature, Ctrl+Alt+Shift+T Refactor This, Ctrl+O Override, Ctrl+Alt+Left/Right Back/Forward (and the macOS
+  equivalents). F2 is no longer Rename and Alt+Insert no longer New File (now Ctrl+Alt+Insert) in that keymap.
+  The default Emacs keymap gains a `C-c l` prefix for the language-server commands, `M-g M-n`/`M-g M-p` for
+  problems and `M-,`/`C-M-,` for back/forward; every keymap now binds Back and Forward.
+
+- **LSP: Clean Java Workspace and Restart.** Stops the project's Java server, deletes its index and the classpath
+  and source folders it worked out, and imports the project afresh — the cure for a stale or corrupt jdtls
+  workspace, which Restart Language Servers kept and Clear Java Index Caches skipped while in use.
+- **Java: navigation inside library source.** In a JDK or dependency tab opened by Go to Definition, hover, Find
+  References, Go to Implementation / Type Definition / Declaration and the call and type hierarchies now work, asked
+  of the server that opened it; before, only Go to Definition did and the rest said "No language server for this
+  file". JDK and library nodes in the hierarchies open as library source too.
+- **Java: `/**` gives the declaration's Javadoc.** Typing `/**` above a method or class closes the comment and offers
+  jdtls's "Javadoc comment" template, with `@param`, `@return` and `@throws` for that declaration. Enter instead
+  still splits the comment as before.
+- **Java: rename what an extraction created.** After Extract Method, Variable, Constant or Field the caret is on the
+  name jdtls picked (`d`, `getTotal`) and Rename opens on it.
+- **Java: Search Everywhere finds JDK and library classes.** With a Java server running, `List`, `Assertions` and
+  the other classes the project's index cannot see are listed under Symbols after the project's own, and open as
+  library source.
+- **Format Document formats only the selection when there is one** (`textDocument/rangeFormatting`), whole lines,
+  as IntelliJ's Reformat Code does; before, the whole file was reformatted under a selection.
+- **Change Signature and Move show their files before applying.** When they change other files, the rename preview
+  lists them, ticked, and an unticked file is left alone; before, both applied unseen.
+- **Related File (test ⇄ subject) is in the Navigate menu**, and on `C-c S-t` (`C-c T`) in the Emacs keymap.
+- **Java: Lombok.** jdtls runs with Lombok as its Java agent for a project whose build declares Lombok (Maven
+  `org.projectlombok`, Gradle's Freefair plugin), using the newest Lombok jar already in the local Maven or Gradle
+  cache, as vscode-java does with its own. Before, every getter of an `@Data` or `@Getter` class was an error.
+  Nothing is downloaded: a project built for the first time gets it when its server next starts.
+- **Java: null analysis from the project's annotations.** With JSpecify, `javax.annotation`, Spring or Eclipse
+  null annotations on the classpath, jdtls checks `@Nullable` and `@NonNull` use, as IntelliJ's inspections do.
+- **Java: static members of JUnit and Mockito are completed without an import** (`assertEquals`, `mock`,
+  `when`…), and the static import is added.
+- **Surround With.** Insert Snippet over selected lines wraps them in the Java `if`, `for`, `while`, `do`, `try`
+  and `synchronized` snippets, re-indented; Ctrl+Alt+T (Cmd+Alt+T on macOS) in the IntelliJ keymap. A snippet's
+  multi-line variable now keeps the indentation of the line it is on.
+- **Java: Move into a new package.** Move's package list ends with "New package…": type the name and the folder
+  is created under the current source root and the file moved there.
+- **Java: Related File offers to create a missing test.** On a class under `src/main/java` with no test, it offers
+  a JUnit 5 test in the same package under `src/test/java`, and opens it.
+
+### Changed
+
+- **Project Map preview and note cards move and zoom with the map.** Panning carries a card along with the
+  columns under it, zooming scales it with them (the card's − / + still sizes its text on top), and a card can
+  be dragged past the edge of the visible canvas the way a column can, instead of stopping at the panel's edge. Its resize grip now allows up to the panel's
+  size wherever the card stands, and resizing the panel no longer pushes cards back inside it.
+- **Refactor: the preview's right-click menu owns its own state and moved to `editor.markdown`.** `PreviewMenu` is now an object the buffer holds: the seven export and print actions the window injects, and what the pointer was on when the menu opened, live in it instead of in eleven `EditorBuffer` fields read from outside. The window injects the actions through `buffer.previewMenu()` (`setExportPdf`, `setPrint`, …) in place of seven `setPreview…Handler` setters. `EditorBuffer` is 58 lines shorter, which restores room under the 10,000-line cap. Internal-only — no behavior, dependency, or `module-info` change.
+- **jdtls is pinned to 1.63.0** (from 1.62.0), checked against the jdtls probes. Doctor now names the installed
+  jdtls version and warns when it is older than the pinned one, and Install replaces an older copy of Editora's
+  own instead of saying it is already installed. Installs made before a pin bump used to keep their server for
+  good.
+- **Java files up to 50,000 lines keep the language server** in the large-file tier, as Python files do. jdtls
+  checks a 12,000-line file in well under a second; above 10,000 lines Java files lost diagnostics, completion
+  and navigation.
+- **One Java server per Maven reactor or Gradle build outside a project.** Opening files of two modules of one
+  reactor in a window without a project started a jdtls per module (1.4 GB each) that could not see the other
+  module; the root is now the reactor's or the Gradle build's. A second window on a project another window
+  already serves says that it starts a server of its own.
+- **Simple mode shows the language-server loading bar,** so a server importing a project in the background is
+  visible.
+- **Fold All leaves a Java, Kotlin, Scala, Groovy or C# file's one top-level type open** and folds its members,
+  imports and comments, the outline IntelliJ's Collapse All gives; before, the file folded to a single line.
+- **Type Hierarchy on an interface opens on its subtypes,** the implementations, instead of an empty Supertypes view.
+- **The References window shows code for files without a tab,** read in the background, names each file's folder so
+  two `Main.java` can be told apart, and says what was searched ("5 references to area in 4 files"). It no
+  longer lists the declaration itself.
+- **Completion, quick-fix, hover and signature popups open above the caret line** when there is no room below it,
+  instead of being pushed up over the line being typed.
+- **Static methods and nested types are italic in their own colour,** as in IntelliJ; before, a language server's
+  `static` modifier gave them the constant colour, so `String.format` read like a field.
+- **Java: Generate hashCode() and equals() starts with every field ticked**, and Enter with nothing ticked in a
+  Generate list says so instead of closing silently. The list's rows are taller and it shows twelve at a time.
+- **Java: Move lists the test source folders' packages after the main ones,** so a main class is not moved into
+  `src/test` by picking the first of two identical package names.
+- **Peek Definition works in library source and peeks it.** From a JDK or dependency tab, and on a definition
+  inside one, the peek window shows the library source, on the declaration, instead of opening a tab.
+- **A member called more than once is one row in Call Hierarchy,** with the count ("append(String) ×2").
+- **The References window marks the references that write** — an assignment, `+=`, `++` — with "(write)".
+
+- **Refactor: the text model the editor shares with other packages moved to a new `com.editora.text`.** The LSP value types (`LspTextEdit`, `LspDiagnostic`, `SemanticToken`, `OccurrenceSpan`), `FoldRegions`, the search matcher with `CaseFold` and `SearchMatches`, all of language detection (`LanguageRegistry`, `LanguageNames`, `ConfigFileType`, `ShellFiles`, `ShellScripts`, `Shebang`, `Modeline`) and `EncryptedNames` leave the editor sub-packages, with 13 tests. `lsp`, `search`, `crypto`, `template` and `editops` no longer depend on the editor; `editor.language` is gone, its classes having no presentation in them. `text` has its own 0.95 coverage floor. Internal-only — no behavior, dependency, or `module-info` change.
+- **Refactor: the editor's toolkit-free helpers moved to the core packages they belong to.** `AceLabels`,
+  `LineEndings`, `RegexLiterals`, `TextNav`, `TextFingerprint` and `WholeDocumentEdit` go to `com.editora.editops`;
+  `CompactSource` to `com.editora.run`, `CodeLessLines` to `com.editora.dap`, `PomFiles` to `com.editora.maven` and
+  `RulerColumns` to `com.editora.config`, each with its test. `com.editora.index` no longer depends on the editor at
+  all. `PomFiles.snippetLanguage(buffer, language)` became `EditorBuffer.snippetLanguage(language)`, so `maven` does
+  not reference the editor either. The classes that are the buffer's own state or reference the editor stay:
+  `SavedBaseline`, `DocumentSnapshots`, `WordWrap`, `LineMarks`, `TabSurface`, `RunScan`, and `CodeLensShift`, which
+  works on RichTextFX types. Internal-only — no behavior, dependency, or `module-info` change.
+
+### Fixed
+
+- **Java: a folder of `.java` files with packages but no build file is no longer red everywhere.** jdtls guessed
+  each file's own folder as its source folder, so `src/demo/Main.java` declaring `package demo` was flagged as
+  being in the wrong package and nothing in it resolved. Editora now tells jdtls the source folder the package
+  declaration implies as soon as the file is open, the correction Debug already made at launch.
+- **Java: whole-project Problems drops errors that were fixed.** With Problems showing the whole project, saving
+  a Java file now runs a quiet incremental build, so errors in files that are not open clear once their cause is
+  fixed, instead of staying until Build Project was run again.
+- **The quick-fix list puts the fix first.** It listed jdtls's actions in the server's order, so "Extract
+  interface..." was preselected and the fix for the squiggle sat below ten generators. Fixes now come first, then
+  assists, refactorings and source actions; repeated titles are dropped, rows say "Fix", "Refactor" or "Generate"
+  instead of LSP kind ids, and for Java the generators moved to Generate. Typing filters the list instead of
+  editing the code behind it, and the fixes for a line's problem are offered from anywhere on that line, not
+  only with the caret on the squiggle.
+- **Java: a refactoring that moves or creates files leaves the disk consistent.** A class rename, Move or
+  Extract Interface changed files on disk but left their new text unsaved, so the project did not compile until
+  every tab was saved. Every file such a refactoring touches is now saved. A file the refactoring opened only to
+  change it is saved and its tab closed, instead of a dirty tab per file.
+- **Java: a rename that clashes with an existing name is reported.** jdtls applies it anyway; Editora now checks
+  the renamed files afterwards and says how many new errors it left and how to undo it.
+- **Java: a pom.xml or build.gradle change reaches the classpath.** jdtls asked "A build file was modified. Do you
+  want to synchronize the Java classpath/configuration?" in the status line, where it could not be answered, so a
+  dependency added to the pom stayed unresolved. Build files now sync on save (`updateBuildConfiguration:
+  automatic`), and jdtls's other questions come with buttons that run its answer.
+- **Java: Organize Imports works when a name is ambiguous.** With one `Date` or `List` that could be two classes it
+  did nothing and said "Imports already organized". It now asks which class each such name means, and imports the
+  rest either way.
+- **Java: paste with imports only imports what the pasted code uses.** jdtls resolved every missing import of the
+  file, so pasting `int z = 1;` could add an unrelated `import java.time.LocalDate;`.
+- **Java: Reload Project Configuration and Build Project work from the pom.xml tab,** where they reached the pom
+  language server instead of jdtls. Build Project now says when the build found errors ("Project built with
+  errors: see Problems") instead of "Project built".
+- **Java: opening a project no longer writes Eclipse files into it.** jdtls put `.project`, `.classpath` and
+  `.settings/` into every imported project and module, where they showed up in `git status`. They now stay in
+  jdtls's own workspace (`-Djava.import.generatesMetadataFilesAtProjectRoot=false`, as vscode-java does). Files
+  written by earlier versions are not removed.
+- **Java: Gradle projects import when a newer JDK is installed.** The newest JDK on the machine became jdtls's
+  default runtime, and Gradle ran on it; with JDK 27 installed every Gradle 9 import failed while the status bar
+  read "1100% Starting Java Language Server". The default is now Settings ▸ Build Tools ▸ Default JDK, else
+  `JAVA_HOME`, else the newest, and Gradle is told to run on it.
+- **Java: jdtls starts when `JAVA_HOME` points at a JDK older than 21.** Editora now hands jdtls's launcher a JDK
+  21 or newer that it finds (the Default JDK when it qualifies), and when there is none it says so instead of
+  reporting that the server "keeps crashing".
+- **Java: jdtls's memory is capped.** It started with `-Xms1G` and no limit, 1.3–2.5 GB for a small project; it now
+  gets vscode-java's defaults (`-Xmx2G`, parallel GC, a small initial heap). A `-Xmx` or GC flag of your own on
+  the command or in `JDK_JAVA_OPTIONS` still wins.
+- **Java: Gradle projects reach "Loaded and ready", and the import narration makes sense.** A Gradle import kept
+  sending "Starting" lines after jdtls said it was ready, which kept the ready line from ever coming.
+  Percentages past 100 ("1100% Starting Java Language Server") are dropped, and a failed import ("WARNING") is
+  reported as an error that says where to look. Opening another file into a server that is already running no
+  longer says "Starting Java language server…".
+
+- **Java: the completion documentation popup shows Javadoc.** jdtls computes an item's Javadoc in
+  `completionItem/resolve` only when the client lists `documentation` among the properties it resolves; Editora
+  listed only `additionalTextEdits`, so the popup showed the return type and nothing else.
+- **Java: signature help shows the method's Javadoc.** The setting was sent as `java.signatureHelp.description`;
+  jdtls reads `java.signatureHelp.description.enabled`.
+- **Java: completion and import quick fixes no longer offer JDK internals** (`sun.*`, `com.sun.*`, `jdk.*`),
+  nor `java.awt.*`, `java.beans.*`, `Hashtable` or `Vector`. jdtls installs its type filter only when the client
+  sends one; Editora now sends vscode-java's list.
+- **Java: inlay hints follow the "all arguments" mode and show inferred types.** jdtls filtered parameter-name
+  hints to literals on its own, so the "all" mode changed nothing; it now sends every name and Editora's filter
+  applies the mode. `var` declarations and lambda parameters get their inferred type, hints for numbered names
+  such as `List.of(e1:, e2:)` are dropped, and an unkinded hint without a trailing `:` or `=` (jdtls's lambda
+  parameter type) counts as a type hint, which the literals mode never removes.
+- **Java: quick fixes and generated members follow the file's indentation.** jdtls asks the client for
+  `java.format.tabSize` and `insertSpaces` before every code action and got no answer, so Generate toString,
+  Create method and the other generators indented with tabs in space-indented files.
+- **Jumps no longer flicker, and their target is never hidden under the sticky-scroll rows.** A click in the
+  Structure panel, Go to Line, a jump to a line from a bookmark, TODO or the Problems list, Go to Definition, a
+  search hit and the fold motions all repainted the editor over two or three frames: the caret moved before the
+  view, the view jumped before the pinned scope headers changed, and the minimap's viewport box followed a frame
+  behind. Each now lands in one frame, and the minimap's box keeps up with every scroll. In the Structure panel
+  the row clicked and the row left no longer flash unstyled black text. Go to Line and the fold motions put a
+  line above the view below the pinned headers instead of under them, a line already in view is not scrolled
+  to, and a jump to the line just inside a method no longer lands under that method's own header.
+- **Java: Go to Definition into library source lands on the declaration,** shown below the sticky header, rather
+  than on the first line of its Javadoc, under the header; the status bar no longer stays on "Loading library source…" or reads "Editable"
+  for the read-only tab.
+- **Java: Find References says when it failed or timed out** ("the language server may still be indexing") instead
+  of "No references found".
+- **Java: completion matches the name, not the parameters.** Without a filter text from the server, `items.st`
+  offered `addAll(Collection<? extends Item> c)` and `equals(Object o)` because the parameter list was matched.
+- **Opening Problems keeps the caret line in view.** A bottom tool window opening scrolled the line being edited off
+  the screen.
+- **Problems no longer shows jdtls's numeric problem ids** (`[67108964]`), which linked nowhere.
+- **New Java files in Gradle source sets get the right package.** In `src/integrationTest/java` or
+  `src/testFixtures/java` the source-set folders became part of the package name.
+- **Java: a project's JDK and compliance problems appear after it is imported.** jdtls reports them on the project
+  folder, and only a build produced them: a project expecting Java 8 on a machine without one showed odd errors
+  and no reason until Build Project. One quiet build now follows each Maven or Gradle import, and such a problem is
+  said in the status line and listed in Problems in either scope.
+
+
+## [0.24.0] - 2026-10-24
+
+### Added
+
+- **An icon for every Settings page.** Each category in the Settings window's sidebar now has a glyph before
+  its name — a palette for Appearance, a pencil for Editor, a padlock for Encryption, and so on — in the UI
+  Kit's outline style. Pages that already have an icon elsewhere reuse it (Git, GitHub, Terminal, Debugging,
+  Search, Templates), so they look the same in Settings as on the tool stripe and toolbar. The glyph is muted,
+  brightens on hover and takes the accent colour with the selected row; the Beta pill and modified-setting
+  count stay after the name.
+- **Narrowing from the Structure panel, and a narrowed editor that says so.** The Structure tool window's
+  sort row gains a Narrow to fold region toggle. One click narrows the editor to the picked symbol's own
+  block and turns the mode on — while on, a click on another symbol narrows to that one instead — and a second
+  click shows the whole file again. The outline stays the whole file's while narrowed — rows outside the
+  region are muted, and in the mode a click on one walks the file to it — and the block is found in the whole
+  document, so a narrowed buffer can be re-narrowed to the block around it. Browsing the outline never
+  narrows: the arrow keys, the filter field and a right-click only select. The toggle is disabled for a file
+  that cannot be narrowed, hidden in Simple UI mode, reachable from the keyboard (`f` while the tree has
+  focus, and the command `structure.narrowFold` for any keymap), and its tooltip names the keys and that
+  language support pauses while narrowed. It follows the buffer: lit while the panel narrowed it, an amber
+  border while a chord did. A narrowed editor shows it in the text itself, not only in the status bar pill: an
+  amber banner above the code names the accessible lines ("Narrowed to lines 120–180 of 950") with a Widen button, and the gutter's line numbers
+  — which now keep the file's numbering while narrowed instead of restarting at 1 — turn amber. The status
+  bar's Ln and the Structure rows' line numbers count from the top of the file too, and the status bar pill
+  reads "Narrowed · Widen". `C-x n d` and `C-x n f` look for their definition and block in the whole document,
+  as Emacs does, rather than in the narrowed region.
 - **A Java debugging sample.** `samples/debug/java/` is a small standalone Java 25 Maven project (six
   classes, nine green JUnit tests) with a `break here` comment at every spot worth a breakpoint: plain,
   conditional, hit count, logpoint, inside a lambda, in a caught and an uncaught exception, on three named
@@ -22,15 +320,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings says which project the Project scope edits.** In a project window the scope switch's Project pill
+  reads "Project: *name*" (the name the main window's title shows; the folder path is its tooltip), the scope
+  bar is tinted while Project is selected, the window is titled "Settings — Project: *name*", and the note
+  leads with the project the changes apply to and the `.editora/settings.json` they are saved in.
+- **The Project Map always opens in its own window.** The Project tool window's Tree / Map switch is now a
+  single Map button: the tool window keeps showing the tree, and the Map opens in a separate, resizable window
+  beside the editor window (or on another screen), or comes forward when it is open already. The window has
+  its own search field, is not pinned above the editor window — opening a file from the Map brings the editor
+  forward — and closes with its editor window or project. Rename, New Folder and Delete from the Map ask in
+  the Map window. Whether the window was open, and where, is remembered per workspace (schema v24); a workspace
+  that last showed the Map reopens it. `project.toggleMapView` (Project: Open / Close Project Map Window)
+  opens the window even with the Project tool window closed, and closes it when it is the window in use.
+- **Refactor: the rest of the flat `com.editora.editor` package split into feature sub-packages.** After `editor.debug` and `editor.http`, the editor's presentation code moves next to the core package it presents: `editor.lsp` (diagnostics, code actions, LSP edits, semantic tokens, occurrences), `editor.markdown` (Markdown editing, lint, the 3-mode preview, its image pipeline and the HTML/clipboard/print exports), `editor.completion`, `editor.fold` (folding, the line-number gutter, sticky scroll, narrowing), `editor.highlight`, `editor.language`, `editor.structured` (the tree and summary previews and their PDF snapshots), `editor.notes`, `editor.spell`, `editor.undo`, `editor.search`, `editor.git`, `editor.todo`, `editor.minimap`, `editor.logviewer` and `editor.crypto`. The root keeps `EditorBuffer` and what every sub-package builds on (the overlay layer, line marks, caret and typing helpers): 54 types, down from 194. The Personal Notes hover moved out of `EditorBuffer` into `NoteHover`, which keeps the buffer under the 10,000-line cap. Classes and members other packages now call are public instead of package-private; state that used to be read as fields goes through accessors. Internal-only — no behavior, dependency, or `module-info` change.
+- **Refactor: the debugger and HTTP-client presentation moved into `com.editora.editor.debug` and `com.editora.editor.http`.** The breakpoint manager and gutter menu, execution line, inline values, debug hover and identifier scanner (10 classes) now live in `editor.debug`; the `.http` gutter, result marks, variable marks and fixes, hooks and completions (8 classes) in `editor.http`. The rule the split follows: `com.editora.X` holds a feature's toolkit-free core and `com.editora.editor.X` its presentation inside the buffer. The overlay infrastructure those classes build on (`OverlayPalette`, `CanvasGuards`, `AfterLayoutPaint`, `SecondaryPane`, `TabSurface`, `LineMarks`, `LineMarkTracker`, `CodeLensShift`, `MenuIcons`, `MarkdownLintOverlay`) and the members `EditorBuffer` calls on the moved classes are public now instead of package-private; the JaCoCo per-package rule covers `com.editora.editor.*`. Internal-only — no behavior, dependency, or `module-info` change.
 - **Null checking in the build.** NullAway, an Error Prone plugin, now checks every package marked
-  `@NullMarked` (JSpecify) during compile and fails the build on a null that is not declared. Nine packages
-  start marked: the JVM debug adapter, EditorConfig, single-instance launch, the OS secret stores, GnuPG
-  encryption, the MCP server, the agent client, settings sync and crash recovery. A new package must start
-  marked, and the list of packages written before the rule may only shrink (docs/conventions.md, "Null
-  annotations"). There is no change in behaviour.
+  `@NullMarked` (JSpecify) during compile and fails the build on a null that is not declared. Every package
+  is marked, the window UI (`ui`) last, so the whole code base is checked. A new package must start marked
+  (docs/conventions.md, "Null annotations").
+- **Maven tool window (review pass 2).** A module's tree now merges the parent chain found beside it on disk
+  (profiles, plugins, `pluginManagement` goal groups shown as managed, `${property}` plugin versions resolved);
+  profiles are tri-state (off, `-P`, `-P!id`) with their activation condition (JDK, OS, property, file) beside
+  them, and the profiles your `settings.xml` activates are shown locked; the tree and the actions popup share one
+  set of checked profiles. A bound execution runs as `prefix:goal@id`. Every first build in a Maven or Gradle
+  folder that is not yet trusted asks once, wrapper or not, and the prompt lists what will run (the wrapper, the
+  pom's plugins, `.mvn/` files, a project.json override); the tree header shows the trust state with Revoke, and
+  the same gate fronts build-before-launch, the classpath fallback and "Load all tasks". A project whose build
+  files sit one or two folders below its root lists them under Projects; the detection never walks above the
+  open project. Run custom prefills the last command, keeps a per-project history (Recent rows) and says which
+  profile flags it will not add; Rerun Last names the folder. A Build submenu in the Run menu and default chords
+  (IntelliJ `Ctrl+Shift+F10`, `Alt+Shift+B`) reach the Maven actions; the Maven submenu drops its "Maven:" prefix;
+  a malformed pom keeps the lifecycle and shows the error with an Open pom.xml link; goal tooltips lose their
+  Javadoc markup; Run is greyed until a task is selected; Settings and Doctor show which Maven a module's build
+  really runs ("./mvnw (trusted)" or "mvn on PATH"); the Default JDK hint names the tools it drives. Workspace
+  state schema 22 → 23.
 
 ### Fixed
 
+- **Run: a second Run during a deployed configuration's before-launch step no longer moves the program to
+  this machine.** The second Run was refused ("A program is already running"), but it cleared the launch's
+  deployment on the way, so when the step finished the program ran in the local project instead of the
+  host's copy. A deployed Java configuration lost its launch altogether. A refused Run now leaves the launch
+  under way as it is. A Run during the deploy's upload is refused the same way; it used to start a second
+  deploy, which was refused but marked the first one ended, so Stop no longer cancelled the upload.
+- **Null pointer exceptions found by the new null checking.** Each would have failed the action, or a
+  background thread, with a `NullPointerException`:
+  - **Terminal Find** after a newer search or the terminal's closing had already replaced the scan.
+  - **Debugger:** a `stopped` event that arrived before the session's client was set.
+  - **File watching (polling):** a folder that could not be listed when it was first watched; its first
+    readable listing is now the baseline.
+  - **Plugin registry:** a download without a deadline, on a JVM whose `nanoTime()` is negative.
+  - **Test runner:** a suite reported without a name.
+  - **SSH config:** an `Include ~…` in a config with no home folder above `~/.ssh`.
+  - **Install:** a destination at the root of a drive (now a clear error).
+  - **Scala Run:** a file path ending in `/..`.
+  - **Local History:** an iterator `remove()` before `next()` (now the `IllegalStateException` the contract
+    names).
+  - **Node.js Run:** a configuration whose script is not a valid path (on Windows, one with `<` in it):
+    the run never started and said nothing; it now asks for the script.
+- **Markdown: switching to Preview no longer sometimes opens it at the top.** Switching just after a
+  highlighting pass (soon after opening or editing the file) showed the start of the document, not the line
+  the editor had at its top. That line now carries over every time.
 - **Opening a root as a file no longer throws.** `editora /` (or `editora D:\`), and Remote > Open File on
   `sftp://host` with no path, used to hit a `NullPointerException` in the open path. From the command line that
   stopped the session restore and left an empty window. Now the status bar says the path is a folder, and no tab
@@ -40,6 +390,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asked again is a retry now.
 - **Remote: a login or host-key question left unanswered for two minutes closes its dialog.** The login gave up
   but the dialog stayed on screen, and an answer typed into it went nowhere.
+
+- **Maven: the submenu acts on the pom it was opened on.** Right-click `moduleB/pom.xml` (or its folder) and
+  *Update Versions*, *Show Actions* and *Run custom* now read, list and run that module. They used to act on
+  whichever module the active editor tab was in, so a version update could rewrite the wrong pom. The status
+  line names the folder when it is not the active tab's. *Rerun Last* and *Stop* are window-wide and left
+  the submenu (the palette and the tool window keep them).
+- **Maven: a module can build from its reactor root.** In a multi-module project the Maven tool window starts
+  with a *Reactor* section whose toggle runs every task as `mvn -f <root>/pom.xml -pl <module> -am …`, so
+  `compile` or `test` in a module that depends on a sibling no longer fails with "Could not find artifact"
+  until the sibling is installed. Offered only when the root pom lists the module and the root is inside the
+  open project.
+- **Maven: Update Versions and the New Project wizard order versions as Maven does.** Versions are compared
+  with a port of Maven's `ComparableVersion`, not a semver comparator: Update Versions no longer proposes a
+  *downgrade* such as `guava 33.0.0-jre → r09`, and a candidate whose leading number is below the current one,
+  a property reference (`${surefire.version}`), a range or `LATEST`/`RELEASE` is never offered. The wizard's
+  "Update dependencies and plugins to the latest versions" resolves dependencies through the same Maven
+  Central path and stable filter as plugins. It used to run `versions:use-latest-releases`, which wrote
+  milestones, betas and alphas (`7.1.0-M2`, `8.0.0.Beta3`, `5.0.0.Alpha2`) into brand-new projects. The status
+  reports both counts.
+- **Maven: "Load full catalog…" works again.** Maven Central's 18 MB `archetype-catalog.xml` is streamed (no
+  DOM, no 16 MiB or 20,000-row cap) into one row per archetype at its newest version (about 3,800 rows),
+  cached under `~/.editora/cache/archetype-catalog.json` for a day and then re-checked with a conditional
+  request; picker rows show `groupId:artifactId:version` before the description. The curated list now holds
+  only archetypes that generate *and* build on a current JDK: `maven-archetype-plugin` and `-site` 1.5, Camel
+  4.23.0; the Quarkus row (a plugin, not an archetype) and the 2010 Scala row are gone.
+- **Run and Debug Main Class in a Maven or Gradle project build first.** Maven `compile` (`test-compile` for a
+  class under `src/test`) or Gradle `compileJava` runs in the Run/Debug console before the launch and a failed
+  build aborts it, so a fresh clone no longer dies with `ClassNotFoundException` and an edited file no longer
+  runs the previous binary (jdtls runs with autobuild off). Settings → Build Tools → "Build before Run and
+  Debug" (on) turns it off; a run configuration with its own before-launch step keeps that step. The no-jdtls
+  Maven fallback resolves the classpath with the same Maven the Maven window runs (`./mvnw` once trusted, the
+  command override, else PATH `mvn`) instead of a hard-coded `mvn`, in the Run console: its output streams, Stop
+  ends it, a second Run is refused while it runs, and a failure's status quotes Maven's first `[ERROR]` line
+  instead of "Could not resolve the classpath."; the program's classpath carries the runtime scope only. A
+  before-launch step may be symbolic (`maven:compile`, `gradle:compileJava`), resolved through the same
+  executable at run time; a generated Maven project's configuration stores that. A launch that ran without the
+  build prints a hint to build when the JVM cannot find the main class. Settings schema 141.
+- **Maven `pom.xml` server (lemminx-maven): repaired install, honest status.** The Maven-aware `pom.xml` server
+  Editora installed could not answer a single request: lemminx-maven's "zip with dependencies" leaves out Guava,
+  Commons Lang and jsoup, so every completion, hover, definition and outline failed inside the server while the
+  status bar said "Loaded and ready". Install… now also downloads those three libraries from Maven Central
+  (pinned by version and SHA-256) into the same folder and, before keeping an install, starts the server and asks
+  it one hover request; an install whose server cannot answer is refused with the reason. A folder that lacks
+  jars (an earlier install, a wiped folder) is no longer "found": `pom.xml` falls back to the XML server,
+  Settings → LSP shows "lemminx-maven: incomplete — Install… repairs it" and Doctor names the missing jars. Any
+  language server that answers a request with an internal error is now logged with the server's detail and
+  announced once per request kind ("lemminx-maven: internal error on hover — see the log"); three failures in a
+  row stop the server (Restart Language Servers retries) and Doctor shows it as a warning; hover says "Hover
+  failed: …" instead of "No documentation at the caret". **Existing installs: click Install… once.**
+- **Debug Test on a Maven project attaches again.** Surefire 3 withholds the JDWP "Listening for transport…"
+  banner until the suspended test JVM has run, so waiting for it hung the run forever. Editora now picks a free
+  loopback port before the launch, passes it in `-Dmaven.surefire.debug`, and attaches as soon as the fork
+  listens on it (a further fork of the same run is attached after the first finished; after 60 s without a
+  listener the status says so). While it waits, the Test Results header reads "Debug: waiting for the test JVM
+  to open port N…" instead of the whole Maven argv, the status-bar message is no longer overwritten by "Maven:
+  running test…", and Debug ▸ Stop ends the Maven run before a session exists. The JVM prints one "Debugger
+  failed to attach: handshake failed" line in the Build Output: that is Editora's port check, not an error.
+  Gradle is unchanged.
+- **Maven: New Maven Project and Update Versions (review pass 2).** The wizard runs Maven on the JDK chosen in
+  Settings → Build Tools, opens the Output window while it generates, and shows the archetype's own properties
+  (JavaFX version, JUnit version, …) with their defaults once the archetype is in your local repository; the Java
+  release goes through quickstart's `javaCompilerVersion`. The form says which field blocks Create, accepts a
+  relative or `~` location and shows the folder it means, allows an existing empty folder, derives a lower-case
+  package, and the generated `pom.xml` opens in the new project's window. A project generated inside an open
+  aggregator stays a module of it instead of becoming a second project. A JavaFX archetype gets no `java` run
+  configuration (it cannot launch that way); the wizard says to run it with `javafx:run`. The consent prompt names
+  the archetype's repository, "Trust and Generate" skips it for the rest of the session, and Cancel returns to the
+  form. Update Versions shows a checkbox per row under Dependencies / BOM imports / Plugins / Parent, tags a major
+  jump, counts what it did not check (property-driven, inherited), offers the parent pom from a module and the
+  property itself when a version is `${property}` used only there; the Central lookups run in parallel under a
+  background task, stop at the first connection failure, and a second invocation cancels the first. Counts are
+  pluralised; the wizard's Output tab is "New Project".
+- **Maven / Output console (review pass 2).** `[ERROR]`, `[WARNING]`, `BUILD SUCCESS` and `BUILD FAILURE` lines keep
+  their colours under every editor theme; Maven's compiler locations (`App.java:[5,18]`) are clickable, column
+  included; a build you stop reads **Stopped** in the console header, the status bar and Test Results instead of
+  "exit code 143" / "Run failed"; starting a task while another runs offers **Stop and run**; the console keeps the
+  **previous run** behind a header toggle, has a find bar and **Save output…**.
+- **Run, Debug and Test on Maven (review pass 2).** Run's Maven fallback and the build before Run/Debug find a
+  module's reactor through the poms' `<modules>` (a `modules/` folder without a pom included, never above the open
+  project), build from the root with `-pl <module> -am` only when the root lists the module, fall back to the
+  module alone when the reactor does not hold it, and say in the Run console which mode ran; both carry the
+  Maven window's checked profiles and flags. A saved configuration resolves the module its project name or main
+  class belongs to, whatever file is active; with no Maven JDK selected the program runs on `$JAVA_HOME`'s `java`,
+  the one Maven compiled with. Remote hosts get a `maven` tool beside the JDK (Settings → Remote → tools); the
+  host's build streams into the Run console and Stop ends it. A hand-typed `-Dtest=` that matches nothing reads
+  "no test matched"; Test Results marks retried and flaky tests with their retry traces and reads a custom
+  Surefire or Failsafe report folder; Debug via build tool warns when the Boot plugin configures `jvmArguments`
+  and says so after 45 s without a debug banner; a generated project's configuration keeps a blank working
+  directory (the project root).
+- **Maven pom.xml editing (review pass 2).** The pom summary preview now reads the parent chain beside a local file and the BOMs it imports from the local repository, so a managed version shows its number with its source (*from reactor-parent 2.0.0*, *from junit-bom 5.11.0 (import)*); "inherited" is said only under a declared `<parent>` and a dangling `${…}` reads "unresolved". Rows take you to their element, section titles collapse (Properties starts collapsed on a long pom), a filter narrows the rows, Dependencies come before Properties, and repositories (flagged when not Maven Central), reporting plugins, URL/SCM and each profile's activation conditions are listed; a malformed pom names its line and column. Names never break mid-word in a narrow split. Same-named open files show their folder in the tab ("pom.xml · core"), the Structure window names a pom's dependencies, plugins and profiles, a pom gets Maven snippets (dep, plugin, profile, …) and there is a "Maven pom.xml" file template. The Maven language server runs on the Build Tools JDK (also for Install…), serves a whole reactor from one JVM without a project, announces "ready" only once its Maven initialization is done, names its diagnostics, hides `${…}` property items from artifact completion unless you type `$`, and Settings → LSP can turn on the Maven Central index (off by default: local repository only). The native XML server is shown as "lemminx". Settings schema 141 → 142.
 
 ## [0.23.0] - 2026-10-19
 

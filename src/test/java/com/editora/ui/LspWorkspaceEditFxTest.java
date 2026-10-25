@@ -17,11 +17,11 @@ import java.util.function.Consumer;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspTextEdit;
 import com.editora.io.DocumentWriteSequencer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import com.editora.lsp.WorkspaceEditMapper;
+import com.editora.text.LspTextEdit;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.RenameFile;
@@ -131,10 +131,49 @@ class LspWorkspaceEditFxTest {
         }
 
         /** These fakes never open a background tab, so a file with no open buffer is unopenable — which is
-         *  exactly the condition the all-or-nothing refusal is about. */
+         *  exactly the condition the all-or-nothing refusal is about. A test that wants one sets {@link #host}. */
         @Override
         public EditorBuffer openBackgroundBuffer(Path file) {
-            return null;
+            if (host == null) {
+                return null;
+            }
+            try {
+                EditorBuffer b = new EditorBuffer();
+                b.setPath(file);
+                b.setContent(Files.readString(file));
+                host.buffers.add(b);
+                open.put(file.toAbsolutePath().normalize(), b);
+                return b;
+            } catch (IOException e) {
+                return null;
+            }
+        }
+
+        /** Set to open background tabs (into this host); null keeps every untabbed file unopenable. */
+        FakeHost host;
+
+        final List<Path> saved = new ArrayList<>();
+        final List<Path> closed = new ArrayList<>();
+
+        @Override
+        public boolean saveBuffer(EditorBuffer buffer) {
+            try {
+                Files.writeString(buffer.getPath(), buffer.getContent());
+                buffer.markClean();
+                saved.add(buffer.getPath());
+                return true;
+            } catch (IOException e) {
+                return false;
+            }
+        }
+
+        @Override
+        public void closeBackgroundBuffer(EditorBuffer buffer) {
+            closed.add(buffer.getPath());
+            open.values().remove(buffer);
+            if (host != null) {
+                host.buffers.remove(buffer);
+            }
         }
 
         /** Off models a window whose tab lookup misses: the file moves and the tab stays behind. */
@@ -370,10 +409,7 @@ class LspWorkspaceEditFxTest {
         EditorBuffer a = openBuffer("A.java", "class A {}\n");
         var mapped = new WorkspaceEditMapper.Mapped(
                 List.of(new WorkspaceEditMapper.FileEdit(
-                        a.getPath(),
-                        List.of(new com.editora.editor.LspTextEdit(0, 6, 0, 7, "B")),
-                        null,
-                        "class A {}\n")),
+                        a.getPath(), List.of(new com.editora.text.LspTextEdit(0, 6, 0, 7, "B")), null, "class A {}\n")),
                 List.of());
         FxTestSupport.runOnFx(() -> a.setContent("// note\nclass A {}\n"));
 
@@ -487,6 +523,103 @@ class LspWorkspaceEditFxTest {
         assertEquals(1, ops.renamed.size(), "the open buffer/tab must be remapped");
         assertEquals(from, ops.renamed.get(0)[0]);
         assertEquals(to, ops.renamed.get(0)[1]);
+    }
+
+    /**
+     * A class rename moves a file, so every file it touched is saved: the disk compiles at once (Java review B2).
+     * Then one Undo reverts both files and moves the file back (B1).
+     */
+    @Test
+    void aRefactoringThatMovesAFileIsSavedAndUndoneAsOne() throws Exception {
+        EditorBuffer decl = openBuffer("OldName.java", "class OldName {}\n");
+        EditorBuffer use = openBuffer("Use.java", "class Use { OldName o; }\n");
+        Path from = decl.getPath();
+        Path to = root.resolve("NewName.java");
+        var we = new WorkspaceEdit();
+        we.setDocumentChanges(List.of(
+                Either.forLeft(edit(from, 0, 6, 13, "NewName")),
+                Either.forLeft(edit(use.getPath(), 0, 12, 19, "NewName")),
+                Either.forRight(
+                        new RenameFile(from.toUri().toString(), to.toUri().toString()))));
+
+        assertTrue(apply(we));
+
+        assertEquals("class NewName {}\n", Files.readString(to), "saved where it moved");
+        assertEquals("class Use { NewName o; }\n", Files.readString(use.getPath()));
+        assertFalse(FxTestSupport.callOnFx(decl::isDirty));
+        assertFalse(FxTestSupport.callOnFx(use::isDirty));
+        assertEquals(
+                2,
+                FxTestSupport.callOnFx(
+                        () -> coordinator.lastAppliedEdit().files().size()));
+
+        FxTestSupport.runOnFx(() -> coordinator.refactoringUndoChooser = files -> {
+            assertEquals(2, files);
+            return LspCoordinator.RefactoringUndoChoice.ALL_FILES;
+        });
+        assertTrue(FxTestSupport.callOnFx(() -> coordinator.offerRefactoringUndo(use)));
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (!Files.exists(from) && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+            FxTestSupport.runOnFx(() -> {});
+        }
+        FxTestSupport.runOnFx(() -> {}); // let the finish step on the FX thread run
+        assertTrue(Files.exists(from), "moved back");
+        assertFalse(Files.exists(to));
+        assertEquals("class OldName {}\n", Files.readString(from));
+        assertEquals("class Use { OldName o; }\n", Files.readString(use.getPath()));
+        assertEquals("class Use { OldName o; }\n", FxTestSupport.callOnFx(use::getContent));
+        assertEquals(null, FxTestSupport.callOnFx(coordinator::lastAppliedEdit), "undone: nothing left to undo");
+    }
+
+    /** A file the edit opened only to change it is saved and its tab closed, not left dirty (B18). */
+    @Test
+    void aFileWithoutATabIsSavedAndItsBackgroundTabClosed() throws Exception {
+        ops.host = host;
+        EditorBuffer a = openBuffer("A.java", "class A { B b; }\n");
+        Path b = root.resolve("B.java");
+        Files.writeString(b, "class B {}\n");
+        var we = new WorkspaceEdit();
+        we.setDocumentChanges(
+                List.of(Either.forLeft(edit(a.getPath(), 0, 10, 11, "C")), Either.forLeft(edit(b, 0, 6, 7, "C"))));
+
+        assertTrue(apply(we));
+
+        assertEquals("class C {}\n", Files.readString(b));
+        assertEquals(List.of(b), ops.closed);
+        assertEquals(List.of(b), ops.saved, "the open file the user sees is left for them to save");
+        assertTrue(FxTestSupport.callOnFx(a::isDirty));
+        assertEquals(
+                2,
+                FxTestSupport.callOnFx(
+                        () -> coordinator.lastAppliedEdit().files().size()));
+
+        // Changed since: Undo is per file again, and the explicit command says why it cannot.
+        FxTestSupport.runOnFx(() -> a.setContent("class A { C c; }\n"));
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.offerRefactoringUndo(a)));
+        FxTestSupport.runOnFx(coordinator::undoRefactoring);
+        assertEquals(com.editora.i18n.Messages.tr("status.lsp.refactoringChangedSince"), host.error);
+    }
+
+    /** F2 / Shift+F2 move to the next or previous problem, wrapping (Java review A6). */
+    @Test
+    void theNextProblemWraps() {
+        var a = new com.editora.text.LspDiagnostic(
+                2, 4, 2, 9, com.editora.text.LspDiagnostic.Severity.ERROR, "a", null, "java");
+        var b = new com.editora.text.LspDiagnostic(
+                7, 0, 7, 3, com.editora.text.LspDiagnostic.Severity.ERROR, "b", null, "java");
+        var sorted = List.of(a, b);
+        assertEquals(b, LspCoordinator.nextProblem(sorted, 2, 4, true), "past the one the caret is on");
+        assertEquals(a, LspCoordinator.nextProblem(sorted, 9, 0, true), "wraps to the first");
+        assertEquals(a, LspCoordinator.nextProblem(sorted, 7, 0, false));
+        assertEquals(b, LspCoordinator.nextProblem(sorted, 0, 0, false), "wraps to the last");
+    }
+
+    @Test
+    void theEndOfATextIsCountedInUtf16() {
+        assertEquals(new Position(0, 0), LspCoordinator.endOf(""));
+        assertEquals(new Position(1, 0), LspCoordinator.endOf("a\n"));
+        assertEquals(new Position(1, 2), LspCoordinator.endOf("a\n\uD83D\uDE00"));
     }
 
     /**

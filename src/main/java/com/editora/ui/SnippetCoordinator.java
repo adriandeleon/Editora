@@ -12,6 +12,7 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.snippet.SnippetManager;
 import com.editora.snippet.SnippetManager.Problem;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -37,6 +38,7 @@ final class SnippetCoordinator {
         void showPicker();
 
         /** The active project's root, or null. */
+        @Nullable
         Path projectRoot();
 
         /** Tells the other windows a user snippet file changed. */
@@ -64,7 +66,7 @@ final class SnippetCoordinator {
     private final Ops ops;
     private final SnippetManager manager;
     /** The buffer whose session the status bar is showing, or null. */
-    private EditorBuffer shown;
+    private @Nullable EditorBuffer shown;
 
     SnippetCoordinator(ConfigManager config, CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -88,8 +90,9 @@ final class SnippetCoordinator {
 
     /** Gives a new buffer its snippet lookup, the Tab-expansion setting and the session hint. */
     void wireBuffer(EditorBuffer buffer) {
-        buffer.setSnippetProvider(manager::byTabTrigger);
-        buffer.setSnippetOfferProvider(manager::byPrefix);
+        // A pom.xml gets the Maven snippets (dep, plugin, profile…) on top of XML's (Maven review C15).
+        buffer.setSnippetProvider((lang, prefix) -> manager.byTabTrigger(buffer.snippetLanguage(lang), prefix));
+        buffer.setSnippetOfferProvider((lang, prefix) -> manager.byPrefix(buffer.snippetLanguage(lang), prefix));
         buffer.setSnippetTabExpansion(host.settings().isSnippetTabExpansion());
         buffer.setSnippetHooks(file -> ops.projectRoot(), progress -> sessionMoved(buffer, progress));
     }
@@ -139,7 +142,7 @@ final class SnippetCoordinator {
         if (b == null) {
             return;
         }
-        if (manager.forLanguage(b.getLanguage()).isEmpty()) {
+        if (manager.forLanguage(b.snippetLanguage(b.getLanguage())).isEmpty()) {
             host.setStatus(tr("status.noSnippets"));
             return;
         }

@@ -63,7 +63,7 @@ class MarkupContextMenuFxTest {
     /** {@code editor.MarkdownMenus} is package-private: the Markdown submenu's builder and its labelling rule. */
     private static Object markdownMenus(String method, Class<?> type, Object arg) throws Exception {
         java.lang.reflect.Method m =
-                Class.forName("com.editora.editor.MarkdownMenus").getDeclaredMethod(method, type);
+                Class.forName("com.editora.editor.markdown.MarkdownMenus").getDeclaredMethod(method, type);
         m.setAccessible(true);
         return m.invoke(null, arg);
     }

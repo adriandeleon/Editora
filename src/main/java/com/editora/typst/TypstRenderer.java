@@ -13,6 +13,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Low-level facade over the {@code typst} CLI. The multi-page analogue of {@code diagram/DiagramRenderer}:
@@ -44,7 +45,7 @@ public final class TypstRenderer {
     private static final Pattern PAGE_NUM = Pattern.compile("page-(\\d+)\\.png$");
 
     /** A multi-page render outcome: the ordered per-page PNG {@code pages} on success, else {@code error}. */
-    public record Pages(List<byte[]> pages, String error) {
+    public record Pages(List<byte[]> pages, @Nullable String error) {
         public boolean ok() {
             return error == null && pages != null && !pages.isEmpty();
         }
@@ -53,7 +54,7 @@ public final class TypstRenderer {
             return new Pages(List.copyOf(pages), null);
         }
 
-        static Pages fail(String error) {
+        static Pages fail(@Nullable String error) {
             return new Pages(List.of(), error == null || error.isBlank() ? "render failed" : error.strip());
         }
     }
@@ -116,7 +117,7 @@ public final class TypstRenderer {
      * project root so a multi-file project's up-references resolve. Either may be {@code null} for an
      * untitled/remote buffer (→ isolated temp).
      */
-    public static Pages renderPages(List<String> cmd, String source, Path fileDir, Path root) {
+    public static Pages renderPages(List<String> cmd, String source, @Nullable Path fileDir, @Nullable Path root) {
         return renderPages(cmd, source, fileDir, root, null);
     }
 
@@ -125,7 +126,12 @@ public final class TypstRenderer {
      * throwaway {@code .editora-typst-<uuid>.typ} basename in a compile-error message to the buffer's real
      * name — otherwise every Typst typo shows the internal UUID temp filename, not the user's file (#462).
      */
-    public static Pages renderPages(List<String> cmd, String source, Path fileDir, Path root, String displayName) {
+    public static Pages renderPages(
+            List<String> cmd,
+            String source,
+            @Nullable Path fileDir,
+            @Nullable Path root,
+            @Nullable String displayName) {
         Prep p = null;
         Path input = null;
         Path outDir = null;
@@ -161,7 +167,7 @@ public final class TypstRenderer {
      * {@code displayName} (or a neutral {@code document.typ} when none is given), so the user sees their own
      * file name in an error, not an internal UUID. Line/column are untouched. Pure; unit-tested.
      */
-    static String friendlyMessage(String message, String displayName) {
+    static @Nullable String friendlyMessage(@Nullable String message, @Nullable String displayName) {
         if (message == null || message.isBlank()) {
             return message;
         }
@@ -183,14 +189,18 @@ public final class TypstRenderer {
      */
     public static final class PendingExport implements AutoCloseable {
         private final ProcessRunner.Result result;
-        private final Path stagingDir;
+        private final @Nullable Path stagingDir;
         private final Path dest;
         private final List<Path> staged;
         private final List<Path> targets;
         private boolean closed;
 
         private PendingExport(
-                ProcessRunner.Result result, Path stagingDir, Path dest, List<Path> staged, List<Path> targets) {
+                ProcessRunner.Result result,
+                @Nullable Path stagingDir,
+                Path dest,
+                List<Path> staged,
+                List<Path> targets) {
             this.result = result;
             this.stagingDir = stagingDir;
             this.dest = dest;
@@ -271,7 +281,8 @@ public final class TypstRenderer {
      * file; a PNG/SVG document is one file per page. {@code fileDir}/{@code root} as in {@link #renderPages}.
      * Blocking. The caller must {@link PendingExport#commit()} or {@link PendingExport#close()} the result.
      */
-    public static PendingExport stageExport(List<String> cmd, String source, Path dest, Path fileDir, Path root) {
+    public static PendingExport stageExport(
+            List<String> cmd, String source, Path dest, @Nullable Path fileDir, @Nullable Path root) {
         Prep p = null;
         Path input = null;
         Path staging = null;
@@ -368,7 +379,7 @@ public final class TypstRenderer {
         }
     }
 
-    private static Prep prepare(Path fileDir, Path root) throws IOException {
+    private static Prep prepare(@Nullable Path fileDir, @Nullable Path root) throws IOException {
         if (fileDir != null && Files.isDirectory(fileDir)) {
             Path validRoot = (root != null && Files.isDirectory(root)) ? root : null;
             return new Prep(fileDir, effectiveRoot(fileDir, validRoot), false);
@@ -382,7 +393,7 @@ public final class TypstRenderer {
      * real directory that <em>contains</em> {@code inputDir} (typst requires the input to sit inside the
      * root), otherwise {@code inputDir} itself. Pure; unit-tested.
      */
-    static Path effectiveRoot(Path inputDir, Path root) {
+    static Path effectiveRoot(Path inputDir, @Nullable Path root) {
         if (root == null) {
             return inputDir;
         }
@@ -479,7 +490,7 @@ public final class TypstRenderer {
         return m.find() ? Integer.parseInt(m.group(1)) : Integer.MAX_VALUE;
     }
 
-    private static void deleteIfExists(Path p) {
+    private static void deleteIfExists(@Nullable Path p) {
         if (p == null) {
             return;
         }
@@ -490,7 +501,7 @@ public final class TypstRenderer {
         }
     }
 
-    private static void deleteRecursively(Path dir) {
+    private static void deleteRecursively(@Nullable Path dir) {
         if (dir == null) {
             return;
         }

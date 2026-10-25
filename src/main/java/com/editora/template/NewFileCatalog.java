@@ -4,13 +4,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The file kinds offered by the Project tree's "New ▸" menu (and the {@code file.newFileOfType}
  * palette picker) — the IDE-standard "New ▸ Java Class / Python File / YAML File" catalog.
  *
  * <p>Pure data plus lookups, so the whole menu is one table: adding a type is a row, and the menu,
  * the palette picker and the tests all pick it up. Every entry names a type Editora already
- * understands (its extension resolves through {@link com.editora.editor.LanguageRegistry} /
+ * understands (its extension resolves through {@link com.editora.text.LanguageRegistry} /
  * {@code ConfigFileType} to a real language, so the new file opens highlighted) — the catalog is
  * deliberately a curated subset of "one obvious file per language" rather than every extension
  * alias: nobody looks for "New ▸ .mjs".
@@ -311,12 +313,12 @@ public final class NewFileCatalog {
     }
 
     /** The type with this id, or null. */
-    public static NewFileType byId(String id) {
+    public static @Nullable NewFileType byId(String id) {
         return id == null ? null : BY_ID.get(id);
     }
 
     /** The id of the category holding {@code type}, or null for {@link #PLAIN} / a top-level entry. */
-    public static String categoryOf(NewFileType type) {
+    public static @Nullable String categoryOf(NewFileType type) {
         for (Category c : CATEGORIES) {
             if (c.types().contains(type)) {
                 return c.id();

@@ -5,6 +5,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 
 import com.editora.io.PathContainment;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Containment for the file paths a {@code .http} request may reference — the {@code < ./body.json} external
@@ -36,7 +37,7 @@ public final class HttpPaths {
      * <p>A target that does not exist is returned as resolved (its existing parent chain is still checked), so
      * the caller's read fails with its ordinary "missing file" handling.
      */
-    public static Path contained(Path baseDir, String reference) {
+    public static @Nullable Path contained(@Nullable Path baseDir, String reference) {
         Path target = lexicallyContained(baseDir, reference);
         if (target == null || !PathContainment.isWithin(baseDir, target)) {
             return null;
@@ -52,7 +53,7 @@ public final class HttpPaths {
      * regular file. The target itself usually does not exist yet; its nearest existing parent is what gets
      * canonicalized.
      */
-    public static Path containedForWrite(Path baseDir, String reference) {
+    public static @Nullable Path containedForWrite(Path baseDir, String reference) {
         Path target = lexicallyContained(baseDir, reference);
         if (target == null || Files.isSymbolicLink(target) || !PathContainment.isWithin(baseDir, target)) {
             return null;
@@ -66,7 +67,7 @@ public final class HttpPaths {
     }
 
     /** The lexically normalized target, or null when the reference is unusable or climbs out of the base. */
-    private static Path lexicallyContained(Path baseDir, String reference) {
+    private static @Nullable Path lexicallyContained(@Nullable Path baseDir, String reference) {
         if (baseDir == null || reference == null || reference.isBlank()) {
             return null;
         }

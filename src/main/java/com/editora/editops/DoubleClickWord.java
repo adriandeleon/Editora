@@ -3,6 +3,8 @@ package com.editora.editops;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Which span of a line a double-click selects.
  *
@@ -39,12 +41,12 @@ public final class DoubleClickWord {
      * @param hyphenated whether hyphens are part of identifiers (CSS)
      * @return {@code [start, end)} columns to select, or {@code null} when no word ends after the column
      */
-    public static int[] at(String line, int column, boolean prose, boolean hyphenated) {
+    public static int @Nullable [] at(String line, int column, boolean prose, boolean hyphenated) {
         return at(line, column, prose, hyphenated, false);
     }
 
     /** As {@link #at(String, int, boolean, boolean)}; {@code dollar}: {@link IdentifierChars#dollarIdentifiers}. */
-    public static int[] at(String line, int column, boolean prose, boolean hyphenated, boolean dollar) {
+    public static int @Nullable [] at(String line, int column, boolean prose, boolean hyphenated, boolean dollar) {
         Matcher m = (dollar ? SCRIPT_RUN : RUN).matcher(line);
         int start = -1;
         int end = -1;

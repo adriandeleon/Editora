@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.editora.markdown.MarkdownLinkRewrite.Link;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which Markdown file links to which file: each document's outgoing links (inline, reference definitions,
@@ -30,19 +31,19 @@ public final class MarkdownLinkIndex {
 
     private static final int MAX_LINE_TEXT = 200;
 
-    private final Path root;
+    private final @Nullable Path root;
     private final Map<Path, Doc> docs = new LinkedHashMap<>();
     private final Set<Path> files = new LinkedHashSet<>();
     private boolean wikiLinks = true;
 
-    private WikiTargets targets;
-    private Map<Path, List<Backlink>> incoming;
+    private @Nullable WikiTargets targets;
+    private @Nullable Map<Path, List<Backlink>> incoming;
 
     public MarkdownLinkIndex(Path root) {
         this.root = root == null ? null : root.toAbsolutePath().normalize();
     }
 
-    public Path root() {
+    public @Nullable Path root() {
         return root;
     }
 
@@ -173,7 +174,7 @@ public final class MarkdownLinkIndex {
      * The file {@code link}, written in {@code doc}, points at — lexically for a path, by name for a wiki
      * link — or null: a web address, an anchor in the same document, an unresolved name.
      */
-    public Path target(Path doc, Link link) {
+    public @Nullable Path target(Path doc, Link link) {
         Path d = norm(doc);
         if (link.isWiki()) {
             if (link.path().isEmpty()) {

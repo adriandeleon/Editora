@@ -11,6 +11,8 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A planned Python launch: the argv, the environment on top of the inherited one, and the interpreter that was
  * chosen (for the console's first line and for messages). Built by {@link #plan} from a {@link Request} and the
@@ -27,7 +29,7 @@ public record PythonRunPlan(
         List<String> argv,
         Map<String, String> env,
         PythonInterpreters.PythonInterpreter interpreter,
-        String missingShebang) {
+        @Nullable String missingShebang) {
 
     /**
      * What to run.
@@ -45,12 +47,12 @@ public record PythonRunPlan(
      * @param userEnv a run configuration's variables (they win)
      */
     public record Request(
-            Path file,
-            Path projectRoot,
+            @Nullable Path file,
+            @Nullable Path projectRoot,
             String target,
             boolean module,
             List<String> args,
-            String firstLine,
+            @Nullable String firstLine,
             String configured,
             List<String> interpreterOptions,
             String projectChoice,
@@ -64,11 +66,11 @@ public record PythonRunPlan(
 
         /** A plain Run File request: no configuration fields. */
         public static Request file(
-                Path file,
-                Path projectRoot,
+                @Nullable Path file,
+                @Nullable Path projectRoot,
                 String target,
                 List<String> args,
-                String firstLine,
+                @Nullable String firstLine,
                 String choice,
                 String setting) {
             return new Request(
@@ -150,9 +152,14 @@ public record PythonRunPlan(
         command.addAll(r.interpreterOptions());
         Map<String, String> interpreterEnv = new LinkedHashMap<>(PythonLaunch.envPrefix(command));
         interpreterEnv.putAll(choice.env());
-        List<String> pythonPath = PythonInterpreters.pythonPathEntries(r.projectRoot(), host.isDirectory()).stream()
-                .map(p -> host.toTarget().apply(r.projectRoot().getFileSystem().getPath(p)))
-                .toList();
+        List<String> pythonPath = List.of();
+        Path projectRoot = r.projectRoot();
+        if (projectRoot != null) {
+            java.nio.file.FileSystem fs = projectRoot.getFileSystem();
+            pythonPath = PythonInterpreters.pythonPathEntries(projectRoot, host.isDirectory()).stream()
+                    .map(p -> host.toTarget().apply(fs.getPath(p)))
+                    .toList();
+        }
         Map<String, String> env = PythonLaunch.environment(
                 interpreterEnv, pythonPath, host.env().get(PythonLaunch.PYTHONPATH), host.separator(), r.userEnv());
         List<String> argv = PythonLaunch.argv(command, r.target(), r.module(), r.args());

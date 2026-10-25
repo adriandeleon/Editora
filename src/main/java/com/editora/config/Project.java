@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import com.editora.vfs.Vfs;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A named project: a single root folder whose session state (open files, layout, folds) is persisted
@@ -28,7 +29,7 @@ public record Project(String id, String name, String root) {
      * quietly yields a meaningless relative local path.
      */
     @JsonIgnore
-    public Path rootPath() {
+    public @Nullable Path rootPath() {
         try {
             return Vfs.parseStorable(root);
         } catch (InvalidPathException e) {

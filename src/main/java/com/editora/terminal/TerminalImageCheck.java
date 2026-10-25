@@ -23,6 +23,7 @@ import com.jediterm.terminal.model.TerminalSelection;
 import com.jediterm.terminal.model.TerminalTextBuffer;
 import com.pty4j.PtyProcess;
 import com.pty4j.PtyProcessBuilder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Proves that the integrated terminal's native stack works where Editora is running: pty4j opens a real
@@ -175,7 +176,7 @@ public final class TerminalImageCheck {
         public void setCursor(int x, int y) {}
 
         @Override
-        public void setCursorShape(CursorShape shape) {}
+        public void setCursorShape(@Nullable CursorShape shape) {}
 
         @Override
         public void beep() {}
@@ -200,7 +201,7 @@ public final class TerminalImageCheck {
         }
 
         @Override
-        public TerminalSelection getSelection() {
+        public @Nullable TerminalSelection getSelection() {
             return null;
         }
 

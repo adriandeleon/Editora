@@ -23,6 +23,7 @@ import org.commonmark.parser.beta.Scanner;
 import org.commonmark.renderer.NodeRenderer;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.commonmark.renderer.text.TextContentRenderer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Emoji shortcodes: {@code :rocket:} becomes an {@link Emoji} node carrying 🚀.
@@ -94,7 +95,7 @@ public final class MarkdownEmoji {
     }
 
     /** The emoji for {@code shortcode} (without colons), or null when the name is not in the table. */
-    public static String lookup(String shortcode) {
+    public static @Nullable String lookup(String shortcode) {
         return shortcode == null ? null : Table.ALL.get(shortcode);
     }
 
@@ -126,7 +127,7 @@ public final class MarkdownEmoji {
 
     /** Reads {@code :name:} at the scanner (on its opening colon); null — position undefined — when it is
      *  not a known shortcode. */
-    private static Emoji shortcode(Scanner s) {
+    private static @Nullable Emoji shortcode(Scanner s) {
         s.next(); // the opening colon
         StringBuilder name = new StringBuilder();
         while (isNameChar(s.peek()) && name.length() <= MAX_NAME) {

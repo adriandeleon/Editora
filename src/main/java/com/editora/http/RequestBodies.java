@@ -19,6 +19,8 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -43,18 +45,18 @@ final class RequestBodies {
     record Content(
             HttpRequest.BodyPublisher publisher,
             String display,
-            String problem,
+            @Nullable String problem,
             DigestAuth.BodyFeed digestFeed,
-            Path file,
+            @Nullable Path file,
             List<HttpExchange.FormPart> parts,
-            java.io.Closeable files) {
+            java.io.@Nullable Closeable files) {
 
         Content(
                 HttpRequest.BodyPublisher publisher,
                 String display,
-                String problem,
+                @Nullable String problem,
                 DigestAuth.BodyFeed digestFeed,
-                Path file,
+                @Nullable Path file,
                 List<HttpExchange.FormPart> parts) {
             this(publisher, display, problem, digestFeed, file, parts, null);
         }
@@ -100,7 +102,7 @@ final class RequestBodies {
      */
     static Content resolve(
             HttpFile.Parsed request,
-            Path baseDir,
+            @Nullable Path baseDir,
             Function<String, String> sub,
             String contentType,
             List<String[]> headers,

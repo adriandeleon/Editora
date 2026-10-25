@@ -19,6 +19,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Central registry of long-lived <em>managed external processes</em> — the LSP language servers and
  * DAP debug adapters Editora spawns. It exists so those servers never outlive the app:
@@ -91,9 +93,9 @@ public final class ProcessRegistry {
 
     private static final Object LEDGER_FILE_LOCK = new Object();
     /** The shared ledger older versions wrote ({@code spawned-servers.txt}): read and cleared, never written. */
-    private static volatile Path ledgerFile;
+    private static volatile @Nullable Path ledgerFile;
     /** This process's own ledger ({@code spawned-servers.<pid>.<start>.txt}) — the only one it writes. */
-    private static volatile Path ownLedgerFile;
+    private static volatile @Nullable Path ownLedgerFile;
 
     /** This Editora process, stamped on every ledger row it writes. */
     private static final Owner SELF = Owner.of(ProcessHandle.current());
@@ -244,7 +246,7 @@ public final class ProcessRegistry {
      * <b>Non-blocking</b> — safe on the FX thread. If the process exits from the SIGTERM, the scheduled
      * step is a harmless no-op; if the JVM exits before it runs, the shutdown hook force-kills it.
      */
-    public static void killTree(Process p) {
+    public static void killTree(@Nullable Process p) {
         if (p == null) {
             return;
         }
@@ -707,7 +709,10 @@ public final class ProcessRegistry {
         int reaped = 0;
         for (LedgerEntry row : rows) {
             List<String> record = row.remote();
-            OrphanReaper reaper = record == null || record.isEmpty() ? null : REAPERS.get(record.get(0));
+            if (record == null || record.isEmpty()) {
+                continue;
+            }
+            OrphanReaper reaper = REAPERS.get(record.get(0));
             if (reaper == null) {
                 continue;
             }
@@ -794,7 +799,12 @@ public final class ProcessRegistry {
 
     /** A ledger row: the spawned root pid plus enough identity to avoid killing a reused PID next run, and the
      *  Editora process that spawned it. */
-    record LedgerEntry(long pid, long startEpochMillis, String command, Owner owner, List<String> remote) {
+    record LedgerEntry(
+            long pid,
+            long startEpochMillis,
+            String command,
+            Owner owner,
+            @Nullable List<String> remote) {
 
         LedgerEntry {
             owner = owner == null ? Owner.NONE : owner;

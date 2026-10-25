@@ -145,11 +145,11 @@ class MarksSurviveReplaceFxTest {
             b.toggleBookmark(7); // keep1();
             b.toggleBreakpoint(8); // keep2();
             b.toggleBreakpoint(11); // after();
-            List<com.editora.editor.LspTextEdit> edits = new java.util.ArrayList<>();
+            List<com.editora.text.LspTextEdit> edits = new java.util.ArrayList<>();
             for (int line = 1; line <= 6; line++) {
-                edits.add(new com.editora.editor.LspTextEdit(line, 0, line, 0, "        "));
+                edits.add(new com.editora.text.LspTextEdit(line, 0, line, 0, "        "));
             }
-            edits.add(new com.editora.editor.LspTextEdit(9, 14, 10, 8, " ")); // "wrapped(a, b);"
+            edits.add(new com.editora.text.LspTextEdit(9, 14, 10, 8, " ")); // "wrapped(a, b);"
             b.applyLspEdits(edits);
         });
         assertEquals(

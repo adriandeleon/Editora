@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -28,7 +30,11 @@ public final class SecretApproval {
      * ({@code anyHost} when it said a host is only known at the send — chosen by an earlier response, or made of a
      * secret or a {@code $…} value), or nothing with the gate's {@code refusal}.
      */
-    record Grant(Set<String> reads, Set<String> hosts, boolean anyHost, String refusal) {
+    record Grant(
+            Set<String> reads,
+            Set<String> hosts,
+            boolean anyHost,
+            @Nullable String refusal) {
 
         static Grant refused(String refusal) {
             return new Grant(Set.of(), Set.of(), false, refusal);
@@ -61,7 +67,10 @@ public final class SecretApproval {
      * result. Reads the request's body files, so call it off the FX thread.
      */
     public static Preview preview(
-            HttpFile.Parsed request, Map<String, String> vars, Path baseDir, CapturedResponses captured) {
+            HttpFile.Parsed request,
+            Map<String, String> vars,
+            @Nullable Path baseDir,
+            @Nullable CapturedResponses captured) {
         PreparedRequest.Dry dry = PreparedRequest.dry(request, vars, baseDir, captured);
         PreparedRequest p = dry.prepared();
         // What the host is made of: the request line up to its path, and a Host header (origin form).
@@ -90,12 +99,12 @@ public final class SecretApproval {
      * asked when none do, for a request that is never sent, or once {@code cancelled} (a run cancelled or replaced
      * before its prompt).
      */
-    static Grant ask(
+    static @Nullable Grant ask(
             SecretGate gate,
             BooleanSupplier cancelled,
             List<HttpFile.Parsed> requests,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured) {
         if (gate == null || gate == SecretGate.UNCHECKED) {
             return null;
@@ -148,7 +157,7 @@ public final class SecretApproval {
      * Why a send that read {@code unresolved}'s secrets may not go out under {@code approval}, or null: a read the
      * gate did not approve, or a host the prompt did not name. A null {@code approval} (an unchecked run) allows all.
      */
-    static String refusalFor(Grant approval, HttpVars.Unresolved unresolved, String targetUrl) {
+    static @Nullable String refusalFor(@Nullable Grant approval, HttpVars.Unresolved unresolved, String targetUrl) {
         if (approval == null || unresolved.secretReads().isEmpty()) {
             return null;
         }
@@ -175,7 +184,7 @@ public final class SecretApproval {
     static HttpExchange unsentReport(
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             String why,
             List<String> extraWarnings) {

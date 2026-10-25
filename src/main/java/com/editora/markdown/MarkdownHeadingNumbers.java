@@ -55,6 +55,7 @@ public final class MarkdownHeadingNumbers {
             first = Math.max(first, below);
         }
         String[] lines = text.split("\n", -1);
+        boolean[] dropped = new boolean[lines.length];
         int[] counters = new int[7];
         boolean changed = false;
         for (MarkdownOutline.Heading h : headings) {
@@ -63,13 +64,13 @@ public final class MarkdownHeadingNumbers {
             if (!atx.find()) {
                 // A setext heading: "1. Part" over dashes would be a list item and a rule, so a numbered one
                 // is written as ATX and its underline dropped.
-                int underline = number && h.level() >= first ? setextUnderline(lines, h.line()) : -1;
+                int underline = number && h.level() >= first ? setextUnderline(lines, dropped, h.line()) : -1;
                 if (underline < 0) {
                     continue;
                 }
                 lines[h.line()] = "#".repeat(h.level()) + " " + h.title().strip();
                 for (int k = h.line() + 1; k <= underline; k++) {
-                    lines[k] = null;
+                    dropped[k] = true;
                 }
                 line = lines[h.line()];
                 atx = ATX.matcher(line);
@@ -105,21 +106,21 @@ public final class MarkdownHeadingNumbers {
         }
         StringBuilder out = new StringBuilder(text.length() + 64);
         boolean firstLine = true;
-        for (String line : lines) {
-            if (line == null) {
+        for (int i = 0; i < lines.length; i++) {
+            if (dropped[i]) {
                 continue;
             }
             if (!firstLine) {
                 out.append('\n');
             }
-            out.append(line);
+            out.append(lines[i]);
             firstLine = false;
         }
         return out.toString();
     }
 
-    private static int setextUnderline(String[] lines, int start) {
-        for (int j = start + 1; j < lines.length && lines[j] != null && !lines[j].isBlank(); j++) {
+    private static int setextUnderline(String[] lines, boolean[] dropped, int start) {
+        for (int j = start + 1; j < lines.length && !dropped[j] && !lines[j].isBlank(); j++) {
             String body = lines[j].strip();
             char c = body.charAt(0);
             if ((c == '=' || c == '-') && body.chars().allMatch(ch -> ch == c)) {

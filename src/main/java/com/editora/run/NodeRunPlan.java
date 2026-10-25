@@ -8,6 +8,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A planned Node.js launch — Run File on a {@code .js/.mjs/.cjs/.ts/.mts/.cts} file or a {@code node}-shebang
  * script, a {@code node} run configuration, or a test file's ▶ ({@code node --test}). Pure: the caller resolves
@@ -32,7 +34,11 @@ import java.util.function.Predicate;
  * @param chdir an {@code env -C DIR} folder from the shebang, else null
  * @param error an i18n key when the file cannot run as planned, else null
  */
-public record NodeRunPlan(List<String> argv, Map<String, String> env, String chdir, String error) {
+public record NodeRunPlan(
+        List<String> argv,
+        Map<String, String> env,
+        @Nullable String chdir,
+        @Nullable String error) {
 
     /** i18n key: a TypeScript file on a Node too old to strip types. */
     public static final String NEEDS_STRIP = "status.run.nodeNeedsTypeStripping";
@@ -48,7 +54,7 @@ public record NodeRunPlan(List<String> argv, Map<String, String> env, String chd
      * Whether a file named {@code name} in a Node language gets a Run ▶ — every one but a declaration file
      * ({@code .d.ts}), which holds no code.
      */
-    public static boolean runnableName(String name) {
+    public static boolean runnableName(@Nullable String name) {
         if (name == null) {
             return true;
         }
@@ -67,7 +73,7 @@ public record NodeRunPlan(List<String> argv, Map<String, String> env, String chd
      * or anything under a {@code test/}, {@code tests/} or {@code __tests__/} folder below {@code root} (its
      * package root, else its project; null = only the name counts).
      */
-    public static boolean isTestFile(Path file, Path root) {
+    public static boolean isTestFile(Path file, @Nullable Path root) {
         if (file == null || file.getFileName() == null) {
             return false;
         }
@@ -116,15 +122,15 @@ public record NodeRunPlan(List<String> argv, Map<String, String> env, String chd
             String target,
             String fileName,
             List<String> args,
-            String firstLine,
+            @Nullable String firstLine,
             NodeRuntimes.NodeRuntime runtime,
             boolean fromConfiguration,
-            String version,
+            @Nullable String version,
             List<String> nodeOptions,
             boolean test,
             boolean noColor,
             Map<String, String> userEnv,
-            Predicate<String> existsHere) {
+            @Nullable Predicate<String> existsHere) {
         public Request {
             args = args == null ? List.of() : List.copyOf(args);
             nodeOptions = nodeOptions == null ? List.of() : List.copyOf(nodeOptions);

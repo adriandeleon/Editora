@@ -3,6 +3,8 @@ package com.editora.sshconfig;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses an SSH client config ({@code ~/.ssh/config} / {@code ssh_config}) into ordered blocks for the
  * preview: a leading {@code global} block (options before the first {@code Host}/{@code Match}), then one
@@ -17,7 +19,7 @@ public final class SshConfig {
     /** A block: {@code type} is {@code "global"}, {@code "Host"}, or {@code "Match"}; {@code argument} is its patterns/criteria. */
     public record Block(String type, String argument, List<Option> options) {
 
-        public String first(String key) {
+        public @Nullable String first(String key) {
             for (Option o : options) {
                 if (o.key().equalsIgnoreCase(key)) {
                     return o.value();
@@ -36,7 +38,7 @@ public final class SshConfig {
      * the first value any matching block sets for {@code key}. {@code Match} blocks are skipped (their criteria
      * — {@code exec}/{@code host}/{@code user}/… — aren't modelled). {@code null} if nothing sets it. Pure.
      */
-    public static String effective(List<Block> blocks, String host, String key) {
+    public static @Nullable String effective(List<Block> blocks, String host, String key) {
         if (blocks == null || host == null) {
             return null;
         }
@@ -104,7 +106,7 @@ public final class SshConfig {
     }
 
     /** Splits "Keyword value" or "Keyword=value" into {@code {key, value}}, or {@code null} if there's no value. */
-    private static String[] splitKeyValue(String line) {
+    private static String @Nullable [] splitKeyValue(String line) {
         int i = 0;
         int n = line.length();
         while (i < n && !isSep(line.charAt(i))) {

@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Runs an external command on the {@link ExecTarget} of its working directory, capturing stdout, stderr,
  * and the exit code with a hard timeout. Both streams are drained concurrently so a chatty command can't
@@ -80,7 +82,7 @@ public final class ProcessRunner {
      * Runs {@code command} in {@code workingDir} (may be {@code null} for the JVM's cwd), waiting at
      * most {@code timeout}. On timeout the process is destroyed and a non-zero {@link Result} returned.
      */
-    public static Result run(Path workingDir, Duration timeout, List<String> command) {
+    public static Result run(@Nullable Path workingDir, Duration timeout, List<String> command) {
         return run(workingDir, timeout, command, Map.of());
     }
 
@@ -88,7 +90,8 @@ public final class ProcessRunner {
      * As {@link #run(Path, Duration, List)} but with {@code extraEnv} merged into the child process's
      * environment (on top of the inherited environment + {@code LC_ALL=C}).
      */
-    public static Result run(Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
+    public static Result run(
+            @Nullable Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
         return run(workingDir, timeout, command, extraEnv, (String) null);
     }
 
@@ -98,7 +101,11 @@ public final class ProcessRunner {
      * {@code wc}) sees EOF and terminates.
      */
     public static Result run(
-            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
+            @Nullable Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            @Nullable String stdin) {
         return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), false, false));
     }
 
@@ -108,11 +115,11 @@ public final class ProcessRunner {
      * result is then {@link Result#cancelled()}.
      */
     public static Result run(
-            Path workingDir,
+            @Nullable Path workingDir,
             Duration timeout,
             List<String> command,
             Map<String, String> extraEnv,
-            Cancellation cancel) {
+            @Nullable Cancellation cancel) {
         return decoded(runRaw(workingDir, timeout, command, extraEnv, null, false, false, null, null, cancel));
     }
 
@@ -133,13 +140,13 @@ public final class ProcessRunner {
      * any JVM tool handed the user's paths (Maven, Gradle, {@code javac}), which cannot even open a file whose
      * name is not ASCII when forced into the C locale.
      */
-    public static Result runInUserLocale(Path workingDir, Duration timeout, List<String> command) {
+    public static Result runInUserLocale(@Nullable Path workingDir, Duration timeout, @Nullable List<String> command) {
         return runInUserLocale(workingDir, timeout, command, Map.of(), null);
     }
 
     /** As {@link #runInUserLocale(Path, Duration, List)}, with {@code extraEnv} merged on top. */
     public static Result runInUserLocale(
-            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
+            @Nullable Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
         return runInUserLocale(workingDir, timeout, command, extraEnv, null);
     }
 
@@ -148,7 +155,11 @@ public final class ProcessRunner {
      * {@link #run(Path, Duration, List, Map, String)}. Used by the External Tools feature.
      */
     public static Result runInUserLocale(
-            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
+            @Nullable Path workingDir,
+            Duration timeout,
+            @Nullable List<String> command,
+            Map<String, String> extraEnv,
+            @Nullable String stdin) {
         return decodedInUserLocale(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), true, false));
     }
 
@@ -157,7 +168,11 @@ public final class ProcessRunner {
      * applying a patch or hashing a blob through the user's clean filters).
      */
     public static Result runWithInputInUserLocale(
-            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, byte[] stdin) {
+            @Nullable Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            byte[] stdin) {
         return decoded(runRaw(workingDir, timeout, command, extraEnv, stdin, true, false));
     }
 
@@ -176,7 +191,7 @@ public final class ProcessRunner {
      * even started (it is then killed as it starts) or after it has exited (nothing happens).
      */
     public static final class Cancellation {
-        private Process process;
+        private @Nullable Process process;
         private boolean cancelled;
 
         /** Kills the command's process tree — SIGTERM first, so git removes its lock files and half a clone. */
@@ -206,19 +221,18 @@ public final class ProcessRunner {
      * {@code cancel} (may be null) stops it; the result is then {@link Result#cancelled()}.
      */
     public static Result runLiveInUserLocale(
-            Path workingDir,
+            @Nullable Path workingDir,
             Duration timeout,
             List<String> command,
             Map<String, String> extraEnv,
-            LiveOutput live,
+            @Nullable LiveOutput live,
             Cancellation cancel) {
         Result r = decodedInUserLocale(
                 runRaw(workingDir, timeout, command, extraEnv, null, true, false, null, live, cancel));
-        return new Result(
-                r.exit(), r.out(), LiveLines.collapseCarriageReturns(r.err()), r.outTruncated(), r.errTruncated());
+        return new Result(r.exit(), r.out(), LiveLines.collapsed(r.err()), r.outTruncated(), r.errTruncated());
     }
 
-    private static byte[] utf8(String stdin) {
+    private static byte @Nullable [] utf8(@Nullable String stdin) {
         return stdin == null ? null : stdin.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -273,7 +287,10 @@ public final class ProcessRunner {
      * flagged {@link Result#outTruncated()}.
      */
     public static Result runLines(
-            Path workingDir, Duration timeout, List<String> command, java.util.function.Predicate<String> stopAfter) {
+            @Nullable Path workingDir,
+            Duration timeout,
+            List<String> command,
+            java.util.function.Predicate<String> stopAfter) {
         return decoded(runRaw(workingDir, timeout, command, Map.of(), null, false, false, stopAfter));
     }
 
@@ -285,13 +302,13 @@ public final class ProcessRunner {
      * {@link #timedOut(BytesResult)} and {@link #cancelled(BytesResult)} tell a run that did not finish.
      */
     public static BytesResult runBytesWithInput(
-            Path workingDir,
+            @Nullable Path workingDir,
             Duration timeout,
             List<String> command,
             Map<String, String> extraEnv,
-            byte[] stdin,
+            byte @Nullable [] stdin,
             boolean userLocale,
-            Cancellation cancel) {
+            @Nullable Cancellation cancel) {
         return runRaw(workingDir, timeout, command, extraEnv, stdin, userLocale, false, null, null, cancel);
     }
 
@@ -312,40 +329,40 @@ public final class ProcessRunner {
     }
 
     private static BytesResult runRaw(
-            Path workingDir,
+            @Nullable Path workingDir,
             Duration timeout,
-            List<String> command,
+            @Nullable List<String> command,
             Map<String, String> extraEnv,
-            byte[] stdin,
+            byte @Nullable [] stdin,
             boolean userLocale,
             boolean scrubSecrets) {
         return runRaw(workingDir, timeout, command, extraEnv, stdin, userLocale, scrubSecrets, null);
     }
 
     private static BytesResult runRaw(
-            Path workingDir,
+            @Nullable Path workingDir,
             Duration timeout,
-            List<String> command,
+            @Nullable List<String> command,
             Map<String, String> extraEnv,
-            byte[] stdin,
+            byte @Nullable [] stdin,
             boolean userLocale,
             boolean scrubSecrets,
-            java.util.function.Predicate<String> stopAfterLine) {
+            java.util.function.@Nullable Predicate<String> stopAfterLine) {
         return runRaw(
                 workingDir, timeout, command, extraEnv, stdin, userLocale, scrubSecrets, stopAfterLine, null, null);
     }
 
     private static BytesResult runRaw(
-            Path workingDir,
+            @Nullable Path workingDir,
             Duration timeout,
-            List<String> command,
+            @Nullable List<String> command,
             Map<String, String> extraEnv,
-            byte[] stdin,
+            byte @Nullable [] stdin,
             boolean userLocale,
             boolean scrubSecrets,
-            java.util.function.Predicate<String> stopAfterLine,
-            LiveOutput live,
-            Cancellation cancel) {
+            java.util.function.@Nullable Predicate<String> stopAfterLine,
+            @Nullable LiveOutput live,
+            @Nullable Cancellation cancel) {
         // The directory decides where the command runs: here, or on the host a remote folder lives on. No
         // directory means here, so a version probe never leaves this machine.
         ExecSpec spec = ExecSpec.of(
@@ -517,7 +534,7 @@ public final class ProcessRunner {
             System.getProperty("user.home") + "/.editora/plugins/lsp/java/bin",
             System.getProperty("user.home") + "/.editora-dev/plugins/lsp/java/bin");
 
-    private static volatile String cachedPath;
+    private static volatile @Nullable String cachedPath;
 
     /**
      * The user's <em>login-shell</em> PATH (so a GUI-launched {@code .app} picks up version-manager dirs
@@ -595,7 +612,7 @@ public final class ProcessRunner {
     }
 
     /** Splits a {@code PATH}-style string and adds each non-blank entry to {@code dirs} (set ⇒ de-dups). */
-    private static void addPathEntries(LinkedHashSet<String> dirs, String path) {
+    private static void addPathEntries(LinkedHashSet<String> dirs, @Nullable String path) {
         if (path == null || path.isBlank()) {
             return;
         }
@@ -607,7 +624,7 @@ public final class ProcessRunner {
     }
 
     private static volatile boolean loginPathResolved;
-    private static volatile String loginShellPath;
+    private static volatile @Nullable String loginShellPath;
 
     /**
      * The {@code PATH} reported by the user's login shell, or {@code null} (Windows, no usable shell, or
@@ -617,7 +634,7 @@ public final class ProcessRunner {
      * interactive login shell once and reading its {@code $PATH} recovers all of them at a stroke (the
      * approach VS Code's {@code resolveShellEnv} uses). Resolved once and cached.
      */
-    private static String loginShellPath() {
+    private static @Nullable String loginShellPath() {
         if (loginPathResolved) {
             return loginShellPath;
         }
@@ -634,7 +651,7 @@ public final class ProcessRunner {
     private static final String PATH_MARK_BEGIN = "__EDITORA_PATH_BEGIN__";
     private static final String PATH_MARK_END = "__EDITORA_PATH_END__";
 
-    private static String queryLoginShellPath() {
+    private static @Nullable String queryLoginShellPath() {
         if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
             return null; // Windows has no POSIX login-shell PATH convention
         }
@@ -690,7 +707,7 @@ public final class ProcessRunner {
 
     /** Returns the substring of {@code s} strictly between {@code begin} and {@code end}, or {@code null}
      *  if either marker is missing or the span is empty/blank. Pure — unit-tested. */
-    static String extractMarked(String s, String begin, String end) {
+    static @Nullable String extractMarked(String s, String begin, String end) {
         if (s == null) {
             return null;
         }
@@ -802,7 +819,8 @@ public final class ProcessRunner {
      * {@code find /} can't exhaust the heap (the packaged app runs {@code -Xmx2g}, and an OOM here would be
      * swallowed into the executor's discarded Future, leaving the caller's status spinning forever).
      */
-    private static void drain(InputStream in, ByteArrayOutputStream out, AtomicBoolean truncated, LiveOutput live) {
+    private static void drain(
+            InputStream in, ByteArrayOutputStream out, AtomicBoolean truncated, @Nullable LiveOutput live) {
         byte[] buf = new byte[8192];
         LiveLines lines = live == null ? null : new LiveLines(live);
         try (in) {

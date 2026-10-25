@@ -7,6 +7,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.editora.config.PathDisplay;
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure grouping of TODO matches for the tool window: turns the flat set of {@code (file, match)} entries into
  * ordered {@link Group}s by {@link GroupBy} — file, priority, tag, or keyword — the IntelliJ "Comment
@@ -31,7 +34,7 @@ public final class TodoGrouping {
      * panel localizes), the {@code file} it belongs to (non-null only under {@link GroupBy#FILE}, so the
      * header can show the file icon + navigate), and the ordered {@code entries}.
      */
-    public record Group(String label, Path file, List<Entry> entries) {}
+    public record Group(String label, @Nullable Path file, List<Entry> entries) {}
 
     /** Keyword header order (defaults first), then anything else alphabetically. */
     private static final List<String> KEYWORD_ORDER = List.of("TODO", "FIXME", "HACK", "NOTE", "XXX", "DONE");
@@ -44,7 +47,7 @@ public final class TodoGrouping {
      * dimension-specific order (priority by urgency, tag/keyword alphabetically with the catch-all bucket
      * last) and their rows by file name then line.
      */
-    public static List<Group> group(List<Entry> entries, GroupBy by, Path activeFile) {
+    public static List<Group> group(List<Entry> entries, GroupBy by, @Nullable Path activeFile) {
         if (entries == null || entries.isEmpty()) {
             return List.of();
         }
@@ -66,7 +69,7 @@ public final class TodoGrouping {
         };
     }
 
-    private static List<Group> byFile(List<Entry> entries, Path activeFile) {
+    private static List<Group> byFile(List<Entry> entries, @Nullable Path activeFile) {
         Map<Path, List<Entry>> byPath = new LinkedHashMap<>();
         for (Entry e : entries) {
             byPath.computeIfAbsent(e.file(), k -> new ArrayList<>()).add(e);
@@ -88,7 +91,7 @@ public final class TodoGrouping {
      * with the empty-key catch-all bucket last) and rows within a group by file name then line.
      */
     private static List<Group> byKey(
-            List<Entry> entries, java.util.function.Function<Entry, String> keyOf, Comparator<String> rank) {
+            List<Entry> entries, java.util.function.Function<Entry, String> keyOf, @Nullable Comparator<String> rank) {
         Map<String, List<Entry>> byKey = new LinkedHashMap<>();
         for (Entry e : entries) {
             byKey.computeIfAbsent(keyOf.apply(e), k -> new ArrayList<>()).add(e);
@@ -97,11 +100,12 @@ public final class TodoGrouping {
                 ? rank
                 : Comparator.comparingInt((String k) -> k.isEmpty() ? 1 : 0)
                         .thenComparing(k -> k.toLowerCase(java.util.Locale.ROOT));
-        List<String> keys = new ArrayList<>(byKey.keySet());
-        keys.sort(order);
+        List<Map.Entry<String, List<Entry>>> keyed = new ArrayList<>(byKey.entrySet());
+        keyed.sort(Map.Entry.comparingByKey(order));
         List<Group> groups = new ArrayList<>();
-        for (String k : keys) {
-            List<Entry> rows = byKey.get(k);
+        for (Map.Entry<String, List<Entry>> keyRows : keyed) {
+            String k = keyRows.getKey();
+            List<Entry> rows = keyRows.getValue();
             rows.sort(Comparator.comparing((Entry e) -> fileName(e.file()))
                     .thenComparingInt(e -> e.match().line()));
             groups.add(new Group(k, null, rows));
@@ -125,17 +129,15 @@ public final class TodoGrouping {
         return i < 0 ? TodoComment.PRIORITY_ORDER.size() : i;
     }
 
-    private static String nz(String s) {
+    private static String nz(@Nullable String s) {
         return s == null ? "" : s;
     }
 
     private static String fileName(Path p) {
-        return p == null
-                ? ""
-                : (p.getFileName() == null ? p.toString() : p.getFileName().toString());
+        return p == null ? "" : PathDisplay.fileName(p);
     }
 
-    private static boolean samePath(Path a, Path b) {
+    private static boolean samePath(@Nullable Path a, @Nullable Path b) {
         return a != null && a.equals(b);
     }
 

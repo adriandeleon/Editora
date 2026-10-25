@@ -1085,6 +1085,13 @@
 .pom-profile-title { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; -fx-padding: 16 0 0 0; }
 .pom-empty { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 .pom-error { -fx-text-fill: -color-danger-fg; }
+.pom-activation { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; -fx-font-style: italic; -fx-padding: 0 0 2 0; }
+.pom-filter { -fx-font-size: 0.95em; -fx-max-width: 320; }
+.pom-tags { -fx-hgap: 4; }
+/* Rows that take the editor to their element: the hand cursor says so, an underline on hover confirms it. */
+.pom-link:hover .pom-artifact, .pom-link:hover .pom-group, .pom-link:hover.pom-name, .pom-link:hover.pom-version,
+.pom-link:hover.pom-version-managed, .pom-link:hover.pom-version-unknown, .pom-link:hover.pom-error,
+.pom-link:hover.pom-profile-title { -fx-underline: true; }
 
 /* Keep the tree token colors stable when a row is selected. The rows are TextFlows of Text runs, whose
    -fx-fill AtlantaFX flips to the selection foreground (-color-cell-fg-selected) on a selected cell — so
@@ -1363,8 +1370,8 @@
     -fx-text-fill: -color-fg-default;
 }
 
-/* Project navigator mode switch. The tree remains the management surface; Map is the read-only spatial
-   Canvas view, so this control is intentionally small enough to live beside the shared search field. */
+/* The Project panel's Map button. The tree is the panel's management surface; the Map, the spatial Canvas
+   view, always opens in a window of its own, so the button is small enough to live beside the search field. */
 .project-view-modes {
     -fx-background-color: -color-bg-subtle;
     -fx-background-radius: 5;
@@ -1380,6 +1387,17 @@
 .project-view-toggle:selected {
     -fx-background-color: -color-accent-subtle;
     -fx-text-fill: -color-accent-fg;
+}
+.project-view-toggle:hover {
+    -fx-background-color: -color-neutral-muted;
+    -fx-text-fill: -color-fg-default;
+}
+
+/* The Project Map's own window: its search row over the Map, on the theme's surface (a new scene has none). */
+.project-map-window {
+    -fx-background-color: -color-bg-default;
+    -fx-padding: 6;
+    -fx-spacing: 4;
 }
 
 /* Canvas project map. Filters are native controls for focus/accessibility; only the hierarchy is painted. */
@@ -2158,6 +2176,20 @@
     -fx-font-size: 1em;
 }
 
+/* The New Maven Project form's hint doubles as the reason Create is disabled: red when it is one. */
+.settings-hint.overlay-form-error {
+    -fx-text-fill: -state-red;
+}
+/* Update Versions preview: group headings over the checkbox rows, and the tag on a major jump. */
+.maven-version-group {
+    -fx-font-weight: bold;
+    -fx-padding: 6 0 0 0;
+}
+.maven-version-major {
+    -fx-text-fill: -state-amber;
+    -fx-font-weight: bold;
+}
+
 .tool-window-close,
 .tool-window-float,
 .tool-window-maximize {
@@ -2792,6 +2824,45 @@
     -fx-padding: 1 8 1 8;
 }
 
+/* The editor's own signs of narrowing (the pill above is far from the text, which looks like a short, whole
+   file). An amber strip above the code names the accessible lines and offers Widen; the gutter's numbers —
+   which keep the file's numbering while narrowed — turn amber too, so every row says it is a window. */
+.narrow-bar {
+    -fx-background-color: -state-amber-bg;
+    -fx-border-color: transparent transparent -state-amber transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 3 12 3 12;
+}
+.narrow-bar .narrow-bar-text { -fx-text-fill: -state-amber; -fx-font-weight: bold; }
+.narrow-bar .narrow-bar-widen { -fx-padding: 2 12 2 12; }
+.editor-area.narrowed .lineno { -fx-text-fill: -state-amber; }
+/* A Project Map declaration card shows some of its file's lines, numbered as the file numbers them: its gutter
+   is the narrowed one. The editor themes' `.editor-area .text` fill would reach the number's own Text. */
+.project-map-preview-editor.narrowed .lineno,
+.project-map-preview-editor.narrowed .lineno > .text { -fx-text-fill: -state-amber; -fx-fill: -state-amber; }
+
+/* Structure panel: the narrow-to-fold-region toggle. Lit, it reads amber like the narrowing indicators; narrowed
+   by a chord (C-x n n) it is not lit, and an amber border says the file is narrowed anyway. */
+.structure-narrow-fold {
+    -fx-padding: 2 0 2 0;
+    -fx-pref-width: 30;
+    -fx-alignment: center;
+    -fx-background-radius: 5;
+    -fx-border-radius: 5;
+    -fx-border-width: 1;
+    -fx-border-color: -color-border-muted;
+}
+.structure-narrow-fold .icon-line { -fx-stroke: -color-fg-muted; }
+.structure-narrow-fold:hover .icon-line { -fx-stroke: -color-fg-default; }
+.structure-narrow-fold:narrowed-elsewhere { -fx-border-color: -state-amber; }
+.structure-narrow-fold:selected {
+    -fx-background-color: -state-amber-bg;
+    -fx-border-color: -state-amber;
+}
+.structure-narrow-fold:selected .icon-line { -fx-stroke: -state-amber; }
+/* Rows outside the narrowed region stay listed (in fold mode a click narrows to them), muted. */
+.structure-tree .tree-cell:out-of-reach { -fx-opacity: 0.55; }
+
 /* MCP server segment: a green "running" pill, deliberately noticeable (a local agent endpoint is live). */
 .status-bar .status-mcp {
     -fx-text-fill: -state-green;
@@ -3123,6 +3194,33 @@
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
 }
+/* A category row is graphic-only (CategoryCell): glyph, name Label, badges. The cell's own text fill
+   doesn't reach a child Label, so the name and the glyph take the row's colours here. */
+.settings-sidebar .list-cell .settings-sidebar-name {
+    -fx-text-fill: -color-fg-default;
+}
+.settings-sidebar .list-cell:filled:selected .settings-sidebar-name {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
+.settings-sidebar .settings-sidebar-icon .icon-line {
+    -fx-stroke: -color-fg-muted;
+}
+.settings-sidebar .settings-sidebar-icon .toolbar-icon {
+    -fx-fill: -color-fg-muted;
+}
+.settings-sidebar .list-cell.settings-sidebar-item:filled:hover .settings-sidebar-icon .icon-line {
+    -fx-stroke: -color-fg-default;
+}
+.settings-sidebar .list-cell.settings-sidebar-item:filled:hover .settings-sidebar-icon .toolbar-icon {
+    -fx-fill: -color-fg-default;
+}
+.settings-sidebar .list-cell:filled:selected .settings-sidebar-icon .icon-line {
+    -fx-stroke: -color-accent-fg;
+}
+.settings-sidebar .list-cell:filled:selected .settings-sidebar-icon .toolbar-icon {
+    -fx-fill: -color-accent-fg;
+}
 /* A category with no search hit is disabled (CategoryCell); say so, or it looks clickable and is not. */
 .settings-sidebar .list-cell.settings-sidebar-item:disabled {
     -fx-opacity: 0.4;
@@ -3298,8 +3396,8 @@
 /* The Appearance page's live preview is a swatch of the editor surface sitting inside a card, not an
    input — the frame the control theme draws around the CodeArea reads as a second box inside the card's
    own border. Drop it; the card already delimits the sample. */
-/* About panel (native-About layout: icon + name/version/tagline, copyright, a stack of links, then a
-   monospace environment block). Sizes are absolute rather than em-derived so the block stays a fixed
+/* About panel (native-About layout: icon + name/version/tagline, the update status, copyright, a stack of
+   links, then a monospace environment block). Sizes are absolute rather than em-derived so the block stays a fixed
    ratio to the name whatever the chrome font size is. */
 .about-content { -fx-padding: 6 8 2 8; }
 .about-name { -fx-font-size: 26px; -fx-font-weight: bold; }
@@ -3307,6 +3405,9 @@
 .about-tagline { -fx-font-size: 13px; -fx-text-fill: -color-fg-muted; }
 .about-copyright { -fx-text-fill: -color-fg-muted; }
 .about-update { -fx-text-fill: -state-accent; -fx-font-weight: bold; }
+.about-uptodate { -fx-text-fill: -state-green; }
+.about-update-failed { -fx-text-fill: -state-red; }
+.about-checked { -fx-text-fill: -color-fg-muted; }
 .about-env {
     -fx-font-family: "JetBrains Mono", monospace;
     -fx-font-size: 11.5px;
@@ -4339,6 +4440,45 @@
 /* Section headers (Lifecycle / Scripts / Targets / …) read bolder + muted, like an IDE group row. */
 .build-tasks-tree .tree-cell.build-tasks-section {
     -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+}
+/* The header above the tree: the detected build root and its workspace-trust pill, with Revoke. */
+.build-tasks-header {
+    -fx-padding: 0 4 2 4;
+}
+.build-tasks-root {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+.build-tasks-trust {
+    -fx-font-size: 10px;
+    -fx-padding: 1 6 1 6;
+    -fx-background-radius: 8;
+    -fx-background-color: -color-bg-inset;
+    -fx-text-fill: -color-fg-muted;
+}
+.build-tasks-trust.build-tasks-trusted {
+    -fx-background-color: -color-success-subtle;
+    -fx-text-fill: -color-success-fg;
+}
+.build-tasks-trust.build-tasks-untrusted {
+    -fx-background-color: -color-warning-subtle;
+    -fx-text-fill: -color-warning-fg;
+}
+.build-tasks-revoke {
+    -fx-font-size: 11px;
+    -fx-padding: 0;
+}
+/* A build file that did not parse: the reason, with a link to the file, above the (lifecycle-only) tree. */
+.build-tasks-notice {
+    -fx-padding: 2 4 4 4;
+}
+.build-tasks-notice-text {
+    -fx-text-fill: -color-danger-fg;
+    -fx-font-size: 11px;
+}
+/* Rows of the "Projects" section: the build roots found below the open project. */
+.build-tasks-tree .tree-cell.build-tasks-project {
     -fx-text-fill: -color-fg-muted;
 }
 

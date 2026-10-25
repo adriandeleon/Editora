@@ -13,12 +13,14 @@ import javafx.scene.control.TabPane;
 import javafx.stage.Stage;
 
 import com.editora.config.ConfigManager;
+import com.editora.config.PathDisplay;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
 import com.editora.ui.MainController.OpenTarget;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -35,7 +37,7 @@ final class WindowSessionCoordinator {
         ConfigManager config();
 
         /** Points the Project tree at {@code root} (the panel is built on its first open). */
-        void setProjectRoot(Path root);
+        void setProjectRoot(@Nullable Path root);
 
         ProjectManager projects();
 
@@ -102,22 +104,27 @@ final class WindowSessionCoordinator {
 
         void discardLoading(EditorBuffer buffer);
 
-        EditorBuffer bufferOf(Tab tab);
+        @Nullable
+        EditorBuffer bufferOf(@Nullable Tab tab);
 
-        Tab tabForPath(Path file);
+        @Nullable
+        Tab tabForPath(@Nullable Path file);
 
+        @Nullable
         Path tabPath(Tab tab);
 
+        @Nullable
         Path windowProjectRoot();
 
         /** The project this window edits, or null. */
-        default Project windowProject() {
+        default @Nullable Project windowProject() {
             return null;
         }
 
         /** Re-applies the file's stored folds, bookmarks, breakpoints, notes and read-only pin. */
         void restorePerFileState(EditorBuffer buffer);
 
+        @Nullable
         Tab tabForBuffer(EditorBuffer buffer);
 
         void refreshStatusBar();
@@ -209,7 +216,8 @@ final class WindowSessionCoordinator {
         restoreTabs = new ArrayList<>();
         // Fill order: the selected file first (the CLI target when there is one, else the session's active
         // file), then the rest in tab order.
-        schedule = new RestoreSchedule(files.size(), selectIndex >= 0 ? selectIndex : activeIndex);
+        RestoreSchedule restore = new RestoreSchedule(files.size(), selectIndex >= 0 ? selectIndex : activeIndex);
+        schedule = restore;
         host.editorArea().holdActiveTab(true); // until the session's own active tab is the selected one
         try {
             restoreShells(files, layout, selectIndex, restoreTabs);
@@ -226,7 +234,7 @@ final class WindowSessionCoordinator {
                 materialize(tab, true);
             }
         }
-        startRestore();
+        startRestore(restore);
     }
 
     /**
@@ -236,16 +244,17 @@ final class WindowSessionCoordinator {
      */
     private void restoreShells(
             List<WorkspaceState.OpenFile> files,
-            com.editora.config.EditorGroupLayout layout,
+            com.editora.config.@Nullable EditorGroupLayout layout,
             int selectIndex,
             List<Tab> tabs) {
         for (int i = 0; i < files.size(); i++) {
             WorkspaceState.OpenFile f = files.get(i);
             host.editorArea().setRestoreTargetGroup(layout == null ? -1 : f.getGroup());
-            Path p = com.editora.vfs.Vfs.parseStorable(f.getPath()); // non-null: the filter above kept only readable
+            Path p = java.util.Objects.requireNonNull(
+                    com.editora.vfs.Vfs.parseStorable(f.getPath()), "the session scan kept only entries that parse");
             boolean active = i == selectIndex;
             // A raster image restores into the read-only image viewer.
-            if (ImageFormats.isSupported(p.getFileName().toString())) {
+            if (ImageFormats.isSupported(PathDisplay.fileName(p))) {
                 Tab tab = host.fileWorkflows().openImageTab(p, active);
                 if (f.isPinned()) {
                     host.pinned().add(tab);
@@ -254,7 +263,7 @@ final class WindowSessionCoordinator {
                 continue;
             }
             // A PDF restores into the read-only PDF viewer.
-            if (PdfViewerPane.isPdf(p.getFileName().toString())) {
+            if (PdfViewerPane.isPdf(PathDisplay.fileName(p))) {
                 Tab tab = host.fileWorkflows().openPdfTab(p, active);
                 if (f.isPinned()) {
                     host.pinned().add(tab);
@@ -307,7 +316,7 @@ final class WindowSessionCoordinator {
     private List<Tab> restoreTabs = List.of();
 
     /** Which entries still need their editor, and in what order; null until a session is being restored. */
-    private RestoreSchedule schedule;
+    private @Nullable RestoreSchedule schedule;
 
     /** Restored buffers whose text has not landed yet (built on the cadence or out of order alike). */
     private int inFlight;
@@ -327,8 +336,8 @@ final class WindowSessionCoordinator {
      * behind a command-line target and is built now), runs the CLI action, and starts the cadence after
      * that file has had a frame to paint.
      */
-    private void startRestore() {
-        int first = schedule.first();
+    private void startRestore(RestoreSchedule restore) {
+        int first = restore.first();
         Runnable continued = () -> {
             // The requested file (already selected + just filled) is the one the CLI action targets, so run
             // it now rather than after the whole restore — a caret jump needs its content.
@@ -336,7 +345,7 @@ final class WindowSessionCoordinator {
             // Keep background tabs out of the visible file's first rendered frames.
             afterNextPaint(this::restoreStep);
         };
-        if (first >= 0 && schedule.claim(first) && startEntry(first, continued)) {
+        if (first >= 0 && restore.claim(first) && startEntry(first, continued)) {
             return;
         }
         continued.run(); // image/PDF viewer, or already built: nothing to fill before the CLI action
@@ -351,7 +360,8 @@ final class WindowSessionCoordinator {
         if (host.fileWorkflows().isShutdown()) {
             return; // the window closed mid-restore: there is nothing left to fill or to open
         }
-        if (schedule.isExhausted()) {
+        RestoreSchedule restore = schedule; // set before the cadence starts
+        if (restore == null || restore.isExhausted()) {
             maybeFinishRestore();
             return;
         }
@@ -364,7 +374,7 @@ final class WindowSessionCoordinator {
                 afterNextPaint(this::restoreStep);
             }
         };
-        started[0] = schedule.batch(System::nanoTime, RestoreSchedule.DEFAULT_BUDGET_NANOS, i -> startEntry(i, onDone))
+        started[0] = restore.batch(System::nanoTime, RestoreSchedule.DEFAULT_BUDGET_NANOS, i -> startEntry(i, onDone))
                 .size();
         counted[0] = true;
         if (started[0] == 0) {
@@ -424,7 +434,8 @@ final class WindowSessionCoordinator {
      * (a viewer, the Welcome page); a tab that already has its buffer is returned untouched, so this is a
      * cheap no-op for every selection of an ordinary tab.
      */
-    EditorBuffer materialize(Tab tab, boolean shown) {
+    @Nullable
+    EditorBuffer materialize(@Nullable Tab tab, boolean shown) {
         return materialize(tab, shown, null);
     }
 
@@ -432,9 +443,11 @@ final class WindowSessionCoordinator {
      * As above; {@code done} (if given) receives the buffer once its text has landed, or {@code null} if the
      * load failed or the tab was closed first.
      */
-    EditorBuffer materialize(Tab tab, boolean shown, java.util.function.Consumer<EditorBuffer> done) {
+    @Nullable
+    EditorBuffer materialize(
+            @Nullable Tab tab, boolean shown, java.util.function.@Nullable Consumer<@Nullable EditorBuffer> done) {
         RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
-        if (placeholder == null) {
+        if (tab == null || placeholder == null) {
             EditorBuffer existing = host.bufferOf(tab);
             if (done != null) {
                 done.accept(existing);
@@ -462,9 +475,10 @@ final class WindowSessionCoordinator {
      * background. Null when {@code tab} is not a placeholder, or the read fails (the tab is then removed,
      * like any restored file that cannot be read).
      */
-    EditorBuffer materializeLoaded(Tab tab) {
+    @Nullable
+    EditorBuffer materializeLoaded(@Nullable Tab tab) {
         RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
-        if (placeholder == null) {
+        if (tab == null || placeholder == null) {
             return null;
         }
         EditorBuffer buffer = buildEditor(tab, placeholder, false);
@@ -530,6 +544,7 @@ final class WindowSessionCoordinator {
     }
 
     /** A one-shot action applying the command-line startup targets; see {@link #runPendingStartupAction}. */
+    @Nullable
     Runnable pendingAfterRestore;
 
     /** The command-line {@code FILE} targets, consulted by {@link #openInitialBuffer()} to pick the tab to
@@ -610,7 +625,8 @@ final class WindowSessionCoordinator {
      * Editora burns while starting, ~225 MB less. The saved session is left untouched, so the next ordinary
      * launch restores everything as usual.
      */
-    public void startup(Path projectDir, List<OpenTarget> targets, String newFile, boolean noSession) {
+    public void startup(
+            @Nullable Path projectDir, List<OpenTarget> targets, @Nullable String newFile, boolean noSession) {
         if (projectDir != null && host.projectsEnabled()) {
             activateStartupProject(projectDir); // swap to the project's session before it's restored
         }
@@ -636,7 +652,7 @@ final class WindowSessionCoordinator {
         pendingAfterRestore = () -> {
             Path leftPath = left == null ? null : left.toAbsolutePath().normalize();
             Path rightPath = right == null ? null : right.toAbsolutePath().normalize();
-            if (!readableDiffPath(leftPath) || !readableDiffPath(rightPath)) {
+            if (leftPath == null || rightPath == null || !readableDiffPath(leftPath) || !readableDiffPath(rightPath)) {
                 Path bad = !readableDiffPath(leftPath) ? leftPath : rightPath;
                 host.chrome().exitDiffUiMode();
                 suppressWelcome = false;
@@ -656,11 +672,11 @@ final class WindowSessionCoordinator {
         openInitialBuffer();
     }
 
-    static boolean readableDiffPath(Path path) {
+    static boolean readableDiffPath(@Nullable Path path) {
         return path != null && (Files.isRegularFile(path) || Files.isDirectory(path)) && Files.isReadable(path);
     }
 
-    void applyStartupTargets(List<OpenTarget> targets, String newFile) {
+    void applyStartupTargets(List<OpenTarget> targets, @Nullable String newFile) {
         if (newFile != null) {
             // --new-file[=NAME]: open a fresh buffer instead of the Welcome page. "" = blank untitled.
             EditorBuffer buffer = new EditorBuffer();
@@ -733,7 +749,7 @@ final class WindowSessionCoordinator {
             Path p = b != null ? b.getPath() : host.tabPath(t);
             String language = b != null
                     ? b.getLanguage()
-                    : p == null ? null : com.editora.editor.LanguageRegistry.forFileName(p.toString());
+                    : p == null ? null : com.editora.text.LanguageRegistry.forFileName(p.toString());
             if (p != null && "java".equals(language)) {
                 hasJavaOpen = true;
                 break;
@@ -756,6 +772,7 @@ final class WindowSessionCoordinator {
     }
 
     /** The main class of this window's selected Java run configuration (else the first one), or null. */
+    @Nullable
     String mainClassOfSelectedJavaConfig() {
         List<com.editora.config.RunConfiguration> configs =
                 host.config().getWorkspaceState().getRunConfigurations();
@@ -789,12 +806,12 @@ final class WindowSessionCoordinator {
     }
 
     /** Selects the tab for {@code file} (if open) and moves the caret to a 1-based line/column. */
-    void gotoInFile(Path file, int line1, int col1) {
+    void gotoInFile(@Nullable Path file, int line1, int col1) {
         gotoInFile(file, line1, col1, true);
     }
 
     /** Jumps to {@code file}:{@code line1}:{@code col1}; {@code focusEditor} false leaves focus where it is. */
-    void gotoInFile(Path file, int line1, int col1, boolean focusEditor) {
+    void gotoInFile(@Nullable Path file, int line1, int col1, boolean focusEditor) {
         boolean record = !host.navigation().suppressNavRecord && !host.navigation().navigating;
         gotoInFile(
                 file,
@@ -811,13 +828,21 @@ final class WindowSessionCoordinator {
      * loaded file's first line, so re-reading either would record a jump the caller suppressed, from line 1.
      */
     private void gotoInFile(
-            Path file, int line1, int col1, boolean focusEditor, boolean record, NavigationHistory.Location origin) {
+            @Nullable Path file,
+            int line1,
+            int col1,
+            boolean focusEditor,
+            boolean record,
+            NavigationHistory.@Nullable Location origin) {
         Tab tab = host.tabForPath(file);
         if (tab == null) {
             return;
         }
         host.editorArea().select(tab);
         EditorBuffer buffer = host.bufferOf(tab);
+        if (buffer == null) {
+            return; // an image or hex viewer tab: no text to place the caret in
+        }
         if (host.fileWorkflows().loadingBuffers.contains(buffer)) {
             host.fileWorkflows()
                     .afterBufferLoad
@@ -826,9 +851,11 @@ final class WindowSessionCoordinator {
             return;
         }
         CodeArea area = buffer.getArea();
+        boolean wasNarrowed = buffer.isNarrowed();
         // The caller names a line of the file. In a narrowed buffer the area holds only the region, so rebase
         // (or widen, when the target is outside it) before clamping against the area's own line count.
         int areaLine1 = host.navigation().areaLine(buffer, line1 - 1) + 1;
+        boolean widened = wasNarrowed && !buffer.isNarrowed();
         int total = area.getParagraphs().size();
         int line = Math.max(1, Math.min(total, areaLine1)) - 1;
         int col = 0;
@@ -847,14 +874,9 @@ final class WindowSessionCoordinator {
                             new NavigationHistory.Location(
                                     file, host.navigation().documentLine(buffer, targetLine), targetCol));
         }
-        area.requestFollowCaret();
-        Platform.runLater(() -> {
-            try {
-                area.showParagraphAtTop(targetLine);
-            } catch (RuntimeException ignored) {
-                // Viewport not ready; ignore.
-            }
-        });
+        // At the top, below any sticky-scroll rows (the line under them was hidden), in the frame that moves the
+        // caret when the editor is already on screen.
+        buffer.jumps().reveal(area, targetLine, widened);
         if (focusEditor) {
             area.requestFocus();
         }
@@ -866,7 +888,7 @@ final class WindowSessionCoordinator {
      * ({@code Path.of()} would hand an sftp:// entry to the local filesystem, where it either fails or names
      * an unrelated local file), or where a move made before the editor was built relocated it.
      */
-    void fillSessionBuffer(WorkspaceState.OpenFile f, Path file, EditorBuffer buffer, Runnable onComplete) {
+    void fillSessionBuffer(WorkspaceState.OpenFile f, @Nullable Path file, EditorBuffer buffer, Runnable onComplete) {
         if (file == null) {
             failSessionBuffer(f, buffer, f.getPath());
             onComplete.run();
@@ -984,7 +1006,7 @@ final class WindowSessionCoordinator {
      * anything else becomes the buffer's text. Returns the buffer that now holds the file, or {@code null}
      * when the tab was closed meanwhile or became a hex view.
      */
-    private EditorBuffer applySessionLoad(
+    private @Nullable EditorBuffer applySessionLoad(
             WorkspaceState.OpenFile f, EditorBuffer buffer, FileWorkflowCoordinator.PreparedLoad load) {
         Tab tab = host.tabForBuffer(buffer);
         if (tab == null) {

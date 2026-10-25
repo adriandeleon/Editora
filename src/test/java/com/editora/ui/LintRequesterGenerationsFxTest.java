@@ -7,7 +7,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import com.editora.editor.MarkdownLintService;
+import com.editora.editor.markdown.MarkdownLintService;
 import com.editora.mermaid.MermaidService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

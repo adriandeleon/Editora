@@ -14,11 +14,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import com.editora.editor.MarkdownDocInfo;
-import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.MathImages;
-import com.editora.editor.PreviewImageLoader;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.markdown.MarkdownDocInfo;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.MathImages;
+import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.markdown.MarkdownMath;
 import com.editora.mermaid.Mermaid;
 import com.github.weisj.jsvg.SVGDocument;
@@ -72,6 +72,7 @@ import org.commonmark.node.Text;
 import org.commonmark.node.ThematicBreak;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders Markdown to a <b>native vector</b> (searchable) PDF, mirroring the editor's preview coverage:
@@ -158,13 +159,18 @@ public final class MarkdownPdfWriter {
      * (the PDF's Title and the footer) and the footer's localised page label.
      */
     public static Outcome write(
-            String markdown, Path baseDir, PdfPageSpec spec, PdfDocMeta meta, List<String> mmdcCommand, Path out)
+            String markdown,
+            @Nullable Path baseDir,
+            PdfPageSpec spec,
+            PdfDocMeta meta,
+            @Nullable List<String> mmdcCommand,
+            Path out)
             throws IOException {
         // The preview's parse: math is recognised by the parser (when the feature is on), not searched for
         // in text the Markdown parser has already rewritten.
         Node ast = com.editora.markdown.MarkdownExportTree.lower(
                 MarkdownRenderer.parseForRender(markdown, MathImages.isEnabled()),
-                com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
+                com.editora.editor.markdown.MarkdownHtmlExport.wikiPaths(baseDir));
         return write(ast, baseDir, spec, meta, mmdcCommand, out, SystemFontFiles.get(), MathImages.isEnabled());
     }
 
@@ -181,7 +187,12 @@ public final class MarkdownPdfWriter {
 
     /** As {@link #write(Node, Path, String, List, Path)} on the page {@code spec} describes, with {@code meta}. */
     public static Outcome writeData(
-            Node ast, Path baseDir, PdfPageSpec spec, PdfDocMeta meta, List<String> mmdcCommand, Path out)
+            Node ast,
+            @Nullable Path baseDir,
+            PdfPageSpec spec,
+            PdfDocMeta meta,
+            @Nullable List<String> mmdcCommand,
+            Path out)
             throws IOException {
         return write(ast, baseDir, spec, meta, mmdcCommand, out, SystemFontFiles.get(), false);
     }
@@ -205,10 +216,10 @@ public final class MarkdownPdfWriter {
     /** {@code math}: whether {@code $…$} in text is a formula (Markdown source) or literal text (data). */
     static Outcome write(
             Node ast,
-            Path baseDir,
+            @Nullable Path baseDir,
             PdfPageSpec spec,
             PdfDocMeta meta,
-            List<String> mmdcCommand,
+            @Nullable List<String> mmdcCommand,
             Path out,
             List<Path> fallbackFonts,
             boolean math)
@@ -228,10 +239,10 @@ public final class MarkdownPdfWriter {
 
     private static Outcome render(
             Node ast,
-            Path baseDir,
+            @Nullable Path baseDir,
             PdfPageSpec spec,
             PdfDocMeta meta,
-            List<String> mmdcCommand,
+            @Nullable List<String> mmdcCommand,
             Path out,
             List<Path> fallbackFonts,
             boolean math)
@@ -337,7 +348,7 @@ public final class MarkdownPdfWriter {
     }
 
     /** Where a link leads: an external URI, or the id of a heading in this document. */
-    private record LinkRef(String uri, String anchor) {}
+    private record LinkRef(@Nullable String uri, @Nullable String anchor) {}
 
     /**
      * The target of a link to {@code destination}, or null when the PDF gives it no action: only
@@ -345,7 +356,7 @@ public final class MarkdownPdfWriter {
      * Anything else — a relative file path, {@code file:}, {@code javascript:} — keeps its link styling but
      * does nothing when clicked.
      */
-    private static LinkRef linkRef(String destination) {
+    private static @Nullable LinkRef linkRef(String destination) {
         if (destination == null) {
             return null;
         }
@@ -390,13 +401,13 @@ public final class MarkdownPdfWriter {
             String text,
             PDFont font,
             float size,
-            Color color,
+            @Nullable Color color,
             boolean underline,
             boolean strike,
             boolean brk,
             boolean space,
-            LinkRef link,
-            PDImageXObject img,
+            @Nullable LinkRef link,
+            @Nullable PDImageXObject img,
             float imgW,
             float imgH,
             float imgDrop,
@@ -477,7 +488,7 @@ public final class MarkdownPdfWriter {
             boolean space,
             boolean underline,
             boolean strike,
-            LinkRef link,
+            @Nullable LinkRef link,
             float scale) {}
 
     /** A laid-out line: its pieces, its width, and how far its pictures reach above and below the baseline. */
@@ -522,8 +533,8 @@ public final class MarkdownPdfWriter {
 
         final float bottom;
         final float footerY;
-        final Path baseDir;
-        final List<String> mmdc;
+        final @Nullable Path baseDir;
+        final @Nullable List<String> mmdc;
         final boolean math;
         final PDFont body;
         final PDFont bodyBold;
@@ -531,14 +542,21 @@ public final class MarkdownPdfWriter {
         final PDFont bodyBoldItalic;
         final PDType0Font mono;
         /** The styled faces of the code font, embedded only when a highlighted block needs them. */
+        @Nullable
         PDType0Font monoBold;
 
+        @Nullable
         PDType0Font monoItalic;
+
         final PdfGlyphs glyphs;
         PDPage page;
+
+        @Nullable
         PDPageContentStream cs;
+
         float y;
         /** The colour of the paragraph being laid out when it is an alert's title line; null otherwise. */
+        @Nullable
         Color tint;
 
         /** Inline-collection state: whitespace was seen since the last word (see {@link Word#space()}). */
@@ -563,8 +581,8 @@ public final class MarkdownPdfWriter {
         Cur(
                 PDDocument doc,
                 PdfPageSpec spec,
-                Path baseDir,
-                List<String> mmdc,
+                @Nullable Path baseDir,
+                @Nullable List<String> mmdc,
                 PdfGlyphs glyphs,
                 boolean math,
                 Map<Heading, String> ids)
@@ -592,6 +610,15 @@ public final class MarkdownPdfWriter {
             this.bodyBoldItalic = embed(doc, "inter/Inter-BoldItalic");
             this.mono = embed(doc, "jetbrains-mono/JetBrainsMono-Regular");
             newPage();
+        }
+
+        /** The current page's content stream: open from the constructor's first page until {@link #finish}. */
+        PDPageContentStream cs() {
+            PDPageContentStream stream = cs;
+            if (stream == null) {
+                throw new IllegalStateException("no page is open");
+            }
+            return stream;
         }
 
         void newPage() throws IOException {
@@ -673,7 +700,8 @@ public final class MarkdownPdfWriter {
         }
 
         /** The heading {@code fragment} names: as written, then percent-decoded, then lower-cased. */
-        Mark anchor(String fragment) {
+        @Nullable
+        Mark anchor(@Nullable String fragment) {
             Mark m = anchors.get(fragment);
             if (m == null) {
                 try {
@@ -858,11 +886,11 @@ public final class MarkdownPdfWriter {
                 // that baseline (within the line box) so it stays attached to the heading rather than
                 // colliding with the following paragraph.
                 float ruleY = y + leading - size * 0.5f;
-                cs.setStrokingColor(PdfTheme.RULE);
-                cs.setLineWidth(0.6f);
-                cs.moveTo(left, ruleY);
-                cs.lineTo(contentRight(), ruleY);
-                cs.stroke();
+                cs().setStrokingColor(PdfTheme.RULE);
+                cs().setLineWidth(0.6f);
+                cs().moveTo(left, ruleY);
+                cs().lineTo(contentRight(), ruleY);
+                cs().stroke();
             }
             y -= PARA_GAP;
         }
@@ -947,24 +975,24 @@ public final class MarkdownPdfWriter {
          */
         void checkbox(boolean checked, float x) throws IOException {
             float bottom = y - 0.5f;
-            cs.setStrokingColor(PdfTheme.DEFAULT_FG);
-            cs.setLineWidth(0.8f);
-            cs.addRect(x, bottom, CHECKBOX, CHECKBOX);
-            cs.stroke();
+            cs().setStrokingColor(PdfTheme.DEFAULT_FG);
+            cs().setLineWidth(0.8f);
+            cs().addRect(x, bottom, CHECKBOX, CHECKBOX);
+            cs().stroke();
             if (checked) {
-                cs.setLineWidth(1.2f);
-                cs.moveTo(x + 1.8f, bottom + 4.2f);
-                cs.lineTo(x + 3.4f, bottom + 2.2f);
-                cs.lineTo(x + 6.3f, bottom + 6.2f);
-                cs.stroke();
+                cs().setLineWidth(1.2f);
+                cs().moveTo(x + 1.8f, bottom + 4.2f);
+                cs().lineTo(x + 3.4f, bottom + 2.2f);
+                cs().lineTo(x + 6.3f, bottom + 6.2f);
+                cs().stroke();
             }
-            cs.saveGraphicsState();
-            cs.setRenderingMode(RenderingMode.NEITHER);
+            cs().saveGraphicsState();
+            cs().setRenderingMode(RenderingMode.NEITHER);
             // Body size, so extractors read it as part of the item's line; condensed to the box's width.
             String state = checked ? "[x]" : "[ ]";
-            cs.setHorizontalScaling(100f * CHECKBOX / glyphs.width(body, state, BODY));
-            glyphs.show(cs, body, BODY, state, x, y);
-            cs.restoreGraphicsState();
+            cs().setHorizontalScaling(100f * CHECKBOX / glyphs.width(body, state, BODY));
+            glyphs.show(cs(), body, BODY, state, x, y);
+            cs().restoreGraphicsState();
         }
 
         /** A footnote definition: its {@code [label]} marker, then the definition's blocks beside it. */
@@ -1017,11 +1045,11 @@ public final class MarkdownPdfWriter {
             if (bar.top - bottom < LEADING / 2f) {
                 return; // nothing of the quote on this page (it starts on the next one)
             }
-            cs.setStrokingColor(bar.color);
-            cs.setLineWidth(2.5f);
-            cs.moveTo(bar.x, bar.top);
-            cs.lineTo(bar.x, bottom);
-            cs.stroke();
+            cs().setStrokingColor(bar.color);
+            cs().setLineWidth(2.5f);
+            cs().moveTo(bar.x, bar.top);
+            cs().lineTo(bar.x, bottom);
+            cs().stroke();
         }
 
         /**
@@ -1030,7 +1058,7 @@ public final class MarkdownPdfWriter {
          * continuation lines instead of running off the page edge. A fenced block whose info string names a
          * bundled grammar is syntax-coloured with the code PDF's palette.
          */
-        void codeBlock(String literal, String info, float left) throws IOException {
+        void codeBlock(String literal, @Nullable String info, float left) throws IOException {
             float fontSize = BODY - 1f;
             float cell = mono.getStringWidth("M") / 1000f * fontSize;
             int maxCols = Math.max(1, (int) Math.floor((contentRight() - left - 10f) / cell));
@@ -1044,13 +1072,13 @@ public final class MarkdownPdfWriter {
             for (List<PdfText.Run> line : lines) {
                 need(LEADING);
                 // light gray background strip
-                cs.setNonStrokingColor(PdfTheme.CODE_BG);
-                cs.addRect(left, y - 3f, contentRight() - left, LEADING);
-                cs.fill();
+                cs().setNonStrokingColor(PdfTheme.CODE_BG);
+                cs().addRect(left, y - 3f, contentRight() - left, LEADING);
+                cs().fill();
                 int col = 0;
                 for (PdfText.Run r : line) {
-                    cs.setNonStrokingColor(r.color().equals(PdfTheme.DEFAULT_FG) ? CODE_FG : r.color());
-                    col += glyphs.showOnGrid(cs, monoFace(r), fontSize, cell, r.text(), left + 5f + col * cell, y);
+                    cs().setNonStrokingColor(r.color().equals(PdfTheme.DEFAULT_FG) ? CODE_FG : r.color());
+                    col += glyphs.showOnGrid(cs(), monoFace(r), fontSize, cell, r.text(), left + 5f + col * cell, y);
                 }
                 y -= LEADING;
             }
@@ -1058,7 +1086,8 @@ public final class MarkdownPdfWriter {
         }
 
         /** The token styles of a fenced block, or null when its language has no bundled grammar. */
-        StyleSpans<Collection<String>> highlight(String code, String info) {
+        @Nullable
+        StyleSpans<Collection<String>> highlight(String code, @Nullable String info) {
             if (info == null || info.isBlank() || code.isEmpty() || code.length() > MAX_HIGHLIGHT_CHARS) {
                 return null;
             }
@@ -1154,6 +1183,7 @@ public final class MarkdownPdfWriter {
          * The picture at {@code destination}, fetched and embedded once per document; null when it cannot be
          * fetched or decoded (the caller prints the alt text).
          */
+        @Nullable
         Pic picture(String destination) {
             if (pictures.containsKey(destination)) {
                 return pictures.get(destination);
@@ -1197,7 +1227,8 @@ public final class MarkdownPdfWriter {
         }
 
         /** Draws {@code img}, {@code natW}×{@code natH} points at its natural size, shrunk to fit the page. */
-        void drawImage(PDImageXObject img, float left, float natW, float natH, LinkRef link) throws IOException {
+        void drawImage(PDImageXObject img, float left, float natW, float natH, @Nullable LinkRef link)
+                throws IOException {
             float maxW = contentRight() - left;
             float w = Math.min(natW, maxW);
             float h = w / natW * natH;
@@ -1208,7 +1239,7 @@ public final class MarkdownPdfWriter {
             }
             needBox(h);
             float bottomEdge = boxTop() - h;
-            cs.drawImage(img, left, bottomEdge, w, h);
+            cs().drawImage(img, left, bottomEdge, w, h);
             if (link != null) {
                 links.add(new LinkBox(page, left, bottomEdge, left + w, bottomEdge + h, link));
             }
@@ -1220,11 +1251,11 @@ public final class MarkdownPdfWriter {
             // blocks around it instead of on the next block's baseline.
             needBox(PARA_GAP);
             float ruleY = boxTop() - PARA_GAP / 2f;
-            cs.setStrokingColor(PdfTheme.RULE);
-            cs.setLineWidth(0.8f);
-            cs.moveTo(left, ruleY);
-            cs.lineTo(contentRight(), ruleY);
-            cs.stroke();
+            cs().setStrokingColor(PdfTheme.RULE);
+            cs().setLineWidth(0.8f);
+            cs().moveTo(left, ruleY);
+            cs().lineTo(contentRight(), ruleY);
+            cs().stroke();
             afterBox(boxTop() - PARA_GAP);
         }
 
@@ -1420,9 +1451,9 @@ public final class MarkdownPdfWriter {
             float rowTop = boxTop();
             float rowH = n * LEADING + 4f;
             if (row.head()) {
-                cs.setNonStrokingColor(PdfTheme.CODE_BG);
-                cs.addRect(left, rowTop - rowH, tableW, rowH);
-                cs.fill();
+                cs().setNonStrokingColor(PdfTheme.CODE_BG);
+                cs().addRect(left, rowTop - rowH, tableW, rowH);
+                cs().fill();
             }
             for (int ci = 0; ci < row.cells().size(); ci++) {
                 List<Line> lines = row.cells().get(ci);
@@ -1439,14 +1470,14 @@ public final class MarkdownPdfWriter {
                 }
             }
             // borders
-            cs.setStrokingColor(PdfTheme.RULE);
-            cs.setLineWidth(0.5f);
-            cs.addRect(left, rowTop - rowH, tableW, rowH);
-            cs.stroke();
+            cs().setStrokingColor(PdfTheme.RULE);
+            cs().setLineWidth(0.5f);
+            cs().addRect(left, rowTop - rowH, tableW, rowH);
+            cs().stroke();
             for (int ci = 1; ci < cols; ci++) {
-                cs.moveTo(colX[ci], rowTop);
-                cs.lineTo(colX[ci], rowTop - rowH);
-                cs.stroke();
+                cs().moveTo(colX[ci], rowTop);
+                cs().lineTo(colX[ci], rowTop - rowH);
+                cs().stroke();
             }
             return rowH;
         }
@@ -1791,9 +1822,9 @@ public final class MarkdownPdfWriter {
                 float high;
                 // The marker runs under the words and the spaces between two of them, not past the phrase.
                 if (w.mark() && (!p.space() || (before != null && before.mark()))) {
-                    cs.setNonStrokingColor(MARK_BG);
-                    cs.addRect(x, base - w.size() * 0.25f + w.rise(), p.width(), w.size() * 1.1f);
-                    cs.fill();
+                    cs().setNonStrokingColor(MARK_BG);
+                    cs().addRect(x, base - w.size() * 0.25f + w.rise(), p.width(), w.size() * 1.1f);
+                    cs().fill();
                 }
                 if (!p.space()) {
                     before = w;
@@ -1802,14 +1833,14 @@ public final class MarkdownPdfWriter {
                     float h = w.imgH() * p.scale();
                     low = base - w.imgDrop() * p.scale();
                     high = low + h;
-                    cs.drawImage(w.img(), x, low, p.width(), h);
+                    cs().drawImage(w.img(), x, low, p.width(), h);
                 } else {
                     low = base - w.size() * 0.25f;
                     high = base + w.size() * 0.8f;
                     if (w.color() != null) {
-                        cs.setNonStrokingColor(w.color());
+                        cs().setNonStrokingColor(w.color());
                     }
-                    glyphs.show(cs, w.font(), w.size(), p.text(), x, base + w.rise());
+                    glyphs.show(cs(), w.font(), w.size(), p.text(), x, base + w.rise());
                 }
                 if (p.underline()) {
                     underline(w.color() == null ? PdfTheme.DEFAULT_FG : w.color(), x, x + p.width(), base);
@@ -1840,19 +1871,19 @@ public final class MarkdownPdfWriter {
         /** The strikethrough line for {@code w}'s text between {@code from} and {@code to}, at mid x-height. */
         void strike(Word w, float from, float to, float base) throws IOException {
             float sy = base + w.size() * 0.28f;
-            cs.setStrokingColor(w.color() == null ? PdfTheme.DEFAULT_FG : w.color()); // a math word has no color
-            cs.setLineWidth(Math.max(0.6f, w.size() * 0.06f));
-            cs.moveTo(from, sy);
-            cs.lineTo(to, sy);
-            cs.stroke();
+            cs().setStrokingColor(w.color() == null ? PdfTheme.DEFAULT_FG : w.color()); // a math word has no color
+            cs().setLineWidth(Math.max(0.6f, w.size() * 0.06f));
+            cs().moveTo(from, sy);
+            cs().lineTo(to, sy);
+            cs().stroke();
         }
 
         void underline(Color color, float from, float to, float base) throws IOException {
-            cs.setStrokingColor(color);
-            cs.setLineWidth(0.5f);
-            cs.moveTo(from, base - 1.5f);
-            cs.lineTo(to, base - 1.5f);
-            cs.stroke();
+            cs().setStrokingColor(color);
+            cs().setLineWidth(0.5f);
+            cs().moveTo(from, base - 1.5f);
+            cs().lineTo(to, base - 1.5f);
+            cs().stroke();
         }
 
         /** The largest end index such that {@code text[from, end)} is no wider than {@code avail}. */
@@ -1872,14 +1903,14 @@ public final class MarkdownPdfWriter {
         }
 
         void drawText(String s, PDFont font, float size, Color color, float x, float y) throws IOException {
-            cs.setNonStrokingColor(color);
-            glyphs.show(cs, font, size, s, x, y);
+            cs().setNonStrokingColor(color);
+            glyphs.show(cs(), font, size, s, x, y);
         }
 
-        byte[] fetch(String url) {
+        byte @Nullable [] fetch(String url) {
             // The preview's guarded fetcher: internal-address block re-checked per redirect hop, UNC refusal,
             // regular files only, and a byte cap — exporting a document must not reach what previewing refuses.
-            return com.editora.editor.PreviewImageLoader.fetchForExport(url, baseDir);
+            return com.editora.editor.markdown.PreviewImageLoader.fetchForExport(url, baseDir);
         }
     }
 
@@ -1890,7 +1921,7 @@ public final class MarkdownPdfWriter {
      * ({@code [![shot](shot.png)](shot.png)}) — or null when the paragraph has anything else in it. Such a
      * picture is a block at its natural size; one among text is set in the line ({@code Cur.inline}).
      */
-    private static Image blockImage(Paragraph p) {
+    private static @Nullable Image blockImage(Paragraph p) {
         Node c = p.getFirstChild();
         if (c == null || c.getNext() != null) {
             return null;

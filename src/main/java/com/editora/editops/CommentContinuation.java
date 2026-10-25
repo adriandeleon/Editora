@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Enter inside a {@code /* … *}{@code /} block comment in a brace language (JSDoc, Javadoc, Doxygen): the new
  * line continues the comment with {@code " * "}, as VS Code's JavaScript/TypeScript rules and IntelliJ do. In a
@@ -38,7 +40,7 @@ public final class CommentContinuation {
      * @param before the caret's line up to the caret
      * @param after the caret's line from the caret
      */
-    public static Indenter.EnterEdit enter(String text, int caret, String before, String after) {
+    public static Indenter.@Nullable EnterEdit enter(String text, int caret, String before, String after) {
         String indent = Indenter.leadingWhitespace(before);
         if (DOC_OPEN.matcher(before).matches()) {
             String body = "\n" + indent + " * ";
@@ -59,6 +61,17 @@ public final class CommentContinuation {
             return new Indenter.EnterEdit(insert, insert.length());
         }
         return null;
+    }
+
+    /**
+     * Whether typing {@code *} here opens a Javadoc that should be closed at once: the line so far is
+     * {@code /*}, nothing follows the caret, and no {@code *}{@code /} below closes a comment already. jdtls
+     * offers its "Javadoc comment" template (the declaration's {@code @param}, {@code @return},
+     * {@code @throws}) only on a {@code /**} line that is closed, as VS Code's auto-close leaves it, so without
+     * this {@code /**} + Enter gave an empty comment (Java review A12).
+     */
+    public static boolean closesDocOpening(String text, int caret, String before, String after) {
+        return before.strip().equals("/*") && before.endsWith("/*") && after.isBlank() && !closedBelow(text, caret);
     }
 
     /** Whether a {@code *}{@code /} follows the caret before any other comment opens. */

@@ -13,7 +13,7 @@ import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GitHunk;
+import com.editora.editor.git.GitHunk;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

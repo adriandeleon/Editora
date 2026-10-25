@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Reads node:test's default <b>spec</b> reporter — what {@code node --test} prints when its output is not a
  * terminal (Node 23+), so a plain {@code "test": "node --test"} script fills Test Results without anyone adding
@@ -47,8 +49,8 @@ public final class NodeSpecParser implements TestResultParser {
     private final Map<String, List<String>> failedByBareName = new HashMap<>();
 
     private boolean inFailures;
-    private String detailFor;
-    private String detailFile;
+    private @Nullable String detailFor;
+    private @Nullable String detailFile;
     private int detailLine;
     private int detailIndent = -1;
     private final List<String> detail = new ArrayList<>();

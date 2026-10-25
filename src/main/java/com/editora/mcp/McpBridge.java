@@ -17,19 +17,26 @@ import org.jspecify.annotations.Nullable;
 public interface McpBridge {
 
     /** One open tab/buffer. {@code path} is null for an unsaved (untitled) buffer. */
-    record OpenFile(String path, String title, String language, boolean dirty, boolean active) {}
+    record OpenFile(@Nullable String path, String title, String language, boolean dirty, boolean active) {}
 
     /** One tab in the strip — including non-editor tabs. {@code type} is {@code editor}/{@code image}/
      *  {@code hex}/{@code diff}/{@code merge}/{@code welcome}/{@code other}; {@code path} is null when the
      *  tab has no file (Welcome, an untitled buffer). */
-    record TabInfo(String type, String title, String path, boolean active) {}
+    record TabInfo(String type, String title, @Nullable String path, boolean active) {}
 
     /** One scanned TODO/highlight match (1-based line/col). {@code keyword}/{@code tag}/{@code priority}
      *  are the parsed comment structure ({@code null} when absent). */
-    record TodoItem(String file, int line, int col, String keyword, String tag, String priority, String text) {}
+    record TodoItem(
+            String file,
+            int line,
+            int col,
+            String keyword,
+            @Nullable String tag,
+            @Nullable String priority,
+            String text) {}
 
     /** A buffer's live (possibly unsaved) text plus identity. */
-    record BufferContent(String path, String title, String language, boolean dirty, String text) {}
+    record BufferContent(@Nullable String path, String title, String language, boolean dirty, String text) {}
 
     /** A flattened LSP diagnostic (1-based line/col for human/agent consumption). */
     record Diagnostic(int line, int col, String severity, String message, String origin) {}
@@ -43,7 +50,7 @@ public interface McpBridge {
     /** The active buffer's caret + selection (1-based lines/cols; with no selection the range collapses
      *  to the caret and {@code selectedText} is empty). */
     record Selection(
-            String path,
+            @Nullable String path,
             String title,
             int caretLine,
             int caretCol,
@@ -57,14 +64,18 @@ public interface McpBridge {
     record Symbol(String name, String detail, String kind, int line, int endLine, List<Symbol> children) {}
 
     /** One changed file from {@code git status} (porcelain-v2 index/worktree letters as 1-char strings). */
-    record GitFileState(String path, String index, String worktree, String origPath) {}
+    record GitFileState(
+            @Nullable String path,
+            String index,
+            String worktree,
+            @Nullable String origPath) {}
 
     /** The Git status for the window's context; {@code repo} false when Git is off or there is no repo. */
     record GitState(
             boolean repo,
-            String root,
-            String branch,
-            String upstream,
+            @Nullable String root,
+            @Nullable String branch,
+            @Nullable String upstream,
             int ahead,
             int behind,
             List<GitFileState> files) {}

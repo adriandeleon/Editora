@@ -233,6 +233,9 @@ class DebugCoordinatorCommandsFxTest {
             overlay.install(sceneRoot);
             host = new Host();
             host.settings.setDebugSupport(true);
+            // The pom.xml above marks a Maven project for routing only; nothing here can be built, so the
+            // build-before-launch step (its own tests live in RunCoordinatorFlowsFxTest) stays off.
+            host.settings.setBuildBeforeRun(false);
             host.settings.setLspSupport(true);
             LspCoordinator lsp = new LspCoordinator(host, lspManager, new LspOpsStub());
             lsp.setServerAvailableForTest("java", true);
@@ -1561,7 +1564,7 @@ class DebugCoordinatorCommandsFxTest {
                     "the same rejection is not repeated for every answer: " + log);
         }
         assertEquals(
-                com.editora.editor.BreakpointManager.LiveState.VERIFIED,
+                com.editora.editor.debug.BreakpointManager.LiveState.VERIFIED,
                 FxTestSupport.callOnFx(() -> b.getBreakpointManager().live(4).state()));
     }
 
@@ -1593,7 +1596,7 @@ class DebugCoordinatorCommandsFxTest {
         session.userNotification("WARNING", "Cannot format the log message 'b is {b +}'");
         awaitStatus(tr("status.debug.error", "Cannot format the log message 'b is {b +}'"));
 
-        List<com.editora.editor.BreakpointManager.LiveState> states = FxTestSupport.callOnFx(() -> List.of(
+        List<com.editora.editor.debug.BreakpointManager.LiveState> states = FxTestSupport.callOnFx(() -> List.of(
                 b.getBreakpointManager().live(2).state(),
                 b.getBreakpointManager().live(3).state(),
                 b.getBreakpointManager().live(4).state()));
@@ -1802,6 +1805,23 @@ class DebugCoordinatorCommandsFxTest {
         session.awaitDelivered();
         assertEquals(1, session.breakpoints.size(), "an unchanged set is not sent twice");
         assertEquals(2, session.breakpoints.get(0).getBreakpoints().length);
+    }
+
+    @Test
+    void stopWhileATestRunWaitsForItsJvmEndsThatRunInstead() throws Exception {
+        // Debug Test on Maven: the build runs, the fork is not listening yet, there is no session (review D1).
+        List<String> ended = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> debug.setPendingAttach(() -> ended.add("build stopped")));
+        assertTrue(FxTestSupport.callOnFx(debug::sessionLive), "the wait counts as live: the window stays");
+        assertTrue(FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(debug.panel(), "preparing")));
+
+        FxTestSupport.runOnFx(() -> debug.stop());
+        assertEquals(List.of("build stopped"), ended);
+        assertFalse(FxTestSupport.callOnFx(debug::sessionLive));
+        assertFalse(FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(debug.panel(), "preparing")));
+
+        FxTestSupport.runOnFx(() -> debug.stop()); // nothing waits any more: inert
+        assertEquals(List.of("build stopped"), ended);
     }
 
     @Test

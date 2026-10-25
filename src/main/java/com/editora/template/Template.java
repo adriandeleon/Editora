@@ -3,6 +3,8 @@ package com.editora.template;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A file template: an {@code id} (= its file stem; a user template overrides a plugin or bundled one with
  * the same id), a display {@code name}/{@code description}, an optional target {@code language} (the
@@ -22,7 +24,7 @@ public record Template(
         String language,
         String fileName,
         String body,
-        List<TemplateFile> files,
+        @Nullable List<TemplateFile> files,
         Map<String, String> labels,
         Origin origin,
         String source) {
@@ -48,13 +50,18 @@ public record Template(
             String language,
             String fileName,
             String body,
-            List<TemplateFile> files) {
+            @Nullable List<TemplateFile> files) {
         this(id, name, description, language, fileName, body, files, Map.of(), Origin.USER, "");
     }
 
     /** True when this template generates several files (uses {@link #files()} rather than body/fileName). */
     public boolean isMultiFile() {
         return files != null && !files.isEmpty();
+    }
+
+    /** {@link #files()}, or an empty list for a single-file template. */
+    public List<TemplateFile> filesOrEmpty() {
+        return files == null ? List.of() : files;
     }
 
     /** This template with {@code labels} as its wizard labels (an edit in Settings must not drop them). */

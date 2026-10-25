@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses {@code /etc/fstab} text into {@link FstabEntry} rows for the preview. Comments ({@code #}) and
  * blank lines are dropped. Each entry line is 4–6 whitespace-separated columns (device mount type options
@@ -76,7 +78,7 @@ public final class Fstab {
         return out.isEmpty() ? List.of("defaults") : out;
     }
 
-    private static Integer parseColumn(String s) {
+    private static @Nullable Integer parseColumn(String s) {
         try {
             return Integer.valueOf(s.strip());
         } catch (NumberFormatException e) {

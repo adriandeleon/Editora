@@ -2,6 +2,8 @@ package com.editora.lsp;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure mapping of a semantic-token <em>type name</em> + modifier bitset to a single CSS class string
  * (or {@code null} = "leave TextMate's lexical class in place"). The mapping is driven by the server's
@@ -21,7 +23,7 @@ public final class SemanticTokenMapper {
      * {@code modLegend}; {@code null} for a type TextMate already classifies well (keyword/comment/
      * string/number/operator), so those fall through to the lexical highlight.
      */
-    static String cssClass(String type, int modBits, List<String> modLegend) {
+    static @Nullable String cssClass(String type, int modBits, List<String> modLegend) {
         String base = baseClass(type);
         if (base == null) {
             return null;
@@ -31,14 +33,22 @@ public final class SemanticTokenMapper {
         if (hasMod(modBits, modLegend, "deprecated")) {
             return base + " sem-deprecated";
         }
-        if (hasMod(modBits, modLegend, "readonly") || hasMod(modBits, modLegend, "static")) {
-            return base.equals("sem-constant") ? base : base + " sem-constant"; // avoid "sem-constant sem-constant"
+        if (base.equals("sem-constant")) {
+            return base; // avoid "sem-constant sem-constant"
         }
-        return base;
+        // Readonly values and static fields take the constant colour; a static method or nested type keeps its own
+        // colour in italics, as IntelliJ draws it — the constant colour made String.format read like a field (Java
+        // review A14).
+        boolean isStatic = hasMod(modBits, modLegend, "static");
+        boolean variable = "variable".equals(type) || "property".equals(type);
+        if (hasMod(modBits, modLegend, "readonly") || isStatic && variable) {
+            return base + " sem-constant";
+        }
+        return isStatic ? base + " sem-static" : base;
     }
 
     /** The base {@code sem-*} class for a semantic token type, or {@code null} to defer to TextMate. */
-    private static String baseClass(String type) {
+    private static @Nullable String baseClass(String type) {
         if (type == null) {
             return null;
         }

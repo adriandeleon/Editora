@@ -627,14 +627,93 @@ class LspManagerTest {
                 "jdtls offers Extract Interface only with both flags");
     }
 
+    /**
+     * Extract at a bare caret (the expression picker over {@code java/inferSelection}), Introduce Parameter
+     * through {@code java/getRefactorEdit}, and the move confirmation are driven by {@code LspCoordinator}
+     * (Java review D7, D11).
+     */
+    @Test
+    void theInferredSelectionAndMoveConfirmationFlowsAreDeclared() {
+        var caps = LspManager.javaExtendedClientCapabilities();
+
+        assertEquals(List.of("extractMethod", "extractVariable", "extractField"), caps.get("inferSelectionSupport"));
+        assertEquals(Boolean.TRUE, caps.get("advancedIntroduceParameterRefactoringSupport"));
+        assertEquals(Boolean.TRUE, caps.get("moveRefactoringConfirmationSupport"));
+    }
+
     /** Each of these changes an answer into something that needs a client flow Editora does not have. */
     @Test
     void theCapabilitiesWithoutAClientFlowAreNotDeclared() {
         var caps = LspManager.javaExtendedClientCapabilities();
 
-        assertFalse(caps.containsKey("inferSelectionSupport"), "extract with no selection: an expression picker");
-        assertFalse(caps.containsKey("advancedIntroduceParameterRefactoringSupport"), "needs inferSelection");
         assertFalse(caps.containsKey("advancedOrganizeImportsSupport"), "an ambiguous-import chooser");
+        assertEquals(Boolean.TRUE, caps.get("executeClientCommandSupport"), "the import chooser answers it (A3)");
+    }
+
+    /**
+     * jdtls reads its preferences by dotted key ({@code java.signatureHelp.description.enabled}), walking the
+     * nested maps. A value placed one level too high resolves to no key at all, which is how the signature
+     * Javadoc stayed off (Java review A2) — so these are checked by their flattened names, in both channels.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void theJavaPreferencesReachJdtlsUnderTheirReadKeys() {
+        Map<String, Object> init = (Map<String, Object>)
+                ((Map<String, Object>) LspManager.javaInitOptions(List.of()).get("settings")).get("java");
+        Map<String, Object> pushed =
+                (Map<String, Object>) LspServerSettings.push("java", false).get("java");
+        for (Map<String, Object> java : List.of(init, pushed)) {
+            Map<String, Object> keys = flatten("java", java);
+            assertEquals(Boolean.TRUE, keys.get("java.signatureHelp.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.signatureHelp.description.enabled"));
+            assertEquals(LspServerSettings.FILTERED_TYPES, keys.get("java.completion.filteredTypes"));
+            assertEquals("all", keys.get("java.inlayHints.parameterNames.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.inlayHints.parameterNames.suppressWhenSameNameNumbered"));
+            assertEquals(Boolean.TRUE, keys.get("java.inlayHints.variableTypes.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.inlayHints.parameterTypes.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.symbols.includeSourceMethodDeclarations"));
+            assertEquals(Boolean.TRUE, keys.get("java.edit.smartSemicolonDetection.enabled"));
+            assertEquals(Boolean.FALSE, keys.get("java.format.onType.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.referencesCodeLens.enabled"));
+            assertEquals("all", keys.get("java.implementationCodeLens"));
+            assertEquals("automatic", keys.get("java.configuration.updateBuildConfiguration"), "Java review C1");
+            assertEquals(LspServerSettings.FAVORITE_STATICS, keys.get("java.completion.favoriteStaticMembers"));
+            assertEquals("automatic", keys.get("java.compile.nullAnalysis.mode"));
+            assertEquals(Boolean.TRUE, keys.get("java.completion.chain.enabled"));
+            assertEquals(LspServerSettings.NULLABLE, keys.get("java.compile.nullAnalysis.nullable"));
+            assertEquals(LspServerSettings.NONNULL, keys.get("java.compile.nullAnalysis.nonnull"));
+            assertEquals(LspServerSettings.NONNULL_BY_DEFAULT, keys.get("java.compile.nullAnalysis.nonnullbydefault"));
+        }
+        assertEquals(Boolean.FALSE, flatten("java", init).get("java.autobuild.enabled"), "init keeps autobuild off");
+    }
+
+    /** Gradle runs on the projects' default JDK, the user's (Java review C4), not on what jdtls runs on. */
+    @SuppressWarnings("unchecked")
+    @Test
+    void gradleRunsOnTheDefaultRuntime() {
+        var jdks = List.of(new JavaRuntimes.Jdk(27, "/jdk27"), new JavaRuntimes.Jdk(25, "/jdk25"));
+        Map<String, Object> java = (Map<String, Object>)
+                ((Map<String, Object>) LspManager.javaInitOptions(List.of(), false, jdks, "/jdk25")
+                                .get("settings"))
+                        .get("java");
+        Map<String, Object> keys = flatten("java", java);
+        assertEquals("/jdk25", keys.get("java.import.gradle.java.home"));
+        assertEquals("automatic", keys.get("java.configuration.updateBuildConfiguration"), "kept beside the runtimes");
+        List<Map<String, Object>> runtimes = (List<Map<String, Object>>) keys.get("java.configuration.runtimes");
+        assertEquals("/jdk25", JavaRuntimes.defaultPath(runtimes));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> flatten(String prefix, Map<String, Object> map) {
+        Map<String, Object> out = new java.util.HashMap<>();
+        map.forEach((k, v) -> {
+            if (v instanceof Map<?, ?> nested) {
+                out.putAll(flatten(prefix + "." + k, (Map<String, Object>) nested));
+            } else {
+                out.put(prefix + "." + k, v);
+            }
+        });
+        return out;
     }
 
     /** The options object must still carry what it did before — the flags are additive to it. */
@@ -713,5 +792,115 @@ class LspManagerTest {
         assertEquals(changed, LspManager.mergeWatched(deleted, created), "an atomic save");
         assertEquals(deleted, LspManager.mergeWatched(changed, deleted));
         assertEquals(changed, LspManager.mergeWatched(changed, changed));
+    }
+
+    /**
+     * For the Maven pom.xml server "the executable resolves" is only "java is there": the folder its
+     * {@code -cp "<dir>/*"} names must hold every jar too (Maven review C3). Other servers keep the plain check.
+     */
+    @Test
+    void theMavenServerIsAvailableOnlyWithACompleteInstallFolder(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path javaExe = dir.resolve("java");
+        java.nio.file.Files.writeString(javaExe, "#!/bin/sh\nexit 0\n");
+        org.junit.jupiter.api.Assumptions.assumeTrue(javaExe.toFile().setExecutable(true), "needs an executable bit");
+        java.nio.file.Path maven = java.nio.file.Files.createDirectories(dir.resolve("maven"));
+        java.util.List<String> argv =
+                com.editora.run.ProgramArgs.commandLine(com.editora.install.InstallCatalog.jvmClasspathCommand(
+                        maven, com.editora.install.InstallCatalog.LEMMINX_MAIN_CLASS));
+        argv = new java.util.ArrayList<>(argv);
+        argv.set(0, javaExe.toString());
+
+        assertTrue(LspManager.available(argv), "the plain check: java is there");
+        assertFalse(
+                LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, argv), "an empty folder is not an install");
+        assertTrue(LspManager.available("xml", argv), "another server with the same shape keeps the plain check");
+
+        for (String name : java.util.List.of(
+                "org.eclipse.lemminx-0.30.1.jar",
+                "lemminx-maven-0.12.0.jar",
+                "guava-33.7.2-jre.jar",
+                "commons-lang3-3.21.0.jar")) {
+            java.nio.file.Files.writeString(maven.resolve(name), "");
+        }
+        assertFalse(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, argv), "jsoup still missing");
+        java.nio.file.Files.writeString(maven.resolve("jsoup-1.23.2.jar"), "");
+        assertTrue(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, argv));
+
+        java.util.List<String> script = java.util.List.of(javaExe.toString());
+        assertTrue(
+                LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, script),
+                "a user's own launcher has no folder to check");
+        assertFalse(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, java.util.List.of()));
+    }
+
+    /** A bare caret on no squiggle carries the diagnostics of its line, or quick fixes vanish off the token (A5). */
+    @Test
+    void aCaretOffTheSquiggleStillCarriesItsLinesDiagnostics() {
+        var onLine = new org.eclipse.lsp4j.Diagnostic(
+                new org.eclipse.lsp4j.Range(
+                        new org.eclipse.lsp4j.Position(4, 8), new org.eclipse.lsp4j.Position(4, 23)),
+                "Unhandled exception");
+        var elsewhere = new org.eclipse.lsp4j.Diagnostic(
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(9, 0), new org.eclipse.lsp4j.Position(9, 3)),
+                "Other");
+        var caret =
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 0));
+        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), caret));
+        var onToken = new org.eclipse.lsp4j.Range(
+                new org.eclipse.lsp4j.Position(4, 10), new org.eclipse.lsp4j.Position(4, 10));
+        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), onToken));
+        var selection =
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 2));
+        assertEquals(
+                List.of(),
+                LspManager.contextDiagnostics(List.of(onLine, elsewhere), selection),
+                "a selection is exact");
+    }
+
+    /** Fixes first, then assists, refactorings, source; duplicates dropped; preferred first (A4). */
+    @Test
+    void codeActionsAreGroupedByKindAndDeduplicated() {
+        var items = List.of(
+                new LspManager.CodeActionItem("Generate toString()...", "source.generate.toString", false, "a"),
+                new LspManager.CodeActionItem("Extract interface...", "refactor.extract.interface", false, "b"),
+                new LspManager.CodeActionItem("Organize imports", "quickassist", false, "c"),
+                new LspManager.CodeActionItem("Import 'LocalDate'", "quickfix", false, "d"),
+                new LspManager.CodeActionItem("Organize imports", "source.organizeImports", false, "e"),
+                new LspManager.CodeActionItem("Surround with try/catch", "quickfix", false, "f"));
+        assertEquals(
+                List.of(
+                        "Import 'LocalDate'",
+                        "Surround with try/catch",
+                        "Organize imports",
+                        "Extract interface...",
+                        "Generate toString()..."),
+                CodeActionKinds.arrange(items, i -> true).stream()
+                        .map(LspManager.CodeActionItem::title)
+                        .toList());
+        assertEquals(
+                List.of("Generate toString()...", "Organize imports"),
+                CodeActionKinds.arrange(items, i -> CodeActionKinds.group(i.kind()) == CodeActionKinds.Group.SOURCE)
+                        .stream()
+                        .map(LspManager.CodeActionItem::title)
+                        .toList());
+        assertTrue(CodeActionKinds.matches("refactor.extract.function", "refactor.extract"));
+        assertFalse(CodeActionKinds.matches("refactor.extracted", "refactor.extract"));
+        assertEquals(CodeActionKinds.Group.ASSIST, CodeActionKinds.group(""));
+    }
+
+    @Test
+    void repeatedCallsToOneMemberAreOneRowWithTheirCount() {
+        java.nio.file.Path a = java.nio.file.Path.of("/p/A.java");
+        var append = new LspManager.HierarchyNode("append(String)", "StringBuilder", "method", null, 90, 4, "x1");
+        var appendAgain =
+                new LspManager.HierarchyNode("append(String)", "StringBuilder", "method", null, 90, 4, "x2", 2);
+        var report = new LspManager.HierarchyNode("report()", "demo.A", "method", a, 3, 8, "x3");
+        var merged = LspManager.mergeCalls(java.util.List.of(append, report, appendAgain));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("append(String)x3", "report()x1"),
+                merged.stream().map(n -> n.name() + "x" + n.calls()).toList(),
+                "first-seen order; the call sites add up (Java review B19)");
+        org.junit.jupiter.api.Assertions.assertSame(append.raw(), merged.get(0).raw(), "the first item expands");
     }
 }

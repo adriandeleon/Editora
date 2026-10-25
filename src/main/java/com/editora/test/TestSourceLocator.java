@@ -1,6 +1,7 @@
 package com.editora.test;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure helpers for deriving a source-file name hint from a test's grouping/class name, per tool. The
@@ -16,7 +17,7 @@ public final class TestSourceLocator {
      * name + {@code .java}. Go: {@code null} (the package maps to a directory, not one file; navigate by the
      * {@code TestXxx} function name instead). Cargo/npm: {@code null}.
      */
-    public static String fileHint(String className, BuildTool tool) {
+    public static @Nullable String fileHint(@Nullable String className, BuildTool tool) {
         if (className == null || className.isBlank()) {
             return null;
         }
@@ -30,7 +31,7 @@ public final class TestSourceLocator {
      * The source file's path below a source root, {@code com/foo/BarTest.java} — what distinguishes this
      * class from a same-named one in another package or module. {@code null} when {@link #fileHint} is.
      */
-    public static String pathHint(String className, BuildTool tool) {
+    public static @Nullable String pathHint(String className, BuildTool tool) {
         String file = fileHint(className, tool);
         if (file == null) {
             return null;
@@ -54,7 +55,7 @@ public final class TestSourceLocator {
      * neither Surefire's {@code -Dtest=Class#method} nor Gradle's {@code --tests Class.method} accepts
      * those, so a filter built from the raw name selects nothing.
      */
-    public static String filterMethodName(String methodName) {
+    public static @Nullable String filterMethodName(@Nullable String methodName) {
         if (methodName == null) {
             return null;
         }
@@ -74,10 +75,11 @@ public final class TestSourceLocator {
      * method filter against the class file that declares the method, so {@code OrderTest#rejects} selects
      * nothing when {@code rejects} lives in the {@code @Nested} class.
      */
-    public static String filterClassName(String className) {
-        if (className == null) {
-            return null;
-        }
+    public static @Nullable String filterClassName(@Nullable String className) {
+        return className == null ? null : lastSegment(className);
+    }
+
+    private static String lastSegment(String className) {
         int dot = className.lastIndexOf('.');
         return dot >= 0 ? className.substring(dot + 1) : className;
     }
@@ -88,7 +90,7 @@ public final class TestSourceLocator {
      * invocation, whose description name really is {@code name[0]}: {@code name} alone matches nothing
      * there, so both forms are offered ({@code name+name[*]} — Surefire's multi-method syntax).
      */
-    public static String mavenMethodFilter(String methodName) {
+    public static @Nullable String mavenMethodFilter(@Nullable String methodName) {
         if (methodName == null) {
             return null;
         }
@@ -125,7 +127,7 @@ public final class TestSourceLocator {
 
     /** A class name as shown to the user: the last dot-segment, a nested class as {@code Outer.Inner}. */
     public static String displayName(String className) {
-        return filterClassName(className).replace('$', '.');
+        return lastSegment(className).replace('$', '.');
     }
 
     /** The last dot-segment of a fully-qualified name (strips any nested-class {@code $} suffix too). */

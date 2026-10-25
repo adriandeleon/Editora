@@ -1,5 +1,7 @@
 package com.editora.todo;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * User-configurable per-part colors for a structured TODO comment
  * ({@code KEYWORD [tag] (priority) description}): a color for the {@code [tag]} span and one per
@@ -9,7 +11,12 @@ package com.editora.todo;
  * <p>{@link #of} defensively replaces any {@code null}/blank field with the {@link TodoColors} default, so a
  * missing or cleared setting never yields an empty color.
  */
-public record TodoPartColors(String tag, String critical, String high, String medium, String low) {
+public record TodoPartColors(
+        @Nullable String tag,
+        @Nullable String critical,
+        @Nullable String high,
+        @Nullable String medium,
+        @Nullable String low) {
 
     /** The built-in defaults (the same palette {@link TodoColors} exposes). */
     public static TodoPartColors defaults() {
@@ -22,7 +29,12 @@ public record TodoPartColors(String tag, String critical, String high, String me
     }
 
     /** Builds an instance, substituting the built-in default for any {@code null}/blank hex. */
-    public static TodoPartColors of(String tag, String critical, String high, String medium, String low) {
+    public static TodoPartColors of(
+            String tag,
+            @Nullable String critical,
+            @Nullable String high,
+            @Nullable String medium,
+            @Nullable String low) {
         TodoPartColors d = defaults();
         return new TodoPartColors(
                 orDefault(tag, d.tag()),
@@ -32,13 +44,13 @@ public record TodoPartColors(String tag, String critical, String high, String me
                 orDefault(low, d.low()));
     }
 
-    private static String orDefault(String v, String fallback) {
+    private static @Nullable String orDefault(@Nullable String v, @Nullable String fallback) {
         return v == null || v.isBlank() ? fallback : v;
     }
 
     /** The color (web hex) for a {@code (priority)} level, or {@code null} when {@code priority} is null /
      *  not one of {@link TodoComment#PRIORITY_ORDER}. */
-    public String priorityColor(String priority) {
+    public @Nullable String priorityColor(String priority) {
         if (priority == null) {
             return null;
         }

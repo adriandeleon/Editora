@@ -1,5 +1,7 @@
 package com.editora.template;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * One entry in the "New ▸" menu: a file kind the user can create in a folder.
  *
@@ -26,7 +28,8 @@ package com.editora.template;
  *     <code>{cursor}</code> token marks where the caret lands and is removed from the text. Empty =
  *     an empty file.
  */
-public record NewFileType(String id, String label, String defaultBaseName, String extension, String template) {
+public record NewFileType(
+        String id, @Nullable String label, String defaultBaseName, String extension, String template) {
 
     /** A type whose menu label is a proper name (kept verbatim in every language). */
     static NewFileType named(String id, String label, String defaultBaseName, String extension) {

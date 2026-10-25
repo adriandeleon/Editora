@@ -27,6 +27,7 @@ import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
 import com.editora.test.GradleTaskOutcomes;
 import com.editora.test.JavaTestScanner;
+import com.editora.test.JdwpAttachRetry;
 import com.editora.test.JvmReportDirs;
 import com.editora.test.ParsedSuite;
 import com.editora.test.TapParser;
@@ -41,6 +42,7 @@ import com.editora.test.TestRunRecognizer;
 import com.editora.test.TestSourceLocator;
 import com.editora.test.TestStatus;
 import com.editora.test.TestTreeBuilder;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -67,10 +69,10 @@ final class TestRunCoordinator implements TestRunHook {
         void openLink(StackTraceLinks.Link link);
 
         /** Navigate to a test's source by name (class→file + method), when there's no usable stack frame. */
-        void jumpToTest(TestNode node, BuildTool tool);
+        void jumpToTest(TestNode node, @Nullable BuildTool tool);
 
         /** Re-invoke the tool's build coordinator with these task args (rerun / rerun-failed). */
-        void runTest(BuildTool tool, Path root, List<String> taskArgs, List<String> toggleArgs);
+        void runTest(@Nullable BuildTool tool, @Nullable Path root, List<String> taskArgs, List<String> toggleArgs);
 
         /** Stop the running build for {@code tool} (the tool's own BuildService). */
         void stopTest(BuildTool tool);
@@ -85,6 +87,17 @@ final class TestRunCoordinator implements TestRunHook {
 
         /** Attach the debugger to a test JVM suspended on {@code port} ({@code className} anchors the source). */
         void attachDebugger(String className, String host, int port);
+
+        /**
+         * A Debug Test run is waiting for its JVM to attach: Debug ▸ Stop runs {@code cancel} (which ends the
+         * build) until a session starts or the run ends ({@code null} clears it).
+         */
+        default void setPendingDebugAttach(@Nullable Runnable cancel) {}
+
+        /** Whether a debug session is live or starting (the Maven attach loop tells a closed port by it). */
+        default boolean debugSessionActive() {
+            return false;
+        }
     }
 
     /**
@@ -122,7 +135,7 @@ final class TestRunCoordinator implements TestRunHook {
     /** Report directories on a remote host are listed over the network: less often. */
     private static final long REMOTE_POLL_MS = 2000;
 
-    private static long poll(Path root) {
+    private static long poll(@Nullable Path root) {
         return com.editora.vfs.Vfs.isRemote(root) ? REMOTE_POLL_MS : POLL_MS;
     }
     /** Bounded depth for the reactor/multi-project report-dir walk. */
@@ -139,9 +152,9 @@ final class TestRunCoordinator implements TestRunHook {
     private final CoordinatorHost host;
     private final Ops ops;
     /** The Test Results panel, built on its first use (normally a test run or the window's first open). */
-    private TestRunnerPanel panel;
+    private @Nullable TestRunnerPanel panel;
     /** The output font to apply when the panel is built (set by every settings apply, panel or not). */
-    private String outputFontFamily;
+    private @Nullable String outputFontFamily;
 
     private int outputFontSize;
     private final ScheduledExecutorService poller = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -150,26 +163,56 @@ final class TestRunCoordinator implements TestRunHook {
         return t;
     });
 
-    private TestRun currentRun;
-    private BuildTool currentTool;
-    private TestResultParser parser;
+    private @Nullable TestRun currentRun;
+    private @Nullable BuildTool currentTool;
+    private @Nullable TestResultParser parser;
     private boolean fileBased;
-    private ScheduledFuture<?> pollTask;
+    private @Nullable ScheduledFuture<?> pollTask;
     // seenMtimes/baselineMtimes are touched ONLY on the poller thread (baseline task → ticks → final sweep).
     private final Map<Path, Long> seenMtimes = new HashMap<>();
     private final Map<Path, Long> baselineMtimes = new HashMap<>(); // pre-run report mtimes (skip stale leftovers)
-    private int runGeneration; // bumped per run (FX thread); guards a late poll tick from merging into a newer run
+    // Bumped per run (FX thread); guards a late poll tick (reports, or the Maven attach loop) from a newer run.
+    private volatile int runGeneration;
     private boolean seeded; // this run pre-seeded pending nodes → prune the never-reported ones at finish
-    private TestNode followTarget; // the newest result — kept scrolled into view while the run is live
-    private String awaitingAttachFor; // class whose suspended test JVM we should attach to (Debug Test)
+    private @Nullable TestNode followTarget; // the newest result — kept scrolled into view while the run is live
+    private @Nullable String awaitingAttachFor; // class whose suspended test JVM we should attach to (Debug Test)
     /** The JDWP ports of this run's JVMs already attached to (Debug Test). */
     private final java.util.Set<Integer> attachedPorts = new java.util.HashSet<>();
+    /**
+     * Debug Test on Maven: the loopback port Editora chose for the fork and polls until it listens (review
+     * D1 — Surefire 3 withholds the JDWP banner until the suspended JVM has run); 0 when the banner is the way
+     * (Gradle). The poller thread only probes; what follows is decided on the FX thread ({@link #onAttachProbe}),
+     * which owns the rest. The deadline is reset by Surefire's own {@code T E S T S} banner, so a long compile
+     * before the tests does not count against it.
+     */
+    private int mavenDebugPort;
 
-    private Timeline elapsedTimer;
+    private @Nullable ScheduledFuture<?> attachTask;
+    private boolean attachAsked;
+    private boolean everAttached;
+    private long attachDeadline;
+    /** Test seams: how the Maven debug port is chosen, and how long the first attach may take. */
+    java.util.function.IntSupplier debugPortPicker = () -> {
+        try {
+            return JdwpAttachRetry.freeLoopbackPort();
+        } catch (java.io.IOException e) {
+            return -1;
+        }
+    };
+
+    long attachDeadlineMs = JdwpAttachRetry.DEADLINE_MS;
+
+    private @Nullable Timeline elapsedTimer;
     private boolean refreshPending;
 
     /** Gradle's own account of this run: whether it printed task lines, and the tasks it reused. */
     private boolean sawGradleTaskLines;
+
+    /** Maven said a {@code -Dtest=} filter matched nothing (and failed the build for it, without Editora's flags). */
+    private boolean sawNoTestsMatching;
+
+    /** The report folders of this run's module beyond the standard ones (a pom's {@code reportsDirectory}, review D17). */
+    private volatile List<Path> configuredReportDirs = List.of();
 
     private final Set<String> reusedGradleTasks = new java.util.HashSet<>();
 
@@ -217,13 +260,13 @@ final class TestRunCoordinator implements TestRunHook {
     }
 
     /** The external run the tree shows, or null when it shows a build tool's (see {@link ExternalRun}). */
-    private ExternalRun external;
+    private @Nullable ExternalRun external;
 
     /**
      * Starts showing an external run ({@link ExternalRun}): a fresh tree, the Test Results window, the timer.
      * False when the Test Runner is off, or a build tool's test run is still going (it keeps the tree).
      */
-    boolean startExternalRun(String label, Path workingDir, ExternalRun driver) {
+    boolean startExternalRun(@Nullable String label, @Nullable Path workingDir, ExternalRun driver) {
         if (!isEnabled() || (currentRun != null && currentRun.isRunning() && currentTool != null)) {
             return false;
         }
@@ -288,6 +331,7 @@ final class TestRunCoordinator implements TestRunHook {
         }
         currentTool = tool;
         external = null;
+        stoppedByUser = false;
         currentRun = new TestRun(tool, workingDir, taskArgs, toggleArgs, System.currentTimeMillis());
         parser = TestResultParsers.forTool(tool);
         fileBased = TestResultParsers.isFileBased(tool);
@@ -300,6 +344,8 @@ final class TestRunCoordinator implements TestRunHook {
         followTarget = null;
         awaitingAttachFor = null;
         sawGradleTaskLines = false;
+        sawNoTestsMatching = false;
+        configuredReportDirs = List.of();
         reusedGradleTasks.clear();
 
         panel().startRun(String.join(" ", taskArgs));
@@ -313,7 +359,15 @@ final class TestRunCoordinator implements TestRunHook {
             // Snapshot the pre-run report mtimes on the poller thread BEFORE the first tick, so a leftover
             // TEST-*.xml from a prior run is never parsed as this run's result (a full `mvn test` recreates
             // the dir, but `-Dtest=Foo` leaves every other class's stale report in place).
-            poller.execute(() -> baselineReports(t, dir));
+            poller.execute(() -> {
+                configuredReportDirs = JvmReportDirs.reportDirs(
+                        t,
+                        dir,
+                        t == BuildTool.MAVEN
+                                ? com.editora.maven.PomBuildConfig.read(dir)
+                                : com.editora.maven.PomBuildConfig.DEFAULTS); // only Maven's dirs read it
+                baselineReports(t, dir);
+            });
             startPolling(gen, t, dir);
             // IntelliJ-style: pre-seed the whole expected test list greyed-out (RUNNING) for an unfiltered run,
             // so tests show as pending and flip to green/red instead of popping in per finished class. A
@@ -333,9 +387,15 @@ final class TestRunCoordinator implements TestRunHook {
         }
         // "Debug Test": the suspended test JVM prints the JDWP banner — attach as soon as we see it. Checked
         // before the file-based return, because for Maven/Gradle the console is the ONLY place it appears.
+        // Maven's fork is on a port chosen up front, which the attach loop owns: Surefire 3 surfaces that
+        // banner only after the attached JVM ran, when the loop may already be waiting for the next fork, so
+        // acting on it would attach a port that is gone (queued as "another JVM is waiting").
         if (awaitingAttachFor != null) {
+            if (mavenDebugPort > 0 && TestDebug.isSurefireTestsBanner(line)) {
+                attachDeadline = System.currentTimeMillis() + attachDeadlineMs; // the tests start now
+            }
             int port = TestDebug.jdwpPort(line);
-            if (port > 0) {
+            if (port > 0 && port != mavenDebugPort) {
                 // Kept for the whole run: every forked JVM prints its own banner and waits (review D11). A port
                 // already attached is the same JVM's banner printed again.
                 if (attachedPorts.add(port)) {
@@ -344,6 +404,9 @@ final class TestRunCoordinator implements TestRunHook {
             }
         }
         if (fileBased) {
+            if (currentTool == BuildTool.MAVEN && TestRunRecognizer.isNoTestsMatchingLine(line)) {
+                sawNoTestsMatching = true; // a hand-typed -Dtest= without the reactor flags (review D9)
+            }
             if (currentTool == BuildTool.GRADLE) {
                 sawGradleTaskLines |= GradleTaskOutcomes.isTaskLine(line);
                 String reused = GradleTaskOutcomes.reusedTask(line);
@@ -362,8 +425,11 @@ final class TestRunCoordinator implements TestRunHook {
             }
             if (tap || nodeTestRun) {
                 tapDecided = true;
+                TestResultParser p = parser; // TAP's from the start, or the spec parser just chosen
                 for (String buffered : npmSniff) {
-                    mergeAll(parser.onLine(buffered, false));
+                    if (p != null) {
+                        mergeAll(p.onLine(buffered, false));
+                    }
                 }
                 npmSniff.clear();
             } else if (npmSniff.size() > NPM_SNIFF_LIMIT) {
@@ -371,13 +437,26 @@ final class TestRunCoordinator implements TestRunHook {
             }
             return;
         }
-        mergeAll(parser.onLine(line, stderr));
+        TestResultParser p = parser; // a build tool's run always has one
+        if (p != null) {
+            mergeAll(p.onLine(line, stderr));
+        }
     }
 
     @Override
     public void onTestExit(int code) {
         finish(code);
     }
+
+    /** The run the user stopped ends as "Stopped" (Maven review B5), not as a failed run with SIGTERM's code. */
+    @Override
+    public void onTestStopped(int code) {
+        stoppedByUser = true;
+        finish(code);
+    }
+
+    /** Set by {@link #onTestStopped} for the run in flight; {@link #completeRun} reads it into the header. */
+    private boolean stoppedByUser;
 
     @Override
     public void onTestError(String message) {
@@ -388,7 +467,7 @@ final class TestRunCoordinator implements TestRunHook {
     }
 
     @Override
-    public String consoleLine(String raw, boolean stderr) {
+    public @Nullable String consoleLine(String raw, boolean stderr) {
         return parser != null ? parser.consoleLine(raw, stderr) : raw;
     }
 
@@ -400,11 +479,15 @@ final class TestRunCoordinator implements TestRunHook {
         }
         stopPolling();
         stopElapsedTimer();
+        stopAttachLoop();
+        if (awaitingAttachFor != null) {
+            ops.setPendingDebugAttach(null); // the run is over: nothing left for Debug ▸ Stop to end
+        }
         TestRun run = currentRun;
         int gen = runGeneration;
-        if (fileBased) {
-            BuildTool tool = currentTool;
-            Path dir = run.workingDir();
+        BuildTool tool = currentTool;
+        if (fileBased && tool != null) { // a file-based run is always a build tool's
+            Path dir = java.util.Objects.requireNonNull(run.workingDir(), "a build tool's run has its folder");
             // Which leftover reports may stand for this run if it rewrote nothing: those of the test tasks
             // Gradle itself reported as up to date. Sweeping every report under the project showed another
             // module's week-old failure for a successful `:app:test`. Under -q there are no task lines to go
@@ -433,12 +516,18 @@ final class TestRunCoordinator implements TestRunHook {
                 });
             });
         } else {
-            mergeAll(parser.onExit(code));
+            TestResultParser p = parser;
+            if (p != null) {
+                mergeAll(p.onExit(code));
+            }
             if (npm && !tapDecided) {
                 // No structured (TAP) output — surface an honest banner rather than an empty tree.
                 String banner = tr("testrunner.tap.unavailable");
                 TestTreeBuilder.merge(run.root(), new ParsedSuite(banner, List.of()));
-                run.root().childById(banner).setStatus(TestStatus.SKIPPED); // a message row, not a running suite
+                TestNode bannerRow = run.root().childById(banner); // just merged
+                if (bannerRow != null) {
+                    bannerRow.setStatus(TestStatus.SKIPPED); // a message row, not a running suite
+                }
             }
             completeRun(run, gen, code);
         }
@@ -453,10 +542,11 @@ final class TestRunCoordinator implements TestRunHook {
             run.root().pruneRunning(); // drop pre-seeded placeholders that never got a result (parameterized/skipped)
         }
         run.finish(code, System.currentTimeMillis());
-        panel().finishRun(run, code);
+        panel().finishRun(run, code, stoppedByUser);
         // A Maven filter that matches nothing is not an error (the flags a reactor needs see to that), so
-        // the build is green and the tree empty. Say so: "0 of 0 tests passed" reads as a pass.
-        if (code == 0
+        // the build is green and the tree empty. Say so: "0 of 0 tests passed" reads as a pass. A hand-typed
+        // filter lacks those flags: Surefire then fails the build saying so, which reads like a broken build.
+        if ((code == 0 || sawNoTestsMatching)
                 && run.tool() == BuildTool.MAVEN
                 && TestRunRecognizer.isFilteredRun(run.tool(), run.taskArgs())
                 && run.counts().total() == 0) {
@@ -532,7 +622,7 @@ final class TestRunCoordinator implements TestRunHook {
     private void baselineReports(BuildTool tool, Path root) {
         seenMtimes.clear();
         baselineMtimes.clear();
-        for (Path file : reportFiles(tool, root)) {
+        for (Path file : reportFilesOfRun(tool, root)) {
             try {
                 baselineMtimes.put(file, Files.getLastModifiedTime(file).toMillis());
             } catch (Exception ignored) {
@@ -593,7 +683,7 @@ final class TestRunCoordinator implements TestRunHook {
      * paths are never entered, where the old {@code Files.walk} enumerated all of {@code target/} and
      * {@code node_modules/} only to throw the entries away.
      */
-    static List<Path> testSourceFiles(Path root) {
+    static @Nullable List<Path> testSourceFiles(Path root) {
         List<Path> files = new ArrayList<>();
         ProjectWalk.Outcome walked = ProjectWalk.walk(
                 root,
@@ -624,10 +714,10 @@ final class TestRunCoordinator implements TestRunHook {
      * {@link TestRunRecognizer#showsExistingReports}).
      */
     private void sweepReports(
-            int gen, BuildTool tool, Path root, boolean full, java.util.function.Predicate<Path> leftovers) {
+            int gen, BuildTool tool, Path root, boolean full, java.util.function.@Nullable Predicate<Path> leftovers) {
         try {
             List<ParsedSuite> parsed = new ArrayList<>();
-            for (Path file : reportFiles(tool, root)) {
+            for (Path file : reportFilesOfRun(tool, root)) {
                 long mtime = Files.getLastModifiedTime(file).toMillis();
                 Long base = baselineMtimes.get(file);
                 if (base != null && base == mtime && (leftovers == null || !leftovers.test(file))) {
@@ -637,7 +727,8 @@ final class TestRunCoordinator implements TestRunHook {
                 if (!full && seen != null && seen == mtime) {
                     continue;
                 }
-                ParsedSuite suite = parser.parseReportFile(file);
+                TestResultParser p = parser; // null only once a newer, external run has replaced this one
+                ParsedSuite suite = p == null ? null : p.parseReportFile(file);
                 if (suite != null) {
                     seenMtimes.put(file, mtime);
                     parsed.add(suite);
@@ -667,8 +758,19 @@ final class TestRunCoordinator implements TestRunHook {
      * cannot contain one: dot-directories ({@code .git} alone is thousands of entries), dependency trees,
      * anything below the depth limit, and a report directory's own contents.
      */
+    private List<Path> reportFilesOfRun(BuildTool tool, Path root) {
+        return reportFiles(tool, root, configuredReportDirs);
+    }
+
+    /** {@link #reportFiles(BuildTool, Path, List)} with the standard folders only. */
     static List<Path> reportFiles(BuildTool tool, Path root) {
+        return reportFiles(tool, root, List.of());
+    }
+
+    /** As {@link #reportFiles(BuildTool, Path)} with {@code configured} (a pom's own folders) looked in too. */
+    static List<Path> reportFiles(BuildTool tool, Path root, List<Path> configured) {
         Set<Path> dirs = new LinkedHashSet<>(JvmReportDirs.reportDirs(tool, root));
+        dirs.addAll(configured);
         ProjectWalk.walk(
                 root,
                 new ProjectWalk.Options(WALK_DEPTH + 1, Integer.MAX_VALUE, GitignoreFilter.NONE),
@@ -726,7 +828,10 @@ final class TestRunCoordinator implements TestRunHook {
     }
 
     /** The first stack frame that resolves to a location — preferring one in the test's own source file. */
-    static StackTraceLinks.Link firstFrame(String stackTrace, String preferredFile) {
+    static StackTraceLinks.@Nullable Link firstFrame(@Nullable String stackTrace, @Nullable String preferredFile) {
+        if (stackTrace == null) {
+            return null;
+        }
         StackTraceLinks.Link fallback = null;
         for (String line : stackTrace.split("\n")) {
             StackTraceLinks.Link link = StackTraceLinks.parse(line);
@@ -761,18 +866,27 @@ final class TestRunCoordinator implements TestRunHook {
             return;
         }
         com.editora.editor.EditorBuffer active = host.activeBuffer();
+        int port = mavenDebugPort(tool);
         List<String> args = TestDebug.debugTaskArgs(
                 tool,
                 target.className(),
                 target.methodName(),
-                gradleDebugInit(tool, active == null ? null : active.getPath()));
+                gradleDebugInit(tool, active == null ? null : active.getPath()),
+                port);
         if (args.isEmpty()) {
             host.setStatus(tr("status.testrunner.debugUnsupported"));
             return;
         }
-        host.setStatus(tr("status.testrunner.debugWaiting"));
+        int before = runGeneration;
         launch.accept(args);
-        armDebugger(target.className());
+        if (runGeneration != before) { // the run started (not refused as busy / not detected)
+            armDebugger(target.className(), port);
+        }
+    }
+
+    /** The port a Maven test debug forks on (chosen now, polled until it listens); 0 for the banner tools. */
+    private int mavenDebugPort(@Nullable BuildTool tool) {
+        return tool == BuildTool.MAVEN ? Math.max(0, debugPortPicker.getAsInt()) : 0;
     }
 
     private void runOne(TestNode node, boolean debug) {
@@ -801,9 +915,13 @@ final class TestRunCoordinator implements TestRunHook {
                     currentRun.toggleArgs());
             return;
         }
+        if (tool == null) {
+            return; // only an external run has no build tool, and it was handled above
+        }
+        int port = debug ? mavenDebugPort(tool) : 0;
         List<String> args = debug
                 ? TestDebug.debugTaskArgs(
-                        tool, node.className(), method, gradleDebugInit(tool, currentRun.workingDir()))
+                        tool, node.className(), method, gradleDebugInit(tool, currentRun.workingDir()), port)
                 : TestRunRecognizer.singleTestTask(tool, node.className(), method);
         if (args.isEmpty()) {
             host.setStatus(tr(debug ? "status.testrunner.debugUnsupported" : "status.testrunner.rerunUnsupported"));
@@ -812,7 +930,7 @@ final class TestRunCoordinator implements TestRunHook {
         Path dir = currentRun.workingDir();
         List<String> toggles = currentRun.toggleArgs();
         if (debug) {
-            startDebugRun(tool, dir, args, toggles, node.className());
+            startDebugRun(tool, dir, args, toggles, node.className(), port);
         } else {
             ops.runTest(tool, dir, args, toggles);
         }
@@ -823,26 +941,106 @@ final class TestRunCoordinator implements TestRunHook {
      * attached in turn), or null for {@code --debug-jvm}'s 5005: not Gradle, or a project whose build runs on
      * another machine, where a file written here does not exist.
      */
-    private static Path gradleDebugInit(BuildTool tool, Path where) {
+    private static @Nullable Path gradleDebugInit(@Nullable BuildTool tool, @Nullable Path where) {
         if (tool != BuildTool.GRADLE || where == null || !com.editora.process.ExecTargets.runsHere(where)) {
             return null;
         }
         return com.editora.build.GradleDebugInit.write(List.of(TestDebug.GRADLE_TEST_TASK));
     }
 
-    private void startDebugRun(BuildTool tool, Path dir, List<String> args, List<String> toggles, String className) {
-        host.setStatus(tr("status.testrunner.debugWaiting"));
+    private void startDebugRun(
+            @Nullable BuildTool tool,
+            @Nullable Path dir,
+            List<String> args,
+            List<String> toggles,
+            String className,
+            int port) {
+        int before = runGeneration;
         ops.runTest(tool, dir, args, toggles);
-        armDebugger(className);
+        if (runGeneration != before) {
+            armDebugger(className, port);
+        }
     }
 
-    private void armDebugger(String className) {
+    private void armDebugger(String className, int port) {
         // Set AFTER the launch: ops.runTest re-enters onTestRunStart synchronously, which resets the
         // per-run state (including this flag) — arming it beforehand would be wiped before the JVM ever
         // printed its JDWP banner. Surefire/Gradle fork the test JVM suspended; onTestOutput sees the
-        // banner and attaches.
+        // banner and attaches — or, for Maven, the port chosen up front is polled until the fork listens.
         awaitingAttachFor = className;
         attachedPorts.clear();
+        mavenDebugPort = port;
+        // The waiting status is set after the launch too: the build's own "running …" status would overwrite
+        // it at once (review D14), and the Test Results header says it instead of the whole argv.
+        host.setStatus(tr("status.testrunner.debugWaiting"));
+        panel().setRunNote(port > 0 ? tr("testrunner.debugWaiting", port) : tr("testrunner.debugWaitingBanner"));
+        ops.setPendingDebugAttach(this::stop); // Debug ▸ Stop while waiting ends the build, as it does a session's
+        if (port > 0) {
+            startAttachLoop(runGeneration, port);
+        }
+    }
+
+    /** Polls the chosen port every {@link JdwpAttachRetry#INTERVAL_MS} until the Maven fork listens on it. */
+    private void startAttachLoop(int gen, int port) {
+        stopAttachLoop();
+        attachAsked = false;
+        everAttached = false;
+        attachDeadline = System.currentTimeMillis() + attachDeadlineMs;
+        attachTask = poller.scheduleWithFixedDelay(
+                () -> attachTick(gen, port),
+                JdwpAttachRetry.INTERVAL_MS,
+                JdwpAttachRetry.INTERVAL_MS,
+                TimeUnit.MILLISECONDS);
+    }
+
+    private void stopAttachLoop() {
+        if (attachTask != null) {
+            attachTask.cancel(false);
+            attachTask = null;
+        }
+    }
+
+    /** Poller thread: one probe of the port; what follows is decided on the FX thread. */
+    private void attachTick(int gen, int port) {
+        if (gen != runGeneration) {
+            return; // a newer run: its own loop (if any) is the live one
+        }
+        JdwpAttachRetry.Probe probe = JdwpAttachRetry.probe("127.0.0.1", port, JdwpAttachRetry.PROBE_TIMEOUT_MS);
+        Platform.runLater(() -> onAttachProbe(gen, port, probe));
+    }
+
+    /** FX thread: what a probe of the chosen port means for this run. */
+    private void onAttachProbe(int gen, int port, JdwpAttachRetry.Probe probe) {
+        if (gen != runGeneration || attachTask == null) {
+            return;
+        }
+        JdwpAttachRetry.Decision decision = JdwpAttachRetry.decide(
+                probe, attachAsked, ops.debugSessionActive(), everAttached, System.currentTimeMillis(), attachDeadline);
+        switch (decision) {
+            case ATTACH -> {
+                attachAsked = true;
+                everAttached = true;
+                if (awaitingAttachFor != null && attachedPorts.add(port)) {
+                    ops.attachDebugger(awaitingAttachFor, "localhost", port);
+                }
+            }
+            case PORT_CLOSED -> {
+                // The attached JVM ran and exited (or died): a further fork of the same run (forkCount>1 with
+                // reuseForks=false, reruns) binds the same port next and waits suspended — attach it in turn.
+                attachAsked = false;
+                attachedPorts.remove(port);
+                if (currentRun != null && currentRun.isRunning()) {
+                    ops.setPendingDebugAttach(this::stop); // waiting again: Stop ends the build
+                }
+            }
+            case TIMED_OUT -> {
+                stopAttachLoop();
+                String message = tr("status.testrunner.debugNoAttach", port, attachDeadlineMs / 1000);
+                host.setStatus(message);
+                panel().setRunNote(message);
+            }
+            case KEEP_WAITING -> {}
+        }
     }
 
     /** {@code test.showOnlyFailed}: open the window and narrow the tree to failures/errors. */
@@ -913,6 +1111,10 @@ final class TestRunCoordinator implements TestRunHook {
     }
 
     void stop() {
+        // Debug ▸ Stop on a Debug Test session comes here too (its ownerStop): the loop ends before the build
+        // does, so the JVM the debugger just left — its agent listens again while it runs on to its end —
+        // is not taken for a next fork and attached as it exits.
+        stopAttachLoop();
         if (external != null) {
             external.stop();
         } else if (currentTool != null) {
@@ -922,6 +1124,7 @@ final class TestRunCoordinator implements TestRunHook {
 
     void shutdown() {
         stopPolling();
+        stopAttachLoop();
         stopElapsedTimer();
         poller.shutdownNow();
     }

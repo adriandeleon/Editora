@@ -17,6 +17,7 @@ import javafx.application.Platform;
 
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Scans for TODO/highlight pattern matches off the JavaFX thread (the {@code SearchService} idiom: a
@@ -61,7 +62,7 @@ public final class TodoService {
      */
     public void scan(
             List<TodoPatterns.Compiled> patterns,
-            Path scopeRoot,
+            @Nullable Path scopeRoot,
             Map<Path, String> openContents,
             Consumer<Outcome> onResult) {
         long g = gen.incrementAndGet();
@@ -80,7 +81,7 @@ public final class TodoService {
      */
     Outcome run(
             List<TodoPatterns.Compiled> patterns,
-            Path scopeRoot,
+            @Nullable Path scopeRoot,
             Map<Path, String> open,
             java.util.function.BooleanSupplier superseded) {
         if (superseded.getAsBoolean() || patterns == null || patterns.isEmpty()) {
@@ -140,7 +141,7 @@ public final class TodoService {
         });
     }
 
-    private static String readText(Path file) {
+    private static @Nullable String readText(Path file) {
         try {
             if (Files.size(file) > MAX_FILE_BYTES) {
                 return null;

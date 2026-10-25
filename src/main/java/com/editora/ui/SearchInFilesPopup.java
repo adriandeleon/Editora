@@ -24,11 +24,12 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
-import com.editora.editor.SearchMatcher;
 import com.editora.search.FileResult;
 import com.editora.search.LineMatch;
 import com.editora.search.SearchQuery;
 import com.editora.search.SearchService;
+import com.editora.text.SearchMatcher;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -44,22 +45,19 @@ import static com.editora.i18n.Messages.tr;
 final class SearchInFilesPopup {
 
     /** One result row: a file header ({@code match == null}, {@code count} = its match count) or a match. */
-    private record Row(Path file, LineMatch match, int count) {
-        boolean isHeader() {
-            return match == null;
-        }
-    }
+    private record Row(Path file, @Nullable LineMatch match, int count) {}
 
     /** Window hooks the popup needs (the default root, the async search, and open-in-editor). */
     interface Ops {
         /** The folder to seed the search root with on open (project root, else the active file's folder). */
+        @Nullable
         Path defaultRoot();
 
         /** Runs the multi-file search off-thread with comma-separated include/exclude globs; {@code onResult}
          *  is delivered on the FX thread. */
         void search(
                 SearchQuery query,
-                Path root,
+                @Nullable Path root,
                 String includeGlobs,
                 String excludeGlobs,
                 Consumer<SearchService.Outcome> onResult);
@@ -184,7 +182,7 @@ final class SearchInFilesPopup {
      * project / file), seeds the query from {@code selection} when non-null (else keeps the previous query),
      * focuses + selects the query field, and runs the search if a query is present.
      */
-    void show(String selection) {
+    void show(@Nullable String selection) {
         hint.setText(PickerKeys.legend(PickerKeys.hint("open", "↵")));
         Path root = ops.defaultRoot();
         rootField.setText(root == null ? "" : root.toString());
@@ -234,10 +232,11 @@ final class SearchInFilesPopup {
             // the prefix typed so far (h, ha, han, …) and pushed the real entries out of the shared history.
             ops.recordSearch(q);
         }
-        if (r.isHeader()) {
+        LineMatch match = r.match();
+        if (match == null) { // a file header
             ops.openMatch(r.file(), 1, 0);
         } else {
-            ops.openMatch(r.file(), r.match().line(), r.match().col());
+            ops.openMatch(r.file(), match.line(), match.col());
         }
     }
 
@@ -268,7 +267,7 @@ final class SearchInFilesPopup {
         ops.search(sq, scope, include.getText(), exclude.getText(), outcome -> populate(outcome, scope));
     }
 
-    private void populate(SearchService.Outcome outcome, Path root) {
+    private void populate(SearchService.Outcome outcome, @Nullable Path root) {
         List<Row> out = new ArrayList<>();
         int firstMatch = -1;
         for (FileResult fr : outcome.files()) {
@@ -294,11 +293,11 @@ final class SearchInFilesPopup {
     }
 
     /** The root the currently-shown results were produced against (for relativizing header paths). */
-    private Path currentRoot;
+    private @Nullable Path currentRoot;
 
     /** Resolves the root field to a directory: blank ⇒ null (open buffers only); {@code ~} expanded; a
      *  non-directory ⇒ null. */
-    private Path resolveRoot() {
+    private @Nullable Path resolveRoot() {
         String t = rootField.getText();
         if (t == null || t.isBlank()) {
             return null;
@@ -319,7 +318,7 @@ final class SearchInFilesPopup {
      * A file's display path: relative to {@code root} when it lives under it, else the absolute path. Pure
      * (unit-tested).
      */
-    static String displayPath(Path root, Path file) {
+    static String displayPath(@Nullable Path root, Path file) {
         Path abs = file.toAbsolutePath().normalize();
         if (root != null) {
             Path r = root.toAbsolutePath().normalize();
@@ -381,14 +380,14 @@ final class SearchInFilesPopup {
                 setGraphic(null);
                 return;
             }
-            if (item.isHeader()) {
+            LineMatch m = item.match();
+            if (m == null) { // a file header
                 fileName.setText(displayPath(currentRoot, item.file()));
                 fileName.setGraphic(
                         FileIcons.forFileName(String.valueOf(item.file().getFileName())));
                 count.setText("(" + item.count() + ")");
                 setGraphic(header);
             } else {
-                LineMatch m = item.match();
                 lineNo.setText(String.valueOf(m.line()));
                 preview.setText(previewOf(m));
                 setGraphic(matchRow);

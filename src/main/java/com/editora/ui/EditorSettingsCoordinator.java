@@ -13,8 +13,9 @@ import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LanguageRegistry;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.text.LanguageRegistry;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -45,6 +46,7 @@ final class EditorSettingsCoordinator {
 
         OverlayHost overlayHost();
 
+        @Nullable
         WindowManager windowManager();
 
         BuildOutputPanel buildOutputPanel();
@@ -55,8 +57,10 @@ final class EditorSettingsCoordinator {
 
         WelcomePane welcomePane();
 
+        @Nullable
         Tab welcomeTab();
 
+        @Nullable
         Tab doctorTab();
 
         void applyProjectSupport();
@@ -115,17 +119,20 @@ final class EditorSettingsCoordinator {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         void openPath(Path file);
 
         void openPath(Path file, boolean quietIfOpen);
 
+        @Nullable
         EditorBuffer bufferOf(Tab tab);
 
         void requestSave();
 
-        void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
+        void promptText(
+                String title, String label, @Nullable String initial, java.util.function.Consumer<String> onAccept);
 
         void refreshSpellAllTabs();
 
@@ -167,9 +174,9 @@ final class EditorSettingsCoordinator {
         host.promptText(
                 commandTitle("editor.setRulers"),
                 tr("palette.rulers.columns"),
-                com.editora.editor.RulerColumns.format(s.getRulers()),
+                com.editora.config.RulerColumns.format(s.getRulers()),
                 v -> {
-                    java.util.List<Integer> columns = com.editora.editor.RulerColumns.parse(v);
+                    java.util.List<Integer> columns = com.editora.config.RulerColumns.parse(v);
                     if (columns == null) {
                         host.setStatus(tr("status.rulers.invalid", v.trim()));
                         return;
@@ -195,7 +202,7 @@ final class EditorSettingsCoordinator {
         host.promptText(
                 commandTitle("editor.setLanguageRulers"),
                 tr("palette.rulers.language", language),
-                own == null ? "" : com.editora.editor.RulerColumns.format(own),
+                own == null ? "" : com.editora.config.RulerColumns.format(own),
                 v -> {
                     java.util.Map<String, java.util.List<Integer>> map =
                             new java.util.LinkedHashMap<>(s.getLanguageRulers());
@@ -203,7 +210,7 @@ final class EditorSettingsCoordinator {
                     if (v.isBlank()) {
                         map.remove(language);
                     } else {
-                        columns = com.editora.editor.RulerColumns.parse(v);
+                        columns = com.editora.config.RulerColumns.parse(v);
                         if (columns == null) {
                             host.setStatus(tr("status.rulers.invalid", v.trim()));
                             return;
@@ -225,7 +232,7 @@ final class EditorSettingsCoordinator {
         host.setStatus(
                 columns.isEmpty()
                         ? tr("status.rulers.none")
-                        : tr("status.rulers.set", com.editora.editor.RulerColumns.format(columns)));
+                        : tr("status.rulers.set", com.editora.config.RulerColumns.format(columns)));
     }
 
     void toggleLineHighlight() {
@@ -469,8 +476,9 @@ final class EditorSettingsCoordinator {
 
     /** Rebuilds the shared keymap (base + user + plugin overrides) and re-applies it to every window. */
     void reloadKeymap() {
-        if (host.windowManager() != null) {
-            host.windowManager().reloadSharedKeymap();
+        WindowManager wm = host.windowManager();
+        if (wm != null) {
+            wm.reloadSharedKeymap();
         } else {
             host.keymap().loadNamed(host.config().getSettings().getKeymap());
             host.keymap()
@@ -487,9 +495,9 @@ final class EditorSettingsCoordinator {
     java.util.Map<String, String> baseBindings() {
         com.editora.command.KeymapManager base = new com.editora.command.KeymapManager();
         base.loadNamed(host.config().getSettings().getKeymap());
-        if (host.windowManager() != null) {
-            KeymapLayers.pluginKeymaps(
-                            host.config().getSettings(), host.windowManager().pluginManager(), base.activeName())
+        WindowManager windows = host.windowManager();
+        if (windows != null) {
+            KeymapLayers.pluginKeymaps(host.config().getSettings(), windows.pluginManager(), base.activeName())
                     .forEach(base::applyOverrides);
         }
         return base.bindings();
@@ -653,7 +661,7 @@ final class EditorSettingsCoordinator {
         // combo made that unsearchable.)
         String current = names.contains(buffer.getLanguage()) ? buffer.getLanguage() : names.get(0);
         chooseSetting(
-                "buffer.setLanguage", () -> names, com.editora.editor.LanguageNames::display, () -> current, name -> {
+                "buffer.setLanguage", () -> names, com.editora.text.LanguageNames::display, () -> current, name -> {
                     buffer.setLanguageOverride(name);
                     host.previews().applyDefaultViewMode(buffer); // an untitled buffer just made Markdown
                     host.statusBar().refresh();
@@ -684,7 +692,7 @@ final class EditorSettingsCoordinator {
             String commandId,
             java.util.function.BooleanSupplier get,
             java.util.function.Consumer<Boolean> set,
-            Runnable apply) {
+            @Nullable Runnable apply) {
         boolean next = !get.getAsBoolean();
         set.accept(next);
         host.requestSave();
@@ -702,7 +710,7 @@ final class EditorSettingsCoordinator {
             String commandId,
             java.util.function.Supplier<String> get,
             java.util.function.Consumer<String> set,
-            Runnable apply) {
+            @Nullable Runnable apply) {
         promptStringSetting(commandId, get, set, apply, value -> null);
     }
 
@@ -711,8 +719,8 @@ final class EditorSettingsCoordinator {
             String commandId,
             java.util.function.Supplier<String> get,
             java.util.function.Consumer<String> set,
-            Runnable apply,
-            java.util.function.Function<String, String> refuse) {
+            @Nullable Runnable apply,
+            java.util.function.Function<String, @Nullable String> refuse) {
         host.promptText(commandTitle(commandId), tr("palette.setting.value"), get.get(), v -> {
             String value = v.trim();
             String why = refuse.apply(value);
@@ -764,7 +772,7 @@ final class EditorSettingsCoordinator {
             int min,
             int max,
             java.util.function.IntConsumer set,
-            Runnable apply) {
+            @Nullable Runnable apply) {
         promptIntValue(commandId, get, min, max, clamped -> {
             set.accept(clamped);
             host.requestSave();
@@ -819,7 +827,7 @@ final class EditorSettingsCoordinator {
             String commandId,
             java.util.function.Supplier<List<String>> options,
             java.util.function.Function<String, String> label,
-            java.util.function.Supplier<String> current,
+            java.util.function.@Nullable Supplier<String> current,
             java.util.function.Consumer<String> onChoose) {
         QuickOpen<String> picker = new QuickOpen<>(
                 commandTitle(commandId), tr("palette.setting.pick"), options::get, label::apply, id -> "", id -> {
@@ -1004,7 +1012,8 @@ final class EditorSettingsCoordinator {
      * ancestor-directory walk on the FX thread), anything else — a loading shell's {@code EMPTY}, or the
      * result a load worker prepared — is applied as is.
      */
-    void applyViewSettings(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+    void applyViewSettings(
+            EditorBuffer buffer, com.editora.editorconfig.@Nullable EditorConfigProperties editorConfig) {
         staleView.remove(buffer); // whatever was waiting for this buffer is applied now
         Settings s = host.config().getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
@@ -1166,7 +1175,7 @@ final class EditorSettingsCoordinator {
     /** Applies an already-resolved EditorConfig result without touching the filesystem. */
     void applyResolvedEditorConfig(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties properties) {
         // A shell script keeps LF and no BOM whatever a broad [*] section says: bash cannot run it otherwise.
-        com.editora.editorconfig.EditorConfigProperties p = com.editora.editor.ShellScripts.honoured(
+        com.editora.editorconfig.EditorConfigProperties p = com.editora.text.ShellScripts.honoured(
                 buffer.getLanguage(),
                 properties == null ? com.editora.editorconfig.EditorConfigProperties.EMPTY : properties);
         buffer.setEditorConfigProps(p);
@@ -1177,7 +1186,7 @@ final class EditorSettingsCoordinator {
         }
         // Unconditional, so a file that leaves an end_of_line rule behind (Save As, EditorConfig switched off)
         // goes back to its own line ending. A manual conversion lives on the buffer, not in this override.
-        buffer.setEolOverride(com.editora.editor.LineEndings.labelOf(p.endOfLine()));
+        buffer.setEolOverride(com.editora.editops.LineEndings.labelOf(p.endOfLine()));
         buffer.setRulerColumn(p.maxLineLength()); // null = default 80, OFF = hide
         buffer.setCharsetOverride(p.charset());
     }
@@ -1203,7 +1212,7 @@ final class EditorSettingsCoordinator {
         return scope;
     }
 
-    private ProjectScope listenedScope;
+    private @Nullable ProjectScope listenedScope;
 
     void applyEffectiveIndent(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties p) {
         Boolean insertSpaces = p.insertSpaces();

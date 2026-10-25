@@ -81,5 +81,9 @@
   "f6": "debug.pause",
   "C-back-quote": "tool.terminal",
   "S-escape": "terminal.focusEditor",
-  "C-S-back-quote": "terminal.new"
+  "C-S-back-quote": "terminal.new",
+  "C--": "nav.back",
+  "C-S--": "nav.forward",
+  "f8": "lsp.nextProblem",
+  "S-f8": "lsp.previousProblem"
 }

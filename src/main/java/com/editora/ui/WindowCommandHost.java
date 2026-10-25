@@ -11,6 +11,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Project;
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What {@link WindowCommandRegistrar} needs from a window: the adapter between the command table and
@@ -92,7 +93,12 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
-    public WindowManager windowManager() {
+    public ProjectPanel builtProjectPanel() {
+        return mc.projectPanel();
+    }
+
+    @Override
+    public @Nullable WindowManager windowManager() {
         return mc.windowManager;
     }
 
@@ -114,6 +120,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     @Override
     public ToolWindow structureToolWindow() {
         return mc.structureToolWindow;
+    }
+
+    @Override
+    public StructurePanel structurePanel() {
+        return mc.structurePanel();
     }
 
     @Override
@@ -592,7 +603,7 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
-    public EditorBuffer activeBuffer() {
+    public @Nullable EditorBuffer activeBuffer() {
         return mc.activeBuffer();
     }
 
@@ -637,7 +648,7 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
-    public void saveAsPrompt(EditorBuffer buffer) {
+    public void saveAsPrompt(@Nullable EditorBuffer buffer) {
         mc.fileWorkflows.saveAsPrompt(buffer);
     }
 
@@ -717,7 +728,7 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
-    public void copyPath(EditorBuffer buffer) {
+    public void copyPath(@Nullable EditorBuffer buffer) {
         mc.copyPath(buffer);
     }
 
@@ -737,7 +748,7 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
-    public void renameFile(EditorBuffer buffer, Tab tab) {
+    public void renameFile(@Nullable EditorBuffer buffer, Tab tab) {
         mc.renameFile(buffer, tab);
     }
 
@@ -777,7 +788,7 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
-    public void maybeOfferInstall(EditorBuffer buffer) {
+    public void maybeOfferInstall(@Nullable EditorBuffer buffer) {
         mc.installPrompts.maybeOfferInstall(buffer);
     }
 

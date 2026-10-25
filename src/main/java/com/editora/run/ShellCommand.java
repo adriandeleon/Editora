@@ -7,6 +7,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The interpreter a shell script runs under, decided the way running it as {@code ./script} would: by its
  * shebang line (pure, unit-tested).
@@ -39,7 +41,10 @@ public final class ShellCommand {
      * {@code null} value <em>unsets</em> one ({@code env -u NAME}) — and the folder {@code env -C DIR} runs it
      * in ({@code null} when there is none; a relative one is relative to the run's working directory).
      */
-    public record Launch(List<String> interpreter, Map<String, String> env, String chdir) {
+    public record Launch(
+            List<String> interpreter,
+            Map<String, String> env,
+            @Nullable String chdir) {
         public Launch(List<String> interpreter, Map<String, String> env) {
             this(interpreter, env, null);
         }
@@ -63,13 +68,13 @@ public final class ShellCommand {
      * @throws ProgramArgs.UnclosedQuoteException when the options have an unclosed quote
      */
     public static Launch launch(
-            String firstLine,
+            @Nullable String firstLine,
             String fileName,
             String interpreterOverride,
             String interpreterOptions,
-            Predicate<String> existsHere) {
+            @Nullable Predicate<String> existsHere) {
         Map<String, String> env = new LinkedHashMap<>();
-        String[] chdir = new String[1];
+        @Nullable String[] chdir = new @Nullable String[1];
         List<String> fromShebang = shebang(firstLine, env, chdir);
         String interpreter;
         List<String> flags;
@@ -182,12 +187,12 @@ public final class ShellCommand {
      * The shebang's interpreter and its flags, with an {@code env} lookup resolved; empty when the line is no
      * shebang. Variables set on an {@code env} line are added to {@code env}.
      */
-    static List<String> shebang(String firstLine, Map<String, String> env) {
-        return shebang(firstLine, env, new String[1]);
+    static List<String> shebang(@Nullable String firstLine, Map<String, String> env) {
+        return shebang(firstLine, env, new @Nullable String[1]);
     }
 
     /** As above; {@code chdir[0]} receives an {@code env -C DIR} folder. */
-    static List<String> shebang(String firstLine, Map<String, String> env, String[] chdir) {
+    static List<String> shebang(@Nullable String firstLine, Map<String, String> env, @Nullable String[] chdir) {
         if (firstLine == null) {
             return List.of();
         }
@@ -258,7 +263,7 @@ public final class ShellCommand {
         return out;
     }
 
-    private static String localize(String interpreter, Predicate<String> existsHere) {
+    private static String localize(String interpreter, @Nullable Predicate<String> existsHere) {
         if (existsHere == null || !interpreter.startsWith("/") || existsHere.test(interpreter)) {
             return interpreter;
         }

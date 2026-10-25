@@ -7,8 +7,8 @@ import java.util.Map;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 
-import com.editora.editor.LspDiagnostic;
-import com.editora.editor.LspDiagnostic.Severity;
+import com.editora.text.LspDiagnostic;
+import com.editora.text.LspDiagnostic.Severity;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

@@ -64,23 +64,24 @@ class MainControllerWindowFxTest {
     void tearDown() throws Exception {
         try {
             FxTestSupport.runOnFx(() -> {
-                // The MCP server and the known update are per application, not per window: leave neither
-                // behind for the next test class in this JVM.
+                // The MCP server is per application and the known update lives in the shared preferences, not
+                // per window: leave neither behind for the next test class in this JVM.
                 if (settings.isMcpSupport()) {
                     settings.setMcpSupport(false);
                     FxTestSupport.invoke(controller, "applyMcpSupport");
                 }
-                setStatic("latestKnownUpdate", null);
+                settings.setLatestReleaseVersion("");
+                settings.setLatestReleaseUrl("");
+                settings.setLastUpdateCheckOkEpoch(0);
             });
         } finally {
             async.close();
         }
     }
 
-    /** A per-application static: the MCP server lives on {@code MainController}, the known update on
-     *  {@code UpdateCoordinator}. */
+    /** A per-application static of {@code MainController} (the MCP server). */
     private static java.lang.reflect.Field staticField(String field) throws NoSuchFieldException {
-        for (Class<?> owner : List.of(MainController.class, UpdateCoordinator.class)) {
+        for (Class<?> owner : List.of(MainController.class)) {
             try {
                 java.lang.reflect.Field f = owner.getDeclaredField(field);
                 f.setAccessible(true);
@@ -164,6 +165,8 @@ class MainControllerWindowFxTest {
             assertTrue(notice.isVisible(), "even an automatic check shows what it found");
             assertEquals(tr("statusbar.update", "99.0.0"), notice.getText());
             assertEquals(tr("status.update.available", "99.0.0"), echoNow());
+            assertEquals("99.0.0", settings.getLatestReleaseVersion(), "kept for About and the next launch");
+            assertTrue(settings.getLastUpdateCheckOkEpoch() > 0);
 
             FxTestSupport.invoke(FxTestSupport.field(controller, "updates"), "openDownloadPage");
             assertEquals("99.0.0", settings.getDismissedUpdateVersion(), "seen: not announced again");
@@ -191,6 +194,7 @@ class MainControllerWindowFxTest {
 
             outcome(new UpdateService.Outcome(false, null, "no route to host"), true);
             assertEquals(tr("status.update.failed", "no route to host"), echoNow());
+            assertEquals(com.editora.AppInfo.VERSION, settings.getLatestReleaseVersion(), "a failure keeps the answer");
             outcome(new UpdateService.Outcome(false, current, null), true);
             assertEquals(tr("status.update.upToDate", com.editora.AppInfo.VERSION), echoNow());
             assertFalse(statusSegment("update").isVisible());
@@ -202,9 +206,9 @@ class MainControllerWindowFxTest {
         FxTestSupport.runOnFx(() -> {
             outcome(new UpdateService.Outcome(true, new ReleaseInfo("99.0.0", "", ""), null), false);
             assertTrue(statusSegment("update").isVisible());
-            outcome(new UpdateService.Outcome(false, new ReleaseInfo("1.0.0", "", ""), null), false);
+            outcome(new UpdateService.Outcome(false, new ReleaseInfo("0.0.1", "", ""), null), false);
             assertFalse(statusSegment("update").isVisible());
-            assertNull(getStatic("latestKnownUpdate"));
+            assertEquals("0.0.1", settings.getLatestReleaseVersion(), "the newest release found, not newer");
 
             // With no update known, "open the download page" has nothing to dismiss.
             String dismissed = settings.getDismissedUpdateVersion();

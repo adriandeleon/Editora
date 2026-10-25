@@ -39,6 +39,7 @@ import org.commonmark.node.Text;
 import org.commonmark.node.ThematicBreak;
 import org.commonmark.parser.IncludeSourceSpans;
 import org.commonmark.parser.Parser;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The lint rules that need to know how the document <em>parses</em> — list structure, emphasis and link nodes,
@@ -98,14 +99,30 @@ final class MarkdownLintMore {
         final MarkdownLintOptions opt;
         final Set<String> definedLabels = new HashSet<>();
         final List<LinkReferenceDefinition> definitions = new ArrayList<>();
+
+        @Nullable
         String headingStyle;
+
         char bullet;
+
+        @Nullable
         String hrStyle;
+
+        @Nullable
         String codeBlockStyle;
+
+        @Nullable
         String fenceStyle;
+
+        @Nullable
         String emphasisStyle;
+
+        @Nullable
         String strongStyle;
+
+        @Nullable
         Set<String> anchors;
+
         final Set<String> headingsSeen = new HashSet<>();
         final List<Set<String>> siblingHeadings = new ArrayList<>();
 
@@ -250,12 +267,12 @@ final class MarkdownLintMore {
         return false;
     }
 
-    private static SourceSpan first(Node node) {
+    private static @Nullable SourceSpan first(Node node) {
         List<SourceSpan> spans = node.getSourceSpans();
         return spans.isEmpty() ? null : spans.get(0);
     }
 
-    private static SourceSpan last(Node node) {
+    private static @Nullable SourceSpan last(Node node) {
         List<SourceSpan> spans = node.getSourceSpans();
         return spans.isEmpty() ? null : spans.get(spans.size() - 1);
     }
@@ -321,7 +338,9 @@ final class MarkdownLintMore {
     // --- headings: MD003, MD024 ---------------------------------------------------------------------------
 
     private static void heading(Run run, Heading h) {
-        SourceSpan s = first(h);
+        if (!(first(h) instanceof SourceSpan s)) {
+            return; // a node without source spans has nothing to point a diagnostic at
+        }
         String raw = run.raw(s).strip();
         if (run.emit.on("MD003")) {
             String style =
@@ -397,7 +416,9 @@ final class MarkdownLintMore {
         if (items.isEmpty()) {
             return;
         }
-        SourceSpan head = first(items.get(0));
+        if (!(first(items.get(0)) instanceof SourceSpan head)) {
+            return;
+        }
         int firstColumn = markerColumn(run, head);
         int firstEnd = markerEnd(run.line(head.getLineIndex()), firstColumn);
 
@@ -406,8 +427,8 @@ final class MarkdownLintMore {
         if (bullets
                 && emit.on("MD007")
                 && list.getParent() instanceof ListItem parentItem
-                && bulletAncestry(parentItem)) {
-            SourceSpan parent = first(parentItem);
+                && bulletAncestry(parentItem)
+                && first(parentItem) instanceof SourceSpan parent) {
             String parentLine = run.line(parent.getLineIndex());
             int parentColumn = markerColumn(run, parent);
             int parentEnd = markerEnd(parentLine, parentColumn);
@@ -421,7 +442,9 @@ final class MarkdownLintMore {
         boolean incrementing = false;
         for (int index = 0; index < items.size(); index++) {
             ListItem item = items.get(index);
-            SourceSpan s = first(item);
+            if (!(first(item) instanceof SourceSpan s)) {
+                continue;
+            }
             int lineNo = s.getLineIndex() + 1;
             String line = run.line(s.getLineIndex());
             int column = markerColumn(run, s);
@@ -559,9 +582,14 @@ final class MarkdownLintMore {
     private static boolean rightAligned(Run run, List<ListItem> items) {
         int end = -1;
         boolean differentStarts = false;
-        int start = markerColumn(run, first(items.get(0)));
+        if (!(first(items.get(0)) instanceof SourceSpan head)) {
+            return false;
+        }
+        int start = markerColumn(run, head);
         for (ListItem item : items) {
-            SourceSpan s = first(item);
+            if (!(first(item) instanceof SourceSpan s)) {
+                return false;
+            }
             int column = markerColumn(run, s);
             int e = markerEnd(run.line(s.getLineIndex()), column);
             if (end >= 0 && e != end) {
@@ -578,8 +606,9 @@ final class MarkdownLintMore {
      * inserts is only offered at the top level, where an empty line cannot change what a container holds.
      */
     private static void blanksAround(Run run, Node block, String code) {
-        SourceSpan head = first(block);
-        SourceSpan tail = last(block);
+        if (!(first(block) instanceof SourceSpan head) || !(last(block) instanceof SourceSpan tail)) {
+            return;
+        }
         boolean topLevel = block.getParent() instanceof Document;
         int above = head.getLineIndex() - 1;
         // Two lists back to back (a change of marker starts a new list) are not "text touching a list".
@@ -608,7 +637,9 @@ final class MarkdownLintMore {
         if (!run.emit.on("MD035")) {
             return;
         }
-        SourceSpan s = first(node);
+        if (!(first(node) instanceof SourceSpan s)) {
+            return;
+        }
         String raw = run.raw(s).strip();
         String wanted = run.opt.stringOption("MD035.style", "consistent");
         if (wanted.equals("consistent")) {
@@ -640,8 +671,7 @@ final class MarkdownLintMore {
             }
             wanted = run.codeBlockStyle;
         }
-        if (!style.equals(wanted)) {
-            SourceSpan s = first(node);
+        if (!style.equals(wanted) && first(node) instanceof SourceSpan s) {
             run.emit.add(s.getLineIndex() + 1, s.getColumnIndex() + 1, s.getLength(), "MD046", "MD046");
         }
     }
@@ -658,8 +688,7 @@ final class MarkdownLintMore {
             }
             wanted = run.fenceStyle;
         }
-        if (!style.equals(wanted)) {
-            SourceSpan s = first(fence);
+        if (!style.equals(wanted) && first(fence) instanceof SourceSpan s) {
             Integer length = fence.getOpeningFenceLength();
             run.emit.add(s.getLineIndex() + 1, s.getColumnIndex() + 1, length == null ? 3 : length, "MD048", "MD048");
         }
@@ -751,8 +780,9 @@ final class MarkdownLintMore {
         if (punctuation.indexOf(title.charAt(title.length() - 1)) >= 0) {
             return;
         }
-        SourceSpan s = first(only);
-        run.emit.add(s.getLineIndex() + 1, s.getColumnIndex() + 1, s.getLength(), "MD036", "MD036");
+        if (first(only) instanceof SourceSpan s) {
+            run.emit.add(s.getLineIndex() + 1, s.getColumnIndex() + 1, s.getLength(), "MD036", "MD036");
+        }
     }
 
     private static void emphasisStyle(Run run, Node node) {
@@ -761,8 +791,9 @@ final class MarkdownLintMore {
         if (!run.emit.on(code)) {
             return;
         }
-        SourceSpan open = first(node);
-        SourceSpan close = last(node);
+        if (!(first(node) instanceof SourceSpan open) || !(last(node) instanceof SourceSpan close)) {
+            return;
+        }
         String openLine = run.line(open.getLineIndex());
         if (open.getColumnIndex() >= openLine.length()) {
             return;
@@ -811,22 +842,25 @@ final class MarkdownLintMore {
 
     private static void link(Run run, Link link) {
         Emitter emit = run.emit;
-        SourceSpan s = first(link);
+        if (!(first(link) instanceof SourceSpan s)) {
+            return;
+        }
         int lineNo = s.getLineIndex() + 1;
         String destination = link.getDestination() == null ? "" : link.getDestination();
         if (emit.on("MD039") && link.getSourceSpans().size() == 1) {
             List<Edit> fix = new ArrayList<>();
-            if (link.getFirstChild() instanceof Text t && first(t) != null) {
+            if (link.getFirstChild() instanceof Text t && first(t) instanceof SourceSpan ts) {
                 int lead =
                         t.getLiteral().length() - t.getLiteral().stripLeading().length();
                 if (lead > 0 && lead < t.getLiteral().length()) {
-                    fix.add(Edit.on(s.getLineIndex(), first(t).getColumnIndex(), first(t).getColumnIndex() + lead, ""));
+                    fix.add(Edit.on(s.getLineIndex(), ts.getColumnIndex(), ts.getColumnIndex() + lead, ""));
                 }
             }
-            if (link.getLastChild() instanceof Text t && first(t) != null) {
+            if (link.getLastChild() instanceof Text t && first(t) instanceof SourceSpan ts) {
                 int trail =
                         t.getLiteral().length() - t.getLiteral().stripTrailing().length();
-                int end = first(t).getColumnIndex() + first(t).getLength();
+                int end = ts.getColumnIndex() + ts.getLength();
+
                 if (trail > 0 && trail < t.getLiteral().length()) {
                     fix.add(Edit.on(s.getLineIndex(), end - trail, end, ""));
                 }
@@ -854,7 +888,9 @@ final class MarkdownLintMore {
     }
 
     private static void image(Run run, Image image) {
-        SourceSpan s = first(image);
+        if (!(first(image) instanceof SourceSpan s)) {
+            return;
+        }
         if (run.emit.on("MD045") && plainText(image).isBlank()) {
             run.emit.add(s.getLineIndex() + 1, s.getColumnIndex() + 1, s.getLength(), "MD045", "MD045");
         }
@@ -932,7 +968,7 @@ final class MarkdownLintMore {
                 }
             }
         }
-        if (message != null) {
+        if (message != null && s != null) {
             // Underlined from "[[", whether or not a "!" stands before it.
             String line = run.line(s.getLineIndex());
             int column = s.getColumnIndex();
@@ -1015,7 +1051,9 @@ final class MarkdownLintMore {
         if (!run.emit.on("MD038") || code.getSourceSpans().size() != 1) {
             return;
         }
-        SourceSpan s = first(code);
+        if (!(first(code) instanceof SourceSpan s)) {
+            return;
+        }
         String raw = run.raw(s);
         int ticks = 0;
         while (ticks < raw.length() && raw.charAt(ticks) == '`') {
@@ -1302,12 +1340,16 @@ final class MarkdownLintMore {
         for (LinkReferenceDefinition def : run.definitions) {
             String label = MarkdownLint.normalizeLabel(def.getLabel());
             SourceSpan s = first(def);
+
             if (containsIgnoreCase(ignored, label)) {
                 continue;
             }
             boolean duplicate = !seen.add(label);
             if (!duplicate && used.contains(label)) {
                 continue;
+            }
+            if (s == null) {
+                continue; // counted for duplicates above, but there is no source to point at
             }
             Edit[] fix = def.getSourceSpans().size() == 1 && def.getParent() instanceof Document
                     ? new Edit[] {new Edit(s.getLineIndex(), 0, s.getLineIndex() + 1, 0, "")}

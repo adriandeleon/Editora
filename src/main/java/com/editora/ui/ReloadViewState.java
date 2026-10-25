@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.NarrowLines;
+import com.editora.editor.fold.NarrowLines;
 import org.fxmisc.richtext.CodeArea;
 
 /**

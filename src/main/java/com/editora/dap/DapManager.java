@@ -22,6 +22,7 @@ import javafx.application.Platform;
 import com.editora.lsp.LspManager;
 import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -49,13 +50,16 @@ public final class DapManager {
     }
 
     /** A candidate main class returned by jdtls's {@code vscode.java.resolveMainClass}. */
-    public record MainClassOption(String mainClass, String projectName, String filePath) {
+    public record MainClassOption(
+            @Nullable String mainClass,
+            @Nullable String projectName,
+            @Nullable String filePath) {
         /**
          * The plain fully-qualified class name. For a class of a named module jdtls answers {@code
          * <module>/<class>} in {@link #mainClass} (what the launch needs); a saved configuration and the
          * gutter name the class alone, so that is what a main class is matched by.
          */
-        public String className() {
+        public @Nullable String className() {
             return JavaLaunchSupport.className(mainClass);
         }
     }
@@ -66,7 +70,11 @@ public final class DapManager {
      * when resolution failed. Reused by the non-debug Run path (which turns it into a {@code java} argv).
      */
     public record ResolvedLaunch(
-            String javaExec, List<String> modulePaths, List<String> classPaths, String error, boolean enablePreview) {
+            @Nullable String javaExec,
+            List<String> modulePaths,
+            List<String> classPaths,
+            @Nullable String error,
+            boolean enablePreview) {
         static ResolvedLaunch failed(String error) {
             return new ResolvedLaunch(null, List.of(), List.of(), error, false);
         }
@@ -90,7 +98,7 @@ public final class DapManager {
 
         void onOutput(String text, String category);
 
-        void onError(String message);
+        void onError(@Nullable String message);
 
         /**
          * What the adapter says about {@code file}'s breakpoints (see {@link DapModels.BreakpointStatus}):
@@ -132,7 +140,7 @@ public final class DapManager {
          * host) with {@code env} on top of the user's environment. Not reported for an attach: the program
          * was already running, under whatever started it.
          */
-        default void onDebuggeeRuntime(List<String> runtime, Path where, Map<String, String> env) {}
+        default void onDebuggeeRuntime(List<String> runtime, @Nullable Path where, Map<String, String> env) {}
     }
 
     private final LspManager lsp;
@@ -151,16 +159,16 @@ public final class DapManager {
     // Python (debugpy, stdio) + JavaScript (vscode-js-debug, socket) — the standalone adapters.
     private boolean pythonEnabled;
     private String pythonCommand = ""; // interpreter exe (blank ⇒ python3 on PATH)
-    private Path debugpyDir; // resolved PYTHONPATH dir for debugpy (null ⇒ rely on interpreter)
+    private @Nullable Path debugpyDir; // resolved PYTHONPATH dir for debugpy (null ⇒ rely on interpreter)
     private boolean pythonAvailable;
     private boolean jsEnabled;
     private String jsPath = ""; // configured dapDebugServer.js path/dir (blank ⇒ auto-detect)
-    private Path jsServer; // resolved dapDebugServer.js (null ⇒ not found)
+    private @Nullable Path jsServer; // resolved dapDebugServer.js (null ⇒ not found)
     private boolean jsAvailable;
     /** The Debugging setting's Node.js ("" = automatic), see {@link com.editora.run.NodeRuntimes}. */
     private volatile String nodePath = "";
     /** The window's project root for the next JavaScript launch (its package root and workspace folder). */
-    private volatile Path jsProjectRoot;
+    private volatile @Nullable Path jsProjectRoot;
     /** The current session is vscode-js-debug's (read on adapter threads to clean up what it prints). */
     private volatile boolean jsSession;
     /**
@@ -169,14 +177,14 @@ public final class DapManager {
      */
     private volatile boolean jsClientConsole;
     /** js-debug's stderr for the starting JavaScript session, for the message when it dies while starting. */
-    private volatile AdapterStderr jsAdapterStderr;
+    private volatile @Nullable AdapterStderr jsAdapterStderr;
     /** Condition errors js-debug already reported this session (it repeats each one per script it loads). */
     private final java.util.Set<String> reportedConditionErrors = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    private volatile DapClient client;
+    private volatile @Nullable DapClient client;
     private volatile long sessionEpoch;
     private volatile boolean managerClosed;
-    private volatile Future<?> startupTask;
+    private volatile @Nullable Future<?> startupTask;
     private final Object sessionLock = new Object();
     private State state = State.INACTIVE;
     private int currentThreadId;
@@ -193,20 +201,20 @@ public final class DapManager {
     /** The session epoch of a step request the adapter has not answered yet, else -1 (FX thread). */
     private long stepPendingEpoch = -1;
 
-    private Path debugFile;
+    private @Nullable Path debugFile;
     /** Temporary .java copy used to compile an extensionless shebang, scoped to its launch epoch. */
-    private volatile SourceAlias sourceAlias;
+    private volatile @Nullable SourceAlias sourceAlias;
 
-    private volatile Path compilationDirectory;
+    private volatile @Nullable Path compilationDirectory;
     /** Removes {@link #compilationDirectory} on its target ({@code null}: a folder of this machine). */
-    private volatile Runnable compilationRemoval;
+    private volatile @Nullable Runnable compilationRemoval;
 
     private record SourceAlias(long epoch, Path original, Path compiled) {}
 
     /** Whether a Java launch asks the adapter to let Editora start the program (see {@link #setProgramConsole}). */
     private boolean programConsole;
     /** The program of the current session when Editora started it, else null (FX thread). */
-    private Debuggee debuggee;
+    private @Nullable Debuggee debuggee;
     /** How long a program may take to exit once the adapter has reported the session over, before it is killed. */
     private static final long DEBUGGEE_EXIT_GRACE_MILLIS = 3_000;
 
@@ -216,7 +224,7 @@ public final class DapManager {
     /** The adapter language of the current (or last) session: {@code java}, {@code python} or {@code javascript}. */
     private String sessionLanguage = "java";
 
-    private Runnable restartAction;
+    private @Nullable Runnable restartAction;
 
     public DapManager(LspManager lsp) {
         this.lsp = lsp;
@@ -253,7 +261,7 @@ public final class DapManager {
     }
 
     /** The filters chosen for {@code language}, or null when the adapter's defaults apply. */
-    private List<String> filtersFor(String language) {
+    private @Nullable List<String> filtersFor(String language) {
         sessionLanguage = language;
         jsSession = "javascript".equals(language);
         reportedConditionErrors.clear();
@@ -301,10 +309,10 @@ public final class DapManager {
      * An attach, and the Python and JavaScript adapters, are not affected either way.
      */
     /** Where a program Editora starts runs instead of the Debug console (a Terminal tab); null for the console. */
-    private ProgramTerminal programTerminal;
+    private @Nullable ProgramTerminal programTerminal;
 
     /** Takes effect at the next launch; see {@link ProgramTerminal}. */
-    public void setProgramTerminal(ProgramTerminal programTerminal) {
+    public void setProgramTerminal(@Nullable ProgramTerminal programTerminal) {
         this.programTerminal = programTerminal;
     }
 
@@ -326,7 +334,7 @@ public final class DapManager {
     }
 
     /** The project root a JavaScript launch resolves its Node.js, package root and workspace folder from. */
-    public void setJsProjectRoot(Path projectRoot) {
+    public void setJsProjectRoot(@Nullable Path projectRoot) {
         this.jsProjectRoot = projectRoot;
     }
 
@@ -338,19 +346,21 @@ public final class DapManager {
     /** Sends {@code line} (a line terminator is added) to the debugged program's standard input; false when
      *  there is no such program to send it to. */
     public boolean sendProgramInput(String line) {
-        if (!programInputAvailable() || line == null) {
+        Debuggee program = debuggee;
+        if (program == null || !program.acceptsInput() || line == null) {
             return false;
         }
-        debuggee.sendInput(line);
+        program.sendInput(line);
         return true;
     }
 
     /** Ends the debugged program's standard input (end of file); false when there is none to end. */
     public boolean closeProgramInput() {
-        if (!programInputAvailable()) {
+        Debuggee program = debuggee;
+        if (program == null || !program.acceptsInput()) {
             return false;
         }
-        debuggee.closeInput();
+        program.closeInput();
         listener.onProgramInput(false);
         return true;
     }
@@ -524,7 +534,7 @@ public final class DapManager {
     }
 
     /** Runs {@code <python> -c "import debugpy"} (debugpyDir on PYTHONPATH); true on a clean exit. */
-    private boolean probeDebugpy(Path dir) {
+    private boolean probeDebugpy(@Nullable Path dir) {
         List<String> interp = DapServerRegistry.interpreterArgv("python", pythonCommand);
         if (interp.isEmpty()) {
             return false;
@@ -562,7 +572,7 @@ public final class DapManager {
     }
 
     /** What {@code <node> --version} prints ({@code v24.18.1}), or null when it does not run. Off the FX thread. */
-    static String nodeVersion(String node) {
+    static @Nullable String nodeVersion(String node) {
         try {
             ProcessRunner.Result r =
                     ProcessRunner.run(null, java.time.Duration.ofSeconds(5), List.of(node, "--version"));
@@ -574,12 +584,12 @@ public final class DapManager {
 
     /** Launches {@code argv} (PATH-augmented; {@code pythonPathDir} prepended to PYTHONPATH when non-null),
      *  discards its output, and returns whether it exits 0 within 5s. */
-    private static boolean probe(List<String> argv, Path pythonPathDir) {
+    private static boolean probe(List<String> argv, @Nullable Path pythonPathDir) {
         return probe(argv, pythonPathDir, Map.of());
     }
 
     /** As {@link #probe(List, Path)}, with {@code env} (a command's own {@code env NAME=value} prefix) applied. */
-    private static boolean probe(List<String> argv, Path pythonPathDir, Map<String, String> env) {
+    private static boolean probe(List<String> argv, @Nullable Path pythonPathDir, Map<String, String> env) {
         try {
             List<String> cmd = ProcessRunner.resolveExecutable(argv);
             ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -615,7 +625,7 @@ public final class DapManager {
     }
 
     /** The file the current (or last) session was started for; null before any session. */
-    public Path debugFile() {
+    public @Nullable Path debugFile() {
         return debugFile;
     }
 
@@ -655,7 +665,7 @@ public final class DapManager {
      * folder and is compiled here when jdtls has no class file for it.
      */
     public void startLaunch(
-            Path file, String language, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
+            Path file, String language, MainClassPicker picker, String javaExecOverride, @Nullable Path projectRoot) {
         jvmCwd = null; // a file's own debug runs in its folder
         jvmJar = null;
         if ("java".equals(language)) {
@@ -668,14 +678,14 @@ public final class DapManager {
     }
 
     /** The folder a JVM-language program runs in; null for its file's folder. */
-    private volatile Path jvmCwd;
+    private volatile @Nullable Path jvmCwd;
 
     /**
      * Debugs JVM-language script {@code file} ({@code groovy}, {@code clojure}) in {@code cwd} — a run
      * configuration's folder, or null for the one the tool runs it in —
      * with the arguments and environment set beforehand. Restart repeats it.
      */
-    public void startJvmScript(Path file, String language, Path cwd) {
+    public void startJvmScript(Path file, String language, @Nullable Path cwd) {
         jvmCwd = cwd;
         jvmJar = null;
         startProgram(file, language);
@@ -683,7 +693,7 @@ public final class DapManager {
     }
 
     /** A compiled program's jar for the next JVM launch, run as {@code java -jar}; null runs the file's tool. */
-    private volatile Path jvmJar;
+    private volatile @Nullable Path jvmJar;
 
     /** The {@code java} that runs {@link #jvmJar}: the session JDK's. */
     private volatile String jvmJava = "java";
@@ -694,7 +704,7 @@ public final class DapManager {
      * the arguments, VM arguments and environment set beforehand. The debugger's agent goes on that command line.
      * Restart repeats it with the same jar; the coordinator's own restart compiles an edited file again.
      */
-    public void startJvmProgram(Path file, String language, Path cwd, Path jar, String java) {
+    public void startJvmProgram(Path file, String language, @Nullable Path cwd, Path jar, String java) {
         jvmCwd = cwd;
         jvmJar = jar;
         jvmJava = java == null || java.isBlank() ? "java" : java;
@@ -768,7 +778,7 @@ public final class DapManager {
     }
 
     /** The folder an attached program's sources are looked up under: the file's build root, else its folder. */
-    private static Path jvmSourceRoot(Path file) {
+    private static @Nullable Path jvmSourceRoot(Path file) {
         Path dir = file.toAbsolutePath().getParent();
         for (Path p = dir; p != null; p = p.getParent()) {
             for (String marker :
@@ -809,7 +819,7 @@ public final class DapManager {
     }
 
     /** {@link #setVmArgs(List)}'s arguments; null when the raw {@link #vmArgs} text applies. */
-    private volatile List<String> vmArgList;
+    private volatile @Nullable List<String> vmArgList;
 
     /** The JVM arguments of the next launch as java-debug's {@code vmArgs} string, for an adapter on {@code target}. */
     private String vmArgsFor(LaunchConfig.Target target) {
@@ -833,7 +843,7 @@ public final class DapManager {
      * this machine, never used for a remote file), else for a remote file the host's configured one, else the
      * one jdtls resolved.
      */
-    private String javaExecFor(Path file, String javaExecOverride, String resolved) {
+    private @Nullable String javaExecFor(Path file, String javaExecOverride, @Nullable String resolved) {
         if (!com.editora.process.ExecTargets.runsHere(file)) {
             return hostJavaExec.isBlank() ? resolved : hostJavaExec;
         }
@@ -851,7 +861,7 @@ public final class DapManager {
     public static final String COMMAND_CATEGORY = "editora.command";
 
     /** The project a Python launch belongs to (null: none) — its venv, and its root on PYTHONPATH. */
-    private volatile Path pythonProjectRoot;
+    private volatile @Nullable Path pythonProjectRoot;
 
     /** The interpreter picked for that project ("" when none was), relative paths taken from its root. */
     private volatile String pythonProjectChoice = "";
@@ -870,10 +880,10 @@ public final class DapManager {
     }
 
     /** Run's plan request for the next Python launch (its root, choice, setting, shebang), or null. */
-    private volatile com.editora.run.PythonRunPlan.Request pythonRequest;
+    private volatile com.editora.run.PythonRunPlan.@Nullable Request pythonRequest;
 
     /** The machine the next Python program runs on, as Run plans it, or null (decided from the file). */
-    private volatile com.editora.run.PythonRunPlan.Host pythonHost;
+    private volatile com.editora.run.PythonRunPlan.@Nullable Host pythonHost;
 
     /**
      * Plans the next Python launch the way Run plans one: {@code request}'s project root, picked interpreter,
@@ -910,7 +920,7 @@ public final class DapManager {
     }
 
     /** Java launch for a file of the build project at {@code projectRoot} ({@code null}: a loose file). */
-    public void startLaunch(Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
+    public void startLaunch(Path file, MainClassPicker picker, String javaExecOverride, @Nullable Path projectRoot) {
         startLaunch(file, picker, javaExecOverride, projectRoot, null);
     }
 
@@ -919,7 +929,11 @@ public final class DapManager {
      * root of a plain-folder project window, where a program reads its files as it would from a terminal there.
      */
     public void startLaunch(
-            Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot, Path looseCwd) {
+            Path file,
+            MainClassPicker picker,
+            String javaExecOverride,
+            @Nullable Path projectRoot,
+            @Nullable Path looseCwd) {
         if (!ready(file)) {
             return;
         }
@@ -937,7 +951,12 @@ public final class DapManager {
     }
 
     private void resolveMainClassAndLaunch(
-            Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot, Path looseCwd, long epoch) {
+            Path file,
+            MainClassPicker picker,
+            String javaExecOverride,
+            @Nullable Path projectRoot,
+            @Nullable Path looseCwd,
+            long epoch) {
         lsp.executeCommand(file, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -985,7 +1004,7 @@ public final class DapManager {
                 notice(
                         epoch,
                         com.editora.i18n.Messages.tr(
-                                "debug.console.noMainInFile", file.getFileName(), only.className()));
+                                "debug.console.noMainInFile", file.getFileName(), String.valueOf(only.className())));
                 launchOption(file, only, cwd, javaExecOverride, projectRoot, epoch);
             } else {
                 picker.pick(options, chosen -> {
@@ -1006,7 +1025,12 @@ public final class DapManager {
      * output folder (autobuild is off), so a class missing there is compiled here, from its own source file.
      */
     private void launchOption(
-            Path file, MainClassOption opt, String cwd, String javaExecOverride, Path projectRoot, long epoch) {
+            Path file,
+            MainClassOption opt,
+            @Nullable String cwd,
+            String javaExecOverride,
+            @Nullable Path projectRoot,
+            long epoch) {
         if (projectRoot != null) {
             resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch);
             return;
@@ -1038,7 +1062,7 @@ public final class DapManager {
     }
 
     /** The fully-qualified name of the first {@code main} {@code file} declares itself, or null (bounded read). */
-    static String ownMainClass(Path file) {
+    static @Nullable String ownMainClass(Path file) {
         try {
             if (file == null || Files.size(file) > 2_000_000) {
                 return null;
@@ -1058,61 +1082,10 @@ public final class DapManager {
         }
     }
 
-    /**
-     * In a folder with no build file jdtls keeps a Java file in an "invisible project" whose source folder it
-     * guesses — and it guesses the file's own folder, so {@code src/demo/Main.java} declaring {@code package
-     * demo} is class {@code Main} to it: the launch named a class that does not exist, its package line was
-     * flagged as wrong, and no stop could be shown in the file. When the declared package says the source
-     * folder is another one, this tells jdtls so (adding the right folder, then removing the wrong ones —
-     * Editora's jdtls workspace changes, never the user's files) and then runs {@code then}. Anything that
-     * cannot be corrected (no package, a misplaced file, a folder outside the server's workspace) runs
-     * {@code then} as it is: the compile below names the class from the file either way.
-     */
+    /** {@link JavaSourceRootFix} before a launch from a folder with no build file, then {@code then}. */
     private void correctSourceRoot(Path file, long epoch, Runnable then) {
-        String pkg = JavaLaunchSupport.declaredPackage(file);
-        Path root = pkg.isEmpty() || !com.editora.process.ExecTargets.runsHere(file)
-                ? null
-                : JavaLaunchSupport.sourceRoot(file, pkg);
-        if (root == null) {
-            then.run();
-            return;
-        }
-        lsp.executeCommand(file, "java.project.listSourcePaths", List.of(), (res, err) -> {
-            if (!isCurrent(epoch)) {
-                return;
-            }
-            List<Path> current = err == null ? JavaLaunchSupport.sourcePaths(res) : List.of();
-            List<Path> wrong = JavaLaunchSupport.wrongSourceRoots(current, file, root);
-            if (wrong.isEmpty()) {
-                then.run();
-                return;
-            }
-            lsp.executeCommand(
-                    file, "java.project.addToSourcePath", List.of(root.toUri().toString()), (added, e2) -> {
-                        if (!isCurrent(epoch)) {
-                            return;
-                        }
-                        if (e2 != null || !JavaLaunchSupport.statusOk(added)) {
-                            then.run(); // the right folder is outside the server's workspace: leave it be
-                            return;
-                        }
-                        removeSourceRoots(file, new ArrayList<>(wrong), epoch, then);
-                    });
-        });
-    }
-
-    private void removeSourceRoots(Path file, List<Path> wrong, long epoch, Runnable then) {
-        if (wrong.isEmpty()) {
-            then.run();
-            return;
-        }
-        Path next = wrong.remove(0);
-        lsp.executeCommand(
-                file, "java.project.removeFromSourcePath", List.of(next.toUri().toString()), (r, e) -> {
-                    if (isCurrent(epoch)) {
-                        removeSourceRoots(file, wrong, epoch, then);
-                    }
-                });
+        JavaSourceRootFix.correct(
+                lsp, file, JavaLaunchSupport.declaredPackage(file), () -> isCurrent(epoch), fixed -> then.run());
     }
 
     /** Debug a compact {@code .java} file as the implicit class named after the file. */
@@ -1146,8 +1119,8 @@ public final class DapManager {
     }
 
     /** Attaches to a running JVM at {@code host:port} (the file provides the jdtls session for the adapter). */
-    public void startAttach(Path file, String host, int port) {
-        if (!ready(file)) {
+    public void startAttach(@Nullable Path file, String host, int port) {
+        if (!ready(file) || file == null) { // ready() reports a missing file
             return;
         }
         restartAction = () -> startAttach(file, host, port);
@@ -1187,7 +1160,7 @@ public final class DapManager {
         });
     }
 
-    private boolean ready(Path file) {
+    private boolean ready(@Nullable Path file) {
         if (managerClosed) {
             return false;
         }
@@ -1209,7 +1182,8 @@ public final class DapManager {
         return true;
     }
 
-    private void resolveAndLaunch(Path file, MainClassOption opt, String cwd, String javaExecOverride, long epoch) {
+    private void resolveAndLaunch(
+            Path file, MainClassOption opt, @Nullable String cwd, String javaExecOverride, long epoch) {
         resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, null);
     }
 
@@ -1221,7 +1195,12 @@ public final class DapManager {
      * instead of the launch if jdtls's classpath does not hold the main class's class file.
      */
     private void resolveAndLaunch(
-            Path file, MainClassOption opt, String cwd, String javaExecOverride, long epoch, Runnable ifNoClassFile) {
+            Path file,
+            MainClassOption opt,
+            @Nullable String cwd,
+            String javaExecOverride,
+            long epoch,
+            @Nullable Runnable ifNoClassFile) {
         String proj = opt.projectName() == null ? "" : opt.projectName();
         resolveLaunch(file, opt, r -> {
             if (!isCurrent(epoch)) {
@@ -1273,6 +1252,9 @@ public final class DapManager {
         List<String> paths = new ArrayList<>(r.classPaths());
         paths.addAll(r.modulePaths());
         String cls = opt.className();
+        if (cls == null) {
+            return; // classState has nothing to judge by either
+        }
         switch (JavaLaunchSupport.classState(paths, opt.mainClass(), optionSource(file, opt))) {
             case MISSING -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesMissing", cls));
             case STALE -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesStale", cls));
@@ -1293,12 +1275,13 @@ public final class DapManager {
         // SearchPattern from the main class, and createPattern("") returns null, surfacing as an internal
         // NPE from its search engine instead of anything actionable. Callers check first and say something
         // useful; this makes the unchecked path fail cleanly rather than incomprehensibly.
-        if (opt.mainClass() == null || opt.mainClass().isBlank()) {
+        String mainClass = opt.mainClass();
+        if (mainClass == null || mainClass.isBlank()) {
             cb.accept(ResolvedLaunch.failed(tr("debug.error.configNeedsMainClass")));
             return;
         }
         String proj = opt.projectName() == null ? "" : opt.projectName();
-        lsp.executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj), (res, err) -> {
+        lsp.executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(mainClass, proj), (res, err) -> {
             if (err != null) {
                 cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathFailed", msg(err))));
                 return;
@@ -1314,21 +1297,21 @@ public final class DapManager {
                 // [[], ["…/target/classes"]] while the user was told the project hadn't imported.
                 LOG.log(
                         Level.WARNING,
-                        () -> "resolveClasspath returned no entries for " + opt.mainClass() + " (project='"
+                        () -> "resolveClasspath returned no entries for " + mainClass + " (project='"
                                 + proj + "'); raw result type="
                                 + (res == null ? "null" : res.getClass().getName())
                                 + " value=" + JdtlsReplies.abbreviate(String.valueOf(res)));
-                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathEmpty", opt.mainClass())));
+                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathEmpty", mainClass)));
                 return;
             }
             lsp.executeCommand(
                     routingFile,
                     "vscode.java.resolveJavaExecutable",
-                    List.of(opt.mainClass(), proj),
+                    List.of(mainClass, proj),
                     (jx, e2) -> lsp.executeCommand(
                             routingFile,
                             "vscode.java.checkProjectSettings",
-                            List.of(JavaLaunchSupport.previewSettingsQuery(opt.mainClass(), proj)),
+                            List.of(JavaLaunchSupport.previewSettingsQuery(mainClass, proj)),
                             // A project compiled with --enable-preview needs the flag to load its classes;
                             // a failed check (an older java-debug) leaves the launch as it was.
                             (preview, e3) -> cb.accept(new ResolvedLaunch(
@@ -1409,7 +1392,8 @@ public final class DapManager {
      * classpath — self-contained, like the Run feature. jdtls is still used only to start the adapter.
      * Runs off the FX thread (javac is a subprocess).
      */
-    private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion) {
+    private void compileAndLaunch(
+            Path file, String fqn, String javaExecOverride, long epoch, @Nullable Integer sourceVersion) {
         compileAndLaunch(file, fqn, javaExecOverride, epoch, sourceVersion, null);
     }
 
@@ -1419,7 +1403,12 @@ public final class DapManager {
      * with it, and the class is launched by the package the file declares.
      */
     private void compileAndLaunch(
-            Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion, Path workingDir) {
+            Path file,
+            String fqn,
+            String javaExecOverride,
+            long epoch,
+            @Nullable Integer sourceVersion,
+            @Nullable Path workingDir) {
         compileAndLaunch(file, fqn, javaExecOverride, epoch, sourceVersion, workingDir, file);
     }
 
@@ -1429,11 +1418,11 @@ public final class DapManager {
      */
     private void compileAndLaunch(
             Path file,
-            String fqn,
+            @Nullable String fqn,
             String javaExecOverride,
             long epoch,
-            Integer sourceVersion,
-            Path workingDir,
+            @Nullable Integer sourceVersion,
+            @Nullable Path workingDir,
             Path routing) {
         // A remote file is compiled on its host, with its javac, into a folder of the host's cache.
         boolean remote = !com.editora.process.ExecTargets.runsHere(file);
@@ -1531,7 +1520,7 @@ public final class DapManager {
         });
     }
 
-    private SourceAlias activeSourceAlias() {
+    private @Nullable SourceAlias activeSourceAlias() {
         SourceAlias alias = sourceAlias;
         return alias != null && alias.epoch() == sessionEpoch ? alias : null;
     }
@@ -1639,11 +1628,11 @@ public final class DapManager {
     }
 
     /** See {@link JavaCompilation#mainClassFromFile}. */
-    static String mainClassFromFile(Path file) {
+    static @Nullable String mainClassFromFile(Path file) {
         return JavaCompilation.mainClassFromFile(file);
     }
 
-    private static String firstOrNull(List<String> l) {
+    private static @Nullable String firstOrNull(List<String> l) {
         return l == null || l.isEmpty() ? null : l.get(0);
     }
 
@@ -1656,7 +1645,7 @@ public final class DapManager {
     }
 
     private void startDebugSessionAndConnect(
-            Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
+            @Nullable Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
         if (!isCurrent(epoch)) {
             return;
         }
@@ -1670,7 +1659,8 @@ public final class DapManager {
         });
     }
 
-    private void startDebugSession(Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
+    private void startDebugSession(
+            @Nullable Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
         if (!isCurrent(epoch)) {
             return;
         }
@@ -1745,7 +1735,8 @@ public final class DapManager {
      * Connects to the java-debug adapter jdtls opened on {@code port}: on this machine directly, on a remote
      * file's host through a tunnel that closes with the session.
      */
-    private CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connectJava(DapClient c, Path file, int port) {
+    private CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connectJava(
+            DapClient c, @Nullable Path file, int port) {
         if (com.editora.process.ExecTargets.runsHere(file)) {
             return c.connect(port, "java");
         }
@@ -1760,7 +1751,7 @@ public final class DapManager {
     }
 
     /** How the adapter of a session for {@code file} names files: its host's paths for a remote file. */
-    static DapPaths pathsFor(Path file) {
+    static DapPaths pathsFor(@Nullable Path file) {
         return file != null && !com.editora.process.ExecTargets.runsHere(file)
                 ? DapPaths.on(com.editora.process.ExecTargets.forPath(file), file.getFileSystem())
                 : DapPaths.LOCAL;
@@ -1781,7 +1772,7 @@ public final class DapManager {
      * module with its own arguments and folder instead of the file — a test under pytest. {@code file} still
      * names the session, picks the interpreter and anchors the breakpoints.
      */
-    private void startProgram(Path file, String language, PythonLaunch.Target module) {
+    private void startProgram(Path file, String language, PythonLaunch.@Nullable Target module) {
         if (!readyProgram(file, language)) {
             return;
         }
@@ -1900,9 +1891,9 @@ public final class DapManager {
             Path file,
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
-            List<String> filters,
+            @Nullable List<String> filters,
             long epoch,
-            PythonLaunch.Target module)
+            PythonLaunch.@Nullable Target module)
             throws Exception {
         HostPython program = planProgram(file, com.editora.process.ExecTargets.forPath(file), true);
         HostPython adapter = probe(program.argv(List.of("-c", "import debugpy")), debugpyDir, program.env())
@@ -1940,7 +1931,7 @@ public final class DapManager {
      * A pytest run when {@code program} can import pytest; else its unittest fallback; else null, with the
      * session ended saying which interpreter lacks pytest.
      */
-    private PythonLaunch.Target pytestOrFallback(
+    private PythonLaunch.@Nullable Target pytestOrFallback(
             PythonLaunch.Target pytest,
             HostPython program,
             long epoch,
@@ -2004,7 +1995,7 @@ public final class DapManager {
     }
 
     /** The project root {@code file} belongs to (the window's project, when the file is inside it), else null. */
-    private Path pythonRootFor(Path file) {
+    private @Nullable Path pythonRootFor(Path file) {
         Path root = pythonProjectRoot;
         if (root == null || file == null) {
             return null;
@@ -2029,12 +2020,12 @@ public final class DapManager {
             Process proc,
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
-            List<String> filters,
+            @Nullable List<String> filters,
             long epoch,
             DapPaths paths,
             Map<String, Object> launch,
             boolean runsDebuggee,
-            AdapterStderr stderr) {
+            @Nullable AdapterStderr stderr) {
         if (!isCurrent(epoch)) {
             com.editora.process.ProcessRegistry.killTree(proc);
             return;
@@ -2104,10 +2095,11 @@ public final class DapManager {
             Path file,
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
-            List<String> filters,
+            @Nullable List<String> filters,
             long epoch)
             throws Exception {
-        if (jsServer == null) {
+        Path server = jsServer;
+        if (server == null) {
             fail(epoch, tr("debug.error.jsNotFound"));
             return;
         }
@@ -2141,7 +2133,7 @@ public final class DapManager {
                         epoch,
                         tr(
                                 "debug.error.jsNodeTooOld",
-                                node ? version : nodeVersion(used),
+                                String.valueOf(node ? version : nodeVersion(used)),
                                 used,
                                 JsLaunch.MIN_ADAPTER_NODE_MAJOR));
                 return;
@@ -2161,7 +2153,7 @@ public final class DapManager {
                         epoch,
                         tr(
                                 "debug.error.jsNodeTooOld",
-                                version,
+                                String.valueOf(version),
                                 resolved.executable(),
                                 JsLaunch.MIN_ADAPTER_NODE_MAJOR));
                 return;
@@ -2192,7 +2184,7 @@ public final class DapManager {
             onOutput(epoch, com.editora.run.RunService.commandLine(words) + "\n", COMMAND_CATEGORY);
         }
         List<String> chip = runtime;
-        JsAdapter adapter = startJsAdapter(adapterNode, epoch);
+        JsAdapter adapter = startJsAdapter(server, adapterNode, epoch);
         if (adapter == null) {
             return; // reported
         }
@@ -2220,7 +2212,7 @@ public final class DapManager {
             Path file,
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
-            List<String> filters,
+            @Nullable List<String> filters,
             long epoch)
             throws java.io.IOException {
         String language = spec.language();
@@ -2240,8 +2232,8 @@ public final class DapManager {
             fail(epoch, tr("debug.error.notDebuggable." + toolName));
             return;
         }
-        String tool = jvmToolLocator.apply(toolName);
-        if (tool == null) {
+        String tool = toolName == null ? null : jvmToolLocator.apply(toolName);
+        if (toolName == null || tool == null) {
             fail(epoch, tr(com.editora.run.JvmScriptRun.missingToolKeyFor(toolName)));
             return;
         }
@@ -2337,10 +2329,11 @@ public final class DapManager {
     }
 
     /** Finds the tool a JVM language's program runs with ({@code groovy}, {@code scala-cli}); a test supplies one. */
-    private volatile java.util.function.UnaryOperator<String> jvmToolLocator = com.editora.run.JvmTools::locate;
+    private volatile java.util.function.Function<String, @Nullable String> jvmToolLocator =
+            com.editora.run.JvmTools::locate;
 
     /** Test seam for {@link #jvmToolLocator}: a stand-in tool, so the launch can be checked without one installed. */
-    void setJvmToolLocatorForTest(java.util.function.UnaryOperator<String> locator) {
+    void setJvmToolLocatorForTest(java.util.function.Function<String, @Nullable String> locator) {
         this.jvmToolLocator = locator == null ? com.editora.run.JvmTools::locate : locator;
     }
 
@@ -2391,7 +2384,7 @@ public final class DapManager {
             Path file,
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
-            List<String> filters,
+            @Nullable List<String> filters,
             long epoch) {
         String language = spec.language();
         String command = HostedDebugAdapter.startCommand(language);
@@ -2480,10 +2473,10 @@ public final class DapManager {
     }
 
     /** The planned launch for the next JavaScript session (null: plan it from the file); sticky across restart. */
-    private volatile JsProgram jsProgram;
+    private volatile @Nullable JsProgram jsProgram;
 
     /** Sets {@link #jsProgram}; {@code null} for an ordinary launch of a file. */
-    public void setJsProgram(JsProgram program) {
+    public void setJsProgram(@Nullable JsProgram program) {
         this.jsProgram = program;
     }
 
@@ -2491,7 +2484,7 @@ public final class DapManager {
      * The Node.js that runs js-debug for a program on {@code programNode} ({@code version}): that one when it is
      * new enough, else the Debugging setting's / PATH's, else null. The program still runs on its own Node.
      */
-    private String adapterNodeFor(String programNode, String version) {
+    private @Nullable String adapterNodeFor(String programNode, @Nullable String version) {
         if (JsLaunch.runsAdapter(version)) {
             return programNode;
         }
@@ -2507,8 +2500,8 @@ public final class DapManager {
      * as on a remote host. A guessed free port, then connect retries for about two seconds, lost to any slower
      * start (review D15). A server that dies first is reported with what it wrote to stderr; null then.
      */
-    private JsAdapter startJsAdapter(String node, long epoch) throws java.io.IOException {
-        List<String> cmd = ProcessRunner.resolveExecutable(List.of(node, jsServer.toString(), "0", "127.0.0.1"));
+    private @Nullable JsAdapter startJsAdapter(Path server, String node, long epoch) throws java.io.IOException {
+        List<String> cmd = ProcessRunner.resolveExecutable(List.of(node, server.toString(), "0", "127.0.0.1"));
         ProcessBuilder pb = new ProcessBuilder(cmd);
         ProcessRunner.applyUserEnv(pb);
         Process proc = BusyExecutable.start(pb);
@@ -2549,7 +2542,7 @@ public final class DapManager {
      * running unless it was waiting for this debugger.
      */
     public void startJsAttach(
-            String host, int port, String name, Path cwd, List<String> skipFiles, boolean continueOnAttach) {
+            String host, int port, String name, @Nullable Path cwd, List<String> skipFiles, boolean continueOnAttach) {
         if (managerClosed) {
             return;
         }
@@ -2557,14 +2550,14 @@ public final class DapManager {
             listener.onError(tr("debug.error.disabled"));
             return;
         }
-        if (!isLanguageAvailable("javascript")) {
+        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("javascript");
+        if (spec == null || !isLanguageAvailable("javascript")) {
             listener.onError(tr("debug.error.jsUnavailable"));
             return;
         }
         if (client != null) {
             stop(); // one session at a time
         }
-        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("javascript");
         restartAction = () -> startJsAttach(host, port, name, cwd, skipFiles, continueOnAttach);
         debugFile = cwd;
         long epoch = beginSession();
@@ -2576,11 +2569,12 @@ public final class DapManager {
         jsClientConsole = false;
         startupTask = io.submit(() -> {
             try {
-                if (jsServer == null) {
+                Path server = jsServer;
+                if (server == null) {
                     fail(epoch, tr("debug.error.jsNotFound"));
                     return;
                 }
-                JsAdapter adapter = startJsAdapter(adapterNode(), epoch);
+                JsAdapter adapter = startJsAdapter(server, adapterNode(), epoch);
                 if (adapter == null) {
                     return; // reported
                 }
@@ -2611,16 +2605,16 @@ public final class DapManager {
      */
     private void attachSocket(
             Process proc,
-            com.editora.process.PortForward forward,
+            com.editora.process.@Nullable PortForward forward,
             int port,
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
-            List<String> filters,
+            @Nullable List<String> filters,
             long epoch,
             DapPaths paths,
             Map<String, Object> request,
             boolean runsDebuggee,
-            List<String> runtime) {
+            @Nullable List<String> runtime) {
         if (!isCurrent(epoch)) {
             com.editora.process.ProcessRegistry.killTree(proc);
             if (forward != null) {
@@ -2678,7 +2672,7 @@ public final class DapManager {
     }
 
     /** Why {@code language} cannot be debugged on remote {@code file}'s host, or null when it can be tried. */
-    private String remoteProblem(Path file, String language) {
+    private @Nullable String remoteProblem(Path file, String language) {
         if (!debuggableOnHost(language)) {
             return tr("debug.error.remoteLanguage");
         }
@@ -2748,9 +2742,9 @@ public final class DapManager {
             Path file,
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
-            List<String> filters,
+            @Nullable List<String> filters,
             long epoch,
-            PythonLaunch.Target module)
+            PythonLaunch.@Nullable Target module)
             throws Exception {
         var target = com.editora.process.ExecTargets.forPath(file);
         Path dir = file.getParent();
@@ -2822,7 +2816,7 @@ public final class DapManager {
             Path file,
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
-            List<String> filters,
+            @Nullable List<String> filters,
             long epoch)
             throws Exception {
         jsClientConsole = false; // js-debug starts the program on the host
@@ -2930,12 +2924,12 @@ public final class DapManager {
         }
     }
 
-    private static String cwdOf(Path file) {
+    private static @Nullable String cwdOf(Path file) {
         return file.getParent() == null ? null : file.getParent().toString();
     }
 
     /** Where a debuggee's runtime is asked its version: {@code file}'s folder, so its host; null is here. */
-    private static Path runtimeWhere(Path file) {
+    private static @Nullable Path runtimeWhere(@Nullable Path file) {
         return file == null ? null : file.getParent();
     }
 
@@ -2953,7 +2947,7 @@ public final class DapManager {
     }
 
     /** A launch body's {@code env} as strings (a null value, which unsets, stays null); empty when absent. */
-    private static Map<String, String> stringMap(Object env) {
+    private static Map<String, String> stringMap(@Nullable Object env) {
         if (!(env instanceof Map<?, ?> m)) {
             return Map.of();
         }
@@ -2964,7 +2958,7 @@ public final class DapManager {
 
     /** Where a debuggee's runtime is asked its version: its launch folder, named as the adapter's machine names
      *  it (so its host); null is here. */
-    private static Path runtimeWhere(DapPaths paths, String cwd) {
+    private static @Nullable Path runtimeWhere(DapPaths paths, @Nullable String cwd) {
         return cwd == null || cwd.isBlank() ? null : paths.fromAdapter(cwd);
     }
 
@@ -3052,7 +3046,7 @@ public final class DapManager {
     }
 
     /** While a run-to-cursor temp breakpoint is planted: the file holding it (re-sent clean on stop). */
-    private Path tempBreakpointFile;
+    private @Nullable Path tempBreakpointFile;
 
     /** Resumes and stops at {@code line} (0-based) in {@code file} via a temporary breakpoint that is
      *  removed on the next stop (or on termination). Call on the FX thread while SUSPENDED. */
@@ -3238,7 +3232,7 @@ public final class DapManager {
      * session: when the adapter is still there its {@code disconnect} has already done so and this finds
      * nothing alive, but when jdtls crashed the program was left running with no way to stop it.
      */
-    private ProcessHandle adapterProgram;
+    private @Nullable ProcessHandle adapterProgram;
 
     /** Records the program the adapter of session {@code epoch} launched (FX thread). */
     private void onProcessId(long epoch, long pid) {
@@ -3347,7 +3341,8 @@ public final class DapManager {
     }
 
     /** One page of a container's children — see {@link DapClient#variables(int, String, int, int)}. */
-    public void variables(int ref, String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
+    public void variables(
+            int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
         DapClient c = client;
         if (c == null) {
             cb.accept(List.of());
@@ -3510,7 +3505,7 @@ public final class DapManager {
 
     private void onStopped(long epoch, int threadId, String reason, boolean allThreadsStopped) {
         DapClient c = client;
-        if (!isCurrent(epoch, c)) {
+        if (c == null || !isCurrent(epoch, c)) {
             return;
         }
         presentStop(epoch, c, threadId, reason, true, allThreadsStopped);
@@ -3634,7 +3629,7 @@ public final class DapManager {
      * ("Debugger attached.") removed, and a breakpoint condition it could not compile turned into a notice that
      * marks that breakpoint rejected — once, though js-debug repeats it for every script it loads (review D12).
      */
-    private String jsOutput(long epoch, String text, String category) {
+    private @Nullable String jsOutput(long epoch, String text, String category) {
         var error = JsLaunch.conditionError(text);
         if (error.isPresent()) {
             JsLaunch.ConditionError ce = error.get();
@@ -3710,10 +3705,11 @@ public final class DapManager {
         Debuggee program = new Debuggee(programTerminal, programTitle());
         try {
             // The adapter names the folder as its machine does: on a remote file's host, a path there.
-            DapPaths paths = pathsFor(debugFile);
+            Path file = debugFile;
+            DapPaths paths = pathsFor(file);
             Path dir = cwd == null || cwd.isBlank() ? null : paths.fromAdapter(cwd);
-            if (dir == null && paths != DapPaths.LOCAL) {
-                dir = debugFile.getParent(); // never this machine's folder of the same name
+            if (dir == null && file != null && paths != DapPaths.LOCAL) {
+                dir = file.getParent(); // never this machine's folder of the same name
             }
             long pid = program.start(dir, argv, env, new Debuggee.Sink() {
                 @Override
@@ -3802,7 +3798,7 @@ public final class DapManager {
     }
 
     /** The current session's exit-code wrapper, or null (the program console is on, a remote file, Windows). */
-    private volatile ExitWrapper exitWrapper;
+    private volatile @Nullable ExitWrapper exitWrapper;
 
     /**
      * Starts the program of a launch java-debug runs itself (the program console off) through a wrapper that
@@ -3810,7 +3806,7 @@ public final class DapManager {
      * a program on this machine and not on Windows (see {@link JavaExitCodeWrapper}); and only when the launch
      * names its {@code java} — without one java-debug picks its own, which the wrapper cannot know.
      */
-    private void wrapForExitCode(Path file, Map<String, Object> args, long epoch) {
+    private void wrapForExitCode(@Nullable Path file, Map<String, Object> args, long epoch) {
         Object java = args.get("javaExec");
         if (!(java instanceof String real)
                 || real.isBlank()
@@ -3926,7 +3922,7 @@ public final class DapManager {
         return !managerClosed && sessionEpoch == epoch;
     }
 
-    private boolean isCurrent(long epoch, DapClient expected) {
+    private boolean isCurrent(long epoch, @Nullable DapClient expected) {
         return isCurrent(epoch) && client == expected;
     }
 
@@ -4012,7 +4008,7 @@ public final class DapManager {
             }
 
             @Override
-            public void onTransportClosed(Throwable error) {
+            public void onTransportClosed(@Nullable Throwable error) {
                 if (error != null) {
                     LOG.log(Level.FINE, "Debug adapter transport closed", error);
                 }
@@ -4038,7 +4034,7 @@ public final class DapManager {
         });
     }
 
-    private void fail(long epoch, String message) {
+    private void fail(long epoch, @Nullable String message) {
         Platform.runLater(() -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -4085,7 +4081,7 @@ public final class DapManager {
         JdtlsReplies.parseClasspath(res, modulepaths, classpaths);
     }
 
-    private static String asString(Object res) {
+    private static @Nullable String asString(Object res) {
         return JdtlsReplies.asString(res);
     }
 
@@ -4127,7 +4123,10 @@ public final class DapManager {
     }
 
     /** {@code message} is java-debug's reason for {@link CodeReplaceResult#FAILED}, else empty. */
-    public record CodeReplaceOutcome(CodeReplaceResult result, List<String> classes, String message) {
+    public record CodeReplaceOutcome(
+            CodeReplaceResult result,
+            List<String> classes,
+            @Nullable String message) {
 
         public CodeReplaceOutcome {
             classes = classes == null ? List.of() : List.copyOf(classes);
@@ -4180,7 +4179,7 @@ public final class DapManager {
     }
 
     /** The file the session was started for (it routes a build to that session's jdtls); null when none. */
-    public Path sessionFile() {
+    public @Nullable Path sessionFile() {
         return debugFile;
     }
 
@@ -4190,9 +4189,9 @@ public final class DapManager {
      * the running program. A build with compile errors replaces nothing. {@code cb} runs on the FX thread,
      * and not at all when the session ended meanwhile.
      */
-    public void applyCodeChanges(Path file, Consumer<CodeReplaceOutcome> cb) {
+    public void applyCodeChanges(@Nullable Path file, Consumer<CodeReplaceOutcome> cb) {
         DapClient c = client;
-        if (!canReplaceCode() || file == null) {
+        if (c == null || !canReplaceCode() || file == null) {
             cb.accept(new CodeReplaceOutcome(CodeReplaceResult.NO_SESSION, List.of(), ""));
             return;
         }
@@ -4216,7 +4215,7 @@ public final class DapManager {
     }
 
     /** Pure: the outcome of a {@code redefineClasses} answer, or of the request failing with {@code error}. */
-    static CodeReplaceOutcome codeReplaceOutcome(DapModels.CodeReplace reply, String error) {
+    static CodeReplaceOutcome codeReplaceOutcome(DapModels.CodeReplace reply, @Nullable String error) {
         if (error != null) {
             return new CodeReplaceOutcome(CodeReplaceResult.FAILED, List.of(), error);
         }
@@ -4293,7 +4292,7 @@ public final class DapManager {
             public void onOutput(String text, String category) {}
 
             @Override
-            public void onError(String message) {}
+            public void onError(@Nullable String message) {}
         };
     }
 

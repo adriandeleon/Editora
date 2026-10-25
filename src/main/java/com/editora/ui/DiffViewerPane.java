@@ -48,13 +48,14 @@ import com.editora.diff.DiffModels.RowType;
 import com.editora.diff.DiffModels.UnifiedRow;
 import com.editora.diff.DiffText;
 import com.editora.diff.PatchWriter;
-import com.editora.editor.GrammarRegistry;
 import com.editora.editor.TabContent;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -80,14 +81,14 @@ public final class DiffViewerPane implements TabContent {
     });
 
     private final String title;
-    private String leftName;
-    private String rightName;
+    private @Nullable String leftName;
+    private @Nullable String rightName;
     private String headerLeft;
     private String headerRight;
     private String leftText;
     private String rightText;
     private DiffModel model;
-    private final IGrammar grammar;
+    private final @Nullable IGrammar grammar;
     private String fontStyle; // mutable so text zoom can resize the diff areas live (#533)
     private final boolean showLineNumbers;
     private java.util.function.Consumer<PatchRequest> onExportPatch = p -> {};
@@ -96,15 +97,15 @@ public final class DiffViewerPane implements TabContent {
 
     /**
      * How a side's source bytes spell what the viewer holds as bare-{@code \n} text: its line ending (a
-     * {@link com.editora.editor.LineEndings} label) and charset name. Only an exported patch needs them — it
+     * {@link com.editora.editops.LineEndings} label) and charset name. Only an exported patch needs them — it
      * has to match the file's bytes to apply.
      */
     public record SideFormat(String lineEnding, String charset) {
         public static final SideFormat DEFAULT =
-                new SideFormat(com.editora.editor.LineEndings.LF, com.editora.editorconfig.EditorConfigCharset.UTF_8);
+                new SideFormat(com.editora.editops.LineEndings.LF, com.editora.editorconfig.EditorConfigCharset.UTF_8);
 
         public SideFormat {
-            lineEnding = lineEnding == null ? com.editora.editor.LineEndings.LF : lineEnding;
+            lineEnding = lineEnding == null ? com.editora.editops.LineEndings.LF : lineEnding;
             charset = charset == null ? com.editora.editorconfig.EditorConfigCharset.UTF_8 : charset;
         }
     }
@@ -142,7 +143,7 @@ public final class DiffViewerPane implements TabContent {
     private final Label changeNav = new Label();
     private final Button toggleButton = new Button();
     private final Button swapButton = new Button();
-    private Button exportButton;
+    private final Button exportButton;
     private final Button applyAllButton = new Button();
     private final Button undoButton = new Button();
     private final Button saveButton = new Button();
@@ -213,21 +214,21 @@ public final class DiffViewerPane implements TabContent {
 
     /** The side-by-side left pane, kept so {@link #showSideBySide()} can re-bind {@link #leftPaneWidth}
      *  after a round trip through the unified view (which unbinds it). */
-    private javafx.scene.layout.Region leftPaneBox;
+    private javafx.scene.layout.@Nullable Region leftPaneBox;
 
     private int changeCursor = -1; // index into model.changeBlockStarts for prev/next nav
 
     // Side-by-side areas (built once, lazily).
-    private CodeArea leftArea;
-    private CodeArea rightArea;
-    private Node sideBySideNode;
-    private javafx.scene.control.SplitPane sideSplit;
-    private DiffConnectorCanvas connectorCanvas;
-    private CodeArea unifiedArea;
-    private Node unifiedNode;
-    private CodeArea resultArea;
-    private Node resultNode;
-    private SplitPane resultSplit;
+    private @Nullable CodeArea leftArea;
+    private @Nullable CodeArea rightArea;
+    private @Nullable Node sideBySideNode;
+    private javafx.scene.control.@Nullable SplitPane sideSplit;
+    private @Nullable DiffConnectorCanvas connectorCanvas;
+    private @Nullable CodeArea unifiedArea;
+    private @Nullable Node unifiedNode;
+    private @Nullable CodeArea resultArea;
+    private @Nullable Node resultNode;
+    private @Nullable SplitPane resultSplit;
     private final PauseTransition resultDiffDelay = new PauseTransition(Duration.millis(250));
     private boolean resultEditing;
     private boolean resultDirty;
@@ -235,10 +236,10 @@ public final class DiffViewerPane implements TabContent {
     private boolean mutationAllowed = true;
 
     private boolean updatingResult;
-    private String resultBaselineText;
+    private @Nullable String resultBaselineText;
     private boolean syncing; // re-entrancy guard for scroll sync
     /** The side-by-side pane the user is scrolling; only it drives the other (see {@link #syncScroll}). */
-    private CodeArea scrollLeader;
+    private @Nullable CodeArea scrollLeader;
 
     private int[] sideSourceRows = new int[0];
     private int[] unifiedSourceRows = new int[0];
@@ -259,17 +260,17 @@ public final class DiffViewerPane implements TabContent {
 
     public DiffViewerPane(
             String title,
-            String headerLeft,
-            String headerRight,
-            String leftName,
-            String rightName,
+            @Nullable String headerLeft,
+            @Nullable String headerRight,
+            @Nullable String leftName,
+            @Nullable String rightName,
             String leftText,
             String rightText,
             DiffModel model,
             String fontFamily,
             int fontSize,
             boolean showLineNumbers,
-            String grammarPath) {
+            @Nullable String grammarPath) {
         this.title = title;
         this.leftName = leftName;
         this.rightName = rightName;
@@ -288,6 +289,8 @@ public final class DiffViewerPane implements TabContent {
         root.getStyleClass().add("diff-viewer");
         root.setAccessibleRole(AccessibleRole.PARENT);
         root.setAccessibleText(tr("diff.accessibleViewer", this.headerLeft, this.headerRight));
+        exportButton =
+                iconButton(Icons.saveAs(), tr("diff.tooltip.exportPatch"), () -> onExportPatch.accept(patchRequest()));
         root.setTop(buildToolbar());
         resultDiffDelay.setOnFinished(e -> {
             if (resultEditing && resultArea != null) {
@@ -369,7 +372,7 @@ public final class DiffViewerPane implements TabContent {
     }
 
     /** Shows a full-UI icon for standalone {@code --diff-ui}; passing {@code null} hides it again. */
-    public void setExitDiffUiAction(Runnable action) {
+    public void setExitDiffUiAction(@Nullable Runnable action) {
         onExitDiffUi = action == null ? () -> {} : action;
         boolean visible = action != null;
         exitDiffUiButton.setVisible(visible);
@@ -613,7 +616,7 @@ public final class DiffViewerPane implements TabContent {
      * which is what the controller must compare against, not its own record of the last text it wrote (that
      * runs ahead of the pane until the re-diff lands).
      */
-    public String editableBaselineText() {
+    public @Nullable String editableBaselineText() {
         return resultEditing && resultBaselineText != null
                 ? resultBaselineText
                 : editableSide == EditableSide.RIGHT ? rightText : leftText;
@@ -631,7 +634,7 @@ public final class DiffViewerPane implements TabContent {
         return resultEditing && resultArea != null;
     }
 
-    public String resultText() {
+    public @Nullable String resultText() {
         return resultArea == null ? null : resultArea.getText();
     }
 
@@ -745,7 +748,7 @@ public final class DiffViewerPane implements TabContent {
         return PatchWriter.unifiedDiff(leftLabel, rightLabel, leftText, rightText);
     }
 
-    private static IGrammar grammarFor(String name) {
+    private static @Nullable IGrammar grammarFor(@Nullable String name) {
         if (name == null || name.isBlank()) {
             return null;
         }
@@ -762,8 +765,6 @@ public final class DiffViewerPane implements TabContent {
         updateSummary();
         Button next = iconButton(Icons.arrowDown(), tr("diff.nextChange"), this::nextChange);
         Button prev = iconButton(Icons.arrowUp(), tr("diff.prevChange"), this::prevChange);
-        exportButton =
-                iconButton(Icons.saveAs(), tr("diff.tooltip.exportPatch"), () -> onExportPatch.accept(patchRequest()));
         exportButton.setAccessibleText(tr("diff.exportPatch"));
         whitespaceButton.getStyleClass().addAll("flat", "diff-option-button");
         whitespaceButton.setFocusTraversable(false);
@@ -1241,14 +1242,12 @@ public final class DiffViewerPane implements TabContent {
         }
         resultEditing = true;
         resultBaselineText = editableSide == EditableSide.RIGHT ? rightText : leftText;
-        if (resultArea == null) {
-            buildResultEditor();
-        }
+        CodeArea area = resultArea != null ? resultArea : buildResultEditor();
         setResultText(resultBaselineText, true);
         editResultButton.setSelected(true);
         updateResultControls();
         rebuildCurrentView();
-        Platform.runLater(resultArea::requestFocus);
+        Platform.runLater(area::requestFocus);
     }
 
     private void closeResultEditor() {
@@ -1294,7 +1293,7 @@ public final class DiffViewerPane implements TabContent {
         }
     }
 
-    private void buildResultEditor() {
+    private CodeArea buildResultEditor() {
         resultArea = AreaUndo.bounded(new CodeArea());
         resultArea.setId("diff-editable-result");
         resultArea.getStyleClass().addAll("editor-area", "diff-result");
@@ -1328,9 +1327,10 @@ public final class DiffViewerPane implements TabContent {
         box.setPadding(new Insets(6, 8, 8, 8));
         VBox.setVgrow(scroll, Priority.ALWAYS);
         resultNode = box;
+        return resultArea;
     }
 
-    private void setResultText(String text, boolean baseline) {
+    private void setResultText(@Nullable String text, boolean baseline) {
         if (resultArea == null) {
             return;
         }
@@ -1621,7 +1621,7 @@ public final class DiffViewerPane implements TabContent {
             drawOverview(graphics, rightViewport);
         }
 
-        private VisibleBand visibleBand(CodeArea area, DiffConnectorModel.Band band, Bounds viewport) {
+        private @Nullable VisibleBand visibleBand(CodeArea area, DiffConnectorModel.Band band, Bounds viewport) {
             int visibleCount = area.getVisibleParagraphs().size();
             if (visibleCount == 0) {
                 return null;
@@ -1942,7 +1942,7 @@ public final class DiffViewerPane implements TabContent {
         showComparison(unifiedNode);
     }
 
-    private void showComparison(Node comparison) {
+    private void showComparison(@Nullable Node comparison) {
         if (!resultEditing || resultNode == null) {
             root.setCenter(comparison);
             return;
@@ -1973,7 +1973,8 @@ public final class DiffViewerPane implements TabContent {
             if (i > 0) {
                 sb.append('\n');
             }
-            sb.append(rows.get(i).text());
+            String rowText = rows.get(i).text();
+            sb.append(rowText == null ? "" : rowText);
         }
         String text = sb.toString();
         unifiedArea.replaceText(text);
@@ -1984,7 +1985,8 @@ public final class DiffViewerPane implements TabContent {
                 offset++;
             }
             addAbs(wordAbs, offset, rows.get(i).wordRanges());
-            offset += rows.get(i).text().length();
+            String rowText = rows.get(i).text();
+            offset += rowText == null ? 0 : rowText.length();
         }
         applyStyle(unifiedArea, text, wordAbs);
         int[] nos = new int[rows.size()];
@@ -2111,6 +2113,9 @@ public final class DiffViewerPane implements TabContent {
             } catch (RuntimeException ignored) {
                 return;
             }
+            if (base == null) {
+                return;
+            }
             StyleSpans<Collection<String>> combined = words == null ? base : base.overlay(words, DiffViewerPane::union);
             Platform.runLater(() -> {
                 if (generation == highlightGeneration.get() && text.equals(area.getText())) {
@@ -2156,7 +2161,7 @@ public final class DiffViewerPane implements TabContent {
     }
 
     /** Converts a row's per-line word ranges to absolute offsets within the assembled document. */
-    private static void addAbs(List<int[]> out, int lineOffset, int[][] ranges) {
+    private static void addAbs(List<int[]> out, int lineOffset, int @Nullable [][] ranges) {
         if (ranges == null) {
             return;
         }
@@ -2250,7 +2255,7 @@ public final class DiffViewerPane implements TabContent {
     }
 
     /** A fixed-width gutter cell holding {@code icon} (clickable, with {@code tip}) or empty for alignment. */
-    private HBox arrowSlot(Node icon, String tip, Runnable onClick) {
+    private HBox arrowSlot(@Nullable Node icon, String tip, Runnable onClick) {
         HBox slot = new HBox();
         slot.setMinWidth(16);
         slot.setPrefWidth(16);
@@ -2465,7 +2470,12 @@ public final class DiffViewerPane implements TabContent {
             selectLines(unifiedArea, u, displayEnd);
             // Pin the row to the top AFTER the selection (selectRange schedules a caret-follow scroll that
             // would otherwise leave the block bottom-aligned). One pulse later runs after that follow.
-            Platform.runLater(() -> unifiedArea.showParagraphAtTop(top));
+            Platform.runLater(() -> {
+                CodeArea area = unifiedArea;
+                if (area != null) {
+                    area.showParagraphAtTop(top);
+                }
+            });
         } else if (leftArea != null && rightArea != null) {
             int displayStart = displaySideRowForSource(sideRow);
             int displayEnd = displaySideRowForSource(sideEnd);
@@ -2481,8 +2491,12 @@ public final class DiffViewerPane implements TabContent {
             Platform.runLater(() -> {
                 syncing = true;
                 try {
-                    leftArea.showParagraphAtTop(top);
-                    rightArea.showParagraphAtTop(top);
+                    CodeArea l = leftArea;
+                    CodeArea r = rightArea;
+                    if (l != null && r != null) {
+                        l.showParagraphAtTop(top);
+                        r.showParagraphAtTop(top);
+                    }
                 } finally {
                     syncing = false;
                 }
@@ -2554,7 +2568,7 @@ public final class DiffViewerPane implements TabContent {
     }
 
     @Override
-    public Object unsavedStateToken() {
+    public @Nullable Object unsavedStateToken() {
         return hasDirtyResult() && resultArea != null ? resultArea.getText() : null;
     }
 

@@ -8,6 +8,7 @@ import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.AttributeRepository;
 import org.apache.sshd.common.session.Session;
 import org.apache.sshd.core.CoreModuleProperties;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The one {@link SshClient} every window's {@link RemoteFileSystems} connects through.
@@ -34,7 +35,7 @@ final class SshClients {
     /** MINA's outer bound on a login, questions and all: past every question's own two-minute wait. */
     private static final Duration LOGIN_LIMIT = Duration.ofMinutes(15);
 
-    private static SshClient client;
+    private static @Nullable SshClient client;
     private static int users;
 
     private SshClients() {}
@@ -92,7 +93,7 @@ final class SshClients {
     }
 
     /** The engine that owns {@code session}: the one that adopted it, else the one that connected it. */
-    static RemoteFileSystems engineOf(Session session) {
+    static @Nullable RemoteFileSystems engineOf(Session session) {
         if (session == null) {
             return null;
         }

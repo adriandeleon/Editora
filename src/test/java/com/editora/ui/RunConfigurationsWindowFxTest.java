@@ -33,7 +33,7 @@ class RunConfigurationsWindowFxTest {
 
     @AfterAll
     void tearDown() throws Exception {
-        FxTestSupport.runOnFx(() -> javafx.stage.Window.getWindows().stream()
+        FxTestSupport.runOnFx(() -> java.util.List.copyOf(javafx.stage.Window.getWindows()).stream()
                 .filter(Stage.class::isInstance)
                 .map(Stage.class::cast)
                 .filter(stage -> tr("run.config.title").equals(stage.getTitle()))
@@ -63,6 +63,74 @@ class RunConfigurationsWindowFxTest {
         assertFalse(FxTestSupport.callOnFx(jdk.getItems()::isEmpty));
         assertEquals("", FxTestSupport.callOnFx(() -> jdk.getValue().home()));
         FxTestSupport.runOnFx(stage::close);
+    }
+
+    /**
+     * The Save and Close row is always on screen. The window used to open at a fixed 760×640 with the form
+     * and the buttons in one column, so a desktop text scale that made the rows taller pushed the buttons
+     * out of the window. Now it opens at least as tall as the form needs (screen permitting), and the form
+     * scrolls rather than the buttons when the window is shorter than that.
+     */
+    @Test
+    void theButtonRowStaysInsideTheWindowAtAnyHeight(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(new RunConfiguration("App", "example.App", "", "", "", "")));
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show("App", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        javafx.scene.control.ScrollPane scroll =
+                (javafx.scene.control.ScrollPane) stage.getScene().lookup("#run-config-form-scroll");
+        javafx.scene.Node buttons = stage.getScene().lookup("#run-config-buttons");
+
+        FxTestSupport.runOnFx(() -> stage.getScene().getRoot().layout());
+        assertTrue(FxTestSupport.callOnFx(
+                () -> bottomInScene(buttons) <= stage.getScene().getHeight()));
+        assertTrue(
+                FxTestSupport.callOnFx(() -> scroll.getViewportBounds().getHeight()
+                        >= scroll.getContent().prefHeight(-1) - 1),
+                "opens tall enough for the whole form, with no scrolling");
+
+        // Well short of the form. The root is resized directly, as the scene does when the window is: headless
+        // Glass resizes the stage but leaves the scene at its old size until some later pulse.
+        double shortHeight = 260;
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.layout.Region root =
+                    (javafx.scene.layout.Region) stage.getScene().getRoot();
+            root.resize(root.getWidth(), shortHeight);
+            root.layout();
+        });
+        assertTrue(
+                FxTestSupport.callOnFx(() -> bottomInScene(buttons) <= shortHeight), "the buttons stay in the window");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> scroll.getViewportBounds().getHeight()
+                        < scroll.getContent().prefHeight(-1)),
+                "the form scrolls instead");
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    /** Closing the window and opening it again shows it again, at the size it was left. */
+    @Test
+    void theWindowReopensAfterItIsClosed(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show(null, null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        FxTestSupport.runOnFx(() -> stage.setWidth(stage.getWidth() + 40));
+        double width = FxTestSupport.callOnFx(stage::getWidth);
+        FxTestSupport.runOnFx(stage::close);
+        assertFalse(FxTestSupport.callOnFx(stage::isShowing));
+
+        FxTestSupport.runOnFx(() -> window.show(null, null));
+        assertTrue(FxTestSupport.callOnFx(stage::isShowing));
+        assertEquals(width, FxTestSupport.callOnFx(stage::getWidth), 0.5);
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    private static double bottomInScene(javafx.scene.Node node) {
+        return node.localToScene(node.getBoundsInLocal()).getMaxY();
     }
 
     @Test

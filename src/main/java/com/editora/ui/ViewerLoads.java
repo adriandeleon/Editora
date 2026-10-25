@@ -11,6 +11,8 @@ import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Shared background work for the read-only viewer tabs ({@link ImageViewerPane}, {@link HexViewerPane}):
  * the worker their file reads + decodes run on, and the pure sizing decisions for a large image.
@@ -53,7 +55,7 @@ final class ViewerLoads {
      * The pixel dimensions {@code [width, height]} of the image in {@code bytes}, read from its header without
      * decoding any pixel data; {@code null} when no installed reader recognizes the format.
      */
-    static int[] dimensions(byte[] bytes) {
+    static int @Nullable [] dimensions(byte[] bytes) {
         try (ImageInputStream in = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
             if (in == null) {
                 return null;
@@ -78,7 +80,7 @@ final class ViewerLoads {
      * The size to decode a {@code width}×{@code height} image at so it holds at most {@code maxPixels}:
      * {@code null} when it already fits (decode as is), else the proportionally reduced {@code [w, h]}.
      */
-    static int[] reducedSize(int width, int height, long maxPixels) {
+    static int @Nullable [] reducedSize(int width, int height, long maxPixels) {
         long pixels = (long) width * height;
         if (width <= 0 || height <= 0 || pixels <= maxPixels) {
             return null;

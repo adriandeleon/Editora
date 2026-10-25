@@ -28,6 +28,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The HTTP Client's remembered state per {@code .http} file, in {@code <configDir>/http-history/<hash>.json}:
@@ -74,10 +75,15 @@ public final class HttpResponseHistory {
     static final long ORPHAN_GRACE_MILLIS = TimeUnit.DAYS.toMillis(90);
 
     /** A header as stored ({@code [name, value]} pairs do not serialize readably). */
-    public record Header(String name, String value) {}
+    public record Header(String name, @Nullable String value) {}
 
     /** One multipart field as it went out: an inline {@code value}, or a {@code file} (absolute path). */
-    public record FormField(String name, String value, String file, String filename, String contentType) {}
+    public record FormField(
+            @Nullable String name,
+            @Nullable String value,
+            @Nullable String file,
+            @Nullable String filename,
+            @Nullable String contentType) {}
 
     /**
      * How a request was sent, beyond its method, URL, headers and body text: the {@code < file} it streamed
@@ -85,22 +91,26 @@ public final class HttpResponseHistory {
      * were followed, the HTTP version it asked for, and the URL it ended at after redirects.
      */
     public record Sent(
-            String bodyFile,
+            @Nullable String bodyFile,
             List<FormField> formParts,
-            String digestUser,
+            @Nullable String digestUser,
             boolean followRedirects,
-            String httpVersion,
-            String finalUrl) {}
+            @Nullable String httpVersion,
+            @Nullable String finalUrl) {}
 
     /** One test of a response: its name, whether it passed, and why not. */
-    public record TestResult(String name, boolean passed, String message) {}
+    public record TestResult(
+            @Nullable String name, boolean passed, @Nullable String message) {}
 
     /**
      * What a response's {@code @assert} checks and response handlers found: the tests in the order they ran, the
      * handlers' log lines, and the error a handler stopped with (null when none did). Null in an entry that ran none,
      * and in every entry saved before schema 4.
      */
-    public record Tests(List<TestResult> tests, List<String> log, String error) {}
+    public record Tests(
+            List<TestResult> tests,
+            List<String> log,
+            @Nullable String error) {}
 
     /**
      * One remembered exchange: when it ran ({@code at}, epoch millis), the request's {@code name} (its
@@ -116,31 +126,31 @@ public final class HttpResponseHistory {
      */
     public record Response(
             long at,
-            String name,
+            @Nullable String name,
             int requestIndex,
             String method,
             String url,
-            List<Header> requestHeaders,
+            @Nullable List<Header> requestHeaders,
             String requestBody,
             int status,
-            List<Header> headers,
+            @Nullable List<Header> headers,
             String body,
             boolean bodyCut,
             boolean binary,
             String contentType,
             long elapsedMs,
             long sizeBytes,
-            String error,
+            @Nullable String error,
             List<String> warnings,
             boolean truncated,
-            String protocol,
-            String charset,
-            Sent sent,
+            @Nullable String protocol,
+            @Nullable String charset,
+            @Nullable Sent sent,
             long landedAt,
-            String urlTemplate,
-            String fingerprint,
-            Tests tests,
-            String environment) {
+            @Nullable String urlTemplate,
+            @Nullable String fingerprint,
+            @Nullable Tests tests,
+            @Nullable String environment) {
 
         /** An entry without its environment (as a version-4 file holds them). */
         public Response(
@@ -162,13 +172,13 @@ public final class HttpResponseHistory {
                 String error,
                 List<String> warnings,
                 boolean truncated,
-                String protocol,
-                String charset,
-                Sent sent,
+                @Nullable String protocol,
+                @Nullable String charset,
+                @Nullable Sent sent,
                 long landedAt,
-                String urlTemplate,
-                String fingerprint,
-                Tests tests) {
+                @Nullable String urlTemplate,
+                @Nullable String fingerprint,
+                @Nullable Tests tests) {
             this(
                     at,
                     name,
@@ -418,7 +428,7 @@ public final class HttpResponseHistory {
                     environment);
         }
 
-        private static List<Header> remask(List<Header> headers) {
+        private static @Nullable List<Header> remask(@Nullable List<Header> headers) {
             if (headers == null) {
                 return null;
             }
@@ -452,7 +462,7 @@ public final class HttpResponseHistory {
 
         /** Where the file was copied before its unreadable entries go on the next save (not saved); null if none. */
         @JsonIgnore
-        public Path damagedCopy;
+        public @Nullable Path damagedCopy;
 
         /** What could not be read as written when this was loaded (not saved); see {@link #load}. */
         @JsonIgnore
@@ -713,7 +723,7 @@ public final class HttpResponseHistory {
      * still one request —; else, with no position known, its method and URL. Shared with {@code
      * ui.HttpHistoryRetention}. Pure.
      */
-    public static String requestKey(String name, int requestIndex, String method, String url) {
+    public static String requestKey(@Nullable String name, int requestIndex, String method, String url) {
         String m = method == null ? "" : method.toUpperCase(java.util.Locale.ROOT);
         if (name != null && !name.isBlank()) {
             return "name:" + name.strip();
@@ -730,7 +740,8 @@ public final class HttpResponseHistory {
     }
 
     /** {@link #entryKey(Response)} from its parts. Pure. */
-    public static String entryKey(long at, int requestIndex, String name, String method, String url) {
+    public static String entryKey(
+            long at, int requestIndex, @Nullable String name, String method, @Nullable String url) {
         return at + "\n" + requestIndex + "\n" + name + "\n" + method + "\n" + url;
     }
 
@@ -854,7 +865,7 @@ public final class HttpResponseHistory {
     }
 
     /** The {@code file} a history file names, read without loading its responses; null when unreadable. */
-    private String recordedFile(Path history) {
+    private @Nullable String recordedFile(Path history) {
         try (JsonParser p = mapper.getFactory().createParser(history.toFile())) {
             if (p.nextToken() != JsonToken.START_OBJECT) {
                 return null;
@@ -954,7 +965,7 @@ public final class HttpResponseHistory {
     }
 
     /** {@code body} cut to {@link #MAX_BODY_CHARS} (null → ""). */
-    public static String cappedBody(String body) {
+    public static String cappedBody(@Nullable String body) {
         if (body == null) {
             return "";
         }

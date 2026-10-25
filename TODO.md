@@ -61,6 +61,9 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Java LSP review (2026-10-24) leftovers** — clean-ups / organize imports / format on save, chain
+      completion, the project's import layout and formatter profile and Lombok downloads (#1333); Complete
+      Statement (#1340); Smart Type completion (#1341); one jdtls shared between windows (C12, #1342).
 - [x] **Commit options, bulk actions and the remaining Git items** — in the Commit window: Amend (names the
       commit, prefills its message, message-only amend, in-place warning when it is already pushed), Commit
       and Push, Sign-off (per repository, session), *Undo Last Commit*, a subject/body length guide, the last
@@ -251,9 +254,9 @@ A backlog of planned features and improvements. Unordered within each section.
       Shapes read off jdtls 1.61 and pinned by the opt-in `JdtlsRefactorProbeTest`. Code lenses
       (`Settings.codeLens`, schema 108→109) ride the inlay mechanism at end of line; `JavaTestScanner`
       reports `Outer$Inner` targets.
-      *Not done: the rename jdtls proposes after an extract (`RefactorWorkspaceEdit.command`) is ignored;
-      `inferSelectionSupport` (extract with no selection), Introduce Parameter and the ambiguous-import
-      chooser are not declared; a Change Signature preview.*
+      *(The rename after an extract, the ambiguous-import chooser, a Change Signature preview,
+      `inferSelectionSupport`, Introduce Parameter and the move confirmation followed in the Java LSP
+      review's fix pass, PR #1329.)*
 - [x] **Go to Implementation / Type Definition / Declaration** (#735, #736) — the three navigation requests
       every registered server advertises and none of which Editora sent. `LspManager.requestDefinition`
       generalized into a shared `requestLocations` walk parameterized by which session method runs, so all

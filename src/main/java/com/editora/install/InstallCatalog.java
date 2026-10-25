@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The pure, toolkit-free catalog of installable language support: which {@link Step}s make up each
  * {@link Lang}'s LSP server + DAP adapter (Mermaid is render-tools only), plus the small pure helpers that
@@ -51,8 +53,10 @@ public final class InstallCatalog {
          *  mermaid-cli (mmdc) drives; run from mmdc's own dir so the version matches its Puppeteer. */
         PUPPETEER_BROWSER,
         /** Download a self-contained JVM LSP "zip with dependencies" ({@code directUrl}), extract it into the
-         *  config dir, and set the server command to {@code java -cp "<dir>/*" <mainClass>}. Used for the
-         *  Maven-aware pom.xml server (JVM lemminx + lemminx-maven), whose bundle is cross-platform. */
+         *  config dir, add the pinned jars the bundle leaves out ({@link #jvmLspExtraJars}), prove the server
+         *  answers a request ({@link JvmLspSmoke}), and set the server command to
+         *  {@code java -cp "<dir>/*" <mainClass>}. Used for the Maven-aware pom.xml server (JVM lemminx +
+         *  lemminx-maven), whose bundle is cross-platform. */
         JVM_LSP_ZIP,
         /** A JVM language server shipped as one pinned fat jar ({@link #jvmLspJar}): downloaded, refused unless its
          *  SHA-256 matches, put at {@code <config>/<destSubpath>/<file>}, and the server command set to
@@ -119,7 +123,7 @@ public final class InstallCatalog {
      * those behaviours with {@code JdtlsUpgradeProbeTest} (opt-in; it measures all three against the new
      * tarball); the milestone list is at {@code https://download.eclipse.org/jdtls/milestones/}.
      */
-    public static final String JDTLS_VERSION = "1.62.0";
+    public static final String JDTLS_VERSION = "1.63.0";
 
     /**
      * The TypeScript the language servers that need its {@code tsserver} are installed with. TypeScript 7 is
@@ -130,7 +134,7 @@ public final class InstallCatalog {
     public static final String TYPESCRIPT_PACKAGE = "typescript@6";
 
     /** The build stamp of the {@link #JDTLS_VERSION} tarball. */
-    public static final String JDTLS_BUILD = "202610131109";
+    public static final String JDTLS_BUILD = "202610191322";
 
     /** Eclipse JDT-LS pinned milestone; extracts to top-level {@code bin/ config/ features/ plugins/}. */
     public static final String JDTLS_TARBALL_URL = "https://download.eclipse.org/jdtls/milestones/"
@@ -169,6 +173,71 @@ public final class InstallCatalog {
 
     /** lemminx's stdio launcher main class (inside the bundle's lemminx-core jar). */
     public static final String LEMMINX_MAIN_CLASS = "org.eclipse.lemminx.XMLServerLauncher";
+
+    /** Maven Central, where {@link #LEMMINX_MAVEN_EXTRA_JARS} come from. */
+    public static final String MAVEN_CENTRAL = "https://repo1.maven.org/maven2/";
+
+    /**
+     * The jars the lemminx-maven "zip with dependencies" does <b>not</b> contain although the server cannot answer
+     * a single request without them: lemminx-maven's pom marks guava, commons-lang3 and jsoup {@code provided}
+     * (vscode-xml supplies them from its own lemminx uber-jar), so the bundle starts, says it is ready, and then
+     * fails every completion, hover, definition and outline inside the server with
+     * {@code NoClassDefFoundError: com/google/common/cache/CacheBuilder} (Maven review C1). They are downloaded
+     * from Maven Central into the same folder — the launch command's {@code <dir>/*} classpath picks them up.
+     * Pinned by version <b>and</b> SHA-256 (the hashes Central publishes beside each jar, checked against a
+     * downloaded copy); the set was validated against the real server: with exactly these three, local-repo
+     * completion, hover, diagnostics and go-to-parent all work. Bump with {@link #LEMMINX_MAVEN_VERSION}.
+     */
+    public static final List<JvmLspJar> LEMMINX_MAVEN_EXTRA_JARS = List.of(
+            mavenCentralJar(
+                    "com.google.guava",
+                    "guava",
+                    "33.7.2-jre",
+                    "b530942257fb935f8b2cfaa5f8eb5bd59c555fd8e8d01b8ce98912e077ea606c"),
+            mavenCentralJar(
+                    "org.apache.commons",
+                    "commons-lang3",
+                    "3.21.0",
+                    "a2af247ec4db6eb8947e18e23e0433e4871a7c5d0a40e1f92e46ede54ae1defe"),
+            mavenCentralJar(
+                    "org.jsoup",
+                    "jsoup",
+                    "1.23.2",
+                    "e9d8c856856680427f096d156f02a414289985c930998fcb519ce5be39b42003"));
+
+    /**
+     * Lombok, downloaded on request for a project that declares it when no build has cached a jar yet
+     * ({@code JavaLombok} runs jdtls with it as a Java agent). Pinned by version and SHA-256 (checked against a
+     * copy verified by Central's SHA-1); stored under {@link #LOMBOK_SUBPATH}.
+     */
+    public static final JvmLspJar LOMBOK = mavenCentralJar(
+            "org.projectlombok",
+            "lombok",
+            "1.18.48",
+            "85477a4655ebb2c074a9099cfb749be454449fee564d4282610df1b85f7c508b");
+
+    /** Where Editora keeps its own Lombok jar, under the config dir. */
+    public static final String LOMBOK_SUBPATH = "plugins/lsp/lombok";
+
+    /** A pinned Maven Central jar: {@code <MAVEN_CENTRAL>/<group as path>/<artifact>/<version>/<artifact>-<version>.jar}. Pure. */
+    public static JvmLspJar mavenCentralJar(String groupId, String artifactId, String version, String sha256) {
+        String file = artifactId + "-" + version + ".jar";
+        return new JvmLspJar(
+                MAVEN_CENTRAL + groupId.replace('.', '/') + "/" + artifactId + "/" + version + "/" + file,
+                sha256,
+                file);
+    }
+
+    /**
+     * The extra jars a {@link Kind#JVM_LSP_ZIP} step downloads beside its bundle, by step id: the lemminx-maven
+     * step's {@link #LEMMINX_MAVEN_EXTRA_JARS}; none for any other. Pure.
+     */
+    public static List<JvmLspJar> jvmLspExtraJars(String stepId) {
+        return LEMMINX_MAVEN_STEP.equals(stepId) ? LEMMINX_MAVEN_EXTRA_JARS : List.of();
+    }
+
+    /** The id of the {@code maven-pom} install step (the status line says "Installing lemminx-maven…"). */
+    public static final String LEMMINX_MAVEN_STEP = "lemminx-maven";
 
     /**
      * The launch command for a JVM LSP whose jars were extracted to {@code dir}:
@@ -226,14 +295,14 @@ public final class InstallCatalog {
             String id,
             Kind kind,
             Set<Prereq> prereqs,
-            List<String> npmPackages,
-            String pipPackage,
-            String apiUrl,
-            String assetPattern,
-            String directUrl,
+            @Nullable List<String> npmPackages,
+            @Nullable String pipPackage,
+            @Nullable String apiUrl,
+            @Nullable String assetPattern,
+            @Nullable String directUrl,
             boolean extractJarOnly,
             String destSubpath,
-            String verifyEntry) {}
+            @Nullable String verifyEntry) {}
 
     /**
      * The missing steps split by whether their prerequisites are {@code present}: {@code runnable} ones install
@@ -267,14 +336,14 @@ public final class InstallCatalog {
     }
 
     /** {@code [npm, install, -g, <pkgs…>]}. Pure. */
-    public static List<String> npmInstallGlobalArgv(List<String> pkgs) {
+    public static List<String> npmInstallGlobalArgv(@Nullable List<String> pkgs) {
         List<String> argv = new ArrayList<>(List.of("npm", "install", "-g"));
         argv.addAll(pkgs);
         return List.copyOf(argv);
     }
 
     /** {@code [<python>, -m, pip, install, --upgrade, --target, <dest>, <pkg>]}. Pure. */
-    public static List<String> pipInstallTargetArgv(String python, Path dest, String pkg) {
+    public static List<String> pipInstallTargetArgv(String python, Path dest, @Nullable String pkg) {
         return List.of(python, "-m", "pip", "install", "--upgrade", "--target", dest.toString(), pkg);
     }
 
@@ -304,6 +373,8 @@ public final class InstallCatalog {
             "openvsxorg.blob.core.windows.net",
             "download.eclipse.org",
             "repo.eclipse.org",
+            // Maven Central: the three jars the lemminx-maven bundle leaves out (LEMMINX_MAVEN_EXTRA_JARS).
+            "repo1.maven.org",
             "api.releases.hashicorp.com",
             "releases.hashicorp.com",
             // JetBrains' Kotlin LSP (a pinned URL with a pinned hash), and the CDN it redirects to.
@@ -312,7 +383,7 @@ public final class InstallCatalog {
 
     /** Whether {@code url} is an {@code https} URL on one of the {@link #DOWNLOAD_HOSTS} (default port, no
      *  credentials). Pure — unit-tested. */
-    public static boolean isTrustedDownloadUrl(String url) {
+    public static boolean isTrustedDownloadUrl(@Nullable String url) {
         if (url == null) {
             return false;
         }
@@ -329,7 +400,7 @@ public final class InstallCatalog {
     }
 
     /** The first substring of {@code text} matching {@code regex}, or {@code null}. Pure. */
-    public static String firstMatch(String text, String regex) {
+    public static @Nullable String firstMatch(String text, @Nullable String regex) {
         if (text == null) {
             return null;
         }
@@ -453,7 +524,7 @@ public final class InstallCatalog {
             // --- JVM lemminx + lemminx-maven (one cross-platform zip; needs java on PATH) ---
             case "maven-pom" ->
                 java.util.Optional.of(List.of(new Step(
-                        "lemminx-maven",
+                        LEMMINX_MAVEN_STEP,
                         Kind.JVM_LSP_ZIP,
                         Set.of(Prereq.JAVA),
                         null,
@@ -747,7 +818,7 @@ public final class InstallCatalog {
             int installedMegabytes) {
 
         /** This platform's asset, or null when upstream publishes none for it. */
-        public PinnedAsset assetFor(Platform platform) {
+        public @Nullable PinnedAsset assetFor(Platform platform) {
             return assets.get(platform);
         }
 
@@ -806,7 +877,7 @@ public final class InstallCatalog {
      * The download a server's install makes, as {@code [download MB, installed MB]}, when it is big enough to ask
      * about first; null otherwise. Pure.
      */
-    public static int[] largeDownload(String serverId) {
+    public static int @Nullable [] largeDownload(String serverId) {
         return serverInstall(serverId).orElse(List.of()).stream()
                 .filter(s -> s.kind() == Kind.PINNED_SERVER)
                 .map(s -> pinnedServer(s.id()).orElse(null))
@@ -860,7 +931,7 @@ public final class InstallCatalog {
             String id, String version, java.util.Map<Platform, PinnedAsset> assets, String binaryName) {
 
         /** This platform's asset, or null when upstream publishes none for it. */
-        public PinnedAsset assetFor(Platform platform) {
+        public @Nullable PinnedAsset assetFor(Platform platform) {
             return assets.get(platform);
         }
     }
@@ -1022,7 +1093,7 @@ public final class InstallCatalog {
     }
 
     /** Editora's own copy of tool {@code id} when it is installed, else null ({@code configDir} may be null). */
-    public static String installedToolIfPresent(Path configDir, String id) {
+    public static @Nullable String installedToolIfPresent(@Nullable Path configDir, String id) {
         if (configDir == null) {
             return null;
         }

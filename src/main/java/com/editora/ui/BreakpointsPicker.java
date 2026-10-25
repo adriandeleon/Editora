@@ -14,9 +14,10 @@ import javafx.scene.input.KeyCombination;
 import com.editora.config.Breakpoint;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
-import com.editora.editor.BreakpointDescription;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.debug.BreakpointDescription;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -28,7 +29,12 @@ import static com.editora.i18n.Messages.tr;
 final class BreakpointsPicker {
 
     /** One breakpoint: its file, its whole-file 0-based line, and the tab it is open in (null: closed). */
-    record Entry(Path file, String key, int line, Breakpoint breakpoint, EditorBuffer buffer) {}
+    record Entry(
+            Path file,
+            String key,
+            int line,
+            Breakpoint breakpoint,
+            @Nullable EditorBuffer buffer) {}
 
     private final CoordinatorHost host;
     private final DebugCoordinator.Ops ops;
@@ -161,7 +167,7 @@ final class BreakpointsPicker {
     }
 
     /** A closed file's saved breakpoint replaced ({@code next}) or removed (null): saved, and sent to a session. */
-    private void rewriteClosed(Entry e, Breakpoint next) {
+    private void rewriteClosed(Entry e, @Nullable Breakpoint next) {
         Map<String, List<Breakpoint>> map = ops.breakpointMap();
         List<Breakpoint> list = new ArrayList<>(map.getOrDefault(e.key(), List.of()));
         list.removeIf(bp -> bp.line() == e.line());

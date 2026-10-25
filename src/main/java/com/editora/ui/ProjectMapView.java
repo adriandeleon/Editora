@@ -80,6 +80,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.PersonalNote;
 import com.editora.git.GitFileStatus;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -119,7 +120,7 @@ final class ProjectMapView extends VBox {
     private final Predicate<Path> isOpen;
     private final Predicate<Path> isModified;
     private final Consumer<Path> onOpenFile;
-    private final Function<Path, ProjectMapPreview.Content> previewContent;
+    private final Function<Path, ProjectMapPreview.@Nullable Content> previewContent;
     private final ToggleButton openFilter = filterButton("project.map.filter.open");
     private final ToggleButton modifiedFilter = filterButton("project.map.filter.modified");
     private final ToggleButton gitFilter = filterButton("project.map.filter.gitChanged");
@@ -140,7 +141,7 @@ final class ProjectMapView extends VBox {
     private final Label breadcrumbEllipsisSeparator = new Label("›");
     private final Label noMatchesLabel = new Label();
     private final PauseTransition noMatchesDelay = new PauseTransition(NO_MATCHES_DELAY);
-    private Popup helpPopup;
+    private @Nullable Popup helpPopup;
     private long helpHiddenAt;
     private final MapSurface surface = new MapSurface();
     private final Canvas previewConnectorCanvas = new Canvas(1, 1);
@@ -158,7 +159,7 @@ final class ProjectMapView extends VBox {
     private final javafx.animation.PauseTransition cardDiskRefresh =
             new javafx.animation.PauseTransition(CARD_POLL_INTERVAL);
     /** The expansion the cards were last checked against (an identity, replaced by every reload). */
-    private Set<Path> cardsCheckedAgainst;
+    private @Nullable Set<Path> cardsCheckedAgainst;
 
     private boolean orphanCheckPending;
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
@@ -195,7 +196,7 @@ final class ProjectMapView extends VBox {
             new javafx.animation.PauseTransition(Duration.millis(LOADING_NOTICE_MILLIS));
     private final List<Path> selectionHistory = new ArrayList<>();
 
-    private Path root;
+    private @Nullable Path root;
     private boolean disposed;
     /** False while the Project panel shows the Tree: loads wait until the Map is on screen. */
     private boolean active = true;
@@ -206,7 +207,7 @@ final class ProjectMapView extends VBox {
     private boolean announceLimit;
     private boolean announceMatches;
     private boolean wasCapped;
-    private Path loadMoreDirectory;
+    private @Nullable Path loadMoreDirectory;
     private int loadMorePreviousLimit;
     private int loadMorePreviousLoaded;
     private ProjectMapModel.Snapshot snapshot = ProjectMapModel.Snapshot.EMPTY;
@@ -226,13 +227,19 @@ final class ProjectMapView extends VBox {
     private Runnable onLeaveMap = () -> {};
     private Consumer<ProjectMapModel.Entry> onRenameEntry = entry -> {};
     private Consumer<ProjectMapModel.Entry> onDeleteEntry = entry -> {};
-    private Path pendingSelection;
+    private @Nullable Path pendingSelection;
     private Consumer<FlowDirection> onFlowChanged = ignored -> {};
     private Consumer<ProjectMapOutput> onPrint = ignored -> {};
     private Consumer<ProjectMapOutput> onExportPdf = ignored -> {};
-    private ProjectMapPreview.MarkerActions previewMarkerActions;
-    private ProjectPanel.MarkerActions notePreviewActions;
+    private ProjectMapPreview.@Nullable MarkerActions previewMarkerActions;
+    private ProjectPanel.@Nullable MarkerActions notePreviewActions;
     private StackPane canvasHost;
+    /** The open structure columns and the outlines behind them. */
+    private final ProjectMapStructure structure;
+
+    private java.util.function.BiConsumer<Path, Integer> onOpenAt = (file, line) -> {};
+    private java.util.function.BiConsumer<Path, com.editora.text.FoldRegions.Region> onOpenNarrowed =
+            (file, block) -> {};
 
     ProjectMapView(Consumer<Path> onOpenFile, Predicate<Path> isOpen, Predicate<Path> isModified) {
         this(onOpenFile, isOpen, isModified, path -> null);
@@ -242,20 +249,26 @@ final class ProjectMapView extends VBox {
             Consumer<Path> onOpenFile,
             Predicate<Path> isOpen,
             Predicate<Path> isModified,
-            Function<Path, ProjectMapPreview.Content> previewContent) {
+            Function<Path, ProjectMapPreview.@Nullable Content> previewContent) {
         this.onOpenFile = onOpenFile;
         this.isOpen = isOpen == null ? path -> false : isOpen;
         this.isModified = isModified == null ? path -> false : isModified;
         this.previewContent = previewContent == null ? path -> null : previewContent;
+        this.structure = new ProjectMapStructure(this::previewContentFor);
+        structure.setOnChanged(this::structureChanged);
         getStyleClass().add("project-map-view");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
 
-        getChildren().addAll(buildFilters(), buildNavigation(), buildCanvasHost());
+        FlowPane filters = buildFilters();
+        HBox navigation = buildNavigation();
+        canvasHost = buildCanvasHost();
+        getChildren().addAll(filters, navigation, canvasHost);
         VBox.setVgrow(getChildren().get(2), Priority.ALWAYS);
         surface.setOnActivate(this::activate);
         surface.setOnCloseColumn(this::closeColumn);
         surface.setOnPreview(this::previewSelection);
+        surface.setOnStructure(this::toggleStructure);
         surface.setOnNotesPreview(this::previewNotes);
         surface.setOnSelectionChanged(this::selectionChanged);
         surface.setStatusSuppliers(this.isOpen, this.isModified);
@@ -467,7 +480,6 @@ final class ProjectMapView extends VBox {
         previewConnectorCanvas.setManaged(false);
         previewConnectorCanvas.setMouseTransparent(true);
         StackPane host = new StackPane(surface, previewConnectorCanvas, noMatchesLabel, zoomBar);
-        canvasHost = host;
         host.getStyleClass().add("project-map-host");
         StackPane.setAlignment(zoomBar, Pos.BOTTOM_LEFT);
         StackPane.setMargin(zoomBar, new Insets(ZOOM_BAR_MARGIN));
@@ -561,7 +573,16 @@ final class ProjectMapView extends VBox {
         grid.setVgap(3);
         int row = 0;
         row = helpHeading(grid, row, "project.map.help.mouse");
-        for (String id : List.of("click", "chevron", "preview", "wheel", "panWheel", "dragCanvas", "dragHeader")) {
+        for (String id : List.of(
+                "click",
+                "chevron",
+                "preview",
+                "structure",
+                "symbol",
+                "wheel",
+                "panWheel",
+                "dragCanvas",
+                "dragHeader")) {
             row = helpRow(grid, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
         }
         row = helpHeading(grid, row, "project.map.help.keyboard");
@@ -681,7 +702,7 @@ final class ProjectMapView extends VBox {
         return tr("project.map.flow." + flow.name().toLowerCase(java.util.Locale.ROOT));
     }
 
-    void setRoot(Path root) {
+    void setRoot(@Nullable Path root) {
         Path normalized = ProjectMapModel.normalize(root);
         // Not Objects.equals: two SFTP paths on different connections throw from equals() instead of
         // answering false, which made mounting a second host (or reconnecting to the first) fail half-way.
@@ -694,6 +715,7 @@ final class ProjectMapView extends VBox {
         rememberRoot();
         this.root = normalized;
         closeAllPreviews();
+        structure.clear();
         expanded.clear();
         clearSearchState();
         directoryLimits.clear();
@@ -722,7 +744,10 @@ final class ProjectMapView extends VBox {
     }
 
     /** What the view keeps of a folder it is leaving. Local folders only: their paths compare safely. */
-    private record RootMemory(Set<Path> expanded, Map<Path, Integer> limits, Path selected) {}
+    private record RootMemory(
+            Set<Path> expanded,
+            Map<Path, Integer> limits,
+            @Nullable Path selected) {}
 
     /**
      * In the window with no project the root follows the active tab's folder, so every tab switch to another
@@ -893,7 +918,7 @@ final class ProjectMapView extends VBox {
         surface.stateChanged();
     }
 
-    void setPreviewMarkerActions(ProjectMapPreview.MarkerActions actions) {
+    void setPreviewMarkerActions(ProjectMapPreview.@Nullable MarkerActions actions) {
         previewMarkerActions = actions;
         previews.values().forEach(preview -> preview.setMarkerActions(actions));
     }
@@ -933,6 +958,8 @@ final class ProjectMapView extends VBox {
         remapAll(searchOpened, from, to);
         remapAll(searchClosed, from, to);
         remapAll(revealPins, from, to);
+        structure.pathRenamed(
+                from.toAbsolutePath().normalize(), to.toAbsolutePath().normalize());
         Map<Path, Integer> limits = new HashMap<>();
         directoryLimits.forEach((path, limit) -> limits.put(ProjectMapModel.remap(path, from, to), limit));
         directoryLimits.clear();
@@ -1028,9 +1055,34 @@ final class ProjectMapView extends VBox {
     }
 
     void setContextMenuFactory(Function<ProjectMapModel.Entry, ContextMenu> factory) {
-        // A "+N more" or stub row is not a file: it has no file-management menu.
+        // A "+N more" or stub row is not a file: it has no file-management menu. A declaration has its own.
         surface.setContextMenuFactory(
-                factory == null ? null : entry -> entry.isPlaceholder() ? null : factory.apply(entry));
+                factory == null
+                        ? null
+                        : entry -> entry.isPlaceholder()
+                                ? null
+                                : entry.isSymbol() ? symbolMenu(entry) : factory.apply(entry));
+    }
+
+    /** A declaration row's menu: its card, the file opened at it, the file opened narrowed to its block. */
+    private ContextMenu symbolMenu(ProjectMapModel.Entry entry) {
+        ProjectMapModel.Symbol symbol = entry.symbol();
+        ContextMenu menu = new ContextMenu();
+        if (symbol == null) {
+            return menu;
+        }
+        MenuItem preview = new MenuItem(tr("project.map.structure.preview"));
+        preview.setOnAction(event -> previewSymbol(entry));
+        MenuItem openAt = new MenuItem(tr("project.map.structure.openAt"));
+        openAt.setOnAction(event -> onOpenAt.accept(symbol.file(), symbol.line()));
+        MenuItem openNarrowed = new MenuItem(tr("project.map.preview.openNarrowed"));
+        openNarrowed.setOnAction(event -> onOpenNarrowed.accept(
+                symbol.file(),
+                symbol.block() != null
+                        ? symbol.block()
+                        : new com.editora.text.FoldRegions.Region(symbol.line(), symbol.endLine())));
+        menu.getItems().setAll(preview, openAt, openNarrowed);
+        return menu;
     }
 
     void setOutputActions(Consumer<ProjectMapOutput> print, Consumer<ProjectMapOutput> exportPdf) {
@@ -1075,7 +1127,7 @@ final class ProjectMapView extends VBox {
      */
     void filesChangedOnDisk() {
         if (disposed
-                || previews.isEmpty()
+                || previews.isEmpty() && !structure.hasOpenColumns()
                 || getScene() == null
                 || cardDiskRefresh.getStatus() == javafx.animation.Animation.Status.RUNNING) {
             return;
@@ -1090,6 +1142,7 @@ final class ProjectMapView extends VBox {
         cardDiskRefresh.stop();
         generation.incrementAndGet();
         loader.shutdownNow();
+        structure.dispose();
         loadInFlight = false;
         loadingDelay.stop();
         surface.dispose();
@@ -1121,7 +1174,7 @@ final class ProjectMapView extends VBox {
             }
 
             @Override
-            public Rendered render(double pageWidth, double pageHeight) {
+            public @Nullable Rendered render(double pageWidth, double pageHeight) {
                 return disposed ? null : surface.renderOutput(pageWidth, pageHeight);
             }
         };
@@ -1250,10 +1303,18 @@ final class ProjectMapView extends VBox {
         }
         revealPins.retainAll(loadedPaths);
         Path selectedBefore = surface.selectedPath();
-        surface.setEntries(loaded.entries(), loaded.loadedDirectories());
+        Set<Path> loadedFiles = new HashSet<>();
+        for (ProjectMapModel.Entry entry : loaded.entries()) {
+            if (entry.isFile()) {
+                loadedFiles.add(entry.path());
+            }
+        }
+        structure.prune(loadedFiles, symbolCardFiles());
+        showRows();
+        structure.refresh(symbolCardFiles()); // a file outlined before may have changed meanwhile
         setOutputEnabled(!loaded.entries().isEmpty());
         if (pendingSelection != null) {
-            if (loadedPaths.contains(pendingSelection)) {
+            if (loadedPaths.contains(pendingSelection) || surface.contains(pendingSelection)) {
                 surface.setSelected(pendingSelection);
             } else {
                 dropHistory(pendingSelection); // gone: it must not be selected if it ever reappears
@@ -1269,7 +1330,7 @@ final class ProjectMapView extends VBox {
     }
 
     /** After "+N more": follow the rows that arrived, or undo the raise when the overall limit gave none. */
-    private void finishLoadMore(ProjectMapModel.Snapshot loaded, Set<Path> loadedPaths, Path selectedBefore) {
+    private void finishLoadMore(ProjectMapModel.Snapshot loaded, Set<Path> loadedPaths, @Nullable Path selectedBefore) {
         Path directory = loadMoreDirectory;
         loadMoreDirectory = null;
         if (directory == null) {
@@ -1280,7 +1341,10 @@ final class ProjectMapView extends VBox {
             directoryLimits.put(directory, loadMorePreviousLimit);
             return;
         }
-        Path moreRow = ProjectMapModel.normalize(directory.resolve(ProjectMapModel.PLACEHOLDER_NAME));
+        Path moreRow = directory
+                .resolve(ProjectMapModel.PLACEHOLDER_NAME)
+                .toAbsolutePath()
+                .normalize();
         if (moreRow.equals(selectedBefore) && !loadedPaths.contains(moreRow)) {
             // The whole folder is loaded now, so the row that was selected is gone: move to its last row.
             Path last = null;
@@ -1347,6 +1411,10 @@ final class ProjectMapView extends VBox {
             }
             return; // "Empty folder" / "Cannot read this folder" do nothing
         }
+        if (entry.isSymbol()) {
+            previewSymbol(entry);
+            return;
+        }
         if (entry.directory()) {
             toggleDirectory(entry.path());
         } else {
@@ -1376,14 +1444,14 @@ final class ProjectMapView extends VBox {
         onExpandedChanged.run();
     }
 
-    private void closeDuringSearch(Path directory) {
+    private void closeDuringSearch(@Nullable Path directory) {
         searchOpened.removeIf(path -> path.startsWith(directory));
         searchClosed.removeIf(path -> path.startsWith(directory));
         searchClosed.add(directory);
     }
 
     /** Raises one truncated directory's row limit by a chunk; the overall limit still applies. */
-    private void loadMore(Path directory) {
+    private void loadMore(@Nullable Path directory) {
         Path path = ProjectMapModel.normalize(directory);
         if (path == null) {
             return;
@@ -1402,6 +1470,10 @@ final class ProjectMapView extends VBox {
         if (normalized == null) {
             return;
         }
+        if (structure.isOpen(normalized)) {
+            closeStructure(normalized);
+            return;
+        }
         if (searching()) {
             closeDuringSearch(normalized);
         } else {
@@ -1414,6 +1486,142 @@ final class ProjectMapView extends VBox {
         }
         reload();
         onExpandedChanged.run();
+    }
+
+    /**
+     * The Structure icon of a file row, or the chevron of a declaration that holds others: opens or closes its
+     * structure column. Nothing is listed again; the rows come from the file's outline.
+     */
+    private void toggleStructure(ProjectMapModel.Entry entry) {
+        if (structure.isOpen(entry.path())) {
+            closeStructure(entry.path());
+            return;
+        }
+        if (structure.toggle(entry)) {
+            showRows();
+        }
+    }
+
+    /** Closes a structure column and the columns below it; a selection inside it moves to its row. */
+    private void closeStructure(Path path) {
+        structure.close(path);
+        if (surface.selectionBelow(path)) {
+            surface.select(path);
+        }
+        showRows(); // the cards of its declarations close with it (closeOrphanedCards)
+    }
+
+    /**
+     * Hands the surface the last listing plus the open structure columns. Nothing is read: a structure column
+     * opening or an outline arriving needs no new listing.
+     */
+    private void showRows() {
+        List<ProjectMapModel.Entry> rows = structure.withStructure(snapshot.entries());
+        Set<Path> open = new HashSet<>(snapshot.loadedDirectories());
+        open.addAll(structure.openAmong(rows));
+        surface.setEntries(rows, open);
+        updateNavigation();
+    }
+
+    /** An outline arrived or changed: the columns are redrawn and every declaration card follows its lines. */
+    private void structureChanged() {
+        if (disposed) {
+            return;
+        }
+        showRows();
+        for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
+            if (!ProjectMapStructure.isSymbolPath(entry.getKey())) {
+                continue;
+            }
+            ProjectMapStructure.Node node = structure.node(entry.getKey());
+            ProjectMapPreview card = entry.getValue();
+            Path file = structure.fileOf(entry.getKey());
+            if (node == null) {
+                if (file != null && structure.hasOutline(file)) {
+                    card.setSymbolMissing(true); // keeps its last lines: they may be the last copy to read
+                }
+                continue;
+            }
+            card.setSymbolMissing(false);
+            card.setRange(rangeOf(node.symbol()));
+        }
+    }
+
+    private static ProjectMapPreview.Range rangeOf(ProjectMapModel.Symbol symbol) {
+        return new ProjectMapPreview.Range(symbol.label(), symbol.line(), symbol.startLine(), symbol.endLine());
+    }
+
+    /** The files a declaration card is open for: their outlines are kept to follow the cards' lines. */
+    private Set<Path> symbolCardFiles() {
+        Set<Path> files = new HashSet<>();
+        for (Path key : previews.keySet()) {
+            if (ProjectMapStructure.isSymbolPath(key)) {
+                Path file = structure.fileOf(key);
+                if (file != null) {
+                    files.add(file);
+                }
+            }
+        }
+        return files;
+    }
+
+    /**
+     * A declaration row: opens (or focuses) the card of its lines. The card reads and colours the whole file
+     * and shows the declaration's block with its doc comment, numbered as the file numbers it.
+     */
+    private void previewSymbol(ProjectMapModel.Entry entry) {
+        ProjectMapModel.Symbol symbol = entry.symbol();
+        if (symbol == null) {
+            return;
+        }
+        Path key = entry.path();
+        ProjectMapPreview existing = previews.get(key);
+        if (existing != null) {
+            touchCard(existing, true);
+            existing.focusContent();
+            return;
+        }
+        Path file = symbol.file();
+        ProjectMapPreview preview = createPreview(key);
+        preview.setOnOpenAt((path, line) -> onOpenAt.accept(path, line));
+        preview.setOnOpenNarrowed(() -> {
+            ProjectMapStructure.Node node = structure.node(key);
+            ProjectMapModel.Symbol current = node == null ? symbol : node.symbol();
+            com.editora.text.FoldRegions.Region block = current.block();
+            onOpenNarrowed.accept(
+                    file,
+                    block != null ? block : new com.editora.text.FoldRegions.Region(current.line(), current.endLine()));
+        });
+        preview.showRange(
+                file,
+                rangeOf(symbol),
+                previewContentFor(file),
+                (width, height, parentWidth, parentHeight) -> previewPlacement(
+                        preview,
+                        key,
+                        width,
+                        height,
+                        ProjectMapPreview.MIN_WIDTH,
+                        ProjectMapPreview.MIN_HEIGHT,
+                        parentWidth,
+                        parentHeight));
+        scheduleCardRefresh();
+    }
+
+    /**
+     * Where a declaration card's Open and Open Narrowed go: the file opened at a line, and the file opened
+     * narrowed to a block (both 0-based lines, the file's own).
+     */
+    void setOpenActions(
+            java.util.function.BiConsumer<Path, Integer> openAt,
+            java.util.function.BiConsumer<Path, com.editora.text.FoldRegions.Region> openNarrowed) {
+        onOpenAt = openAt == null ? (file, line) -> {} : openAt;
+        onOpenNarrowed = openNarrowed == null ? (file, block) -> {} : openNarrowed;
+    }
+
+    /** The language server's outline of an open buffer, when the editor has one (see ProjectMapStructure). */
+    void setServerSymbols(Function<Path, java.util.@Nullable List<com.editora.lsp.SymbolNode>> symbols) {
+        structure.setServerSymbols(symbols);
     }
 
     private void selectionChanged(Path path) {
@@ -1430,7 +1638,7 @@ final class ProjectMapView extends VBox {
         ProjectMapModel.Entry entry = surface.selectedEntry()
                 .filter(candidate -> candidate.path().equals(path))
                 .orElse(null);
-        if (entry == null || entry.directory()) {
+        if (entry == null || !entry.isFile()) {
             return;
         }
         Path selected = entry.path().toAbsolutePath().normalize();
@@ -1457,7 +1665,7 @@ final class ProjectMapView extends VBox {
         scheduleCardRefresh(); // starts following the buffer when the card mirrors one
     }
 
-    private ProjectMapPreview.Content previewContentFor(Path path) {
+    private ProjectMapPreview.@Nullable Content previewContentFor(Path path) {
         try {
             return previewContent.apply(path);
         } catch (RuntimeException ignored) {
@@ -1482,8 +1690,12 @@ final class ProjectMapView extends VBox {
             return;
         }
         makeRoomForCard();
-        ProjectMapNotePreview preview =
-                new ProjectMapNotePreview((note, body) -> notePreviewActions.updatePersonalNote(selected, note, body));
+        ProjectMapNotePreview preview = new ProjectMapNotePreview((note, body) -> {
+            ProjectPanel.MarkerActions actions = notePreviewActions;
+            if (actions != null) {
+                actions.updatePersonalNote(selected, note, body);
+            }
+        });
         preview.setOnClose(() -> closeNotePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
         preview.setOnTouch(() -> touchCard(preview, false));
@@ -1492,6 +1704,7 @@ final class ProjectMapView extends VBox {
             surface.requestFocus();
         });
         preview.setOnBlankRejected(() -> onStatus.accept(tr("status.projectMap.noteBlankRestored")));
+        preview.setMapScale(surface.cardZoom());
         installPreviewListeners(preview);
         notePreviews.put(selected, preview);
         cardTouches.put(preview, ++cardTouchSequence);
@@ -1512,6 +1725,7 @@ final class ProjectMapView extends VBox {
     private ProjectMapPreview createPreview(Path path) {
         makeRoomForCard();
         ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
+        preview.setMapScale(surface.cardZoom());
         preview.setMarkerActions(previewMarkerActions);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
@@ -1673,7 +1887,9 @@ final class ProjectMapView extends VBox {
 
     /** Asks for {@link #refreshCards} once the notifications that prompted it have settled. */
     private void scheduleCardRefresh() {
-        if (disposed || getScene() == null || previews.isEmpty() && notePreviews.isEmpty()) {
+        if (disposed
+                || getScene() == null
+                || previews.isEmpty() && notePreviews.isEmpty() && !structure.hasOpenColumns()) {
             return; // off screen (the Tree is showing): the next time the Map is shown refreshes them
         }
         cardRefresh.playFromStart();
@@ -1692,9 +1908,15 @@ final class ProjectMapView extends VBox {
         for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
             ProjectMapPreview card = entry.getValue();
             if (!polled || card.showsOpenBuffer()) {
-                card.refresh(previewContentFor(entry.getKey()));
+                Path file = card.path();
+                card.refresh(previewContentFor(file != null ? file : entry.getKey()));
             }
             mirrors |= card.showsOpenBuffer();
+        }
+        // Structure columns follow their file too: an open buffer's edits, or a closed file rewritten on disk.
+        if (structure.hasOpenColumns() || !symbolCardFiles().isEmpty()) {
+            structure.refresh(symbolCardFiles());
+            mirrors |= structure.openFiles().stream().anyMatch(file -> safeTest(isOpen, file));
         }
         if (!polled) {
             refreshNoteCards();
@@ -1707,11 +1929,12 @@ final class ProjectMapView extends VBox {
     }
 
     private void refreshNoteCards() {
-        boolean enabled = notePreviewActions != null && notePreviewActions.personalNotesEnabled();
+        ProjectPanel.MarkerActions actions = notePreviewActions;
+        boolean enabled = actions != null && actions.personalNotesEnabled();
         for (Map.Entry<Path, ProjectMapNotePreview> entry : List.copyOf(notePreviews.entrySet())) {
             List<PersonalNote> values;
             try {
-                values = enabled ? notePreviewActions.personalNotes(entry.getKey()) : List.of();
+                values = enabled && actions != null ? actions.personalNotes(entry.getKey()) : List.of();
             } catch (RuntimeException ignored) {
                 continue;
             }
@@ -1730,9 +1953,35 @@ final class ProjectMapView extends VBox {
     /**
      * The one placement path for code and note cards: beside the row's column when there is room for the
      * card's minimum size, otherwise over the map inside the panel, then shifted or cascaded clear of the
-     * cards already open. The map itself is never panned to make room.
+     * cards already open — of those in view; one dragged or panned off the panel takes no room. The map
+     * itself is never panned to make room. Sizes in and out are the card's own, unzoomed; the room is found
+     * for the card as drawn at its zoom.
      */
     private ProjectMapPreview.Placement previewPlacement(
+            Region preview,
+            Path path,
+            double width,
+            double height,
+            double minimumWidth,
+            double minimumHeight,
+            double parentWidth,
+            double parentHeight) {
+        double scale = cardScale(preview);
+        ProjectMapPreview.Placement drawn = drawnPlacement(
+                preview,
+                path,
+                width * scale,
+                height * scale,
+                minimumWidth * scale,
+                minimumHeight * scale,
+                parentWidth,
+                parentHeight);
+        return new ProjectMapPreview.Placement(
+                drawn.x(), drawn.y(), drawn.width() / scale, drawn.height() / scale, drawn.growLeft());
+    }
+
+    /** {@link #previewPlacement} in panel pixels: every size here is a card as drawn. */
+    private ProjectMapPreview.Placement drawnPlacement(
             Region preview,
             Path path,
             double width,
@@ -1797,9 +2046,10 @@ final class ProjectMapView extends VBox {
             if (other == candidate || !other.isVisible()) {
                 continue;
             }
-            if (x < other.getLayoutX() + other.getWidth() + PREVIEW_CASCADE
+            double scale = cardScale(other);
+            if (x < other.getLayoutX() + other.getWidth() * scale + PREVIEW_CASCADE
                     && x + width + PREVIEW_CASCADE > other.getLayoutX()
-                    && y < other.getLayoutY() + other.getHeight() + PREVIEW_CASCADE
+                    && y < other.getLayoutY() + other.getHeight() * scale + PREVIEW_CASCADE
                     && y + height + PREVIEW_CASCADE > other.getLayoutY()) {
                 return true;
             }
@@ -1809,6 +2059,14 @@ final class ProjectMapView extends VBox {
 
     private static double clampPreview(double value, double minimum, double maximum) {
         return Math.max(minimum, Math.min(maximum, value));
+    }
+
+    /** The map zoom a card is drawn at: its width and height are unzoomed, its corner is in panel pixels. */
+    private static double cardScale(Region card) {
+        if (card instanceof ProjectMapPreview code) {
+            return code.mapScale();
+        }
+        return card instanceof ProjectMapNotePreview note ? note.mapScale() : 1;
     }
 
     private void repaintPreviewConnectors() {
@@ -1853,25 +2111,29 @@ final class ProjectMapView extends VBox {
         double y1;
         double x2;
         double y2;
+        double left = preview.getLayoutX();
+        double top = preview.getLayoutY();
+        double width = preview.getWidth() * cardScale(preview);
+        double height = preview.getHeight() * cardScale(preview);
         boolean horizontal = flowFilter.getValue() == FlowDirection.LEFT_TO_RIGHT
                 || flowFilter.getValue() == FlowDirection.RIGHT_TO_LEFT;
         if (horizontal) {
-            boolean previewAfter = preview.getLayoutX() + preview.getWidth() / 2 >= anchor.x() + anchor.width() / 2;
+            boolean previewAfter = left + width / 2 >= anchor.x() + anchor.width() / 2;
             x1 = previewAfter ? anchor.x() + anchor.width() : anchor.x();
             y1 = anchor.y() + anchor.height() / 2;
-            x2 = previewAfter ? preview.getLayoutX() : preview.getLayoutX() + preview.getWidth();
-            y2 = clampPreview(y1, preview.getLayoutY(), preview.getLayoutY() + preview.getHeight());
+            x2 = previewAfter ? left : left + width;
+            y2 = clampPreview(y1, top, top + height);
             double control = Math.max(18, Math.abs(x2 - x1) * 0.45);
             g.beginPath();
             g.moveTo(x1, y1);
             g.bezierCurveTo(
                     x1 + (previewAfter ? control : -control), y1, x2 + (previewAfter ? -control : control), y2, x2, y2);
         } else {
-            boolean previewAfter = preview.getLayoutY() + preview.getHeight() / 2 >= anchor.y() + anchor.height() / 2;
+            boolean previewAfter = top + height / 2 >= anchor.y() + anchor.height() / 2;
             x1 = anchor.x() + anchor.width() / 2;
             y1 = previewAfter ? anchor.y() + anchor.height() : anchor.y();
-            x2 = clampPreview(x1, preview.getLayoutX(), preview.getLayoutX() + preview.getWidth());
-            y2 = previewAfter ? preview.getLayoutY() : preview.getLayoutY() + preview.getHeight();
+            x2 = clampPreview(x1, left, left + width);
+            y2 = previewAfter ? top : top + height;
             double control = Math.max(18, Math.abs(y2 - y1) * 0.45);
             g.beginPath();
             g.moveTo(x1, y1);
@@ -1950,6 +2212,15 @@ final class ProjectMapView extends VBox {
             surface.select(normalized);
             return;
         }
+        if (ProjectMapStructure.isSymbolPath(normalized)) {
+            // A declaration whose column was closed: its file is what can be revealed (a file is never listed).
+            Path file = normalized;
+            while (ProjectMapStructure.isSymbolPath(file) && file.getParent() != null) {
+                file = file.getParent();
+            }
+            revealPath(file);
+            return;
+        }
         // Open the way to the target and leave every other open branch as it is.
         Set<Path> chain = ProjectMapModel.ancestorsWithin(root, List.of(normalized));
         if (searching()) {
@@ -1989,8 +2260,7 @@ final class ProjectMapView extends VBox {
         }
         List<Node> nodes = new ArrayList<>();
         for (Path path : trail.reversed()) {
-            Path fileName = path.getFileName();
-            Button crumb = new Button(fileName == null ? path.toString() : fileName.toString());
+            Button crumb = new Button(crumbLabel(path));
             crumb.getStyleClass().add("project-map-breadcrumb");
             crumb.setTooltip(new Tooltip(path.toString()));
             crumb.setOnAction(event -> revealPath(path));
@@ -2004,6 +2274,18 @@ final class ProjectMapView extends VBox {
         }
         breadcrumbs.getChildren().setAll(nodes);
         fitBreadcrumbs();
+    }
+
+    /** A breadcrumb's text: the folder or file name, or a declaration's label. */
+    private String crumbLabel(Path path) {
+        if (ProjectMapStructure.isSymbolPath(path)) {
+            ProjectMapStructure.Node node = structure.node(path);
+            if (node != null) {
+                return node.symbol().label();
+            }
+        }
+        Path fileName = path.getFileName();
+        return fileName == null ? path.toString() : fileName.toString();
     }
 
     /**
@@ -2108,6 +2390,10 @@ final class ProjectMapView extends VBox {
         private static final double CHEVRON_ZONE = 24;
         /** Trailing strip of a file row that holds the preview affordance. */
         private static final double PREVIEW_ZONE = 29;
+        /** Strip before the preview eye of a file that has an outline: its Structure icon. */
+        private static final double STRUCTURE_ZONE = 24;
+        /** Room for a declaration row's line number. */
+        private static final double SYMBOL_LINE_WIDTH = 56;
         /** Width reserved in a row for one bookmark or Personal Note badge. */
         private static final double MARKER_WIDTH = 13;
 
@@ -2163,7 +2449,7 @@ final class ProjectMapView extends VBox {
         /** What {@link #paint} draws on: the live Canvas, or an off-scene one while output is rendered. */
         private Canvas canvas = liveCanvas;
         /** Non-null only while print/PDF output is rendered: the light colours that replace the theme's. */
-        private Map<Rectangle, Color> outputPalette;
+        private @Nullable Map<Rectangle, Color> outputPalette;
 
         private final Rectangle viewportClip = new Rectangle();
         private final StackPane iconRasterizer = new StackPane();
@@ -2211,6 +2497,9 @@ final class ProjectMapView extends VBox {
         };
 
         private List<ProjectMapModel.Entry> entries = List.of();
+        /** {@link #entries} by path, for the rows a column title or a symbol's emphasis looks up. */
+        private Map<Path, ProjectMapModel.Entry> entryByPath = Map.of();
+
         private Set<Path> expandedSnapshot = Set.of();
         private ProjectMapModel.Filters filters =
                 new ProjectMapModel.Filters("", false, false, false, false, false, ProjectMapModel.TypeFilter.ALL);
@@ -2226,8 +2515,8 @@ final class ProjectMapView extends VBox {
         private Set<Path> notedPaths = Set.of();
         private Set<Path> emphasized = Set.of();
         private FlowDirection flowDirection = DEFAULT_FLOW;
-        private Path selected;
-        private Path hovered;
+        private @Nullable Path selected;
+        private @Nullable Path hovered;
         /** The part of the hovered row under the pointer, when it is one that acts differently from the row. */
         private Affordance hoveredAffordance = Affordance.NONE;
 
@@ -2247,26 +2536,32 @@ final class ProjectMapView extends VBox {
         private Consumer<ProjectMapModel.Entry> onActivate = entry -> {};
         private Consumer<Path> onCloseColumn = path -> {};
         private Consumer<Path> onPreview = path -> {};
+        private Consumer<ProjectMapModel.Entry> onStructure = entry -> {};
         private Consumer<Path> onNotesPreview = path -> {};
         private Consumer<Path> onSelectionChanged = path -> {};
-        private Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory = entry -> null;
+        private Function<ProjectMapModel.Entry, @Nullable ContextMenu> contextMenuFactory = entry -> null;
         private Runnable onZoomChanged = () -> {};
         private double zoom = 1.0;
         private boolean keepZoomOnColumnOpen = true;
         private boolean focusNewColumn = true;
         private double offsetX;
         private double offsetY;
+        /** The viewport the open cards were last moved for; NaN until the first paint. */
+        private double cardsOffsetX = Double.NaN;
+
+        private double cardsOffsetY = Double.NaN;
+        private double cardsZoom = Double.NaN;
         private double pressX;
         private double pressY;
         private double pressOffsetX;
         private double pressOffsetY;
         private double columnPressOffsetX;
         private double columnPressOffsetY;
-        private ProjectMapModel.ColumnId draggedColumn;
-        private OverviewBox overviewBox;
-        private ContextMenu activeContextMenu;
-        private Scene dismissScene;
-        private EventHandler<MouseEvent> dismissFilter;
+        private ProjectMapModel.@Nullable ColumnId draggedColumn;
+        private @Nullable OverviewBox overviewBox;
+        private @Nullable ContextMenu activeContextMenu;
+        private @Nullable Scene dismissScene;
+        private @Nullable EventHandler<MouseEvent> dismissFilter;
         private boolean panning;
         /** The pointer moved the viewport or a column since the last press, so its release is not a click. */
         private boolean dragMoved;
@@ -2287,8 +2582,8 @@ final class ProjectMapView extends VBox {
         private boolean syncingHidden;
 
         private double showHiddenLabelWidth;
-        private Font rowFont;
-        private Font rowFontBold;
+        private @Nullable Font rowFont;
+        private @Nullable Font rowFontBold;
         private final Map<String, String> elidedTitles = new HashMap<>();
         private final String columnNoMatches = tr("project.map.column.noMatches");
         private final String columnFilterPrompt = tr("project.map.column.filter");
@@ -2406,6 +2701,10 @@ final class ProjectMapView extends VBox {
             this.onPreview = onPreview == null ? path -> {} : onPreview;
         }
 
+        void setOnStructure(Consumer<ProjectMapModel.Entry> callback) {
+            onStructure = callback == null ? entry -> {} : callback;
+        }
+
         void setOnNotesPreview(Consumer<Path> onNotesPreview) {
             this.onNotesPreview = onNotesPreview == null ? path -> {} : onNotesPreview;
         }
@@ -2414,7 +2713,7 @@ final class ProjectMapView extends VBox {
             onSelectionChanged = callback == null ? path -> {} : callback;
         }
 
-        void setContextMenuFactory(Function<ProjectMapModel.Entry, ContextMenu> factory) {
+        void setContextMenuFactory(@Nullable Function<ProjectMapModel.Entry, @Nullable ContextMenu> factory) {
             contextMenuFactory = factory == null ? entry -> null : factory;
         }
 
@@ -2441,6 +2740,7 @@ final class ProjectMapView extends VBox {
             }
         }
 
+        @Nullable
         Path selectedPath() {
             return selected;
         }
@@ -2476,6 +2776,11 @@ final class ProjectMapView extends VBox {
                     .map(entry -> new ProjectMapModel.ColumnId(entry.depth(), entry.parent()))
                     .collect(java.util.stream.Collectors.toSet());
             this.entries = entries == null ? List.of() : List.copyOf(entries);
+            Map<Path, ProjectMapModel.Entry> byPath = new HashMap<>();
+            for (ProjectMapModel.Entry entry : this.entries) {
+                byPath.putIfAbsent(entry.path(), entry);
+            }
+            entryByPath = byPath;
             Set<ProjectMapModel.ColumnId> newColumnIds = this.entries.stream()
                     .map(entry -> new ProjectMapModel.ColumnId(entry.depth(), entry.parent()))
                     .collect(java.util.stream.Collectors.toSet());
@@ -2618,7 +2923,7 @@ final class ProjectMapView extends VBox {
             return noMatches;
         }
 
-        private ColumnBox columnBox(ProjectMapModel.ColumnId id) {
+        private @Nullable ColumnBox columnBox(ProjectMapModel.@Nullable ColumnId id) {
             for (ColumnBox candidate : columnBoxes) {
                 if (candidate.column().id().equals(id)) {
                     return candidate;
@@ -2673,7 +2978,7 @@ final class ProjectMapView extends VBox {
             Platform.runLater(this::autoFit);
         }
 
-        void setSelected(Path selected) {
+        void setSelected(@Nullable Path selected) {
             this.selected = selected;
             updateAccessibleText();
             repaint();
@@ -2729,10 +3034,41 @@ final class ProjectMapView extends VBox {
                     paint(); // the row under a resting pointer changed with the viewport
                 }
                 completedPaints++;
+                moveCardsWithViewport();
                 repaintPreviewConnectors();
             } finally {
                 painting = false;
             }
+        }
+
+        /**
+         * Cards sit on the canvas: a pan or a zoom since the last paint carries each card's corner along with
+         * the map under it, as it does the columns, and draws the card at the new zoom from that corner.
+         */
+        private void moveCardsWithViewport() {
+            double fromX = cardsOffsetX;
+            double fromY = cardsOffsetY;
+            double fromZoom = cardsZoom;
+            cardsOffsetX = offsetX;
+            cardsOffsetY = offsetY;
+            cardsZoom = zoom;
+            if (Double.isNaN(fromZoom) || fromX == offsetX && fromY == offsetY && fromZoom == zoom) {
+                return;
+            }
+            double ratio = zoom / fromZoom;
+            List<Region> cards = new ArrayList<>(previews.values());
+            cards.addAll(notePreviews.values());
+            for (Region card : cards) {
+                card.relocate(
+                        offsetX + (card.getLayoutX() - fromX) * ratio, offsetY + (card.getLayoutY() - fromY) * ratio);
+            }
+            previews.values().forEach(card -> card.setMapScale(zoom));
+            notePreviews.values().forEach(card -> card.setMapScale(zoom));
+        }
+
+        /** The zoom of the last paint, which the open cards are drawn at and a new card opens at. */
+        double cardZoom() {
+            return Double.isNaN(cardsZoom) ? zoom : cardsZoom;
         }
 
         /** Coalesces continuous viewport gestures so they submit no more than one Canvas render per pulse. */
@@ -2745,7 +3081,7 @@ final class ProjectMapView extends VBox {
         }
 
         /** World-space bounds of every laid-out column plus the paper margin, or null for an empty map. */
-        private ProjectMapOutputPlan.Box outputBounds() {
+        private ProjectMapOutputPlan.@Nullable Box outputBounds() {
             if (entries.isEmpty() || columnBoxes.isEmpty()) {
                 return null;
             }
@@ -2788,7 +3124,7 @@ final class ProjectMapView extends VBox {
          * pan and zoom and always in a light palette. Painting goes to an off-scene Canvas, so the live
          * Canvas, viewport and hover state are untouched; interactive controls and the overview are left out.
          */
-        ProjectMapOutput.Rendered renderOutput(double pageWidth, double pageHeight) {
+        ProjectMapOutput.@Nullable Rendered renderOutput(double pageWidth, double pageHeight) {
             // Headers collapse when their controls do not fit, so the live layout depends on the zoom. With
             // outputPaint set they are always collapsed (there are no controls on paper): the layout measured
             // here is then the one painted on the pages at the output scale.
@@ -2803,7 +3139,7 @@ final class ProjectMapView extends VBox {
             }
         }
 
-        private ProjectMapOutput.Rendered renderOutputPages(double pageWidth, double pageHeight) {
+        private ProjectMapOutput.@Nullable Rendered renderOutputPages(double pageWidth, double pageHeight) {
             repaint();
             ProjectMapOutputPlan.Box bounds = outputBounds();
             if (bounds == null) {
@@ -3155,7 +3491,9 @@ final class ProjectMapView extends VBox {
                     .toList();
             for (ProjectMapModel.ColumnId id : removed) {
                 ColumnControls controls = columnControls.remove(id);
-                getChildren().removeAll(controls.filter(), controls.showHidden(), controls.pin(), controls.close());
+                if (controls != null) { // listed from its keys just above
+                    getChildren().removeAll(controls.filter(), controls.showHidden(), controls.pin(), controls.close());
+                }
                 columnLayouts.remove(id);
                 columnQueries.remove(id);
                 columnShowHidden.remove(id);
@@ -3239,7 +3577,7 @@ final class ProjectMapView extends VBox {
             for (ProjectMapModel.Entry entry : entries) {
                 Path path = entry.path();
                 loadedPaths.add(path);
-                if (entry.isPlaceholder()) {
+                if (entry.isPlaceholder() || entry.isSymbol()) {
                     continue;
                 }
                 if (ProjectMapModel.matches(
@@ -3254,7 +3592,15 @@ final class ProjectMapView extends VBox {
                 }
             }
             addUnloadedMatches(direct, loadedPaths);
-            emphasized = ProjectMapModel.emphasized(entries, direct, root);
+            Set<Path> result = ProjectMapModel.emphasized(entries, direct, root);
+            // A declaration is as prominent as its file: the filters are about files, not what is in them.
+            for (ProjectMapModel.Entry entry : entries) {
+                ProjectMapModel.Symbol symbol = entry.symbol();
+                if (symbol != null && result.contains(symbol.file())) {
+                    result.add(entry.path());
+                }
+            }
+            emphasized = result;
         }
 
         /**
@@ -3357,7 +3703,8 @@ final class ProjectMapView extends VBox {
                 int depth = column.depth();
                 ProjectMapModel.ColumnId id = column.id();
                 ColumnLayout layout = columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout());
-                double nodeWidth = nodeWidths.get(id);
+                Double measured = nodeWidths.get(id); // every column's, put just above
+                double nodeWidth = measured != null ? measured : nodeWidthFor(column);
                 double depthStep = verticalFlow
                         ? COLUMN_TOP_INSET + COLUMN_HEADER_HEIGHT + NODE_HEIGHT + COLUMN_BOTTOM_PADDING + COLUMN_GAP
                         : 0;
@@ -3527,7 +3874,7 @@ final class ProjectMapView extends VBox {
                     required = Math.max(required, measuredLabelWidth(entry.name()) + rowExtraWidth(entry));
                 }
             }
-            if (column.depth() > 0 && showHiddenLabelWidth > 0) {
+            if (column.depth() > 0 && showHiddenLabelWidth > 0 && !isStructureColumn(column.id())) {
                 // At 100% the header row must hold the filter, the labelled checkbox and the lock, whatever
                 // the checkbox label measures in the current language.
                 required = Math.max(
@@ -3538,9 +3885,12 @@ final class ProjectMapView extends VBox {
 
         /** Width a row needs besides its label: icon and padding, then the marks at its trailing end. */
         private double rowExtraWidth(ProjectMapModel.Entry entry) {
+            if (entry.isSymbol()) {
+                return 31 + SYMBOL_LINE_WIDTH + (branches(entry) ? CHEVRON_ZONE : 8);
+            }
             if (!entry.directory()) {
-                // File rows reserve a fixed tail: Git letter and unsaved dot, both badges and Preview.
-                return 31 + 20 + MARKER_WIDTH * 2 + PREVIEW_ZONE;
+                // File rows reserve a fixed tail: Git letter and unsaved dot, both badges, Structure and Preview.
+                return 31 + 20 + MARKER_WIDTH * 2 + PREVIEW_ZONE + (hasStructure(entry) ? STRUCTURE_ZONE : 0);
             }
             double markers = (bookmarkedPaths.contains(entry.path()) ? MARKER_WIDTH : 0)
                     + (notedPaths.contains(entry.path()) ? MARKER_WIDTH : 0);
@@ -3614,6 +3964,13 @@ final class ProjectMapView extends VBox {
             if (parent == null) {
                 return tr("project.map.column.level", column.depth());
             }
+            ProjectMapModel.Entry owner = entryByPath.get(parent);
+            if (owner != null && owner.isFile()) {
+                return tr("project.map.column.structure", owner.name());
+            }
+            if (owner != null && owner.isSymbol()) {
+                return owner.name();
+            }
             Path name = parent.getFileName();
             return name == null ? parent.toString() : name.toString();
         }
@@ -3683,10 +4040,15 @@ final class ProjectMapView extends VBox {
                 }
                 // The checkbox keeps its whole label while there is room and falls back to the bare box
                 // (still named by its tooltip and accessible text) rather than to a clipped "Hid…".
-                double labelWidth = showHiddenLabelWidth(controls.showHidden());
+                // A structure column lists declarations, which are never hidden: it has no checkbox.
+                boolean structureColumn = isStructureColumn(id);
+                if (structureColumn) {
+                    controls.showHidden().setVisible(false);
+                }
+                double labelWidth = structureColumn ? 0 : showHiddenLabelWidth(controls.showHidden());
                 boolean labelFits =
                         availableWidth >= MIN_COLUMN_FILTER_WIDTH + labelWidth + pinWidth + COLUMN_CONTROL_GAP * 2;
-                double hiddenWidth = labelFits ? labelWidth : CHECK_ONLY_WIDTH;
+                double hiddenWidth = structureColumn ? 0 : labelFits ? labelWidth : CHECK_ONLY_WIDTH;
                 ContentDisplay display = labelFits ? ContentDisplay.LEFT : ContentDisplay.GRAPHIC_ONLY;
                 if (controls.showHidden().getContentDisplay() != display) {
                     controls.showHidden().setContentDisplay(display);
@@ -3929,6 +4291,11 @@ final class ProjectMapView extends VBox {
             double iconX = box.x() + 7 * zoom;
             double iconY = box.y() + 6 * zoom;
             drawIcon(g, entry, iconX, iconY, focusedSelection);
+            if (entry.isSymbol()) {
+                drawSymbolRow(g, entry, box, focusedSelection, isSelected);
+                g.setGlobalAlpha(1);
+                return;
+            }
             g.setFill(
                     focusedSelection
                             ? onAccent()
@@ -3944,8 +4311,96 @@ final class ProjectMapView extends VBox {
                 drawChevron(g, entry, box, focusedSelection);
             } else {
                 drawPreviewAffordance(g, box, focusedSelection, isHovered);
+                if (hasStructure(entry)) {
+                    drawStructureAffordance(g, entry, box, focusedSelection, isHovered);
+                }
             }
             g.setGlobalAlpha(1);
+        }
+
+        /**
+         * The rest of a declaration row: its label, its 1-based line in the file (muted, at the trailing end)
+         * and, when it holds declarations of its own, the chevron that opens their column.
+         */
+        private void drawSymbolRow(
+                GraphicsContext g, ProjectMapModel.Entry entry, NodeBox box, boolean onAccentFill, boolean bold) {
+            ProjectMapModel.Symbol symbol = entry.symbol();
+            boolean chevron = branches(entry);
+            double right = box.x() + box.width() - (chevron ? CHEVRON_ZONE : 8) * zoom;
+            String line = symbol == null ? "" : tr("structure.line", symbol.line() + 1);
+            Color muted = onAccentFill ? onAccent() : color(mutedProbe, Color.web("#8b949e"));
+            g.setFill(muted);
+            g.setFont(Font.font("System", FontWeight.NORMAL, Math.max(8, 10 * zoom)));
+            g.setTextAlign(TextAlignment.RIGHT);
+            g.fillText(line, right - 2 * zoom, box.y() + 20 * zoom);
+            g.setTextAlign(TextAlignment.LEFT);
+            double labelLeft = box.x() + 31 * zoom;
+            double room = right - SYMBOL_LINE_WIDTH * zoom - labelLeft;
+            g.setFill(onAccentFill ? onAccent() : color(textProbe, Color.web("#d8dee9")));
+            g.setFont(rowFont(bold));
+            String label = entry.name();
+            double width = measuredLabelWidth(label) * zoom;
+            g.fillText(width <= room ? label : elide(label, 12 * zoom, room), labelLeft, box.y() + 20.5 * zoom);
+            if (chevron) {
+                drawChevron(g, entry, box, onAccentFill);
+            }
+        }
+
+        /**
+         * The Structure icon before a file row's eye — the Structure tool window's glyph of stepped lines. It
+         * opens the file's structure column, and sits in a filled disc while that column is open, as an open
+         * folder's chevron does.
+         */
+        private void drawStructureAffordance(
+                GraphicsContext g, ProjectMapModel.Entry entry, NodeBox box, boolean onAccentFill, boolean rowHovered) {
+            boolean hot = rowHovered && hoveredAffordance == Affordance.STRUCTURE;
+            boolean open = structure.isOpen(entry.path());
+            double cx = box.x() + box.width() - (PREVIEW_ZONE + STRUCTURE_ZONE / 2) * zoom;
+            double cy = box.y() + box.height() / 2;
+            Color ink = onAccentFill ? onAccent() : color(hot ? textProbe : mutedProbe, Color.web("#8b949e"));
+            if (open || hot) {
+                double radius = 9 * zoom;
+                double previous = g.getGlobalAlpha();
+                g.setGlobalAlpha(previous * (open ? (hot ? 0.34 : 0.22) : 0.16));
+                g.setFill(ink);
+                g.fillOval(cx - radius, cy - radius, radius * 2, radius * 2);
+                g.setGlobalAlpha(previous);
+            }
+            // Icons.structure(): M3 4h10 M5.5 8h7.5 M8 12h5, on a 16-unit box centred on (8, 8).
+            double unit = 0.75 * zoom;
+            g.setStroke(ink);
+            g.setLineWidth(Math.max(1, 1.3 * zoom));
+            g.strokeLine(cx - 5 * unit, cy - 4 * unit, cx + 5 * unit, cy - 4 * unit);
+            g.strokeLine(cx - 2.5 * unit, cy, cx + 5 * unit, cy);
+            g.strokeLine(cx, cy + 4 * unit, cx + 5 * unit, cy + 4 * unit);
+        }
+
+        /** Whether a file row has the Structure icon: its language can have an outline. */
+        private boolean hasStructure(ProjectMapModel.Entry entry) {
+            return structure.supports(entry);
+        }
+
+        /** A folder, or a declaration that holds others: its row ends in a chevron. */
+        private boolean branches(ProjectMapModel.Entry entry) {
+            ProjectMapModel.Symbol symbol = entry.symbol();
+            return symbol != null ? symbol.branches() : entry.directory() && !entry.isPlaceholder();
+        }
+
+        /** A column of declarations: its owner row is a file or a declaration. */
+        private boolean isStructureColumn(ProjectMapModel.ColumnId id) {
+            ProjectMapModel.Entry owner = id.parent() == null ? null : entryByPath.get(id.parent());
+            return owner != null && (owner.isFile() || owner.isSymbol());
+        }
+
+        /** The strip at a row's trailing end that its own affordances take: chevron, or Structure and eye. */
+        private double trailingZone(ProjectMapModel.Entry entry) {
+            if (entry.isSymbol()) {
+                return branches(entry) ? CHEVRON_ZONE : 8;
+            }
+            if (entry.directory()) {
+                return CHEVRON_ZONE;
+            }
+            return PREVIEW_ZONE + (hasStructure(entry) ? STRUCTURE_ZONE : 0);
         }
 
         /**
@@ -3968,7 +4423,7 @@ final class ProjectMapView extends VBox {
         }
 
         /** Row label fonts for this paint; every row shares one of the two. */
-        private Font rowFont(boolean bold) {
+        private @Nullable Font rowFont(boolean bold) {
             if (rowFont == null) {
                 rowFont = Font.font("System", FontWeight.NORMAL, 12 * zoom);
                 rowFontBold = Font.font("System", FontWeight.SEMI_BOLD, 12 * zoom);
@@ -3992,7 +4447,16 @@ final class ProjectMapView extends VBox {
 
         /** Whether {@code x} is over the chevron of the folder row {@code box}. */
         private boolean chevronHit(NodeBox box, double x) {
-            return box.entry().directory() && x >= box.x() + box.width() - CHEVRON_ZONE * zoom;
+            return branches(box.entry()) && x >= box.x() + box.width() - CHEVRON_ZONE * zoom;
+        }
+
+        /** Whether {@code x} is over a file row's Structure icon. */
+        private boolean structureHit(NodeBox box, double x) {
+            if (!hasStructure(box.entry())) {
+                return false;
+            }
+            double right = box.x() + box.width() - PREVIEW_ZONE * zoom;
+            return x >= right - STRUCTURE_ZONE * zoom && x < right;
         }
 
         /**
@@ -4074,7 +4538,7 @@ final class ProjectMapView extends VBox {
 
         /** Open files get an unmistakable tab-colored rail in addition to their accent-colored label. */
         private void drawOpenMarker(GraphicsContext g, ProjectMapModel.Entry entry, NodeBox box, boolean selectedNode) {
-            if (entry.directory() || !openPaths.contains(entry.path())) {
+            if (!entry.isFile() || !openPaths.contains(entry.path())) {
                 return;
             }
             g.setFill(selectedNode ? onAccent() : color(accentProbe, Color.web("#388bfd")));
@@ -4089,6 +4553,19 @@ final class ProjectMapView extends VBox {
         }
 
         private Image iconImage(ProjectMapModel.Entry entry, boolean onAccentFill) {
+            ProjectMapModel.Symbol symbol = entry.symbol();
+            if (symbol != null) {
+                // A declaration has the Structure tool window's glyph for its kind.
+                String glyph = StructureIcons.pathFor(symbol.kind());
+                IconKey key = new IconKey("symbol:" + glyph, onAccentFill ? ON_ACCENT_ICON_CLASS : "");
+                Image cached = iconImages.get(key);
+                if (cached == null) {
+                    cached = rasterize(
+                            StructureIcons.forKind(symbol.kind()), "project-map-symbol-icon", key.statusClass());
+                    iconImages.put(key, cached);
+                }
+                return cached;
+            }
             String kind = entry.directory() ? "folder" : FileIcons.iconKeyFor(entry.name());
             // On the accent fill the glyph takes the on-accent ink whatever its status colour would be.
             String statusClass = onAccentFill ? ON_ACCENT_ICON_CLASS : iconStatusClass(entry);
@@ -4115,9 +4592,15 @@ final class ProjectMapView extends VBox {
 
         /** Snapshots the shared Project-tree SVG once; subsequent Canvas paints only blit the cached image. */
         private Image rasterizeIcon(String fileName, boolean directory, String statusClass) {
-            Node glyph = FileIcons.forProjectItem(fileName, directory);
+            return rasterize(
+                    FileIcons.forProjectItem(fileName, directory),
+                    directory ? "folder-cell" : "file-cell",
+                    statusClass);
+        }
+
+        private Image rasterize(Node glyph, String cellClass, String statusClass) {
             StackPane cell = new StackPane(glyph);
-            cell.getStyleClass().add(directory ? "folder-cell" : "file-cell");
+            cell.getStyleClass().add(cellClass);
             if (statusClass != null && !statusClass.isBlank()) {
                 cell.getStyleClass().add(statusClass);
             }
@@ -4146,13 +4629,13 @@ final class ProjectMapView extends VBox {
          */
         private void drawStatusMarks(
                 GraphicsContext g, ProjectMapModel.Entry entry, NodeBox box, boolean onAccentFill) {
-            if (entry.directory()) {
+            if (!entry.isFile()) {
                 return;
             }
             double markerWidth = (bookmarkedPaths.contains(entry.path()) ? MARKER_WIDTH : 0)
                     + (notedPaths.contains(entry.path()) ? MARKER_WIDTH : 0);
-            // Keep the Preview target in the final strip and the semantic markers immediately to its left.
-            double x = box.x() + box.width() - (PREVIEW_ZONE + 3 + markerWidth) * zoom;
+            // Keep Structure and Preview in the final strip and the semantic markers immediately to its left.
+            double x = box.x() + box.width() - (trailingZone(entry) + 3 + markerWidth) * zoom;
             GitFileStatus status = gitState.get(entry.path());
             if (status != null) {
                 g.setFill(onAccentFill ? onAccent() : gitColor(status));
@@ -4183,8 +4666,8 @@ final class ProjectMapView extends VBox {
         /** Small bookmark and note outlines drawn directly on the Canvas (no scene-graph nodes per row). */
         private void drawFileMarkers(
                 GraphicsContext g, ProjectMapModel.Entry entry, NodeBox box, boolean selectedNode) {
-            // Folders end in the chevron strip, files in the (slightly wider) preview strip.
-            double x = box.x() + box.width() - ((entry.directory() ? CHEVRON_ZONE : PREVIEW_ZONE) + 6) * zoom;
+            // Folders end in the chevron strip, files in the (wider) Structure and preview strip.
+            double x = box.x() + box.width() - (trailingZone(entry) + 6) * zoom;
             double y = box.y() + 10 * zoom;
             g.setLineWidth(Math.max(1, 1.25 * zoom));
             if (notedPaths.contains(entry.path())) {
@@ -4222,14 +4705,16 @@ final class ProjectMapView extends VBox {
                     next = Affordance.NOTES;
                 } else if (chevronHit(box, x)) {
                     next = Affordance.CHEVRON;
-                } else if (!box.entry().directory() && previewHit(box, x)) {
+                } else if (box.entry().isFile() && previewHit(box, x)) {
                     next = Affordance.PREVIEW;
+                } else if (structureHit(box, x)) {
+                    next = Affordance.STRUCTURE;
                 }
             }
             setAffordance(next, box);
         }
 
-        private void setAffordance(Affordance next, NodeBox box) {
+        private void setAffordance(Affordance next, @Nullable NodeBox box) {
             if (next == hoveredAffordance) {
                 return;
             }
@@ -4241,12 +4726,18 @@ final class ProjectMapView extends VBox {
         }
 
         /** What a click does on the part of the row under the pointer, or null where it is the row itself. */
-        private String affordanceHint(ProjectMapModel.Entry entry) {
+        private @Nullable String affordanceHint(ProjectMapModel.Entry entry) {
             return switch (hoveredAffordance) {
-                case PREVIEW -> entry.directory() ? null : tr("project.map.node.preview", entry.name());
+                case PREVIEW -> entry.isFile() ? tr("project.map.node.preview", entry.name()) : null;
+                case STRUCTURE ->
+                    tr(
+                            structure.isOpen(entry.path())
+                                    ? "project.map.node.hideStructure"
+                                    : "project.map.node.showStructure",
+                            entry.name());
                 case NOTES -> tr("project.map.node.notes", entry.name());
                 case CHEVRON ->
-                    !entry.directory()
+                    !branches(entry)
                             ? null
                             : tr(
                                     expandedSnapshot.contains(entry.path())
@@ -4260,6 +4751,7 @@ final class ProjectMapView extends VBox {
         private enum Affordance {
             NONE,
             PREVIEW,
+            STRUCTURE,
             NOTES,
             CHEVRON
         }
@@ -4278,8 +4770,8 @@ final class ProjectMapView extends VBox {
             Set<Path> bookmarked = new HashSet<>();
             Set<Path> noted = new HashSet<>();
             for (ProjectMapModel.Entry entry : entries) {
-                if (entry.isPlaceholder()) {
-                    continue;
+                if (entry.isPlaceholder() || entry.isSymbol()) {
+                    continue; // a declaration is not a file: it is neither open nor marked
                 }
                 if (!entry.directory() && safeTest(openState, entry.path())) {
                     open.add(entry.path());
@@ -4438,6 +4930,19 @@ final class ProjectMapView extends VBox {
             if (hint != null) {
                 lines.add(hint);
             }
+            ProjectMapModel.Symbol symbol = entry.symbol();
+            if (symbol != null) {
+                lines.add(entry.name());
+                if (symbol.kind() != null && !symbol.kind().isBlank()) {
+                    lines.add(tr("project.map.tooltip.type", symbol.kind()));
+                }
+                lines.add(tr("project.map.structure.lines", symbol.startLine() + 1, symbol.endLine() + 1));
+                lines.add(symbol.file().toString());
+                if (hint == null) {
+                    lines.add(tr("project.map.node.symbolPreview"));
+                }
+                return String.join("\n", lines);
+            }
             lines.add(entry.path().toString());
             String type = entry.symbolicLink()
                     ? tr("project.map.tooltip.symbolicLink")
@@ -4507,8 +5012,14 @@ final class ProjectMapView extends VBox {
             select(entry.path());
             if (notePreviewHit(hit, event.getX())) {
                 onNotesPreview.accept(entry.path());
-            } else if (!entry.directory() && previewHit(hit, event.getX())) {
+            } else if (entry.isFile() && previewHit(hit, event.getX())) {
                 onPreview.accept(entry.path());
+            } else if (structureHit(hit, event.getX()) || entry.isSymbol() && chevronHit(hit, event.getX())) {
+                onStructure.accept(entry);
+            } else if (entry.isSymbol()) {
+                if (event.getClickCount() == 1) {
+                    onActivate.accept(entry); // its card
+                }
             } else if (event.getClickCount() == 1) {
                 // A folder that is already open is only selected; its chevron (or the column's close
                 // button) collapses it. Collapsing on any click threw away the whole subtree's expansion.
@@ -4530,7 +5041,7 @@ final class ProjectMapView extends VBox {
                 return false;
             }
             // The badge sits just before the row's trailing strip: the chevron's on a folder, Preview on a file.
-            double right = box.x() + box.width() - (box.entry().directory() ? CHEVRON_ZONE : PREVIEW_ZONE) * zoom;
+            double right = box.x() + box.width() - trailingZone(box.entry()) * zoom;
             return x >= right - MARKER_WIDTH * zoom && x < right;
         }
 
@@ -4750,8 +5261,9 @@ final class ProjectMapView extends VBox {
 
         /** F2 renames and Delete deletes the selected entry, through the Project tree's own row actions. */
         private boolean rowAction(KeyCode code) {
-            ProjectMapModel.Entry entry =
-                    selectedEntry().filter(row -> !row.isPlaceholder()).orElse(null);
+            ProjectMapModel.Entry entry = selectedEntry()
+                    .filter(row -> !row.isPlaceholder() && !row.isSymbol())
+                    .orElse(null);
             switch (ProjectPanel.rowKey(code, true, entry != null)) {
                 case RENAME -> onRenameEntry.accept(entry);
                 case DELETE -> onDeleteEntry.accept(entry);
@@ -4865,18 +5377,32 @@ final class ProjectMapView extends VBox {
                     .ifPresent(this::select);
         }
 
+        /**
+         * The arrow along the flow: into the selected folder, file structure or declaration, opening its column
+         * first when it is closed.
+         */
         private void selectChildOrExpand() {
             var current = selectedEntry();
-            if (current.isEmpty() || !current.get().directory()) {
+            if (current.isEmpty()) {
+                return;
+            }
+            ProjectMapModel.Entry entry = current.get();
+            boolean folder = entry.directory() && !entry.isPlaceholder();
+            boolean structured = entry.isFile() && hasStructure(entry) || entry.isSymbol() && branches(entry);
+            if (!folder && !structured) {
                 return;
             }
             List<ProjectMapModel.Entry> children = boxes.stream()
                     .map(NodeBox::entry)
-                    .filter(entry -> current.get().path().equals(entry.parent()))
+                    .filter(child -> entry.path().equals(child.parent()))
                     .toList();
             if (children.isEmpty()) {
-                if (!expandedSnapshot.contains(current.get().path())) {
-                    onActivate.accept(current.get());
+                if (!expandedSnapshot.contains(entry.path())) {
+                    if (folder) {
+                        onActivate.accept(entry);
+                    } else {
+                        onStructure.accept(entry);
+                    }
                 }
             } else {
                 select(children.getFirst().path());
@@ -5029,7 +5555,7 @@ final class ProjectMapView extends VBox {
             return high > max ? max - high : 0;
         }
 
-        private NodeBox hit(double x, double y) {
+        private @Nullable NodeBox hit(double x, double y) {
             for (int i = boxes.size() - 1; i >= 0; i--) {
                 NodeBox box = boxes.get(i);
                 if (x >= box.x() && x <= box.x() + box.width() && y >= box.y() && y <= box.y() + box.height()) {
@@ -5039,7 +5565,7 @@ final class ProjectMapView extends VBox {
             return null;
         }
 
-        private ColumnBox headerHit(double x, double y) {
+        private @Nullable ColumnBox headerHit(double x, double y) {
             for (int i = columnBoxes.size() - 1; i >= 0; i--) {
                 ColumnBox box = columnBoxes.get(i);
                 if (x >= box.x() && x <= box.x() + box.width() && y >= box.y() && y <= box.y() + 22 * zoom) {
@@ -5188,6 +5714,28 @@ final class ProjectMapView extends VBox {
                     }
                 }
             }
+            ProjectMapModel.Symbol symbol = current.symbol();
+            if (symbol != null) {
+                // A structure column is shown in the order its declarations are written: count in that order.
+                int index = 1;
+                int count = 0;
+                for (ProjectMapModel.Entry entry : entries) {
+                    if (columnId(entry).equals(column) && !entry.isPlaceholder()) {
+                        count++;
+                        if (entry == current) {
+                            index = count;
+                        }
+                    }
+                }
+                setAccessibleText(tr(
+                        "project.map.accessible.symbol",
+                        current.name(),
+                        symbol.kind() == null ? "" : symbol.kind(),
+                        symbol.line() + 1,
+                        index,
+                        count));
+                return;
+            }
             String key;
             if (current.directory()) {
                 key = expandedSnapshot.contains(current.path())
@@ -5231,7 +5779,7 @@ final class ProjectMapView extends VBox {
             return color(warningProbe, Color.web("#b08a00"));
         }
 
-        private NodeBox nodeBox(Path path) {
+        private @Nullable NodeBox nodeBox(@Nullable Path path) {
             return boxes.stream()
                     .filter(box -> box.entry().path().equals(path))
                     .findFirst()

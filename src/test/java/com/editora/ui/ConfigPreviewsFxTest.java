@@ -10,9 +10,9 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.VBox;
 
 import com.editora.dockerfile.Dockerfile;
-import com.editora.editor.DockerfilePreview;
-import com.editora.editor.SshConfigPreview;
-import com.editora.editor.SystemdPreview;
+import com.editora.editor.structured.DockerfilePreview;
+import com.editora.editor.structured.SshConfigPreview;
+import com.editora.editor.structured.SystemdPreview;
 import com.editora.sshconfig.SshConfig;
 import com.editora.systemd.SystemdUnit;
 import org.junit.jupiter.api.BeforeAll;

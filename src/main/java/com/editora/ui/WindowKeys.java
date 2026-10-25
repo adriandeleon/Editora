@@ -5,6 +5,8 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure decision logic for the multi-window restore set (extracted from {@link WindowManager} so it can be
  * unit-tested without the toolkit). A window is identified by a <em>key</em>:
@@ -49,7 +51,7 @@ final class WindowKeys {
      * {@code --project} key when present, drops project windows when Projects are disabled (the global +
      * untitled windows always restore), and falls back to the global window when nothing is left.
      */
-    static LinkedHashSet<String> restoreKeys(Collection<String> saved, boolean projectsOn, String cliId) {
+    static LinkedHashSet<String> restoreKeys(Collection<String> saved, boolean projectsOn, @Nullable String cliId) {
         LinkedHashSet<String> toOpen = new LinkedHashSet<>(saved);
         if (cliId != null) {
             toOpen.add(cliId);
@@ -68,7 +70,7 @@ final class WindowKeys {
      * the last-active project if it's in the set, else the first restored window. {@code toOpen} must be
      * non-empty (see {@link #restoreKeys}).
      */
-    static String primaryKey(String cliId, Collection<String> toOpen, String activeId) {
+    static String primaryKey(@Nullable String cliId, Collection<String> toOpen, @Nullable String activeId) {
         if (cliId != null) {
             return cliId;
         }

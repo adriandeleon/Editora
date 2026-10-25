@@ -16,8 +16,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import javax.imageio.ImageIO;
 
-import com.editora.editor.MarkdownDocInfo;
-import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.markdown.MarkdownDocInfo;
+import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.gfm.tables.TableBlock;
@@ -36,6 +36,7 @@ import org.commonmark.node.Node;
 import org.commonmark.node.OrderedList;
 import org.commonmark.node.Paragraph;
 import org.commonmark.node.ThematicBreak;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders a Markdown document to an OpenDocument Text ({@code .odt}) file — hand-written (a ZIP of XML, via
@@ -58,10 +59,11 @@ public final class OdtWriter {
      * What the content walk carries: the pictures collected for {@code Pictures/}, where relative image
      * paths resolve, and the heading anchors ({@code bookmarks} is their set, for link targets).
      */
-    private record Pictures(List<Embedded> list, Path baseDir, Map<Heading, String> anchors, Set<String> bookmarks) {}
+    private record Pictures(
+            List<Embedded> list, @Nullable Path baseDir, Map<Heading, String> anchors, Set<String> bookmarks) {}
 
     /** {@code meta.xml}: the document's title and the application that wrote it. */
-    static String metaXml(String title) {
+    static String metaXml(@Nullable String title) {
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                 + "<office:document-meta xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\""
                 + " xmlns:dc=\"http://purl.org/dc/elements/1.1/\""
@@ -71,7 +73,8 @@ public final class OdtWriter {
                 + "</office:meta></office:document-meta>";
     }
 
-    public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
+    public static void write(String markdown, @Nullable Path baseDir, @Nullable List<String> mmdc, Path out)
+            throws IOException {
         List<Embedded> images = new ArrayList<>();
         String content = contentXml(markdown, baseDir, mmdc, images);
         String title = MarkdownDocInfo.title(MarkdownRenderer.parseForRender(markdown), DocxWriter.fileTitle(out));
@@ -90,9 +93,11 @@ public final class OdtWriter {
 
     // ---- content.xml (pure, unit-tested) ----
 
-    static String contentXml(String markdown, Path baseDir, List<String> mmdc, List<Embedded> imageList) {
+    static String contentXml(
+            String markdown, @Nullable Path baseDir, @Nullable List<String> mmdc, List<Embedded> imageList) {
         Node ast = com.editora.markdown.MarkdownExportTree.lower(
-                MarkdownRenderer.parseForRender(markdown), com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
+                MarkdownRenderer.parseForRender(markdown),
+                com.editora.editor.markdown.MarkdownHtmlExport.wikiPaths(baseDir));
         Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
         Pictures images = new Pictures(imageList, baseDir, anchors, new HashSet<>(anchors.values()));
         StringBuilder b = new StringBuilder();
@@ -107,7 +112,8 @@ public final class OdtWriter {
         return b.toString();
     }
 
-    private static void block(StringBuilder b, Node n, Path baseDir, List<String> mmdc, Pictures images) {
+    private static void block(
+            StringBuilder b, Node n, @Nullable Path baseDir, @Nullable List<String> mmdc, Pictures images) {
         if (n instanceof Heading h) {
             int lvl = Math.min(6, h.getLevel());
             b.append("<text:h text:style-name=\"Heading_20_")
@@ -212,7 +218,11 @@ public final class OdtWriter {
 
     /** A footnote definition: its {@code [label]} marker leading the first paragraph, then any further blocks. */
     private static void footnote(
-            StringBuilder b, FootnoteDefinition def, Path baseDir, List<String> mmdc, Pictures images) {
+            StringBuilder b,
+            FootnoteDefinition def,
+            @Nullable Path baseDir,
+            @Nullable List<String> mmdc,
+            Pictures images) {
         List<InlineRun> marker = List.of(InlineRun.plain(InlineRun.footnoteMarker(def.getLabel()) + " "));
         boolean first = true;
         for (Node c = def.getFirstChild(); c != null; c = c.getNext()) {
@@ -277,7 +287,12 @@ public final class OdtWriter {
     }
 
     private static void listXml(
-            StringBuilder b, Node listNode, boolean ordered, Path baseDir, List<String> mmdc, Pictures images) {
+            StringBuilder b,
+            Node listNode,
+            boolean ordered,
+            @Nullable Path baseDir,
+            @Nullable List<String> mmdc,
+            Pictures images) {
         b.append("<text:list text:style-name=\"").append(ordered ? "L2" : "L1").append("\">");
         for (Node item = listNode.getFirstChild(); item != null; item = item.getNext()) {
             if (!(item instanceof ListItem)) {
@@ -421,7 +436,7 @@ public final class OdtWriter {
      * headings points at that heading's bookmark, and only a web or mail address or a relative reference
      * stays live ({@link InlineRun#isSafeHref}).
      */
-    private static String href(String href, Pictures ctx) {
+    private static @Nullable String href(@Nullable String href, Pictures ctx) {
         if (href == null || href.isBlank()) {
             return null;
         }
@@ -444,7 +459,7 @@ public final class OdtWriter {
     }
 
     /** Embeds {@code png} as an as-char {@code <draw:frame>} sized to roughly the line height; false if undecodable. */
-    private static boolean mathFrame(StringBuilder b, byte[] png, Pictures images, boolean display) {
+    private static boolean mathFrame(StringBuilder b, byte @Nullable [] png, Pictures images, boolean display) {
         if (png == null) {
             return false;
         }
@@ -470,7 +485,7 @@ public final class OdtWriter {
         }
     }
 
-    private static void imageFrame(StringBuilder b, Image img, Path baseDir, Pictures images) {
+    private static void imageFrame(StringBuilder b, Image img, @Nullable Path baseDir, Pictures images) {
         byte[] bytes = OfficeImages.load(img.getDestination(), baseDir);
         if (!imageFrameBytes(b, bytes, images)) {
             String alt = InlineRun.textOf(img);
@@ -479,7 +494,7 @@ public final class OdtWriter {
     }
 
     /** Embeds raster {@code bytes} as a {@code <draw:frame>} + a {@code Pictures/} entry; false if undecodable. */
-    private static boolean imageFrameBytes(StringBuilder b, byte[] bytes, Pictures images) {
+    private static boolean imageFrameBytes(StringBuilder b, byte @Nullable [] bytes, Pictures images) {
         if (bytes == null) {
             return false;
         }
@@ -558,7 +573,7 @@ public final class OdtWriter {
 
     // ---- escaping ----
 
-    private static String esc(String s) {
+    private static String esc(@Nullable String s) {
         return stripInvalidXml(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
@@ -570,7 +585,7 @@ public final class OdtWriter {
      * pasted terminal output is enough. POI does the same for the {@code .docx} side, which is why only this
      * hand-rolled writer was exposed.
      */
-    static String stripInvalidXml(String s) {
+    static String stripInvalidXml(@Nullable String s) {
         if (s == null || s.isEmpty()) {
             return s == null ? "" : s;
         }
@@ -604,7 +619,7 @@ public final class OdtWriter {
                 : i > 0 && Character.isHighSurrogate(s.charAt(i - 1));
     }
 
-    private static String escAttr(String s) {
+    private static String escAttr(@Nullable String s) {
         return esc(s).replace("\"", "&quot;");
     }
 

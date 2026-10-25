@@ -14,6 +14,7 @@ import javafx.application.Platform;
 import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRunner;
 import com.editora.web.Browsers.Browser;
+import org.jspecify.annotations.Nullable;
 
 /**
  * UI-facing façade for the HTML Live Preview, mirroring {@code MermaidService}: work runs on a single daemon
@@ -28,7 +29,8 @@ import com.editora.web.Browsers.Browser;
 public final class HtmlPreviewService {
 
     /** Outcome of a {@link #preview} call: whether the browser was launched, the served URL, an error. */
-    public record Result(boolean ok, String url, String message) {}
+    public record Result(
+            boolean ok, @Nullable String url, @Nullable String message) {}
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "html-preview-service");
@@ -40,8 +42,8 @@ public final class HtmlPreviewService {
     /** Opens a URL in the OS default browser (injected — {@code HostServices.showDocument}); runs on FX. */
     private final Consumer<String> systemOpener;
 
-    private volatile List<Browser> cachedBrowsers;
-    private volatile Path previewedFile; // absolute, normalized; guards notifyChanged to the served file
+    private volatile @Nullable List<Browser> cachedBrowsers;
+    private volatile @Nullable Path previewedFile; // absolute, normalized; guards notifyChanged to the served file
     private volatile AtomicReference<String> previewedText = new AtomicReference<>("");
     private final AtomicLong previewGeneration = new AtomicLong();
 

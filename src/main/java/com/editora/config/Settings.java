@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /** User preferences, (de)serialized to {@code settings.json}. Session/state lives in {@link WorkspaceState}. */
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -52,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 140;
+    public static final int SCHEMA_VERSION = 144;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -219,6 +220,13 @@ public class Settings {
     private long lastUpdateCheckEpoch = 0;
     /** The version whose update notice the user dismissed (so it isn't re-shown); "" = none dismissed. */
     private String dismissedUpdateVersion = "";
+    /** The newest release the last successful update check found ("" = none yet), and its release page: what
+     *  the About panel and the status bar go on until the next check, across restarts. */
+    private String latestReleaseVersion = "";
+
+    private String latestReleaseUrl = "";
+    /** Epoch millis of the last update check that got an answer (0 = none): the About panel's "Last checked". */
+    private long lastUpdateCheckOkEpoch = 0;
 
     private boolean spellCheck = true;
     /** Honor the personal dictionary ({@code dictionary.txt}) during spell check; off re-flags those words. */
@@ -311,6 +319,19 @@ public class Settings {
     private boolean lspPasteImports = true;
     /** Smart-semicolon detection (#746): OFF by default, as in VS Code — it moves a typed character. */
     private boolean lspSmartSemicolon;
+    /** After an explicit save of a Java file, organize its imports through jdtls and save again if that changed
+     *  it (IntelliJ's Actions on Save, Optimize Imports). Off by default; an autosave never does it. */
+    private boolean javaOrganizeImportsOnSave;
+    /** As above, formatting the file (IntelliJ's Actions on Save, Reformat Code). Off by default. */
+    private boolean javaFormatOnSave;
+    /** As above, running jdtls's clean-ups ({@link #javaCleanups}) first. Off by default. */
+    private boolean javaCleanupOnSave;
+    /** The jdtls clean-up ids that Clean Up File and clean-up on save run ({@code java.cleanup.actions}). */
+    private java.util.List<String> javaCleanups = new java.util.ArrayList<>(DEFAULT_JAVA_CLEANUPS);
+
+    /** Clean-ups that only state what the code already means: on by default once clean-up is switched on. */
+    public static final java.util.List<String> DEFAULT_JAVA_CLEANUPS =
+            java.util.List.of("addOverride", "addDeprecated", "redundantModifiers", "redundantSuperCall");
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
     private boolean editorConfigSupport = true;
     /** Highlight configured patterns (TODO/FIXME/…) in the editor + list them in the TODO tool window. */
@@ -322,10 +343,10 @@ public class Settings {
     /** Per-part highlight colors for a structured TODO comment (web hex); defaults from {@code TodoColors}. */
     private String todoTagColor = com.editora.todo.TodoColors.TAG_COLOR;
 
-    private String todoPriorityCriticalColor = com.editora.todo.TodoColors.priorityColor("critical");
-    private String todoPriorityHighColor = com.editora.todo.TodoColors.priorityColor("high");
-    private String todoPriorityMediumColor = com.editora.todo.TodoColors.priorityColor("medium");
-    private String todoPriorityLowColor = com.editora.todo.TodoColors.priorityColor("low");
+    private @Nullable String todoPriorityCriticalColor = com.editora.todo.TodoColors.priorityColor("critical");
+    private @Nullable String todoPriorityHighColor = com.editora.todo.TodoColors.priorityColor("high");
+    private @Nullable String todoPriorityMediumColor = com.editora.todo.TodoColors.priorityColor("medium");
+    private @Nullable String todoPriorityLowColor = com.editora.todo.TodoColors.priorityColor("low");
 
     private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
     private boolean abbrevMode = false; // auto-expand abbreviations as you type on a word terminator
@@ -534,6 +555,9 @@ public class Settings {
      *  (per-test pass/fail/skip + stack traces) instead of only the raw Output console. On by default;
      *  suppressed in Simple UI mode. */
     private boolean testRunner = true;
+    /** Build before Run and Debug: in a Maven or Gradle project, compile with the build tool before a main class
+     *  runs or is debugged (review D2), unless the configuration has a before-launch step of its own. */
+    private boolean buildBeforeRun = true;
     /** Use ripgrep to accelerate Find in Files when it's detected on PATH (default on; falls back otherwise). */
     private boolean ripgrepSearch = true;
     /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
@@ -714,7 +738,7 @@ public class Settings {
     private boolean aiApiKeysInKeychain = false;
     /** Where the AI keys live this session; null (no keychain asked) means the fields above. Not persisted. */
     @JsonIgnore
-    private transient ApiKeyVault apiKeyVault;
+    private transient @Nullable ApiKeyVault apiKeyVault;
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -896,6 +920,9 @@ public class Settings {
     /** Whether the Maven-aware pom.xml server is enabled (only effective once installed — see
      *  {@link #mavenPomLspCommand} — and under the global LSP enable). */
     private boolean mavenPomLspEnabled = true;
+    /** Whether lemminx-maven may download and use the Maven Central index for pom.xml completion (a large
+     *  one-time download); off = completion from the local repository ({@code ~/.m2}) only. */
+    private boolean mavenPomCentralIndex = false;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -1732,7 +1759,7 @@ public class Settings {
     }
 
     /** Markdown and plain text: the languages whose lines are paragraphs, governed by {@link #wordWrapProse}. */
-    public static boolean isProseLanguage(String language) {
+    public static boolean isProseLanguage(@Nullable String language) {
         return language == null || language.equals("plaintext") || language.equals("markdown");
     }
 
@@ -1904,6 +1931,39 @@ public class Settings {
         this.lspSmartSemicolon = lspSmartSemicolon;
     }
 
+    public boolean isJavaOrganizeImportsOnSave() {
+        return javaOrganizeImportsOnSave;
+    }
+
+    public void setJavaOrganizeImportsOnSave(boolean javaOrganizeImportsOnSave) {
+        this.javaOrganizeImportsOnSave = javaOrganizeImportsOnSave;
+    }
+
+    public boolean isJavaFormatOnSave() {
+        return javaFormatOnSave;
+    }
+
+    public void setJavaFormatOnSave(boolean javaFormatOnSave) {
+        this.javaFormatOnSave = javaFormatOnSave;
+    }
+
+    public boolean isJavaCleanupOnSave() {
+        return javaCleanupOnSave;
+    }
+
+    public void setJavaCleanupOnSave(boolean javaCleanupOnSave) {
+        this.javaCleanupOnSave = javaCleanupOnSave;
+    }
+
+    public java.util.List<String> getJavaCleanups() {
+        return javaCleanups == null ? java.util.List.of() : javaCleanups;
+    }
+
+    public void setJavaCleanups(java.util.List<String> javaCleanups) {
+        this.javaCleanups =
+                javaCleanups == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(javaCleanups);
+    }
+
     public void setLspOnTypeFormatting(boolean lspOnTypeFormatting) {
         this.lspOnTypeFormatting = lspOnTypeFormatting;
     }
@@ -1997,7 +2057,7 @@ public class Settings {
         this.todoTagColor = todoTagColor;
     }
 
-    public String getTodoPriorityCriticalColor() {
+    public @Nullable String getTodoPriorityCriticalColor() {
         return todoPriorityCriticalColor;
     }
 
@@ -2005,7 +2065,7 @@ public class Settings {
         this.todoPriorityCriticalColor = c;
     }
 
-    public String getTodoPriorityHighColor() {
+    public @Nullable String getTodoPriorityHighColor() {
         return todoPriorityHighColor;
     }
 
@@ -2013,7 +2073,7 @@ public class Settings {
         this.todoPriorityHighColor = c;
     }
 
-    public String getTodoPriorityMediumColor() {
+    public @Nullable String getTodoPriorityMediumColor() {
         return todoPriorityMediumColor;
     }
 
@@ -2021,7 +2081,7 @@ public class Settings {
         this.todoPriorityMediumColor = c;
     }
 
-    public String getTodoPriorityLowColor() {
+    public @Nullable String getTodoPriorityLowColor() {
         return todoPriorityLowColor;
     }
 
@@ -2511,6 +2571,30 @@ public class Settings {
         this.dismissedUpdateVersion = dismissedUpdateVersion == null ? "" : dismissedUpdateVersion;
     }
 
+    public String getLatestReleaseVersion() {
+        return latestReleaseVersion == null ? "" : latestReleaseVersion;
+    }
+
+    public void setLatestReleaseVersion(String latestReleaseVersion) {
+        this.latestReleaseVersion = latestReleaseVersion == null ? "" : latestReleaseVersion;
+    }
+
+    public String getLatestReleaseUrl() {
+        return latestReleaseUrl == null ? "" : latestReleaseUrl;
+    }
+
+    public void setLatestReleaseUrl(String latestReleaseUrl) {
+        this.latestReleaseUrl = latestReleaseUrl == null ? "" : latestReleaseUrl;
+    }
+
+    public long getLastUpdateCheckOkEpoch() {
+        return lastUpdateCheckOkEpoch;
+    }
+
+    public void setLastUpdateCheckOkEpoch(long lastUpdateCheckOkEpoch) {
+        this.lastUpdateCheckOkEpoch = lastUpdateCheckOkEpoch;
+    }
+
     public boolean isShowMenuBar() {
         return showMenuBar;
     }
@@ -2921,6 +3005,14 @@ public class Settings {
 
     public void setTestRunner(boolean testRunner) {
         this.testRunner = testRunner;
+    }
+
+    public boolean isBuildBeforeRun() {
+        return buildBeforeRun;
+    }
+
+    public void setBuildBeforeRun(boolean buildBeforeRun) {
+        this.buildBeforeRun = buildBeforeRun;
     }
 
     public String getMavenCommand() {
@@ -3984,6 +4076,14 @@ public class Settings {
 
     public void setMavenPomLspEnabled(boolean mavenPomLspEnabled) {
         this.mavenPomLspEnabled = mavenPomLspEnabled;
+    }
+
+    public boolean isMavenPomCentralIndex() {
+        return mavenPomCentralIndex;
+    }
+
+    public void setMavenPomCentralIndex(boolean mavenPomCentralIndex) {
+        this.mavenPomCentralIndex = mavenPomCentralIndex;
     }
 
     public boolean isPdfLineNumbers() {

@@ -22,6 +22,7 @@ import com.editora.config.Settings;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -170,7 +171,7 @@ final class SettingsResetFlow {
     }
 
     /** Writes the dated copy of the settings in force; null (after saying why) when it cannot. */
-    private Path backUp(Window owner, LocalDateTime now) {
+    private @Nullable Path backUp(Window owner, LocalDateTime now) {
         try {
             config.save(); // the copy is to hold the settings as they are, not as of the last queued write
             return SettingsResetBackup.write(config.getSettingsFile(), now);

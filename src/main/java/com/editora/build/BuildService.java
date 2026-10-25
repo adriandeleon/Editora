@@ -8,6 +8,7 @@ import java.util.Map;
 import com.editora.process.BusyExecutable;
 import com.editora.process.OutputPump;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs a build-tool invocation (Maven/Gradle/npm/Cargo/Go) in a project directory and streams stdout/stderr
@@ -35,7 +36,7 @@ public final class BuildService {
         void onError(String message);
     }
 
-    private volatile Process current;
+    private volatile @Nullable Process current;
 
     /** Whether Stop interrupts first (Node and its package managers): see {@link #stop()}. */
     private volatile boolean interruptOnStop;
@@ -78,7 +79,7 @@ public final class BuildService {
     }
 
     /** As {@link #run(Path, List, Listener)}, with environment overrides such as Maven's selected JDK. */
-    public void run(Path workingDir, List<String> argv, Map<String, String> environment, Listener listener) {
+    public void run(@Nullable Path workingDir, List<String> argv, Map<String, String> environment, Listener listener) {
         if (workingDir == null || argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }

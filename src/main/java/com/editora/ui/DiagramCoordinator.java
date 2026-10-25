@@ -8,8 +8,9 @@ import javafx.stage.FileChooser;
 import com.editora.config.Settings;
 import com.editora.diagram.DiagramKind;
 import com.editora.diagram.DiagramService;
-import com.editora.editor.DiagramImages;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.markdown.DiagramImages;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -39,7 +40,7 @@ final class DiagramCoordinator {
      *  the preview right-click "Export to PDF" (which already chose the file), mirroring
      *  {@code MermaidCoordinator.exportDiagram}. */
     void exportToPath(
-            com.editora.diagram.DiagramKind kind,
+            com.editora.diagram.@Nullable DiagramKind kind,
             String source,
             java.nio.file.Path dest,
             java.util.function.Consumer<com.editora.process.ProcessRunner.Result> onResult) {
@@ -48,12 +49,14 @@ final class DiagramCoordinator {
 
     /** As above with an explicit theme — print is on white paper, so it asks for light whatever the app is. */
     void exportToPath(
-            com.editora.diagram.DiagramKind kind,
+            com.editora.diagram.@Nullable DiagramKind kind,
             String source,
             java.nio.file.Path dest,
             boolean dark,
             java.util.function.Consumer<com.editora.process.ProcessRunner.Result> onResult) {
-        service.export(kind, source, dest, dark, onResult);
+        if (kind != null) { // callers only export a buffer whose isRenderedDiagram() is true
+            service.export(kind, source, dest, dark, onResult);
+        }
     }
 
     /** Whether the diagram feature is enabled in Settings (default on). */
@@ -87,7 +90,7 @@ final class DiagramCoordinator {
         ifEnabled(() -> {
             EditorBuffer b = host.activeBuffer();
             DiagramKind kind = b == null ? null : b.diagramKind();
-            if (kind == null) {
+            if (b == null || kind == null) {
                 host.setStatus(tr("status.diagram.notDiagram"));
                 return;
             }

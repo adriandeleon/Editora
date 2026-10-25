@@ -7,12 +7,14 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
  * The floating bar shown above a non-empty selection offering the AI actions that apply to it —
  * currently Explain and Rewrite (extend here as more selection-scoped AI actions are added). Modeled
- * exactly on {@link MarkdownFormatBar}: a non-focus-traversable, free-positioned {@link HBox} of flat
+ * exactly on {@code MarkdownFormatBar}: a non-focus-traversable, free-positioned {@link HBox} of flat
  * icon buttons. Kept in the {@code editor} package (no dependency on {@code ui}) — the actual API calls
  * live in {@code ui.AiCoordinator} and reach here only via the {@link EditorBuffer} handlers it injects.
  * {@link EditorBuffer} owns the show/hide/position lifecycle.
@@ -45,7 +47,8 @@ final class AiActionsBar {
      * feature is on and {@code view} has a selection — or it is up and may have to move or go away. The
      * buffer asks before queueing an update, because the triggers are every scroll event and caret move.
      */
-    static boolean updateNeeded(AiActionsBar bar, boolean enabled, org.fxmisc.richtext.CodeArea view) {
+    static boolean updateNeeded(
+            @Nullable AiActionsBar bar, boolean enabled, org.fxmisc.richtext.@Nullable CodeArea view) {
         return view == null
                 || (enabled && view.getSelection().getLength() > 0)
                 || (bar != null && bar.node.isVisible());

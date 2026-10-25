@@ -3,8 +3,8 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -26,7 +26,9 @@ import javafx.stage.Window;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
-import com.editora.search.FuzzyMatch;
+import org.jspecify.annotations.Nullable;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A build tool's toolbar-button dropdown: a search field over a sectioned {@link ListView} of runnable
@@ -67,18 +69,24 @@ public final class BuildActionsPopup {
     private final ObservableList<Row> items = FXCollections.observableArrayList();
     private List<Row> all = List.of();
 
-    private OverlayHost overlayHost;
+    private @Nullable OverlayHost overlayHost;
     private final VBox content;
     private boolean showing;
     private long lastHiddenAt;
 
-    private BuildActionsProvider provider;
-    private final Set<String> activeToggles = new LinkedHashSet<>();
+    private @Nullable BuildActionsProvider provider;
+    /** The coordinator's toggle set for the root shown (shared with the tasks tree), or a fresh one. */
+    private Set<String> activeToggles = new LinkedHashSet<>();
+
+    /** The remembered "Run custom…" strings (newest first) and what runs one. */
+    private List<String> recent = List.of();
+
+    private Consumer<String> onRunRecent = text -> {};
 
     private Runnable onRunCustom = () -> {};
     private RunHandler onRun = (taskArgs, toggleArgs) -> {};
-    private String secondaryLabel;
-    private Runnable secondaryAction;
+    private @Nullable String secondaryLabel;
+    private @Nullable Runnable secondaryAction;
 
     public BuildActionsPopup(Labels labels) {
         this.labels = labels;
@@ -125,6 +133,17 @@ public final class BuildActionsPopup {
         this.secondaryAction = action;
     }
 
+    /** The "Recent" section: the last custom strings run for this tool, each a row that runs it again. */
+    public void setRecent(List<String> entries, Consumer<String> run) {
+        this.recent = entries == null ? List.of() : List.copyOf(entries);
+        this.onRunRecent = run == null ? text -> {} : run;
+    }
+
+    /** The toggle set the open popup reads and writes (a test's, or the coordinator's). */
+    public Set<String> activeToggles() {
+        return activeToggles;
+    }
+
     /** Re-renders the open popup after the coordinator merged on-demand-loaded tasks into the shared provider
      *  (Gradle's "Load all tasks…"). No-op when the popup was never shown (its provider is still null). */
     public void rerender() {
@@ -150,7 +169,7 @@ public final class BuildActionsPopup {
 
     /** Populates and shows the popup anchored below {@code anchor}, driven by {@code provider}. */
     public void show(Window owner, Node anchor, BuildActionsProvider provider) {
-        prepare(provider);
+        prepare(provider, new LinkedHashSet<>());
         if (overlayHost == null) {
             return;
         }
@@ -158,9 +177,20 @@ public final class BuildActionsPopup {
         overlayHost.showBelow(content, anchor, search::requestFocus, this::onHidden);
     }
 
-    /** Populates and shows the popup centered (the command-palette entry point — no toolbar anchor). */
+    /** Populates and shows the popup centered (the command-palette entry point — no toolbar anchor), with a
+     *  toggle set of its own that starts empty. */
     public void show(Window owner, BuildActionsProvider provider) {
-        prepare(provider);
+        show(owner, provider, new LinkedHashSet<>());
+    }
+
+    /**
+     * As {@link #show(Window, BuildActionsProvider)}, reading and writing {@code toggles} — the coordinator's
+     * set for the root the popup acts on, the same one the tasks tree shows. The popup used to start every
+     * open with no profile checked, so a profile ticked in the tool window was dropped from a run started
+     * here (review B8).
+     */
+    public void show(Window owner, BuildActionsProvider provider, Set<String> toggles) {
+        prepare(provider, toggles);
         if (overlayHost == null) {
             return;
         }
@@ -168,13 +198,22 @@ public final class BuildActionsPopup {
         overlayHost.show(content, true, search::requestFocus, this::onHidden);
     }
 
-    private void prepare(BuildActionsProvider provider) {
+    private void prepare(BuildActionsProvider provider, Set<String> toggles) {
         this.provider = provider;
+        this.activeToggles = toggles == null ? new LinkedHashSet<>() : toggles;
         hint.setText(PickerKeys.legend(PickerKeys.hint("run", "↵"))); // per show: follows a keymap switch
-        activeToggles.clear();
         rebuildRows();
         search.clear();
         filter("");
+    }
+
+    /** The provider the popup was last shown with: rows exist only after {@link #prepare}. */
+    private BuildActionsProvider shownProvider() {
+        BuildActionsProvider p = provider;
+        if (p == null) {
+            throw new IllegalStateException("build actions popup used before it was shown");
+        }
+        return p;
     }
 
     private void onHidden() {
@@ -188,7 +227,13 @@ public final class BuildActionsPopup {
         if (secondaryAction != null && secondaryLabel != null) {
             rows.add(new ActionRow(secondaryLabel, secondaryAction, false));
         }
-        for (BuildAction.Section section : provider.sections(activeToggles)) {
+        if (!recent.isEmpty()) {
+            rows.add(new Header(tr("buildpopup.recent")));
+            for (String text : recent) {
+                rows.add(new ActionRow(text, () -> onRunRecent.accept(text), true));
+            }
+        }
+        for (BuildAction.Section section : shownProvider().sections(activeToggles)) {
             if (section.rows().isEmpty()) {
                 continue;
             }
@@ -205,21 +250,30 @@ public final class BuildActionsPopup {
         filter(search.getText());
     }
 
-    private void toggle(String id) {
-        if (!activeToggles.add(id)) {
-            activeToggles.remove(id);
+    private void toggle(BuildAction.Toggle toggle) {
+        if (toggle.locked()) {
+            return; // on whatever the argv says (a settings.xml profile): nothing to flip
+        }
+        // The tree's cycle: off → on → explicitly off (tri-state) → off.
+        BuildActionsTree.ToggleState state = BuildActionsTree.stateOf(activeToggles, toggle);
+        activeToggles.remove(toggle.id());
+        activeToggles.remove(toggle.offId());
+        if (state == BuildActionsTree.ToggleState.OFF) {
+            activeToggles.add(toggle.id());
+        } else if (state == BuildActionsTree.ToggleState.ON && toggle.triState()) {
+            activeToggles.add(toggle.offId());
         }
         String selected = selectedLabel();
         rebuildRows();
         reselect(selected);
     }
 
-    private String selectedLabel() {
+    private @Nullable String selectedLabel() {
         Row r = list.getSelectionModel().getSelectedItem();
         return r == null ? null : labelOf(r);
     }
 
-    private void reselect(String label) {
+    private void reselect(@Nullable String label) {
         if (label != null) {
             for (int i = 0; i < items.size(); i++) {
                 if (labelOf(items.get(i)).equals(label)) {
@@ -245,16 +299,20 @@ public final class BuildActionsPopup {
         return "";
     }
 
+    /** The tree's filter rule ({@link BuildActionsFilter}): a substring of the row's label, or of its
+     *  section's title, which keeps the whole section. */
     private void filter(String query) {
-        String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+        String q = BuildActionsFilter.normalize(query);
         List<Row> out = new ArrayList<>();
         Header pending = null;
+        boolean sectionMatches = false;
         for (Row r : all) {
             if (r instanceof Header h) {
                 pending = h;
+                sectionMatches = !q.isEmpty() && BuildActionsFilter.matches(h.title(), q);
                 continue;
             }
-            if (q.isEmpty() || FuzzyMatch.of(labelOf(r), q) != null) {
+            if (q.isEmpty() || sectionMatches || BuildActionsFilter.matches(labelOf(r), q)) {
                 if (pending != null) {
                     out.add(pending);
                     pending = null;
@@ -300,9 +358,9 @@ public final class BuildActionsPopup {
             a.run().run();
         } else if (row instanceof TaskRow t) {
             hide();
-            onRun.run(t.task().args(), provider.toggleArgs(activeToggles));
+            onRun.run(t.task().args(), shownProvider().toggleArgs(activeToggles));
         } else if (row instanceof ToggleRow tg) {
-            toggle(tg.toggle().id()); // composes with a run rather than acting standalone — doesn't close
+            toggle(tg.toggle()); // composes with a run rather than acting standalone — doesn't close
         }
     }
 
@@ -337,8 +395,16 @@ public final class BuildActionsPopup {
             } else if (item instanceof ToggleRow tg) {
                 setDisable(false);
                 setText(null);
-                CheckBox box = new CheckBox(tg.toggle().label() + tg.toggle().note());
-                box.setSelected(activeToggles.contains(tg.toggle().id()));
+                BuildAction.Toggle toggle = tg.toggle();
+                String note = toggle.note();
+                CheckBox box =
+                        new CheckBox(note == null || note.isEmpty() ? toggle.label() : toggle.label() + " " + note);
+                BuildActionsTree.ToggleState state = toggle.locked()
+                        ? BuildActionsTree.ToggleState.ON
+                        : BuildActionsTree.stateOf(activeToggles, toggle);
+                box.setIndeterminate(state == BuildActionsTree.ToggleState.EXPLICIT_OFF);
+                box.setSelected(state == BuildActionsTree.ToggleState.ON);
+                box.setDisable(toggle.locked());
                 box.setMouseTransparent(true); // the row (not the box) handles the click
                 setGraphic(box);
             }

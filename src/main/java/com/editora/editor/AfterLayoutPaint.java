@@ -8,6 +8,7 @@ import javafx.scene.Node;
 import javafx.scene.Scene;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs an overlay's paint <em>after the layout pass</em> of the pulse that asked for it, and looks again on the
@@ -23,7 +24,7 @@ import org.fxmisc.richtext.CodeArea;
  *
  * <p>One per overlay; FX thread only. The listener is on the scene only while a paint or a check is due.
  */
-final class AfterLayoutPaint {
+public final class AfterLayoutPaint {
 
     /** How many pulses after a paint the text's position is checked. */
     static final int CHECKS_AFTER_PAINT = 3;
@@ -34,7 +35,7 @@ final class AfterLayoutPaint {
     private final BooleanSupplier drawable;
     private final Runnable afterLayout = this::afterLayoutPulse;
     /** The scene whose post-layout pulses {@link #afterLayout} is listening to, or null. */
-    private Scene armed;
+    private @Nullable Scene armed;
 
     private boolean pending;
     private int checksLeft;
@@ -49,7 +50,7 @@ final class AfterLayoutPaint {
      * @param paint the overlay's repaint
      * @param drawable whether the overlay has anything to draw: the checks after a paint stop when it has not
      */
-    AfterLayoutPaint(Node owner, CodeArea area, Runnable paint, BooleanSupplier drawable) {
+    public AfterLayoutPaint(Node owner, CodeArea area, Runnable paint, BooleanSupplier drawable) {
         this.owner = owner;
         this.area = area;
         this.paint = paint;
@@ -57,7 +58,7 @@ final class AfterLayoutPaint {
     }
 
     /** Asks for {@code paint} after the next layout pass (several requests before it are one paint). */
-    void request() {
+    public void request() {
         pending = true;
         arm();
     }
@@ -128,7 +129,7 @@ final class AfterLayoutPaint {
     }
 
     /** The area-local bounds of the first character of the first visible line that has one, or null. */
-    private Bounds firstCharacter() {
+    private @Nullable Bounds firstCharacter() {
         try {
             int total = area.getParagraphs().size();
             int first = Math.max(0, area.firstVisibleParToAllParIndex());

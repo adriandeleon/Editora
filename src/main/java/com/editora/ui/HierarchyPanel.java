@@ -38,6 +38,9 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
 
         /** Opens {@code file} at a 0-based position. */
         void open(java.nio.file.Path file, int line, int col);
+
+        /** Opens a JDK or library node's {@code jdt://} source at a 0-based line (Java review B19). */
+        default void openLibrary(String uri, int line) {}
     }
 
     /** The two hierarchy modes; the toggle labels follow. */
@@ -56,7 +59,7 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
     private List<LspManager.HierarchyNode> roots = List.of();
 
     /** A child marker meaning "not fetched yet" — replaced by the real children on first expand. */
-    private static final LspManager.HierarchyNode PENDING = new LspManager.HierarchyNode("…", "", "", null, 0, 0, null);
+    private static final LspManager.HierarchyNode PENDING = new LspManager.HierarchyNode("…", "", "", null, 0, 0, "");
 
     public HierarchyPanel(Loader loader) {
         this.loader = loader;
@@ -113,9 +116,17 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
     public void setRoots(Mode mode, List<LspManager.HierarchyNode> roots) {
         this.mode = mode;
         this.roots = roots == null ? List.of() : List.copyOf(roots);
-        primaryToggle.setSelected(true);
+        // "Who implements this?" is the question on an interface; its supertypes are usually nothing (B19).
+        (opensOnSubtypes(mode, this.roots) ? secondaryToggle : primaryToggle).setSelected(true);
         relabel();
         rebuild();
+    }
+
+    /** Whether a type hierarchy for {@code roots} opens on Subtypes: an interface's. Pure. */
+    static boolean opensOnSubtypes(Mode mode, List<LspManager.HierarchyNode> roots) {
+        return mode == Mode.TYPES
+                && roots.size() == 1
+                && "interface".equals(roots.get(0).kindName());
     }
 
     /** Whether the tree currently expands toward the primary direction (callers / supertypes). */
@@ -169,8 +180,13 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
     private void openSelected() {
         TreeItem<LspManager.HierarchyNode> sel = tree.getSelectionModel().getSelectedItem();
         LspManager.HierarchyNode n = sel == null ? null : sel.getValue();
-        if (n != null && n != PENDING && n.file() != null) {
+        if (n == null || n == PENDING) {
+            return;
+        }
+        if (n.file() != null) {
             loader.open(n.file(), n.line(), n.col());
+        } else if (n.libraryUri() != null) {
+            loader.openLibrary(n.libraryUri(), n.line());
         }
     }
 
@@ -185,8 +201,10 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
             }
             setGraphic(getTreeItem() == null ? null : getTreeItem().getGraphic());
             String detail = n.detail().isBlank() ? "" : "  —  " + n.detail();
-            String where = n.file() == null ? "" : "  ·  " + n.file().getFileName() + ":" + (n.line() + 1);
-            setText(n.name() + detail + where);
+            String where = n.file() != null
+                    ? "  ·  " + n.file().getFileName() + ":" + (n.line() + 1)
+                    : n.libraryUri() != null ? "  ·  " + LspManager.classFileTitle(n.libraryUri()) : "";
+            setText(n.name() + (n.calls() > 1 ? "  ×" + n.calls() : "") + detail + where);
         }
     }
 }

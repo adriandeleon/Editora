@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.Objects;
 import java.util.function.Supplier;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Keeps one immutable full-text snapshot for a document version.
  *
@@ -17,10 +19,10 @@ final class DocumentSnapshots {
 
     record Snapshot(long version, String text) {}
 
-    private Snapshot current;
+    private @Nullable Snapshot current;
     private long materializations;
 
-    private String expected;
+    private @Nullable String expected;
 
     Snapshot get(long version, Supplier<String> textSource) {
         if (current == null || current.version() != version) {
@@ -40,7 +42,7 @@ final class DocumentSnapshots {
      * change notification is handed this String instead of copying the whole document back out of
      * RichTextFX. Always paired with {@link #seed} once the replacement returns.
      */
-    void expect(String text) {
+    void expect(@Nullable String text) {
         expected = text;
     }
 
@@ -63,7 +65,7 @@ final class DocumentSnapshots {
      * which the first snapshot aliases: letting that one go would free nothing and cost a whole-document copy
      * on the next read. Returns whether anything was released.
      */
-    boolean releaseUnless(String retained) {
+    boolean releaseUnless(@Nullable String retained) {
         if (current == null || current.text() == retained) {
             return false;
         }

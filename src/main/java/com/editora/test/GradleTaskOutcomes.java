@@ -5,6 +5,8 @@ import java.util.Collection;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Reads Gradle's plain-console task lines ({@code > Task :app:test UP-TO-DATE}) so a test run can tell which
  * test tasks Gradle <em>reused</em> rather than ran — the only tasks whose reports on disk stand for this
@@ -22,7 +24,7 @@ public final class GradleTaskOutcomes {
     }
 
     /** The path of a task Gradle skipped because its previous result still holds, else {@code null}. */
-    public static String reusedTask(String line) {
+    public static @Nullable String reusedTask(String line) {
         if (line == null) {
             return null;
         }

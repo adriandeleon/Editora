@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.util.List;
 
 import com.editora.plugin.PluginProblem;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -12,7 +13,7 @@ final class PluginProblems {
     private PluginProblems() {}
 
     /** The sentence for {@code p}. */
-    static String text(PluginProblem p) {
+    static String text(@Nullable PluginProblem p) {
         if (p == null) {
             return "";
         }

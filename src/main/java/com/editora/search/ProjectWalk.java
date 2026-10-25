@@ -10,6 +10,8 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.EnumSet;
 import java.util.function.BooleanSupplier;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The one pruned project walk every "look at the files of this project" feature goes through: Find in Files,
  * the TODO scan, the symbol index, the test-source lookups.
@@ -75,7 +77,11 @@ public final class ProjectWalk {
     }
 
     /** The limits and filters of one walk. */
-    public record Options(int maxDepth, int maxAccepted, GitignoreFilter gitignore, BooleanSupplier cancelled) {
+    public record Options(
+            int maxDepth,
+            int maxAccepted,
+            GitignoreFilter gitignore,
+            @Nullable BooleanSupplier cancelled) {
 
         public Options {
             gitignore = gitignore == null ? GitignoreFilter.NONE : gitignore;
@@ -88,7 +94,7 @@ public final class ProjectWalk {
     }
 
     /** Walks {@code root}, offering every surviving regular or special file to {@code visitor}. */
-    public static Outcome walk(Path root, Options options, Visitor visitor) {
+    public static Outcome walk(@Nullable Path root, Options options, Visitor visitor) {
         int[] accepted = {0};
         int[] unreadable = {0};
         boolean[] capped = {false};
@@ -115,6 +121,8 @@ public final class ProjectWalk {
         java.util.ArrayDeque<GitignoreFilter> filters = new java.util.ArrayDeque<>();
         java.util.ArrayDeque<Path> filterDirs = new java.util.ArrayDeque<>();
         filters.push(options.gitignore());
+        BooleanSupplier stop = options.cancelled(); // never null once constructed: see Options
+        BooleanSupplier cancelled = stop != null ? stop : () -> false;
         try {
             Files.walkFileTree(
                     real, EnumSet.noneOf(FileVisitOption.class), options.maxDepth(), new SimpleFileVisitor<>() {
@@ -129,7 +137,7 @@ public final class ProjectWalk {
 
                         @Override
                         public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                            if (options.cancelled().getAsBoolean()) {
+                            if (cancelled.getAsBoolean()) {
                                 return FileVisitResult.TERMINATE;
                             }
                             if (dir.equals(real)) {
@@ -153,7 +161,7 @@ public final class ProjectWalk {
 
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                            if (options.cancelled().getAsBoolean()) {
+                            if (cancelled.getAsBoolean()) {
                                 return FileVisitResult.TERMINATE;
                             }
                             if (attrs.isDirectory()) {

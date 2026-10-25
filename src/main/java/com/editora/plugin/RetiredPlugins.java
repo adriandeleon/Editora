@@ -15,6 +15,8 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Registry plugins whose feature is now part of Editora. A retired plugin never loads — not from its folder,
  * not from a registry, not from a zip — so the built-in feature and the plugin can never run side by side. At
@@ -93,10 +95,10 @@ public final class RetiredPlugins {
         return removed;
     }
 
-    private static final AtomicReference<List<String>> NOTICE = new AtomicReference<>();
+    private static final AtomicReference<@Nullable List<String>> NOTICE = new AtomicReference<>();
 
     /** The plugins this launch removed, once — the first window tells the user — then null. */
-    public static List<String> takeNotice() {
+    public static @Nullable List<String> takeNotice() {
         return NOTICE.getAndSet(null);
     }
 }

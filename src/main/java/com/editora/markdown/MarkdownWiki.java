@@ -1,6 +1,6 @@
 package com.editora.markdown;
 
-import java.util.function.UnaryOperator;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The wiki link under a caret as something to edit — {@code [[note]]}, {@code [[note|label]]},
@@ -22,7 +22,13 @@ public final class MarkdownWiki {
      * @param inTable whether it stands in a table row, where its bar is written {@code \|}
      */
     public record Link(
-            int start, int end, String target, String heading, String label, boolean embed, boolean inTable) {
+            int start,
+            int end,
+            String target,
+            @Nullable String heading,
+            @Nullable String label,
+            boolean embed,
+            boolean inTable) {
 
         /** What the reader sees: the label, else the target (with its heading). */
         public String shown() {
@@ -55,7 +61,7 @@ public final class MarkdownWiki {
      *       cell, so it is no wiki link.
      * </ul>
      */
-    public static Link at(String text, int caret) {
+    public static @Nullable Link at(String text, int caret) {
         int ls = text.lastIndexOf('\n', caret - 1) + 1;
         int le = text.indexOf('\n', caret);
         String line = text.substring(ls, le < 0 ? text.length() : le);
@@ -139,7 +145,8 @@ public final class MarkdownWiki {
      * is the target as written, with {@code .md} added when it names no file type. A heading becomes its
      * anchor ({@link MarkdownToc#slug}).
      */
-    public static MarkdownEdit toMarkdown(Link link, UnaryOperator<String> resolve) {
+    public static MarkdownEdit toMarkdown(
+            Link link, java.util.function.@Nullable Function<String, @Nullable String> resolve) {
         String path = link.target().isEmpty() ? "" : resolve == null ? null : resolve.apply(link.target());
         if (path == null) {
             String t = link.target();
@@ -158,12 +165,12 @@ public final class MarkdownWiki {
      * Returns {@code null} for a link that leaves the project — one with a scheme ({@code https:}, {@code
      * mailto:}) — which a wiki link cannot name.
      */
-    public static MarkdownEdit toWiki(MarkdownLinks.Link link) {
+    public static @Nullable MarkdownEdit toWiki(MarkdownLinks.Link link) {
         return toWiki(link, false);
     }
 
     /** {@link #toWiki(MarkdownLinks.Link)} for a link in a table row, where the bar is written {@code \|}. */
-    public static MarkdownEdit toWiki(MarkdownLinks.Link link, boolean inTable) {
+    public static @Nullable MarkdownEdit toWiki(MarkdownLinks.Link link, boolean inTable) {
         String d = link.destination();
         if (d.isEmpty() || d.matches("(?i)^[a-z][a-z0-9+.-]*:.*") || d.startsWith("//")) {
             return null;

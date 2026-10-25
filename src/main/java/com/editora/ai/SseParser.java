@@ -1,5 +1,7 @@
 package com.editora.ai;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A tiny incremental parser for <em>Server-Sent Events</em> (the Anthropic Messages API's streaming
  * transport): feed it lines, it emits an {@link Event} whenever a blank line completes one. Pure and
@@ -14,7 +16,7 @@ public final class SseParser {
     private final StringBuilder data = new StringBuilder();
 
     /** Feeds one line; returns the completed event when {@code line} is the blank separator, else null. */
-    public Event feed(String line) {
+    public @Nullable Event feed(String line) {
         if (line == null || line.isEmpty()) {
             if (data.length() == 0 && eventName.isEmpty()) {
                 return null; // stray blank line between events

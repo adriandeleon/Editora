@@ -17,11 +17,13 @@ import java.util.concurrent.Executors;
 
 import javafx.application.Platform;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Word-completion candidates drawn from the bundled Hunspell {@code .dic} word lists (the same resources
  * the spell checker uses: {@code resources/com/editora/dictionaries/<id>/index.dic}). The base word list
  * is parsed and sorted <b>once per language, off the FX thread, cached</b> (mirroring
- * {@link com.editora.editor.SpellDictionaries#ensureBuilt}); until a language is loaded, it contributes
+ * {@link com.editora.editor.spell.SpellDictionaries#ensureBuilt}); until a language is loaded, it contributes
  * nothing. Prefix lookup is a case-insensitive binary-search range over the sorted array, so it's
  * {@code O(log n + k)} and never touches the editor's hot paths.
  */
@@ -58,7 +60,7 @@ public final class DictionaryWords {
      * Ensures {@code langId}'s word list is parsed + sorted (off-thread, once), then runs {@code onReady}
      * on the FX thread. No-op if already loaded/loading or unavailable. {@code onReady} may be null.
      */
-    public static void ensureLoaded(String langId, Runnable onReady) {
+    public static void ensureLoaded(String langId, @Nullable Runnable onReady) {
         if (langId == null || !AVAILABLE.contains(langId)) {
             return;
         }
@@ -93,7 +95,7 @@ public final class DictionaryWords {
         });
     }
 
-    private static String[] load(String langId) throws IOException {
+    private static String @Nullable [] load(String langId) throws IOException {
         try (InputStream in = DictionaryWords.class.getResourceAsStream(BASE + langId + "/index.dic")) {
             if (in == null) {
                 return null;

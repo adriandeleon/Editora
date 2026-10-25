@@ -113,7 +113,7 @@ class HttpClientScratchFxTest {
             EditorBuffer created = new EditorBuffer();
             created.setDisplayName("scratch.http");
             created.setContent(text);
-            created.setHttpHooks(new com.editora.editor.HttpHooks(
+            created.setHttpHooks(new com.editora.editor.http.HttpHooks(
                     line -> coordinator.runRequest(created, line),
                     null,
                     () -> coordinator.cancelRun(created),

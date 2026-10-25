@@ -9,6 +9,8 @@ import java.nio.file.WatchService;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Opens the folder watchers Editora uses (the project tree, a language server's workspace), falling back to a
  * {@link PollingWatchService} when the operating system refuses one.
@@ -32,7 +34,7 @@ public final class WatchServices {
     private static volatile Opener opener = () -> FileSystems.getDefault().newWatchService();
 
     /** Why the last native watcher could not be opened, or null while every one could. */
-    private static volatile String fallbackReason;
+    private static volatile @Nullable String fallbackReason;
 
     private WatchServices() {}
 
@@ -66,7 +68,7 @@ public final class WatchServices {
     }
 
     /** Why the most recent native watcher could not be opened, or null. */
-    public static String fallbackReason() {
+    public static @Nullable String fallbackReason() {
         return fallbackReason;
     }
 
@@ -74,7 +76,7 @@ public final class WatchServices {
      * Tries to open (and at once closes) a native watcher: null when the system gives one, else the reason. For
      * the Doctor; it costs one watcher for an instant.
      */
-    public static String probe() {
+    public static @Nullable String probe() {
         try (WatchService ws = opener.open()) {
             return null;
         } catch (IOException | RuntimeException e) {

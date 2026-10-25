@@ -20,11 +20,11 @@ import javafx.stage.Window;
 import com.editora.completion.CompletionResult;
 import com.editora.completion.CompletionSource;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspTextEdit;
 import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspTestHooks;
 import com.editora.lsp.WorkspaceEditHazards;
 import com.editora.lsp.WorkspaceEditJournal;
+import com.editora.text.LspTextEdit;
 import com.google.gson.JsonParser;
 import org.eclipse.lsp4j.CodeLens;
 import org.eclipse.lsp4j.Command;
@@ -315,17 +315,17 @@ class LspCoordinatorHooksFxTest {
     void aNetZeroEditRestoresTheDiagnosticsItCleared() throws Exception {
         // Written on the FX thread and read here, while the typing-pause timer may still add to it (about a
         // quarter second after the edit): a plain ArrayList threw ConcurrentModificationException mid-read.
-        List<List<com.editora.editor.LspDiagnostic>> shown = new java.util.concurrent.CopyOnWriteArrayList<>();
+        List<List<com.editora.text.LspDiagnostic>> shown = new java.util.concurrent.CopyOnWriteArrayList<>();
         HookedBuffer buffer = fx.open("A.java", SOURCE, FxTestSupport.callOnFx(() -> new HookedBuffer() {
             @Override
-            public void setLspDiagnostics(List<com.editora.editor.LspDiagnostic> diagnostics) {
+            public void setLspDiagnostics(List<com.editora.text.LspDiagnostic> diagnostics) {
                 shown.add(diagnostics);
                 super.setLspDiagnostics(diagnostics);
             }
         }));
         FxTestSupport.runOnFx(() -> fx.coordinator.wireBuffer(buffer));
-        var diagnostic = new com.editora.editor.LspDiagnostic(
-                1, 9, 1, 11, com.editora.editor.LspDiagnostic.Severity.ERROR, "x", null, null);
+        var diagnostic = new com.editora.text.LspDiagnostic(
+                1, 9, 1, 11, com.editora.text.LspDiagnostic.Severity.ERROR, "x", null, null);
         FxTestSupport.runOnFx(() -> fx.coordinator.onDiagnostics(buffer.getPath(), List.of(diagnostic)));
         shown.clear();
 
@@ -503,11 +503,13 @@ class LspCoordinatorHooksFxTest {
 
     @Test
     void aCrashLeavesAnotherProjectsBuffersAlone() throws Exception {
+        // Two sibling projects: neither is a module of the other (a pom chain is one reactor, C10).
         Path otherProject = Files.createDirectories(root.resolve("other"));
         Files.writeString(otherProject.resolve("pom.xml"), "<project/>");
-        Files.writeString(root.resolve("pom.xml"), "<project/>");
+        Path mine = Files.createDirectories(root.resolve("mine"));
+        Files.writeString(mine.resolve("pom.xml"), "<project/>");
         EditorBuffer elsewhere = fx.open("other/B.java", "class B {}\n");
-        EditorBuffer here = fx.open("A.java", SOURCE);
+        EditorBuffer here = fx.open("mine/A.java", SOURCE);
         assertEquals(2, fx.fakes.size(), "two project roots, two servers");
 
         FxTestSupport.runOnFx(() -> LspTestHooks.simulateServerDeath(fx.manager, here.getPath()));

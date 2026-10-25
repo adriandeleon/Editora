@@ -3,6 +3,8 @@ package com.editora.lsp;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure: the settings Editora gives a language server, chosen <b>per server id</b>.
  *
@@ -36,7 +38,7 @@ final class LspServerSettings {
     private static final String HTML_SERVER_ID = "html";
     private static final String BASH_SERVER_ID = "bash";
 
-    private static Map<String, Object> bashSection(BashIdeConfig bashIde) {
+    private static Map<String, Object> bashSection(@Nullable BashIdeConfig bashIde) {
         return (bashIde == null ? BashIdeConfig.defaults() : bashIde).toSection();
     }
 
@@ -46,7 +48,7 @@ final class LspServerSettings {
      * The settings object to push to {@code serverId} after {@code initialized}, or {@code null} when that
      * server must not be pushed anything.
      */
-    static Map<String, Object> push(String serverId, boolean javaOnTypeFormatting) {
+    static @Nullable Map<String, Object> push(String serverId, boolean javaOnTypeFormatting) {
         return push(serverId, javaOnTypeFormatting, null);
     }
 
@@ -54,7 +56,8 @@ final class LspServerSettings {
      * As {@link #push(String, boolean)}, with bash-language-server's {@code bashIde} section ({@code null} = its
      * defaults) for the Bash server.
      */
-    static Map<String, Object> push(String serverId, boolean javaOnTypeFormatting, BashIdeConfig bashIde) {
+    static @Nullable Map<String, Object> push(
+            String serverId, boolean javaOnTypeFormatting, @Nullable BashIdeConfig bashIde) {
         return push(serverId, javaOnTypeFormatting, bashIde, null);
     }
 
@@ -62,8 +65,11 @@ final class LspServerSettings {
      * As {@link #push(String, boolean, BashIdeConfig)}, with the Python interpreter ({@code null}/blank = let the
      * server pick its own) for the Python server.
      */
-    static Map<String, Object> push(
-            String serverId, boolean javaOnTypeFormatting, BashIdeConfig bashIde, String pythonPath) {
+    static @Nullable Map<String, Object> push(
+            String serverId,
+            boolean javaOnTypeFormatting,
+            @Nullable BashIdeConfig bashIde,
+            @Nullable String pythonPath) {
         if (BASH_SERVER_ID.equals(serverId)) {
             Map<String, Object> settings = new HashMap<>();
             settings.put(BashIdeConfig.SECTION, bashSection(bashIde));
@@ -86,7 +92,7 @@ final class LspServerSettings {
      * The answer to {@code serverId} asking {@code workspace/configuration} for {@code section}; {@code null}
      * (the server keeps its own default) for every section that is not that server's own.
      */
-    static Object answer(String serverId, String section) {
+    static @Nullable Object answer(String serverId, String section) {
         return answer(serverId, section, null);
     }
 
@@ -95,12 +101,13 @@ final class LspServerSettings {
      * defaults). bash-language-server asks for {@code bashIde} once it is initialized; answering {@code null}
      * left every one of its settings at the built-in default with no way to change them.
      */
-    static Object answer(String serverId, String section, BashIdeConfig bashIde) {
+    static @Nullable Object answer(String serverId, String section, @Nullable BashIdeConfig bashIde) {
         return answer(serverId, section, bashIde, null);
     }
 
     /** As {@link #answer(String, String, BashIdeConfig)}, with the Python server's interpreter (may be null). */
-    static Object answer(String serverId, String section, BashIdeConfig bashIde, String pythonPath) {
+    static @Nullable Object answer(
+            String serverId, String section, @Nullable BashIdeConfig bashIde, @Nullable String pythonPath) {
         String s = section == null ? "" : section;
         if (BASH_SERVER_ID.equals(serverId)) {
             return s.equals(BashIdeConfig.SECTION) ? bashSection(bashIde) : null;
@@ -132,12 +139,12 @@ final class LspServerSettings {
         return null;
     }
 
-    private static boolean blank(String s) {
+    private static boolean blank(@Nullable String s) {
         return s == null || s.isBlank();
     }
 
     /** The whole {@code python} object: the analysis settings, and the interpreter when one was resolved. */
-    private static Map<String, Object> pythonSection(String pythonPath) {
+    private static Map<String, Object> pythonSection(@Nullable String pythonPath) {
         Map<String, Object> python = new HashMap<>();
         python.put("analysis", pythonAnalysis());
         if (!blank(pythonPath)) {
@@ -154,7 +161,8 @@ final class LspServerSettings {
         return analysis;
     }
 
-    private static Map<String, Object> javaSettings(boolean onTypeFormatting) {
+    /** The {@code java} object pushed to jdtls; {@code LspManager} sends the same keys at {@code initialize}. */
+    static Map<String, Object> javaSettings(boolean onTypeFormatting) {
         // jdtls ADVERTISES signatureHelpProvider but its handler returns an empty result unless
         // `java.signatureHelp.enabled` is set — it ships OFF (VS Code's Java extension sets it in its
         // own defaults, which is why it "just works" there). Verified by driving a real jdtls: same
@@ -162,7 +170,9 @@ final class LspServerSettings {
         // class of bug as #468's provideFormatter.
         Map<String, Object> signatureHelp = new HashMap<>();
         signatureHelp.put("enabled", true);
-        signatureHelp.put("description", true); // include the javadoc in the signature popup
+        // The Javadoc in the popup. jdtls reads `java.signatureHelp.description.enabled`; a bare
+        // `description: true` resolved to no key at all, so the description never came (Java review A2).
+        signatureHelp.put("description", Map.of("enabled", true));
         // Same shape of gate for smart-semicolon detection (#746): jdtls advertises
         // java.edit.smartSemicolonDetection unconditionally, but its handler answers null until this
         // preference is set — verified against a real jdtls (null for every argument shape before,
@@ -183,6 +193,108 @@ final class LspServerSettings {
         // implementations lens at all.
         java.put("referencesCodeLens", Map.of("enabled", true));
         java.put("implementationCodeLens", "all");
+        // The rest are preferences vscode-java sends from its own defaults, which jdtls's defaults assume a
+        // client provides (Java review A9, A10, A15, B3). Each was verified against a real jdtls by
+        // JdtlsClientSettingsProbeTest.
+        //
+        // jdtls holds a default type filter but installs it only when the client sends one: without it
+        // JDK internals (sun.*, com.sun.*, jdk.internal.*) filled completion and the import quick fixes.
+        // favoriteStaticMembers: `assertEquals`, `mock` and the like are offered (and imported statically) without an
+        // import, as IntelliJ's second completion does; jdtls has no list of its own.
+        // chain: in an argument or an assignment, completion also offers a call chain that yields the expected type
+        // — `Collectors.toList()` inside `collect(` — as IntelliJ's second Smart Type completion does.
+        java.put(
+                "completion",
+                Map.of(
+                        "filteredTypes",
+                        FILTERED_TYPES,
+                        "favoriteStaticMembers",
+                        FAVORITE_STATICS,
+                        "chain",
+                        Map.of("enabled", true)));
+        // Null analysis from the project's own annotations (JSpecify, javax, Spring, Eclipse), as IntelliJ's
+        // @Nullable inspections. jdtls knows no annotation names unless sent, so it never ran; vscode-java's mode,
+        // "interactive", asks through a command only vscode-java can run, so it is "automatic" here: on in a
+        // project that has the annotations, off in one that has none.
+        Map<String, Object> nullAnalysis = new HashMap<>();
+        nullAnalysis.put("mode", "automatic");
+        nullAnalysis.put("nonnull", NONNULL);
+        nullAnalysis.put("nullable", NULLABLE);
+        nullAnalysis.put("nonnullbydefault", NONNULL_BY_DEFAULT);
+        java.put("compile", Map.of("nullAnalysis", nullAnalysis));
+        // Inlay hints are requested only while Settings.inlayHints is on, so the server side can be generous:
+        // every parameter name (InlayHintFilter applies Editora's literals/all mode on top — jdtls's own
+        // default, "literals", made the "all" mode a no-op), and the inferred types of `var` and lambda
+        // parameters, which jdtls leaves off by default.
+        Map<String, Object> inlayHints = new HashMap<>();
+        inlayHints.put("parameterNames", Map.of("enabled", "all", "suppressWhenSameNameNumbered", true));
+        inlayHints.put("variableTypes", Map.of("enabled", true));
+        inlayHints.put("parameterTypes", Map.of("enabled", true));
+        java.put("inlayHints", inlayHints);
+        // workspace/symbol answers types only unless asked for methods too.
+        java.put("symbols", Map.of("includeSourceMethodDeclarations", true));
+        // A pom.xml or build.gradle change reaches the classpath on its own. jdtls's default, "interactive",
+        // asks a question per change, and a pom edit never took effect until it was answered (Java review C1).
+        java.put("configuration", Map.of("updateBuildConfiguration", "automatic"));
         return java;
+    }
+
+    /** vscode-java's {@code java.completion.favoriteStaticMembers} default. */
+    static final java.util.List<String> FAVORITE_STATICS = java.util.List.of(
+            "org.junit.Assert.*",
+            "org.junit.Assume.*",
+            "org.junit.jupiter.api.Assertions.*",
+            "org.junit.jupiter.api.Assumptions.*",
+            "org.junit.jupiter.api.DynamicContainer.*",
+            "org.junit.jupiter.api.DynamicTest.*",
+            "org.mockito.Mockito.*",
+            "org.mockito.ArgumentMatchers.*",
+            "org.mockito.Answers.*");
+
+    /** vscode-java's {@code java.compile.nullAnalysis} annotation lists. */
+    static final java.util.List<String> NONNULL = java.util.List.of(
+            "javax.annotation.Nonnull",
+            "org.eclipse.jdt.annotation.NonNull",
+            "org.springframework.lang.NonNull",
+            "org.jspecify.annotations.NonNull");
+
+    static final java.util.List<String> NULLABLE = java.util.List.of(
+            "javax.annotation.Nullable",
+            "org.eclipse.jdt.annotation.Nullable",
+            "org.springframework.lang.Nullable",
+            "org.jspecify.annotations.Nullable");
+
+    static final java.util.List<String> NONNULL_BY_DEFAULT = java.util.List.of(
+            "javax.annotation.ParametersAreNonnullByDefault",
+            "org.eclipse.jdt.annotation.NonNullByDefault",
+            "org.springframework.lang.NonNullApi",
+            "org.jspecify.annotations.NullMarked");
+
+    /** vscode-java's {@code java.completion.filteredTypes} default: types never offered or imported. */
+    static final java.util.List<String> FILTERED_TYPES = java.util.List.of(
+            "java.awt.*",
+            "com.sun.*",
+            "sun.*",
+            "jdk.*",
+            "org.graalvm.*",
+            "io.micrometer.shaded.*",
+            "java.beans.*",
+            "java.util.Hashtable",
+            "java.util.Vector");
+
+    /**
+     * jdtls's {@code workspace/configuration} question for a document's indentation, asked before every code
+     * action so that quick fixes and generated members are formatted like the file (Java review B8, D9): the
+     * answer, or null when {@code section} is not one of those two keys or the document's indent is unknown.
+     */
+    static @Nullable Object javaFormatAnswer(String section, @Nullable FormattingIndent indent) {
+        if (indent == null) {
+            return null;
+        }
+        return switch (section == null ? "" : section) {
+            case "java.format.tabSize" -> indent.tabSize();
+            case "java.format.insertSpaces" -> indent.insertSpaces();
+            default -> null;
+        };
     }
 }

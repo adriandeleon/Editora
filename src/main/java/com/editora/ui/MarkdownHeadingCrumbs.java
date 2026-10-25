@@ -12,6 +12,7 @@ import javafx.util.Duration;
 import com.editora.editor.EditorBuffer;
 import com.editora.markdown.MarkdownOutline;
 import com.editora.markdown.MarkdownText;
+import org.jspecify.annotations.Nullable;
 import org.reactfx.Subscription;
 
 /**
@@ -33,11 +34,11 @@ final class MarkdownHeadingCrumbs extends HBox {
     private final PauseTransition pause = new PauseTransition(Duration.millis(180));
     private final ChangeListener<Integer> caretMoved = (obs, was, now) -> pause.playFromStart();
 
-    private EditorBuffer buffer;
-    private Subscription edits;
+    private @Nullable EditorBuffer buffer;
+    private @Nullable Subscription edits;
     private List<MarkdownOutline.Heading> headings = List.of();
     private boolean stale = true;
-    private List<MarkdownOutline.Heading> shown;
+    private @Nullable List<MarkdownOutline.Heading> shown;
 
     MarkdownHeadingCrumbs() {
         getStyleClass().add("markdown-heading-crumbs");
@@ -47,7 +48,7 @@ final class MarkdownHeadingCrumbs extends HBox {
     }
 
     /** Follows {@code target}'s caret when it is a Markdown buffer; null (or any other buffer) clears. */
-    void attach(EditorBuffer target) {
+    void attach(@Nullable EditorBuffer target) {
         EditorBuffer next = target != null && target.isMarkdown() ? target : null;
         if (next == buffer) {
             return;

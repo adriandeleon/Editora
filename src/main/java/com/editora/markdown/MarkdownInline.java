@@ -2,6 +2,8 @@ package com.editora.markdown;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure (no-toolkit, unit-tested) inline Markdown formatting: wrap/unwrap a selection in a symmetric
  * marker ({@code **} bold, {@code *} italic, {@code ~~} strikethrough, {@code `} code), turn a selection
@@ -19,12 +21,12 @@ public final class MarkdownInline {
      * collapsed caret inside a word toggles that word; anywhere else it inserts an empty pair with the caret
      * between (or removes the one it sits in). Returns {@code null} when there is nothing to mark.
      */
-    public static MarkdownEdit toggle(String text, int selStart, int selEnd, String marker) {
+    public static @Nullable MarkdownEdit toggle(String text, int selStart, int selEnd, String marker) {
         return MarkdownEmphasis.toggle(text, selStart, selEnd, marker, true);
     }
 
     /** {@link #toggle} for a plain symmetric marker with no run semantics (Typst's {@code *bold*}, {@code _emph_}). */
-    public static MarkdownEdit toggleSymmetric(String text, int selStart, int selEnd, String marker) {
+    public static @Nullable MarkdownEdit toggleSymmetric(String text, int selStart, int selEnd, String marker) {
         return MarkdownEmphasis.toggle(text, selStart, selEnd, marker, false);
     }
 
@@ -53,7 +55,7 @@ public final class MarkdownInline {
      * The destination of the link whose span contains {@code caret} — inline, reference, autolink or bare
      * URL — or {@code null} when the caret is not on a link. See {@link MarkdownLinkAt}.
      */
-    public static String linkAround(String text, int caret) {
+    public static @Nullable String linkAround(String text, int caret) {
         return MarkdownLinkAt.destination(text, caret);
     }
 

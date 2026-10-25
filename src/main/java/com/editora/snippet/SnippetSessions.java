@@ -4,11 +4,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 /** A bounded stack of nested expansions. Parents track ranges while only the child handles Tab/typing. */
 public final class SnippetSessions {
     private final List<SnippetSession> stack = new ArrayList<>();
-    private final java.util.function.Function<CodeArea, Runnable> undoJoin;
+    private final java.util.function.@Nullable Function<CodeArea, Runnable> undoJoin;
     private Runnable onChanged = () -> {};
 
     public SnippetSessions() {
@@ -20,11 +21,11 @@ public final class SnippetSessions {
      *     step of the edit before them, so a field's mirrors are undone with the Backspace or paste that
      *     changed it; {@code null} leaves each mirror edit its own step
      */
-    public SnippetSessions(java.util.function.Function<CodeArea, Runnable> undoJoin) {
+    public SnippetSessions(java.util.function.@Nullable Function<CodeArea, Runnable> undoJoin) {
         this.undoJoin = undoJoin;
     }
 
-    private SnippetSession active() {
+    private @Nullable SnippetSession active() {
         return stack.isEmpty() ? null : stack.getLast();
     }
 
@@ -47,7 +48,7 @@ public final class SnippetSessions {
     }
 
     /** The view the running session is in, or null. */
-    public CodeArea area() {
+    public @Nullable CodeArea area() {
         return active() == null ? null : active().area();
     }
 
@@ -71,8 +72,9 @@ public final class SnippetSessions {
     }
 
     /** {@code {position, count}} of the active field in the innermost session, or null when idle. */
-    public int[] progress() {
-        return isActive() ? active().progress() : null;
+    public int @Nullable [] progress() {
+        SnippetSession s = active();
+        return s != null && s.isActive() ? s.progress() : null;
     }
 
     /** How many expansions are stacked: 0 when idle, more than 1 while one runs inside another's field. */
@@ -85,7 +87,8 @@ public final class SnippetSessions {
     }
 
     /** As above, with the buffer's indent unit for the snippet's own indentation ({@code null} = keep tabs). */
-    public void start(CodeArea area, ParsedSnippet parsed, int from, int to, String indent, String indentUnit) {
+    public void start(
+            CodeArea area, ParsedSnippet parsed, int from, int to, String indent, @Nullable String indentUnit) {
         SnippetSession parent = active();
         if (stack.size() >= 16 || parent != null && !parent.suspendForChild(area, from, to)) {
             cancel();

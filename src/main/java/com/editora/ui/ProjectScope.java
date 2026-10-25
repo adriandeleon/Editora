@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 import com.editora.config.ConfigManager;
 import com.editora.config.ProjectSettings;
 import com.editora.config.Settings;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One window's project scope: the values its project's committed {@code .editora/settings.json} sets, whether
@@ -32,7 +33,7 @@ final class ProjectScope {
 
     private final Supplier<Path> root;
     private final Supplier<ConfigManager> config;
-    private Path cachedRoot;
+    private @Nullable Path cachedRoot;
     private ProjectSettings cache = EMPTY;
 
     ProjectScope(Supplier<Path> root, Supplier<ConfigManager> config) {
@@ -84,7 +85,7 @@ final class ProjectScope {
      * What applied at the last {@link #reload}. Trust is read live, so comparing with a signature taken just
      * before the reload would miss a trust decision made a moment earlier.
      */
-    private String applied;
+    private @Nullable String applied;
 
     /** What applies here, as one string: root, trust and the values (language servers aside: LspCoordinator's). */
     private String signature() {
@@ -131,11 +132,13 @@ final class ProjectScope {
     }
 
     /** Whether saving trims trailing whitespace; null when the project leaves it to .editorconfig and the default. */
+    @Nullable
     Boolean trimTrailingWhitespace() {
         return settings().editor().trimTrailingWhitespace(trusted());
     }
 
     /** Whether saving ends a file with a newline; null when the project leaves it. */
+    @Nullable
     Boolean insertFinalNewline() {
         return settings().editor().insertFinalNewline(trusted());
     }
@@ -146,7 +149,8 @@ final class ProjectScope {
                 .spellLanguage(
                         user.getSpellLanguage(),
                         trusted(),
-                        id -> com.editora.editor.SpellDictionaries.available().contains(id));
+                        id -> com.editora.editor.spell.SpellDictionaries.available()
+                                .contains(id));
     }
 
     /** The command build tool {@code tool} runs here (blank = the tool's own default lookup). */

@@ -18,6 +18,7 @@ import javafx.scene.input.Clipboard;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 
+import com.editora.config.PathDisplay;
 import com.editora.diff.BinaryDiff;
 import com.editora.diff.BlobRewrite;
 import com.editora.diff.ConflictParser;
@@ -36,6 +37,7 @@ import com.editora.git.GitFormat;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -54,7 +56,7 @@ import static com.editora.i18n.Messages.tr;
  */
 final class DiffCoordinator {
 
-    record GitReviewTarget(String path, String leftPath, char status) {}
+    record GitReviewTarget(String path, @Nullable String leftPath, char status) {}
 
     private record BuiltDiff(DiffViewerPane pane, DiffModel model) {}
 
@@ -72,8 +74,8 @@ final class DiffCoordinator {
         /** Decoded source bytes: the text in the editor's form, the format read off the raw decode. */
         static DiffContent decoded(EditorConfigCharset.Decoded raw) {
             return text(
-                    com.editora.editor.LineEndings.toLf(raw.text()),
-                    com.editora.editor.LineEndings.dominant(raw.text()),
+                    com.editora.editops.LineEndings.toLf(raw.text()),
+                    com.editora.editops.LineEndings.dominant(raw.text()),
                     raw.charset());
         }
 
@@ -97,6 +99,7 @@ final class DiffCoordinator {
         default void prepareDiffPane(DiffViewerPane pane) {}
 
         /** The open buffer for {@code target} (canonical-path match), or {@code null} if not open. */
+        @Nullable
         EditorBuffer openBufferFor(Path target);
 
         /**
@@ -104,15 +107,16 @@ final class DiffCoordinator {
          * reading the file on the calling thread: only for {@link #applyMergeResolution}, whose answer a merge
          * pane's save-before-close needs synchronously. Everything else uses {@link #openBackgroundBufferAsync}.
          */
+        @Nullable
         EditorBuffer openBackgroundBuffer(Path target);
 
         /** Loads a closed apply target away from the FX thread, then returns its attached buffer on FX. */
-        default void openBackgroundBufferAsync(Path target, Consumer<EditorBuffer> done) {
+        default void openBackgroundBufferAsync(Path target, Consumer<@Nullable EditorBuffer> done) {
             done.accept(openBackgroundBuffer(target));
         }
 
         /** Removes a background buffer opened solely for an apply that was rejected as stale. */
-        default void discardBackgroundBuffer(EditorBuffer buffer) {}
+        default void discardBackgroundBuffer(@Nullable EditorBuffer buffer) {}
 
         /** Saves {@code buffer}; {@code true} on success. */
         boolean saveBuffer(EditorBuffer buffer);
@@ -121,9 +125,11 @@ final class DiffCoordinator {
         List<DiffViewerPane> openDiffPanes();
 
         /** The active tab's diff pane, or {@code null} when the active tab isn't a diff. */
+        @Nullable
         DiffViewerPane activeDiffPane();
 
         /** Start directory for the compare-with-file picker. */
+        @Nullable
         Path finderStartDir();
 
         /**
@@ -131,7 +137,8 @@ final class DiffCoordinator {
          * the file is remote / has no rule), so a diff decodes git blobs + a closed working file the same way
          * the editor would read them — not force-decoding as UTF-8.
          */
-        String editorConfigCharset(Path file);
+        @Nullable
+        String editorConfigCharset(@Nullable Path file);
 
         /** Opens a changed file and moves the editor to its one-based line. */
         void openAt(Path file, int line);
@@ -249,7 +256,7 @@ final class DiffCoordinator {
             DiffSide leftSide,
             DiffSide rightSide,
             DiffViewerPane.EditableSide editableSide,
-            Path target) {
+            @Nullable Path target) {
         openDiff(
                 title,
                 headerLeft,
@@ -272,7 +279,7 @@ final class DiffCoordinator {
             DiffSide leftSide,
             DiffSide rightSide,
             DiffViewerPane.EditableSide editableSide,
-            Path target,
+            @Nullable Path target,
             Consumer<DiffViewerPane> configure) {
         buildDiffPane(
                 title,
@@ -300,12 +307,12 @@ final class DiffCoordinator {
             String title,
             String headerLeft,
             String headerRight,
-            String leftName,
-            String rightName,
+            @Nullable String leftName,
+            @Nullable String rightName,
             DiffSide leftSide,
             DiffSide rightSide,
             DiffViewerPane.EditableSide editableSide,
-            Path target,
+            @Nullable Path target,
             Consumer<DiffViewerPane> configure,
             Consumer<BuiltDiff> onReady) {
         leftSide.fetch(leftContent -> rightSide.fetch(rightContent -> {
@@ -361,11 +368,12 @@ final class DiffCoordinator {
                     lastDiffOptions = opts;
                     currentOptions[0] = opts;
                     long requested = generation.incrementAndGet();
-                    String left = pane.editableSide() == DiffViewerPane.EditableSide.LEFT && pane.hasResultEditor()
-                            ? pane.resultText()
+                    String result = pane.hasResultEditor() ? pane.resultText() : null;
+                    String left = pane.editableSide() == DiffViewerPane.EditableSide.LEFT && result != null
+                            ? result
                             : current[0];
-                    String right = pane.editableSide() == DiffViewerPane.EditableSide.RIGHT && pane.hasResultEditor()
-                            ? pane.resultText()
+                    String right = pane.editableSide() == DiffViewerPane.EditableSide.RIGHT && result != null
+                            ? result
                             : current[1];
                     diffService.compute(left, right, opts, next -> {
                         if (next == null) {
@@ -470,6 +478,7 @@ final class DiffCoordinator {
     }
 
     /** The {@code .editorconfig} charset the editor would read {@code file} with, or {@code null} (see {@link Ops}). */
+    @Nullable
     String editorConfigCharset(Path file) {
         return ops.editorConfigCharset(file);
     }
@@ -522,7 +531,8 @@ final class DiffCoordinator {
      * opening and decoding a closed target never blocks JavaFX. Shared by every diff surface, including the
      * Local File History panel's per-hunk restore.
      */
-    void applyToLocalIfUnchangedAsync(Path target, String expectedText, String newText, Consumer<Boolean> done) {
+    void applyToLocalIfUnchangedAsync(
+            Path target, @Nullable String expectedText, String newText, Consumer<Boolean> done) {
         EditorBuffer existing = ops.openBufferFor(target);
         if (existing != null) {
             done.accept(applyToBufferIfUnchanged(existing, expectedText, newText));
@@ -537,7 +547,7 @@ final class DiffCoordinator {
         });
     }
 
-    private boolean applyToBufferIfUnchanged(EditorBuffer buffer, String expectedText, String newText) {
+    private boolean applyToBufferIfUnchanged(EditorBuffer buffer, @Nullable String expectedText, String newText) {
         if (buffer == null
                 || !buffer.isEditable()
                 || buffer.isDisposed()
@@ -584,18 +594,18 @@ final class DiffCoordinator {
     }
 
     /** Opens a diff of a file or a multi-file review of a folder at HEAD vs the working tree. */
-    void diffPathVsHead(Path path) {
+    void diffPathVsHead(@Nullable Path path) {
         if (path == null) {
             host.setStatus(tr("status.diff.noFile"));
-            return;
-        }
-        if (git.reportIfNoRepo()) {
             return;
         }
         // Capture the repo root at open time and close over it: the refresher re-runs this fetcher, and the
         // live git.repoRoot() goes null while a (non-buffer) diff tab is the active tab in a No-Project window
         // — re-reading it then would fetch HEAD against a null root and blank the left pane.
-        Path root = git.repoRoot();
+        Path root = git.repoRootOrReport();
+        if (root == null) {
+            return;
+        }
         String rel = GitService.repoRelative(root, path);
         if (rel == null) {
             host.setStatus(tr("status.diff.notInRepo"));
@@ -627,7 +637,7 @@ final class DiffCoordinator {
      * a status when the text doesn't parse as a unified diff; notes when a multi-file patch shows only the
      * first file (v1 scope — one file section per tab).
      */
-    void openPatchFile(EditorBuffer buffer) {
+    void openPatchFile(@Nullable EditorBuffer buffer) {
         if (buffer == null) {
             host.setStatus(tr("status.diff.noFile"));
             return;
@@ -706,9 +716,9 @@ final class DiffCoordinator {
      * patch-file wording when {@code null}.
      */
     private DiffViewerPane patchPane(
-            String title,
-            String headerLeft,
-            String headerRight,
+            @Nullable String title,
+            @Nullable String headerLeft,
+            @Nullable String headerRight,
             String fallback,
             PatchParser.FilePatch fp,
             com.editora.diff.DiffModels.DiffModel initial) {
@@ -910,7 +920,7 @@ final class DiffCoordinator {
     }
 
     /** Opens the two arbitrary paths supplied by the standalone {@code --diff-ui} launch. */
-    void comparePaths(Path left, Path right) {
+    void comparePaths(@Nullable Path left, @Nullable Path right) {
         if (left != null && right != null && Files.isDirectory(left) && Files.isDirectory(right)) {
             compareDirectories(left, right);
             return;
@@ -923,10 +933,10 @@ final class DiffCoordinator {
     }
 
     /** Opens the two arbitrary files supplied by the standalone {@code --diff-ui} launch. */
-    void compareFiles(Path left, Path right) {
+    void compareFiles(@Nullable Path left, @Nullable Path right) {
         Path leftPath = left == null ? null : left.toAbsolutePath().normalize();
         Path rightPath = right == null ? null : right.toAbsolutePath().normalize();
-        if (!readableFile(leftPath) || !readableFile(rightPath)) {
+        if (leftPath == null || rightPath == null || !readableFile(leftPath) || !readableFile(rightPath)) {
             Path bad = !readableFile(leftPath) ? leftPath : rightPath;
             host.setStatus(tr("status.diff.unreadable", bad == null ? "" : bad));
             return;
@@ -950,10 +960,10 @@ final class DiffCoordinator {
     }
 
     /** Recursively scans two directory roots away from the FX thread, then opens a lazy file review. */
-    void compareDirectories(Path left, Path right) {
+    void compareDirectories(@Nullable Path left, @Nullable Path right) {
         Path leftRoot = left == null ? null : left.toAbsolutePath().normalize();
         Path rightRoot = right == null ? null : right.toAbsolutePath().normalize();
-        if (!readableDirectory(leftRoot) || !readableDirectory(rightRoot)) {
+        if (leftRoot == null || rightRoot == null || !readableDirectory(leftRoot) || !readableDirectory(rightRoot)) {
             Path bad = !readableDirectory(leftRoot) ? leftRoot : rightRoot;
             host.setStatus(tr("status.diff.unreadableDirectory", bad == null ? "" : bad));
             return;
@@ -979,8 +989,8 @@ final class DiffCoordinator {
         String summary = tr("diff.directory.summary", entries.size(), result.identicalFiles())
                 + (result.truncated() ? " · " + tr("diff.directory.truncated") : "")
                 + (result.incomplete() ? " · " + tr("diff.directory.incomplete") : "");
-        String leftName = pathName(leftRoot);
-        String rightName = pathName(rightRoot);
+        String leftName = PathDisplay.fileName(leftRoot);
+        String rightName = PathDisplay.fileName(rightRoot);
         DirectoryReviewPane review = new DirectoryReviewPane(
                 tr("diff.title.directories", leftName, rightName), entries, summary, (entry, ready) -> {
                     Path leftFile = leftRoot.resolve(entry.label());
@@ -1024,15 +1034,11 @@ final class DiffCoordinator {
                         : tr("status.diff.directoryOpened", entries.size()));
     }
 
-    private static String pathName(Path path) {
-        return path.getFileName() == null ? path.toString() : path.getFileName().toString();
-    }
-
-    private static boolean readableFile(Path path) {
+    private static boolean readableFile(@Nullable Path path) {
         return path != null && Files.isRegularFile(path) && Files.isReadable(path);
     }
 
-    private static boolean readableDirectory(Path path) {
+    private static boolean readableDirectory(@Nullable Path path) {
         return path != null && Files.isDirectory(path) && Files.isReadable(path);
     }
 
@@ -1081,15 +1087,15 @@ final class DiffCoordinator {
     }
 
     /** Diff a project-tree file or folder against a commit chosen from its history. */
-    void diffPathVsCommit(Path path) {
+    void diffPathVsCommit(@Nullable Path path) {
         if (path == null) {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
-        if (git.reportIfNoRepo()) {
+        Path root = git.repoRootOrReport(); // capture at open time; see diffPathVsHead
+        if (root == null) {
             return;
         }
-        Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
         String rel = GitService.repoRelative(root, path);
         if (rel == null) {
             host.setStatus(tr("status.diff.notInRepo"));
@@ -1114,15 +1120,15 @@ final class DiffCoordinator {
     }
 
     /** Diff a project-tree file or folder against a branch chosen from the repo's branches. */
-    void diffPathVsBranch(Path path) {
+    void diffPathVsBranch(@Nullable Path path) {
         if (path == null) {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
-        if (git.reportIfNoRepo()) {
+        Path root = git.repoRootOrReport(); // capture at open time; see diffPathVsHead
+        if (root == null) {
             return;
         }
-        Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
         String rel = GitService.repoRelative(root, path);
         if (rel == null) {
             host.setStatus(tr("status.diff.notInRepo"));
@@ -1152,15 +1158,15 @@ final class DiffCoordinator {
     }
 
     /** Diff a project-tree file or folder against a tag chosen from the repository. */
-    void diffPathVsTag(Path path) {
+    void diffPathVsTag(@Nullable Path path) {
         if (path == null) {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
-        if (git.reportIfNoRepo()) {
+        Path root = git.repoRootOrReport();
+        if (root == null) {
             return;
         }
-        Path root = git.repoRoot();
         String rel = GitService.repoRelative(root, path);
         if (rel == null) {
             host.setStatus(tr("status.diff.notInRepo"));
@@ -1258,7 +1264,7 @@ final class DiffCoordinator {
             String folderRel,
             String ref,
             String displayRef,
-            String rightRef,
+            @Nullable String rightRef,
             GitService.WorkingTreeDiff result) {
         boolean working = rightRef == null;
         String prefix = folderRel.isEmpty() ? "" : folderRel + "/";
@@ -1278,7 +1284,7 @@ final class DiffCoordinator {
                         : tr("diff.directory.refSummary", entries.size(), displayRef, rightRef))
                 + (result.truncated() ? " · " + tr("diff.directory.truncated") : "");
         String reviewTitle = working
-                ? tr("diff.title.vsBranch", pathName(folder), displayRef)
+                ? tr("diff.title.vsBranch", PathDisplay.fileName(folder), displayRef)
                 : tr("diff.title.refVsRef", displayRef, rightRef);
         DirectoryReviewPane review = new DirectoryReviewPane(reviewTitle, entries, summary, (entry, ready) -> {
             String repoPath = prefix + entry.label();
@@ -1318,9 +1324,9 @@ final class DiffCoordinator {
     }
 
     /** Diff a Git-panel file row: staged → index↔HEAD, unstaged → worktree↔index. */
-    void diffGitPanelFile(String repoRel, boolean staged) {
+    void diffGitPanelFile(@Nullable String repoRel, boolean staged) {
         Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
-        if (root == null) {
+        if (root == null || repoRel == null) {
             return;
         }
         Path abs = root.resolve(repoRel);
@@ -1444,7 +1450,11 @@ final class DiffCoordinator {
      * One file of a review between two sets of Git blobs: {@code leftSpec}/{@code rightSpec} are
      * {@code <rev>:<path>} blob specs, {@code null} for a side on which the file does not exist.
      */
-    record BlobReviewTarget(String path, char status, String leftSpec, String rightSpec) {}
+    record BlobReviewTarget(
+            String path,
+            char status,
+            @Nullable String leftSpec,
+            @Nullable String rightSpec) {}
 
     /**
      * Opens a read-only multi-file review tab — the one {@link #reviewGitChanges} builds — for files given
@@ -1508,12 +1518,15 @@ final class DiffCoordinator {
         }
         List<GitReviewTarget> targets = new ArrayList<>();
         for (FileEntry file : status.files()) {
+            String path = file.path();
+            if (path == null) {
+                continue;
+            }
             if (staged && file.staged()) {
-                targets.add(new GitReviewTarget(
-                        file.path(), sourcePath(file.path(), file.origPath(), file.index()), file.index()));
+                targets.add(new GitReviewTarget(path, sourcePath(path, file.origPath(), file.index()), file.index()));
             } else if (!staged && (file.unstaged() || file.untracked())) {
-                String source = file.untracked() ? null : sourcePath(file.path(), file.origPath(), file.worktree());
-                targets.add(new GitReviewTarget(file.path(), source, file.untracked() ? '?' : file.worktree()));
+                String source = file.untracked() ? null : sourcePath(path, file.origPath(), file.worktree());
+                targets.add(new GitReviewTarget(path, source, file.untracked() ? '?' : file.worktree()));
             }
         }
         return List.copyOf(targets);
@@ -1529,13 +1542,13 @@ final class DiffCoordinator {
         }
         for (FileEntry file : status.files()) {
             if (file.staged() && repoRel.equals(file.path())) {
-                return sourcePath(file.path(), file.origPath(), file.index());
+                return sourcePath(repoRel, file.origPath(), file.index());
             }
         }
         return repoRel;
     }
 
-    private static String sourcePath(String path, String originalPath, char status) {
+    private static String sourcePath(String path, @Nullable String originalPath, char status) {
         return (status == 'R' || status == 'C') && originalPath != null && !originalPath.isBlank()
                 ? originalPath
                 : path;
@@ -1640,7 +1653,7 @@ final class DiffCoordinator {
         }
         if (open != null) {
             byte[] working = EditorConfigCharset.encode(
-                    com.editora.editor.LineEndings.apply(open.getContent(), open.getLineEnding()),
+                    com.editora.editops.LineEndings.apply(open.getContent(), open.getLineEnding()),
                     open.getEffectiveCharset());
             stageRewritten(
                     root, repoRel, expectedBlob, working, null, ecCharset, openCharset, request.afterText(), done);
@@ -1669,9 +1682,9 @@ final class DiffCoordinator {
             String repoRel,
             GitService.BlobResult expectedBlob,
             byte[] original,
-            String shownText,
-            String ecCharset,
-            String openCharset,
+            @Nullable String shownText,
+            @Nullable String ecCharset,
+            @Nullable String openCharset,
             String afterText,
             Consumer<com.editora.process.ProcessRunner.Result> done) {
         EditorConfigCharset.Decoded decoded = DiffSideText.decodeRaw(original, ecCharset, openCharset);
@@ -1699,12 +1712,12 @@ final class DiffCoordinator {
      * (the file didn't exist under the new name at the parent) and the whole file shows as added instead of the
      * rename.
      */
-    void diffCommitFile(String hash, String repoRel, String origRepoRel) {
+    void diffCommitFile(String hash, String repoRel, @Nullable String origRepoRel) {
         diffCommitFile(git.repoRoot(), hash, repoRel, origRepoRel); // capture at open time; see diffPathVsHead
     }
 
     /** {@link #diffCommitFile(String, String, String)} in the repository the commit was listed from. */
-    void diffCommitFile(Path root, String hash, String repoRel, String origRepoRel) {
+    void diffCommitFile(@Nullable Path root, String hash, String repoRel, @Nullable String origRepoRel) {
         if (root == null) {
             return;
         }
@@ -1761,6 +1774,10 @@ final class DiffCoordinator {
         DiffSide empty = callback -> callback.accept(DiffContent.text(""));
         DirectoryReviewPane review = new DirectoryReviewPane(title, entries, summary, (entry, ready) -> {
             GitService.CommitFile file = byPath.get(entry.label());
+            if (file == null) {
+                ready.accept(null);
+                return;
+            }
             Path workingFile = root.resolve(file.path());
             String leftPath = sourcePath(file.path(), file.origPath(), file.status());
             String name = file.path().substring(file.path().lastIndexOf('/') + 1);
@@ -1828,7 +1845,7 @@ final class DiffCoordinator {
     }
 
     /** {@link #diffCommitFileVsWorking(String, String, Path)} in the repository the commit was listed from. */
-    void diffCommitFileVsWorking(Path root, String hash, String repoRel, Path workingFile) {
+    void diffCommitFileVsWorking(@Nullable Path root, String hash, String repoRel, Path workingFile) {
         if (root == null || workingFile == null) {
             return;
         }
@@ -1888,7 +1905,7 @@ final class DiffCoordinator {
     }
 
     /** The effective charset of {@code file}'s open buffer, or {@code null} when it is not open. */
-    private String openCharset(Path file) {
+    private @Nullable String openCharset(Path file) {
         EditorBuffer open = file == null ? null : ops.openBufferFor(file);
         return open == null ? null : open.getEffectiveCharset();
     }
@@ -1896,7 +1913,7 @@ final class DiffCoordinator {
     /** Index side whose exact raw blob becomes the compare-and-swap preimage for hunk actions. */
     private DiffSide indexBlobSide(
             Path root,
-            String path,
+            @Nullable String path,
             Path file,
             java.util.concurrent.atomic.AtomicReference<GitService.BlobResult> snapshot) {
         return blobSide(root, ":" + path, file, snapshot::set);
@@ -1966,7 +1983,7 @@ final class DiffCoordinator {
         });
     }
 
-    private Path askPatchExportFile() {
+    private @Nullable Path askPatchExportFile() {
         FileChooser fc = new FileChooser();
         fc.setTitle(tr("diff.exportPatch"));
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Patch (*.patch)", "*.patch"));
@@ -1978,9 +1995,9 @@ final class DiffCoordinator {
     /** The two texts a patch is written from: each displayed side with its source's line ending put back. */
     static String[] patchSides(DiffViewerPane.PatchRequest request) {
         return new String[] {
-            com.editora.editor.LineEndings.apply(
+            com.editora.editops.LineEndings.apply(
                     request.leftText(), request.leftFormat().lineEnding()),
-            com.editora.editor.LineEndings.apply(
+            com.editora.editops.LineEndings.apply(
                     request.rightText(), request.rightFormat().lineEnding())
         };
     }
@@ -2013,7 +2030,7 @@ final class DiffCoordinator {
         DiffText format = DiffText.parse(text);
         Path path = b.getPath();
         Path root = git.repoRoot();
-        String rel = GitService.repoRelative(root, path);
+        String rel = root == null || path == null ? null : GitService.repoRelative(root, path);
         if (root == null || rel == null) {
             openMarkerMergeOrReport(b, text, format, hasMarkers);
             return;
@@ -2124,7 +2141,7 @@ final class DiffCoordinator {
     }
 
     /** A merge stage in the buffer's own form; the resolution built from it replaces the buffer's text. */
-    private static String decodeMergeBlob(byte[] bytes, String editorConfigCharset, String openCharset) {
+    private static String decodeMergeBlob(byte[] bytes, @Nullable String editorConfigCharset, String openCharset) {
         return DiffSideText.decode(bytes, editorConfigCharset, openCharset).text();
     }
 

@@ -28,7 +28,7 @@ import javafx.stage.Stage;
 import com.editora.config.HttpResponseHistory;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.HttpLineResult;
+import com.editora.editor.http.HttpLineResult;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;

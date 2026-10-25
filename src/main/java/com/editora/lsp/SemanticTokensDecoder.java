@@ -3,7 +3,7 @@ package com.editora.lsp;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.editor.SemanticToken;
+import com.editora.text.SemanticToken;
 
 /**
  * Pure decode of an LSP semantic-tokens {@code data} array into absolute, CSS-classed

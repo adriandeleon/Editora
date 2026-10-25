@@ -5,6 +5,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Startup timing instrumentation: phase marks from <em>process start</em> to the first painted frame.
  *
@@ -121,7 +123,7 @@ public final class Startup {
     }
 
     /** One line for a mark recorded after the report was printed, in the report's own column layout. Pure. */
-    public static String formatLate(Mark previous, Mark late) {
+    public static String formatLate(@Nullable Mark previous, Mark late) {
         long delta = late.millis() - (previous == null ? 0 : previous.millis());
         String line = String.format("[perf] %-14s %6d  (+%d)%n", late.phase(), late.millis(), delta);
         return SESSION_RESTORED.equals(late.phase())

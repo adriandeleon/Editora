@@ -3,6 +3,8 @@ package com.editora.test;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The seam every per-tool parser implements. Two disjoint modes, picked by {@link TestResultParsers}:
  * <ul>
@@ -24,7 +26,7 @@ public interface TestResultParser {
     }
 
     /** Parses one report file into a suite, or {@code null} if it is not a (complete) report (file tools). */
-    default ParsedSuite parseReportFile(Path file) {
+    default @Nullable ParsedSuite parseReportFile(Path file) {
         return null;
     }
 
@@ -38,7 +40,7 @@ public interface TestResultParser {
      * decoded {@code output} text (so a {@code -json} run stays human-readable in the console), or {@code null}
      * to suppress a non-output event.
      */
-    default String consoleLine(String raw, boolean stderr) {
+    default @Nullable String consoleLine(String raw, boolean stderr) {
         return raw;
     }
 }

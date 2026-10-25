@@ -64,7 +64,7 @@ So a `save()` from any window writes `settings.json` plus that window's session 
 
 ### Changes reach every window
 
-`Settings` is one object, but each window applies it to its own buffers and services. `SharedConfig.enqueueSettings(origin)` — the single point every save goes through — compares the serialized preferences with what all windows last applied (`markSettingsApplied()`, first called when a second window is built). When they differ it tells `WindowManager`, which re-applies them in every window except the one that saved (that one applied the change itself), after a short coalescing delay so a burst such as a Ctrl+wheel zoom costs the other windows one re-apply. A palette toggle, a key binding or any other command therefore needs no broadcast of its own; `lastUpdateCheckEpoch` and `dismissedUpdateVersion` are bookkeeping and never trigger one. The Settings window still calls `broadcastSettingsApplied()` directly, which applies everywhere at once and resets the baseline.
+`Settings` is one object, but each window applies it to its own buffers and services. `SharedConfig.enqueueSettings(origin)` — the single point every save goes through — compares the serialized preferences with what all windows last applied (`markSettingsApplied()`, first called when a second window is built). When they differ it tells `WindowManager`, which re-applies them in every window except the one that saved (that one applied the change itself), after a short coalescing delay so a burst such as a Ctrl+wheel zoom costs the other windows one re-apply. A palette toggle, a key binding or any other command therefore needs no broadcast of its own; the update-check fields (`lastUpdateCheckEpoch`, `dismissedUpdateVersion`, `latestReleaseVersion`, `latestReleaseUrl`, `lastUpdateCheckOkEpoch`) are bookkeeping and never trigger one. The Settings window still calls `broadcastSettingsApplied()` directly, which applies everywhere at once and resets the baseline.
 
 The abbreviations and the saved SFTP sites are edited as whole lists by each window's Settings page, so a change to either (`SharedConfig.saveAbbreviations` / `saveConnections` → `setOnStoreChanged`) makes `WindowManager` tell every open Settings window to re-read them (`SettingsWindow.syncStoreBackedEditors`) — the change can land while Settings has the focus, so the window's own focus listener is not enough. A keymap reload (`WindowManager.reloadSharedKeymap`) likewise refreshes every open Settings window's keymap combo, shortcut list, chord chips and Macros key-binding row (`SettingsWindow.syncKeymap`).
 
@@ -175,8 +175,8 @@ Every structured config file carries an integer `schemaVersion` field, and its o
 2. The version to **assume when the file has no `schemaVersion` marker** — `1`, the pre-versioning baseline (a bare JSON array is detected as `0` instead, by `ConfigMigrations.versionOf`). `SETTINGS` also carries a small *evidence* table (`versionWithoutMarker`): a key that first appeared in version N proves the file is at least N, so a current-shape file that merely lost its marker resumes after the steps that are not safe to repeat instead of replaying all of them from 1.
 3. An ordered map of **step `Migration`s** keyed by the version they upgrade *from* (`v → v+1`).
 
-For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (122; `121 → 122` turns `remoteExecution`
-on once), with an additive identity step for
+For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (141; `121 → 122` turns `remoteExecution`
+on once, `140 → 141` is the additive `buildBeforeRun`), with an additive identity step for
 the Default JDK at `102 → 103` (also used by standalone Java files), `104 → 105` as
 `retireUnusedSettingsKeys`, and an identity step at `105 → 106` for per-keymap key-binding overrides
 (`keybindings`/`keybindingsMac` keep their place and now mean "the active keymap's"; `keymapKeybindings`/

@@ -42,6 +42,7 @@ import com.editora.github.IssueListParser.Issue;
 import com.editora.github.PrListParser.PullRequest;
 import com.editora.github.RunListParser.RunState;
 import com.editora.github.RunListParser.WorkflowRun;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -315,7 +316,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             }
 
             @Override
-            public GitHubListQuery.State fromString(String text) {
+            public GitHubListQuery.@Nullable State fromString(String text) {
                 return null;
             }
         });
@@ -686,6 +687,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     }
 
     /** The text shown in place of the rows (the empty-list note, or a failure message). For tests. */
+    @Nullable
     String placeholderText() {
         return list.getPlaceholder() == placeholder ? placeholder.getText() : null;
     }

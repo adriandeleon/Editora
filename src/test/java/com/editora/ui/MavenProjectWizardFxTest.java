@@ -49,7 +49,11 @@ class MavenProjectWizardFxTest {
     }
 
     private MavenProjectCoordinator coordinator() throws Exception {
-        return FxTestSupport.callOnFx(() -> FxTestSupport.field(fx.controller, "mavenProjectCoordinator"));
+        MavenProjectCoordinator c =
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(fx.controller, "mavenProjectCoordinator"));
+        // Whatever ~/.m2 holds on this machine must not decide what the wizard does with the Java release.
+        c.setDescriptorsForTest(a -> com.editora.maven.ArchetypeDescriptor.NONE);
+        return c;
     }
 
     private static MavenArchetype quickstart() {
@@ -191,20 +195,35 @@ class MavenProjectWizardFxTest {
             assertEquals(1, configs.size(), "exactly one seeded configuration");
             assertEquals("demo", configs.get(0).name(), "named after the project");
             assertEquals("com.example.demo.App", configs.get(0).mainClass());
-            assertEquals(projectDir.toString(), configs.get(0).workingDir());
+            assertEquals(
+                    "",
+                    configs.get(0).workingDir(),
+                    "blank = the project root, so a moved folder keeps working (review D20)");
             // jdtls names an imported Maven project by its artifactId; a blank projectName makes
             // resolveClasspath answer with an EMPTY classpath and no error.
             assertEquals("demo", configs.get(0).projectName(), "so the first launch resolves directly");
             // archetype:generate writes sources only and jdtls autobuild is off, so without a compile step
             // the very first Run resolves a correct classpath and then dies with ClassNotFoundException.
-            assertEquals("mvn -q compile", configs.get(0).beforeLaunch(), "the first Run must compile first");
+            assertEquals(
+                    "maven:compile",
+                    configs.get(0).beforeLaunch(),
+                    "the first Run must compile first, with the tree's Maven");
             assertEquals("demo", seeded.getWorkspaceState().getSelectedRunConfig(), "pre-selected");
             // The open file is not cosmetic: a Java launch resolves its classpath through an OPEN Java
             // file, so a window that opens on pom.xml alone reports "open a Java file from the project".
+            // The pom opens beside it, in the NEW window — it used to land as a foreign tab in this one.
             var open = seeded.getWorkspaceState().getOpenFiles();
-            assertEquals(1, open.size());
+            assertEquals(2, open.size());
             assertTrue(open.get(0).getPath().endsWith("App.java"), "the class that will run is open");
+            assertTrue(open.get(1).getPath().endsWith("pom.xml"), "and so is the pom");
             assertTrue(seeded.getWorkspaceState().getActiveFile().endsWith("App.java"), "and it is the active tab");
+            Object editorArea = FxTestSupport.field(fx.controller, "editorArea");
+            @SuppressWarnings("unchecked")
+            List<javafx.scene.control.Tab> tabs = (List<javafx.scene.control.Tab>)
+                    FxTestSupport.callOnFx(() -> FxTestSupport.call(editorArea, "tabs", new Class[] {}));
+            assertTrue(
+                    tabs.stream().noneMatch(t -> String.valueOf(t.getText()).contains("pom.xml")),
+                    "the pom is not opened in the window the wizard ran from");
         } finally {
             deleteRecursively(parent);
         }
@@ -362,27 +381,24 @@ class MavenProjectWizardFxTest {
     }
 
     /**
-     * With the update box ticked, the dependency half runs as a SECOND maven invocation in the project
-     * directory — not as extra flags on archetype:generate, which would not accept them.
+     * With the update box ticked there is still only ONE Maven run: both dependencies and plugins are
+     * resolved from Maven Central's metadata in-process (the {@code versions:use-latest-releases} run that
+     * used to follow wrote milestones and betas). This pom pins nothing, so no lookup is made either.
      */
     @Test
-    void updatingVersionsRunsTheVersionsPluginInTheProject() throws Exception {
+    void updatingVersionsDoesNotRunMavenASecondTime() throws Exception {
         Path parent = Files.createTempDirectory("editora-maven-versions");
         try {
             MavenProjectCoordinator c = coordinator();
             Path projectDir = parent.resolve("demo");
             List<List<String>> runs = new java.util.ArrayList<>();
-            List<Path> dirs = new java.util.ArrayList<>();
             FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
                 runs.add(command);
-                dirs.add(dir);
-                if (runs.size() == 1) {
-                    try {
-                        Files.createDirectories(projectDir);
-                        Files.writeString(projectDir.resolve("pom.xml"), POM);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
+                try {
+                    Files.createDirectories(projectDir);
+                    Files.writeString(projectDir.resolve("pom.xml"), POM);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
                 }
                 listener.onExit(0);
             }));
@@ -390,13 +406,10 @@ class MavenProjectWizardFxTest {
             MavenProjectSpec spec = new MavenProjectSpec(
                     quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
             FxTestSupport.runOnFx(() -> c.generate(spec, new MavenProjectExtras("", "", true)));
+            FxTestSupport.drainFx();
 
-            assertEquals(2, runs.size(), "the dependency update is a second maven run");
-            assertTrue(
-                    runs.get(1).contains("versions:use-latest-releases"),
-                    runs.get(1).toString());
-            assertTrue(runs.get(1).contains("-DgenerateBackupPoms=false"), "a versionsBackup pom is litter");
-            assertEquals(projectDir, dirs.get(1), "it must run IN the generated project, not its parent");
+            assertEquals(1, runs.size(), "archetype:generate only; versions are resolved in-process");
+            assertTrue(runs.get(0).contains("archetype:generate"), runs.get(0).toString());
         } finally {
             deleteRecursively(parent);
         }

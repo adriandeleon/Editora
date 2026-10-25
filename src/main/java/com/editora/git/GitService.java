@@ -29,6 +29,7 @@ import com.editora.process.CommandLog;
 import com.editora.process.ExecTarget;
 import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The native-{@code git} facade. Every Git command shells out via {@link ProcessRunner} on a daemon
@@ -67,8 +68,8 @@ public final class GitService {
      *  per-line hunk-text map (for the change-bar hover tooltip), git's reason when it refuses to work in the
      *  folder, and the multi-step operation (merge, rebase, …) the repository is in the middle of. */
     public record RepoState(
-            Path root,
-            Path diffFile,
+            @Nullable Path root,
+            @Nullable Path diffFile,
             GitStatus status,
             Map<Integer, ChangeType> changes,
             Map<Integer, String> hunks,
@@ -84,8 +85,8 @@ public final class GitService {
         }
 
         public RepoState(
-                Path root,
-                Path diffFile,
+                @Nullable Path root,
+                @Nullable Path diffFile,
                 GitStatus status,
                 Map<Integer, ChangeType> changes,
                 Map<Integer, String> hunks,
@@ -94,8 +95,8 @@ public final class GitService {
         }
 
         public RepoState(
-                Path root,
-                Path diffFile,
+                @Nullable Path root,
+                @Nullable Path diffFile,
                 GitStatus status,
                 Map<Integer, ChangeType> changes,
                 Map<Integer, String> hunks,
@@ -105,8 +106,8 @@ public final class GitService {
         }
 
         public RepoState(
-                Path root,
-                Path diffFile,
+                @Nullable Path root,
+                @Nullable Path diffFile,
                 GitStatus status,
                 Map<Integer, ChangeType> changes,
                 Map<Integer, String> hunks,
@@ -116,8 +117,8 @@ public final class GitService {
         }
 
         public RepoState(
-                Path root,
-                Path diffFile,
+                @Nullable Path root,
+                @Nullable Path diffFile,
                 GitStatus status,
                 Map<Integer, ChangeType> changes,
                 Map<Integer, String> hunks) {
@@ -224,7 +225,7 @@ public final class GitService {
      * {@link #UNAVAILABLE_RETRY}, doubling with each consecutive failure up to {@link #UNAVAILABLE_RETRY_MAX},
      * so a machine without git pays for one failed process start now and then, not one per refresh. Pure.
      */
-    static boolean availabilityCurrent(Availability cached, List<String> command, long nowNanos) {
+    static boolean availabilityCurrent(@Nullable Availability cached, List<String> command, long nowNanos) {
         if (cached == null || !cached.command().equals(command)) {
             return false;
         }
@@ -244,7 +245,7 @@ public final class GitService {
      * was changed in Settings, through a different window) is stale and is probed again. A negative answer
      * also expires ({@link #availabilityCurrent}).
      */
-    private volatile Availability gitAvailable;
+    private volatile @Nullable Availability gitAvailable;
 
     /** {@link System#nanoTime()} outside tests; the expiry of every negative answer is measured on it. */
     private volatile java.util.function.LongSupplier nanoClock = System::nanoTime;
@@ -292,7 +293,7 @@ public final class GitService {
      * argv for a command the <em>user</em> asked for (commit, checkout, push, …): the configured git command
      * plus {@code args}, with the user's hooks and configuration fully in effect.
      */
-    private static List<String> gitArgv(Path dir, String... args) {
+    private static List<String> gitArgv(@Nullable Path dir, String... args) {
         List<String> command = commandFor(dir);
         List<String> cmd = new ArrayList<>(command.size() + args.length);
         cmd.addAll(command);
@@ -325,7 +326,7 @@ public final class GitService {
      * Whether git for {@code dir} runs on this machine: its execution target's answer, not its filesystem's. A
      * folder of this machine can still have its tools run elsewhere (bind-mounted into a container, in WSL).
      */
-    private static boolean isLocal(Path dir) {
+    private static boolean isLocal(@Nullable Path dir) {
         return ExecTargets.runsHere(dir);
     }
 
@@ -335,7 +336,7 @@ public final class GitService {
     }
 
     /** The git command for the machine {@code dir} is on. */
-    static List<String> commandFor(Path dir) {
+    static List<String> commandFor(@Nullable Path dir) {
         if (isLocal(dir)) {
             return GIT_CMD;
         }
@@ -354,8 +355,8 @@ public final class GitService {
      * host that host's own, once it can run commands at all. Never probes a remote host from the JavaFX
      * thread: until a lane has asked, the answer there is no.
      */
-    public boolean gitAvailable(Path context) {
-        if (isLocal(context)) {
+    public boolean gitAvailable(@Nullable Path context) {
+        if (context == null || isLocal(context)) { // a null path is this machine's
             return gitAvailable();
         }
         ExecTarget target = ExecTargets.forPath(context);
@@ -446,7 +447,7 @@ public final class GitService {
     private static final Map<String, String> REMOTE_USER_ENV = GitSafety.userEnv(Map.of());
 
     /** The environment of a user command run in {@code dir}. */
-    private static Map<String, String> userEnv(Path dir) {
+    private static Map<String, String> userEnv(@Nullable Path dir) {
         return isLocal(dir) ? USER_ENV : REMOTE_USER_ENV;
     }
 
@@ -509,7 +510,7 @@ public final class GitService {
     public boolean gitAvailable() {
         List<String> command = GIT_CMD;
         Availability cached = gitAvailable;
-        if (availabilityCurrent(cached, command, nanoClock.getAsLong())) {
+        if (cached != null && availabilityCurrent(cached, command, nanoClock.getAsLong())) {
             return cached.available();
         }
         if (cached != null && cached.command().equals(command) && onFxThread()) {
@@ -573,7 +574,7 @@ public final class GitService {
      * @param contextPath a file or directory used to locate the repo (may be {@code null})
      * @param diffFile    the file whose HEAD diff feeds the gutter (may be {@code null} to skip)
      */
-    public void refresh(Path contextPath, Path diffFile, Consumer<RepoState> onResult) {
+    public void refresh(Path contextPath, @Nullable Path diffFile, Consumer<RepoState> onResult) {
         long gen = refreshGen.incrementAndGet();
         submit(exec, () -> {
             if (gen != refreshGen.get()) {
@@ -632,7 +633,7 @@ public final class GitService {
      * @param backOff skip the status (answering {@link #UNANSWERED}) while the repository is in the wait that
      *     follows a timeout; false for a caller that needs an answer whatever it costs
      */
-    private RepoState computeRefresh(Path contextPath, Path diffFile, boolean backOff) {
+    private RepoState computeRefresh(Path contextPath, @Nullable Path diffFile, boolean backOff) {
         if (!gitAvailable(contextPath) || contextPath == null) {
             return RepoState.NONE;
         }
@@ -770,7 +771,8 @@ public final class GitService {
      */
     public void showBlob(Path root, String spec, Consumer<BlobResult> onResult) {
         submit(exec, () -> {
-            BlobResult result = gitAvailable(root) && root != null ? blobNow(root, spec) : new BlobResult(false, null);
+            BlobResult result =
+                    gitAvailable(root) && root != null ? blobNow(root, spec) : new BlobResult(false, new byte[0]);
             BlobResult posted = result;
             Platform.runLater(() -> onResult.accept(posted));
         });
@@ -898,7 +900,7 @@ public final class GitService {
      * Lists up to {@code max} commits touching {@code file} (most recent first) via one {@code git log},
      * tab-separated fields parsed by the pure {@link #parseLog}. Posts on the FX thread.
      */
-    public void log(Path root, Path file, int max, Consumer<List<Commit>> onResult) {
+    public void log(Path root, @Nullable Path file, int max, Consumer<List<Commit>> onResult) {
         submit(exec, () -> {
             List<Commit> commits = List.of();
             if (gitAvailable(root) && root != null) {
@@ -982,7 +984,7 @@ public final class GitService {
     private final AtomicLong logGen = new AtomicLong();
 
     /** The Git Log listing now being read, or null; see {@link #cancelHistoryRead}. */
-    private volatile ProcessRunner.Cancellation historyRead;
+    private volatile ProcessRunner.@Nullable Cancellation historyRead;
 
     /**
      * Stops the Git Log listing that is being read — a {@code content:} search can run for seconds, or
@@ -1248,7 +1250,7 @@ public final class GitService {
         }
     }
 
-    private List<BlameParser.BlameLine> cachedBlame(String source, BlameKey key) {
+    private @Nullable List<BlameParser.BlameLine> cachedBlame(String source, @Nullable BlameKey key) {
         CachedBlame cached;
         synchronized (blameCache) {
             cached = blameCache.get(source);
@@ -1379,7 +1381,7 @@ public final class GitService {
         return cache.putText(name, text);
     }
 
-    private BlameKey blameKey(Path root, Path file, BlameOptions options, BlameIgnoreRevs.Plan plan) {
+    private @Nullable BlameKey blameKey(Path root, Path file, BlameOptions options, BlameIgnoreRevs.Plan plan) {
         try {
             ProcessRunner.Result head = git(root, QUICK, "rev-parse", "--verify", "HEAD");
             if (!head.ok()) {
@@ -1400,7 +1402,8 @@ public final class GitService {
     }
 
     /** One file changed by a commit: its name-status letter, path, and (for rename/copy) the original path. */
-    public record CommitFile(char status, String path, String origPath) {}
+    public record CommitFile(
+            char status, String path, @Nullable String origPath) {}
 
     /**
      * Lists the files a commit changed relative to its <em>first parent</em> — the same pair the commit-file
@@ -1544,7 +1547,7 @@ public final class GitService {
      * falls back to {@code toAbsolutePath().normalize()}, preserving the old behaviour where there's nothing
      * to resolve.
      */
-    public static String repoRelative(Path root, Path file) {
+    public static @Nullable String repoRelative(Path root, Path file) {
         if (root == null || file == null || root.getFileSystem() != file.getFileSystem()) {
             return null; // a path on another file system (a remote tab) is never inside this repository
         }
@@ -1923,7 +1926,7 @@ public final class GitService {
     }
 
     /** {@code git rev-list --count <revisions>}, or {@code null} when it fails (an unknown revision, no upstream). */
-    private static Integer revCount(Path root, String... revisions) {
+    private static @Nullable Integer revCount(Path root, String... revisions) {
         String[] args = new String[revisions.length + 2];
         args[0] = "rev-list";
         args[1] = "--count";
@@ -2368,7 +2371,7 @@ public final class GitService {
     static final Duration AUTO_FETCH = Duration.ofMinutes(2);
 
     /** The background fetch now running, or null. */
-    private volatile ProcessRunner.Cancellation autoFetchCommand;
+    private volatile ProcessRunner.@Nullable Cancellation autoFetchCommand;
 
     /** Whether a user command is running or waiting on the network lane. */
     public boolean networkBusy() {
@@ -2466,7 +2469,7 @@ public final class GitService {
         });
     }
 
-    private static HeadCommit headCommitNow(Path root) {
+    private static @Nullable HeadCommit headCommitNow(Path root) {
         ProcessRunner.Result r = git(root, QUICK, "log", "-1", "--no-color", "--format=%H%x00%h%x00%P%x00%s%x00%B");
         String[] parts = r.ok() ? r.out().split("\0", 5) : new String[0];
         if (parts.length < 5 || parts[0].isBlank()) {
@@ -2616,7 +2619,7 @@ public final class GitService {
     }
 
     /** A patch read from git: its bytes, or why there are none. */
-    public record PatchText(byte[] bytes, String error) {
+    public record PatchText(byte[] bytes, @Nullable String error) {
         public boolean ok() {
             return error == null;
         }
@@ -2799,7 +2802,7 @@ public final class GitService {
      * working tree, else {@code null}. Where links are checked out as plain files ({@code core.symlinks=false},
      * the Windows default) the path is not a link to Java either, and is staged as the file it is.
      */
-    private static byte[] symlinkTarget(Path root, String path) {
+    private static byte @Nullable [] symlinkTarget(Path root, String path) {
         try {
             Path file = root.resolve(path);
             if (!Files.isSymbolicLink(file)) {
@@ -2814,7 +2817,7 @@ public final class GitService {
         }
     }
 
-    private ProcessRunner.Result stageBlobNow(Path root, String path, BlobResult expectedBlob, byte[] body) {
+    private ProcessRunner.Result stageBlobNow(Path root, String path, BlobResult expectedBlob, byte @Nullable [] body) {
         if (root == null || path == null || expectedBlob == null) {
             return new ProcessRunner.Result(1, "", "The index changed after this diff was created");
         }
@@ -2885,7 +2888,9 @@ public final class GitService {
         } catch (java.nio.file.FileAlreadyExistsException busy) {
             return new ProcessRunner.Result(1, "", "The Git index is busy");
         } catch (java.io.IOException failure) {
-            return new ProcessRunner.Result(1, "", failure.getMessage());
+            return new ProcessRunner.Result(
+                    1, "", failure.getMessage() == null ? failure.toString() : failure.getMessage());
+
         } finally {
             try {
                 if (lockOwned) {
@@ -2956,7 +2961,7 @@ public final class GitService {
             Path root,
             Duration timeout,
             List<String[]> commands,
-            Supplier<String> refusal,
+            @Nullable Supplier<String> refusal,
             Consumer<ProcessRunner.Result> onResult) {
         if (lane == networkExec) {
             submitNetworkInRequestOrder(
@@ -2992,7 +2997,7 @@ public final class GitService {
             Path root,
             Duration timeout,
             List<String[]> commands,
-            Supplier<String> refusal,
+            @Nullable Supplier<String> refusal,
             Consumer<ProcessRunner.Result> onResult,
             boolean locked) {
         ProcessRunner.Result result;
@@ -3101,11 +3106,11 @@ public final class GitService {
     }
 
     /** The answer to "which repository is this path in": a root, or nothing with git's reason if it refused. */
-    private record RootLookup(Path root, String refusal) {
+    private record RootLookup(@Nullable Path root, String refusal) {
         static final RootLookup NOT_A_REPO = new RootLookup(null, "");
     }
 
-    private Path resolveRoot(Path contextPath) {
+    private @Nullable Path resolveRoot(Path contextPath) {
         return lookupRoot(contextPath).root();
     }
 
@@ -3281,7 +3286,7 @@ public final class GitService {
      * {@link #gitLogged} for a command long enough to watch: the {@link CommandLog} hears that it started and
      * each line as git writes it, not only the finished transcript.
      */
-    private ProcessRunner.Result gitStreamed(Path dir, Duration timeout, String... args) {
+    private ProcessRunner.Result gitStreamed(@Nullable Path dir, Duration timeout, String... args) {
         long startNanos = System.nanoTime();
         List<String> argv = gitArgv(dir, args);
         CommandLog log = commandLog;
@@ -3300,7 +3305,7 @@ public final class GitService {
     }
 
     /** The streamed network command now running — the lane runs one at a time — or null. */
-    private volatile ProcessRunner.Cancellation streamedCommand;
+    private volatile ProcessRunner.@Nullable Cancellation streamedCommand;
 
     /**
      * Stops the clone, fetch, pull or push that is running; its caller gets a
@@ -3326,7 +3331,7 @@ public final class GitService {
     }
 
     /** The local user command (commit, checkout, reset, stash, …) now running, or null. */
-    private volatile ProcessRunner.Cancellation localCommand;
+    private volatile ProcessRunner.@Nullable Cancellation localCommand;
 
     /**
      * Stops the user command that is running: the clone, fetch, pull or push if there is one

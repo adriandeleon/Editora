@@ -1,5 +1,7 @@
 package com.editora.editops;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Emacs {@code auto-fill-mode}: break a line at a word boundary as it grows past the fill column while you
  * type. Pure and toolkit-free (mirroring {@link Filler}); the buffer calls {@link #compute} after each
@@ -26,7 +28,7 @@ public final class AutoFill {
      * whitespace after it (so an over-long first word still breaks eventually). Never breaks inside the
      * leading indentation — a break there would only produce an empty first line.
      */
-    public static Break compute(String lineText, int fillColumn, String fillPrefix) {
+    public static @Nullable Break compute(String lineText, int fillColumn, String fillPrefix) {
         return compute(lineText, fillColumn, fillPrefix, fillPrefix);
     }
 
@@ -35,7 +37,7 @@ public final class AutoFill {
      * {@code 1. item}) wraps <em>under its text</em> — repeating the marker would turn the wrapped tail into
      * a second item.
      */
-    public static Break computeProse(String lineText, int fillColumn, String lineComment) {
+    public static @Nullable Break computeProse(String lineText, int fillColumn, @Nullable String lineComment) {
         if (lineText == null) {
             return null;
         }
@@ -44,7 +46,7 @@ public final class AutoFill {
     }
 
     /** As {@link #compute(String, int, String)}, starting the wrapped tail with {@code continuation}. */
-    static Break compute(String lineText, int fillColumn, String fillPrefix, String continuation) {
+    static @Nullable Break compute(String lineText, int fillColumn, String fillPrefix, String continuation) {
         if (lineText == null || fillColumn < 1 || lineText.length() <= fillColumn) {
             return null;
         }

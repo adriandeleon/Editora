@@ -15,6 +15,7 @@ import javafx.scene.input.KeyEvent;
 
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
+import org.jspecify.annotations.Nullable;
 import org.reactfx.Subscription;
 
 /**
@@ -45,7 +46,7 @@ public final class SnippetSession {
     private final List<Field> fields = new ArrayList<>(); // ordered: 1,2,… then $0 last
     private final int[] finalRange; // $0 caret (or end of insert); shifts with edits
     private int active = -1;
-    private Subscription sub;
+    private @Nullable Subscription sub;
     private boolean applying;
     private boolean ended;
     private boolean completed;
@@ -72,7 +73,7 @@ public final class SnippetSession {
     }
 
     private java.util.function.Function<CodeArea, Runnable> undoJoin = a -> () -> {};
-    private ContextMenu choiceMenu;
+    private @Nullable ContextMenu choiceMenu;
 
     /**
      * One tab stop's live document ranges. {@code ranges.get(primaryIdx)} is the editable field; the rest
@@ -131,7 +132,8 @@ public final class SnippetSession {
      * spaces or a tab) first; {@code null} keeps the body's tabs. Line endings are always normalised: the
      * area stores a CRLF as one character, so offsets taken from text that still holds one would be late.
      */
-    public SnippetSession(CodeArea area, ParsedSnippet parsed, int from, int to, String indent, String indentUnit) {
+    public SnippetSession(
+            CodeArea area, ParsedSnippet parsed, int from, int to, String indent, @Nullable String indentUnit) {
         this.area = area;
         ParsedSnippet p = reindent(normalize(parsed, indentUnit), indent == null ? "" : indent);
         area.replaceText(from, to, p.text());
@@ -289,7 +291,7 @@ public final class SnippetSession {
     }
 
     /** See {@link SnippetSessions#SnippetSessions(java.util.function.Function)}. */
-    void setUndoJoin(java.util.function.Function<CodeArea, Runnable> undoJoin) {
+    void setUndoJoin(java.util.function.@Nullable Function<CodeArea, Runnable> undoJoin) {
         this.undoJoin = undoJoin == null ? a -> () -> {} : undoJoin;
     }
 
@@ -997,12 +999,13 @@ public final class SnippetSession {
      * {@link #spaceIndentUnit} spaces, so it does not put four spaces into a tab-indented file. Whitespace
      * after the first other character of a line is text and is kept. Pure.
      */
-    public static ParsedSnippet normalize(ParsedSnippet parsed, String indentUnit) {
+    public static ParsedSnippet normalize(ParsedSnippet parsed, @Nullable String indentUnit) {
         String t = parsed.text();
-        boolean convert = indentUnit != null && !indentUnit.isEmpty();
-        boolean tabs = convert && !indentUnit.equals("\t") && t.indexOf('\t') >= 0;
+        String unit = indentUnit == null ? "" : indentUnit;
+        boolean convert = !unit.isEmpty();
+        boolean tabs = convert && !unit.equals("\t") && t.indexOf('\t') >= 0;
         int spaceUnit = convert ? spaceIndentUnit(t) : 0;
-        boolean spaces = spaceUnit > 0 && !indentUnit.equals(" ".repeat(spaceUnit));
+        boolean spaces = spaceUnit > 0 && !unit.equals(" ".repeat(spaceUnit));
         if (!tabs && !spaces && t.indexOf('\r') < 0) {
             return parsed;
         }
@@ -1019,7 +1022,7 @@ public final class SnippetSession {
                 c = '\n';
             }
             if (c == '\t' && tabs && lineStart) {
-                sb.append(indentUnit);
+                sb.append(unit);
                 continue;
             }
             if (c == ' ' && spaces && lineStart) {
@@ -1031,10 +1034,10 @@ public final class SnippetSession {
                 int start = sb.length();
                 for (int j = 0; j < n; j++) { // an offset inside a level snaps to that level's start
                     map[k + j] = j < levels * spaceUnit
-                            ? start + (j / spaceUnit) * indentUnit.length()
-                            : start + levels * indentUnit.length() + (j - levels * spaceUnit);
+                            ? start + (j / spaceUnit) * unit.length()
+                            : start + levels * unit.length() + (j - levels * spaceUnit);
                 }
-                sb.append(indentUnit.repeat(levels)).append(" ".repeat(n - levels * spaceUnit));
+                sb.append(unit.repeat(levels)).append(" ".repeat(n - levels * spaceUnit));
                 k += n - 1;
                 lineStart = false;
                 continue;

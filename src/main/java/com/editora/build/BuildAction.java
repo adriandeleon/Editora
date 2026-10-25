@@ -25,9 +25,13 @@ public final class BuildAction {
      * render the group folded — for a long, browse-on-demand group (a Maven plugin's full goal list) that
      * would otherwise bury the sections above it. The searchable popup ignores it (it has no folding).
      */
-    public record Section(String title, List<Row> rows, boolean collapsed) {
+    public record Section(String title, List<Row> rows, boolean collapsed, String tooltip) {
         public Section(String title, List<Row> rows) {
-            this(title, rows, false);
+            this(title, rows, false, "");
+        }
+
+        public Section(String title, List<Row> rows, boolean collapsed) {
+            this(title, rows, collapsed, "");
         }
     }
 
@@ -45,10 +49,27 @@ public final class BuildAction {
         }
     }
 
-    /** A checkable modifier. {@code note} is an optional trailing annotation (Maven's "(active by default)"). */
-    public record Toggle(String id, String label, String note) implements Row {
+    /**
+     * A checkable modifier. {@code note} is an optional trailing annotation (Maven's activation condition).
+     *
+     * <p>A {@code triState} toggle has a third, explicitly-off state — Maven's {@code -P!id}, which switches
+     * off a profile the pom or settings would otherwise activate. The views keep it in the same id set as
+     * {@code "!" + id} (Maven's own spelling), so a provider's {@link BuildActionsProvider#toggleArgs} sees
+     * both forms. A {@code locked} toggle is on by something outside the build's argv (a profile activated
+     * in {@code ~/.m2/settings.xml}): shown checked and disabled, never put in the set.
+     */
+    public record Toggle(String id, String label, String note, boolean triState, boolean locked) implements Row {
         public Toggle(String id, String label) {
-            this(id, label, "");
+            this(id, label, "", false, false);
+        }
+
+        public Toggle(String id, String label, String note) {
+            this(id, label, note, false, false);
+        }
+
+        /** The id the views store for this toggle's explicitly-off state. */
+        public String offId() {
+            return "!" + id;
         }
     }
 }

@@ -20,6 +20,7 @@ import javafx.application.Platform;
 
 import com.editora.config.HistoryRevision;
 import com.editora.history.HistoryRetention.RetentionPolicy;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The UI-facing facade for the Local File History. Mirrors the {@code GitService}/{@code MermaidService}
@@ -34,7 +35,7 @@ import com.editora.history.HistoryRetention.RetentionPolicy;
 public final class HistoryService {
 
     /** A null revision can mean an unchanged successful snapshot; {@code successful} distinguishes I/O failure. */
-    public record SnapshotOutcome(HistoryRevision revision, boolean successful) {}
+    public record SnapshotOutcome(@Nullable HistoryRevision revision, boolean successful) {}
 
     private static final Logger LOG = Logger.getLogger(HistoryService.class.getName());
 
@@ -43,7 +44,7 @@ public final class HistoryService {
     private final Object publicationLock = new Object();
     private int publicationsInFlight;
     private final Set<String> publicationHashes = new LinkedHashSet<>();
-    private Set<String> deferredLiveHashes;
+    private @Nullable Set<String> deferredLiveHashes;
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "history-service");
@@ -64,9 +65,9 @@ public final class HistoryService {
     private long lastGcNanos;
     private boolean gcRequested;
     /** The policy the index was last swept with; {@code null} until the startup sweep is claimed. */
-    private RetentionPolicy sweptPolicy;
+    private @Nullable RetentionPolicy sweptPolicy;
     /** The limits the user has agreed to; see {@link #effectivePolicy}. Guarded by {@link #publicationLock}. */
-    private RetentionPolicy acknowledgedPolicy;
+    private @Nullable RetentionPolicy acknowledgedPolicy;
 
     private volatile Consumer<RetentionPolicy> onAcknowledged = policy -> {};
 
@@ -407,7 +408,7 @@ public final class HistoryService {
      * {@link #acknowledge} — whichever way the setting was changed, tightening a limit deletes revisions, and
      * that needs the user's say-so first (see {@link #previewTightening}).
      */
-    public RetentionPolicy effectivePolicy(RetentionPolicy configured) {
+    public @Nullable RetentionPolicy effectivePolicy(RetentionPolicy configured) {
         RetentionPolicy before;
         RetentionPolicy after;
         synchronized (publicationLock) {
@@ -445,7 +446,7 @@ public final class HistoryService {
      * unconfirmed — a settings sync, an edited {@code settings.json} — was held back while the editor ran and
      * then applied, and swept, at the next start. Does not notify the listener.
      */
-    public void restoreAcknowledged(RetentionPolicy policy) {
+    public void restoreAcknowledged(@Nullable RetentionPolicy policy) {
         synchronized (publicationLock) {
             acknowledgedPolicy = policy;
         }

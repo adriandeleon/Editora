@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.config.Settings;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure: bash-language-server's own settings — its {@code bashIde} configuration section — as Editora sends them
@@ -132,7 +133,7 @@ public record BashIdeConfig(
         return List.copyOf(out);
     }
 
-    private static void addRequest(List<String> out, String key, Object value) {
+    private static void addRequest(List<String> out, String key, @Nullable Object value) {
         if (value instanceof String s && !s.isBlank()) {
             out.add("bash: " + key + " = " + s.strip());
         }
@@ -142,7 +143,7 @@ public record BashIdeConfig(
      * This configuration with blank ShellCheck/shfmt paths filled in from the copies Editora installed
      * ({@code null} = none installed). A path the user set is kept.
      */
-    public BashIdeConfig withInstalledTools(String installedShellcheck, String installedShfmt) {
+    public BashIdeConfig withInstalledTools(@Nullable String installedShellcheck, @Nullable String installedShfmt) {
         return new BashIdeConfig(
                 shellcheckPath.isEmpty() && installedShellcheck != null ? installedShellcheck : shellcheckPath,
                 shellcheckArguments,
@@ -237,11 +238,11 @@ public record BashIdeConfig(
         return command.indexOf('/') >= 0 || command.indexOf('\\') >= 0;
     }
 
-    private static String str(Object value, String fallback) {
+    private static String str(@Nullable Object value, String fallback) {
         return value instanceof String s ? s : fallback;
     }
 
-    private static boolean bool(Object value, boolean fallback) {
+    private static boolean bool(@Nullable Object value, boolean fallback) {
         return value instanceof Boolean b ? b : fallback;
     }
 

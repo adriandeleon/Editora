@@ -38,6 +38,7 @@ import com.editora.test.TestRun;
 import com.editora.test.TestStatus;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -83,18 +84,18 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     /** Same-instance {@link TestNode} → its tree item, so live updates never rebuild or duplicate the tree. */
     private final Map<TestNode, TreeItem<TestNode>> items = new IdentityHashMap<>();
 
-    private TestNode lastRoot;
-    private TestRun lastRun; // for the no-selection run summary in the detail pane
+    private @Nullable TestNode lastRoot;
+    private @Nullable TestRun lastRun; // for the no-selection run summary in the detail pane
     private TestCounts lastCounts = TestCounts.ZERO; // drives the chip-visibility rule on a filter change
     private String runLabel = "";
     private Runnable onRerun;
-    private Runnable onRerunFailed;
-    private Runnable onStop;
-    private Consumer<TestNode> onActivate;
-    private Consumer<TestNode> onRerunOne;
-    private Consumer<TestNode> onDebugOne;
+    private @Nullable Runnable onRerunFailed;
+    private @Nullable Runnable onStop;
+    private @Nullable Consumer<TestNode> onActivate;
+    private @Nullable Consumer<TestNode> onRerunOne;
+    private @Nullable Consumer<TestNode> onDebugOne;
     private java.util.function.BooleanSupplier debugAvailable = () -> false;
-    private Consumer<StackTraceLinks.Link> onLink;
+    private @Nullable Consumer<StackTraceLinks.Link> onLink;
 
     TestRunnerPanel() {
         getStyleClass().add("test-runner");
@@ -273,7 +274,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     }
 
     /** A run started: reset the tree/detail/counts and show the running state. */
-    void startRun(String label) {
+    void startRun(@Nullable String label) {
         items.clear();
         rootItem.getChildren().clear();
         lastRoot = null;
@@ -291,6 +292,15 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         showRunSummary(); // the detail pane shows the run header until a test is selected
     }
 
+    /**
+     * Replaces the header's "Running <argv>…" with what the run is really doing — Debug Test waiting for the
+     * suspended test JVM (review D14: the status bar's version was overwritten at once, and the header showed
+     * a 180-character argv instead).
+     */
+    void setRunNote(String note) {
+        status.setText(note == null ? tr("testrunner.running", runLabel) : note);
+    }
+
     /** Live update: sync the tree from the (mutated-in-place) root and refresh the header counts/progress. */
     void update(TestRun run) {
         update(run, null);
@@ -301,7 +311,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
      * frontier). While the run is live and "track running test" is on, it is scrolled into view so the user
      * watches progress in real time.
      */
-    void update(TestRun run, TestNode follow) {
+    void update(TestRun run, @Nullable TestNode follow) {
         update0(run);
         revealFollow(run, follow);
     }
@@ -324,7 +334,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
      * fully visible, so a steady run doesn't jitter). No-op once the run finishes, when the user turned
      * tracking off, or when the row is filtered out by "show passed".
      */
-    private void revealFollow(TestRun run, TestNode follow) {
+    private void revealFollow(TestRun run, @Nullable TestNode follow) {
         if (follow == null || !followToggle.isSelected() || !run.isRunning()) {
             return;
         }
@@ -351,11 +361,24 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
      * too — the leaves alone would read "N of N passed" — so it gets its own header and the failed style.
      */
     void finishRun(TestRun run, int exitCode) {
+        finishRun(run, exitCode, false);
+    }
+
+    /**
+     * As {@link #finishRun(TestRun, int)}; {@code stopped} when the user ended the run (Maven review B5): the
+     * header then reads "Stopped" with what had been counted so far — neither a pass nor "Run failed (exit
+     * code 143)", which is SIGTERM's code and not a verdict — and the bar is not painted as failed unless a
+     * test had already failed.
+     */
+    void finishRun(TestRun run, int exitCode, boolean stopped) {
         update(run);
         TestCounts counts = run.counts();
         setElapsed(run.elapsedMillis(0)); // finished → elapsedMillis ignores the arg and uses the stored finish time
         boolean aborted = exitCode != 0 && !counts.anyFailed();
-        if (aborted) {
+        if (stopped) {
+            status.setText(tr("testrunner.finishedStopped", counts.passed(), counts.failedOrErrored()));
+            setProgressFailed(counts.anyFailed());
+        } else if (aborted) {
             status.setText(tr("testrunner.finishedAborted", exitCode));
             progress.setProgress(1); // an empty bar cannot show the failed colour (0 tests reported)
             setProgressFailed(true);
@@ -523,7 +546,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     // --- detail ------------------------------------------------------------------------------------
 
-    private void showDetail(TestNode node) {
+    private void showDetail(@Nullable TestNode node) {
         if (node == null) {
             showRunSummary();
             return;
@@ -536,6 +559,9 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         sb.append(fq).append('\n').append(statusLabel(node.status()));
         if (node.durationMs() > 0) {
             sb.append(" (").append(node.durationMs()).append(" ms)");
+        }
+        if (node.retries() > 0) {
+            sb.append(" — ").append(tr(node.isFlaky() ? "testrunner.flaky" : "testrunner.retried", node.retries()));
         }
         sb.append('\n');
         if (node.kind() != TestNodeKind.TEST) {
@@ -578,11 +604,11 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         detail.moveTo(0);
     }
 
-    private static boolean hasText(String s) {
+    private static boolean hasText(@Nullable String s) {
         return s != null && !s.isBlank();
     }
 
-    private static void appendSection(StringBuilder sb, String title, String body) {
+    private static void appendSection(StringBuilder sb, String title, @Nullable String body) {
         if (body != null && !body.isBlank()) {
             sb.append("\n--- ").append(title).append(" ---\n").append(body).append("\n");
         }
@@ -665,7 +691,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         return r;
     }
 
-    private void run(Runnable r) {
+    private void run(@Nullable Runnable r) {
         if (r != null) {
             r.run();
         }
@@ -699,6 +725,13 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
                 Label dur = new Label(node.durationMs() + " ms");
                 dur.getStyleClass().add("test-duration");
                 row.getChildren().add(dur);
+            }
+            if (node.kind() == TestNodeKind.TEST && node.retries() > 0) {
+                // Surefire re-ran it: passed in the end (flaky) or failed every try (review D16).
+                Label retries =
+                        new Label(tr(node.isFlaky() ? "testrunner.flaky" : "testrunner.retried", node.retries()));
+                retries.getStyleClass().add("test-duration");
+                row.getChildren().add(retries);
             }
             setGraphic(row);
         }

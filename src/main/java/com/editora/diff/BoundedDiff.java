@@ -5,6 +5,7 @@ import java.util.List;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.algorithm.DiffAlgorithmListener;
 import com.github.difflib.patch.Patch;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A Myers diff that gives up once the edit distance passes a budget. The search costs O(N + D²) in time and
@@ -26,7 +27,7 @@ final class BoundedDiff {
     }
 
     /** The patch from {@code left} to {@code right}, or {@code null} when it needs more than {@code maxEdits} edits. */
-    static <T> Patch<T> diff(List<T> left, List<T> right, int maxEdits) {
+    static <T> @Nullable Patch<T> diff(List<T> left, List<T> right, int maxEdits) {
         if (Math.abs(left.size() - right.size()) > maxEdits) {
             return null; // the length difference alone is a lower bound on the edit distance
         }

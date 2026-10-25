@@ -12,6 +12,8 @@ import java.util.concurrent.TimeUnit;
 
 import javafx.application.Platform;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Streams a child process's stdout/stderr to the JavaFX thread without letting a chatty process flood it.
  * The one pump behind both streaming services — {@code run.RunService} (a program's console) and
@@ -140,7 +142,7 @@ public final class OutputPump {
     /** When the last drain started ({@link System#nanoTime}); guarded by {@link #lock}. */
     private long lastDrainNanos = System.nanoTime() - MIN_DRAIN_INTERVAL_NANOS;
 
-    private Runnable droppedNotice;
+    private @Nullable Runnable droppedNotice;
 
     /**
      * @param threadPrefix names the reader threads ({@code <prefix>-stdout} / {@code <prefix>-stderr})
@@ -327,13 +329,20 @@ public final class OutputPump {
         enqueue(null, gen, 0, false, action, null, false);
     }
 
-    private void enqueue(Feed reader, int gen, int chars, boolean output, Runnable action, Sink sink, boolean stderr) {
+    private void enqueue(
+            @Nullable Feed reader,
+            int gen,
+            int chars,
+            boolean output,
+            Runnable action,
+            @Nullable Sink sink,
+            boolean stderr) {
         boolean schedule = false;
         synchronized (lock) {
             if (gen != generation) {
                 return;
             }
-            if (output && overflow == Overflow.BLOCK && !awaitRoom(reader, gen, chars)) {
+            if (output && reader != null && overflow == Overflow.BLOCK && !awaitRoom(reader, gen, chars)) {
                 return;
             }
             pending.addLast(new PendingFx(gen, chars, output, action));
@@ -398,7 +407,7 @@ public final class OutputPump {
         return gen == generation;
     }
 
-    private PendingFx removeOldestOutput() {
+    private @Nullable PendingFx removeOldestOutput() {
         Iterator<PendingFx> it = pending.iterator();
         while (it.hasNext()) {
             PendingFx event = it.next();

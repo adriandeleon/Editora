@@ -326,8 +326,8 @@ class MainControllerChromeFxTest {
             assertEquals(List.of(), FxTestSupport.call(controller, "undoHistoryCheckpoints", new Class<?>[] {}));
             EditorBuffer buffer = addBuffer("first state\n");
             @SuppressWarnings("unchecked")
-            List<com.editora.editor.UndoHistory.Checkpoint> checkpoints =
-                    (List<com.editora.editor.UndoHistory.Checkpoint>)
+            List<com.editora.editor.undo.UndoHistory.Checkpoint> checkpoints =
+                    (List<com.editora.editor.undo.UndoHistory.Checkpoint>)
                             FxTestSupport.call(controller, "undoHistoryCheckpoints", new Class<?>[] {});
             assertEquals(1, checkpoints.size(), "a baseline, so there is always something to pick");
 
@@ -336,7 +336,7 @@ class MainControllerChromeFxTest {
             FxTestSupport.invokeWith(
                     controller,
                     "restoreUndoCheckpoint",
-                    com.editora.editor.UndoHistory.Checkpoint.class,
+                    com.editora.editor.undo.UndoHistory.Checkpoint.class,
                     checkpoints.get(0));
             assertEquals("first state\n", buffer.getContent());
         });

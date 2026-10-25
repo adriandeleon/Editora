@@ -5,6 +5,7 @@ import java.util.regex.Pattern;
 
 import com.editora.http.HttpClientService;
 import com.editora.http.HttpResult;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -85,7 +86,7 @@ enum HttpFailureKind {
         return OTHER;
     }
 
-    private boolean matches(String error) {
+    private boolean matches(@Nullable String error) {
         if (error == null) {
             return false;
         }

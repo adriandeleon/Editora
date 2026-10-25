@@ -14,6 +14,7 @@ import org.apache.sshd.common.FactoryManager;
 import org.apache.sshd.common.channel.ChannelFactory;
 import org.apache.sshd.common.session.ConnectionService;
 import org.apache.sshd.common.session.Session;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The shared client's agent: for an Automatic login ({@code DEFAULT_KEYS}), a connection to the user's SSH agent,
@@ -34,7 +35,7 @@ final class AgentFactory implements SshAgentFactory {
     }
 
     @Override
-    public SshAgent createClient(Session session, FactoryManager manager) throws IOException {
+    public @Nullable SshAgent createClient(Session session, FactoryManager manager) throws IOException {
         RemoteFileSystems engine = SshClients.engineOf(session);
         if (engine == null || RemoteFileSystems.authOf(session) != RemoteConnection.AuthMethod.DEFAULT_KEYS) {
             return null; // MINA then offers no agent keys

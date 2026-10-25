@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 
-import com.editora.editor.LanguageRegistry;
+import com.editora.text.LanguageRegistry;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

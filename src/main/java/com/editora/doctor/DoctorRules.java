@@ -1,5 +1,7 @@
 package com.editora.doctor;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure classification rules for probe results — the decisions that turn raw exit codes / parsed values
  * into a {@link DoctorStatus}. Kept toolkit- and process-free so they are trivially unit-tested; the
@@ -53,12 +55,12 @@ public final class DoctorRules {
     }
 
     /** The first non-blank line of {@code out}, else of {@code err}, else {@code ""} — the version line. */
-    public static String firstLine(String out, String err) {
+    public static String firstLine(String out, @Nullable String err) {
         String line = firstNonBlankLine(out);
         return line.isEmpty() ? firstNonBlankLine(err) : line;
     }
 
-    private static String firstNonBlankLine(String text) {
+    private static String firstNonBlankLine(@Nullable String text) {
         if (text == null) {
             return "";
         }

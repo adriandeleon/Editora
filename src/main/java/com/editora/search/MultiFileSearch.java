@@ -6,7 +6,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import com.editora.editor.SearchMatcher;
+import com.editora.text.SearchMatcher;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure helpers for multi-file search: find per-line matches in a text, and apply a replacement to every
@@ -158,7 +159,7 @@ public final class MultiFileSearch {
      * user is told instead. The check needs no real match: the pattern is given an empty alternative, which
      * keeps its groups and matches the empty string, and the replacement is expanded against that.
      */
-    public static String replacementError(SearchQuery q, String replacement) {
+    public static @Nullable String replacementError(SearchQuery q, String replacement) {
         if (q == null || !q.regex() || q.text() == null || q.text().isEmpty() || replacement == null) {
             return null;
         }
@@ -191,7 +192,7 @@ public final class MultiFileSearch {
      * {@link Pattern#UNICODE_CHARACTER_CLASS}, or {@code null} for a bad pattern. Derived from the compiled
      * pattern rather than rebuilt, so whatever flags the shared compile uses carry over.
      */
-    private static Pattern unicodeRegex(SearchQuery q) {
+    private static @Nullable Pattern unicodeRegex(SearchQuery q) {
         Pattern base = SearchMatcher.compileRegex(q.text(), q.caseSensitive(), q.wholeWord());
         if (base == null) {
             return null;
@@ -204,7 +205,7 @@ public final class MultiFileSearch {
     }
 
     /** One line's matches: through {@code unicode} when given, else exactly as the find bar matches. */
-    private static List<int[]> lineMatches(String line, SearchQuery q, Pattern unicode, int limit) {
+    private static List<int[]> lineMatches(String line, SearchQuery q, @Nullable Pattern unicode, int limit) {
         if (unicode == null) {
             return SearchMatcher.matches(line, q.text(), q.caseSensitive(), q.regex(), q.wholeWord(), limit);
         }

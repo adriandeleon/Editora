@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Single source of the app name, version, and build timestamp — shared by the {@code --version} CLI
  * output and the About dialog so they never drift apart.
@@ -138,8 +140,8 @@ public final class AppInfo {
     private static final java.time.Duration GIT_TIMEOUT = java.time.Duration.ofSeconds(2);
 
     private static final Object GIT_LOCK = new Object();
-    private static java.util.concurrent.CompletableFuture<String> gitCommit;
-    private static java.util.concurrent.CompletableFuture<String> gitBranch;
+    private static java.util.concurrent.@Nullable CompletableFuture<String> gitCommit;
+    private static java.util.concurrent.@Nullable CompletableFuture<String> gitBranch;
 
     /**
      * The short git commit this build was made from, or {@code ""} when it can't be determined (no
@@ -214,7 +216,7 @@ public final class AppInfo {
      * com.editora.process.ProcessRunner} (augmented PATH, parse-stable locale, closed stdin, an enforced
      * timeout). {@code null} when the build has no directory to ask about.
      */
-    private static com.editora.process.ProcessRunner.Result git(String... args) {
+    private static com.editora.process.ProcessRunner.@Nullable Result git(String... args) {
         java.nio.file.Path dir = checkoutDir(codeSource(), System.getProperty("java.home"));
         if (dir == null) {
             return null;
@@ -225,7 +227,7 @@ public final class AppInfo {
         return com.editora.process.ProcessRunner.run(dir, GIT_TIMEOUT, argv);
     }
 
-    private static java.net.URL codeSource() {
+    private static java.net.@Nullable URL codeSource() {
         try {
             java.security.CodeSource source =
                     AppInfo.class.getProtectionDomain().getCodeSource();
@@ -245,7 +247,7 @@ public final class AppInfo {
      * from inside some other repository reported <em>that</em> repository's commit and branch as its own.
      * Pure apart from the existence checks; unit-tested.
      */
-    static java.nio.file.Path checkoutDir(java.net.URL codeSource, String javaHome) {
+    static java.nio.file.@Nullable Path checkoutDir(java.net.@Nullable URL codeSource, String javaHome) {
         if (codeSource != null && "file".equalsIgnoreCase(codeSource.getProtocol())) {
             try {
                 java.nio.file.Path location = java.nio.file.Path.of(codeSource.toURI());
@@ -274,7 +276,7 @@ public final class AppInfo {
     }
 
     /** The short hash in a {@code git rev-parse --short HEAD} result, or {@code ""}. Pure; unit-tested. */
-    static String commitFrom(com.editora.process.ProcessRunner.Result result) {
+    static String commitFrom(com.editora.process.ProcessRunner.@Nullable Result result) {
         if (result == null || !result.ok() || result.out() == null) {
             return "";
         }
@@ -284,7 +286,7 @@ public final class AppInfo {
     }
 
     /** The branch in a {@code git rev-parse --abbrev-ref HEAD} result, or {@code ""}. Pure; unit-tested. */
-    static String branchFrom(com.editora.process.ProcessRunner.Result result) {
+    static String branchFrom(com.editora.process.ProcessRunner.@Nullable Result result) {
         if (result == null || !result.ok() || result.out() == null) {
             return "";
         }

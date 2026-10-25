@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a request resolves to before anything is sent — method, URL, headers, body, Digest credentials, the label and
  * the details — with every {@code {{…}}} substituted through one function. A send ({@link HttpClientService}) and the
@@ -21,7 +23,7 @@ record PreparedRequest(
         List<String> warnings,
         HttpVersions.Choice version,
         RequestBodies.Content body,
-        DigestAuth.Credentials digest,
+        DigestAuth.@Nullable Credentials digest,
         String label,
         HttpExchange.Details details) {
 
@@ -33,7 +35,11 @@ record PreparedRequest(
     record Dry(PreparedRequest prepared, HttpVars.Unresolved sink, HttpVars.Scope scope, ZonedDateTime now) {}
 
     /** The dry resolution of {@code request} (see {@link Dry}). Reads the request's body files: off the FX thread. */
-    static Dry dry(HttpFile.Parsed request, Map<String, String> vars, Path baseDir, CapturedResponses captured) {
+    static Dry dry(
+            HttpFile.Parsed request,
+            Map<String, String> vars,
+            @Nullable Path baseDir,
+            @Nullable CapturedResponses captured) {
         ZonedDateTime now = ZonedDateTime.now();
         HttpVars.Unresolved sink = HttpVars.Unresolved.dry();
         HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir, true);
@@ -47,7 +53,7 @@ record PreparedRequest(
      * so whatever the run reads (the secrets the trust gate asks about) is known before the first byte goes out.
      * {@link #dry} runs exactly this with a dry {@code sub}.
      */
-    static PreparedRequest of(HttpFile.Parsed request, Path baseDir, Function<String, String> sub) {
+    static PreparedRequest of(HttpFile.Parsed request, @Nullable Path baseDir, Function<String, String> sub) {
         String method = request.method().isEmpty() ? "GET" : request.method();
 
         // The URL first, then the headers: the unresolved-variable warnings follow the order of the file.
@@ -132,7 +138,7 @@ record PreparedRequest(
         return sb.toString();
     }
 
-    private static DigestAuth.Credentials digestCredentials(List<String[]> headers) {
+    private static DigestAuth.@Nullable Credentials digestCredentials(List<String[]> headers) {
         for (String[] h : headers) {
             if (h[0].equalsIgnoreCase("Authorization")) {
                 return DigestAuth.shorthand(h[1]);

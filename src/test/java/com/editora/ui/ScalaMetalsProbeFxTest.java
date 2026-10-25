@@ -14,7 +14,7 @@ import javafx.stage.Window;
 import com.editora.command.CommandRegistry;
 import com.editora.dap.DapManager;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspDiagnostic;
+import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

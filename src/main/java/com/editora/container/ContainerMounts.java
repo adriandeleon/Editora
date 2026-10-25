@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How a container sees folders of this machine: its bind mounts, each a folder here ({@code source}) and the
  * path it has inside ({@code destination}). A file under a mounted folder has a name on both sides; anything
@@ -30,7 +32,7 @@ public record ContainerMounts(List<Mount> mounts) {
     }
 
     /** The container's name for {@code local}, or null when no mount covers it. */
-    public String toContainer(Path local) {
+    public @Nullable String toContainer(Path local) {
         Path abs = local.toAbsolutePath().normalize();
         for (Mount m : mounts) {
             if (abs.startsWith(m.source())) {
@@ -43,7 +45,7 @@ public record ContainerMounts(List<Mount> mounts) {
     }
 
     /** This machine's file for the container path {@code inside}, or null when no mount covers it. */
-    public Path toLocal(String inside) {
+    public @Nullable Path toLocal(String inside) {
         if (inside == null || !inside.startsWith("/")) {
             return null;
         }

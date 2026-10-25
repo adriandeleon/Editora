@@ -33,6 +33,7 @@ import com.editora.git.RelativeTime;
 import com.editora.io.AtomicFileWrite;
 import com.editora.process.ProcessRunner;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -56,9 +57,11 @@ final class AgentCoordinator implements AcpClient.Host {
     /** The agent-specific window services beyond {@link CoordinatorHost}. */
     interface Ops {
         /** This window's project root, or null (no project). */
+        @Nullable
         Path projectRoot();
 
         /** The open buffer in <em>this window</em> whose file matches {@code path} (canonical), or null. */
+        @Nullable
         EditorBuffer bufferForPath(String path);
 
         /**
@@ -66,7 +69,7 @@ final class AgentCoordinator implements AcpClient.Host {
          * write to disk underneath a buffer — dirty or not — leaves that window holding text the file no
          * longer has. FX-thread only.
          */
-        default EditorBuffer bufferInAnotherWindow(Path file) {
+        default @Nullable EditorBuffer bufferInAnotherWindow(Path file) {
             return null;
         }
 
@@ -75,17 +78,17 @@ final class AgentCoordinator implements AcpClient.Host {
          * reports once it is durable ({@code true} also when the feature is off: there is then nothing to
          * wait for). FX-thread only.
          */
-        default void recordHistory(Path file, String content, Consumer<Boolean> completion) {
+        default void recordHistory(Path file, @Nullable String content, Consumer<Boolean> completion) {
             completion.accept(true);
         }
 
         /** The {@code .editorconfig} charset the editor would read {@code file} with, or null. Any thread. */
-        default String editorConfigCharset(Path file) {
+        default @Nullable String editorConfigCharset(Path file) {
             return null;
         }
 
         /** Takes this file's place in the app-wide document-write order; null = no shared sequencer (tests). */
-        default com.editora.io.DocumentWriteSequencer.Ticket beginDocumentWrite(Path file) {
+        default com.editora.io.DocumentWriteSequencer.@Nullable Ticket beginDocumentWrite(Path file) {
             return null;
         }
 
@@ -124,7 +127,7 @@ final class AgentCoordinator implements AcpClient.Host {
     private final CoordinatorHost host;
     private final Ops ops;
     /** Where agent file writes are always refused — the editor's config directory ({@link #protectDirectory}). */
-    private volatile Path writeProtectedDir;
+    private volatile @Nullable Path writeProtectedDir;
 
     private final AtomicFileWrite.FileOperations documentFiles;
     /** Spawning the agent runs a login-shell PATH probe + process start — keep it off the FX thread. */
@@ -134,21 +137,21 @@ final class AgentCoordinator implements AcpClient.Host {
         return t;
     });
 
-    private AgentPanel panel;
+    private @Nullable AgentPanel panel;
     /** Non-null while the chat panel is popped out into its own window; the {@link AgentPanel} node moves
      *  between the docked tool window and this stage's scene (a node lives in one scene only). */
-    private Stage detachedStage;
+    private @Nullable Stage detachedStage;
 
-    private volatile AcpClient client;
-    private volatile String sessionId;
+    private volatile @Nullable AcpClient client;
+    private volatile @Nullable String sessionId;
     private volatile List<AcpJson.ModelInfo> models = List.of();
     private volatile List<AcpJson.ModeInfo> modes = List.of();
-    private volatile String currentModelId;
-    private volatile String currentModeId;
+    private volatile @Nullable String currentModelId;
+    private volatile @Nullable String currentModeId;
     /** The runtime-current agent client (distinct from the persisted default in Settings.agentClient):
      *  changed only by an explicit pick (switchAgentClient) or a cross-agent resume — NOT reset by a mere
      *  session teardown (disposeClient). Lazily initialized from Settings on first use (activeAgent()). */
-    private volatile AcpAgentRegistry.AgentDef activeAgent;
+    private volatile AcpAgentRegistry.@Nullable AgentDef activeAgent;
     /** agentId -> last PATH-availability probe (Settings status rows). Mirrors LspManager.availableCache;
      *  invalidated when a client's command override changes (see detect / invalidateDetection). */
     private final Map<String, Boolean> agentAvailableCache = new ConcurrentHashMap<>();
@@ -431,7 +434,10 @@ final class AgentCoordinator implements AcpClient.Host {
                     // thread this stage completes on.
                     Platform.runLater(() -> ops.rememberSession(
                             sid, cwd, sessionLabel(text), now, activeAgent().id()));
-                    return client.prompt(sid, composed);
+                    AcpClient c = client; // null when the client was disposed meanwhile
+                    return c != null
+                            ? c.prompt(sid, composed)
+                            : CompletableFuture.<String>failedFuture(new IOException(tr("status.agent.noSession")));
                 })
                 .whenComplete((stopReason, error) -> Platform.runLater(() -> {
                     panel().setBusy(false);
@@ -457,7 +463,7 @@ final class AgentCoordinator implements AcpClient.Host {
 
     /** The active buffer's context header, or null if there is no active editor buffer (e.g. the Welcome
      *  tab). Recomputed on every call — the active buffer/caret can change between turns in one session. */
-    private String activeBufferContext() {
+    private @Nullable String activeBufferContext() {
         EditorBuffer b = host.activeBuffer();
         if (b == null) {
             return null;
@@ -776,13 +782,11 @@ final class AgentCoordinator implements AcpClient.Host {
             return root;
         }
         EditorBuffer b = host.activeBuffer();
-        if (b != null
-                && b.getPath() != null
-                && host.isLocalBuffer(b)
-                && b.getPath().getParent() != null) {
-            return b.getPath().toAbsolutePath().getParent();
-        }
-        return Path.of(System.getProperty("user.home"));
+        Path path = b == null ? null : b.getPath();
+        Path parent = b != null && path != null && host.isLocalBuffer(b) && path.getParent() != null
+                ? path.toAbsolutePath().getParent()
+                : null;
+        return parent != null ? parent : Path.of(System.getProperty("user.home"));
     }
 
     /** {@link AgentPanel}'s inline-code-path click handler: resolves a clicked span's raw text to a file
@@ -930,7 +934,7 @@ final class AgentCoordinator implements AcpClient.Host {
     }
 
     /** FX thread: the buffer holding {@code file} — in this window, else in any other — or null. */
-    private EditorBuffer openBuffer(Path file) {
+    private @Nullable EditorBuffer openBuffer(Path file) {
         EditorBuffer here = ops.bufferForPath(file.toString());
         return here != null ? here : ops.bufferInAnotherWindow(file);
     }
@@ -939,10 +943,10 @@ final class AgentCoordinator implements AcpClient.Host {
     static final String ENCRYPTED = "This is an encrypted file; Editora does not share it with agents.";
 
     @Override
-    public String readTextFile(String path, Integer line, Integer limit) throws Exception {
+    public String readTextFile(String path, @Nullable Integer line, @Nullable Integer limit) throws Exception {
         Path file = sessionPath(path);
         String key = PathKeys.key(file);
-        if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+        if (com.editora.text.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
             throw new IOException(ENCRYPTED); // ADR 0017: neither the decrypted text nor the ciphertext
         }
         String text = fxCall(() -> {
@@ -966,9 +970,9 @@ final class AgentCoordinator implements AcpClient.Host {
     }
 
     @Override
-    public void writeTextFile(String path, String content) throws Exception {
+    public void writeTextFile(String path, @Nullable String content) throws Exception {
         Path file = sessionPath(path);
-        if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+        if (com.editora.text.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
             throw new IOException(ENCRYPTED); // an agent's text would land in an encrypted file's name, unencrypted
         }
         String key = PathKeys.key(file);
@@ -992,7 +996,7 @@ final class AgentCoordinator implements AcpClient.Host {
      *
      * <p>This is the one place an ACP write replaces a buffer's text.
      */
-    private String applyToOpenBuffer(EditorBuffer open, String key, String body, String path) {
+    private @Nullable String applyToOpenBuffer(EditorBuffer open, String key, String body, String path) {
         if (!open.isEditable()) {
             return "Cannot apply an agent edit to read-only buffer " + path;
         }
@@ -1071,7 +1075,7 @@ final class AgentCoordinator implements AcpClient.Host {
     }
 
     /** Agent request thread: the previous text is in Local File History, durably, or the write does not happen. */
-    private void recordBeforeWrite(Path file, String previousText) throws IOException {
+    private void recordBeforeWrite(Path file, @Nullable String previousText) throws IOException {
         CompletableFuture<Boolean> durable = new CompletableFuture<>();
         Platform.runLater(() -> {
             try {
@@ -1097,7 +1101,7 @@ final class AgentCoordinator implements AcpClient.Host {
 
     /** The agent may edit the project, never the editor's own settings/keymaps/plugins (which can run code). */
     @Override
-    public Path writeProtectedDirectory() {
+    public @Nullable Path writeProtectedDirectory() {
         return writeProtectedDir;
     }
 
@@ -1201,7 +1205,7 @@ final class AgentCoordinator implements AcpClient.Host {
     // --- helpers --------------------------------------------------------------------------------------
 
     /** The 1-based {@code line}/{@code limit} slice of {@code text} an ACP fs read may ask for (pure). */
-    static String slice(String text, Integer line, Integer limit) {
+    static String slice(String text, @Nullable Integer line, @Nullable Integer limit) {
         if (text == null) {
             return "";
         }
@@ -1215,7 +1219,7 @@ final class AgentCoordinator implements AcpClient.Host {
     }
 
     /** The display name for {@code modelId} (falls back to the bare id if not found, empty if null). Pure. */
-    static String modelDisplayName(List<AcpJson.ModelInfo> models, String modelId) {
+    static String modelDisplayName(List<AcpJson.ModelInfo> models, @Nullable String modelId) {
         if (modelId == null) {
             return "";
         }
@@ -1228,7 +1232,7 @@ final class AgentCoordinator implements AcpClient.Host {
     }
 
     /** The display name for {@code modeId} (falls back to the bare id if not found, empty if null). Pure. */
-    static String modeDisplayName(List<AcpJson.ModeInfo> modes, String modeId) {
+    static String modeDisplayName(List<AcpJson.ModeInfo> modes, @Nullable String modeId) {
         if (modeId == null) {
             return "";
         }

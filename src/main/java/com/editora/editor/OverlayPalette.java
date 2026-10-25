@@ -7,6 +7,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Colours for the Canvas-drawn editor overlays (whitespace markers, diagnostic squiggles, search washes,
  * inline debug values). A Canvas cannot be styled from CSS, and the overlays used one fixed colour each —
@@ -19,19 +21,19 @@ import javafx.scene.paint.Paint;
  * including the mid-tone ones, without a per-theme table. Resolved when the editor background changes
  * (a theme switch), never per paint.
  */
-final class OverlayPalette {
+public final class OverlayPalette {
 
     /** Contrast a faint, decorative marker must reach to be visible at all without competing with text. */
     static final double SUBTLE = 3.0;
     /** Contrast of a structural hint drawn across many lines (indent guides): there, but well behind text. */
     static final double GUIDE = 1.45;
     /** Contrast of a non-text indicator (squiggle, match border). */
-    static final double INDICATOR = 3.0;
+    public static final double INDICATOR = 3.0;
     /** Contrast of text the user reads (inline debug values). */
     static final double TEXT = 4.5;
 
     /** One resolved set of overlay colours. */
-    record Colors(
+    public record Colors(
             Color whitespace,
             Color inlineValue,
             Color error,
@@ -43,13 +45,13 @@ final class OverlayPalette {
             Color indentGuide,
             Color ground) {}
 
-    private static Color cachedFor;
-    private static Colors cached;
+    private static @Nullable Color cachedFor;
+    private static @Nullable Colors cached;
 
     private OverlayPalette() {}
 
     /** The overlay colours for an editor painted on {@code background}. Pure. */
-    static Colors of(Color background) {
+    public static Colors of(Color background) {
         Color ground = background == null
                 ? Color.WHITE
                 : Color.color(background.getRed(), background.getGreen(), background.getBlue());
@@ -69,7 +71,7 @@ final class OverlayPalette {
     }
 
     /** Whether light ink reads better than dark ink on {@code ground}. Pure. */
-    static boolean isDark(Color ground) {
+    public static boolean isDark(Color ground) {
         return contrast(Color.WHITE, ground) >= contrast(Color.BLACK, ground);
     }
 
@@ -81,7 +83,7 @@ final class OverlayPalette {
      * {@code base}, moved toward the ground's ink by the smallest step that reaches {@code ratio}
      * against {@code ground}; unchanged when it already does. Pure.
      */
-    static Color reach(Color base, Color ground, double ratio) {
+    public static Color reach(Color base, Color ground, double ratio) {
         if (contrast(base, ground) >= ratio) {
             return base;
         }
@@ -118,7 +120,7 @@ final class OverlayPalette {
      * Feeds {@code sink} the colours for {@code area}'s current background, and again whenever the editor
      * theme repaints it. The listener is on the area itself, which the overlay already lives and dies with.
      */
-    static void track(Region area, Consumer<Colors> sink) {
+    public static void track(Region area, Consumer<Colors> sink) {
         sink.accept(forRegion(area));
         area.backgroundProperty().addListener((obs, was, now) -> sink.accept(forRegion(area)));
     }
@@ -137,7 +139,7 @@ final class OverlayPalette {
      * Six levels need to stay apart, so they differ in more than hue — FATAL is the error colour at full
      * strength with the heaviest wash, DEBUG and TRACE are two steps of the neutral.
      */
-    record LogTints(
+    public record LogTints(
             Color fatal,
             Color error,
             Color warn,
@@ -149,7 +151,7 @@ final class OverlayPalette {
             Color warnWash) {}
 
     /** The log tints for an editor painted on {@code background}. Pure. */
-    static LogTints logTints(Color background) {
+    public static LogTints logTints(Color background) {
         Color ground = background == null
                 ? Color.WHITE
                 : Color.color(background.getRed(), background.getGreen(), background.getBlue());
@@ -172,7 +174,7 @@ final class OverlayPalette {
     }
 
     /** {@link #logTints(Color)} for {@code area}'s current background. */
-    static LogTints logTints(Region area) {
+    public static LogTints logTints(Region area) {
         return logTints(backgroundOf(area));
     }
 
@@ -180,7 +182,7 @@ final class OverlayPalette {
         return Color.color(c.getRed(), c.getGreen(), c.getBlue(), Math.min(1, opacity));
     }
 
-    static Color backgroundOf(Region area) {
+    public static Color backgroundOf(Region area) {
         Background background = area.getBackground();
         if (background != null && !background.getFills().isEmpty()) {
             Paint fill = background.getFills().get(0).getFill();

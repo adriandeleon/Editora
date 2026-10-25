@@ -11,13 +11,14 @@ import java.util.Set;
 import java.util.function.Function;
 
 import com.editora.config.PathKeys;
-import com.editora.editor.LspTextEdit;
 import com.editora.process.ExecTargets;
+import com.editora.text.LspTextEdit;
 import org.eclipse.lsp4j.SnippetTextEdit;
 import org.eclipse.lsp4j.TextDocumentEdit;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Maps an LSP {@link WorkspaceEdit} — a quick fix's changes, possibly across several files — into neutral
@@ -48,7 +49,11 @@ public final class WorkspaceEditMapper {
      * moment the request was sent). Null when the target was open on the server.
      */
     public record FileEdit(
-            Path file, List<LspTextEdit> edits, Integer version, String expectedText, Long diskPreimageAt) {
+            Path file,
+            List<LspTextEdit> edits,
+            @Nullable Integer version,
+            @Nullable String expectedText,
+            @Nullable Long diskPreimageAt) {
         public FileEdit(Path file, List<LspTextEdit> edits) {
             this(file, edits, null, null, null);
         }
@@ -119,12 +124,12 @@ public final class WorkspaceEditMapper {
      * edits to the newly created file, which is the standard LSP shape, or follow edits to other files.
      * An empty edit is a valid no-op.
      */
-    public static Mapped map(WorkspaceEdit edit) {
+    public static @Nullable Mapped map(WorkspaceEdit edit) {
         return map(edit, DocumentUris::toPath);
     }
 
     /** As {@link #map(WorkspaceEdit)}, reading the edit's URIs with {@code toPath} (the answering server's). */
-    static Mapped map(WorkspaceEdit edit, Function<String, Path> toPath) {
+    static @Nullable Mapped map(WorkspaceEdit edit, Function<String, @Nullable Path> toPath) {
         if (edit == null) {
             return new Mapped(List.of(), List.of(), List.of(), List.of());
         }
@@ -153,6 +158,9 @@ public final class WorkspaceEditMapper {
                         return null;
                     }
                     Path file = toPath.apply(tde.getTextDocument().getUri());
+                    if (file == null) {
+                        return null; // addEdits above has already refused this URI
+                    }
                     Integer version = tde.getTextDocument().getVersion();
                     if (versions.containsKey(file) && !java.util.Objects.equals(versions.get(file), version)) {
                         return null; // contradictory versions for one document cannot be applied atomically
@@ -265,7 +273,7 @@ public final class WorkspaceEditMapper {
      * In practice this never fires: a server may only send snippet edits once the client advertises the
      * capability, which Editora does not.
      */
-    private static List<TextEdit> plainEdits(List<Either<TextEdit, SnippetTextEdit>> edits) {
+    private static @Nullable List<TextEdit> plainEdits(List<Either<TextEdit, SnippetTextEdit>> edits) {
         if (edits == null) {
             return List.of();
         }
@@ -287,7 +295,10 @@ public final class WorkspaceEditMapper {
      * an edit has no usable range.
      */
     private static boolean addEdits(
-            Map<Path, List<LspTextEdit>> byFile, Function<String, Path> toPath, String uri, List<TextEdit> edits) {
+            Map<Path, List<LspTextEdit>> byFile,
+            Function<String, @Nullable Path> toPath,
+            String uri,
+            List<TextEdit> edits) {
         Path file = toPath.apply(uri);
         if (file == null) {
             return false;

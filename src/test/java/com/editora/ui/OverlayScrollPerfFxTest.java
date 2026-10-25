@@ -21,7 +21,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LspDiagnostic;
+import com.editora.text.LspDiagnostic;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -85,6 +85,8 @@ class OverlayScrollPerfFxTest {
     @Test
     void scrollingInsideOneScopeRebuildsNothingAndAChangeRebuildsOnlyItsRow() throws Exception {
         FxTestSupport.runOnFx(() -> {
+            // The count is for the whole JVM: an earlier test that pinned rows made tooltips of its own.
+            int tooltipsBefore = staticInt("com.editora.editor.LazyTooltip", "created");
             EditorBuffer b = new EditorBuffer();
             try {
                 b.setLanguageOverride("java");
@@ -108,7 +110,7 @@ class OverlayScrollPerfFxTest {
                 assertEquals(2, rows.size(), "the class and the method are pinned");
                 int built = rowsBuilt(bar);
                 int tooltips = staticInt("com.editora.editor.LazyTooltip", "created");
-                assertEquals(0, tooltips, "no row has been hovered, so no tooltip exists");
+                assertEquals(tooltipsBefore, tooltips, "no row has been hovered, so no tooltip exists");
 
                 for (int first = 11; first < 150; first++) {
                     pin(b, first);
@@ -209,8 +211,8 @@ class OverlayScrollPerfFxTest {
                 FxTestSupport.call(b, "todoOverlay", new Class[] {}); // attach (lazy) so the loop below finds it
                 // The four overlays that are TabSurface since M4: a find, a word highlight, a suspended
                 // debug session and a jump each hold a full-viewport texture only while their tab is shown.
-                b.setSearchMatches(com.editora.editor.SearchMatches.of(0, 3), 0);
-                b.setOccurrenceSpans(List.of(new com.editora.editor.OccurrenceSpan(0, 0, 0, 3, false)));
+                b.setSearchMatches(com.editora.text.SearchMatches.of(0, 3), 0);
+                b.setOccurrenceSpans(List.of(new com.editora.text.OccurrenceSpan(0, 0, 0, 3, false)));
                 b.setInlineValues(Map.of("value", "1", "text", "2"), 0);
                 b.startAceJump();
                 Object md = FxTestSupport.call(b, "mdLintOverlay", new Class[] {}); // attached on first use
@@ -310,7 +312,7 @@ class OverlayScrollPerfFxTest {
         EditorBuffer hidden = buffers.get(1);
         FxTestSupport.runOnFx(() -> {
             hidden.setSearchMatches(
-                    com.editora.editor.SearchMatches.ofPairs(List.of()),
+                    com.editora.text.SearchMatches.ofPairs(List.of()),
                     -1); // unrelated lazy overlay: must not disturb the others
             FxTestSupport.invokeWith(
                     FxTestSupport.field(hidden, "lspOverlay"), "setDiagnostics", List.class, List.of(diagnostic()));
@@ -510,8 +512,8 @@ class OverlayScrollPerfFxTest {
         });
         settle();
 
-        AtomicInteger renders = staticCounter("com.editora.editor.Minimap", "RENDERS_FOR_TEST");
-        AtomicInteger unchanged = staticCounter("com.editora.editor.Minimap", "UNCHANGED_FOR_TEST");
+        AtomicInteger renders = staticCounter("com.editora.editor.minimap.Minimap", "RENDERS_FOR_TEST");
+        AtomicInteger unchanged = staticCounter("com.editora.editor.minimap.Minimap", "UNCHANGED_FOR_TEST");
 
         // Hidden, the first tab holds no image (its texture is released) but keeps the pixels.
         assertNull(
@@ -615,7 +617,7 @@ class OverlayScrollPerfFxTest {
             assertEquals(header.prefWidth(-1), plain.prefWidth(-1), 0.01, "the chevron column keeps its width");
         });
 
-        Method tint = Class.forName("com.editora.editor.FoldManager").getDeclaredMethod("blameTint", String.class);
+        Method tint = Class.forName("com.editora.editor.fold.FoldManager").getDeclaredMethod("blameTint", String.class);
         tint.setAccessible(true);
         Object a = tint.invoke(null, "rgba(240,165,70,0.123)");
         assertNotNull(a);

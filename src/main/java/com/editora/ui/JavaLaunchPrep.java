@@ -5,7 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import com.editora.editor.LspDiagnostic;
+import com.editora.text.LspDiagnostic;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The pure decisions a Java debug launch makes before it starts (review A2, A16, B3): which folder a program
@@ -17,7 +18,7 @@ final class JavaLaunchPrep {
     private JavaLaunchPrep() {}
 
     /** Whether {@code file} is in the folder tree of {@code root} (normalized; null-safe). */
-    static boolean inside(Path file, Path root) {
+    static boolean inside(Path file, @Nullable Path root) {
         if (file == null || root == null || file.getFileSystem() != root.getFileSystem()) {
             return false;
         }
@@ -30,11 +31,13 @@ final class JavaLaunchPrep {
      * The folder a Java file belongs to for a launch: its Maven/Gradle project ({@code buildRoot}), else the
      * window's project when the file is in it (a plain-folder project, review A16), else none.
      */
-    static Path projectOf(Path file, Path buildRoot, Path windowProject) {
+    static @Nullable Path projectOf(Path file, @Nullable Path buildRoot, @Nullable Path windowProject) {
         if (buildRoot != null) {
             return buildRoot;
         }
-        return inside(file, windowProject) ? windowProject.toAbsolutePath().normalize() : null;
+        return windowProject != null && inside(file, windowProject)
+                ? windowProject.toAbsolutePath().normalize()
+                : null;
     }
 
     /**
@@ -43,7 +46,7 @@ final class JavaLaunchPrep {
      * in an unsaved one would sit on lines the program does not have (review B3). Without a project, the
      * launched file's own folder tree. Other file types are left alone.
      */
-    static boolean saveBeforeLaunch(Path path, String language, Path launched, Path project) {
+    static boolean saveBeforeLaunch(@Nullable Path path, String language, Path launched, @Nullable Path project) {
         if (path == null || !"java".equals(language)) {
             return false;
         }
@@ -59,7 +62,7 @@ final class JavaLaunchPrep {
      * javac's form, which the console turns into links — sorted by file, at most {@code limit} of them
      * ({@link #errorCount} says how many there are). Errors outside the project are not this launch's.
      */
-    static List<String> errorLines(Map<Path, List<LspDiagnostic>> errors, Path project, int limit) {
+    static List<String> errorLines(Map<Path, List<LspDiagnostic>> errors, @Nullable Path project, int limit) {
         List<String> out = new ArrayList<>();
         for (Map.Entry<Path, List<LspDiagnostic>> e : new java.util.TreeMap<>(errors).entrySet()) {
             if (project != null && !inside(e.getKey(), project)) {
@@ -78,7 +81,7 @@ final class JavaLaunchPrep {
     }
 
     /** How many error diagnostics of {@code errors} are in {@code project}. */
-    static int errorCount(Map<Path, List<LspDiagnostic>> errors, Path project) {
+    static int errorCount(Map<Path, List<LspDiagnostic>> errors, @Nullable Path project) {
         int n = 0;
         for (Map.Entry<Path, List<LspDiagnostic>> e : errors.entrySet()) {
             if (project == null || inside(e.getKey(), project)) {

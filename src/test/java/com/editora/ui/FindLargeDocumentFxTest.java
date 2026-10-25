@@ -14,7 +14,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.SearchMatches;
+import com.editora.text.SearchMatches;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

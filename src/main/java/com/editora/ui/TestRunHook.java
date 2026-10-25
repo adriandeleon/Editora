@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The seam by which {@link BuildCoordinator} hands a recognized test run to the Test Results feature
@@ -31,6 +32,14 @@ interface TestRunHook {
     /** The claimed run exited with {@code code}. */
     void onTestExit(int code);
 
+    /**
+     * The claimed run ended because the user stopped it; {@code code} is what the killed process reported
+     * (143 after SIGTERM) and is not a verdict. Default: as an exit, for a hook that does not tell them apart.
+     */
+    default void onTestStopped(int code) {
+        onTestExit(code);
+    }
+
     /** The claimed run failed to launch / errored. */
     void onTestError(String message);
 
@@ -39,7 +48,7 @@ interface TestRunHook {
      * {@code -json} events back into readable text (or {@code null} to suppress a bookkeeping event). Default:
      * the line verbatim.
      */
-    default String consoleLine(String raw, boolean stderr) {
+    default @Nullable String consoleLine(String raw, boolean stderr) {
         return raw;
     }
 }

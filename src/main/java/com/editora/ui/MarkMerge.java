@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure helper for persisting one buffer's notes, bookmarks or breakpoints into a store that other buffers on
  * the same file write too (a second window on the same project bucket).
@@ -25,7 +27,8 @@ final class MarkMerge {
      * instance, so identity says whether a window is affected. {@code fileKey} is the key within it;
      * {@code null} means "several files" (a rename re-keyed a folder).
      */
-    record Change(Kind kind, Map<String, ?> bucket, String fileKey) {}
+    record Change(
+            Kind kind, Map<String, ?> bucket, @Nullable String fileKey) {}
 
     /** Which store a {@link Change} is about. */
     enum Kind {
@@ -37,7 +40,7 @@ final class MarkMerge {
     private MarkMerge() {}
 
     /** The keys of {@code list} ({@code null} → none). */
-    static <T, K> Set<K> keys(List<T> list, Function<T, K> key) {
+    static <T, K> Set<K> keys(@Nullable List<T> list, Function<T, K> key) {
         Set<K> out = new HashSet<>();
         if (list != null) {
             for (T item : list) {
@@ -53,7 +56,7 @@ final class MarkMerge {
      * The entries of {@code stored} that belong to another buffer: not held by this one ({@code mine}) and
      * never seen by it ({@code seen}; {@code null} = it has seen nothing). In stored order.
      */
-    static <T, K> List<T> foreign(List<T> stored, Set<K> seen, List<T> mine, Function<T, K> key) {
+    static <T, K> List<T> foreign(@Nullable List<T> stored, @Nullable Set<K> seen, List<T> mine, Function<T, K> key) {
         if (stored == null || stored.isEmpty()) {
             return List.of();
         }
@@ -78,7 +81,8 @@ final class MarkMerge {
      * What this buffer writes for the file: its own entries plus the {@link #foreign} ones. Returns
      * {@code mine} itself when there are none, so the common single-buffer case is exactly the old write.
      */
-    static <T, K> List<T> withForeign(List<T> stored, Set<K> seen, List<T> mine, Function<T, K> key) {
+    static <T, K> List<T> withForeign(
+            @Nullable List<T> stored, @Nullable Set<K> seen, List<T> mine, Function<T, K> key) {
         List<T> foreign = foreign(stored, seen, mine, key);
         if (foreign.isEmpty()) {
             return mine;

@@ -163,8 +163,11 @@ class HttpSecretGateWindowFxTest {
 
     @Test
     void theBuildWrapperTrustPromptDefaultsToCancelToo() throws Exception {
-        TrustPrompts.Prompt prompt =
-                FxTestSupport.callOnFx(() -> TrustPrompts.buildWrapper(null, work, work.resolve("mvnw")));
+        TrustPrompts.Prompt prompt = FxTestSupport.callOnFx(() -> TrustPrompts.buildProject(
+                null,
+                work,
+                com.editora.build.BuildTrust.describe(
+                        com.editora.build.BuildTool.MAVEN, work, work.resolve("mvnw"), "")));
         FxTestSupport.runOnFx(() -> prompt.alert().show());
         try {
             DialogPane pane = prompt.alert().getDialogPane();

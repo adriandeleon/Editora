@@ -2,6 +2,9 @@ package com.editora.editor;
 
 import java.util.Objects;
 
+import com.editora.editops.TextFingerprint;
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a buffer compares its text with to know whether it is modified: the saved (or loaded) text's length and
  * {@link TextFingerprint fingerprint} — not the text.
@@ -18,11 +21,11 @@ final class SavedBaseline {
 
     private final int length;
     /** The text the baseline was taken from, while it is still the buffer's own snapshot; null once sealed. */
-    private String text;
+    private @Nullable String text;
     /** {@link TextFingerprint} of the text; null until sealed when no worker supplied it. */
-    private String fingerprint;
+    private @Nullable String fingerprint;
 
-    private SavedBaseline(int length, String text, String fingerprint) {
+    private SavedBaseline(int length, @Nullable String text, @Nullable String fingerprint) {
         this.length = length;
         this.text = text;
         this.fingerprint = fingerprint;
@@ -34,7 +37,7 @@ final class SavedBaseline {
     }
 
     /** A baseline that holds {@code text} until sealed, with its fingerprint already known (a load worker's). */
-    static SavedBaseline of(String text, String fingerprint) {
+    static SavedBaseline of(String text, @Nullable String fingerprint) {
         return new SavedBaseline(text.length(), Objects.requireNonNull(text), fingerprint);
     }
 
@@ -56,7 +59,7 @@ final class SavedBaseline {
         if (text != null) {
             return current == text || current.equals(text);
         }
-        return fingerprint.equals(TextFingerprint.of(current));
+        return TextFingerprint.of(current).equals(fingerprint); // sealed, so the fingerprint is known
     }
 
     /**
@@ -75,7 +78,7 @@ final class SavedBaseline {
 
     /** Whether the text is still held (tests). */
     /** The saved text while it is still held (before sealing), else null. */
-    synchronized String heldText() {
+    synchronized @Nullable String heldText() {
         return text;
     }
 
@@ -85,9 +88,11 @@ final class SavedBaseline {
 
     /** The fingerprint, computing it from the held text if needed (tests/diagnostics). */
     synchronized String fingerprint() {
-        if (fingerprint == null) {
-            fingerprint = TextFingerprint.of(text);
+        String known = fingerprint;
+        if (known == null) {
+            known = TextFingerprint.of(Objects.requireNonNull(text, "a baseline without a fingerprint holds its text"));
+            fingerprint = known;
         }
-        return fingerprint;
+        return known;
     }
 }

@@ -2,6 +2,8 @@ package com.editora.process;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A sink for <em>completed</em> one-shot CLI invocations, so the user can read exactly what Editora ran on
  * their behalf and what it answered — the console half of the native-CLI design that {@code GitService} and
@@ -32,8 +34,14 @@ public interface CommandLog {
      * <p>No working directory: it would be near-constant (a window is one project) and only lengthen every
      * echoed line — the tab is already scoped to the window that ran the command.
      */
-    record Entry(List<String> argv, int exitCode, String out, String err, long millis, boolean streamed) {
-        public Entry(List<String> argv, int exitCode, String out, String err, long millis) {
+    record Entry(
+            List<String> argv,
+            int exitCode,
+            String out,
+            @Nullable String err,
+            long millis,
+            boolean streamed) {
+        public Entry(List<String> argv, int exitCode, String out, @Nullable String err, long millis) {
             this(argv, exitCode, out, err, millis, false);
         }
     }

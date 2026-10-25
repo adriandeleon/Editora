@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 
-import com.editora.editor.EncryptedNames;
+import com.editora.text.EncryptedNames;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -43,7 +43,7 @@ public final class EncryptedFiles {
     }
 
     /** The encryption extension of {@code fileName} ({@code "gpg"}, …), lower case, or null. */
-    public static String extensionOf(String fileName) {
+    public static @Nullable String extensionOf(String fileName) {
         return EncryptedNames.extensionOf(fileName);
     }
 

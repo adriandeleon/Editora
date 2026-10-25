@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure helpers for a repository's remotes: the parser for {@code git remote -v} and the split of a
  * remote-tracking branch's short name into its remote and branch. Toolkit-free and unit-tested.
@@ -53,7 +55,7 @@ public final class GitRemotes {
      * contain a slash, so the longest of {@code remoteNames} that prefixes the branch wins; with no known
      * remote matching, the split is at the first slash. {@code null} when there is nothing to split.
      */
-    public static RemoteBranch split(String remoteBranch, List<String> remoteNames) {
+    public static @Nullable RemoteBranch split(String remoteBranch, List<String> remoteNames) {
         if (remoteBranch == null) {
             return null;
         }

@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Folds the verbose output of {@code python -m unittest -v} into Test Results — the runner Python ships with,
  * used when pytest is not installed. Each result line ({@code test_add (pkg.test_m.T.test_add) ... ok}) becomes a
@@ -29,13 +31,13 @@ public final class UnittestOutputParser implements TestResultParser {
 
     private static final Pattern BLOCK = Pattern.compile("^(FAIL|ERROR): (\\w+) \\(([\\w.]+)\\)");
 
-    private String pendingName;
-    private String pendingId;
+    private @Nullable String pendingName;
+    private @Nullable String pendingId;
 
     /** The failure block being read: its test, and its lines once past the dashed rule. */
-    private String blockName;
+    private @Nullable String blockName;
 
-    private String blockId;
+    private @Nullable String blockId;
     private boolean blockError;
     private boolean inTrace;
     private final List<String> trace = new ArrayList<>();
@@ -66,12 +68,13 @@ public final class UnittestOutputParser implements TestResultParser {
             pendingId = m.group(2);
             return List.of();
         }
-        if (pendingName != null) {
+        String name = pendingName;
+        String id = pendingId; // set with pendingName
+        if (name != null && id != null) {
             m = TAIL.matcher(l);
             if (m.matches()) {
-                String name = pendingName;
                 pendingName = null;
-                return result(name, pendingId, m.group(1));
+                return result(name, id, m.group(1));
             }
         }
         return startBlockOr(l, List.of());
@@ -95,7 +98,12 @@ public final class UnittestOutputParser implements TestResultParser {
     }
 
     private List<ParsedSuite> closeBlock() {
-        String cls = className(blockName, blockId);
+        String name = blockName;
+        String id = blockId; // set with blockName
+        if (name == null || id == null) {
+            return List.of(); // no block is open
+        }
+        String cls = className(name, id);
         String stack = String.join("\n", trace).strip();
         String message = null;
         int end = trace.size(); // the exception line comes before the test's captured "Stdout:"/"Stderr:"
@@ -114,7 +122,7 @@ public final class UnittestOutputParser implements TestResultParser {
         }
         ParsedTest t = new ParsedTest(
                 cls,
-                blockName,
+                name,
                 blockError ? TestStatus.ERROR : TestStatus.FAILED,
                 0,
                 null,

@@ -11,6 +11,8 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Small helpers for the virtual-filesystem abstraction. Editora keeps using {@link Path} everywhere, but a
  * path may now belong to a <em>remote</em> filesystem (an SFTP provider) instead of the local default one.
@@ -29,9 +31,11 @@ public final class Vfs {
      */
     public interface RemoteProvider {
         /** A live {@link Path} for a remote URI whose authority this provider has connected, else {@code null}. */
+        @Nullable
         Path resolve(String uri);
 
         /** The {@code sftp://} storable for a {@link Path} on a filesystem this provider owns, else {@code null}. */
+        @Nullable
         String storable(Path path);
     }
 
@@ -60,12 +64,12 @@ public final class Vfs {
 
     /** True when {@code path} is on the local default filesystem (a {@code null} path — untitled — counts
      *  as local). Features that shell out to a local process must check this. */
-    public static boolean isLocal(Path path) {
+    public static boolean isLocal(@Nullable Path path) {
         return path == null || path.getFileSystem() == FileSystems.getDefault();
     }
 
     /** True when {@code path} is on a remote (non-default) filesystem. */
-    public static boolean isRemote(Path path) {
+    public static boolean isRemote(@Nullable Path path) {
         return !isLocal(path);
     }
 
@@ -89,14 +93,14 @@ public final class Vfs {
     }
 
     /** The {@code user@host:port} a remote path belongs to, or null for a local (or unrecognised) path. */
-    public static String authorityOf(Path path) {
+    public static @Nullable String authorityOf(Path path) {
         SftpUri uri = isLocal(path) ? null : SftpUri.parse(toStorableString(path));
         return uri == null ? null : uri.authority();
     }
 
     /** A stable string for persisting a path: the plain path string for a local file (back-compat with the
      *  existing recent-files/projects JSON), or its URI for a remote file. */
-    public static String toStorableString(Path path) {
+    public static String toStorableString(@Nullable Path path) {
         if (path == null) {
             return "";
         }
@@ -117,7 +121,7 @@ public final class Vfs {
 
     /** Reconstructs a path from {@link #toStorableString}: a local path directly, or a remote path via whichever
      *  registered engine owns its authority ({@code null} when none is connected to that host). */
-    public static Path parseStorable(String stored) {
+    public static @Nullable Path parseStorable(String stored) {
         if (stored == null || stored.isBlank()) {
             return null;
         }
@@ -135,8 +139,11 @@ public final class Vfs {
     }
 
     /** Whether {@code stored} is a remote URI (has a non-{@code file} scheme like {@code sftp://}). */
-    public static boolean isRemoteUri(String stored) {
-        int scheme = stored == null ? -1 : stored.indexOf("://");
+    public static boolean isRemoteUri(@Nullable String stored) {
+        if (stored == null) {
+            return false;
+        }
+        int scheme = stored.indexOf("://");
         return scheme > 0 && !stored.regionMatches(true, 0, "file:", 0, 5);
     }
 

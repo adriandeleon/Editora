@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders syntax-highlighted code to a self-contained HTML fragment for the clipboard's {@code text/html}
@@ -70,7 +71,7 @@ public final class CodeHtml {
      * page that has both a light and a dark scheme: {@link #classCss} is the stylesheet that colours them
      * in each. A token colour the table does not know keeps an inline colour.
      */
-    public static String toClassHtml(String text, StyleSpans<Collection<String>> spans, int tabSize) {
+    public static String toClassHtml(String text, @Nullable StyleSpans<Collection<String>> spans, int tabSize) {
         List<List<PdfText.Run>> lines = PdfText.splitIntoLineRuns(text == null ? "" : text, spans, tabSize);
         StringBuilder sb = new StringBuilder(256).append("<pre class=\"md-highlight\"><code>");
         for (int i = 0; i < lines.size(); i++) {
@@ -105,7 +106,7 @@ public final class CodeHtml {
         return sb.append("</code></pre>").toString();
     }
 
-    private static String tokenClass(Color color) {
+    private static @Nullable String tokenClass(Color color) {
         String hex = hex(color);
         for (String[] row : TOKEN_CLASSES) {
             if (row[0].equalsIgnoreCase(hex)) {

@@ -8,6 +8,7 @@ import java.util.function.IntFunction;
 
 import com.editora.config.Bookmark;
 import com.editora.config.Breakpoint;
+import com.editora.editor.debug.BreakpointManager;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

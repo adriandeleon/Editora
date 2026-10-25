@@ -23,6 +23,27 @@ class CommentContinuationTest {
         assertEquals("  /**\n   * |\n   */\n", enter("  /**|\n", "typescript"));
     }
 
+    /** Whether a {@code *} typed at {@code |} in {@code marked} closes the Javadoc it opens (Java review A12). */
+    private static boolean closes(String marked) {
+        int caret = marked.indexOf('|');
+        String text = marked.replace("|", "");
+        int lineStart = text.lastIndexOf('\n', caret - 1) + 1;
+        int lineEnd = text.indexOf('\n', caret);
+        lineEnd = lineEnd < 0 ? text.length() : lineEnd;
+        return CommentContinuation.closesDocOpening(
+                text, caret, text.substring(lineStart, caret), text.substring(caret, lineEnd));
+    }
+
+    @Test
+    void theStarThatOpensAJavadocClosesItWhenNothingElseDoes() {
+        org.junit.jupiter.api.Assertions.assertTrue(closes("    /*|\n    void m(int a) {}\n"));
+        org.junit.jupiter.api.Assertions.assertTrue(closes("/*|  "));
+        org.junit.jupiter.api.Assertions.assertFalse(closes("    /*|\n     * Kept.\n     */\n"), "closed below");
+        org.junit.jupiter.api.Assertions.assertFalse(closes("x = 1; /*|"), "code before it");
+        org.junit.jupiter.api.Assertions.assertFalse(closes("/*|x"), "text after the caret");
+        org.junit.jupiter.api.Assertions.assertFalse(closes("/|"), "not a comment yet");
+    }
+
     @Test
     void enterBetweenTheOpenerAndTheCloserSplitsThem() {
         assertEquals("/**\n * |\n */\n", enter("/**|*/\n", "javascript"));

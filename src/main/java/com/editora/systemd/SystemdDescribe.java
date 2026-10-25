@@ -2,6 +2,8 @@ package com.editora.systemd;
 
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Plain-English glosses for the common systemd directives (used by the unit preview), plus the unit-kind
  * inference. Time-span-valued keys route through {@link TimeSpan} and {@code OnCalendar} through
@@ -23,7 +25,7 @@ public final class SystemdDescribe {
     }
 
     /** A plain-English gloss for a directive, or {@code null} if the key isn't recognized. */
-    public static String gloss(String key, String value) {
+    public static @Nullable String gloss(String key, String value) {
         String k = key.toLowerCase(Locale.ROOT);
         // Time-span-valued monotonic-timer + service keys.
         switch (k) {
@@ -51,7 +53,8 @@ public final class SystemdDescribe {
                 return "start/stop timeout " + TimeSpan.describe(value);
             case "oncalendar":
                 SystemdCalendar.Parsed p = SystemdCalendar.parse(value);
-                return p.ok() ? p.calendar().describe() : "invalid schedule: " + p.error();
+                SystemdCalendar calendar = p.calendar(); // set exactly when the parse is ok
+                return calendar != null ? calendar.describe() : "invalid schedule: " + p.error();
             default:
                 break;
         }

@@ -44,6 +44,7 @@ import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffModels.DiffModel;
 import com.editora.git.RelativeTime;
 import com.editora.history.HistoryBlobStore;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -107,7 +108,8 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
          * Applies {@code newText} only while {@code target} still holds {@code expectedText} (the text the
          * hunk was computed from) and reports whether it did.
          */
-        void applyToLocalIfUnchanged(Path target, String expectedText, String newText, Consumer<Boolean> done);
+        void applyToLocalIfUnchanged(
+                Path target, @Nullable String expectedText, String newText, Consumer<Boolean> done);
 
         void undoLocal(Path target);
 
@@ -133,7 +135,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     private static final int REMEMBERED_FILES = 32;
 
     private final Actions actions;
-    private DiffSupport support; // injected after construction
+    private @Nullable DiffSupport support; // injected after construction
 
     // --- Left: revision list (single-file) / folder tree ---
     private final Label fileLabel = new Label(tr("history.noFile"));
@@ -156,18 +158,18 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     private final Label diffPlaceholder = new Label(tr("history.window.selectPrompt"));
     private final PauseTransition editorSettled = new PauseTransition(Duration.millis(250));
 
-    private Path target; // the active file the revisions belong to (null in folder mode / no file)
-    private Path folderShown; // the folder whose history is listed (null in single-file mode)
-    private HistoryRevision shown; // the revision the right side describes (null = the prompt)
-    private Path shownPath; // the file `shown` is compared with: `target`, or a folder row's own file
+    private @Nullable Path target; // the active file the revisions belong to (null in folder mode / no file)
+    private @Nullable Path folderShown; // the folder whose history is listed (null in single-file mode)
+    private @Nullable HistoryRevision shown; // the revision the right side describes (null = the prompt)
+    private @Nullable Path shownPath; // the file `shown` is compared with: `target`, or a folder row's own file
     private boolean shownMissing; // `shown`'s content could not be read
     private boolean shownTooLarge; // `shown` could not be diffed
-    private DiffViewerPane pane; // built on the first diff result for `shownPath`
-    private Path panePath; // the file `pane` was built for
+    private @Nullable DiffViewerPane pane; // built on the first diff result for `shownPath`
+    private @Nullable Path panePath; // the file `pane` was built for
     private String snapshotText = "";
     private String baseText = "";
     private String editorSha = ""; // hash of the editor text, to find the row it equals ("" = not known)
-    private HistoryRevision pendingSelection; // asked for before its list arrived (Recent Changes)
+    private @Nullable HistoryRevision pendingSelection; // asked for before its list arrived (Recent Changes)
     private boolean keepingSelection; // the list is being rebuilt; selection changes are not the user's
     private int gen; // stale-guard for async re-diffs (selection / toggle can overlap)
 
@@ -312,7 +314,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     }
 
     /** The folder whose history the panel is listing, or {@code null} while it shows a single file. */
-    public Path folderShown() {
+    public @Nullable Path folderShown() {
         return folderShown;
     }
 
@@ -340,7 +342,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     }
 
     /** Replaces the revision list (single-file mode). {@code fileName} = null/blank ⇒ "no file". */
-    public void setRevisions(List<HistoryRevision> list, String fileName, Path target) {
+    public void setRevisions(List<HistoryRevision> list, @Nullable String fileName, @Nullable Path target) {
         boolean wasFolder = folderShown != null;
         folderShown = null;
         setFolderMode(false);
@@ -382,16 +384,18 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             resetDiff(); // the previously-shown diff was for the old file (or old list) — clear it
         } else if (sameFile && wanted.equals(shown) && pane != null) {
             shown = wanted;
-            if (support != null && !support.currentText(target).equals(baseText)) {
+            if (support != null
+                    && target != null
+                    && !support.currentText(target).equals(baseText)) {
                 reDiffAfterEdit(); // same revision, but the file has moved on
             }
-        } else {
+        } else if (target != null) { // a remembered or pending revision is always one of a file's
             remembered.put(target.toString(), wanted);
             showRevision(wanted, target);
         }
     }
 
-    private void setHeading(String text, Path path) {
+    private void setHeading(String text, @Nullable Path path) {
         fileLabel.setText(text);
         revisions.setAccessibleText(text);
         folderTree.setAccessibleText(text);
@@ -495,7 +499,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
      * active file in the single-file view, and the revision's own file in the folder view (a deleted file
      * compares with nothing).
      */
-    private void showRevision(HistoryRevision rev, Path path) {
+    private void showRevision(HistoryRevision rev, @Nullable Path path) {
         if (support == null || path == null) {
             return;
         }
@@ -532,14 +536,15 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
     /** Re-diffs {@link #snapshotText} vs {@link #baseText} with the current toggle options (off-thread). */
     private void recompute() {
-        if (support == null || shown == null || shownMissing) {
+        DiffSupport diffs = support;
+        Path path = shownPath; // set with shown
+        if (diffs == null || shown == null || path == null || shownMissing) {
             return; // nothing shown: the texts below belong to no revision
         }
         int g = ++gen;
-        Path path = shownPath;
         boolean editable = folderShown == null;
         DiffEngine.DiffOptions opts = new DiffEngine.DiffOptions(ignoreWs.isSelected(), wordLevel.isSelected());
-        support.computeDiff(snapshotText, baseText, opts, model -> {
+        diffs.computeDiff(snapshotText, baseText, opts, model -> {
             if (g != gen) {
                 return; // a newer selection/toggle superseded this result
             }
@@ -556,7 +561,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             }
             shownTooLarge = false;
             updateToolbar();
-            Settings s = support.settings();
+            Settings s = diffs.settings();
             String fileName =
                     path.getFileName() == null ? "" : path.getFileName().toString();
             if (pane == null || !path.equals(panePath)) {
@@ -576,7 +581,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 panePath = path;
                 pane.setOptionsControlsVisible(false);
                 if (editable) {
-                    installHunkApply(pane, path);
+                    installHunkApply(pane, path, diffs);
                 }
                 rightPane.setCenter(pane.node());
             } else {
@@ -592,19 +597,18 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
      * hunk", so it is applied only while the file still equals the pane's own current-side text: anything
      * typed since the revision was selected is kept, and the refused apply re-baselines and re-diffs instead.
      */
-    private void installHunkApply(DiffViewerPane built, Path t) {
+    private void installHunkApply(DiffViewerPane built, Path t, DiffSupport diffs) {
         built.setEditableAsync(
                 DiffViewerPane.EditableSide.RIGHT,
-                (newText, done) ->
-                        support.applyToLocalIfUnchanged(t, built.editableBaselineText(), newText, applied -> {
-                            done.accept(applied);
-                            reDiffAfterEdit();
-                        }),
+                (newText, done) -> diffs.applyToLocalIfUnchanged(t, built.editableBaselineText(), newText, applied -> {
+                    done.accept(applied);
+                    reDiffAfterEdit();
+                }),
                 () -> {
-                    support.undoLocal(t);
+                    diffs.undoLocal(t);
                     reDiffAfterEdit();
                 },
-                () -> support.saveLocal(t));
+                () -> diffs.saveLocal(t));
     }
 
     /** After a per-hunk apply/undo changed the current file, re-baseline + re-diff (the editable side
@@ -956,7 +960,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
      * "Current" on the newest revision the editor's text equals; "Latest" on the newest row when that is not
      * it (unsaved edits, a restore of an older row, an undo). Null for an untagged row.
      */
-    private String tagFor(HistoryRevision r) {
+    private @Nullable String tagFor(HistoryRevision r) {
         if (allRevisions.isEmpty()) {
             return null;
         }
@@ -982,7 +986,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         return sb.toString();
     }
 
-    private String accessibleText(HistoryRevision r, String tag) {
+    private String accessibleText(HistoryRevision r, @Nullable String tag) {
         StringBuilder sb = new StringBuilder();
         if (tag != null) {
             sb.append(tag).append(", ");

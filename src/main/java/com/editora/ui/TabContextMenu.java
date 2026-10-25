@@ -183,7 +183,8 @@ final class TabContextMenu {
             pin.setVisible(!simple || c.pinned.contains(tab));
             closeLeft.setDisable(c.eligibleToLeft(tab).isEmpty());
             closeRight.setDisable(c.eligibleToRight(tab).isEmpty());
-            boolean hasPath = buffer.getPath() != null;
+            java.nio.file.Path path = buffer.getPath();
+            boolean hasPath = path != null;
             // Reveal only makes sense for a saved, local file; a terminal also opens on a remote file's host.
             boolean localPath = hasPath && c.isLocalBuffer(buffer);
             reveal.setDisable(!localPath);
@@ -197,8 +198,8 @@ final class TabContextMenu {
             localHistory.setDisable(!c.historyCoordinator.isEnabled());
             // Only shown for a .patch/.diff file — parses the buffer's own (possibly unsaved) text.
             openPatch.setVisible(!simple
-                    && hasPath
-                    && PatchFiles.isPatchFile(buffer.getPath().getFileName().toString()));
+                    && path != null
+                    && PatchFiles.isPatchFile(path.getFileName().toString()));
             // The Git submenu is only shown for a saved file (an untitled buffer can't be in a repo) and is
             // greyed out when there's no VCS (Git off / not inside a repo) — mirroring the Project tree.
             gitMenu.setVisible(hasPath && !simple);

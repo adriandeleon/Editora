@@ -11,6 +11,8 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -24,8 +26,8 @@ final class ToolStatusRow {
     private String tool;
     private final Label pill = new Label();
     private final HBox node = new HBox(8, pill);
-    private Button install;
-    private Hyperlink missingOnly;
+    private @Nullable Button install;
+    private @Nullable Hyperlink missingOnly;
     private final javafx.scene.control.Tooltip tooltip = new javafx.scene.control.Tooltip();
 
     ToolStatusRow(String tool) {
@@ -82,6 +84,7 @@ final class ToolStatusRow {
     }
 
     /** The Install… button, or null when the row has none. */
+    @Nullable
     Button installButton() {
         return install;
     }
@@ -112,6 +115,23 @@ final class ToolStatusRow {
         if (install != null) {
             install.setDisable(found);
             install.setText(found ? tr("settings.install.installed") : tr("settings.install.button"));
+        }
+    }
+
+    /**
+     * Shows a tool that is there but unusable, in the pill's own words ("lemminx-maven: installed but incomplete —
+     * click Install… to repair"): red while {@code featureOn}, with Install… offered as for a missing tool.
+     */
+    void showProblem(String text, boolean featureOn) {
+        pill.getStyleClass().setAll("settings-git-status", SettingsWindow.pillClass(false, featureOn));
+        pill.setText(text);
+        tooltip.setText(text);
+        if (missingOnly != null) {
+            missingOnly.setVisible(true);
+        }
+        if (install != null) {
+            install.setDisable(false);
+            install.setText(tr("settings.install.button"));
         }
     }
 

@@ -22,6 +22,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -37,7 +39,7 @@ public final class MessageLogPopup {
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     /** Shared in-scene overlay host (injected by MainController) + shown state. */
-    private OverlayHost overlayHost;
+    private @Nullable OverlayHost overlayHost;
 
     private boolean showing;
     /** When the popup last hid — used so a click on the echo that auto-hid it doesn't immediately reopen. */
@@ -55,9 +57,9 @@ public final class MessageLogPopup {
 
     private final javafx.scene.control.TextField filter = new javafx.scene.control.TextField();
     private final Button doctor = new Button(tr("messagelog.doctor"));
-    private Runnable onOpenDoctor;
+    private @Nullable Runnable onOpenDoctor;
     private final VBox root;
-    private MessageLog log;
+    private @Nullable MessageLog log;
 
     public MessageLogPopup() {
         Label header = new Label(tr("messagelog.title"));

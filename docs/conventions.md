@@ -163,9 +163,9 @@ and not checked.
   ```
 
   `NullMarkedPackagesTest` fails for a package that is neither marked nor listed in
-  `src/test/resources/com/editora/packaging/unmarked-packages.txt`. That list holds the packages written
-  before the rule. It may only shrink: the test also fails when a listed package is marked or deleted and its
-  line is still there.
+  `src/test/resources/com/editora/packaging/unmarked-packages.txt`. That list held the packages written
+  before the rule and has been empty since 2026-10-20, when `ui`, the last of them, was marked. Keep it empty:
+  the test also fails when a listed package is marked or deleted and its line is still there.
 - **In a marked package everything is non-null unless it says `@Nullable`** (`org.jspecify.annotations`).
   Mark what really may be null: a field set later, a parameter callers pass null to, a "not found" return.
   JSpecify annotations are type-use, so they go next to the type: `private @Nullable Foo foo`,
@@ -179,10 +179,27 @@ and not checked.
 - **NullAway does not follow a boolean that holds a null check.** After
   `boolean kotlin = name != null && name.endsWith(".kt"); if (kotlin) …`, `name` still counts as nullable.
   Write the check inline.
-- **To mark an existing package:** add its `package-info.java`, delete its line from the list, run
-  `mvn -q -DskipTests compile` and fix what NullAway reports. javac stops at 100 errors, so run it again
-  until it is clean. Behaviour must not change. A real bug found on the way gets its own fix and test.
-  Prefer small packages and the boundaries where nulls arrive from outside (JSON, protocols, files).
+- **Every package is marked** (since 2026-10-20). They were marked in layers: nine pilot packages, then the
+  58 smaller ones, then `editor`, then `ui`. A package added later starts marked, so nothing needs migrating.
+  A real bug found on the way got its own fix; behaviour did not change otherwise.
+- **An object finished by a method after its constructor** marks that method `@Initializer`
+  (`com.editora.ui.Initializer`; NullAway honours any annotation of that name). A field the method always
+  assigns then counts as non-null, as if the constructor had set it. `MainController.init` (FXMLLoader builds
+  the controller, `WindowManager` calls `init` straight after), `NavigationCoordinator.setupJumpPickers` (which
+  `init` calls) and `SettingsWindow.build` (the window builds its controls on first show; the methods that can
+  run earlier check first) use it. It is a promise NullAway cannot check, so keep it to that lifecycle; a
+  field set by a setter or a later step stays `@Nullable`. Fields injected by FXML (`@FXML`) are not checked
+  for initialization (`ExcludedFieldAnnotations`).
+- **JavaFX returns null more often than it looks**: `Node.getScene()`, `Scene.getWindow()`, `Control.getSkin()`,
+  `Node.getParent()`, a selection model's selected item, a `ComboBox` value. Guard where the value is used.
+- **Watch for over-wide annotations.** One `null` passed to a method that hands its argument back unchanged
+  makes the result `@Nullable`, and then every reader of it. When many dereferences of one value are
+  flagged, look at where the null comes from before guarding each one (`ProcessRunner.Result.err` was
+  never null; a helper's parameter only looked as if it could be). When a caller has a null for a parameter
+  that does not take one, make the parameter `@Nullable` only if the method already copes with null (it
+  checks, or hands the value on to something documented to take null); NullAway then checks that it does.
+  Otherwise check at the caller. Widening one method after another until the error moves out of sight is
+  how a whole API turns `@Nullable`.
 - **Native bindings are `@NullUnmarked`.** A JNA `Library` interface or `Structure` follows the C API's
   nullness, so mark the binding type `@NullUnmarked` instead of annotating every pointer
   (`secrets.LinuxSecretServiceStore`). The Java field that holds a library that may not have loaded is
@@ -193,8 +210,9 @@ and not checked.
 - **Plumbing.** Only NullAway runs (`-XepDisableAllChecks -Xep:NullAway:ERROR`), and only in the main compile,
   not on tests. `.mvn/jvm.config` exports the javac internals that Error Prone needs. JSpecify is a `provided`
   dependency read through `requires static org.jspecify`, so nothing ships. It runs on JDK 25 and JDK 27.
-  Cost on 2026-10-19, with nine packages marked: a clean `mvn -DskipTests compile` took 0.5 to 1.4 s longer
-  than about 9.5 s without the gate (two noisy runs). The cost grows as more packages are marked.
+  Cost of a clean `mvn -DskipTests compile` (two runs each): about 9.5 s with no package or nine marked,
+  11.5 s with all but `ui` and `editor` (2026-10-19), 12.3 s with all but `ui`, and 14.2 s with every
+  package (both 2026-10-20; 12.2 s for the previous layer on the same run).
 
 ## Worktrees: one per task
 

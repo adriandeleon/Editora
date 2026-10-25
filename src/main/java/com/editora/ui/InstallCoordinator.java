@@ -15,6 +15,7 @@ import com.editora.install.InstallCatalog.Lang;
 import com.editora.install.InstallCatalog.Prereq;
 import com.editora.install.InstallCatalog.Step;
 import com.editora.install.InstallService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -73,6 +74,9 @@ final class InstallCoordinator {
         this.host = host;
         this.ops = ops;
         this.service = service;
+        // The Build Tools JDK satisfies the Java prerequisite and runs the JVM servers' post-install smoke (C4).
+        service.setJdkHomeSupplier(
+                () -> host.settings() == null ? "" : host.settings().getMavenJdkHome());
     }
 
     /** Whether every tool that makes up {@code lang}'s support is already installed/detected. */
@@ -381,7 +385,8 @@ final class InstallCoordinator {
     /** Maps a catalog step to its current detected-availability via the existing per-feature detectors. */
     private boolean stepInstalled(Step step) {
         return switch (step.id()) {
-            case "jdtls" -> ops.lspAvailable("java");
+            // Editora's own jdtls older than the pinned one counts as missing, so Install replaces it (D8).
+            case "jdtls" -> ops.lspAvailable("java") && !editoraJdtlsOutdated();
             case "java-debug" -> ops.dapAvailable("java");
             case "pyright" -> ops.lspAvailable("python");
             // Found where the installer puts it, whether or not debugging is switched on (detection only runs
@@ -398,6 +403,13 @@ final class InstallCoordinator {
         };
     }
 
+    private boolean editoraJdtlsOutdated() {
+        Path config = ops.configDir();
+        com.editora.install.JdtlsVersion installed =
+                config == null ? null : com.editora.install.JdtlsVersion.installed(config.resolve("plugins/lsp/java"));
+        return installed != null && installed.compareTo(com.editora.install.JdtlsVersion.pinned()) < 0;
+    }
+
     private String langName(Lang lang) {
         return tr("install.lang." + lang.name().toLowerCase(Locale.ROOT));
     }
@@ -406,7 +418,7 @@ final class InstallCoordinator {
         return tr("install.prereq." + p.name().toLowerCase(Locale.ROOT));
     }
 
-    private void alert(Alert.AlertType type, String message) {
+    private void alert(Alert.AlertType type, @Nullable String message) {
         alert.accept(type, message);
     }
 

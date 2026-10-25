@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Turns an {@link ExecSpec} into the one string a POSIX host is asked to run. SSH has no argv: the server
  * hands a single command line to the account's login shell. So the line is built to be parsed exactly once,
@@ -77,7 +79,7 @@ public final class PosixShell {
      * target names it) when the scripts are readable there: bash with {@code --init-file}, zsh with
      * {@code ZDOTDIR}. Any other shell, or missing scripts, start as a plain login shell.
      */
-    public static String terminalScript(String cwd, boolean markPid, String integration) {
+    public static String terminalScript(@Nullable String cwd, boolean markPid, @Nullable String integration) {
         StringBuilder script = new StringBuilder();
         if (markPid) {
             script.append("printf '\\036EDITORA %s\\n' \"$$\"; ");
@@ -111,7 +113,7 @@ public final class PosixShell {
      * The script for {@code spec} on a target, its folder as the target names it: the login shell (with
      * integration), or {@link TerminalSpec#command} run by it.
      */
-    public static String terminalScript(String cwd, boolean markPid, TerminalSpec spec) {
+    public static String terminalScript(@Nullable String cwd, boolean markPid, TerminalSpec spec) {
         return spec.runsProgram()
                 ? programScript(cwd, markPid, spec.command(), spec.env())
                 : terminalScript(cwd, markPid, spec.shellIntegration());
@@ -130,7 +132,7 @@ public final class PosixShell {
      *
      * @throws IllegalArgumentException if a variable name is not a valid shell identifier
      */
-    static String programScript(String cwd, boolean markPid, List<String> argv, Map<String, String> env) {
+    static String programScript(@Nullable String cwd, boolean markPid, List<String> argv, Map<String, String> env) {
         StringBuilder script = new StringBuilder();
         if (markPid) {
             script.append("printf '\\036EDITORA %s\\n' \"$$\"; ");
@@ -186,7 +188,11 @@ public final class PosixShell {
      * {@code PATH}, the locale and the caller's own variables still win over them.
      */
     public static String commandLine(
-            ExecSpec spec, String cwd, String path, Map<String, String> userLocale, Map<String, String> profile) {
+            ExecSpec spec,
+            @Nullable String cwd,
+            @Nullable String path,
+            Map<String, String> userLocale,
+            Map<String, String> profile) {
         StringBuilder line = new StringBuilder("exec /bin/sh -c ")
                 .append(quote(GROUP_GUARD))
                 .append(" editora ")
@@ -203,7 +209,11 @@ public final class PosixShell {
      * <script> <argv>…}, nothing quoted.
      */
     public static java.util.List<String> argv(
-            ExecSpec spec, String cwd, String path, Map<String, String> userLocale, Map<String, String> profile) {
+            ExecSpec spec,
+            @Nullable String cwd,
+            @Nullable String path,
+            Map<String, String> userLocale,
+            Map<String, String> profile) {
         java.util.List<String> argv = new java.util.ArrayList<>(java.util.List.of(
                 "/bin/sh", "-c", GROUP_GUARD, "editora", script(spec, cwd, path, userLocale, profile)));
         argv.addAll(spec.argv());
@@ -277,7 +287,11 @@ public final class PosixShell {
     }
 
     static String script(
-            ExecSpec spec, String cwd, String path, Map<String, String> userLocale, Map<String, String> profile) {
+            ExecSpec spec,
+            @Nullable String cwd,
+            @Nullable String path,
+            Map<String, String> userLocale,
+            Map<String, String> profile) {
         StringBuilder script = new StringBuilder("printf '\\036EDITORA %s\\n' \"$$\" >&2\n");
         if (spec.longLived()) {
             script.append(WATCHDOG);

@@ -7,6 +7,8 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How Run and Debug start a Scala file: on its own through Scala CLI, as part of a Scala CLI project
  * ({@code project.scala}), or through the sbt or Mill build it belongs to — and the program's main class, read
@@ -38,7 +40,7 @@ public final class ScalaRun {
     }
 
     /** Where a Scala file belongs: its build and that build's root folder (null for {@link Build#NONE}). */
-    public record Owner(Build build, Path root) {}
+    public record Owner(Build build, @Nullable Path root) {}
 
     private static final List<String> MILL_MARKERS = List.of("build.mill", "build.mill.yaml", "build.sc");
     private static final List<String> OTHER_MARKERS =
@@ -50,12 +52,15 @@ public final class ScalaRun {
      * <em>highest</em> folder with a {@code build.sbt}: an sbt subproject may have a {@code build.sbt} of its
      * own, and sbt runs from the root. A file outside every build belongs to none.
      */
-    public static Owner ownerOf(Path file, Path top, Predicate<Path> isFile) {
+    public static Owner ownerOf(Path file, @Nullable Path top, Predicate<Path> isFile) {
         if (file == null || file.getParent() == null) {
             return new Owner(Build.NONE, null);
         }
         Path stop = top == null ? null : top.toAbsolutePath().normalize();
         Path start = file.toAbsolutePath().normalize().getParent();
+        if (start == null) {
+            return new Owner(Build.NONE, null); // "/..": its folder is above the root
+        }
         if (stop != null && !start.startsWith(stop)) {
             stop = null; // a file outside the project: look up to the root
         }
@@ -151,7 +156,7 @@ public final class ScalaRun {
      * from the top), else -1 — a library file is not a program. Build definitions ({@code .sbt}, {@code .mill},
      * {@code build.sc}) never run.
      */
-    public static int runLine(String name, String text) {
+    public static int runLine(@Nullable String name, String text) {
         String lower = name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
         if (lower.endsWith(".sbt") || lower.endsWith(".mill") || lower.equals("build.sc")) {
             return -1;
@@ -164,7 +169,7 @@ public final class ScalaRun {
     }
 
     /** The main class Run starts for {@code text}: its first entry point's, or null when it has none. */
-    public static String mainClass(String text) {
+    public static @Nullable String mainClass(String text) {
         List<Main> mains = mains(text);
         return mains.isEmpty() ? null : mains.get(0).mainClass();
     }
@@ -173,7 +178,8 @@ public final class ScalaRun {
      * What Scala CLI is given to run: the file alone, or — for a file of a Scala CLI project — the project
      * folder (all its sources and the {@code project.scala} directives) with the file's main class.
      */
-    public static List<String> cliInputs(String file, Owner owner, String projectFolder, String mainClass) {
+    public static List<String> cliInputs(
+            String file, Owner owner, @Nullable String projectFolder, @Nullable String mainClass) {
         if (owner != null && owner.build() == Build.SCALA_CLI && projectFolder != null) {
             List<String> inputs = new ArrayList<>();
             if (mainClass != null) {
@@ -191,7 +197,7 @@ public final class ScalaRun {
      * {@code runMain demo.hello a "b c"} (sbt splits it at spaces, honouring double quotes); plain {@code run}
      * when the main class is not known (sbt then picks it, or asks).
      */
-    public static List<String> sbtRunTask(String mainClass, List<String> args) {
+    public static List<String> sbtRunTask(@Nullable String mainClass, List<String> args) {
         StringBuilder command = new StringBuilder(mainClass == null ? "run" : "runMain " + mainClass);
         for (String a : args == null ? List.<String>of() : args) {
             command.append(' ').append(sbtQuote(a));
@@ -211,7 +217,7 @@ public final class ScalaRun {
      * {@code core.runMain demo.hello args…} — {@code runMain} alone for the root module, {@code core.run args…}
      * when the main class is not known.
      */
-    public static List<String> millRunTask(String module, String mainClass, List<String> args) {
+    public static List<String> millRunTask(String module, @Nullable String mainClass, List<String> args) {
         String prefix = module == null || module.isEmpty() ? "" : module + ".";
         List<String> task = new ArrayList<>();
         if (mainClass == null) {
@@ -231,7 +237,7 @@ public final class ScalaRun {
      * module's {@code src} folder, joined by dots ({@code core/src/demo/Main.scala} → {@code core},
      * {@code core/test/src/…} → {@code core.test}); empty for a file of the root module ({@code src/…}).
      */
-    public static String millModule(Path root, Path file) {
+    public static String millModule(@Nullable Path root, Path file) {
         if (root == null || file == null) {
             return "";
         }

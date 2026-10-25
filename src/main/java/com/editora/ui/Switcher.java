@@ -16,6 +16,7 @@ import javafx.scene.text.Text;
 import javafx.stage.Window;
 
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -47,7 +48,7 @@ public class Switcher {
     private final Label pathLabel = new Label();
     private VBox root;
     /** Shared in-scene overlay host (injected by MainController) + shown state. */
-    private OverlayHost overlayHost;
+    private @Nullable OverlayHost overlayHost;
 
     private boolean showing;
 

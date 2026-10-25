@@ -12,11 +12,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.editora.editor.HttpLineResult;
+import com.editora.editor.http.HttpLineResult;
 import com.editora.http.HttpClientService;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpResult;
 import com.editora.http.HttpTests;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -83,7 +84,7 @@ final class HttpInlineResult {
      * The class the request's ▶ takes: the status's, red when its tests failed or a script stopped with an error,
      * amber when it was cancelled.
      */
-    static String glyphClass(HttpResult r) {
+    static @Nullable String glyphClass(HttpResult r) {
         if (r == null) {
             return null;
         }
@@ -150,7 +151,7 @@ final class HttpInlineResult {
      * An error as short as the line can take: its first line, up to the advice after a dash ("Connection refused — is
      * a server listening on …?" is "Connection refused"), at most {@link #MAX_ERROR} characters.
      */
-    static String shortError(String error) {
+    static String shortError(@Nullable String error) {
         if (error == null || error.isBlank()) {
             return tr("httppanel.requestFailed");
         }

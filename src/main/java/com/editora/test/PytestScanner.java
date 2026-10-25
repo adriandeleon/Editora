@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Finds the tests pytest would collect in one Python file, by text — no interpreter, so the gutter can mark
  * them as the file is typed. Pure.
@@ -24,9 +26,13 @@ public final class PytestScanner {
      * as a whole. {@code line} is 0-based (the {@code def}/{@code class} line, after any decorators);
      * {@code endLine} is the last line of its block.
      */
-    public record TestTarget(int line, int endLine, String className, String functionName) {
+    public record TestTarget(
+            int line,
+            int endLine,
+            @Nullable String className,
+            @Nullable String functionName) {
         /** The node id after the file: {@code Class::test_x}, {@code test_x} or {@code Class}. */
-        public String nodeSuffix() {
+        public @Nullable String nodeSuffix() {
             if (className == null) {
                 return functionName;
             }
@@ -34,7 +40,7 @@ public final class PytestScanner {
         }
 
         /** A short label for menus and the gutter tooltip. */
-        public String displayName() {
+        public @Nullable String displayName() {
             return className == null || functionName == null ? nodeSuffix() : className + "." + functionName;
         }
     }
@@ -43,7 +49,7 @@ public final class PytestScanner {
     private static final Pattern CLASS = Pattern.compile("^([ \\t]*)class[ \\t]+(\\w+)[ \\t]*(\\(([^)]*)\\))?");
 
     /** Whether pytest's default {@code python_files} pattern matches: {@code test_*.py} or {@code *_test.py}. */
-    public static boolean isTestFile(String fileName) {
+    public static boolean isTestFile(@Nullable String fileName) {
         if (fileName == null || !fileName.endsWith(".py")) {
             return false;
         }
@@ -106,7 +112,7 @@ public final class PytestScanner {
     }
 
     /** The test whose block holds {@code line} (0-based): the innermost one, or null. */
-    public static TestTarget atLine(String source, int line) {
+    public static @Nullable TestTarget atLine(String source, int line) {
         TestTarget best = null;
         for (TestTarget t : scan(source)) {
             if (line >= t.line() && line <= t.endLine()) {
@@ -122,7 +128,7 @@ public final class PytestScanner {
      * The pytest node id for {@code target} in a file at {@code relativePath} (from the folder pytest runs
      * in): {@code tests/test_app.py::TestX::test_y}, with forward slashes on every OS.
      */
-    public static String nodeId(String relativePath, TestTarget target) {
+    public static String nodeId(String relativePath, @Nullable TestTarget target) {
         String path = relativePath.replace('\\', '/');
         return target == null ? path : path + "::" + target.nodeSuffix();
     }

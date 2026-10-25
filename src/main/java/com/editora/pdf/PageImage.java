@@ -15,7 +15,8 @@ public record PageImage(byte[] png, ImagePaging.Source source) {
 
     /** A PNG rendered at {@code pixelScale} image pixels per logical pixel. */
     public static PageImage of(byte[] png, double pixelScale) {
-        return new PageImage(png, new ImagePaging.Source(width(png), height(png), pixelScale, null, false));
+        return new PageImage(
+                png, new ImagePaging.Source(width(png), height(png), pixelScale, ImagePaging.NO_CUTS, false));
     }
 
     /** A chunk of a row list: cut only at {@code safeCuts}; {@code continues} the chunk before it. */
@@ -24,7 +25,7 @@ public record PageImage(byte[] png, ImagePaging.Source source) {
     }
 
     /** The page images of a preview snapshot, chunk for chunk. */
-    public static java.util.List<PageImage> of(com.editora.editor.PreviewSnapshots.Result snapshot) {
+    public static java.util.List<PageImage> of(com.editora.editor.structured.PreviewSnapshots.Result snapshot) {
         return snapshot.images().stream()
                 .map(c -> rows(c.png(), c.scale(), c.cuts(), c.continues()))
                 .toList();

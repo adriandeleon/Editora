@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Lisp (Clojure) indentation for {@link Indenter}: a line inside a form is indented by the innermost open
  * bracket, not by the line above it. Pure (no toolkit), so it is unit-tested.
@@ -68,7 +70,7 @@ final class LispIndent {
      * The indent for a line that starts right after {@code text[0, pos)}; {@code null} when {@code pos} is
      * inside a string, whose continuation lines keep their own indentation.
      */
-    static String indentAfter(String text, int pos) {
+    static @Nullable String indentAfter(String text, int pos) {
         int from = scanStart(text, pos);
         int[] stack = new int[16];
         int depth = 0;

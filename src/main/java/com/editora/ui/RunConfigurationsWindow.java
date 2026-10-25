@@ -7,8 +7,10 @@ import java.util.function.Supplier;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.geometry.Dimension2D;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -16,6 +18,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -31,14 +34,25 @@ import com.editora.config.ConfigManager;
 import com.editora.config.RunConfiguration;
 import com.editora.run.RunConfigDefaults;
 import com.editora.run.RunConfigFields;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
 /** Modeless editor for the run configurations owned by this window's project/session. */
 public final class RunConfigurationsWindow {
 
-    private static final double WIDTH = 760;
-    private static final double HEIGHT = 640;
+    /** The smallest size the window opens at; it grows from here to fit the form (see fitToContent). */
+    private static final double WIDTH = 820;
+
+    private static final double HEIGHT = 720;
+    private static final double MIN_WIDTH = 640;
+    private static final double MIN_HEIGHT = 420;
+
+    /** At most this much of the screen: a form taller than that scrolls. */
+    private static final double SCREEN_FRACTION = 0.9;
+
+    /** The size the window opened at, once it has been shown: where to centre it on a later show. */
+    private @Nullable Dimension2D openedSize;
 
     private final ConfigManager config;
     private final Stage stage = new Stage();
@@ -46,9 +60,9 @@ public final class RunConfigurationsWindow {
     private final ListView<RunConfiguration> list = new ListView<>(items);
     private final Supplier<String> suggestion;
     /** A Python or shell configuration for the active script, or null — what Add proposes first. */
-    private final Supplier<RunConfiguration> scriptSuggestion;
+    private final @Nullable Supplier<RunConfiguration> scriptSuggestion;
     /** The window's project root (or null): where Browse starts, and what a chosen script is relative to. */
-    private final Supplier<java.nio.file.Path> projectRoot;
+    private final @Nullable Supplier<java.nio.file.Path> projectRoot;
 
     private final Runnable onChanged;
     private boolean built;
@@ -67,7 +81,7 @@ public final class RunConfigurationsWindow {
     private java.util.function.Consumer<String> editDeployments = name -> {};
 
     /** Sets what the Run on row's Deployments… button opens. */
-    public void setEditDeployments(java.util.function.Consumer<String> editDeployments) {
+    public void setEditDeployments(java.util.function.@Nullable Consumer<String> editDeployments) {
         this.editDeployments = editDeployments == null ? name -> {} : editDeployments;
     }
 
@@ -109,8 +123,8 @@ public final class RunConfigurationsWindow {
     public RunConfigurationsWindow(
             ConfigManager config,
             Supplier<String> suggestion,
-            Supplier<RunConfiguration> scriptSuggestion,
-            Supplier<java.nio.file.Path> projectRoot,
+            @Nullable Supplier<RunConfiguration> scriptSuggestion,
+            @Nullable Supplier<java.nio.file.Path> projectRoot,
             Runnable onChanged) {
         this.config = config;
         this.suggestion = suggestion;
@@ -129,7 +143,12 @@ public final class RunConfigurationsWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
-            centerOn(owner);
+            if (openedSize == null) {
+                openedSize = fitToContent(owner);
+            } else if (!Double.isNaN(stage.getWidth())) {
+                openedSize = new Dimension2D(stage.getWidth(), stage.getHeight()); // kept as the user left it
+            }
+            WindowPlacement.centerOnOwner(stage, owner, openedSize.getWidth(), openedSize.getHeight());
             stage.show();
         }
     }
@@ -472,24 +491,60 @@ public final class RunConfigurationsWindow {
 
         VBox left = new VBox(8, list);
         VBox.setVgrow(list, Priority.ALWAYS);
-        VBox right = new VBox(8, form);
+        // The form scrolls and the button row below it does not: a window shorter than the form (a larger UI
+        // font, a small screen, the user dragging it smaller) still shows Save and Close.
+        ScrollPane formScroll = new ScrollPane(form);
+        formScroll.setId("run-config-form-scroll");
+        formScroll.setFitToWidth(true);
+        formScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        formScroll.getStyleClass().add("edge-to-edge");
+        // Room for the vertical scroll bar inside the viewport, so it never covers the Browse… buttons.
+        form.setPadding(new Insets(0, 4, 0, 0));
+        VBox right = new VBox(8, formScroll);
+        VBox.setVgrow(formScroll, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
         HBox editor = new HBox(12, left, right);
         VBox.setVgrow(editor, Priority.ALWAYS);
         HBox buttons = new HBox(8, add, remove, spacer(), save, close);
+        buttons.setId("run-config-buttons");
         buttons.setAlignment(Pos.CENTER_LEFT);
+        buttons.setMinHeight(Region.USE_PREF_SIZE);
         VBox root = new VBox(12, editor, buttons);
         root.setPadding(new Insets(16));
-        root.setPrefSize(WIDTH, HEIGHT);
 
-        Scene scene = new Scene(root, WIDTH, HEIGHT);
+        Scene scene = new Scene(root);
         scene.getStylesheets()
                 .add(RunConfigurationsWindow.class
                         .getResource("/com/editora/styles/app.css")
                         .toExternalForm());
+        // App.installUiFont attaches this too, but only once the window shows: fitToContent measures before
+        // that, and should measure in the font the form is drawn in. (installUiFont skips a sheet already there.)
+        scene.getStylesheets()
+                .add(RunConfigurationsWindow.class
+                        .getResource("/com/editora/styles/ui-font.css")
+                        .toExternalForm());
         stage.setScene(scene);
-        stage.setMinWidth(640);
-        stage.setMinHeight(540);
+        stage.setMinWidth(MIN_WIDTH);
+        stage.setMinHeight(MIN_HEIGHT);
+    }
+
+    /**
+     * Sizes the window, before its first show, to fit the whole form at the current UI font (at least
+     * {@link #WIDTH}×{@link #HEIGHT}), limited to most of the owner's screen. A fixed size cut the button row off
+     * once a larger desktop text scale made the rows taller than the window.
+     */
+    private Dimension2D fitToContent(Window owner) {
+        Parent root = stage.getScene().getRoot();
+        root.applyCss();
+        double width = Math.max(WIDTH, root.prefWidth(-1));
+        double height = Math.max(HEIGHT, root.prefHeight(width));
+        Dimension2D size = WindowPlacement.clampSize(width, height, WindowPlacement.screenOf(owner), SCREEN_FRACTION);
+        // The root's size, not the stage's, so the title bar is added on top rather than taken from the form.
+        if (root instanceof Region region) {
+            region.setPrefSize(size.getWidth(), size.getHeight());
+        }
+        stage.sizeToScene();
+        return size;
     }
 
     private static TextField field(String promptKey) {
@@ -502,7 +557,7 @@ public final class RunConfigurationsWindow {
      * The scripts (name, command) of the {@code package.json} an npm configuration runs in: its working directory
      * (relative to the project root), else the project root. Empty for a remote folder or no readable file.
      */
-    static List<String[]> npmScripts(java.nio.file.Path root, String workingDir) {
+    static List<String[]> npmScripts(java.nio.file.@Nullable Path root, String workingDir) {
         if (root == null || root.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
             return List.of();
         }
@@ -519,7 +574,7 @@ public final class RunConfigurationsWindow {
     }
 
     /** The Script / target text for a file picked with Browse: relative to the project when inside it. */
-    static String chosenTarget(String type, java.nio.file.Path chosen, java.nio.file.Path root) {
+    static String chosenTarget(String type, java.nio.file.Path chosen, java.nio.file.@Nullable Path root) {
         RunConfiguration c = RunConfigDefaults.forScript(type, chosen, root);
         return c == null ? chosen.toString() : c.target();
     }
@@ -659,9 +714,5 @@ public final class RunConfigurationsWindow {
         config.getWorkspaceState().setRunConfigurations(new ArrayList<>(items));
         config.save();
         onChanged.run();
-    }
-
-    private void centerOn(Window owner) {
-        WindowPlacement.centerOnOwner(stage, owner, WIDTH, HEIGHT); // kept on the owner's screen
     }
 }

@@ -6,6 +6,8 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Detects which Node package manager to invoke for a project, in the order npm/yarn/pnpm/bun tooling itself
  * recommends: the {@code package.json} {@code packageManager} field (corepack — authoritative) first, then the
@@ -36,7 +38,7 @@ public final class NpmPackageManager {
     }
 
     /** The manager named by a {@code "pnpm@8.6.0"}-style {@code packageManager} field, or {@code null}. */
-    static String fromField(String field) {
+    static @Nullable String fromField(@Nullable String field) {
         if (field == null || field.isBlank()) {
             return null;
         }
@@ -56,7 +58,8 @@ public final class NpmPackageManager {
      *     {@code packageManager} field), or "" when nothing did (npm by default)
      * @param root the folder holding that file, or null
      */
-    public record Detection(String manager, String reason, Path root) {
+    public record Detection(
+            String manager, String reason, @Nullable Path root) {
         /** {@code pnpm (pnpm-lock.yaml)} — for Settings and Doctor. */
         public String describe() {
             return reason.isEmpty() ? manager : manager + " (" + reason + ")";
@@ -75,7 +78,11 @@ public final class NpmPackageManager {
      * from the lookups given.
      */
     public static Detection detect(
-            Path dir, Path stop, Path home, Predicate<Path> exists, Function<Path, Optional<String>> readPackageJson) {
+            Path dir,
+            @Nullable Path stop,
+            Path home,
+            Predicate<Path> exists,
+            Function<Path, Optional<String>> readPackageJson) {
         Path top = stop == null ? null : stop.toAbsolutePath().normalize();
         Path homeDir = home == null ? null : home.toAbsolutePath().normalize();
         Path d = dir == null ? null : dir.toAbsolutePath().normalize();

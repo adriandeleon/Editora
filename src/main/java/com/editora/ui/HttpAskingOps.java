@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import com.editora.config.HttpResponseHistory;
 import com.editora.editor.EditorBuffer;
 import com.editora.http.NodeResponseScripts;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The window's {@link HttpClientCoordinator.WindowOps} for one run's trust gates ({@link HttpSecretGate}, {@link
@@ -61,17 +62,17 @@ final class HttpAskingOps implements HttpClientCoordinator.WindowOps {
     }
 
     @Override
-    public HttpResponseHistory historyStore() {
+    public @Nullable HttpResponseHistory historyStore() {
         return ops.historyStore();
     }
 
     @Override
-    public Path projectRoot() {
+    public @Nullable Path projectRoot() {
         return ops.projectRoot();
     }
 
     @Override
-    public HistoryCoordinator history() {
+    public @Nullable HistoryCoordinator history() {
         return ops.history();
     }
 
@@ -81,12 +82,12 @@ final class HttpAskingOps implements HttpClientCoordinator.WindowOps {
     }
 
     @Override
-    public Path scriptCacheDir() {
+    public @Nullable Path scriptCacheDir() {
         return ops.scriptCacheDir();
     }
 
     @Override
-    public NodeResponseScripts.Debugger scriptDebugger() {
+    public NodeResponseScripts.@Nullable Debugger scriptDebugger() {
         return ops.scriptDebugger();
     }
 

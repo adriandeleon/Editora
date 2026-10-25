@@ -6,6 +6,8 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.shape.SVGPath;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Toolbar icons, returned wrapped in a {@link Group} and scaled down. The Group's layout bounds reflect
  * the scaled size, so buttons sized to their graphic also shrink.
@@ -41,7 +43,8 @@ final class Icons {
      *
      * @param action run on activation; {@code null} when the caller wires its own handler
      */
-    static javafx.scene.control.Button button(Node icon, String name, Runnable action, String... styleClasses) {
+    static javafx.scene.control.Button button(
+            Node icon, String name, @Nullable Runnable action, String... styleClasses) {
         javafx.scene.control.Button b = new javafx.scene.control.Button();
         b.setGraphic(icon);
         b.getStyleClass().addAll(styleClasses);
@@ -86,12 +89,12 @@ final class Icons {
         return new Group(svg);
     }
 
-    static Node of(String content) {
-        return of(content, (String[]) null);
+    static Node of(@Nullable String content) {
+        return of(content, new String[0]);
     }
 
     /** As {@link #of(String)}, but also adds {@code extraClasses} to the inner path (e.g. a semantic color). */
-    static Node of(String content, String... extraClasses) {
+    static Node of(@Nullable String content, String... extraClasses) {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("toolbar-icon");
@@ -540,6 +543,12 @@ final class Icons {
 
     static Node notes() {
         return line("M3 2.5h10v8l-3 3H3zM10 13.5v-3h3");
+    }
+
+    /** A pair of curly braces — a block; the Structure panel's narrow-to-fold-region toggle. */
+    static Node foldRegion() {
+        return line("M5.5 2.5c-1.6 0-2 .9-2 2.4v1.6c0 1-.5 1.5-1.5 1.5 1 0 1.5.5 1.5 1.5v1.6c0 1.5.4 2.4 2 2.4"
+                + "M10.5 2.5c1.6 0 2 .9 2 2.4v1.6c0 1 .5 1.5 1.5 1.5-1 0-1.5.5-1.5 1.5v1.6c0 1.5-.4 2.4-2 2.4");
     }
 
     static Node structure() {

@@ -35,6 +35,7 @@ import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpResult;
 import com.editora.http.RunEnvironment;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -73,7 +74,7 @@ final class HttpClientCoordinator {
         }
 
         /** Where each {@code .http} file's environment and last responses are kept; null = keep nothing. */
-        default HttpResponseHistory historyStore() {
+        default @Nullable HttpResponseHistory historyStore() {
             return null;
         }
 
@@ -81,7 +82,7 @@ final class HttpClientCoordinator {
          * The window's project root, which bounds the search for env files (see {@link HttpEnvironments}); null when
          * there is no project.
          */
-        default Path projectRoot() {
+        default @Nullable Path projectRoot() {
             return null;
         }
 
@@ -89,7 +90,7 @@ final class HttpClientCoordinator {
          * Local File History, which records a file's content before a {@code >>!} redirect replaces it; null
          * when the window has none (the replace then proceeds unrecorded, and the response view says so).
          */
-        default HistoryCoordinator history() {
+        default @Nullable HistoryCoordinator history() {
             return null;
         }
 
@@ -122,7 +123,7 @@ final class HttpClientCoordinator {
         default void openFile(Path file) {}
 
         /** The folder Editora copies its response-handler runner to; null when handlers cannot run. */
-        default Path scriptCacheDir() {
+        default @Nullable Path scriptCacheDir() {
             return null;
         }
 
@@ -130,7 +131,7 @@ final class HttpClientCoordinator {
          * The window's JavaScript debugger for Debug Request (it attaches to a script waiting on an inspector port),
          * or null when JavaScript debugging is not available here — not enabled, or js-debug not installed.
          */
-        default com.editora.http.NodeResponseScripts.Debugger scriptDebugger() {
+        default com.editora.http.NodeResponseScripts.@Nullable Debugger scriptDebugger() {
             return null;
         }
     }
@@ -169,7 +170,7 @@ final class HttpClientCoordinator {
     private final Map<EditorBuffer, HttpEnvPill> pills = new IdentityHashMap<>();
 
     /** The environment menu now open (from a pill, the status bar or the command), or null. */
-    private ContextMenu environmentMenu;
+    private @Nullable ContextMenu environmentMenu;
 
     /** Told when the active buffer's environment, or whether it has one, may have changed (the status bar). */
     private Runnable environmentShown = () -> {};
@@ -256,7 +257,7 @@ final class HttpClientCoordinator {
     }
 
     /** Disables the panel's Run for a remote file, with a tooltip saying why (adl, round 3: remote files don't run). */
-    private void gateRun(EditorBuffer buffer, HttpClientPanel p) {
+    private void gateRun(EditorBuffer buffer, @Nullable HttpClientPanel p) {
         if (p != null) {
             p.setRunBlocked(host.isLocalBuffer(buffer) ? null : tr("httppanel.remoteRunTip"));
         }
@@ -267,7 +268,7 @@ final class HttpClientCoordinator {
      * machine's {@code localhost}, not the remote host's): says so and refuses. Every run entry point asks — the ▶ was
      * hidden, but the chords, the palette and the panel's Run still sent the request.
      */
-    private boolean refuseRemote(EditorBuffer buffer) {
+    private boolean refuseRemote(@Nullable EditorBuffer buffer) {
         if (buffer != null && !host.isLocalBuffer(buffer)) {
             host.setStatus(tr("status.http.remoteBlocked"));
             return true;
@@ -276,7 +277,7 @@ final class HttpClientCoordinator {
     }
 
     /** Re-target on tab switch: (re)evaluate the active buffer's preview attachment + environment list. */
-    void refreshFor(EditorBuffer active) {
+    void refreshFor(@Nullable EditorBuffer active) {
         if (active != null) {
             ensureHttpPreview(active);
         }
@@ -376,12 +377,12 @@ final class HttpClientCoordinator {
     }
 
     /** This buffer's response panel, or {@code null} when it has none (not a {@code .http} file / feature off). */
-    private HttpClientPanel panelFor(EditorBuffer buffer) {
+    private @Nullable HttpClientPanel panelFor(@Nullable EditorBuffer buffer) {
         return buffer == null ? null : panels.get(buffer);
     }
 
     /** The active buffer's response panel, or {@code null}. */
-    private HttpClientPanel activePanel() {
+    private @Nullable HttpClientPanel activePanel() {
         return panelFor(host.activeBuffer());
     }
 
@@ -392,6 +393,7 @@ final class HttpClientCoordinator {
     }
 
     /** Test-harness accessor for a buffer's response panel (mirrors {@code CsvCoordinator.gridNodeFor}). */
+    @Nullable
     HttpClientPanel panelForTest(EditorBuffer buffer) {
         return panelFor(buffer);
     }
@@ -489,7 +491,8 @@ final class HttpClientCoordinator {
     }
 
     /** As {@link #runIndex(EditorBuffer, int)}, its scripts under {@code debugger} when it is not null. */
-    private void runIndex(EditorBuffer buffer, int index, com.editora.http.NodeResponseScripts.Debugger debugger) {
+    private void runIndex(
+            EditorBuffer buffer, int index, com.editora.http.NodeResponseScripts.@Nullable Debugger debugger) {
         if (refuseRemote(buffer)) {
             return;
         }
@@ -579,7 +582,7 @@ final class HttpClientCoordinator {
     }
 
     /** Line {@code line} of {@code buffer}'s text, or null. */
-    private static String lineOf(EditorBuffer buffer, int line) {
+    private static @Nullable String lineOf(EditorBuffer buffer, int line) {
         var area = buffer.getArea();
         return line >= 0 && line < area.getParagraphs().size()
                 ? area.getParagraph(line).getText()
@@ -587,7 +590,7 @@ final class HttpClientCoordinator {
     }
 
     /** The folder a buffer's relative paths resolve against: its file's, or null for an untitled buffer. */
-    private static Path folderOf(EditorBuffer buffer) {
+    private static @Nullable Path folderOf(EditorBuffer buffer) {
         Path file = buffer == null ? null : buffer.getPath();
         return file == null ? null : file.toAbsolutePath().getParent();
     }
@@ -690,9 +693,9 @@ final class HttpClientCoordinator {
     }
 
     /** Cancels {@code buffer}'s in-flight run (the Cancel button and the command share this). */
-    void cancelRun(EditorBuffer buffer) {
+    void cancelRun(@Nullable EditorBuffer buffer) {
         HttpClientService.Handle run = buffer == null ? null : running.remove(buffer);
-        if (run == null) {
+        if (buffer == null || run == null) {
             host.setStatus(tr("status.http.nothingRunning"));
             return;
         }
@@ -712,7 +715,7 @@ final class HttpClientCoordinator {
     }
 
     /** {@code buffer}'s in-flight run, or null. Test accessor. */
-    HttpClientService.Handle handleForTest(EditorBuffer buffer) {
+    HttpClientService.@Nullable Handle handleForTest(EditorBuffer buffer) {
         return running.get(buffer);
     }
 
@@ -890,7 +893,7 @@ final class HttpClientCoordinator {
      * is nothing to choose, and why an env file contributes nothing; and an entry to open each env file the file has.
      * Not shown while {@code anchor} is not on screen (the menu is still built, for tests).
      */
-    void showEnvironmentMenu(EditorBuffer buffer, Node anchor, Side side) {
+    void showEnvironmentMenu(@Nullable EditorBuffer buffer, @Nullable Node anchor, Side side) {
         if (buffer == null || pills.get(buffer) == null) {
             return;
         }
@@ -1065,14 +1068,14 @@ final class HttpClientCoordinator {
      * HttpEnvCache}) and applied on the FX thread. Called when the preview is attached, on a tab switch and when the
      * window regains focus.
      */
-    void refreshEnvironments(EditorBuffer buffer) {
+    void refreshEnvironments(@Nullable EditorBuffer buffer) {
         refreshEnvironments(buffer, null);
     }
 
     /** {@link #refreshEnvironments(EditorBuffer)}, then {@code then} on the FX thread once the files are read. */
-    private void refreshEnvironments(EditorBuffer buffer, Runnable then) {
+    private void refreshEnvironments(@Nullable EditorBuffer buffer, @Nullable Runnable then) {
         HttpClientPanel p = panelFor(buffer);
-        if (p == null) {
+        if (buffer == null || p == null) {
             return;
         }
         Path file = buffer.getPath();
@@ -1109,7 +1112,8 @@ final class HttpClientCoordinator {
      * The status bar's text for {@code buffer}'s environment ("Env: dev", "No environment"), or null when it shows
      * none: not an {@code .http} file, or the HTTP Client is off.
      */
-    String environmentLabel(EditorBuffer buffer) {
+    @Nullable
+    String environmentLabel(@Nullable EditorBuffer buffer) {
         return buffer != null && pills.containsKey(buffer) && isEnabled()
                 ? HttpEnvChoice.label(selectedEnvironment(buffer))
                 : null;
@@ -1148,7 +1152,7 @@ final class HttpClientCoordinator {
      * else the window-wide one of older versions ({@link WindowOps#savedEnvironment}), as long as its env files (as
      * last read) define it.
      */
-    String selectedEnvironment(EditorBuffer buffer) {
+    String selectedEnvironment(@Nullable EditorBuffer buffer) {
         if (buffer == null || panelFor(buffer) == null) {
             return "";
         }
@@ -1169,11 +1173,13 @@ final class HttpClientCoordinator {
     }
 
     /** {@code buffer}'s environment pill, or null. Test accessor. */
+    @Nullable
     HttpEnvPill envPillForTest(EditorBuffer buffer) {
         return pills.get(buffer);
     }
 
     /** The environment menu now open (or last built while its anchor was off screen), or null. Test accessor. */
+    @Nullable
     ContextMenu environmentMenuForTest() {
         return environmentMenu;
     }
@@ -1182,6 +1188,7 @@ final class HttpClientCoordinator {
      * The folder whose env files apply to {@code buffer} (see {@link HttpEnvironments}) as last read, or null before
      * the first read (which tells the {@link #setEnvironmentListener listener} when it lands). No file access.
      */
+    @Nullable
     Path envDirFor(EditorBuffer buffer) {
         return buffer == null
                 ? null
@@ -1211,14 +1218,14 @@ final class HttpClientCoordinator {
         String[] lines = text.split("\n", -1);
         long now = System.currentTimeMillis();
         java.time.ZoneId zone = java.time.ZoneId.systemDefault();
-        List<com.editora.editor.HttpLineResult> results = new ArrayList<>();
+        List<com.editora.editor.http.HttpLineResult> results = new ArrayList<>();
         HttpInlineResult.newestPerRequest(requests, entries).forEach((index, entry) -> {
             int line = requests.get(index).startLine();
             if (line < 0 || line >= lines.length) {
                 return;
             }
             HttpResult r = entry.result();
-            results.add(new com.editora.editor.HttpLineResult(
+            results.add(new com.editora.editor.http.HttpLineResult(
                     line,
                     lines[line],
                     HttpInlineResult.segments(r),
@@ -1252,7 +1259,7 @@ final class HttpClientCoordinator {
      * Split) so the result is visible without the user having to open it — the in-editor equivalent of the
      * tool window this feature used to auto-open.
      */
-    private void startRun(EditorBuffer buffer, String label, String shown) {
+    private void startRun(EditorBuffer buffer, @Nullable String label, @Nullable String shown) {
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
             buffer.revealHttpPreview();

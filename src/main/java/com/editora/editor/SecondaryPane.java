@@ -16,13 +16,13 @@ import org.fxmisc.richtext.CodeArea;
  * The container of a split's second view: its scroll pane, its minimap, and a twin of everything the
  * primary pane draws over or beside its text (see {@link Followed}).
  */
-final class SecondaryPane {
+public final class SecondaryPane {
 
     /**
      * Something the primary pane draws for its view (an overlay over the text, a stripe beside it) that can
      * draw the same for a split's second view.
      */
-    interface Followed {
+    public interface Followed {
         /**
          * A twin bound to {@code view}. From then on the original hands it every setting and all data it is
          * given itself, so the two panes cannot drift apart; the twin repaints on its own view's scrolling.
@@ -114,7 +114,7 @@ final class SecondaryPane {
     }
 
     /** Moves {@code view}'s caret to the start of {@code line} (0-based), scrolls there and focuses it. */
-    static void jumpToLine(CodeArea view, int line) {
+    public static void jumpToLine(CodeArea view, int line) {
         int total = view.getParagraphs().size();
         if (total > 0) {
             view.moveTo(Math.max(0, Math.min(line, total - 1)), 0);

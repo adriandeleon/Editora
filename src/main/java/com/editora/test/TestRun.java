@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One test-run session: the results {@link TestNode} tree plus the invocation that produced it (tool, working
@@ -15,17 +16,21 @@ import com.editora.build.BuildTool;
 public final class TestRun {
 
     private final TestNode root = TestNode.root();
-    private final BuildTool tool;
-    private final Path workingDir;
+    private final @Nullable BuildTool tool;
+    private final @Nullable Path workingDir;
     private final List<String> taskArgs;
     private final List<String> toggleArgs;
     private final long startedAtMillis;
-    private Long finishedAtMillis;
+    private @Nullable Long finishedAtMillis;
     private boolean running = true;
     private int exitCode;
 
     public TestRun(
-            BuildTool tool, Path workingDir, List<String> taskArgs, List<String> toggleArgs, long startedAtMillis) {
+            @Nullable BuildTool tool,
+            @Nullable Path workingDir,
+            List<String> taskArgs,
+            List<String> toggleArgs,
+            long startedAtMillis) {
         this.tool = tool;
         this.workingDir = workingDir;
         this.taskArgs = List.copyOf(taskArgs);
@@ -37,11 +42,11 @@ public final class TestRun {
         return root;
     }
 
-    public BuildTool tool() {
+    public @Nullable BuildTool tool() {
         return tool;
     }
 
-    public Path workingDir() {
+    public @Nullable Path workingDir() {
         return workingDir;
     }
 
@@ -84,7 +89,8 @@ public final class TestRun {
      */
     public List<String> failedTestFilters() {
         List<TestNode> failed = root.failedLeaves();
-        if (failed.isEmpty()) {
+        BuildTool tool = this.tool;
+        if (failed.isEmpty() || tool == null) { // no tool: an external run, whose driver reruns its own tests
             return List.of();
         }
         return switch (tool) {

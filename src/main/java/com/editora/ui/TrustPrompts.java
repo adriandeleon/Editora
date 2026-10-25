@@ -10,11 +10,13 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.stage.Window;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
  * The folder-trust prompts: trusting a folder to send its secrets from a {@code .http} request, to run the response
- * handlers of its {@code .http} files, and to run its build wrapper. Both open by themselves while the user may still be typing (the HTTP one after the run has started), and
+ * handlers of its {@code .http} files, and to run its build (wrapper, pom plugins, build scripts). Both open by themselves while the user may still be typing (the HTTP one after the run has started), and
  * trusting is remembered, so <b>Cancel is the default and focused button</b>: a stray Enter or Space never trusts a
  * folder. Built here, on the FX thread, so a test can check the real dialog without showing a window of its own.
  */
@@ -58,17 +60,26 @@ final class TrustPrompts {
         return finish(confirm, owner, trust);
     }
 
-    /** The prompt for running {@code wrapper}, a build script of {@code root}. */
-    static Prompt buildWrapper(Window owner, Path root, Path wrapper) {
-        Path name = root.getFileName();
+    /**
+     * The prompt for the first build in {@code root}: what it will run (the wrapper if any, the pom's plugins,
+     * {@code .mvn/} files, a project.json override — {@link com.editora.build.BuildTrust}), one line each.
+     */
+    static Prompt buildProject(Window owner, @Nullable Path root, com.editora.build.BuildTrust.Summary summary) {
+        // root is a folder (the wrapper's, or the project's) at every caller; typed nullable by Path.getParent()
+        Path name = root == null ? null : root.getFileName();
+        String shown = String.valueOf(root);
         ButtonType trust = new ButtonType(tr("dialog.trust.accept"), ButtonBar.ButtonData.OK_DONE);
+        StringBuilder items = new StringBuilder();
+        for (String item : summary.items()) {
+            items.append("• ").append(item).append('\n');
+        }
         Alert confirm = new Alert(
                 Alert.AlertType.WARNING,
-                tr("dialog.trust.body", wrapper.getFileName().toString(), root.toString()),
+                tr("dialog.trust.projectBody", items.toString().strip(), shown),
                 ButtonType.CANCEL,
                 trust);
         confirm.setTitle(tr("dialog.trust.title"));
-        confirm.setHeaderText(tr("dialog.trust.header", name == null ? root.toString() : name.toString()));
+        confirm.setHeaderText(tr("dialog.trust.projectHeader", name == null ? shown : name.toString()));
         return finish(confirm, owner, trust);
     }
 

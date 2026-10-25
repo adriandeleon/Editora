@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A discovered plugin: its {@link PluginManifest}, install directory, enabled state, the class loader used
  * for its Java code (null for declarative-only or disabled plugins, and for every plugin found after launch:
@@ -24,9 +26,9 @@ public final class PluginDescriptor {
     private final PluginManifest manifest;
     private final Path dir;
     private final boolean enabled;
-    private final ClassLoader classLoader;
-    private final String loadError;
-    private final LoadProblem problem;
+    private final @Nullable ClassLoader classLoader;
+    private final @Nullable String loadError;
+    private final @Nullable LoadProblem problem;
     private final List<String> jars;
     private final String digest;
 
@@ -86,7 +88,11 @@ public final class PluginDescriptor {
 
     /** A descriptor whose load failed for {@code problem} (null: it did not fail). */
     public static PluginDescriptor withProblem(
-            PluginManifest manifest, Path dir, boolean enabled, ClassLoader classLoader, LoadProblem problem) {
+            PluginManifest manifest,
+            Path dir,
+            boolean enabled,
+            @Nullable ClassLoader classLoader,
+            LoadProblem problem) {
         return withProblem(manifest, dir, enabled, classLoader, problem, List.of());
     }
 
@@ -95,8 +101,8 @@ public final class PluginDescriptor {
             PluginManifest manifest,
             Path dir,
             boolean enabled,
-            ClassLoader classLoader,
-            LoadProblem problem,
+            @Nullable ClassLoader classLoader,
+            @Nullable LoadProblem problem,
             List<String> jars) {
         return new PluginDescriptor(
                 manifest, dir, enabled, classLoader, problem == null ? null : problem.english(), problem, jars);
@@ -106,9 +112,9 @@ public final class PluginDescriptor {
             PluginManifest manifest,
             Path dir,
             boolean enabled,
-            ClassLoader classLoader,
-            String loadError,
-            LoadProblem problem,
+            @Nullable ClassLoader classLoader,
+            @Nullable String loadError,
+            @Nullable LoadProblem problem,
             List<String> jars) {
         this.manifest = manifest;
         this.dir = dir;
@@ -121,7 +127,7 @@ public final class PluginDescriptor {
     }
 
     /** Why it failed to load, when it did and the reason is known by kind; else null. */
-    public LoadProblem problem() {
+    public @Nullable LoadProblem problem() {
         return problem;
     }
 
@@ -147,12 +153,12 @@ public final class PluginDescriptor {
     }
 
     /** The plugin's class loader (parent = the app loader), or null when declarative-only / disabled. */
-    public ClassLoader classLoader() {
+    public @Nullable ClassLoader classLoader() {
         return classLoader;
     }
 
     /** A human-readable error when the plugin failed to load, else null. */
-    public String loadError() {
+    public @Nullable String loadError() {
         return loadError;
     }
 

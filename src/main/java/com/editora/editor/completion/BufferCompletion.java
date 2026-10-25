@@ -1,0 +1,1956 @@
+package com.editora.editor.completion;
+
+import java.util.List;
+
+import javafx.application.Platform;
+import javafx.geometry.Bounds;
+import javafx.geometry.Pos;
+import javafx.scene.control.Label;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.AnchorPane;
+import javafx.scene.text.Font;
+
+import com.editora.completion.Completion;
+import com.editora.completion.CompletionEngine;
+import com.editora.completion.CompletionProvider;
+import com.editora.completion.CompletionResult;
+import com.editora.completion.CompletionSession;
+import com.editora.completion.CompletionSource;
+import com.editora.completion.CompletionTrace;
+import com.editora.editor.EditorBuffer.AiCompletionProvider;
+import com.editora.editor.http.HttpCompletions;
+import com.editora.editor.lsp.CodeAction;
+import com.editora.editor.lsp.CodeActionPopup;
+import com.editora.editor.lsp.LspEditShift;
+import com.editora.editor.markdown.MarkdownCompletions;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.snippet.Snippet;
+import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
+
+/** Owns a buffer's completion, code-action and documentation popups and ghost-text state. */
+public final class BufferCompletion {
+    public interface Host {
+        CodeArea area();
+
+        AnchorPane root();
+
+        /** The split view's area, or {@code null} while the buffer is not split. */
+        @Nullable
+        CodeArea area2();
+
+        @Nullable
+        AnchorPane root2();
+
+        boolean largeFile();
+
+        long docVersion();
+
+        boolean lspActive();
+
+        java.util.Set<Character> lspTriggerChars();
+
+        java.util.Set<Character> lspSignatureTriggerChars();
+
+        java.util.function.@Nullable Consumer<Character> signatureHelpRequester();
+
+        String language();
+
+        String fontFamily();
+
+        int fontSize();
+
+        CodeArea getFocusedArea();
+
+        boolean isDiagram();
+
+        void sendLspChange();
+
+        boolean multiCaretActiveOn(CodeArea a);
+
+        boolean isProse();
+
+        String getSpellLanguage();
+
+        boolean isEditable();
+
+        boolean hasActiveSnippet();
+
+        void finishSnippet();
+
+        /** How many snippet sessions are stacked (0 = none): tells a newly started one from an enclosing one. */
+        default int snippetDepth() {
+            return hasActiveSnippet() ? 1 : 0;
+        }
+
+        default Runnable beginCompletionUndo() {
+            return () -> {};
+        }
+
+        void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent);
+
+        /**
+         * The snippet whose trigger ends at the caret and where that trigger starts, or null. With
+         * {@code tabOnly}, only one the Tab key expands by itself: Tab expansion is on and the trigger is not
+         * one of the list-only ones ({@code date}, {@code time}). Without it, any snippet a completion may
+         * offer for the text as typed.
+         */
+        default com.editora.snippet.TabExpansion.@Nullable Match snippetTrigger(CodeArea a, boolean tabOnly) {
+            return null;
+        }
+
+        /**
+         * The abbreviation ending at the caret that abbrev-mode would expand on the next word terminator, in
+         * document offsets, or null (abbrev-mode off, nothing matches, or the buffer may not expand here).
+         */
+        default com.editora.editops.Abbrev.@Nullable Edit abbrevAtCaret(CodeArea a) {
+            return null;
+        }
+
+        int lspOffset(CodeArea a, int line, int col);
+
+        int[] lspPosition(CodeArea a, int offset);
+    }
+
+    private CompletionProvider completionProvider = (s, d, p, sp, prose) -> List.of();
+    /** What {@code {{} completion offers in a {@code .http} buffer; null: only the dynamic built-ins. */
+    private java.util.function.@Nullable Supplier<com.editora.http.HttpVariableIndex.Context> httpVariables;
+
+    private final Host host;
+
+    public BufferCompletion(Host host) {
+        this.host = host;
+    }
+
+    /** When false the whole autocomplete feature is inert (master Settings toggle). */
+    boolean autocompleteEnabled = true;
+
+    /** Per-source autocomplete toggles (gated by {@link #autocompleteEnabled}). */
+    boolean autocompleteProse = true;
+
+    boolean autocompleteSnippets = true;
+
+    boolean autocompleteMermaid = true;
+
+    /** The caret-anchored completion dropdown (lazily created). */
+    @Nullable
+    CompletionPopup completionPopup;
+
+    long completionGen;
+    private long renderGen;
+    private @Nullable CompletionSource completionSource;
+    /** Smart Type completion's filter over the server's list, for the list it opened; null = all of it. */
+    private java.util.function.@Nullable UnaryOperator<List<Completion>> lspFilter;
+
+    private Runnable cancelRequest = () -> {};
+    private @Nullable CompletionSession session;
+    private @Nullable CompletionSession shownSession;
+    private boolean immediateQueued;
+    private long lastRequestVersion = -1;
+    private long lastEditNanos;
+    private @Nullable Bounds completionAnchor;
+    private int completionAnchorStart = -1;
+    private boolean filteringEmpty;
+
+    /**
+     * The chords the completion popup and the quick-fix list take from the keymap while they are up, each
+     * with the command it stands in for (see {@code KeyDispatcher.OWNED_CHORDS}): the
+     * list moves its own selection on {@code C-n}/{@code C-p} and closes on the cancel chord. Every other
+     * binding keeps running its command — the lists used to mark the whole area {@code editora.ownsKeys},
+     * which took all caret and editing chords off the keymap and left them to the text area's built-ins.
+     */
+    static final java.util.Map<String, String> LIST_CHORDS =
+            java.util.Map.of("C-n", "nav.lineDown", "C-p", "nav.lineUp", "C-g", "edit.cancel", "escape", "edit.cancel");
+
+    private static final String OWNED_CHORDS =
+            "editora.ownsChords"; // KeyDispatcher.OWNED_CHORDS (no editor -> command import)
+
+    /**
+     * State of the popup when it shows the <em>local</em> list (snippets/keywords, no server session): the
+     * caret and document version the list was computed for, and whether it was asked for explicitly. A local
+     * list has no {@link CompletionSession} to go stale against, so these are what a later edit or caret
+     * move is compared with (see {@link #queueLocalSync}).
+     */
+    private boolean localShown;
+
+    private boolean localManual;
+    private int localCaret = -1;
+    private long localVersion = -1;
+    private boolean localSyncQueued;
+
+    /** The view the completion popup is currently driven by (for click-accept routing). */
+    @Nullable
+    CodeArea completionArea;
+
+    /** The quick-fix list, anchored at the caret (#767). Lazily built, like the completion popup. */
+    @Nullable
+    CodeActionPopup codeActionPopup;
+
+    /** The area the quick-fix list belongs to, so its key ownership can be released on hide. */
+    @Nullable
+    CodeArea codeActionArea;
+
+    /** The IntelliJ-style documentation side-popup (lazily created) + its lazy resolver/state. */
+    @Nullable
+    CompletionDocPopup docPopup;
+
+    java.util.function.@Nullable BiConsumer<Object, java.util.function.Consumer<String>> completionDocResolver;
+
+    boolean completionDocEnabled = true;
+
+    boolean docPopupActive;
+
+    long docGen;
+
+    javafx.animation.@Nullable PauseTransition docDebounce;
+
+    /**
+     * The {@code docVersion} right after we programmatically accepted a completion, so the auto-trigger
+     * that the accept's own edit schedules is suppressed — but a real edit after it (which bumps the
+     * version) is not. A plain boolean cleared on the next pulse would be useless here: the debounced
+     * trigger it must gate is ~280 ms away.
+     */
+    long suppressCompletionAtVersion = -1;
+
+    /**
+     * The edit the last completion accept made, measured around it, so the {@code additionalTextEdits} a later
+     * {@code completionItem/resolve} returns — positions the server computed against the document as it stood
+     * <em>before</em> that accept — can be translated into the document as it stands now. See
+     * {@link LspEditShift}.
+     */
+    LspEditShift.@Nullable Change pendingCompletionShift;
+
+    /** Inline "ghost text" suggestion (prose buffers): a single muted suffix drawn after the caret. */
+    @Nullable
+    Label ghostLabel;
+
+    /** AI inline completion (any buffer): provider + gate + stale-result guard (see ui.AiCoordinator). */
+    @Nullable
+    AiCompletionProvider aiCompletionProvider;
+
+    boolean aiCompletionEnabled;
+
+    long aiCompletionGen;
+
+    @Nullable
+    String ghostSuffix;
+
+    @Nullable
+    CodeArea ghostArea;
+
+    /** The snippet the ghost offers in place of text to insert (Tab expands it), or null for a text ghost. */
+    @Nullable
+    Snippet ghostSnippet;
+
+    /** The abbreviation the ghost previews (Tab expands it), or null for any other ghost. */
+    com.editora.editops.Abbrev.@Nullable Edit ghostAbbrev;
+
+    /** The two document offsets currently carrying the {@code brace-match} style, or null. */
+    int @Nullable [] braceMatch;
+
+    /** Longest snippet prefix we'll look up ({@code [SuppressMessageAttribute]} is the longest bundled one). */
+    static final int MAX_SNIPPET_PREFIX = 40;
+
+    /** Start of the non-whitespace token ending at {@code caret}, bounded to {@link #MAX_SNIPPET_PREFIX}. */
+    static int snippetTokenStart(String text, int caret) {
+        int start = caret;
+        int limit = Math.max(0, caret - MAX_SNIPPET_PREFIX);
+        while (start > limit && !Character.isWhitespace(text.charAt(start - 1))) {
+            start--;
+        }
+        return start;
+    }
+
+    /** Leading whitespace (spaces/tabs) of a line, used to indent a snippet's continuation lines. */
+    public static String leadingIndent(String line) {
+        int i = 0;
+        while (i < line.length() && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) {
+            i++;
+        }
+        return line.substring(0, i);
+    }
+
+    /**
+     * Whether Enter should close the popup and type a newline instead of accepting {@code label}: in shell and
+     * Python, when the label is exactly the word just typed (Python's {@code try}, {@code if}, {@code for} …
+     * snippets are named after keywords too, so {@code try} with {@code trya} listed took the snippet). Shell's snippets are named after its keywords
+     * ({@code else}, {@code break}, {@code case} …), so {@code else}, a pause, then Enter used to insert the
+     * {@code else} snippet with a {@code command} placeholder instead of ending the line — and skipped the
+     * {@code else} de-indent. Accepting a row that only repeats the typed word adds nothing else worth a
+     * keystroke; Tab still accepts it (and expands a snippet).
+     */
+    public static boolean enterEndsTheLine(String language, String label, String lineBeforeCaret) {
+        if (!("shell".equals(language) || "python".equals(language)) || label == null || label.isEmpty()) {
+            return false;
+        }
+        int start = lineBeforeCaret.length();
+        while (start > 0 && isPrefixChar(lineBeforeCaret.charAt(start - 1))) {
+            start--;
+        }
+        return label.equals(lineBeforeCaret.substring(start));
+    }
+
+    private static String lineBeforeCaret(CodeArea a) {
+        return a.getParagraph(a.getCurrentParagraph()).getText().substring(0, a.getCaretColumn());
+    }
+
+    static boolean isPrefixChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
+
+    private boolean isCompletionPrefixChar(char c) {
+        return isPrefixChar(c) || ("java".equals(host.language()) && Character.isJavaIdentifierPart(c));
+    }
+
+    /** Injects the {@code .http} variable context for {@code {{} completion (see {@link HttpCompletions}). */
+    public void setHttpVariables(
+            java.util.function.@Nullable Supplier<com.editora.http.HttpVariableIndex.Context> context) {
+        this.httpVariables = context;
+    }
+
+    /** Injects the completion lookup (set by the controller), mirroring {@link #setSnippetProvider}. */
+    public void setCompletionProvider(@Nullable CompletionProvider provider) {
+        if (provider != null) {
+            completionProvider = provider;
+        }
+    }
+
+    /** Applies the autocomplete settings: the master toggle plus per-source toggles (prose / snippets /
+     *  mermaid). The {@code mermaid} flag is the effective value (already gated on the feature + tools). */
+    public void setAutocomplete(boolean enabled, boolean prose, boolean snippets, boolean mermaid) {
+        this.autocompleteEnabled = enabled;
+        this.autocompleteProse = prose;
+        this.autocompleteSnippets = snippets;
+        this.autocompleteMermaid = mermaid;
+        if (!enabled) {
+            hideCompletion();
+        }
+    }
+
+    /** Injects the AI completion lookup (set by the controller), mirroring {@link #setCompletionProvider}. */
+    public void setAiCompletionProvider(AiCompletionProvider provider) {
+        this.aiCompletionProvider = provider;
+    }
+
+    /** Applies the effective AI-inline-completion gate (feature on + key present, pushed by the controller). */
+    public void setAiCompletionEnabled(boolean enabled) {
+        this.aiCompletionEnabled = enabled;
+        if (!enabled) {
+            aiCompletionGen++; // drop any in-flight request's result
+            hideGhost();
+        }
+    }
+
+    CompletionPopup completionPopup() {
+        if (completionPopup == null) {
+            completionPopup = new CompletionPopup();
+            completionPopup.setOnAccept(c -> {
+                if (completionArea != null) {
+                    acceptCompletion(completionArea, c);
+                }
+            });
+            completionPopup.setOnSelect(this::onCompletionSelect); // drive the documentation side-popup
+            completionPopup.setOnHidden(() -> {
+                hideDocPopup();
+                if (completionArea != null) completionArea.getProperties().remove(OWNED_CHORDS);
+                localShown = false;
+                if (!filteringEmpty && session != null) {
+                    suppressCompletionAtVersion = host.docVersion();
+                    hidePopup();
+                }
+            });
+        }
+        return completionPopup;
+    }
+
+    /** Injects the lazy doc resolver (opaque token → markdown), set by the controller (LSP-backed). */
+    public void setCompletionDocResolver(
+            java.util.function.BiConsumer<Object, java.util.function.Consumer<String>> resolver) {
+        this.completionDocResolver = resolver;
+    }
+
+    /** Whether the documentation popup auto-shows beside the completion list (the Settings toggle). */
+    public void setCompletionDocEnabled(boolean enabled) {
+        this.completionDocEnabled = enabled;
+        if (!enabled) {
+            hideDocPopup();
+        }
+    }
+
+    CompletionDocPopup docPopup() {
+        if (docPopup == null) {
+            docPopup = new CompletionDocPopup();
+        }
+        return docPopup;
+    }
+
+    /** Ctrl+Q: toggle the doc popup for the open completion session (show/hide for the current selection). */
+    public void toggleCompletionDoc() {
+        if (completionPopup == null || !completionPopup.isShowing()) {
+            return;
+        }
+        docPopupActive = !docPopupActive;
+        if (docPopupActive) {
+            scheduleDoc(completionPopup.selected());
+        } else {
+            hideDocPopup();
+        }
+    }
+
+    void onCompletionSelect(Completion c) {
+        if (docPopupActive) {
+            scheduleDoc(c);
+        }
+    }
+
+    /** Debounced per-selection doc fetch (so arrowing quickly doesn't hammer the resolver). */
+    void scheduleDoc(Completion c) {
+        docGen++;
+        if (c == null || completionDocResolver == null) {
+            hideDocPopup();
+            return;
+        }
+        if (docDebounce == null) {
+            docDebounce = new javafx.animation.PauseTransition(javafx.util.Duration.millis(180));
+        }
+        docDebounce.stop();
+        long gen = docGen;
+        docDebounce.setOnFinished(e -> requestDoc(c, gen));
+        docDebounce.playFromStart();
+    }
+
+    void requestDoc(Completion c, long gen) {
+        if (gen != docGen || !docPopupActive || completionPopup == null || !completionPopup.isShowing()) {
+            return;
+        }
+        var resolver = completionDocResolver;
+        if (resolver == null) {
+            return; // cleared since the debounce started
+        }
+        resolver.accept(c.resolveToken(), doc -> {
+            if (gen != docGen || !docPopupActive || completionPopup == null || !completionPopup.isShowing()) {
+                return;
+            }
+            showDoc(c, doc);
+        });
+    }
+
+    void showDoc(Completion c, String doc) {
+        // The declaration (signature/type) header is shown for every item; the rendered documentation is
+        // added only when the server provides any. Nothing to show ⇒ hide (e.g. a plain word/snippet).
+        String signature = c.detail() == null ? "" : c.detail().strip();
+        javafx.scene.Node rendered = renderDoc(doc);
+        if (signature.isBlank() && rendered == null) {
+            hideDocPopup();
+            return;
+        }
+        CompletionPopup popup = completionPopup;
+        if (popup == null) {
+            return;
+        }
+        Bounds anchor = popup.screenBounds();
+        if (anchor == null || completionArea == null || completionArea.getScene() == null) {
+            return;
+        }
+        docPopup().show(completionArea.getScene().getWindow(), anchor, signature, rendered);
+    }
+
+    /** Opens a link clicked in a completion's documentation: the window's own link opener. */
+    private java.util.function.@Nullable Consumer<String> linkOpener;
+
+    public void setLinkOpener(java.util.function.Consumer<String> opener) {
+        this.linkOpener = opener;
+    }
+
+    /**
+     * A completion's documentation as nodes, or null when there is none (or it cannot be rendered). Its links
+     * are live — a click, or Enter on one, hands the destination to the window's link opener, which treats it
+     * as it would a link in the document — and its images are still limited to {@code data:} ones: the text
+     * comes from a language server, not from the user.
+     */
+    javafx.scene.@Nullable Node renderDoc(String doc) {
+        if (doc == null || doc.isBlank()) {
+            return null;
+        }
+        try {
+            java.util.function.Consumer<String> open = linkOpener;
+            return MarkdownRenderer.renderDocument(
+                    MarkdownRenderer.parseForRender(doc.strip()),
+                    null,
+                    open == null ? null : open::accept,
+                    MarkdownRenderer.ImagePolicy.DATA_ONLY);
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    void hideDocPopup() {
+        docGen++;
+        if (docDebounce != null) {
+            docDebounce.stop();
+        }
+        if (docPopup != null) {
+            docPopup.hide();
+        }
+    }
+
+    /** True while the caret-anchored quick-fix list is up. */
+    public boolean codeActionsShowing() {
+        return codeActionPopup != null && codeActionPopup.isShowing();
+    }
+
+    /**
+     * Screen bounds to anchor a caret-following popup to, or {@code null} if the area isn't on screen.
+     *
+     * <p><b>Never the zero-width {@code getCharacterBoundsOnScreen(caret, caret)} form</b>, which is what
+     * all three callers used to do: for an empty range {@code GenericStyledArea} allocates a throwaway
+     * {@link org.fxmisc.richtext.CaretNode} to measure with, and a {@code CaretNode} starts a 500 ms blink
+     * timer that nothing ever stops — so each call permanently registers a running {@code Timeline} as a
+     * JavaFX pulse receiver. Measured at <b>exactly one leaked timer per popup open</b>, which for the
+     * completion list means one per debounced trigger, all session. Same fault, same fix as
+     * {@link #caretBounds} — measure a <em>one-character</em> range, which takes a different path and
+     * allocates nothing.
+     *
+     * <p><b>The fallbacks are not defensive padding; each covers a case the leaking form silently handled.</b>
+     * That form measured through a caret it had just created, so it answered even when nothing was rendered.
+     * A character can only be measured once its paragraph has been laid out, so it comes back empty whenever
+     * the flow has no cell for that line — the caret scrolled out of view, or the area not yet laid out at
+     * all. Returning {@code null} there means the popup <em>silently does not open</em>, which is how this
+     * first shipped and what {@code CodeActionPopupFxTest} caught in the full suite (it passes alone, where
+     * the area happens to be laid out). So: the character, then the rendered caret, then the area's own
+     * top-left — anchoring a popup at the corner of the editor is far better than declining to show it.
+     *
+     * <p>{@code CodeArea.getCaretBounds()} is second rather than first because it reports the
+     * <em>rendered</em> caret and is empty whenever the area isn't focused.
+     */
+    static Bounds caretAnchorBounds(CodeArea a) {
+        int caret = a.getCaretPosition();
+        var pos = a.offsetToPosition(caret, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+        int len = a.getParagraphLength(pos.getMajor());
+        Bounds measured = null;
+        if (pos.getMinor() < len) {
+            measured = a.getCharacterBoundsOnScreen(caret, caret + 1).orElse(null);
+        } else if (caret > 0 && len > 0) {
+            // End of a non-empty line: no glyph at the caret, so take the last character's right edge —
+            // the same x the caret sits at.
+            Bounds last = a.getCharacterBoundsOnScreen(caret - 1, caret).orElse(null);
+            if (last != null) {
+                measured = new javafx.geometry.BoundingBox(last.getMaxX(), last.getMinY(), 0, last.getHeight());
+            }
+        }
+        if (measured != null) {
+            return measured;
+        }
+        Bounds rendered = a.getCaretBounds().orElse(null);
+        return rendered != null ? rendered : a.localToScreen(a.getBoundsInLocal());
+    }
+
+    public void showCodeActions(List<CodeAction> actions, java.util.function.Consumer<CodeAction> onAccept) {
+        CodeArea a = host.getFocusedArea();
+        if (a == null || actions == null || actions.isEmpty()) {
+            return;
+        }
+        Bounds caretScreen = caretAnchorBounds(a);
+        if (caretScreen == null) {
+            return;
+        }
+        hideCompletion(); // the two lists are both caret-anchored; never stack them
+        if (codeActionPopup == null) {
+            codeActionPopup = new CodeActionPopup();
+            // However the popup ends up hidden, the key ownership goes back with it.
+            codeActionPopup.setOnHidden(this::releaseCodeActionKeys);
+        }
+        codeActionPopup.setOnAccept(action -> {
+            hideCodeActions();
+            if (action != null && onAccept != null) {
+                onAccept.accept(action);
+            }
+        });
+        releaseCodeActionKeys(); // a second invocation while the list is up: drop the first one's listeners
+        codeActionArea = a;
+        // Take C-n/C-p/cancel so they reach the list rather than moving the caret; nothing else.
+        a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
+        // The list is about one caret position in one visible editor. It does not auto-hide (Escape has to
+        // reach the editor's filter), so everything that takes the user elsewhere must dismiss it: leaving
+        // the editor (a tab switch, another window), scrolling its line away, or a press in the text. Left
+        // up, it floated over another file and its Enter binding applied a fix for a line no longer in view.
+        a.focusedProperty().addListener(codeActionDismissOnBlur);
+        a.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, codeActionDismissOnScroll);
+        a.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, codeActionDismissOnPress);
+        codeActionPopup.show(a.getScene().getWindow(), caretScreen, actions);
+    }
+
+    /** Dismisses the quick-fix list and returns the editor chords to the dispatcher. */
+    public void hideCodeActions() {
+        if (codeActionPopup != null) {
+            codeActionPopup.hide();
+        }
+        releaseCodeActionKeys();
+    }
+
+    private final javafx.beans.value.ChangeListener<Boolean> codeActionDismissOnBlur = (o, was, focused) -> {
+        // Only when focus moved to another node (a tab switch, a panel). When the whole window merely goes
+        // inactive the editor is still the scene's focus owner and the list is still about its caret.
+        CodeArea a = codeActionArea;
+        if (!focused && (a == null || a.getScene() == null || a.getScene().getFocusOwner() != a)) {
+            hideCodeActions();
+        }
+    };
+    // The user's own scroll gesture. Not the scroll *estimate*: that also moves while the viewport lays out
+    // after a navigation, which closed a list that had only just been opened.
+    private final javafx.event.EventHandler<javafx.scene.input.ScrollEvent> codeActionDismissOnScroll =
+            e -> hideCodeActions();
+    private final javafx.event.EventHandler<javafx.scene.input.MouseEvent> codeActionDismissOnPress =
+            e -> hideCodeActions();
+
+    /** Hands the list's chords back and detaches its dismiss listeners. Idempotent: both hide paths run it. */
+    void releaseCodeActionKeys() {
+        if (codeActionArea != null) {
+            codeActionArea.focusedProperty().removeListener(codeActionDismissOnBlur);
+            codeActionArea.removeEventFilter(javafx.scene.input.ScrollEvent.SCROLL, codeActionDismissOnScroll);
+            codeActionArea.removeEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, codeActionDismissOnPress);
+            codeActionArea.getProperties().remove(OWNED_CHORDS);
+            codeActionArea = null;
+        }
+    }
+
+    public void installCommitCharacters(CodeArea a) {
+        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            // The quick-fix list is open: what is typed filters it and does not reach the text.
+            CodeActionPopup quickFixes = codeActionPopup;
+            if (!e.isConsumed()
+                    && quickFixes != null
+                    && quickFixes.isShowing()
+                    && e.getCharacter().length() == 1
+                    && !e.isControlDown()
+                    && !e.isMetaDown()
+                    && !Character.isISOControl(e.getCharacter().charAt(0))) {
+                quickFixes.type(e.getCharacter());
+                e.consume();
+            }
+        });
+        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (e.isConsumed()
+                    || e.getCharacter().length() != 1
+                    || !completionPopupShowing()
+                    || host.multiCaretActiveOn(a)) return;
+            CompletionPopup popup = completionPopup;
+            if (popup == null) return;
+            Completion item = popup.selected();
+            if (item == null) return;
+            Completion.Protocol protocol = item.protocol();
+            List<String> commit = protocol == null ? null : protocol.commitCharacters();
+            if (commit == null || !commit.contains(e.getCharacter())) return;
+            String typed = e.getCharacter();
+            int enclosing = host.snippetDepth();
+            if (!acceptCompletion(a, item)) return;
+            if (!typed.equals("(")) {
+                // Only a snippet this acceptance started is finished. A plain item accepted inside another
+                // snippet's field leaves that session alone, or `.` after `user` in println(${1:value})
+                // landed behind the closing parenthesis with the session gone.
+                if (host.snippetDepth() > enclosing) host.finishSnippet();
+                int caret = a.getCaretPosition();
+                if (caret > 0 && a.getText(caret - 1, caret).equals(";")) {
+                    if (typed.equals(";")) {
+                        e.consume();
+                        return;
+                    }
+                    if (typed.equals(".")) a.moveTo(caret - 1);
+                }
+            }
+            // The method/snippet already supplied its opening parenthesis. Do not insert another one.
+            if (typed.equals("(")
+                    && (item.insert().contains("(")
+                            || (a.getCaretPosition() > 0
+                                    && a.getText(a.getCaretPosition() - 1, a.getCaretPosition())
+                                            .equals("(")))) {
+                e.consume();
+            }
+        });
+    }
+
+    public void addCompletionKeys(CodeArea a) {
+        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isConsumed()) return;
+            if (host.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+                return;
+            }
+            // Inline ghost text (prose): Tab accepts, Esc dismisses; anything else lets the caret move
+            // (the caret listener then clears it and the debounce recomputes).
+            if (ghostVisible()) {
+                switch (e.getCode()) {
+                    case TAB -> {
+                        if (e.isShiftDown() || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                            hideGhost();
+                        } else {
+                            acceptGhost();
+                            e.consume();
+                        }
+                    }
+                    case ESCAPE -> {
+                        hideGhost();
+                        e.consume();
+                    }
+                    default -> {} // typing/Backspace/arrows fall through
+                }
+                return;
+            }
+            // Quick-fix list first: it and the completion popup are both caret-anchored and never coexist
+            // (showCodeActions hides completion), so whichever is up owns the keys.
+            CodeActionPopup quickFixes = codeActionPopup;
+            if (quickFixes != null && quickFixes.isShowing()) {
+                boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown();
+                switch (e.getCode()) {
+                    case DOWN -> {
+                        quickFixes.moveDown();
+                        e.consume();
+                    }
+                    case UP -> {
+                        quickFixes.moveUp();
+                        e.consume();
+                    }
+                    case ENTER -> {
+                        quickFixes.accept();
+                        e.consume();
+                    }
+                    case ESCAPE -> {
+                        hideCodeActions();
+                        e.consume();
+                    }
+                    case N -> {
+                        if (ctrl) {
+                            quickFixes.moveDown();
+                            e.consume();
+                        }
+                    }
+                    case P -> {
+                        if (ctrl) {
+                            quickFixes.moveUp();
+                            e.consume();
+                        }
+                    }
+                    case G -> {
+                        if (ctrl) { // C-g cancels, as everywhere else in the editor
+                            hideCodeActions();
+                            e.consume();
+                        }
+                    }
+                    case BACK_SPACE -> {
+                        // Backspace edits the filter while there is one; with none it dismisses, as it edits.
+                        if (quickFixes.backspace()) {
+                            e.consume();
+                        } else {
+                            hideCodeActions();
+                        }
+                    }
+                    default -> {
+                        // A printable key filters the list (its KEY_TYPED is taken below), as IntelliJ's speed
+                        // search does; typing used to dismiss it and edit the code (Java review E6). Anything else
+                        // dismisses: the list is about the caret's current position, and a keystroke that moves
+                        // or edits invalidates it. A modifier on its own does neither — and Control goes down
+                        // before the N/P/G of the chords above, so it must not close.
+                        boolean printable = !e.getText().isEmpty()
+                                && !e.isControlDown()
+                                && !e.isAltDown()
+                                && !e.isMetaDown()
+                                && !Character.isISOControl(e.getText().charAt(0));
+                        if (!printable && !e.getCode().isModifierKey()) hideCodeActions();
+                    }
+                }
+                return;
+            }
+            if (e.getCode() == KeyCode.ESCAPE) {
+                boolean hadCompletion = session != null || completionPopupShowing();
+                suppressCompletionAtVersion = host.docVersion();
+                hideCompletion();
+                if (hadCompletion) e.consume(); // a second Escape can cancel an outer snippet
+                return;
+            }
+            if (completionPopup == null || !completionPopup.isShowing()) {
+                return;
+            }
+            // Emacs-style C-n / C-p move the selection too (the area takes just these chords while the popup
+            // is open — see LIST_CHORDS — so the global dispatcher leaves them for us).
+            if (e.isControlDown() && !e.isAltDown() && !e.isMetaDown()) {
+                if (e.getCode() == KeyCode.N) {
+                    completionPopup.moveDown();
+                    e.consume();
+                    return;
+                }
+                if (e.getCode() == KeyCode.P) {
+                    completionPopup.moveUp();
+                    e.consume();
+                    return;
+                }
+                if (e.getCode() == KeyCode.G) { // C-g cancels (Emacs); Esc is handled below
+                    hideCompletion();
+                    e.consume();
+                    return;
+                }
+                if (e.getCode() == KeyCode.Q) { // C-q toggles the documentation popup (IntelliJ quick-doc)
+                    toggleCompletionDoc();
+                    e.consume();
+                    return;
+                }
+            }
+            switch (e.getCode()) {
+                case DOWN -> {
+                    completionPopup.moveDown();
+                    e.consume();
+                }
+                case UP -> {
+                    completionPopup.moveUp();
+                    e.consume();
+                }
+                case PAGE_DOWN -> {
+                    completionPopup.pageDown();
+                    e.consume();
+                }
+                case PAGE_UP -> {
+                    completionPopup.pageUp();
+                    e.consume();
+                }
+                case ENTER, TAB -> {
+                    if (e.isShiftDown() || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                        hideCompletion();
+                        return;
+                    }
+                    Completion sel = completionPopup.selected();
+                    if (sel != null
+                            && e.getCode() == KeyCode.ENTER
+                            && enterEndsTheLine(host.language(), sel.label(), lineBeforeCaret(a))) {
+                        hideCompletion(); // not consumed: Enter is a newline (and finishes a closer)
+                        return;
+                    }
+                    if (sel != null) {
+                        // A local row the typed text no longer matches is refused: the popup closes and the
+                        // key is left alone, so Enter is a newline and Tab indents or expands the prefix.
+                        boolean local = localShown;
+                        if (acceptCompletion(a, sel, e.getCode() == KeyCode.TAB) || !local) e.consume();
+                    } else {
+                        hideCompletion();
+                    }
+                }
+                case LEFT, RIGHT, HOME, END -> hideCompletion(); // let the caret move
+                default -> {} // letters/Backspace fall through; the document change refreshes the list
+            }
+        });
+        a.focusedProperty().addListener((obs, was, now) -> {
+            if (!now) {
+                hideCompletion();
+            }
+        });
+    }
+
+    /** Installs the immediate completion/signature lifecycle hooks for one view. Settled completion and
+     *  AI requests are shared by the document-level dispatcher, including when this is the split view. */
+    public void installCompletionTrigger(CodeArea a) {
+        // Signature help fires IMMEDIATELY on a typed trigger char ('(' / ','), not on the 280 ms pause —
+        // the overload popup must appear as the call is opened. Guarded to three cheap checks per edit
+        // when off; the request itself is deferred a pulse so the triggering insertion's caret settles
+        // first (the maybeAutoFill lesson) — reading the caret inside the change emission sees a stale
+        // position (#674).
+        a.multiPlainChanges().subscribe(changes -> maybeTriggerSignatureHelp(a, changes));
+        // Any caret move or scroll invalidates the inline ghost's position; clear it (the debounce
+        // re-shows it after the next pause in typing). The popup manages its own key/caret handling.
+        a.caretPositionProperty().addListener((o, ov, nv) -> {
+            if (!a.isFocused()) return; // the inactive split has an independent caret on the shared document
+            hideGhost();
+            // The quick-fix list is about one caret position. A chord that ran its command (they all reach
+            // the keymap now) moved the caret without passing the list's own key filter.
+            if (codeActionsShowing()) hideCodeActions();
+            queueLocalSync();
+            if (session != null && !session.matches(a.getCaretPosition(), host.docVersion())) {
+                // Caret changes during the mutation itself settle before this deferred check.
+                Platform.runLater(() -> {
+                    if (a.isFocused() && session != null && !session.matches(a.getCaretPosition(), host.docVersion()))
+                        hideCompletion();
+                });
+            }
+            dismissCompletionIfPrefixEmpty(a); // close at once when Backspace deletes the whole typed word
+        });
+        a.estimatedScrollYProperty().addListener((o, ov, nv) -> hideGhost());
+        a.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, event -> hideCompletion());
+    }
+
+    /** See {@code installCompletionTrigger}: fires the signature-help requester on a typed trigger char. */
+    void maybeTriggerSignatureHelp(CodeArea a, java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes) {
+        if (host.signatureHelpRequester() == null
+                || !host.lspActive()
+                || host.lspSignatureTriggerChars().isEmpty()) {
+            return; // the per-keystroke hot path for every non-LSP buffer: three field checks, nothing more
+        }
+        if (!a.isFocused() || changes.size() != 1) {
+            return;
+        }
+        org.fxmisc.richtext.model.PlainTextChange c = changes.get(0);
+        if (signatureTriggerTyped(c.getInserted(), c.getRemoved())) {
+            char trigger = c.getInserted().charAt(0); // the char, so the server sees TriggerCharacter (#725)
+            Platform.runLater(() -> {
+                var requester = host.signatureHelpRequester();
+                if (requester != null) requester.accept(trigger);
+            });
+        }
+    }
+
+    /**
+     * Whether {@code inserted}/{@code removed} is a single typed signature-help trigger character. The
+     * subtlety: with bracket auto-close on (the default), typing {@code (} inserts {@code ()} as one 2-char
+     * change — so a bare {@code length()==1} check silently never fired for {@code (}, the primary trigger
+     * (#674, caught in device-testing). We also accept a trigger char that auto-close expanded to a pair:
+     * length 1 (auto-close off, or {@code ,}), or length 2 whose second char closes the first. A paste
+     * (longer, or a non-empty removal) never triggers.
+     */
+    boolean signatureTriggerTyped(String inserted, String removed) {
+        if (inserted.isEmpty() || (removed != null && !removed.isEmpty())) {
+            return false;
+        }
+        if (!host.lspSignatureTriggerChars().contains(inserted.charAt(0))) {
+            return false;
+        }
+        return inserted.length() == 1 || (inserted.length() == 2 && isCloserChar(inserted.charAt(1)));
+    }
+
+    static boolean isCloserChar(char ch) {
+        return ch == ')' || ch == ']' || ch == '}' || ch == '>';
+    }
+
+    /**
+     * Closes the popup the instant the caret lands where there is no word prefix — e.g. Backspace deleted
+     * the whole typed word — so the list doesn't linger over an empty prefix (and isn't left to the 280 ms
+     * debounce). Kept open only when the caret is right after an LSP trigger char (member completion).
+     */
+    void dismissCompletionIfPrefixEmpty(CodeArea a) {
+        if (completionPopup == null || !completionPopup.isShowing() || markdownShown) {
+            return; // a Markdown offer (a path, an anchor) has no word prefix to lose; queueLocalSync keeps it honest
+        }
+        int caret = a.getCaretPosition();
+        // Only the chars just before the caret matter — read a bounded window instead of materializing the
+        // whole document (this fires per caret-move while the popup is open; getText() on a big file is O(n)).
+        int from = Math.max(0, caret - PREFIX_LOOKBACK);
+        String before = a.getText(from, caret);
+        int kept = before.length();
+        while (kept > 0 && isCompletionPrefixChar(before.charAt(kept - 1))) {
+            kept--;
+        }
+        boolean afterTrigger = host.lspActive() && !host.isProse() && endsWithLspTrigger(before, before.length());
+        if (kept == before.length() && !afterTrigger) {
+            hideCompletion();
+        }
+    }
+
+    /** Lookback window (chars) when checking the prefix before the caret — far longer than any real prefix. */
+    static final int PREFIX_LOOKBACK = 256;
+
+    /** True while the completion popup or the inline ghost is visible. */
+    public boolean completionShowing() {
+        return ghostVisible() || (completionPopup != null && completionPopup.isShowing());
+    }
+
+    /** Dismisses any active completion (popup or ghost) and the quick-fix list — the {@code edit.cancel} /
+     *  Escape path, and what {@code EditorBuffer.dispose} calls. */
+    public void cancelCompletion() {
+        suppressCompletionAtVersion = host.docVersion();
+        hideCompletion();
+        if (codeActionsShowing()) hideCodeActions(); // also the dispose path: a closed tab keeps no popup
+    }
+
+    /** Manual trigger (the {@code edit.completion} command), on the focused view. */
+    public void triggerCompletion() {
+        CodeArea split = host.area2();
+        CodeArea a = (split != null && split.isFocused()) ? split : host.area();
+        updateCompletion(a, true);
+    }
+
+    /**
+     * A manual trigger whose list shows only what {@code filter} keeps of the server's items, and none of the
+     * local ones (Smart Type completion). The filter lasts until the list closes.
+     */
+    public void triggerCompletion(java.util.function.UnaryOperator<List<Completion>> filter) {
+        hidePopup();
+        lspFilter = filter;
+        triggerCompletion();
+    }
+
+    /** Recomputes the word at the caret and shows/refreshes/hides the popup. {@code manual} lowers the
+     *  minimum prefix length so an explicit invoke works on a single character. */
+    public void updateCompletion(CodeArea a, boolean manual) {
+        if (!autocompleteEnabled
+                || host.largeFile() // off in large-file mode: a.getText() below would allocate the whole document
+                // per trigger (the same per-keystroke cost brace matching is gated to avoid), and there is
+                // no LSP/grammar to complete against on a large file anyway. largeFile implies hugeFile.
+                || !host.isEditable()
+                || (host.hasActiveSnippet() && !host.lspActive())
+                || (!manual && host.docVersion() == suppressCompletionAtVersion) // don't re-offer right after accept
+                || a.getSelection().getLength() > 0) {
+            hideCompletion();
+            return;
+        }
+        int caret = a.getCaretPosition();
+        int windowStart = Math.max(0, caret - PREFIX_LOOKBACK);
+        String text = a.getText(windowStart, caret);
+        int start = text.length();
+        while (start > 0 && isCompletionPrefixChar(text.charAt(start - 1))) {
+            start--;
+        }
+        String prefix = text.substring(start);
+        if (showHttpOffer(a, caret, prefix, manual)
+                || showMarkdownOffer(a, caret, prefix, manual)
+                || (!manual && showAbbrevGhost(a))) {
+            return;
+        }
+        int min = manual && host.lspActive()
+                ? 0
+                : manual || (host.lspActive() && "java".equals(host.language())) ? 1 : CompletionEngine.MIN_PREFIX;
+        // LSP "trigger character" (e.g. Java's '.'): fire member completion with no prefix, and keep an
+        // open LSP popup updating as the member name is typed (IntelliJ-style) — bypassing the min-prefix.
+        // Keeping it open with an empty prefix is only right immediately after a trigger char; once the
+        // user backspaces past the typed word (prefix empty, not after a trigger) the popup must close.
+        boolean lspTrigger = host.lspActive()
+                && !host.isProse()
+                && (endsWithLspTrigger(text, text.length())
+                        || ((completionPopupShowing() || session != null) && !prefix.isEmpty()));
+        if (prefix.length() < min && !lspTrigger) {
+            hideCompletion();
+            return;
+        }
+        // Per-source toggle: prose → word/dictionary, mermaid → keywords+snippets, other code → snippets.
+        boolean sourceOn =
+                host.isProse() ? autocompleteProse : (host.isDiagram() ? autocompleteMermaid : autocompleteSnippets);
+        if (!sourceOn && !host.lspActive()) {
+            hideCompletion();
+            return;
+        }
+        // Snippets match the whole non-whitespace token (so a non-identifier trigger — `#inc`→`#include`,
+        // `?xml`, `[PSCustomObject]` — surfaces in the popup, not only via Tab, #446); words/keywords use the
+        // identifier run. When the token is wider than the identifier, stamp a replace range on the
+        // snippet-kind items so accepting one replaces `[wideStart, caret]` (the whole `#inc`, never
+        // `##include`) — start only, since the caret is the right end for a locally derived range.
+        int wideStart = snippetTokenStart(text, text.length());
+        String wideToken = text.substring(wideStart);
+        List<Completion> items = sourceOn
+                ? completionProvider.complete(
+                        host.language(), host.getSpellLanguage(), prefix, wideToken, host.isProse())
+                : List.of();
+        if (a.getScene() == null) {
+            return;
+        }
+        if (wideStart < start && !items.isEmpty()) {
+            var pos =
+                    a.offsetToPosition(windowStart + wideStart, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
+            Completion.ReplaceRange rs = Completion.ReplaceRange.startingAt(pos.getMajor(), pos.getMinor());
+            items = items.stream()
+                    .map(c -> c.snippet() != null && c.replaceRange() == null ? c.withReplaceRange(rs) : c)
+                    .toList();
+        }
+        // Prose: a single inline "ghost text" suffix after the caret (only at end-of-line content, so it
+        // never overlaps following text). Code: the multi-choice popup. Handle prose BEFORE any
+        // empty-items return, so the dictionary-load retry still gets registered on the first keystrokes.
+        if (host.isProse()) {
+            // A snippet trigger typed out in full outranks a dictionary word that merely continues it:
+            // `date` offered a ghost `d` (dated) and Tab took that, so the snippet could not be reached by
+            // typing at all. A trigger Tab expands by itself gets no ghost — the key then goes to the
+            // expansion. A list-only one is offered as the ghost, since the popup that lists it elsewhere
+            // never opens in prose.
+            if (host.snippetTrigger(a, true) != null) {
+                hideCompletion();
+                return;
+            }
+            String after = a.getParagraph(a.getCurrentParagraph()).getText().substring(a.getCaretColumn());
+            var offer = autocompleteSnippets && after.isBlank() ? host.snippetTrigger(a, false) : null;
+            if (offer != null) {
+                hidePopup();
+                showGhost(a, snippetGhostText(offer.snippet()));
+                if (ghostVisible()) ghostSnippet = offer.snippet();
+                return;
+            }
+            String suffix = after.isBlank() ? bestGhostSuffix(items, prefix) : null;
+            if (suffix != null && !suffix.isEmpty()) {
+                hidePopup();
+                showGhost(a, suffix);
+                return;
+            }
+            hideCompletion();
+            // The word list loads off-thread; if it isn't ready yet, re-run once it lands so the first
+            // suggestion appears without needing another keystroke.
+            String dl = host.getSpellLanguage();
+            if (com.editora.completion.DictionaryWords.isAvailable(dl)
+                    && !com.editora.completion.DictionaryWords.isReady(dl)) {
+                com.editora.completion.DictionaryWords.ensureLoaded(dl, () -> {
+                    if (a.isFocused()) {
+                        updateCompletion(a, manual);
+                    }
+                });
+            }
+            return;
+        }
+        hideGhost();
+        // Code buffer with a language server: fetch LSP completions async and merge with local snippets.
+        if (host.lspActive() && completionSource != null) {
+            if (!manual && session != null && session.matches(caret, host.docVersion())) {
+                if (session.result() != null) renderCompletion(a, session, items);
+                if (session.result() == null
+                        || !session.result().incomplete()
+                        || lastRequestVersion == host.docVersion()) return;
+            }
+            requestLspCompletion(a, caret, prefix, items, manual);
+            return;
+        }
+        if (items.isEmpty()) {
+            hidePopup();
+            return;
+        }
+        Bounds caretScreen = caretAnchorBounds(a);
+        if (caretScreen == null) {
+            return;
+        }
+        // Keep the list where the word starts while it is refined, as the server-backed list does.
+        int anchorStart = caret - prefix.length();
+        if (localShown && completionAnchorStart == anchorStart && completionAnchor != null) {
+            caretScreen = completionAnchor;
+        }
+        completionAnchorStart = anchorStart;
+        completionAnchor = caretScreen;
+        completionArea = a;
+        // Take C-n/C-p/cancel so they reach the popup instead of moving the caret; nothing else.
+        a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
+        docPopupActive = completionDocEnabled; // arm the doc popup for this session (Ctrl+Q toggles it)
+        completionPopup().setQuery(prefix);
+        completionPopup().show(a.getScene().getWindow(), caretScreen, items, 0);
+        localShown = true;
+        localManual = manual;
+        localCaret = caret;
+        localVersion = host.docVersion();
+    }
+
+    /**
+     * Previews the abbreviation before the caret as ghost text — what abbrev-mode puts there on the next
+     * word terminator, and what Tab puts there now — and says whether it did. Ahead of the word minimum,
+     * since an abbreviation such as {@code adl-e} ends in a one-letter word, and of the list: the word typed
+     * is about to be replaced. Only at end-of-line content, as every ghost; and a trigger Tab expands by
+     * itself keeps its Tab, as it does over a dictionary ghost.
+     */
+    private boolean showAbbrevGhost(CodeArea a) {
+        com.editora.editops.Abbrev.Edit abbrev = host.abbrevAtCaret(a);
+        if (abbrev == null
+                || !a.getParagraph(a.getCurrentParagraph())
+                        .getText()
+                        .substring(a.getCaretColumn())
+                        .isBlank()
+                || host.snippetTrigger(a, true) != null) {
+            return false;
+        }
+        hideCompletion();
+        showGhost(a, abbrevGhostText(abbrev.replacement()));
+        if (ghostVisible()) ghostAbbrev = abbrev;
+        return true;
+    }
+
+    /** Whether autocomplete is on (the master Settings toggle). */
+    public boolean autocompleteEnabled() {
+        return autocompleteEnabled;
+    }
+
+    /** Whether AI inline completion is on for this buffer. */
+    public boolean aiCompletionEnabled() {
+        return aiCompletionEnabled;
+    }
+
+    /** No automatic completion for the edit that produces document version {@code version} (an edit of ours). */
+    public void suppressCompletionAt(long version) {
+        suppressCompletionAtVersion = version;
+    }
+
+    /** How the last accepted completion moved the text below it, for its late {@code additionalTextEdits}. */
+    public LspEditShift.@Nullable Change pendingCompletionShift() {
+        return pendingCompletionShift;
+    }
+
+    /** The snippet the ghost offers, or null. */
+    public @Nullable Snippet ghostSnippet() {
+        return ghostSnippet;
+    }
+
+    /** The abbreviation the ghost previews, or null. */
+    public com.editora.editops.Abbrev.@Nullable Edit ghostAbbrev() {
+        return ghostAbbrev;
+    }
+
+    /** The two document offsets carrying the {@code brace-match} style, or null. */
+    public int @Nullable [] braceMatch() {
+        return braceMatch;
+    }
+
+    /** Records the offsets now carrying the {@code brace-match} style (null: none). */
+    public void setBraceMatch(int @Nullable [] pair) {
+        braceMatch = pair;
+    }
+
+    /** Longest expansion the abbreviation ghost shows before it is cut short. */
+    public static final int ABBREV_GHOST_MAX = 72;
+
+    /** What the ghost shows for an abbreviation: an arrow and its expansion, on one short line. Pure. */
+    public static String abbrevGhostText(String expansion) {
+        String line = expansion == null ? "" : expansion.strip().replaceAll("\\s+", " ");
+        if (line.length() > ABBREV_GHOST_MAX) {
+            line = line.substring(0, ABBREV_GHOST_MAX - 1) + "\u2026";
+        }
+        return " \u2192 " + line;
+    }
+
+    /** The local list on screen is a Markdown offer whose rows replace a range of their own (not a word). */
+    private boolean markdownShown;
+
+    /**
+     * In a Markdown buffer, shows what {@link MarkdownCompletions} has for the caret — files for a link
+     * target, headings for an anchor, reference labels, fence languages, Mermaid keywords in a mermaid
+     * fence — as the local list, and says whether it did. Otherwise the caller goes on as for any prose.
+     *
+     * <p>The document is only read when the caret's own line says something structural is being typed (or
+     * the nearest fence above it is a mermaid one): a typing pause in ordinary prose costs one line.
+     */
+    private boolean showMarkdownOffer(CodeArea a, int caret, String prefix, boolean manual) {
+        if (!(completionProvider instanceof MarkdownCompletions markdown) || !"markdown".equals(host.language())) {
+            return false;
+        }
+        int line = a.getCurrentParagraph();
+        int column = a.getCaretColumn();
+        String lineText = a.getParagraph(line).getText();
+        boolean structural = com.editora.markdown.MarkdownCompletionContext.at(lineText, column) != null;
+        if (!structural && !(autocompleteMermaid && !prefix.isEmpty() && mermaidFenceAbove(a, line))) {
+            return false;
+        }
+        MarkdownCompletions.Offer offer =
+                markdown.offer(a.getText(), line, column, prefix, host.getSpellLanguage(), manual);
+        return showOffer(a, caret, prefix, manual, line, column, offer);
+    }
+
+    /**
+     * In a {@code .http} buffer with the caret inside an open {@code {{}, shows the variables, dynamic built-ins
+     * and request responses {@link HttpCompletions} has for it. The document is read only when the caret's own
+     * line has an unclosed {@code {{} before the caret.
+     */
+    private boolean showHttpOffer(CodeArea a, int caret, String prefix, boolean manual) {
+        if (!"http".equals(host.language())) {
+            return false;
+        }
+        int line = a.getCurrentParagraph();
+        int column = a.getCaretColumn();
+        String lineText = a.getParagraph(line).getText();
+        String before = lineText.substring(0, Math.min(column, lineText.length()));
+        int open = before.lastIndexOf("{{");
+        if (open < 0 || before.indexOf("}}", open) >= 0) {
+            return false;
+        }
+        MarkdownCompletions.Offer offer = HttpCompletions.offer(
+                a.getText(),
+                line,
+                before,
+                lineText.substring(before.length()),
+                httpVariables == null ? null : httpVariables.get());
+        return showOffer(a, caret, prefix, manual, line, column, offer);
+    }
+
+    /** Shows a structural {@code offer} (rows that replace from {@code offer.start()}) as the local list. */
+    private boolean showOffer(
+            CodeArea a,
+            int caret,
+            String prefix,
+            boolean manual,
+            int line,
+            int column,
+            MarkdownCompletions.@Nullable Offer offer) {
+        if (offer == null || a.getScene() == null) {
+            return false;
+        }
+        List<Completion> items = offer.items();
+        if (offer.start() >= 0) {
+            Completion.ReplaceRange range = Completion.ReplaceRange.startingAt(line, offer.start());
+            items = items.stream().map(c -> c.withReplaceRange(range)).toList();
+        }
+        Bounds caretScreen = caretAnchorBounds(a);
+        if (caretScreen == null) {
+            return false;
+        }
+        hideGhost();
+        int anchorStart = offer.start() >= 0 ? caret - (column - offer.start()) : caret - prefix.length();
+        if (localShown && completionAnchorStart == anchorStart && completionAnchor != null) {
+            caretScreen = completionAnchor;
+        }
+        completionAnchorStart = anchorStart;
+        completionAnchor = caretScreen;
+        completionArea = a;
+        a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
+        completionPopup().setQuery(offer.partial().substring(offer.partial().lastIndexOf('/') + 1));
+        completionPopup().show(a.getScene().getWindow(), caretScreen, items, 0);
+        localShown = true;
+        markdownShown = offer.start() >= 0;
+        localManual = manual;
+        localCaret = caret;
+        localVersion = host.docVersion();
+        return true;
+    }
+
+    /** Whether the nearest fence line above {@code line} opens a mermaid block (a bounded look upwards). */
+    private static boolean mermaidFenceAbove(CodeArea a, int line) {
+        for (int i = line - 1; i >= Math.max(0, line - 400); i--) {
+            String t = a.getParagraph(i).getText().stripLeading();
+            if (t.startsWith("```") || t.startsWith("~~~")) {
+                return t.toLowerCase(java.util.Locale.ROOT).contains("mermaid");
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Brings the local list back in line after an edit or a caret move, once the change has settled: an edit
+     * recomputes it for the word now before the caret (which also closes it when nothing matches), a caret
+     * move without an edit closes it. Without this the list was only recomputed by the 280 ms typing pause,
+     * so it kept offering — and Enter/Tab kept accepting — rows for a prefix typed several characters ago.
+     * Coalesced to one deferred pass per burst; a no-op unless the local list is up.
+     */
+    private void queueLocalSync() {
+        if (!localShown || localSyncQueued) return;
+        localSyncQueued = true;
+        Platform.runLater(() -> {
+            localSyncQueued = false;
+            CodeArea a = completionArea;
+            if (!localShown || a == null) return;
+            if (!a.isFocused() || !completionPopupShowing()) {
+                hideCompletion();
+            } else if (host.docVersion() != localVersion) {
+                updateCompletion(a, localManual);
+            } else if (a.getCaretPosition() != localCaret || a.getSelection().getLength() > 0) {
+                hideCompletion();
+            }
+        });
+    }
+
+    /**
+     * Whether a row of the local list still fits the text before the caret: a snippet's trigger (or a word)
+     * must start with the token typed so far. The check the server-backed list gets from its session.
+     */
+    private boolean localRowMatches(CodeArea a, Completion c) {
+        int caret = a.getCaretPosition();
+        String text = a.getText(Math.max(0, caret - PREFIX_LOOKBACK), caret);
+        int start = text.length();
+        while (start > 0 && isCompletionPrefixChar(text.charAt(start - 1))) {
+            start--;
+        }
+        return localRowMatches(c, text.substring(start), text.substring(snippetTokenStart(text, text.length())));
+    }
+
+    /** {@link #localRowMatches(CodeArea, Completion)} on the identifier run and the whole token. Pure. */
+    static boolean localRowMatches(Completion c, String prefix, String wideToken) {
+        String candidate = c.snippet() != null ? c.snippet().prefix() : c.insert();
+        if (candidate == null) return false;
+        return (!prefix.isEmpty() && candidate.regionMatches(true, 0, prefix, 0, prefix.length()))
+                || (c.snippet() != null
+                        && !wideToken.isEmpty()
+                        && candidate.regionMatches(true, 0, wideToken, 0, wideToken.length()));
+    }
+
+    /** Prompt-window sizes for AI inline completion (chars before/after the caret). */
+    static final int AI_COMPLETION_PREFIX_CHARS = 4000;
+
+    static final int AI_COMPLETION_SUFFIX_CHARS = 1000;
+
+    /**
+     * Fires one AI inline-completion request after a typing pause: only in an editable, non-large buffer
+     * with the caret at end-of-line content (the prose-ghost convention — the suggestion never overlaps
+     * following text) and no completion popup open. The async result shows as ghost text (Tab accepts)
+     * only if the caret hasn't moved and no newer request superseded it.
+     */
+    public void maybeRequestAiCompletion(CodeArea a) {
+        if (!aiCompletionEnabled
+                || aiCompletionProvider == null
+                || host.largeFile()
+                || !host.isEditable()
+                || host.hasActiveSnippet()
+                || a.getSelection().getLength() > 0
+                || completionPopupShowing()) {
+            return;
+        }
+        int caret = a.getCaretPosition();
+        if (caret == 0) {
+            return; // nothing to continue yet
+        }
+        // Only the rest of the caret's line and a few kilobytes either side of the caret are read: never
+        // the whole document, which this runs against after every typing pause.
+        if (!a.getText(a.getCurrentParagraph()).substring(a.getCaretColumn()).isBlank()) {
+            return;
+        }
+        String prefix = a.getText(Math.max(0, caret - AI_COMPLETION_PREFIX_CHARS), caret);
+        String suffix = a.getText(caret, Math.min(a.getLength(), caret + AI_COMPLETION_SUFFIX_CHARS));
+        long gen = ++aiCompletionGen;
+        aiCompletionProvider.complete(host.language(), prefix, suffix, result -> {
+            if (gen != aiCompletionGen
+                    || result == null
+                    || result.isBlank()
+                    || !a.isFocused()
+                    || a.getCaretPosition() != caret
+                    || completionPopupShowing()
+                    || host.snippetTrigger(a, true) != null // Tab belongs to the typed trigger
+                    || host.abbrevAtCaret(a) != null) { // ... or to the abbreviation's preview
+                return;
+            }
+            String oneLine = result.lines().findFirst().orElse("").stripTrailing();
+            if (!oneLine.isEmpty()) {
+                showGhost(a, oneLine);
+            }
+        });
+    }
+
+    /** The suffix of the best word completion that continues {@code prefix}, or null if none qualifies. */
+    static @Nullable String bestGhostSuffix(List<Completion> items, String prefix) {
+        for (Completion c : items) {
+            if (c.kind() == Completion.Kind.WORD) {
+                // The accept path keeps the typed prefix and inserts only this suffix, so the word must be
+                // cased compatibly with what was typed (see CompletionEngine.ghostSuffix).
+                String suffix = CompletionEngine.ghostSuffix(c.insert(), prefix);
+                if (suffix != null) {
+                    return suffix;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** What the ghost shows for a snippet offer: an arrow and what the trigger turns into. Pure. */
+    static String snippetGhostText(Snippet s) {
+        String what = s.description() == null || s.description().isBlank() ? s.name() : s.description();
+        return " \u2192 " + (what == null ? "" : what.strip());
+    }
+
+    public Label ghostLabel() {
+        if (ghostLabel == null) {
+            ghostLabel = new Label();
+            ghostLabel.getStyleClass().add("completion-ghost");
+            ghostLabel.setMouseTransparent(true);
+            ghostLabel.setManaged(false); // free-positioned via layoutX/Y, ignored by AnchorPane layout
+            ghostLabel.setFocusTraversable(false);
+            ghostLabel.setAlignment(Pos.CENTER_LEFT); // center text in the line-box height (vertical align)
+            ghostLabel.setVisible(false);
+        }
+        return ghostLabel;
+    }
+
+    public boolean ghostVisible() {
+        return ghostLabel != null && ghostLabel.isVisible();
+    }
+
+    /** Draws the ghost suffix as a muted overlay label starting exactly at the caret. */
+    void showGhost(CodeArea a, String suffix) {
+        ghostSnippet = null;
+        ghostAbbrev = null;
+        int caret = a.getCaretPosition();
+        // At end-of-line there's no glyph *at* the caret, so measure the char *before* it and use its
+        // right edge as the start x (getCharacterBoundsOnScreen(caret, caret) would be empty there).
+        boolean usePrev = caret > 0;
+        Bounds screen = (usePrev
+                        ? a.getCharacterBoundsOnScreen(caret - 1, caret)
+                        : a.getCharacterBoundsOnScreen(caret, caret + 1))
+                .orElse(null);
+        if (screen == null) {
+            return;
+        }
+        AnchorPane split = host.root2();
+        AnchorPane target = (a == host.area2() && split != null) ? split : host.root();
+        Bounds local = target.screenToLocal(screen);
+        if (local == null) {
+            return;
+        }
+        Label g = ghostLabel();
+        if (g.getParent() != target) {
+            if (g.getParent() instanceof AnchorPane ap) {
+                ap.getChildren().remove(g);
+            }
+            target.getChildren().add(g);
+        }
+        g.setFont(Font.font(host.fontFamily(), host.fontSize()));
+        g.setText(suffix);
+        // Unmanaged node: AnchorPane won't lay it out, so size + place it ourselves. applyCss() first so
+        // the Label's skin exists and prefWidth reflects the text (otherwise it stays 0×0). Use the
+        // measured line-box height and let the Label center the text in it, so it aligns with the line.
+        g.applyCss();
+        double w = Math.ceil(g.prefWidth(-1));
+        double h = local.getHeight() > 0 ? local.getHeight() : Math.ceil(g.prefHeight(w));
+        g.resizeRelocate(usePrev ? local.getMaxX() : local.getMinX(), local.getMinY(), w, h);
+        g.setVisible(true);
+        g.toFront();
+        ghostSuffix = suffix;
+        ghostArea = a;
+    }
+
+    /** Inserts the pending ghost suffix at the caret (the Tab-accept path for inline completion). */
+    public void acceptGhost() {
+        if (ghostSuffix == null || ghostArea == null) {
+            return;
+        }
+        CodeArea a = ghostArea;
+        String s = ghostSuffix;
+        Snippet offered = ghostSnippet;
+        com.editora.editops.Abbrev.Edit abbrev = ghostAbbrev;
+        hideGhost();
+        if (abbrev != null) {
+            // Looked up again, so only what the ghost previewed is expanded, over what stands there now.
+            com.editora.editops.Abbrev.Edit now = host.abbrevAtCaret(a);
+            if (now != null && abbrev.equals(now)) {
+                Runnable endUndo = host.beginCompletionUndo();
+                try {
+                    a.replaceText(now.from(), now.to(), now.replacement());
+                } finally {
+                    endUndo.run();
+                }
+                suppressCompletionAtVersion = host.docVersion();
+                a.requestFocus();
+            }
+            return;
+        }
+        if (offered != null) {
+            // The ghost described the snippet; nothing of it is inserted. The trigger is looked up again so
+            // the expansion replaces exactly what stands before the caret now.
+            var m = host.snippetTrigger(a, false);
+            if (m == null || !offered.equals(m.snippet())) {
+                return;
+            }
+            Runnable endUndo = host.beginCompletionUndo();
+            try {
+                host.startSnippet(a, offered, m.start(), a.getCaretPosition(), true);
+            } finally {
+                endUndo.run();
+            }
+            suppressCompletionAtVersion = host.docVersion();
+            a.requestFocus();
+            return;
+        }
+        a.insertText(a.getCaretPosition(), s);
+        // Stamped AFTER the edit (which bumps docVersion), so the auto-trigger that edit schedules is the
+        // one suppressed — the user typing on afterwards bumps the version again and re-enables it.
+        suppressCompletionAtVersion = host.docVersion();
+        a.requestFocus();
+    }
+
+    void hideGhost() {
+        if (ghostLabel != null) {
+            ghostLabel.setVisible(false);
+        }
+        ghostSuffix = null;
+        ghostArea = null;
+        ghostSnippet = null;
+        ghostAbbrev = null;
+    }
+
+    void hidePopup() {
+        completionGen++;
+        renderGen++;
+        cancelRequest.run();
+        cancelRequest = () -> {};
+        session = null;
+        shownSession = null;
+        lspFilter = null;
+        completionAnchor = null;
+        completionAnchorStart = -1;
+        localShown = false;
+        markdownShown = false;
+        if (completionArea != null) {
+            completionArea.getProperties().remove(OWNED_CHORDS); // release the C-n/C-p ownership
+        }
+        if (completionPopup != null) {
+            completionPopup.hide();
+        }
+        hideDocPopup(); // the doc popup never outlives the completion list
+    }
+
+    /** Injected async LSP completion source: {@code accept({line,char}, items->…)}; null = none. */
+    public void setLspCompletionProvider(
+            java.util.function.BiConsumer<int[], java.util.function.Consumer<java.util.List<Completion>>> provider) {
+        setLspCompletionSource(
+                provider == null
+                        ? null
+                        : (line, col, kind, trigger, cb) -> {
+                            provider.accept(
+                                    new int[] {line, col}, items -> cb.accept(new CompletionResult(items, false)));
+                            return () -> {};
+                        });
+    }
+
+    public void setLspCompletionSource(@Nullable CompletionSource source) {
+        hideCompletion();
+        completionSource = source;
+    }
+
+    /** Called once per shared-document change, after the version advances, before the caret settles. */
+    public void documentChanged(org.fxmisc.richtext.model.PlainTextChange change) {
+        if (codeActionsShowing()) hideCodeActions(); // computed for the text as it was
+        queueLocalSync();
+        if (!autocompleteEnabled || !host.lspActive()) return;
+        lastEditNanos = CompletionTrace.now();
+        if (session != null)
+            session.changed(change.getPosition(), change.getRemoved(), change.getInserted(), host.docVersion());
+        if (shownSession != null && shownSession != session) {
+            shownSession.changed(change.getPosition(), change.getRemoved(), change.getInserted(), host.docVersion());
+        }
+        CodeArea a = host.getFocusedArea();
+        boolean trigger = change.getInserted().length() == 1
+                && host.lspTriggerChars().contains(change.getInserted().charAt(0));
+        if ((session != null || trigger) && !immediateQueued) {
+            immediateQueued = true;
+            Platform.runLater(() -> {
+                immediateQueued = false;
+                if (a != null && a.isFocused() && host.lspActive()) updateCompletion(a, false);
+            });
+        }
+    }
+
+    void requestLspCompletion(CodeArea a, int caret, String prefix, List<Completion> localItems, boolean manual) {
+        boolean incomplete = !manual
+                && session != null
+                && session.result() != null
+                && session.result().incomplete()
+                && session.matches(caret, host.docVersion());
+        long gen = ++completionGen;
+        cancelRequest.run();
+        var requested =
+                new CompletionSession(caret, a.getCurrentParagraph(), a.getCaretColumn(), prefix, host.docVersion());
+        session = requested;
+        lastRequestVersion = host.docVersion();
+        CompletionTrace.elapsed("edit-to-sync", lastEditNanos);
+        long sync = CompletionTrace.now();
+        host.sendLspChange();
+        CompletionTrace.elapsed("sync", sync);
+        String trigger = !manual
+                        && caret > 0
+                        && host.lspTriggerChars()
+                                .contains(a.getText(caret - 1, caret).charAt(0))
+                ? a.getText(caret - 1, caret)
+                : null;
+        CompletionSource source = completionSource;
+        if (source == null) {
+            return; // detached while the change synced
+        }
+        cancelRequest = source.request(
+                a.getCurrentParagraph(),
+                a.getCaretColumn(),
+                trigger != null ? 2 : incomplete ? 3 : 1,
+                trigger,
+                result -> {
+                    if (gen != completionGen
+                            || session != requested
+                            || a.getScene() == null
+                            || !requested.matches(a.getCaretPosition(), host.docVersion())
+                            || codeActionsShowing()) return;
+                    requested.result(result);
+                    renderCompletion(a, requested, localItems);
+                    if (result.incomplete() && lastRequestVersion != host.docVersion()) updateCompletion(a, false);
+                });
+    }
+
+    private void renderCompletion(CodeArea a, CompletionSession context, List<Completion> localItems) {
+        long render = ++renderGen;
+        long version = host.docVersion();
+        String prefix = context.prefix();
+        CompletionResult result = context.result();
+        if (result == null) {
+            return;
+        }
+        var smart = lspFilter;
+        var items = smart == null ? result.items() : smart.apply(result.items());
+        List<Completion> local = smart == null ? localItems : List.of();
+        int line = a.getCurrentParagraph();
+        int column = a.getCaretColumn();
+        String beforeCaret = a.getText(
+                Math.max(a.getAbsolutePosition(line, 0), a.getCaretPosition() - PREFIX_LOOKBACK), a.getCaretPosition());
+        long filter = CompletionTrace.now();
+        java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                        mergeCompletions(CompletionEngine.filterLsp(items, prefix, line, column, beforeCaret), local))
+                .thenAccept(merged -> Platform.runLater(() -> {
+                    if (render != renderGen
+                            || context != session
+                            || version != host.docVersion()
+                            || !context.matches(a.getCaretPosition(), version)
+                            || a.getScene() == null
+                            || codeActionsShowing()) return;
+                    if (merged.isEmpty()) {
+                        // Keep the complete source list: a Backspace can expose its candidates again.
+                        filteringEmpty = true;
+                        try {
+                            if (completionPopup != null) completionPopup.hide();
+                        } finally {
+                            filteringEmpty = false;
+                        }
+                        a.getProperties().remove(OWNED_CHORDS);
+                        localShown = false;
+                        shownSession = null;
+                        return;
+                    }
+                    CompletionTrace.elapsed("filter-and-fx-dispatch", filter);
+                    long display = CompletionTrace.now();
+                    int anchorStart = a.getCaretPosition() - context.prefix().length();
+                    Bounds bounds = completionAnchorStart == anchorStart && completionAnchor != null
+                            ? completionAnchor
+                            : caretAnchorBounds(a);
+                    if (bounds == null) return;
+                    completionAnchorStart = anchorStart;
+                    completionAnchor = bounds;
+                    completionArea = a;
+                    shownSession = context;
+                    localShown = false;
+                    a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
+                    docPopupActive = completionDocEnabled;
+                    // A trigger typed out in full is what Tab expands when no list is up; the server's rows
+                    // must not take that away, so its snippet leads the list and is the highlighted row.
+                    var rows = merged;
+                    int select = preselectIndexOf(merged);
+                    var exact = host.snippetTrigger(a, true);
+                    if (exact != null) {
+                        var at = a.offsetToPosition(
+                                exact.start(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
+                        rows = withTypedTrigger(
+                                merged,
+                                exact.snippet(),
+                                Completion.ReplaceRange.startingAt(at.getMajor(), at.getMinor()));
+                        select = 0;
+                    }
+                    completionPopup().setQuery(prefix);
+                    completionPopup().show(a.getScene().getWindow(), bounds, rows, select);
+                    CompletionTrace.elapsed("popup-model", display);
+                }));
+    }
+
+    /** Whether the completion popup is currently open (an in-progress LSP/local completion session). */
+    public boolean completionPopupShowing() {
+        return completionPopup != null && completionPopup.isShowing();
+    }
+
+    /** True if the char just before {@code caret} is one of the server's advertised completion trigger
+     *  characters (e.g. {@code .} for Java, {@code <} for HTML) — so completion fires there, not just on a
+     *  word prefix. The set comes from the server's capabilities via {@link #setLspTriggerChars}.
+     *  Whitespace is never treated as a trigger: no language completes on a space, and doing so would keep
+     *  the popup open on a blank/indented line after the typed word is deleted. */
+    boolean endsWithLspTrigger(String text, int caret) {
+        if (caret <= 0 || caret > text.length()) {
+            return false;
+        }
+        char c = text.charAt(caret - 1);
+        return !Character.isWhitespace(c) && host.lspTriggerChars().contains(c);
+    }
+
+    /** Uses authoritative filterText with prefix tiers and fuzzy alternatives. */
+    static java.util.List<Completion> filterByPrefix(java.util.List<Completion> items, String prefix) {
+        return CompletionEngine.filterLsp(items == null ? List.of() : items, prefix);
+    }
+
+    /** True if {@code p} is a subsequence of {@code s} (chars in order, not necessarily contiguous). */
+    static boolean isSubsequence(String p, String s) {
+        int i = 0;
+        for (int j = 0; j < s.length() && i < p.length(); j++) {
+            if (s.charAt(j) == p.charAt(i)) {
+                i++;
+            }
+        }
+        return i == p.length();
+    }
+
+    /** Index of the first preselected item, or 0 (the popup pre-highlights the server's preselect). */
+    static int preselectIndexOf(java.util.List<Completion> items) {
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).preselect()) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * {@code items} with the row for {@code typed} — the snippet whose trigger stands before the caret —
+     * first, replacing {@code range}. A row the list already had for it is moved rather than repeated.
+     * Pure.
+     */
+    public static java.util.List<Completion> withTypedTrigger(
+            java.util.List<Completion> items, Snippet typed, Completion.ReplaceRange range) {
+        var out = new java.util.ArrayList<Completion>(items.size() + 1);
+        out.add(Completion.ofSnippet(typed).withReplaceRange(range));
+        for (Completion c : items) {
+            if (c.kind() == Completion.Kind.SNIPPET && typed.equals(c.snippet())) continue;
+            if (isServerTemplate(c) && c.label().equals(typed.prefix())) continue;
+            out.add(c);
+        }
+        return out;
+    }
+
+    /**
+     * Preserves server overloads; removes duplicate local snippets and the server templates a local snippet
+     * shadows, and caps the displayed list.
+     */
+    public static java.util.List<Completion> mergeCompletions(
+            java.util.List<Completion> lsp, java.util.List<Completion> local) {
+        // Same inserted text can mean different overloads or imports. Never deduplicate server identities —
+        // except a server template (jdtls's sysout, fori, try_catch…) named like a local snippet: Tab expands
+        // the local one, so the popup offers that one too instead of two rows under one trigger.
+        var triggers = new java.util.HashSet<String>();
+        for (Completion c : local) if (c.kind() == Completion.Kind.SNIPPET) triggers.add(c.label());
+        var out = new java.util.ArrayList<Completion>();
+        var inserts = new java.util.HashSet<String>();
+        if (lsp != null)
+            for (Completion c : lsp) {
+                if (isServerTemplate(c) && triggers.contains(c.label())) continue;
+                out.add(c);
+                inserts.add(c.insert());
+            }
+        for (Completion c : local) if (inserts.add(c.insert())) out.add(c);
+        return List.copyOf(out.subList(0, Math.min(50, out.size())));
+    }
+
+    /** A language server's own snippet item (its {@code kind} is Snippet), as opposed to a local snippet. */
+    private static boolean isServerTemplate(Completion c) {
+        return c.kind() != Completion.Kind.SNIPPET && c.iconKind() == com.editora.completion.CompletionIconKind.SNIPPET;
+    }
+
+    /** Replaces the typed prefix with the accepted completion (a snippet starts a tab-stop session). */
+    boolean acceptCompletion(CodeArea a, Completion c) {
+        return acceptCompletion(a, c, false);
+    }
+
+    boolean acceptCompletion(CodeArea a, Completion c, boolean replace) {
+        CompletionSession context = shownSession;
+        if (context != null
+                && (!context.matches(a.getCaretPosition(), host.docVersion())
+                        || CompletionEngine.matchTier(
+                                        c,
+                                        CompletionEngine.filterQuery(
+                                                c,
+                                                context.prefix(),
+                                                a.getCurrentParagraph(),
+                                                a.getCaretColumn(),
+                                                a.getParagraph(a.getCurrentParagraph())
+                                                        .getText()
+                                                        .substring(0, a.getCaretColumn())))
+                                == 3)) {
+            hideCompletion();
+            return false;
+        }
+        // The local list has no session to check: refuse a row the word before the caret has outgrown, or
+        // Enter/Tab would replace what was typed with a snippet offered for an earlier prefix.
+        if (context == null && localShown && !markdownShown && !localRowMatches(a, c)) {
+            hideCompletion();
+            return false;
+        }
+        int caret = a.getCaretPosition();
+        String text = a.getText();
+        int start = caret;
+        while (start > 0 && isCompletionPrefixChar(text.charAt(start - 1))) {
+            start--;
+        }
+        int end = caret;
+        Completion.ReplaceRange rs =
+                replace && c.protocol() != null && c.protocol().replaceRange() != null
+                        ? c.protocol().replaceRange()
+                        : c.replaceRange();
+        if (context != null) rs = context.range(rs);
+        if (rs != null) {
+            // The server told us exactly what to replace (LSP textEdit.range) — honor it over the identifier
+            // walk, both ends. The start never passes the caret (chars typed since the request are absorbed);
+            // the end only ever extends past it, which is how a server says it is rewriting something already
+            // there — jdtls covers the `;` an import already has, and stopping at the caret would leave it
+            // behind beside the one its insert ends with (`import java.util.*;;`).
+            try {
+                int lineEnd = caret;
+                while (lineEnd < text.length() && text.charAt(lineEnd) != '\n') {
+                    lineEnd++;
+                }
+                int serverEnd = rs.hasEnd() ? host.lspOffset(a, rs.endLine(), rs.endCharacter()) : -1;
+                int[] range = CompletionEngine.replacedRange(
+                        caret, host.lspOffset(a, rs.line(), rs.character()), serverEnd, lineEnd);
+                start = range[0];
+                end = range[1];
+            } catch (RuntimeException ignored) {
+                // Range no longer valid (document moved) — fall back to the identifier walk above.
+            }
+        } else if (caret > 0 && c.snippet() == null) {
+            // No server range: the identifier walk is only a guess at what was typed towards this item. When
+            // the text before the caret overlaps the start of the insert by more than that run, the overlap is
+            // what gets replaced — phpactor's `$user` after `$` or `$us` (not `$$user`), bash-language-server's
+            // `apt-get` after `apt-g` (not `apt-apt-get`). It never shortens the identifier walk.
+            int overlap = CompletionEngine.prefixOverlap(text.substring(0, caret), c.insert());
+            start = Math.min(start, caret - overlap);
+        }
+        hideCompletion();
+        // Measured around our own edit so a later completionItem/resolve's additionalTextEdits — positions the
+        // server computed against the document as it is right here, before the accept — can be translated onto
+        // the document the accept leaves behind (#410). Taken before the edit; completed just after it.
+        var preStart = host.lspPosition(a, start);
+        var preEnd = host.lspPosition(a, end);
+        int preLength = text.length();
+        var plan = "java".equals(host.language())
+                ? com.editora.completion.JavaCompletionInsertion.plan(c, text, start, end)
+                : null;
+        boolean reindent = c.protocol() == null || c.protocol().insertTextMode() != 1;
+        Runnable endUndo = host.beginCompletionUndo();
+        try {
+            if (plan != null && plan.snippet()) {
+                host.startSnippet(
+                        a, new Snippet(c.label(), c.label(), plan.text(), c.detail(), ""), start, end, reindent);
+            } else if (plan != null) {
+                a.replaceText(start, end, completionLiteral(a, c, plan.text()));
+                if (plan.caretOffset() >= 0) a.moveTo(start + plan.caretOffset());
+            } else if (c.snippet() != null) {
+                host.startSnippet(a, c.snippet(), start, end, reindent);
+            } else {
+                a.replaceText(start, end, completionLiteral(a, c, c.insert()));
+            }
+            // Where the replaced range's end landed. Derived from the net length change rather than the accepted
+            // text, so it holds for the snippet path too (its expansion re-indents and adds tab stops).
+            var postEnd = host.lspPosition(a, end + (a.getLength() - preLength));
+            if (context != null && preEnd[0] == context.line() && preEnd[1] >= context.column()) {
+                preEnd[1] -= context.caret() - context.originalCaret();
+            }
+            pendingCompletionShift =
+                    new LspEditShift.Change(preStart[0], preStart[1], preEnd[0], preEnd[1], postEnd[0], postEnd[1]);
+            // Stamped AFTER the edit (which bumps docVersion), so the auto-trigger that edit schedules is the
+            // one suppressed — the user typing on afterwards bumps the version again and re-enables it.
+            suppressCompletionAtVersion = host.docVersion();
+            if (c.onAccept() != null) {
+                c.onAccept().run(); // e.g. resolve + apply a TypeScript auto-import's additionalTextEdits
+            }
+        } finally {
+            endUndo.run();
+        }
+        suppressCompletionAtVersion = host.docVersion(); // eager imports are part of this acceptance too
+        a.requestFocus();
+        // A Java method reference has no argument list, and a finished zero-argument call leaves the
+        // caret after ')'. Neither needs parameter help. Retain it inside enclosing snippet arguments.
+        int acceptedCaret = a.getCaretPosition();
+        boolean finishedJavaCall = plan != null
+                && !host.hasActiveSnippet()
+                && ((plan.text().indexOf('(') < 0 && plan.caretOffset() < 0)
+                        || (acceptedCaret > 0
+                                && a.getText(acceptedCaret - 1, acceptedCaret).equals(")")));
+        if (host.signatureHelpRequester() != null
+                && host.lspActive()
+                && !finishedJavaCall
+                && (c.iconKind() == com.editora.completion.CompletionIconKind.METHOD
+                        || c.iconKind() == com.editora.completion.CompletionIconKind.CONSTRUCTOR)) {
+            long acceptedVersion = host.docVersion();
+            Platform.runLater(() -> {
+                var requester = host.signatureHelpRequester();
+                if (acceptedVersion == host.docVersion() && requester != null) requester.accept(null);
+            });
+        }
+        return true;
+    }
+
+    private String completionLiteral(CodeArea a, Completion item, String text) {
+        if (item.protocol() == null || item.protocol().insertTextMode() == 1 || text.indexOf('\n') < 0) return text;
+        String indent = leadingIndent(a.getParagraph(a.getCurrentParagraph()).getText());
+        return com.editora.snippet.SnippetSession.reindent(
+                        new com.editora.snippet.ParsedSnippet(text, List.of()), indent)
+                .text();
+    }
+
+    void hideCompletion() {
+        hidePopup();
+        hideGhost();
+    }
+}

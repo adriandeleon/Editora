@@ -24,6 +24,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.paint.ImagePattern;
 
 import com.editora.http.HttpResponseFormat;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -87,7 +88,7 @@ final class HttpImageView extends VBox {
     }
 
     /** Shows {@code image}, captioned from its content type and the response's size in bytes. */
-    void show(Image image, String contentType, long bytes) {
+    void show(@Nullable Image image, @Nullable String contentType, long bytes) {
         picture.setImage(image);
         caption.setText(
                 image == null ? "" : caption(contentType, (int) image.getWidth(), (int) image.getHeight(), bytes));
@@ -103,12 +104,12 @@ final class HttpImageView extends VBox {
     }
 
     /** "PNG · 160 × 160 · 858 B": the format (from the content type), the size in pixels, the size in bytes. Pure. */
-    static String caption(String contentType, int width, int height, long bytes) {
+    static String caption(@Nullable String contentType, int width, int height, long bytes) {
         return tr("httppanel.imageCaption", format(contentType), width, height, HttpResponseFormat.humanSize(bytes));
     }
 
     /** {@code image/png} → PNG, {@code image/x-icon} → ICO, {@code image/svg+xml} → SVG; unknown → IMAGE. Pure. */
-    static String format(String contentType) {
+    static String format(@Nullable String contentType) {
         String ct =
                 contentType == null ? "" : contentType.toLowerCase(Locale.ROOT).strip();
         int semi = ct.indexOf(';');

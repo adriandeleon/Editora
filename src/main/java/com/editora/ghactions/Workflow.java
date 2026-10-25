@@ -8,6 +8,7 @@ import java.util.Map;
 import com.editora.cron.CronExpression;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Parses a GitHub Actions workflow YAML into a neutral model for the preview: the workflow name, the
@@ -21,7 +22,10 @@ public final class Workflow {
     private static final YAMLMapper MAPPER = new YAMLMapper();
 
     /** One step: an action reference ({@code uses}) or a shell command ({@code run}), with an optional name. */
-    public record Step(String name, String uses, String run) {
+    public record Step(
+            @Nullable String name,
+            @Nullable String uses,
+            @Nullable String run) {
 
         /** The best display label: the step's name, else the short action name, else the command's first line. */
         public String label() {
@@ -40,26 +44,26 @@ public final class Workflow {
 
     public record Job(
             String id,
-            String name,
-            String runsOn,
+            @Nullable String name,
+            @Nullable String runsOn,
             List<String> needs,
-            String ifCond,
+            @Nullable String ifCond,
             boolean matrix,
             List<Step> steps) {}
 
-    private final String name;
+    private final @Nullable String name;
     private final List<String> triggers;
     private final List<Job> jobs;
-    private final String error;
+    private final @Nullable String error;
 
-    private Workflow(String name, List<String> triggers, List<Job> jobs, String error) {
+    private Workflow(@Nullable String name, List<String> triggers, List<Job> jobs, @Nullable String error) {
         this.name = name;
         this.triggers = triggers;
         this.jobs = jobs;
         this.error = error;
     }
 
-    public String name() {
+    public @Nullable String name() {
         return name;
     }
 
@@ -71,7 +75,7 @@ public final class Workflow {
         return jobs;
     }
 
-    public String error() {
+    public @Nullable String error() {
         return error;
     }
 
@@ -161,13 +165,13 @@ public final class Workflow {
             if (cron == null) {
                 continue;
             }
-            CronExpression.Parsed p = CronExpression.parse(cron);
-            parts.add(p.ok() ? lower(p.expr().describe()) : cron);
+            CronExpression expr = CronExpression.parse(cron).expr(); // set exactly when the parse is ok
+            parts.add(expr != null ? lower(expr.describe()) : cron);
         }
         return parts.isEmpty() ? "on a schedule" : "on a schedule (" + String.join("; ", parts) + ")";
     }
 
-    private static String refList(JsonNode filter, String key) {
+    private static @Nullable String refList(JsonNode filter, String key) {
         if (filter == null || !filter.isObject()) {
             return null;
         }
@@ -225,7 +229,7 @@ public final class Workflow {
         return new Job(id, name, runsOn, needs, ifCond, matrix, steps);
     }
 
-    private static String scalarOrList(JsonNode n) {
+    private static @Nullable String scalarOrList(JsonNode n) {
         if (n == null) {
             return null;
         }
@@ -265,7 +269,7 @@ public final class Workflow {
         return event == null ? "" : event.replace('_', ' ');
     }
 
-    private static String text(JsonNode n) {
+    private static @Nullable String text(JsonNode n) {
         return n != null && n.isValueNode() ? n.asText() : null;
     }
 

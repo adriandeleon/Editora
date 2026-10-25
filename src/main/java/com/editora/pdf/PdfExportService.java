@@ -10,10 +10,11 @@ import javafx.application.Platform;
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelFormat;
 
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Generates PDFs off the JavaFX thread (the {@code GitService}/{@code MermaidService} idiom): a single
@@ -311,10 +312,10 @@ public final class PdfExportService {
     /** As {@link #exportMarkdown(String, Path, String, java.util.List, Path, Consumer)} with a page and metadata. */
     public void exportMarkdown(
             String markdown,
-            Path baseDir,
+            @Nullable Path baseDir,
             PdfPageSpec page,
             PdfDocMeta meta,
-            java.util.List<String> mmdcCommand,
+            java.util.@Nullable List<String> mmdcCommand,
             Path out,
             Consumer<Result> onResult) {
         submit(onResult, () -> {
@@ -396,15 +397,16 @@ public final class PdfExportService {
 
     /**
      * Exports an SVG document as a PDF page: rasterized <b>here</b>, off the FX thread (a large SVG takes
-     * hundreds of milliseconds), at {@link com.editora.editor.PreviewImageLoader#PRINT_RASTER_SCALE}× and
+     * hundreds of milliseconds), at {@link com.editora.editor.markdown.PreviewImageLoader#PRINT_RASTER_SCALE}× and
      * drawn at the SVG's own size. A failed rasterization reports {@code noImageMessage}.
      */
     public void exportSvg(byte[] svg, String noImageMessage, String pageSize, Path out, Consumer<Result> onResult) {
         submit(onResult, () -> {
             Result result;
             try {
-                com.editora.editor.PreviewImageLoader.SvgPng r = com.editora.editor.PreviewImageLoader.svgToPng(
-                        svg, com.editora.editor.PreviewImageLoader.PRINT_RASTER_SCALE);
+                com.editora.editor.markdown.PreviewImageLoader.SvgPng r =
+                        com.editora.editor.markdown.PreviewImageLoader.svgToPng(
+                                svg, com.editora.editor.markdown.PreviewImageLoader.PRINT_RASTER_SCALE);
                 if (r == null) {
                     result = new Result(false, noImageMessage);
                 } else {
@@ -455,7 +457,7 @@ public final class PdfExportService {
         });
     }
 
-    private static java.awt.image.BufferedImage toBufferedImage(Image image) {
+    private static java.awt.image.@Nullable BufferedImage toBufferedImage(Image image) {
         if (image == null || image.getPixelReader() == null) {
             return null;
         }

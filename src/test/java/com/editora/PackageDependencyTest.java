@@ -50,6 +50,9 @@ class PackageDependencyTest {
             "perf",
             "snippet",
             "structured",
+            // The toolkit-free text model the editor shares with lsp, search, crypto, template and editops:
+            // LSP value types, fold regions, search matching, language detection.
+            "text",
             // Pure per-format parsers and detectors behind the gutter Run/Test markers and the previews.
             "cron",
             "csv",

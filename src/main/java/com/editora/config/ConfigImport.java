@@ -28,6 +28,7 @@ import com.editora.plugin.PluginInstaller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Import Configuration: reads a zip made by Export Configuration ({@link ConfigExporter}), says what it holds by
@@ -115,9 +116,9 @@ public final class ConfigImport {
         }
 
         private final Reason reason;
-        private final String entry;
+        private final @Nullable String entry;
 
-        Refused(Reason reason, String entry) {
+        Refused(Reason reason, @Nullable String entry) {
             super(reason + (entry == null ? "" : ": " + entry));
             this.reason = reason;
             this.entry = entry;
@@ -128,7 +129,7 @@ public final class ConfigImport {
         }
 
         /** The entry it is about, or null. */
-        public String entry() {
+        public @Nullable String entry() {
             return entry;
         }
     }
@@ -342,7 +343,7 @@ public final class ConfigImport {
     }
 
     /** The part a config-folder path (forward slashes) belongs to, or null when it is never imported. Pure. */
-    static Part partOf(String path) {
+    static @Nullable Part partOf(String path) {
         switch (path) {
             case ConfigManager.ABBREVIATIONS_FILE_NAME -> {
                 return Part.ABBREVIATIONS;

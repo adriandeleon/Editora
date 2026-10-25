@@ -11,6 +11,7 @@ import javafx.util.Duration;
 import com.editora.editor.EditorBuffer;
 import com.editora.http.HttpFile;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 import org.reactfx.Subscription;
 
 /**
@@ -29,7 +30,7 @@ final class HttpEmptyStateFeed {
     private final PauseTransition settle = new PauseTransition(SETTLE);
     private final ChangeListener<Integer> caretMoved = (o, was, now) -> settle.playFromStart();
     private final InvalidationListener gate = o -> follow();
-    private Subscription textEdits;
+    private @Nullable Subscription textEdits;
     /** The text changed since it was last parsed (or is not known yet). */
     private boolean stale = true;
 
@@ -65,12 +66,12 @@ final class HttpEmptyStateFeed {
             stale = true; // edits made while it was hidden were not seen
             refresh();
         } else if (!want && textEdits != null) {
-            stopFollowing(area);
+            stopFollowing(textEdits, area);
         }
     }
 
-    private void stopFollowing(CodeArea area) {
-        textEdits.unsubscribe();
+    private void stopFollowing(Subscription edits, CodeArea area) {
+        edits.unsubscribe();
         textEdits = null;
         area.currentParagraphProperty().removeListener(caretMoved);
         settle.stop();
@@ -114,7 +115,7 @@ final class HttpEmptyStateFeed {
         panel.emptyStateShowingProperty().removeListener(gate);
         panel.sceneProperty().removeListener(gate);
         if (textEdits != null) {
-            stopFollowing(buffer.getArea());
+            stopFollowing(textEdits, buffer.getArea());
         }
     }
 }

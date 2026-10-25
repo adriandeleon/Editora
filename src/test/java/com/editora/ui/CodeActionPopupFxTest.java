@@ -6,8 +6,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
-import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.lsp.CodeAction;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -213,9 +213,9 @@ class CodeActionPopupFxTest {
             var cell = new javafx.scene.control.ListCell<String>();
             var inside = new javafx.scene.control.Label("row");
             cell.setGraphic(inside);
-            assertFalse(com.editora.editor.CodeActionPopup.onRow(new javafx.scene.control.ScrollBar()));
-            assertFalse(com.editora.editor.CodeActionPopup.onRow(cell), "an empty filler row is not an action");
-            assertFalse(com.editora.editor.CodeActionPopup.onRow(null));
+            assertFalse(com.editora.editor.lsp.CodeActionPopup.onRow(new javafx.scene.control.ScrollBar()));
+            assertFalse(com.editora.editor.lsp.CodeActionPopup.onRow(cell), "an empty filler row is not an action");
+            assertFalse(com.editora.editor.lsp.CodeActionPopup.onRow(null));
         });
     }
 
@@ -240,6 +240,52 @@ class CodeActionPopupFxTest {
         assertEquals("A", accepted.get().token(), "C-p, typed as Control then P, moved the selection");
 
         close(b);
+    }
+
+    /** Typing while the list is open narrows it and leaves the text alone (Java review E6). */
+    @Test
+    void typingFiltersTheListAndBackspaceWidensIt() throws Exception {
+        EditorBuffer b = openBuffer();
+        String before = FxTestSupport.callOnFx(b::getContent);
+        AtomicReference<CodeAction> accepted = new AtomicReference<>();
+        FxTestSupport.runOnFx(() -> b.showCodeActions(ACTIONS, accepted::set));
+        javafx.scene.control.ListView<?> list = FxTestSupport.callOnFx(() -> {
+            Object completion = FxTestSupport.field(b, "completionActions");
+            com.editora.editor.lsp.CodeActionPopup popup = FxTestSupport.field(completion, "codeActionPopup");
+            return FxTestSupport.<javafx.scene.control.ListView<?>>field(popup, "list");
+        });
+
+        FxTestSupport.runOnFx(() -> {
+            type(b, "e");
+            type(b, "x");
+            type(b, "t");
+        });
+        assertEquals(1, (int) FxTestSupport.callOnFx(() -> list.getItems().size()), "only Extract method contains ext");
+        FxTestSupport.runOnFx(() -> type(b, "z"));
+        assertEquals(
+                1, (int) FxTestSupport.callOnFx(() -> list.getItems().size()), "a filter nothing matches is not taken");
+        FxTestSupport.runOnFx(() -> {
+            press(b, KeyCode.BACK_SPACE);
+            press(b, KeyCode.BACK_SPACE);
+        });
+        assertEquals(2, (int) FxTestSupport.callOnFx(() -> list.getItems().size()), "\"e\" matches two titles");
+        FxTestSupport.runOnFx(() -> press(b, KeyCode.BACK_SPACE));
+        assertEquals(3, (int) FxTestSupport.callOnFx(() -> list.getItems().size()));
+        FxTestSupport.runOnFx(() -> {
+            type(b, "m");
+            type(b, "e");
+            type(b, "t");
+            press(b, KeyCode.ENTER);
+        });
+        assertEquals("C", accepted.get().token());
+        assertEquals(before, FxTestSupport.callOnFx(b::getContent), "the typed letters went to the list, not the file");
+
+        close(b);
+    }
+
+    private static void type(EditorBuffer b, String ch) {
+        b.getFocusedArea()
+                .fireEvent(new KeyEvent(KeyEvent.KEY_TYPED, ch, "", KeyCode.UNDEFINED, false, false, false, false));
     }
 
     private static void press(EditorBuffer b, KeyCode code) {

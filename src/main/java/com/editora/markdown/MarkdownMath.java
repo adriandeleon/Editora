@@ -24,6 +24,7 @@ import org.commonmark.parser.block.MatchedBlockParser;
 import org.commonmark.parser.block.ParserState;
 import org.commonmark.renderer.NodeRenderer;
 import org.commonmark.renderer.text.TextContentRenderer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * LaTeX math as part of the Markdown <em>parse</em>: {@code $…$} and {@code $$…$$} become {@link Inline} and
@@ -105,7 +106,7 @@ public final class MarkdownMath {
     }
 
     /** The Markdown source of a math node ({@code $x$}, {@code $$x$$}), or null for any other node. */
-    public static String source(Node node) {
+    public static @Nullable String source(Node node) {
         if (node instanceof Inline in) {
             String d = in.isDisplay() ? "$$" : "$";
             return d + in.getLatex() + d;

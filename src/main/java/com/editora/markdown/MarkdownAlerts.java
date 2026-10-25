@@ -21,6 +21,7 @@ import org.commonmark.renderer.NodeRenderer;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.commonmark.renderer.html.HtmlWriter;
 import org.commonmark.renderer.text.TextContentRenderer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * GitHub alerts: a block quote whose first line is {@code [!NOTE]}, {@code [!TIP]}, {@code [!IMPORTANT]},
@@ -81,7 +82,7 @@ public final class MarkdownAlerts {
     }
 
     /** The kind a quote's first line names, or null when the line is not exactly an alert marker. Pure. */
-    public static Kind marker(String firstLine) {
+    public static @Nullable Kind marker(String firstLine) {
         if (firstLine == null) {
             return null;
         }

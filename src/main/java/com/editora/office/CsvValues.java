@@ -2,6 +2,8 @@ package com.editora.office;
 
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure value helpers for the CSV spreadsheet exporters ({@link XlsxWriter} / {@link OdsWriter}). Decides
  * whether a raw CSV cell should be written as a spreadsheet <em>number</em> or left as text.
@@ -31,7 +33,7 @@ public final class CsvValues {
      * 19-digit snowflake — stays text rather than being rounded to the nearest double
      * ({@code 1234567890123456789} would come back as {@code 1.2345678901234568E18}).
      */
-    public static Double numericValue(String s) {
+    public static @Nullable Double numericValue(String s) {
         if (s == null) {
             return null;
         }

@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a newly added run configuration starts out as.
  *
@@ -28,7 +30,7 @@ public final class RunConfigDefaults {
      * @param fallbackName the localized "New Configuration", used when there is nothing to name it after
      */
     public static com.editora.config.RunConfiguration newConfiguration(
-            String suggestedMainClass, Collection<String> existingNames, String fallbackName) {
+            @Nullable String suggestedMainClass, Collection<String> existingNames, String fallbackName) {
         String name = uniqueName(nameFor(suggestedMainClass, fallbackName), existingNames);
         return new com.editora.config.RunConfiguration(
                 name, suggestedMainClass == null ? "" : suggestedMainClass.strip(), "", "", "", "");
@@ -44,8 +46,8 @@ public final class RunConfigDefaults {
      * so the saved configuration behaves exactly like ▶, and the field shows where it runs instead of a blank
      * that means something else. Blank when that folder is the project root (blank means the root).
      */
-    public static com.editora.config.RunConfiguration forScript(
-            String type, java.nio.file.Path script, java.nio.file.Path projectRoot) {
+    public static com.editora.config.@Nullable RunConfiguration forScript(
+            String type, java.nio.file.Path script, java.nio.file.@Nullable Path projectRoot) {
         if (script == null
                 || !(ScriptRunCommand.PYTHON.equals(type)
                         || ScriptRunCommand.SHELL.equals(type)
@@ -82,7 +84,7 @@ public final class RunConfigDefaults {
      * Java 25 instance {@code void main()} or a multi-line signature the scanner does not see still runs as
      * that class. Null when {@code fileName} is not a {@code .java} file.
      */
-    public static String mainClassForSource(String source, String fileName) {
+    public static @Nullable String mainClassForSource(String source, String fileName) {
         if (fileName == null || !fileName.endsWith(".java") || fileName.length() == ".java".length()) {
             return null;
         }
@@ -134,7 +136,7 @@ public final class RunConfigDefaults {
      * <p>Named after the class rather than left as "New configuration" for the same reason IDEs do it: the
      * list is read at a glance, and three entries all reading "New configuration" tell you nothing.
      */
-    public static String nameFor(String mainClass, String fallback) {
+    public static String nameFor(@Nullable String mainClass, String fallback) {
         if (mainClass == null || mainClass.isBlank()) {
             return fallback;
         }

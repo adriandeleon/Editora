@@ -7,6 +7,8 @@ import java.util.function.Supplier;
 
 import javafx.scene.Node;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The glyph shown beside a main-menu item, by command id.
  *
@@ -172,7 +174,7 @@ final class MenuBarIcons {
     }
 
     /** The glyph for {@code commandId}, or {@code null} when nothing existing depicts it. */
-    static Node forCommand(String commandId) {
+    static @Nullable Node forCommand(String commandId) {
         Supplier<Node> glyph = commandId == null ? null : ICONS.get(commandId);
         return glyph == null ? null : glyph.get();
     }

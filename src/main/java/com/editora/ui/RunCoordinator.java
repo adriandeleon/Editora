@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 
 import com.editora.config.RunConfiguration;
 import com.editora.editor.EditorBuffer;
+import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.JavaLaunchInfo;
 import com.editora.run.JavaMainClass;
 import com.editora.run.JavaRunCommand;
@@ -19,6 +20,7 @@ import com.editora.run.RunService;
 import com.editora.run.ScriptRunCommand;
 import com.editora.run.ShellCommand;
 import com.editora.run.StackTraceLinks;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -40,8 +42,8 @@ final class RunCoordinator {
          * Run in a Terminal tab); {@code onExit} gets its exit code, -1 when there was none.
          */
         default com.editora.terminal.ProgramRun runInTerminal(
-                String title,
-                Path dir,
+                @Nullable String title,
+                @Nullable Path dir,
                 List<String> command,
                 java.util.Map<String, String> env,
                 java.util.function.IntConsumer onExit)
@@ -70,7 +72,7 @@ final class RunCoordinator {
         boolean saveBuffer(EditorBuffer buffer);
 
         /** The remembered program-arguments string for {@code path} ("" when none). */
-        String programArgs(Path path);
+        String programArgs(@Nullable Path path);
 
         /** Persists the program-arguments string for {@code path} (workspace state + durable save). */
         void setProgramArgs(Path path, String args);
@@ -82,9 +84,11 @@ final class RunCoordinator {
         default void openUrl(String url) {}
 
         /** The nearest Maven/Gradle project root above {@code file}, or {@code null} if there is none. */
+        @Nullable
         Path javaProjectRoot(Path file);
 
         /** This window's open project root, or {@code null} when it has no project. */
+        @Nullable
         Path projectRoot();
 
         /** Runs the tests of a Python test file instead of the file as a script; false when it has none. */
@@ -133,6 +137,39 @@ final class RunCoordinator {
             resolveMavenClasspath(root, cb);
         }
 
+        /**
+         * Same resolution with {@code executable} (the tasks tree's argv prefix for Maven) and the launch's
+         * {@code scope} — a project elsewhere (a host) resolves this way; here the Run console runs the
+         * resolution as a streamed step instead.
+         */
+        default void resolveMavenClasspath(
+                Path root,
+                String jdkHome,
+                List<String> executable,
+                com.editora.maven.MavenClasspath.Scope scope,
+                Consumer<List<String>> cb) {
+            resolveMavenClasspath(root, jdkHome, cb);
+        }
+
+        /**
+         * The Maven tasks tree's active toggle args (profiles, offline, the reactor switch) for its detected
+         * root, as it would add them to a task; empty with no tree. A launch's Maven commands carry the
+         * profiles and flags among them (review D13).
+         */
+        default List<String> mavenToggleArgs() {
+            return List.of();
+        }
+
+        /**
+         * The argv prefix a launch may start {@code tool} with from {@code root}: what the tasks tree would
+         * run (the project's wrapper, the command override, the PATH command), after the tasks tree's trust
+         * gate — or null when the user declined to trust the project's wrapper, in which case the gate has
+         * said so and nothing may run.
+         */
+        default @Nullable List<String> buildExecutable(com.editora.build.BuildTool tool, @Nullable Path root) {
+            return List.of(tool.commandExample());
+        }
+
         /** Runs the Gradle Run task via the build tool (streams to Output) — the no-jdtls Gradle
          *  fallback. Runs {@code bootRun} for a Spring Boot project, else {@code run}; {@code root} locates the
          *  build script. */
@@ -142,7 +179,7 @@ final class RunCoordinator {
          * Runs {@code taskArgs} with build tool {@code tool} in {@code root} through its tool window (its
          * console, its workspace-trust check for a repository's own launcher). False when that tool is off.
          */
-        default boolean runBuildTask(com.editora.build.BuildTool tool, Path root, List<String> taskArgs) {
+        default boolean runBuildTask(com.editora.build.BuildTool tool, @Nullable Path root, List<String> taskArgs) {
             return false;
         }
 
@@ -170,7 +207,7 @@ final class RunCoordinator {
          * Attaches the Java debugger to a JVM waiting on this machine's {@code port} (a tunnel to a deployed
          * program), anchored at the open Java file {@code anchor}; {@code stopOwner} ends the program.
          */
-        default void attachJavaDebugger(Path anchor, int port, Runnable stopOwner) {}
+        default void attachJavaDebugger(@Nullable Path anchor, int port, Runnable stopOwner) {}
     }
 
     private final CoordinatorHost host;
@@ -178,9 +215,9 @@ final class RunCoordinator {
     private final RunService service = new RunService();
     private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(service, true); // the console can answer it
     /** The Run console, built on its first use (a run, or the tool window's first open). */
-    private RunPanel panel;
+    private @Nullable RunPanel panel;
     /** The console font to apply when the panel is built (set by every settings apply, panel or not). */
-    private String outputFontFamily;
+    private @Nullable String outputFontFamily;
 
     private int outputFontSize;
 
@@ -189,16 +226,16 @@ final class RunCoordinator {
      * the before-launch console once set {@code lastRunDir} on its own, and Rerun then replayed the previous
      * program in the before-launch step's directory.
      */
-    private Path lastRunDir;
+    private @Nullable Path lastRunDir;
 
     /** Where the console's current output came from — a run or a before-launch step — for its file links. */
-    private Path consoleDir;
+    private @Nullable Path consoleDir;
 
     private java.util.Map<String, String> lastRunEnv = java.util.Map.of();
-    private String lastRunLabel;
-    private List<String> lastRunCommand;
+    private @Nullable String lastRunLabel;
+    private @Nullable List<String> lastRunCommand;
     /** The script the last run ran (a file, or a script configuration's target); null for a Java launch. */
-    private Path lastRunScript;
+    private @Nullable Path lastRunScript;
     /** Stop was pressed for the running program, so its exit is reported as stopped, not as an exit code. */
     private boolean stopRequested;
 
@@ -206,31 +243,31 @@ final class RunCoordinator {
      * The project root a configuration's launch resolves against while it runs on a deployment: the
      * deployment's folder on its host. Null for every launch on this machine (each one sets it).
      */
-    private Path launchRoot;
+    private @Nullable Path launchRoot;
 
     /** The deployment the current configuration launch runs on, or null. */
-    private DeploymentCoordinator.Deployed deployed;
+    private DeploymentCoordinator.@Nullable Deployed deployed;
 
     /** A deploy is running before a launch: Stop ends it, and a second Run waits. */
     private boolean deploying;
 
     /** What the deploy before this launch did: the first line of its console, once. */
-    private String pendingDeploySummary;
+    private @Nullable String pendingDeploySummary;
 
     /** Watches the next program's output (a deployed program's JDWP banner); null for most runs. */
-    private java.util.function.BiConsumer<String, Boolean> pendingOutputWatcher;
+    private java.util.function.@Nullable BiConsumer<String, Boolean> pendingOutputWatcher;
 
     /**
      * What Rerun repeats for the next program, null for most: a deployed configuration (deploy, then run), a Kotlin
      * program (compile an edited file again).
      */
-    private Runnable pendingRerun;
+    private @Nullable Runnable pendingRerun;
 
     /** {@link #pendingRerun} of the last program. */
-    private Runnable lastConfigRerun;
+    private @Nullable Runnable lastConfigRerun;
 
     /** The tunnel to a deployed program's debug port, closed when the program ends. */
-    private com.editora.process.PortForward debugTunnel;
+    private com.editora.process.@Nullable PortForward debugTunnel;
 
     /** What a test run streamed in this console reports to: its output lines, then its exit. */
     interface TestStream {
@@ -241,10 +278,10 @@ final class RunCoordinator {
     }
 
     /** The hooks the next {@link #streamRun} hands its output to (set by {@link #runTests}). */
-    private TestStream pendingTestStream;
+    private @Nullable TestStream pendingTestStream;
 
     /** How Rerun repeats the last run when it was a test run (which feeds Test Results too); else null. */
-    private Runnable lastTestRerun;
+    private @Nullable Runnable lastTestRerun;
 
     RunCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -285,6 +322,7 @@ final class RunCoordinator {
     }
 
     /** Working directory of the most recent run, or {@code null} — used by the shared link resolver. */
+    @Nullable
     Path lastRunDir() {
         return consoleDir;
     }
@@ -335,11 +373,11 @@ final class RunCoordinator {
      * save was refused.
      */
     boolean runTests(
-            String label,
-            Path dir,
+            @Nullable String label,
+            @Nullable Path dir,
             List<String> argv,
             java.util.Map<String, String> env,
-            Path script,
+            @Nullable Path script,
             TestStream hooks,
             Runnable rerun) {
         if (!beginRunRequest() || !saveScriptAndActive(script)) {
@@ -374,7 +412,7 @@ final class RunCoordinator {
      *
      * @return null when no Java file is open anywhere, the one case neither can resolve
      */
-    static Path routingFor(CoordinatorHost host, RunConfiguration cfg) {
+    static @Nullable Path routingFor(CoordinatorHost host, RunConfiguration cfg) {
         List<Path> open = new java.util.ArrayList<>();
         host.forEachBuffer(b -> {
             if (b.getPath() != null && RemoteExec.runsFor(b.getPath()) && "java".equals(b.getLanguage())) {
@@ -454,6 +492,10 @@ final class RunCoordinator {
             return;
         }
         if (ScriptRunCommand.NODE.equals(cfg.type())) {
+            if (script == null) {
+                reportIncomplete(cfg, "status.run.configNeedsTarget"); // a target that is no valid path
+                return;
+            }
             List<String> nodeOptions;
             try {
                 nodeOptions = ProgramArgs.parse(cfg.interpreterOptions());
@@ -549,7 +591,7 @@ final class RunCoordinator {
     private void runPythonConfig(
             RunConfiguration cfg,
             Path cwd,
-            Path script,
+            @Nullable Path script,
             List<String> args,
             java.util.Map<String, String> env,
             boolean remote) {
@@ -581,7 +623,7 @@ final class RunCoordinator {
     }
 
     /** The first line of {@code script} (at most 512 bytes), or null when it cannot be read. */
-    static String firstLine(Path script) {
+    static @Nullable String firstLine(@Nullable Path script) {
         if (script == null) {
             return null;
         }
@@ -595,7 +637,7 @@ final class RunCoordinator {
     }
 
     /** For a run on this machine, whether an absolute interpreter path exists; null (as written) on a host. */
-    private static java.util.function.Predicate<String> existsHere(boolean remote) {
+    private static java.util.function.@Nullable Predicate<String> existsHere(boolean remote) {
         return remote ? null : p -> java.nio.file.Files.isExecutable(Path.of(p));
     }
 
@@ -610,13 +652,15 @@ final class RunCoordinator {
     private void runJvmScriptConfig(
             RunConfiguration cfg,
             Path cwd,
-            Path script,
+            @Nullable Path script,
             List<String> args,
             java.util.Map<String, String> env,
             boolean elsewhere) {
         String language = cfg.type();
-        String toolName = com.editora.run.JvmScriptRun.tool(language, script);
-        String tool = elsewhere ? toolName : com.editora.run.JvmTools.locate(toolName);
+        String toolName = script == null
+                ? com.editora.run.JvmScriptRun.tool(language)
+                : com.editora.run.JvmScriptRun.tool(language, script);
+        String tool = elsewhere || toolName == null ? toolName : com.editora.run.JvmTools.locate(toolName);
         if (tool == null) {
             host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(toolName)));
             return;
@@ -675,7 +719,7 @@ final class RunCoordinator {
     private void runKotlinProgram(
             String label,
             Path source,
-            Path cwd,
+            @Nullable Path cwd,
             String javaExecutable,
             List<String> jvmOptions,
             List<String> args,
@@ -723,7 +767,7 @@ final class RunCoordinator {
                     }
 
                     @Override
-                    public void ended(int code, String launchError) {
+                    public void ended(int code, @Nullable String launchError) {
                         if (launchError != null) {
                             panel().failed(launchError);
                         } else if (code != 0) {
@@ -758,7 +802,7 @@ final class RunCoordinator {
      * closed (which used to swallow the rest of the line into one argument). {@code cfg} names the
      * configuration whose field it was, so its form can be opened; null for a file's own arguments.
      */
-    private List<String> programArgs(String text, RunConfiguration cfg) {
+    private @Nullable List<String> programArgs(String text, @Nullable RunConfiguration cfg) {
         try {
             return ProgramArgs.parse(text);
         } catch (ProgramArgs.UnclosedQuoteException e) {
@@ -800,7 +844,7 @@ final class RunCoordinator {
     }
 
     /** The configuration's program running in a Terminal tab, or null; Run's Stop ends it. */
-    private com.editora.terminal.ProgramRun terminalProgram;
+    private com.editora.terminal.@Nullable ProgramRun terminalProgram;
 
     /** Set by Run's Stop on {@link #terminalProgram}, so its end says "stopped" whatever its exit code. */
     private boolean terminalStopRequested;
@@ -826,17 +870,18 @@ final class RunCoordinator {
     }
 
     /** The root a configuration resolves against: its deployment's folder on the host, else the project's. */
-    private Path configRoot() {
+    private @Nullable Path configRoot() {
         return launchRoot != null ? launchRoot : ops.projectRoot();
     }
 
     /** {@code local} (a folder of the project) as the launch sees it: its copy on the host when deployed. */
     private Path onLaunchHost(Path local) {
-        if (deployed == null || local == null) {
+        DeploymentCoordinator.Deployed d = deployed;
+        if (d == null) {
             return local;
         }
-        Path copy = deployed.paths().toHost(local);
-        return copy != null ? copy : deployed.remoteRoot();
+        Path copy = d.paths().toHost(local);
+        return copy != null ? copy : d.remoteRoot();
     }
 
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
@@ -868,7 +913,7 @@ final class RunCoordinator {
     }
 
     /** A script configuration's script file, resolved as its run will resolve it; null when it has none. */
-    private Path configScript(RunConfiguration cfg) {
+    private @Nullable Path configScript(RunConfiguration cfg) {
         Path cwd = RunConfigWorkingDirectory.resolve(cfg, configRoot());
         return cwd == null ? null : RunConfigWorkingDirectory.script(cfg, configRoot(), cwd);
     }
@@ -970,7 +1015,7 @@ final class RunCoordinator {
             }
 
             @Override
-            public void ended(boolean ok, String message) {
+            public void ended(boolean ok, @Nullable String message) {
                 deploying = false;
                 if (!ok && message != null) {
                     panel().appendOutput(message, true);
@@ -997,7 +1042,11 @@ final class RunCoordinator {
             ops.editConfiguration(cfg.name());
             return;
         }
-        Path localRoot = deployed.localRoot();
+        DeploymentCoordinator.Deployed d = deployed;
+        if (d == null) {
+            return; // a Run asked for during the before-launch step reset the launch (beginRunRequest)
+        }
+        Path localRoot = d.localRoot();
         Path routing = routingFor(host, cfg);
         if (debug && routing == null) {
             host.setStatus(tr("status.run.configNeedsJavaFile")); // the debugger is attached through it
@@ -1016,11 +1065,11 @@ final class RunCoordinator {
         Path hostModule = onLaunchHost(localModule);
         com.editora.run.JavaLaunchPlan.Result planned = com.editora.run.JavaLaunchPlan.forConfiguration(
                 cfg, com.editora.run.JavaLaunchPlan.Inputs.of(hostModule, "", maven));
-        if (!planned.ok()) {
+        com.editora.run.JavaLaunchPlan plan = planned.plan();
+        if (plan == null) {
             reportPlanProblem(cfg, planned.problem());
             return;
         }
-        com.editora.run.JavaLaunchPlan plan = planned.plan();
         List<String> vm = new java.util.ArrayList<>(plan.vmArgs());
         if (debug) {
             vm.add(0, "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:0");
@@ -1040,14 +1089,16 @@ final class RunCoordinator {
                     JavaRunCommand.build(java, List.of(), cp, cfg.mainClass(), vm, plan.args()),
                     plan.environment());
         };
-        host.setStatus(tr("status.deploy.building", deployed.deployment().name()));
+        host.setStatus(tr("status.deploy.building", d.deployment().name()));
         if (maven) {
-            ops.resolveMavenClasspath(hostModule, plan.jdkHome(), cp -> {
-                if (cp == null || cp.isEmpty()) {
-                    host.setStatus(tr("status.deploy.buildFailed", cfg.name()));
-                }
-                launch.accept(cp);
-            });
+            // The host's Maven build streams into the Run console like a local one (review D10); the scope
+            // is the local copy's (the routing file's tree), the module the host's.
+            resolveMavenClasspath(
+                    hostModule,
+                    com.editora.maven.MavenClasspath.Scope.forSource(routing, localModule),
+                    plan.jdkHome(),
+                    label,
+                    launch);
             return;
         }
         Path gradleRoot = onLaunchHost(gradleBuildRoot(localRoot, localModule));
@@ -1083,7 +1134,7 @@ final class RunCoordinator {
      * Watches a deployed program's output for the JDWP agent's "Listening" line, tunnels that port of the host
      * to this machine, and attaches the debugger to it through {@code anchor}.
      */
-    private java.util.function.BiConsumer<String, Boolean> debugAttacher(Path anchor, Path onHost) {
+    private java.util.function.BiConsumer<String, Boolean> debugAttacher(@Nullable Path anchor, @Nullable Path onHost) {
         boolean[] attached = {false};
         return (line, stderr) -> {
             int port = com.editora.test.TestDebug.jdwpPort(line);
@@ -1119,7 +1170,7 @@ final class RunCoordinator {
      * Saves the open tab of {@code script} (null = none) and then the tab in front: the script is what runs,
      * and a before-launch step may read the file being edited in front. False when a save was refused.
      */
-    private boolean saveScriptAndActive(Path script) {
+    private boolean saveScriptAndActive(@Nullable Path script) {
         return (script == null || saveOpenBuffer(script)) && saveActiveBuffer();
     }
 
@@ -1169,14 +1220,14 @@ final class RunCoordinator {
      * Where a shell run starts: {@code cwd}, or the folder the shebang's {@code env -C DIR} names (relative to
      * {@code cwd}). Null, after saying so, when that folder does not exist here.
      */
-    private Path shebangDir(ShellCommand.Launch shell, Path cwd, boolean remote) {
+    private @Nullable Path shebangDir(ShellCommand.Launch shell, @Nullable Path cwd, boolean remote) {
         return chdir(shell.chdir(), cwd, remote);
     }
 
     /** {@code cwd}, or {@code chdir} (a shebang's {@code env -C DIR}) resolved against it; null when missing. */
-    private Path chdir(String chdir, Path cwd, boolean remote) {
-        if (chdir == null || chdir.isBlank()) {
-            return cwd;
+    private @Nullable Path chdir(@Nullable String chdir, @Nullable Path cwd, boolean remote) {
+        if (chdir == null || chdir.isBlank() || cwd == null) {
+            return cwd; // no folder to resolve against: every caller passes one
         }
         Path dir = cwd.resolve(chdir).normalize();
         if (!remote && !java.nio.file.Files.isDirectory(dir)) {
@@ -1203,45 +1254,275 @@ final class RunCoordinator {
     private void withBeforeLaunch(RunConfiguration cfg, Runnable then) {
         Path cwd = beforeLaunchDir(cfg);
         Path routing = routingFor(host, cfg);
-        Path project = onLaunchHost(routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing));
+        Path local = routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing);
+        Path project = local == null ? null : onLaunchHost(local);
         String jdkHome = project == null ? effectiveMavenJdk(null, cfg) : jdkHomeFor(project, cfg);
+        Path toolRoot = project != null ? project : cwd;
         beforeLaunch.run(
                 host,
                 cfg,
+                tool -> ops.buildExecutable(tool, toolRoot), // a symbolic step (maven:compile) runs the tree's Maven
                 cwd,
                 project == null
                         ? JdkToolchain.environment(jdkHome, processPath())
                         : javaEnvironment(project, jdkHome, null),
-                new BeforeLaunchStep.Console() {
-                    @Override
-                    public void started(String commandLine) {
-                        consoleDir = cwd; // so a compiler error's file link in the build output resolves
-                        consoleUsed = true;
-                        panel().started(commandLine);
-                        runtimeGeneration++; // the build step is not the program: no runtime chip for it
-                        panel().setRuntime(null);
-                    }
-
-                    @Override
-                    public void output(String line, boolean stderr) {
-                        panel().appendOutput(line, stderr);
-                    }
-
-                    @Override
-                    public void ended(int code, String launchError) {
-                        if (launchError != null) {
-                            panel().failed(launchError);
-                        } else {
-                            panel().finished(code);
-                        }
-                        ops.onRunStateChanged();
-                    }
-                },
+                stepConsole(cwd),
                 then);
         ops.onRunStateChanged(); // the step is running now: the toolbar's Stop button applies to it
     }
 
+    /** The Run console as a before-launch step shows itself in it: a build, or the Maven classpath resolution. */
+    private BeforeLaunchStep.Console stepConsole(@Nullable Path cwd) {
+        return new BeforeLaunchStep.Console() {
+            @Override
+            public void started(String commandLine) {
+                consoleDir = cwd; // so a compiler error's file link in the build output resolves
+                consoleUsed = true;
+                panel().started(commandLine);
+                runtimeGeneration++; // the build step is not the program: no runtime chip for it
+                panel().setRuntime(null);
+            }
+
+            @Override
+            public void output(String line, boolean stderr) {
+                panel().appendOutput(line, stderr);
+            }
+
+            @Override
+            public void ended(int code, @Nullable String launchError) {
+                if (launchError != null) {
+                    panel().failed(launchError);
+                } else {
+                    panel().finished(code);
+                }
+                ops.onRunStateChanged();
+            }
+        };
+    }
+
+    /**
+     * The build before a jdtls launch (review D2): in a Maven or Gradle project on this machine, with "Build
+     * before Run and Debug" on and no before-launch step of the configuration's own ({@code configuredStep}),
+     * compiles with the build tool — Maven {@code compile}, or {@code test-compile} for a class declared under
+     * {@code src/test}; Gradle {@code compileJava} / {@code compileTestJava} — in the Run console, on the
+     * project's JDK, through the executable the tasks tree uses, and aborts the launch when it fails. Then
+     * {@code then} with whether a build ran. jdtls runs with autobuild off, so without this the launch ran
+     * nothing after a clone and the previous binary after every edit.
+     */
+    private void buildBeforeLaunch(
+            Path root, Path source, String configuredStep, String label, String jdkHome, Consumer<Boolean> then) {
+        com.editora.build.BuildTool tool = null;
+        if (com.editora.process.ExecTargets.runsHere(root)) {
+            tool = ops.mavenProjectAt(root)
+                    ? com.editora.build.BuildTool.MAVEN
+                    : ops.gradleProjectAt(root) ? com.editora.build.BuildTool.GRADLE : null;
+        }
+        if (tool == null || !BuildBeforeLaunch.wanted(host.settings().isBuildBeforeRun(), configuredStep, tool)) {
+            then.accept(false);
+            return;
+        }
+        List<String> executable = ops.buildExecutable(tool, root);
+        if (executable == null) {
+            return; // the trust gate said why
+        }
+        // Maven: from the module's reactor when one lists it (its uninstalled siblings compile first), with
+        // the tasks tree's profiles and flags (reviews D5, D13).
+        List<String> extra = tool == com.editora.build.BuildTool.MAVEN
+                ? BuildBeforeLaunch.mavenExtraArgs(
+                        com.editora.maven.MavenReactor.describeOnDisk(root, ops.projectRoot()),
+                        null,
+                        ops.mavenToggleArgs())
+                : List.of();
+        List<String> argv =
+                BuildBeforeLaunch.compileArgv(tool, executable, BuildBeforeLaunch.isTestSource(source, root), extra);
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
+                root,
+                javaEnvironment(root, jdkHome, null),
+                stepConsole(root),
+                () -> then.accept(true));
+        ops.onRunStateChanged();
+    }
+
+    /**
+     * Resolves the Maven classpath of {@code root} for a launch of the class declared in {@code source}, then
+     * {@code then} with it. The resolution runs in the Run console as a before-launch step — its output
+     * streams, Stop ends it, a second Run is refused while it runs, the window's close kills it (reviews D4,
+     * D8) — with the executable the tasks tree uses (review D3) and its profiles (review D13), and a failure's
+     * status quotes Maven's first {@code [ERROR]} line. A module its reactor lists builds from the reactor
+     * root; when Maven then answers that its reactor does not hold the module, the module is built alone
+     * instead, and the console says which it was (review D5). A project on a host resolves the same way,
+     * with Maven on the host and its build streamed here (review D10).
+     */
+    private void resolveMavenClasspath(
+            Path root, @Nullable Path source, String jdkHome, String label, Consumer<List<String>> then) {
+        resolveMavenClasspath(
+                root,
+                source == null
+                        ? com.editora.maven.MavenClasspath.Scope.RUNTIME
+                        : com.editora.maven.MavenClasspath.Scope.forSource(source, root),
+                jdkHome,
+                label,
+                then);
+    }
+
+    /** As {@link #resolveMavenClasspath(Path, Path, String, String, Consumer)} for a known {@code scope}. */
+    private void resolveMavenClasspath(
+            Path root,
+            com.editora.maven.MavenClasspath.Scope scope,
+            String jdkHome,
+            String label,
+            Consumer<List<String>> then) {
+        List<String> executable = ops.buildExecutable(com.editora.build.BuildTool.MAVEN, root);
+        if (executable == null) {
+            return; // the trust gate said why
+        }
+        if (consoleRunning()) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        List<String> toggles = ops.mavenToggleArgs();
+        Path boundary = ops.projectRoot();
+        if (!com.editora.process.ExecTargets.runsHere(root)) {
+            // Planning asks the host whether its temp folder is in view: off the FX thread.
+            host.setStatus(tr("status.run.resolveClasspath", label));
+            Thread.ofVirtual().name("editora-maven-plan").start(() -> {
+                com.editora.maven.MavenClasspathResolver.Plan plan;
+                try {
+                    plan = com.editora.maven.MavenClasspathResolver.plan(root, boundary, executable, toggles, scope);
+                } catch (java.io.IOException | RuntimeException e) {
+                    javafx.application.Platform.runLater(() -> host.setStatus(
+                            tr("status.run.resolveClasspathFailed", label, String.valueOf(e.getMessage()))));
+                    return;
+                }
+                javafx.application.Platform.runLater(() -> runResolution(plan, root, jdkHome, label, then, false));
+            });
+            return;
+        }
+        com.editora.maven.MavenClasspathResolver.Plan plan;
+        try {
+            plan = com.editora.maven.MavenClasspathResolver.plan(root, boundary, executable, toggles, scope);
+        } catch (java.io.IOException | RuntimeException e) {
+            host.setStatus(tr("status.run.resolveClasspathFailed", label, String.valueOf(e.getMessage())));
+            return;
+        }
+        runResolution(plan, root, jdkHome, label, then, false);
+    }
+
+    /**
+     * Runs {@code plan} as a step of the Run console, then {@code then} with the classpath it wrote.
+     * {@code retried}: this is the single-module retry after Maven refused the reactor selection.
+     */
+    private void runResolution(
+            com.editora.maven.MavenClasspathResolver.Plan plan,
+            @Nullable Path root,
+            String jdkHome,
+            String label,
+            Consumer<List<String>> then,
+            boolean retried) {
+        if (consoleRunning()) {
+            com.editora.maven.MavenClasspathResolver.discard(plan);
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        BeforeLaunchStep.Console console = stepConsole(plan.workingDirectory());
+        boolean[] notInReactor = {false};
+        beforeLaunch.run(
+                host,
+                new BeforeLaunchStep.Command(label, plan.argv(), "status.run.resolveClasspath"),
+                plan.workingDirectory(),
+                javaEnvironment(root, jdkHome, null),
+                new BeforeLaunchStep.Console() {
+                    @Override
+                    public void started(String commandLine) {
+                        console.started(commandLine); // clears the console: the notices follow it
+                        if (retried && root != null) { // a reactor retry has a root
+                            panel().appendNotice(tr("run.console.mavenReactorRetry", selectorOf(root)));
+                        }
+                        com.editora.maven.MavenReactor.Reactor reactor = plan.reactor(); // null: not multi-module
+                        panel().appendNotice(
+                                        reactor != null
+                                                ? tr(
+                                                        "run.console.mavenReactor",
+                                                        reactor.rootName(),
+                                                        reactor.moduleSelector())
+                                                : tr("run.console.mavenSingleModule"));
+                    }
+
+                    @Override
+                    public void output(String line, boolean stderr) {
+                        console.output(line, stderr);
+                        if (plan.multiModule() && com.editora.maven.MavenReactor.isNotInReactor(line)) {
+                            notInReactor[0] = true;
+                        }
+                    }
+
+                    @Override
+                    public void ended(int code, @Nullable String launchError) {
+                        console.ended(code, launchError);
+                        if (code == 0 && launchError == null) {
+                            return;
+                        }
+                        if (notInReactor[0] && launchError == null && !beforeLaunch.wasStopped()) {
+                            // Maven's reactor is the authority: the module it does not hold builds alone.
+                            javafx.application.Platform.runLater(
+                                    () -> runResolution(plan.singleModule(), root, jdkHome, label, then, true));
+                            return;
+                        }
+                        com.editora.maven.MavenClasspathResolver.discard(plan); // the step said why
+                    }
+                },
+                () -> {
+                    List<String> cp = com.editora.maven.MavenClasspathResolver.finish(plan);
+                    if (cp == null || cp.isEmpty()) {
+                        host.setStatus(
+                                tr("status.run.resolveClasspathFailed", label, tr("status.run.noClasspathWritten")));
+                        return;
+                    }
+                    then.accept(cp);
+                });
+        ops.onRunStateChanged();
+    }
+
+    /** The module's folder name, for a notice. */
+    private static String selectorOf(Path root) {
+        Path name = root.getFileName();
+        return name == null ? root.toString() : name.toString();
+    }
+
+    /**
+     * Watches a program's first lines for the JVM not finding its main class and appends the hint to build
+     * (review D15) — for a launch that ran without the build before it ("Build before Run and Debug" off).
+     */
+    private java.util.function.BiConsumer<String, Boolean> missingClassHint(@Nullable String mainClass) {
+        int[] seen = {0};
+        boolean[] said = {false};
+        return (line, stderr) -> {
+            if (said[0] || seen[0]++ >= BuildBeforeLaunch.HINT_WINDOW) {
+                return;
+            }
+            if (mainClass != null && BuildBeforeLaunch.missingClass(line, mainClass)) {
+                said[0] = true;
+                panel().appendNotice(tr("run.console.buildHint"));
+            }
+        };
+    }
+
+    /** The file jdtls says declares {@code mc}, else the launch's routing file: what decides the build's scope. */
+    private static Path sourceOf(JavaMainClass mc, Path routing) {
+        if (mc != null && mc.filePath() != null && !mc.filePath().isBlank()) {
+            try {
+                return Path.of(mc.filePath());
+            } catch (RuntimeException notAPath) {
+                return routing;
+            }
+        }
+        return routing;
+    }
+
     /** Where a before-launch command runs: the configuration's working directory, else the project root. */
+    @Nullable
     Path beforeLaunchDir(RunConfiguration cfg) {
         if (cfg.workingDir().isBlank() && ScriptRunCommand.PYTHON.equals(cfg.type()) && configRoot() != null) {
             return configRoot(); // the script runs in its own folder; a build/setup step stays at the root
@@ -1303,11 +1584,11 @@ final class RunCoordinator {
         // One plan for Run and Debug (review D9): working directory, JDK, environment and arguments.
         com.editora.run.JavaLaunchPlan.Result planned =
                 com.editora.run.JavaLaunchPlan.forConfiguration(cfg, javaLaunchInputs(root));
-        if (!planned.ok()) {
+        com.editora.run.JavaLaunchPlan plan = planned.plan();
+        if (plan == null) {
             reportPlanProblem(cfg, planned.problem());
             return;
         }
-        com.editora.run.JavaLaunchPlan plan = planned.plan();
         Path cwd = plan.cwd();
         List<String> vm = plan.vmArgs();
         List<String> args = plan.args();
@@ -1334,46 +1615,75 @@ final class RunCoordinator {
                         .filter(o -> cfg.mainClass().equals(o.className()))
                         .findFirst()
                         .orElseGet(() -> new JavaMainClass(cfg.mainClass(), cfg.projectName(), routing.toString()));
-                ops.resolveJavaLaunch(routing, mc, info -> {
-                    if (info == null || !info.ok()) {
-                        host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
-                        return;
-                    }
-                    streamRun(
-                            label,
-                            cwd,
-                            JavaRunCommand.build(
-                                    javaOverride.isBlank() ? info.javaExec() : javaOverride,
-                                    info.modulePaths(),
-                                    info.classPaths(),
-                                    cfg.mainClass(),
-                                    info.vmArgs(vm),
-                                    args),
-                            launchEnv);
+                // The build first (review D2): the classpath jdtls resolves is right, the class files in it
+                // are whatever the last build left — nothing, or the previous code.
+                buildBeforeLaunch(root, sourceOf(mc, routing), cfg.beforeLaunch(), label, jdkHome, built -> {
+                    ops.resolveJavaLaunch(routing, mc, info -> {
+                        if (info == null || !info.ok()) {
+                            host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
+                            return;
+                        }
+                        if (!built) {
+                            pendingOutputWatcher = missingClassHint(cfg.mainClass());
+                        }
+                        streamRun(
+                                label,
+                                cwd,
+                                JavaRunCommand.build(
+                                        javaOverride.isBlank()
+                                                ? java.util.Objects.requireNonNullElse(info.javaExec(), "")
+                                                : javaOverride,
+                                        info.modulePaths(),
+                                        info.classPaths(),
+                                        cfg.mainClass(),
+                                        info.vmArgs(vm),
+                                        args),
+                                launchEnv);
+                    });
                 });
             });
         } else if (ops.mavenProjectAt(root)) {
-            host.setStatus(tr("status.run.resolvingClasspath"));
-            ops.resolveMavenClasspath(root, jdkHome, cp -> {
-                if (cp == null || cp.isEmpty()) {
-                    host.setStatus(tr("status.run.resolveFailed"));
-                    return;
-                }
-                streamRun(
-                        label,
-                        cwd,
-                        JavaRunCommand.build(
-                                javaOverride.isBlank() && onHost ? "java" : javaOverride,
-                                List.of(),
-                                cp,
-                                cfg.mainClass(),
-                                vm,
-                                args),
-                        launchEnv);
-            });
+            // The configuration's module, not the routing file's (review D12); with no JDK selected, the java
+            // of the JAVA_HOME Maven compiled with (review D18).
+            Path module = mavenModuleOf(root, cfg);
+            String java = !javaOverride.isBlank()
+                    ? javaOverride
+                    : onHost ? "java" : JdkToolchain.inheritedJavaExecutable(System.getenv());
+            resolveMavenClasspath(
+                    module,
+                    module.equals(root) ? routing : module,
+                    jdkHome,
+                    label,
+                    cp -> streamRun(
+                            label,
+                            module.equals(root) || !cfg.workingDir().isBlank() ? cwd : module,
+                            JavaRunCommand.build(java, List.of(), cp, cfg.mainClass(), vm, args),
+                            launchEnv));
         } else {
             host.setStatus(tr("status.run.javaUnavailable"));
         }
+    }
+
+    /**
+     * The Maven module a saved configuration's class lives in (review D12): the configuration's
+     * {@code projectName} (jdtls's name for a module = its artifactId) or its main class's source file, looked
+     * for among the modules of the reactor around {@code root} (the open project when it is a Maven root,
+     * else the reactor {@code root} belongs to, else {@code root} alone); {@code root} — the routing file's
+     * module — when nothing matches.
+     */
+    private Path mavenModuleOf(Path root, RunConfiguration cfg) {
+        if (!com.editora.process.ExecTargets.runsHere(root)) {
+            return root;
+        }
+        Path project = ops.projectRoot();
+        Path start = project != null && ops.mavenProjectAt(project) && root.startsWith(project) ? project : null;
+        if (start == null) {
+            com.editora.maven.MavenReactor.Reactor reactor =
+                    com.editora.maven.MavenReactor.describeOnDisk(root, project);
+            start = reactor != null ? reactor.root() : root;
+        }
+        Path module = com.editora.maven.MavenReactor.locateModuleOnDisk(start, cfg.projectName(), cfg.mainClass());
+        return module != null && ops.mavenProjectAt(module) ? module : root;
     }
 
     /** What a {@link com.editora.run.JavaLaunchPlan} of a configuration in {@code root}'s project needs to know. */
@@ -1383,16 +1693,18 @@ final class RunCoordinator {
     }
 
     /** Says which field of {@code cfg} a plan could not read, and opens its form there. */
-    void reportPlanProblem(RunConfiguration cfg, com.editora.run.JavaLaunchPlan.Problem problem) {
-        String quote = String.valueOf(problem.quote());
-        host.setStatus(
-                problem.field() == com.editora.run.JavaLaunchPlan.Field.ENV
-                        ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
-                        : tr("status.run.argsUnclosedQuote", quote));
+    void reportPlanProblem(RunConfiguration cfg, com.editora.run.JavaLaunchPlan.@Nullable Problem problem) {
+        if (problem != null) { // a plan that failed always names its problem
+            String quote = String.valueOf(problem.quote());
+            host.setStatus(
+                    problem.field() == com.editora.run.JavaLaunchPlan.Field.ENV
+                            ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
+                            : tr("status.run.argsUnclosedQuote", quote));
+        }
         ops.editConfiguration(cfg.name());
     }
 
-    private void startMainClassRun(String targetFqn) {
+    private void startMainClassRun(@Nullable String targetFqn) {
         EditorBuffer b = host.activeBuffer();
         if (b == null
                 || b.getPath() == null
@@ -1459,7 +1771,7 @@ final class RunCoordinator {
      * class wins; only if none does do we fall back to whatever the toolbar has selected. Outside a build tool
      * there is nothing for a before-launch step to do, so the plain path stays.
      */
-    private RunConfiguration configurationForGutterRun(String targetFqn, Path root) {
+    private @Nullable RunConfiguration configurationForGutterRun(@Nullable String targetFqn, Path root) {
         if (root == null || !(ops.mavenProjectAt(root) || ops.gradleProjectAt(root))) {
             return null;
         }
@@ -1484,7 +1796,7 @@ final class RunCoordinator {
                 .orElse(null);
     }
 
-    private void runViaJdtls(Path routing, Path root, String targetFqn) {
+    private void runViaJdtls(Path routing, Path root, @Nullable String targetFqn) {
         ops.resolveJavaMainClasses(routing, list -> {
             if (list.isEmpty()) {
                 host.setStatus(tr("status.run.noMainClass"));
@@ -1514,7 +1826,7 @@ final class RunCoordinator {
      * dependency:build-classpath} + {@code target/classes}. File-scoped: it runs a {@code main} in the active
      * buffer, not any project class.
      */
-    private void runViaMaven(EditorBuffer b, Path root, String targetFqn) {
+    private void runViaMaven(EditorBuffer b, Path root, @Nullable String targetFqn) {
         List<com.editora.run.MainMethodScanner.MainMethod> mains =
                 com.editora.run.MainMethodScanner.scan(b.getContent());
         com.editora.run.MainMethodScanner.MainMethod chosen = null;
@@ -1537,20 +1849,16 @@ final class RunCoordinator {
     }
 
     private void resolveMavenAndRun(EditorBuffer b, Path root, com.editora.run.MainMethodScanner.MainMethod m) {
-        host.setStatus(tr("status.run.resolvingClasspath"));
         String jdkHome = jdkHomeFor(root, null);
-        ops.resolveMavenClasspath(root, jdkHome, cp -> {
-            if (cp == null || cp.isEmpty()) {
-                host.setStatus(tr("status.run.resolveFailed"));
-                return;
-            }
+        resolveMavenClasspath(root, b.getPath(), jdkHome, shortName(m.fqn()), cp -> {
             List<String> args = programArgs(ops.programArgs(b.getPath()), null);
             if (args == null) {
                 return;
             }
+            // With no JDK selected, the java of the JAVA_HOME Maven just compiled with (review D18).
             String java = !com.editora.process.ExecTargets.runsHere(root)
                     ? hostJava(jdkHome, null)
-                    : JdkToolchain.javaExecutable(jdkHome);
+                    : JdkToolchain.javaExecutableOrInherited(jdkHome);
             List<String> command = JavaRunCommand.build(java, List.of(), cp, m.fqn(), List.of(), args);
             streamRun(shortName(m.fqn()), root, command, javaEnvironment(root, jdkHome, null));
         });
@@ -1574,29 +1882,40 @@ final class RunCoordinator {
         if (mc == null) {
             return;
         }
-        ops.resolveJavaLaunch(routing, mc, info -> {
-            if (info == null || !info.ok()) {
-                host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
-                return;
-            }
-            List<String> args = programArgs(programArgsForMain(mc), null);
-            if (args == null) {
-                return;
-            }
-            List<String> command = JavaRunCommand.build(
-                    javaExecutableFor(root, info.javaExec()),
-                    info.modulePaths(),
-                    info.classPaths(),
-                    mc.fqn(),
-                    info.vmArgs(List.of()),
-                    args);
-            String jdkHome = jdkHomeFor(root, null);
-            streamRun(shortName(mc.className()), root, command, javaEnvironment(root, jdkHome, null));
-        });
+        String jdkHome = jdkHomeFor(root, null);
+        String label = shortName(mc.className());
+        // The arguments are asked for before the build: a prompt after a minute of compiling is a surprise.
+        List<String> args = programArgs(programArgsForMain(mc), null);
+        if (args == null) {
+            return;
+        }
+        buildBeforeLaunch(
+                root,
+                sourceOf(mc, routing),
+                "",
+                label,
+                jdkHome,
+                built -> ops.resolveJavaLaunch(routing, mc, info -> {
+                    if (info == null || !info.ok()) {
+                        host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
+                        return;
+                    }
+                    List<String> command = JavaRunCommand.build(
+                            java.util.Objects.requireNonNullElse(javaExecutableFor(root, info.javaExec()), ""),
+                            info.modulePaths(),
+                            info.classPaths(),
+                            mc.fqn(),
+                            info.vmArgs(List.of()),
+                            args);
+                    if (!built) {
+                        pendingOutputWatcher = missingClassHint(mc.className());
+                    }
+                    streamRun(label, root, command, javaEnvironment(root, jdkHome, null));
+                }));
     }
 
     /** Global Maven JDK, with a saved configuration's project override taking precedence. */
-    private String effectiveMavenJdk(Path root, RunConfiguration cfg) {
+    private String effectiveMavenJdk(@Nullable Path root, @Nullable RunConfiguration cfg) {
         if (root == null || !ops.mavenProjectAt(root)) {
             return "";
         }
@@ -1604,7 +1923,7 @@ final class RunCoordinator {
                 cfg == null ? "" : cfg.jdkHome(), host.settings().getMavenJdkHome());
     }
 
-    private String javaExecutableFor(Path root, String resolved) {
+    private @Nullable String javaExecutableFor(Path root, @Nullable String resolved) {
         if (!com.editora.process.ExecTargets.runsHere(root)) {
             return hostJava(remoteJdkHome(root), resolved);
         }
@@ -1616,13 +1935,13 @@ final class RunCoordinator {
      * The JDK a Java project's program runs with: for a project on a remote host the host's ({@code jdk.home}
      * in its tools, or blank for its own java), never this machine's setting, which names a folder here.
      */
-    private String jdkHomeFor(Path root, RunConfiguration cfg) {
+    private String jdkHomeFor(Path root, @Nullable RunConfiguration cfg) {
         return !com.editora.process.ExecTargets.runsHere(root) ? remoteJdkHome(root) : effectiveMavenJdk(root, cfg);
     }
 
     /** The environment for a Java program or build of {@code root}: on a host, its JDK only — not this PATH. */
     private static java.util.Map<String, String> javaEnvironment(
-            Path root, String jdkHome, java.util.Map<String, String> configured) {
+            @Nullable Path root, String jdkHome, java.util.@Nullable Map<String, String> configured) {
         if (com.editora.process.ExecTargets.runsHere(root)) {
             return launchEnvironment(jdkHome, configured);
         }
@@ -1634,7 +1953,7 @@ final class RunCoordinator {
     }
 
     /** {@code java} on a host: under its configured JDK, else what jdtls resolved there, else its PATH's. */
-    static String hostJava(String jdkHome, String resolved) {
+    static String hostJava(String jdkHome, @Nullable String resolved) {
         if (jdkHome != null && !jdkHome.isBlank()) {
             return jdkHome.strip().replaceAll("/+$", "") + "/bin/java";
         }
@@ -1642,7 +1961,7 @@ final class RunCoordinator {
     }
 
     private static java.util.Map<String, String> launchEnvironment(
-            String jdkHome, java.util.Map<String, String> configured) {
+            String jdkHome, java.util.@Nullable Map<String, String> configured) {
         java.util.LinkedHashMap<String, String> env =
                 new java.util.LinkedHashMap<>(JdkToolchain.environment(jdkHome, processPath()));
         if (configured != null) {
@@ -1684,7 +2003,7 @@ final class RunCoordinator {
         }
     }
 
-    private static String shortName(String fqn) {
+    private static String shortName(@Nullable String fqn) {
         if (fqn == null) {
             return "";
         }
@@ -1697,7 +2016,7 @@ final class RunCoordinator {
      * the buffer first so the on-disk targets/recipes are current. A blank/null {@code target} runs the
      * default goal (bare {@code make}). Backs the per-target gutter ▶ and the generic "Run File" command.
      */
-    void runMakeTarget(EditorBuffer buffer, String target) {
+    void runMakeTarget(EditorBuffer buffer, @Nullable String target) {
         if (buffer == null) {
             return;
         }
@@ -1953,10 +2272,14 @@ final class RunCoordinator {
             // The tool decides the folder too: a Clojure file runs in its project's, where deps.edn is read.
             String toolName = com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
             String tool = jvmTool(buffer);
+            String executable = tool == null ? toolName : tool;
+            if (executable == null) {
+                return; // not reached: every language JvmScriptRun supports names its tool
+            }
             com.editora.run.JvmScriptRun.Launch how = com.editora.run.JvmScriptRun.launch(
                     buffer.getLanguage(),
                     toolName,
-                    tool == null ? toolName : tool,
+                    executable,
                     path,
                     com.editora.process.ExecTargets.forPath(path).toTargetPath(path),
                     args,
@@ -2007,7 +2330,7 @@ final class RunCoordinator {
     }
 
     /** Streams a planned Node launch, or says why it cannot run. */
-    void streamNode(String label, NodeRunLauncher.Ready ready, Path script) {
+    void streamNode(String label, NodeRunLauncher.Ready ready, @Nullable Path script) {
         com.editora.run.NodeRunPlan plan = ready.plan();
         if (plan.error() != null) {
             host.setStatus(tr(plan.error()));
@@ -2032,9 +2355,11 @@ final class RunCoordinator {
      * The tool that runs {@code buffer}'s JVM language ({@code groovy}): this machine's install for a local file,
      * the bare name (the host's PATH) for a remote one; null when it is not installed here.
      */
-    private static String jvmTool(EditorBuffer buffer) {
+    private static @Nullable String jvmTool(EditorBuffer buffer) {
         Path path = buffer.getPath();
-        String tool = com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
+        String tool = path == null
+                ? com.editora.run.JvmScriptRun.tool(buffer.getLanguage())
+                : com.editora.run.JvmScriptRun.tool(buffer.getLanguage(), path);
         if (tool == null) {
             return null;
         }
@@ -2118,7 +2443,11 @@ final class RunCoordinator {
 
     /** The launcher argv for the buffer's language: interpreter + file + {@code args}. */
     private List<String> buildRunCommand(
-            EditorBuffer buffer, Path path, String javaExecutable, List<String> args, ShellCommand.Launch shell) {
+            EditorBuffer buffer,
+            Path path,
+            String javaExecutable,
+            List<String> args,
+            ShellCommand.@Nullable Launch shell) {
         if (shell != null) {
             return ShellCommand.argv(
                     shell, com.editora.process.ExecTargets.forPath(path).toTargetPath(path), args);
@@ -2144,7 +2473,7 @@ final class RunCoordinator {
     }
 
     /** {@code JAVA_HOME} for a host's configured JDK; nothing else, and nothing at all for its own java. */
-    static java.util.Map<String, String> remoteJdkEnvironment(String jdkHome) {
+    static java.util.Map<String, String> remoteJdkEnvironment(@Nullable String jdkHome) {
         return jdkHome == null || jdkHome.isBlank() ? java.util.Map.of() : java.util.Map.of("JAVA_HOME", jdkHome);
     }
 
@@ -2152,7 +2481,8 @@ final class RunCoordinator {
      * Streams a planned Python launch; says so when the file's shebang asked for an interpreter that is not
      * installed here and the project's ran instead.
      */
-    private void streamPython(String label, Path dir, com.editora.run.PythonRunPlan plan, Path script) {
+    private void streamPython(
+            String label, @Nullable Path dir, com.editora.run.PythonRunPlan plan, @Nullable Path script) {
         streamRun(label, dir, plan.argv(), plan.env(), script);
         if (plan.missingShebang() != null) {
             String note = tr(
@@ -2175,18 +2505,22 @@ final class RunCoordinator {
     /**
      * Brings the Run console forward for every valid Run request. A second request while a process is alive
      * is therefore useful rather than a silent no-op: it returns the user to the process that already owns
-     * the console, then reports that another launch cannot start yet.
+     * the console, then reports that another launch cannot start yet. A refused request leaves the launch under
+     * way as it is: clearing its deployment while its before-launch step ran sent a deployed program to the local
+     * project instead of the host's copy. A deploy counts too: a second one was refused only after it had marked
+     * the first one ended, and Stop then no longer reached the upload.
      */
     private boolean beginRunRequest() {
+        ops.openToolWindow();
+        // A before-launch build counts: a second Run must not start a second build.
+        if (consoleRunning() || deploying) {
+            host.setStatus(tr("status.run.busy"));
+            return false;
+        }
         terminalRun = false; // only a configuration that asks for it, and only its own launch
         launchRoot = null; // and only a deployed configuration's launch resolves on its host
         deployed = null;
-        ops.openToolWindow();
-        if (!consoleRunning()) { // a before-launch build counts: a second Run must not start a second build
-            return true;
-        }
-        host.setStatus(tr("status.run.busy"));
-        return false;
+        return true;
     }
 
     /** Runs {@code command} in {@code workingDir} (the project root for a main class, else a file's folder),
@@ -2196,7 +2530,8 @@ final class RunCoordinator {
     }
 
     /** As above, plus {@code env} — a saved run configuration's environment variables. */
-    private void streamRun(String label, Path workingDir, List<String> command, java.util.Map<String, String> env) {
+    private void streamRun(
+            String label, @Nullable Path workingDir, List<String> command, java.util.Map<String, String> env) {
         streamRun(label, workingDir, command, env, null);
     }
 
@@ -2210,11 +2545,15 @@ final class RunCoordinator {
      * The command whose runtime the next run's chip shows instead of the run's own: {@code kotlinc} for a Kotlin
      * program run as {@code java -jar}, which reports both its Kotlin and the JDK the program runs on.
      */
-    private List<String> runtimeCommand;
+    private @Nullable List<String> runtimeCommand;
 
     /** As above; {@code script} is the file being run (saved before a Rerun), null for a Java launch. */
     private void streamRun(
-            String label, Path workingDir, List<String> command, java.util.Map<String, String> env, Path script) {
+            @Nullable String label,
+            @Nullable Path workingDir,
+            List<String> command,
+            java.util.Map<String, String> env,
+            @Nullable Path script) {
         if (terminalRun) {
             terminalRun = false;
             runtimeCommand = null;
@@ -2240,7 +2579,7 @@ final class RunCoordinator {
         stopRequested = false;
         lastRunDir = workingDir;
         // A deployed program's files are the project's: its console links open those, not the host's copies.
-        Path localDir = deployedPaths == null ? null : deployedPaths.toLocal(workingDir);
+        Path localDir = deployedPaths == null || workingDir == null ? null : deployedPaths.toLocal(workingDir);
         consoleDir = localDir != null ? localDir : workingDir;
         lastRunLabel = label;
         lastRunCommand = command;
@@ -2327,7 +2666,11 @@ final class RunCoordinator {
      * prompt shim (a terminal is a tty, so bash prompts by itself). Rerun is left to the tab: it does not replay
      * an older console run.
      */
-    private void runInTerminal(String label, Path workingDir, List<String> command, java.util.Map<String, String> env) {
+    private void runInTerminal(
+            @Nullable String label,
+            @Nullable Path workingDir,
+            List<String> command,
+            java.util.Map<String, String> env) {
         java.util.Map<String, String> own = new java.util.LinkedHashMap<>(env);
         ReadPromptShim.environment(System.getenv()).forEach((k, v) -> own.remove(k, v));
         lastRunCommand = null;
@@ -2361,7 +2704,7 @@ final class RunCoordinator {
      * the way the launch runs it (its folder, so its host, and its environment). An answer that arrives after
      * a newer run started is dropped.
      */
-    private void showRuntime(List<String> command, Path workingDir, java.util.Map<String, String> env) {
+    private void showRuntime(List<String> command, @Nullable Path workingDir, java.util.Map<String, String> env) {
         long generation = ++runtimeGeneration;
         panel().setRuntime(null);
         com.editora.run.RuntimeProbe.probe(command, workingDir, env, version -> {
@@ -2386,9 +2729,9 @@ final class RunCoordinator {
             stopRequested = true;
             service.stop();
             host.setStatus(tr("status.run.stopped"));
-        } else if (terminalProgramRunning()) {
+        } else if (terminalProgram instanceof com.editora.terminal.ProgramRun program && program.isRunning()) {
             terminalStopRequested = true;
-            terminalProgram.stop(); // its tab stays; its end reports the stop
+            program.stop(); // its tab stays; its end reports the stop
         }
     }
 

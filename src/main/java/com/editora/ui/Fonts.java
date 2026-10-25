@@ -11,6 +11,8 @@ import java.util.concurrent.CompletableFuture;
 
 import javafx.scene.text.Font;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Loads the editor's bundled monospace fonts so they're available by family name regardless of what
  * is installed on the system.
@@ -95,7 +97,7 @@ public final class Fonts {
     private static final Set<String> DONE = new HashSet<>();
 
     /** The deferred load in flight or done; null until {@link #loadRemainingAsync} starts one. */
-    private static CompletableFuture<Void> remaining;
+    private static @Nullable CompletableFuture<Void> remaining;
 
     private Fonts() {}
 

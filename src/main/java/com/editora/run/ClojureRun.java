@@ -8,6 +8,8 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How Run and Debug start a Clojure file: which of the three tools runs it, in which folder, and its command line.
  *
@@ -52,7 +54,7 @@ public final class ClojureRun {
         }
 
         /** The tool whose executable is {@code command}, or null. */
-        public static Tool of(String command) {
+        public static @Nullable Tool of(@Nullable String command) {
             for (Tool t : values()) {
                 if (t.command.equals(command)) {
                     return t;
@@ -73,7 +75,12 @@ public final class ClojureRun {
      * @param extraPath for the Clojure CLI in a project, the namespace's classpath root relative to the project
      *     when it is not the default {@code src} ({@code scripts}); null otherwise
      */
-    public record Plan(Tool tool, Path directory, String mainNamespace, boolean inProject, String extraPath) {}
+    public record Plan(
+            Tool tool,
+            @Nullable Path directory,
+            @Nullable String mainNamespace,
+            boolean inProject,
+            @Nullable String extraPath) {}
 
     /** The alias Run adds to a {@code deps.edn} project to put a namespace's folder on the classpath. */
     public static final String EXTRA_PATH_ALIAS = ":editora/run";
@@ -99,7 +106,7 @@ public final class ClojureRun {
             Pattern.compile("^\\s*\\(defn\\s+(?:\\^(?:\\{[^}]*}|\\S+)\\s+)*-main(?=[\\s\\[(]|$)");
 
     /** The namespace {@code text} declares, or null. Pure. */
-    public static String namespace(String text) {
+    public static @Nullable String namespace(String text) {
         if (text == null) {
             return null;
         }
@@ -163,7 +170,7 @@ public final class ClojureRun {
      * The project is the nearest folder, from the file's own up, holding {@code deps.edn}, {@code project.clj}
      * or {@code bb.edn}. Pure.
      */
-    public static Plan plan(Path file, String text, Predicate<Path> isFile) {
+    public static Plan plan(@Nullable Path file, String text, Predicate<Path> isFile) {
         Path folder = file == null ? null : file.toAbsolutePath().getParent();
         Path project = null;
         for (Path dir = folder; dir != null; dir = dir.getParent()) {
@@ -200,7 +207,12 @@ public final class ClojureRun {
         }
         Path directory = inProject ? project : main != null ? root : folder;
         String extraPath = null;
-        if (tool == Tool.CLI && inProject && main != null && !root.equals(project.resolve("src"))) {
+        if (tool == Tool.CLI
+                && inProject
+                && project != null
+                && main != null
+                && root != null
+                && !root.equals(project.resolve("src"))) {
             String relative = project.relativize(root).toString().replace('\\', '/');
             extraPath = relative.isEmpty() ? "." : relative;
         }
@@ -220,7 +232,7 @@ public final class ClojureRun {
      * The folder {@code namespace} is loaded from when it is {@code file}: {@code /p/src} for {@code my-app.core}
      * in {@code /p/src/my_app/core.clj}; null when the file's path does not match the name.
      */
-    static Path classpathRoot(Path file, String namespace) {
+    static @Nullable Path classpathRoot(Path file, String namespace) {
         String[] parts = namespace.replace('-', '_').split("\\.");
         int n = file.getNameCount();
         if (parts.length > n) {
@@ -237,7 +249,7 @@ public final class ClojureRun {
             }
         }
         Path root = file;
-        for (int i = 0; i < parts.length; i++) {
+        for (int i = 0; i < parts.length && root != null; i++) {
             root = root.getParent();
         }
         return root;
@@ -299,12 +311,12 @@ public final class ClojureRun {
      * The environment variable that carries JVM options to the program's JVM: {@code JVM_OPTS} for Leiningen
      * (its own JVM reads {@code LEIN_JVM_OPTS}); null for the Clojure CLI (options are arguments) and Babashka.
      */
-    public static String jvmOptionsVariable(Tool tool) {
+    public static @Nullable String jvmOptionsVariable(Tool tool) {
         return tool == Tool.LEIN ? "JVM_OPTS" : null;
     }
 
     /** The prefix that makes a JVM option a Clojure CLI argument ({@code -J}); null for the other tools. */
-    public static String jvmOptionPrefix(Tool tool) {
+    public static @Nullable String jvmOptionPrefix(Tool tool) {
         return tool == Tool.CLI ? "-J" : null;
     }
 

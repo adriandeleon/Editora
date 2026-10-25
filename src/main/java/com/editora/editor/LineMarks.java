@@ -7,13 +7,16 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.function.IntFunction;
 
+import com.editora.editor.debug.BreakpointManager;
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure line arithmetic shared by the gutter marks that pin themselves to a line — bookmarks
  * ({@link BookmarkManager}) and breakpoints ({@link BreakpointManager}). Both used to carry their own copy
  * of {@link #shift}; one helper keeps "what happens to a mark when its line is edited" a single decision.
  * No toolkit, so it is unit-tested directly.
  */
-final class LineMarks {
+public final class LineMarks {
 
     /** Bounds the outward scan when a displaced mark looks for its line text in a rewritten span. */
     static final int MAX_SCAN = 2000;
@@ -21,7 +24,7 @@ final class LineMarks {
     private LineMarks() {}
 
     /** The three things the arithmetic needs from a mark type. */
-    interface Kind<T> {
+    public interface Kind<T> {
         int line(T mark);
 
         /** The stripped text of the line the mark was set on ("" when unknown). */
@@ -85,7 +88,7 @@ final class LineMarks {
         }
     }
 
-    static int countNewlines(String s) {
+    public static int countNewlines(String s) {
         int n = 0;
         for (int i = 0; i < s.length(); i++) {
             if (s.charAt(i) == '\n') {
@@ -96,7 +99,7 @@ final class LineMarks {
     }
 
     /** A line's text as a mark stores it: stripped, and cut to the stored snapshot length. */
-    static String snapshotText(String raw) {
+    public static String snapshotText(String raw) {
         String t = raw == null ? "" : raw.strip();
         return t.length() > com.editora.config.Bookmark.MAX_LINE_TEXT
                 ? t.substring(0, com.editora.config.Bookmark.MAX_LINE_TEXT)
@@ -108,7 +111,7 @@ final class LineMarks {
      * not an edit of the document — the same text is still there, part of it merely held aside — so it must
      * not be tracked like one: marks inside the region are rebased, marks outside it are held until widen.
      */
-    interface Carrier {
+    public interface Carrier {
         /** Runs {@code swap}, which replaces the document with its {@code [start, end)} region. */
         void narrow(int start, int end, Runnable swap);
 
@@ -163,7 +166,7 @@ final class LineMarks {
      * @param lineTextAt the <em>raw</em> text of a 0-based line of the document <em>after</em> the edit, or
      *                   {@code null} to skip text matching and only clamp
      */
-    static <T> NavigableMap<Integer, T> shift(
+    public static <T> NavigableMap<Integer, T> shift(
             NavigableMap<Integer, T> current,
             Kind<T> kind,
             int startLine,
@@ -171,7 +174,7 @@ final class LineMarks {
             int removedNL,
             int insertedNL,
             int paragraphCount,
-            IntFunction<String> lineTextAt) {
+            @Nullable IntFunction<String> lineTextAt) {
         return shift(
                 current,
                 kind,
@@ -181,12 +184,12 @@ final class LineMarks {
     }
 
     /** {@link #shift(NavigableMap, Kind, int, boolean, int, int, int, IntFunction)} for a fully described edit. */
-    static <T> NavigableMap<Integer, T> shift(
+    public static <T> NavigableMap<Integer, T> shift(
             NavigableMap<Integer, T> current,
             Kind<T> kind,
             Edit edit,
             int paragraphCount,
-            IntFunction<String> lineTextAt) {
+            @Nullable IntFunction<String> lineTextAt) {
         int startLine = edit.startLine();
         boolean atLineStart = edit.atLineStart();
         int removedNL = edit.removedNL();
@@ -251,7 +254,7 @@ final class LineMarks {
             List<T> displaced,
             int first,
             int last,
-            IntFunction<String> lineTextAt,
+            @Nullable IntFunction<String> lineTextAt,
             boolean sameLineCount) {
         List<T> unmatched = new ArrayList<>();
         if (sameLineCount) {
@@ -341,10 +344,10 @@ final class LineMarks {
      * The marks outside a narrowed region, in whole-document lines, with the region's extent at the moment
      * it was cut out — everything {@link #release} needs to put them back around the edited region.
      */
-    record Held<T>(List<T> before, List<T> after, int firstLine, int regionLines) {
+    public record Held<T>(List<T> before, List<T> after, int firstLine, int regionLines) {
 
         /** This hold with no marks in it (the user cleared them while narrowed). */
-        Held<T> emptied() {
+        public Held<T> emptied() {
             return new Held<>(List.of(), List.of(), firstLine, regionLines);
         }
     }
@@ -353,7 +356,7 @@ final class LineMarks {
      * Splits {@code all} around the region {@code [firstLine, lastLine]}: marks inside go into
      * {@code inside} rebased to region-relative lines, marks outside are returned held aside.
      */
-    static <T> Held<T> hold(
+    public static <T> Held<T> hold(
             Collection<T> all, Kind<T> kind, int firstLine, int lastLine, NavigableMap<Integer, T> inside) {
         List<T> before = new ArrayList<>();
         List<T> after = new ArrayList<>();
@@ -375,7 +378,8 @@ final class LineMarks {
      * current marks ({@code inside}, region-relative) moved back down by the region's first line, and the
      * held marks after it shifted by however many lines the region gained or lost while narrowed.
      */
-    static <T> NavigableMap<Integer, T> release(Held<T> held, Collection<T> inside, Kind<T> kind, int regionLinesNow) {
+    public static <T> NavigableMap<Integer, T> release(
+            Held<T> held, Collection<T> inside, Kind<T> kind, int regionLinesNow) {
         NavigableMap<Integer, T> out = new TreeMap<>();
         for (T mark : held.before()) {
             out.put(kind.line(mark), mark);

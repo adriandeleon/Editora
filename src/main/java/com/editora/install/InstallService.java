@@ -10,9 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -27,6 +29,7 @@ import com.editora.install.InstallCatalog.Step;
 import com.editora.plugin.PluginRegistry;
 import com.editora.plugin.Unzip;
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs {@link InstallCatalog} steps off the FX thread (the {@code GitService}/{@code MermaidService} idiom:
@@ -42,8 +45,9 @@ public final class InstallService {
      * resolved command for a per-OS binary install ({@code installedCommand}, the extracted binary path +
      * any suffix — the coordinator persists it into the server's Settings command; {@code null} otherwise).
      */
-    public record Result(boolean ok, String message, String installedCommand) {
-        public Result(boolean ok, String message) {
+    public record Result(
+            boolean ok, @Nullable String message, @Nullable String installedCommand) {
+        public Result(boolean ok, @Nullable String message) {
             this(ok, message, null);
         }
     }
@@ -87,6 +91,26 @@ public final class InstallService {
         this.maxDownloadBytes = maxDownloadBytes;
     }
 
+    /** The JDK home chosen in Settings → Build Tools (blank = none); the JVM servers run and are smoke-tested on it. */
+    private volatile java.util.function.Supplier<String> jdkHome = () -> "";
+
+    /** Wires the Settings → Build Tools JDK: it satisfies the {@link Prereq#JAVA} prerequisite and runs the
+     *  post-install smoke, so a machine with no {@code java} on PATH can still install the Maven server (C4). */
+    public void setJdkHomeSupplier(java.util.function.Supplier<String> jdkHome) {
+        this.jdkHome = jdkHome == null ? () -> "" : jdkHome;
+    }
+
+    /** The configured JDK's {@code java} executable, or {@code ""} when none is set or it has none. */
+    private String jdkJava() {
+        String home;
+        try {
+            home = jdkHome.get();
+        } catch (RuntimeException e) {
+            return "";
+        }
+        return home == null || home.isBlank() ? "" : com.editora.run.JdkToolchain.javaExecutable(home);
+    }
+
     /** Probes which {@link Prereq}s are present on the augmented PATH, off-thread; posts the set on FX. */
     public void detectPrereqs(Consumer<Set<Prereq>> onResult) {
         exec.submit(() -> {
@@ -115,8 +139,8 @@ public final class InstallService {
             if (onPath("composer")) {
                 have.add(Prereq.COMPOSER);
             }
-            if (onPath("java")) {
-                have.add(Prereq.JAVA);
+            if (onPath("java") || !jdkJava().isBlank()) {
+                have.add(Prereq.JAVA); // the Settings → Build Tools JDK counts: the packaged runtime has no java
             }
             Set<Prereq> result = Set.copyOf(have);
             Platform.runLater(() -> onResult.accept(result));
@@ -167,7 +191,7 @@ public final class InstallService {
     // --- step execution ------------------------------------------------------------------------
 
     /** Runs one step; returns the resolved server command for an ARCHIVE step, else {@code null}. */
-    private String runStep(Step s, Path configDir) throws Exception {
+    private @Nullable String runStep(Step s, Path configDir) throws Exception {
         switch (s.kind()) {
             case NPM_GLOBAL -> runCommand(InstallCatalog.npmInstallGlobalArgv(s.npmPackages()), s.id());
             case PIP_TARGET -> {
@@ -264,10 +288,50 @@ public final class InstallService {
         return dest.resolve(fileName).toString();
     }
 
-    /** Downloads the self-contained JVM LSP bundle ({@code directUrl}), extracts it into the config dir, and
-     *  returns the {@code java -cp "<dir>/*" <mainClass>} launch command. */
+    /** The jars a {@link InstallCatalog.Kind#JVM_LSP_ZIP} step adds beside its bundle, by step id; a test supplies its own. */
+    private java.util.function.Function<String, List<InstallCatalog.JvmLspJar>> jvmLspExtraJars =
+            InstallCatalog::jvmLspExtraJars;
+
+    /** The request a freshly extracted JVM server must answer before it counts as installed; a test supplies its own. */
+    @FunctionalInterface
+    interface JvmLspSmokeCheck {
+        /** Why the server launched by {@code argv} (whose jars are in {@code dir}) failed, or empty when it answered. */
+        java.util.Optional<String> check(List<String> argv, Path dir);
+    }
+
+    private JvmLspSmokeCheck jvmLspSmoke = (argv, dir) -> JvmLspSmoke.hoverCheck(argv);
+
+    /** Test seam for {@link #jvmLspExtraJars}: recipes whose hashes match a test's own bytes, or none. */
+    void setJvmLspExtraJarsForTest(java.util.function.Function<String, List<InstallCatalog.JvmLspJar>> recipes) {
+        this.jvmLspExtraJars = recipes;
+    }
+
+    /** Test seam for {@link #jvmLspSmoke}: a verdict without a process. */
+    void setJvmLspSmokeForTest(JvmLspSmokeCheck smoke) {
+        this.jvmLspSmoke = smoke;
+    }
+
+    /**
+     * Downloads the self-contained JVM LSP bundle ({@code directUrl}), extracts it into the config dir, adds the
+     * pinned jars the bundle leaves out ({@link InstallCatalog#jvmLspExtraJars}, each refused unless its SHA-256
+     * is the catalog's), proves the server answers a request ({@link JvmLspSmoke}) and returns the
+     * {@code java -cp "<dir>/*" <mainClass>} launch command. All of it happens in the staging folder: a bundle
+     * that fails any of these leaves the previous install (or nothing) in place.
+     */
     private String installJvmLspZip(Step s, Path configDir) throws Exception {
         byte[] data = download(s.directUrl());
+        List<InstallCatalog.JvmLspJar> extras = jvmLspExtraJars.apply(s.id());
+        List<byte[]> extraData = new ArrayList<>();
+        for (InstallCatalog.JvmLspJar jar : extras) {
+            byte[] bytes = download(jar.url());
+            String actual = InstallCatalog.sha256Hex(bytes);
+            if (!actual.equalsIgnoreCase(jar.sha256())) {
+                throw new InstallException(s.id() + ": " + jar.fileName()
+                        + " does not match its published checksum (expected " + jar.sha256() + ", got " + actual
+                        + ") — not installed");
+            }
+            extraData.add(bytes);
+        }
         Path dest = configDir.resolve(s.destSubpath());
         replaceInstall(dest, staged -> {
             Unzip.extract(
@@ -281,6 +345,22 @@ public final class InstallService {
             // this check that was a "successful" install of an empty folder.
             if (!hasTopLevelJar(staged)) {
                 throw new InstallException(s.id() + ": no jar found in the downloaded bundle");
+            }
+            for (int i = 0; i < extras.size(); i++) {
+                Files.write(staged.resolve(extras.get(i).fileName()), extraData.get(i));
+            }
+            // A bundle that starts and says it is ready can still fail every request inside the server (the
+            // upstream zip without its `provided` jars did, for a whole release): ask it one before swapping it in.
+            List<String> argv = new java.util.ArrayList<>(com.editora.run.ProgramArgs.commandLine(
+                    InstallCatalog.jvmClasspathCommand(staged, InstallCatalog.LEMMINX_MAIN_CLASS)));
+            String java = jdkJava();
+            if (!java.isBlank() && !argv.isEmpty() && "java".equals(argv.get(0))) {
+                argv.set(0, java); // the same JDK the coordinator runs the server on (JvmServerCommand.withJdk)
+            }
+            java.util.Optional<String> failed = jvmLspSmoke.check(List.copyOf(argv), staged);
+            if (failed.isPresent()) {
+                throw new InstallException(s.id() + ": the server was extracted but could not answer a request ("
+                        + failed.get() + ") — not installed");
             }
             return null;
         });
@@ -481,7 +561,8 @@ public final class InstallService {
                 makeExecutable(launcher);
                 return staged.relativize(launcher);
             });
-            return InstallCatalog.binaryCommand(dest.resolve(launcherInInstall.toString()), server.arguments());
+            Path launcherPath = Objects.requireNonNull(launcherInInstall, "the unpack step returns the launcher");
+            return InstallCatalog.binaryCommand(dest.resolve(launcherPath.toString()), server.arguments());
         } finally {
             deleteQuietly(archive);
         }
@@ -544,6 +625,7 @@ public final class InstallService {
     /** Unpacks an install into {@code staged} and checks it; throws to reject it. */
     @FunctionalInterface
     private interface Unpack<T> {
+        @Nullable
         T into(Path staged) throws Exception;
     }
 
@@ -557,9 +639,12 @@ public final class InstallService {
      * the working version. Now the work happens in a folder beside {@code dest} (same volume, so the swap is
      * a rename) and a failure leaves {@code dest} exactly as it was.
      */
-    private static <T> T replaceInstall(Path dest, Unpack<T> unpack) throws Exception {
+    private static <T> @Nullable T replaceInstall(Path dest, Unpack<T> unpack) throws Exception {
         Path target = dest.toAbsolutePath();
         Path parent = target.getParent();
+        if (parent == null) {
+            throw new IOException("cannot install into a filesystem root: " + target);
+        }
         Files.createDirectories(parent);
         String prefix = STAGING_PREFIX + target.getFileName() + "-";
         sweepAbandonedStaging(parent, prefix);
@@ -660,7 +745,8 @@ public final class InstallService {
             makeExecutable(binary);
             return staged.relativize(binary);
         });
-        return InstallCatalog.binaryCommand(dest.resolve(binaryInInstall.toString()), spec.commandSuffix());
+        Path binaryPath = Objects.requireNonNull(binaryInInstall, "the unpack step returns the binary");
+        return InstallCatalog.binaryCommand(dest.resolve(binaryPath.toString()), spec.commandSuffix());
     }
 
     /** Extracts a downloaded binary archive (by the suffix of the URL it came from) into {@code dest}. */
@@ -710,7 +796,7 @@ public final class InstallService {
     /** The first archive URL (.zip/.tar.gz/.tgz/.tar.xz/.txz) in {@code json} that contains {@code substr} —
      *  skips the sibling {@code .sha256}/{@code .sig} checksum URLs that also contain the per-platform
      *  substring. */
-    static String pickArchiveUrl(String json, String substr) {
+    static @Nullable String pickArchiveUrl(String json, String substr) {
         java.util.regex.Matcher m = ARCHIVE_URL.matcher(json == null ? "" : json);
         while (m.find()) {
             if (m.group().contains(substr)) {
@@ -721,7 +807,7 @@ public final class InstallService {
     }
 
     /** Walks {@code dest} for the LS binary (exact or {@code prefix} match; tolerates a Windows extension). */
-    static Path findBinary(Path dest, String name, boolean prefix) throws IOException {
+    static @Nullable Path findBinary(Path dest, String name, boolean prefix) throws IOException {
         try (Stream<Path> s = Files.walk(dest)) {
             return s.filter(Files::isRegularFile)
                     .filter(p -> linkStaysInside(dest, p))
@@ -772,7 +858,7 @@ public final class InstallService {
      * parse-stable C one: the output is only ever shown, and several of these (RubyGems, a JVM-based tool)
      * fail on non-ASCII package metadata or install paths when forced to ASCII.
      */
-    private void runCommand(List<String> argv, String id) throws InstallException {
+    private void runCommand(@Nullable List<String> argv, String id) throws InstallException {
         ProcessRunner.Result r = ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, argv);
         if (!r.ok()) {
             throw new InstallException(id + ": " + (r.message().isBlank() ? "command failed" : r.message()));
@@ -868,7 +954,36 @@ public final class InstallService {
         return url;
     }
 
-    private byte[] download(String url) throws Exception {
+    /**
+     * Downloads the pinned Lombok jar ({@link InstallCatalog#LOMBOK}) into {@code dir}, refusing it unless its
+     * SHA-256 is the catalog's, and returns where it is. Written beside its final name and moved, so a failed
+     * download never leaves a half jar for jdtls to load.
+     */
+    public Path installLombok(Path dir) throws Exception {
+        return installLombok(dir, InstallCatalog.LOMBOK);
+    }
+
+    /** As above, for the recipe {@code jar} (a test's own hash). */
+    Path installLombok(Path dir, InstallCatalog.JvmLspJar jar) throws Exception {
+        byte[] bytes = download(jar.url());
+        String actual = InstallCatalog.sha256Hex(bytes);
+        if (!actual.equalsIgnoreCase(jar.sha256())) {
+            throw new InstallException(jar.fileName() + " does not match its published checksum (expected "
+                    + jar.sha256() + ", got " + actual + ") — not installed");
+        }
+        Files.createDirectories(dir);
+        Path target = dir.resolve(jar.fileName());
+        Path part = dir.resolve(jar.fileName() + ".part");
+        Files.write(part, bytes);
+        Files.move(
+                part,
+                target,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        return target;
+    }
+
+    private byte[] download(@Nullable String url) throws Exception {
         if (!PluginRegistry.isHttps(url)) {
             throw new InstallException("download url must be https: " + url);
         }
@@ -897,7 +1012,7 @@ public final class InstallService {
         return !ProcessRunner.resolveExecutable(List.of(exe)).get(0).equals(exe);
     }
 
-    private static Path findJavaDebugJar(Path root) throws IOException {
+    private static @Nullable Path findJavaDebugJar(Path root) throws IOException {
         try (Stream<Path> s = Files.walk(root)) {
             return s.filter(Files::isRegularFile)
                     .filter(p -> DebugAdapterLocator.matches(p.getFileName().toString()))

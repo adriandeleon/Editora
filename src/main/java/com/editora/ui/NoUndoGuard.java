@@ -5,6 +5,7 @@ import java.util.function.Consumer;
 import javafx.application.Platform;
 
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -57,7 +58,8 @@ final class NoUndoGuard {
      * user is told — the refusal reason, or the "no undo, copy is in Local History" notice — and
      * {@code null} for an ordinary undoable buffer.
      */
-    record Verdict(boolean allowed, boolean safetyCopy, String message) {
+    record Verdict(
+            boolean allowed, boolean safetyCopy, @Nullable String message) {
         static final Verdict UNDOABLE = new Verdict(true, false, null);
     }
 

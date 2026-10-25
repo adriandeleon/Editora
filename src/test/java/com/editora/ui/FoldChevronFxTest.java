@@ -8,8 +8,8 @@ import javafx.scene.control.Label;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 
-import com.editora.editor.FoldManager;
-import com.editora.editor.FoldRegions;
+import com.editora.editor.fold.FoldManager;
+import com.editora.text.FoldRegions;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

@@ -13,11 +13,12 @@ import java.util.concurrent.Executors;
 
 import javafx.application.Platform;
 
-import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.lsp.CodeAction;
 import com.editora.http.HttpEnv;
 import com.editora.http.HttpVariableIndex;
 import com.editora.markdown.MarkdownLint;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -36,6 +37,7 @@ final class HttpVariableHints {
         String environment(EditorBuffer buffer);
 
         /** The folder whose env files apply to the buffer as last read, or null; FX thread, no file access. */
+        @Nullable
         Path envDir(EditorBuffer buffer);
 
         /** Selects {@code environment} for the buffer's file (the "Use environment dev" quick fix). */
@@ -168,7 +170,8 @@ final class HttpVariableHints {
     }
 
     /** {@link #context(String, Path, Path, String)} with the env files already read. */
-    static HttpVariableIndex.Context context(String env, HttpEnvironments.EnvFiles files, Path dir, String text) {
+    static HttpVariableIndex.Context context(
+            String env, HttpEnvironments.EnvFiles files, @Nullable Path dir, String text) {
         boolean selected = env != null && !env.isEmpty();
         return new HttpVariableIndex.Context(
                 selected ? files.variables(env) : Map.of(),
@@ -199,14 +202,14 @@ final class HttpVariableHints {
         return out;
     }
 
-    private static Path folderOf(EditorBuffer buffer) {
+    private static @Nullable Path folderOf(EditorBuffer buffer) {
         return buffer.getPath() == null
                 ? null
                 : buffer.getPath().toAbsolutePath().getParent();
     }
 
     /** The environment name and the modification times of the files a check reads. Stats files: on the worker. */
-    private static String fingerprint(String env, Path envDir, Path dir) {
+    private static String fingerprint(String env, @Nullable Path envDir, @Nullable Path dir) {
         return env
                 + "|" + envDir
                 + "|" + stamp(envDir == null ? null : envDir.resolve(HttpEnv.PUBLIC_FILE))
@@ -214,7 +217,7 @@ final class HttpVariableHints {
                 + "|" + stamp(dir == null ? null : dir.resolve(".env"));
     }
 
-    private static String stamp(Path file) {
+    private static String stamp(@Nullable Path file) {
         try {
             return file != null && Files.isRegularFile(file)
                     ? Files.getLastModifiedTime(file) + "/" + Files.size(file)

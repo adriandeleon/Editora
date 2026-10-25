@@ -10,6 +10,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.markdown.CsvTableDocument;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -31,14 +32,14 @@ final class ExportCoordinator {
     private final com.editora.office.OfficeExportService officeService = new com.editora.office.OfficeExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
     /** Where this window last exported to: the Save dialog starts there for a document that has no folder. */
-    private java.io.File lastExportDirectory;
+    private java.io.@Nullable File lastExportDirectory;
     /** Asks before an export replaces {@code file}, when the Save dialog did not ask (tests replace it). */
     java.util.function.Predicate<java.io.File> confirmReplace = this::confirmReplace;
 
     /** A print preparation started by this window has not reached {@link #openPrintPreview} yet. */
     private boolean printPreparing;
     /** The Print Preview open for this window, or {@code null}. */
-    private PrintPreview openPreview;
+    private @Nullable PrintPreview openPreview;
     /** Creates the printer job behind a preview ({@code null}: no printer). Tests supply a fake — never a real job. */
     java.util.function.Supplier<PrintPreview.Job> printJobs = () -> {
         javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
@@ -59,13 +60,14 @@ final class ExportCoordinator {
     /** PDF exports started through {@link #stagedPdf} that have not reported yet (running + queued). */
     private int pdfExportsPending;
     /** The status-bar entry of the running PDF exports, re-labelled as pages are written; null when idle. */
-    private AutoCloseable pdfExportTask;
+    private @Nullable AutoCloseable pdfExportTask;
     /** The file this window last exported successfully, for {@code file.openLastExport}; null before any. */
-    private Path lastExported;
+    private @Nullable Path lastExported;
     /**
      * Hands a file this window exported to the application the system opens it with (the window sets it to
      * the JavaFX {@code HostServices}; null: none). Only ever given {@link #lastExported}.
      */
+    @Nullable
     Consumer<Path> systemOpener;
     /** Told the path of every export that has replaced its destination; the window reloads a viewer tab on it. */
     Consumer<Path> exported = path -> {};
@@ -74,7 +76,7 @@ final class ExportCoordinator {
      * The grid state of a CSV buffer whose grid is on screen — its visible rows in displayed order and its
      * header setting — or null when the buffer shows no grid. Set by the window ({@code CsvCoordinator}).
      */
-    java.util.function.Function<EditorBuffer, CsvGridPanel.Shown> csvShown = b -> null;
+    java.util.function.Function<EditorBuffer, CsvGridPanel.@Nullable Shown> csvShown = b -> null;
     /** What the active tab holds when it is not an editor buffer (an image, PDF or hex viewer), or null. */
     java.util.function.Supplier<Object> activeTabContent = () -> null;
 
@@ -149,7 +151,7 @@ final class ExportCoordinator {
      * grid shows (see {@link CsvTableDocument}). While the grid is on screen the table is what the grid
      * shows — see {@link #csvRows}.
      */
-    void csvExportPdf(String csvText, String baseName) {
+    void csvExportPdf(String csvText, @Nullable String baseName) {
         CsvGridPanel.Shown shown = csvRows(csvText);
         org.commonmark.node.Node table = CsvTableDocument.fromRows(shown.header(), shown.rows());
         if (table == null) {
@@ -215,7 +217,7 @@ final class ExportCoordinator {
     }
 
     /** The document name (PDF title and footer) and the footer's localised page label. */
-    private static com.editora.pdf.PdfDocMeta pdfMeta(String name) {
+    private static com.editora.pdf.PdfDocMeta pdfMeta(@Nullable String name) {
         return new com.editora.pdf.PdfDocMeta(
                 name, com.editora.i18n.Messages.current(), (page, pages) -> tr("pdf.footer.page", page, pages));
     }
@@ -408,15 +410,15 @@ final class ExportCoordinator {
             return;
         }
         PrintPreview.Job job = printJobs.get();
+        EditorBuffer active = host.activeBuffer();
         if (job == null) {
-            EditorBuffer active = host.activeBuffer();
             noPrinter(() -> csvExportPdf(csvText, active == null ? null : bufferBaseName(active)));
             return;
         }
         preparePrint(() -> printService.prepareDocument(
                 table,
                 null,
-                host.activeBuffer() == null ? null : bufferBaseName(host.activeBuffer()),
+                active == null ? null : bufferBaseName(active),
                 host.settings().isPdfPageFooter(),
                 prepared -> openPrintPreview(job, prepared)));
         if (shown.filtered()) { // say that the preview about to open is not the whole file
@@ -428,7 +430,7 @@ final class ExportCoordinator {
      * Exports the complete Project Map layout—not merely the visible viewport—to a PDF. The map is rendered
      * only after a destination was chosen, on a landscape page when it is wider than tall.
      */
-    void exportProjectMapPdf(ProjectMapOutput output, String baseName) {
+    void exportProjectMapPdf(ProjectMapOutput output, @Nullable String baseName) {
         java.io.File file = choosePdfDestination(baseName, null);
         if (file == null) {
             return;
@@ -502,7 +504,7 @@ final class ExportCoordinator {
     }
 
     /** What the user should know about how the map met the page, or null when it simply fitted. Pure. */
-    static String projectMapOutputNote(ProjectMapOutputPlan.Plan plan) {
+    static @Nullable String projectMapOutputNote(ProjectMapOutputPlan.Plan plan) {
         if (plan.detailReduced()) {
             return tr("status.projectMap.outputCannotKeepDetail", plan.pages().size());
         }
@@ -627,6 +629,10 @@ final class ExportCoordinator {
             return;
         }
         java.util.List<com.editora.pdf.PageImage> pages = pageImage(image);
+        if (pages == null) {
+            host.setStatus(tr("status.print.imageNotLoaded"));
+            return;
+        }
         preparePrint(() -> printService.preparePageImages(pages, prepared -> openPrintPreview(job, prepared)));
     }
 
@@ -646,21 +652,29 @@ final class ExportCoordinator {
         if (f == null) {
             return;
         }
+        java.util.List<com.editora.pdf.PageImage> pages = pageImage(image);
+        if (pages == null) {
+            host.setStatus(tr("status.print.imageNotLoaded"));
+            return;
+        }
         host.setStatus(tr("status.pdf.exporting"));
         String pageSize = host.settings().getPdfPageSize();
-        java.util.List<com.editora.pdf.PageImage> pages = pageImage(image);
         stagedPdf(f, (out, report) -> pdfService.exportPageImages(pages, pageSize, out, report));
     }
 
-    /** An image tab's picture as the one-pixel-per-point page image the raster print and PDF paths take. */
-    private static java.util.List<com.editora.pdf.PageImage> pageImage(javafx.scene.image.Image image) {
-        return java.util.List.of(com.editora.pdf.PageImage.of(com.editora.editor.PreviewImageLoader.imageToPng(image)));
+    /**
+     * An image tab's picture as the one-pixel-per-point page image the raster print and PDF paths take, or
+     * null when it cannot be encoded as a PNG.
+     */
+    private static java.util.@Nullable List<com.editora.pdf.PageImage> pageImage(javafx.scene.image.Image image) {
+        byte[] png = com.editora.editor.markdown.PreviewImageLoader.imageToPng(image);
+        return png == null ? null : java.util.List.of(com.editora.pdf.PageImage.of(png));
     }
 
     // --- the selection only -------------------------------------------------------------------------------
 
     /** The text a selection is cut from, and the selection widened to whole lines of it. */
-    record SelectedLines(String text, LineSelection lines) {}
+    record SelectedLines(EditorBuffer buffer, String text, LineSelection lines) {}
 
     /**
      * The active buffer's selection as whole lines of its file, or null — with the reason in the status bar —
@@ -668,6 +682,7 @@ final class ExportCoordinator {
      * buffer shows only part of it, so the selection is mapped into the whole text. A filtered log view shows
      * lines that are not adjacent in the file; there the visible text is used and numbered as shown.
      */
+    @Nullable
     SelectedLines selectedLines() {
         EditorBuffer b = host.activeBuffer();
         if (b == null) {
@@ -684,7 +699,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.print.noSelection"));
             return null;
         }
-        return new SelectedLines(text, lines);
+        return new SelectedLines(b, text, lines);
     }
 
     /**
@@ -708,7 +723,7 @@ final class ExportCoordinator {
             return;
         }
         Settings s = host.settings();
-        String grammar = grammarKey(host.activeBuffer());
+        String grammar = grammarKey(selected.buffer());
         LineSelection lines = selected.lines();
         preparePrint(() -> printService.prepareCodeLines(
                 selected.text(),
@@ -719,7 +734,7 @@ final class ExportCoordinator {
                 s.isPdfSyntaxHighlighting(),
                 s.isPdfLineNumbers(),
                 s.getTabSize(),
-                bufferBaseName(host.activeBuffer()),
+                bufferBaseName(selected.buffer()),
                 s.isPdfPageFooter(),
                 prepared -> openPrintPreview(job, prepared)));
     }
@@ -733,7 +748,7 @@ final class ExportCoordinator {
         if (selected == null) {
             return;
         }
-        EditorBuffer b = host.activeBuffer();
+        EditorBuffer b = selected.buffer();
         java.io.File f = choosePdfDestination(bufferBaseName(b), b);
         if (f == null) {
             return;
@@ -985,24 +1000,24 @@ final class ExportCoordinator {
         boolean math = host.settings().isMathSupport();
         java.nio.file.Path source = b.getPath();
         java.util.List<String> mmdc = mermaid == null ? null : mermaid.mmdcCommandOrNull();
-        var options = new com.editora.editor.MarkdownHtmlExport.Options(
+        var options = new com.editora.editor.markdown.MarkdownHtmlExport.Options(
                 host.settings().isHtmlExportHighlightCode(),
                 host.settings().isHtmlExportEmbedImages(),
                 source != null && com.editora.vfs.Vfs.isLocal(source) ? source.getParent() : null,
                 mmdc,
-                com.editora.editor.MarkdownHtmlExport.painter(
+                com.editora.editor.markdown.MarkdownHtmlExport.painter(
                         com.editora.pdf.CodeHtml::toClassHtml,
                         () -> com.editora.pdf.CodeHtml.classCss(".markdown-body")));
         java.util.function.Supplier<Exception> write = () -> {
             try {
-                String html = com.editora.editor.MarkdownHtmlExport.toHtml(markdown, title, math, options);
+                String html = com.editora.editor.markdown.MarkdownHtmlExport.toHtml(markdown, title, math, options);
                 com.editora.io.StagedExport.writeString(f.toPath(), html);
                 return null;
             } catch (Exception ex) {
                 return ex;
             }
         };
-        if (!com.editora.editor.MarkdownHtmlExport.readsFilesOrRunsTools(markdown, options)) {
+        if (!com.editora.editor.markdown.MarkdownHtmlExport.readsFilesOrRunsTools(markdown, options)) {
             htmlExported(f, write.get(), true); // text only: nothing to wait for
             return;
         }
@@ -1045,7 +1060,7 @@ final class ExportCoordinator {
             java.util.concurrent.CompletableFuture.completedFuture(null);
 
     /** A Save dialog defaulting to {@code <base-without-ext>.html}. */
-    private java.io.File chooseHtmlDestination(String base, EditorBuffer source) {
+    private java.io.@Nullable File chooseHtmlDestination(String base, EditorBuffer source) {
         return chooseExportDestination(tr("dialog.htmlExport.title"), base, "document", "html", "HTML", source);
     }
 
@@ -1072,7 +1087,7 @@ final class ExportCoordinator {
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.pdf}. */
-    private java.io.File choosePdfDestination(String base, EditorBuffer source) {
+    private java.io.@Nullable File choosePdfDestination(@Nullable String base, @Nullable EditorBuffer source) {
         return chooseExportDestination(tr("dialog.pdfExport.title"), base, "document", "pdf", "PDF", source);
     }
 
@@ -1087,15 +1102,19 @@ final class ExportCoordinator {
      * @param fallbackBase the file name when {@code base} is null
      * @param source       the buffer being exported, or null when the export is not of a file
      */
-    private java.io.File chooseExportDestination(
-            String title, String base, String fallbackBase, String ext, String filterName, EditorBuffer source) {
+    private java.io.@Nullable File chooseExportDestination(
+            @Nullable String title,
+            @Nullable String base,
+            String fallbackBase,
+            String ext,
+            String filterName,
+            @Nullable EditorBuffer source) {
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
         if (title != null) {
             chooser.setTitle(title);
         }
         int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName(
-                (dot > 0 ? base.substring(0, dot) : (base == null ? fallbackBase : base)) + "." + ext);
+        chooser.setInitialFileName((base == null ? fallbackBase : dot > 0 ? base.substring(0, dot) : base) + "." + ext);
         chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter(filterName, "*." + ext));
         java.io.File directory = lastExportDirectory;
         if (source != null
@@ -1196,7 +1215,7 @@ final class ExportCoordinator {
     }
 
     /** What a failure dialog and the status bar say went wrong: the message, or a sentence when there is none. */
-    static String failureDetail(String message) {
+    static String failureDetail(@Nullable String message) {
         return message == null || message.isBlank() ? tr("dialog.export.noDetails") : message;
     }
 
@@ -1253,7 +1272,8 @@ final class ExportCoordinator {
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.<ext>}. */
-    private java.io.File chooseOfficeDestination(String base, String ext, String filterName, EditorBuffer source) {
+    private java.io.@Nullable File chooseOfficeDestination(
+            String base, String ext, String filterName, @Nullable EditorBuffer source) {
         return chooseExportDestination(tr("dialog.officeExport.title"), base, "document", ext, filterName, source);
     }
 
@@ -1465,7 +1485,7 @@ final class ExportCoordinator {
      * The PNG a diagram render left at {@code tmp} — {@code null} when it did not render — deleting the
      * temp file on every path: a failed render and a failed read leave nothing behind either.
      */
-    static byte[] takeRenderedPng(java.nio.file.Path tmp, boolean rendered) throws java.io.IOException {
+    static byte @Nullable [] takeRenderedPng(java.nio.file.Path tmp, boolean rendered) throws java.io.IOException {
         try {
             return rendered ? java.nio.file.Files.readAllBytes(tmp) : null;
         } finally {

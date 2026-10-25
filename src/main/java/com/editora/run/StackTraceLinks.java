@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure detection of source locations in program output (unit-tested), so the Run/Debug consoles can make
  * stack-trace lines clickable. Recognizes the frame formats of the runnable/debuggable languages:
@@ -27,7 +29,7 @@ public final class StackTraceLinks {
      * frame inside a dependency or the JDK (#744) — and it wants the <em>whole line</em>, not the pieces
      * we picked out of it.
      */
-    public record Link(String file, int line, String raw, int column) {
+    public record Link(String file, int line, @Nullable String raw, int column) {
         /** The two-arg form, for callers (and tests) that don't need the original line. */
         public Link(String file, int line) {
             this(file, line, null, 0);
@@ -53,6 +55,15 @@ public final class StackTraceLinks {
      */
     private static final Pattern JAVA_LOCATION =
             Pattern.compile("(?<![^\\s(])((?:[A-Za-z]:)?[^\\s:()]+\\." + JVM_SOURCE + "):(\\d{1,9}):");
+    /**
+     * Maven's compiler plugin prints a location as {@code path:[line,col]} —
+     * {@code [ERROR] /src/demo/App.java:[5,18] illegal start of expression}, and a {@code [WARNING] …:[12,5]
+     * [deprecation] …} the same — for Java, Kotlin, Scala and Groovy sources alike. Tried before
+     * {@link #JAVA_LOCATION}, which wants {@code :line:} and found nothing in these (Maven review B4). The
+     * column is kept: javac's is 1-based, as the editor's.
+     */
+    private static final Pattern MAVEN_LOCATION = Pattern.compile(
+            "(?<![^\\s(])((?:[A-Za-z]:)?[^\\s:()\\[]+\\." + JVM_SOURCE + "):\\[(\\d{1,9}),(\\d{1,9})\\]");
     /**
      * A traceback frame: {@code File "<path>", line N}. Any path — an extensionless script run through its
      * shebang is still Python, and a path may hold a {@code "} (Python prints it unescaped) — but not the
@@ -128,7 +139,7 @@ public final class StackTraceLinks {
     private StackTraceLinks() {}
 
     /** A Node.js location in {@code line} — an ESM URL, a parenthesized frame, tsc's {@code (l,c)}, or a bare path. */
-    private static Link node(String line) {
+    private static @Nullable Link node(String line) {
         Matcher m = NODE_FILE_URL.matcher(line);
         if (m.find()) {
             return new Link(fileUrlPath(m.group(1)), Integer.parseInt(m.group(2)), line, column(m.group(3)));
@@ -183,7 +194,7 @@ public final class StackTraceLinks {
      * is in: the package comes from the class, the file name from the parentheses (a nested or secondary
      * top-level class lives in a file named after another class, so the class name is not used for it).
      */
-    public static String javaSourcePath(Link link) {
+    public static @Nullable String javaSourcePath(Link link) {
         if (link == null || link.raw() == null) {
             return null;
         }
@@ -209,7 +220,7 @@ public final class StackTraceLinks {
      * namespace's directories, munged as the JVM loads them ({@code my-app} → {@code my_app}), then the file —
      * {@code my_app/core.clj}. {@code null} for a namespace with one segment, or any other line.
      */
-    private static String clojureSourcePath(Link link) {
+    private static @Nullable String clojureSourcePath(Link link) {
         Matcher m = CLOJURE_FRAME.matcher(link.raw());
         if (!m.find() || !m.group(2).equals(link.file())) {
             return null;
@@ -231,13 +242,17 @@ public final class StackTraceLinks {
     }
 
     /** The first source location in {@code line}, or null when the line holds none. */
-    public static Link parse(String line) {
+    public static @Nullable Link parse(String line) {
         if (line == null || line.isEmpty()) {
             return null;
         }
         Matcher m = JAVA.matcher(line);
         if (m.find()) {
             return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
+        }
+        m = MAVEN_LOCATION.matcher(line);
+        if (m.find()) {
+            return new Link(m.group(1), Integer.parseInt(m.group(2)), line, Integer.parseInt(m.group(3)));
         }
         m = JAVA_LOCATION.matcher(line);
         if (m.find()) {

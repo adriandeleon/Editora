@@ -18,6 +18,7 @@ import javafx.stage.Window;
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -150,7 +151,7 @@ public final class StatusBar extends HBox {
     /** Text-zoom percentage (clickable to reset to 100%). */
     private final Label zoomPercent = new Label("100%");
 
-    private EditorBuffer attached;
+    private @Nullable EditorBuffer attached;
     /** Simple UI mode hides the git / language / tab-size / line-ending / encoding / LSP segments (size is kept). */
     private boolean simpleMode;
     /** Git feature on (setGitEnabled) and the active file actually in a repo (setGitBranch) — both gate the
@@ -159,7 +160,7 @@ public final class StatusBar extends HBox {
 
     private boolean gitInRepo;
     /** Latest GitHub PR check roll-up (null = hidden), so Simple-mode toggling can re-apply its visibility. */
-    private com.editora.github.ChecksParser.ChecksSummary githubChecksSummary;
+    private com.editora.github.ChecksParser.@Nullable ChecksSummary githubChecksSummary;
     /** Latest LSP server name + loading state, so Simple-mode toggling can re-apply their visibility. */
     private String lspServerName = "";
 
@@ -186,7 +187,7 @@ public final class StatusBar extends HBox {
         refreshCaretSegments();
     };
     /** The debounced edit subscription that recomputes the (O(n)) file-size segment once per typing burst. */
-    private org.reactfx.Subscription sizeSub;
+    private org.reactfx.@Nullable Subscription sizeSub;
 
     public StatusBar(Supplier<EditorBuffer> activeBuffer, CommandRegistry registry, Supplier<Settings> settings) {
         this.activeBuffer = activeBuffer;
@@ -408,7 +409,7 @@ public final class StatusBar extends HBox {
      *
      * @return the segment, for {@link #removePluginSegment}
      */
-    public Node addPluginSegment(String text, String commandId, String hint) {
+    public Node addPluginSegment(String text, @Nullable String commandId, String hint) {
         Label seg = new Label(text == null ? "" : text);
         seg.getStyleClass().add("status-segment");
         if (hint != null && !hint.isBlank()) {
@@ -446,7 +447,7 @@ public final class StatusBar extends HBox {
      * {@code *Error} message is an error whichever of the ~90 call sites reported it through the plain
      * status channel (see {@link StatusSeverity}); everything else is ordinary echo text.
      */
-    public void setMessage(String message) {
+    public void setMessage(@Nullable String message) {
         setMessage(message, StatusSeverity.of(message));
     }
 
@@ -458,7 +459,7 @@ public final class StatusBar extends HBox {
      * {@link #refreshUnreadErrors()}, which keeps a marker up until someone opens the log — so a failure can
      * never disappear entirely unnoticed without the echo line being hijacked to hold it.
      */
-    public void setMessage(String message, MessageLog.Severity severity) {
+    public void setMessage(@Nullable String message, MessageLog.Severity severity) {
         echo.setText(echoLine(message));
         echo.getStyleClass().removeAll("status-echo-warn", "status-echo-error");
         if (severity == MessageLog.Severity.ERROR) {
@@ -486,7 +487,7 @@ public final class StatusBar extends HBox {
      * animation timeline that keeps pulsing the scene, so leaving one spinning when idle would burn repaints
      * for nothing — the same reason the LSP bar sits at a fixed value when it has nothing to say.
      */
-    public void setBackgroundTasks(String label, int count) {
+    public void setBackgroundTasks(@Nullable String label, int count) {
         boolean busy = count > 0 && label != null && !label.isBlank();
         backgroundTasks.setText(busy ? (count > 1 ? label + "  (" + count + ")" : label) : "");
         backgroundTasks.setVisible(busy);
@@ -507,7 +508,7 @@ public final class StatusBar extends HBox {
 
     /** First line of {@code message}, capped at {@link #MAX_ECHO_CHARS}, with {@code …} marking anything
      *  cut (more lines or overlength). Pure — tested. */
-    static String echoLine(String message) {
+    static String echoLine(@Nullable String message) {
         if (message == null) {
             return "";
         }
@@ -546,7 +547,7 @@ public final class StatusBar extends HBox {
      * Shows the active {@code .http} file's environment ({@code text}: "Env: dev"; {@code none}: muted, as for "No
      * environment"), or hides the segment ({@code text} null).
      */
-    public void setHttpEnvironment(String text, boolean none) {
+    public void setHttpEnvironment(@Nullable String text, boolean none) {
         boolean shown = text != null;
         httpEnv.setText(shown ? text : "");
         httpEnv.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("none"), shown && none);
@@ -612,7 +613,7 @@ public final class StatusBar extends HBox {
      * repository, "No VCS" for a {@code null}/blank {@code branch} (no version control for this file, or no
      * file). While Git is off the segment keeps saying so.
      */
-    public void setGitBranch(String branch, int ahead, int behind) {
+    public void setGitBranch(@Nullable String branch, int ahead, int behind) {
         if (branch == null || branch.isBlank()) {
             gitInRepo = false;
             gitBranchText = "";
@@ -694,7 +695,7 @@ public final class StatusBar extends HBox {
      * Updates the GitHub PR CI-checks roll-up. A {@code null} summary (or one with no meaningful runs) hides
      * the segment; otherwise it shows the overall status. Hidden in Simple UI mode.
      */
-    public void setGitHubChecks(com.editora.github.ChecksParser.ChecksSummary summary) {
+    public void setGitHubChecks(com.editora.github.ChecksParser.@Nullable ChecksSummary summary) {
         setGitHubChecks(0, summary);
     }
 
@@ -703,10 +704,10 @@ public final class StatusBar extends HBox {
      * checks belong to ({@code prNumber <= 0}: unknown, not shown) — the branch name beside it does not say
      * which pull request that is. The tooltip carries the full roll-up.
      */
-    public void setGitHubChecks(int prNumber, com.editora.github.ChecksParser.ChecksSummary summary) {
+    public void setGitHubChecks(int prNumber, com.editora.github.ChecksParser.@Nullable ChecksSummary summary) {
         githubChecksSummary =
                 summary == null || summary.overall() == com.editora.github.ChecksParser.Overall.NONE ? null : summary;
-        if (githubChecksSummary != null) {
+        if (summary != null && githubChecksSummary != null) {
             githubChecks.setText(checksText(prNumber, githubChecksSummary, tr("statusbar.checks")));
             githubChecks
                     .getTooltip()
@@ -772,7 +773,7 @@ public final class StatusBar extends HBox {
      * Shows/updates the LSP segment for the active file. {@code serverName} non-blank → "LSP: name"
      * (segment shown); null/blank → the segment is hidden (no language server for this file).
      */
-    public void setLsp(String serverName) {
+    public void setLsp(@Nullable String serverName) {
         lspServerName = serverName == null ? "" : serverName;
         applyLspStatusVisibility();
     }
@@ -783,12 +784,12 @@ public final class StatusBar extends HBox {
      * says something about the file that matters there too.
      */
     private void refreshEncryption(EditorBuffer buffer) {
-        com.editora.editor.EncryptionState state =
+        com.editora.editor.crypto.EncryptionState state =
                 buffer == null ? null : buffer.encryption().state();
         boolean show = state != null;
         encryption.setVisible(show);
         encryption.setManaged(show);
-        if (!show) {
+        if (state == null) {
             return;
         }
         if (encryption.getGraphic() == null) {
@@ -804,7 +805,7 @@ public final class StatusBar extends HBox {
     }
 
     /** Shows the Python interpreter item ({@code text}, hover {@code tooltip}); {@code null} hides it. */
-    public void setPythonInterpreter(String text, String tooltip) {
+    public void setPythonInterpreter(@Nullable String text, @Nullable String tooltip) {
         boolean show = text != null && !text.isBlank() && !simpleMode;
         pythonInterpreter.setText(show ? text : "");
         pythonInterpreter.setTooltip(show && tooltip != null ? new Tooltip(tooltip) : null);
@@ -818,15 +819,17 @@ public final class StatusBar extends HBox {
         applyLspStatusVisibility();
     }
 
-    /** Applies the LSP segment + loading-bar visibility from the stored state — both suppressed in Simple
-     *  mode. The progress bar is only set indeterminate while actually shown; a fixed value otherwise stops
-     *  the animation timeline (which would keep pulsing the scene and starve repaints — see field comment). */
+    /** Applies the LSP segment + loading-bar visibility from the stored state — the segment is suppressed in
+     *  Simple mode, the loading bar is not: it is transient, and without it nothing showed that a language server
+     *  (jdtls takes over a gigabyte) was importing (Java review C20). The progress bar is only set indeterminate
+     *  while actually shown; a fixed value otherwise stops the animation timeline (which would keep pulsing the
+     *  scene and starve repaints — see field comment). */
     private void applyLspStatusVisibility() {
         boolean showLsp = !lspServerName.isBlank() && !simpleMode;
         lsp.setText(lspServerName.isBlank() ? "" : tr("statusbar.lsp", lspServerName));
         lsp.setVisible(showLsp);
         lsp.setManaged(showLsp);
-        boolean showProgress = lspLoadingState && !simpleMode;
+        boolean showProgress = lspLoadingState;
         lspProgress.setProgress(showProgress ? ProgressBar.INDETERMINATE_PROGRESS : 0);
         lspProgress.setVisible(showProgress);
         lspProgress.setManaged(showProgress);
@@ -867,7 +870,7 @@ public final class StatusBar extends HBox {
     }
 
     /** Shows/updates the Debug segment ({@code state} non-blank → "Debug: state"; null/blank → hidden). */
-    public void setDebug(String state) {
+    public void setDebug(@Nullable String state) {
         boolean show = state != null && !state.isBlank();
         debug.setText(show ? tr("statusbar.debug", state) : "");
         debug.setVisible(show);
@@ -894,7 +897,7 @@ public final class StatusBar extends HBox {
     }
 
     /** Re-binds live listeners to {@code buffer} (or none) and refreshes the segments. */
-    public void attach(EditorBuffer buffer) {
+    public void attach(@Nullable EditorBuffer buffer) {
         if (attached != null) {
             attached.focusedAreaProperty().removeListener(viewListener);
             trackCaret(attached.getFocusedArea(), false);
@@ -935,7 +938,7 @@ public final class StatusBar extends HBox {
         boolean isRemote = com.editora.vfs.Vfs.isRemote(path) && !simpleMode;
         remote.setVisible(isRemote);
         remote.setManaged(isRemote);
-        remote.setTooltip(isRemote ? new Tooltip(com.editora.vfs.Vfs.displayLabel(path)) : null);
+        remote.setTooltip(isRemote && path != null ? new Tooltip(com.editora.vfs.Vfs.displayLabel(path)) : null);
         position.setVisible(hasBuffer);
         position.setManaged(hasBuffer);
         // Narrowing is a property of the buffer, not of the window: re-derive the chip on every tab switch, or
@@ -1048,7 +1051,7 @@ public final class StatusBar extends HBox {
      *  by {@link #caretListener} without recomputing the O(n) file size). */
     private void refreshPositionAndCsv(EditorBuffer buffer, org.fxmisc.richtext.CodeArea area) {
         caretRefreshes++;
-        int line = area.getCurrentParagraph() + 1;
+        int line = area.getCurrentParagraph() + 1 + buffer.narrowFirstLine(); // a narrowed view keeps the file's lines
         int col = area.getCaretColumn() + 1;
         int selected = area.getSelection().getLength();
         String text = "Ln " + line + ", Col " + col;
@@ -1190,6 +1193,6 @@ public final class StatusBar extends HBox {
         if (name == null || name.isEmpty()) {
             return tr("statusbar.plainText");
         }
-        return com.editora.editor.LanguageNames.display(name);
+        return com.editora.text.LanguageNames.display(name);
     }
 }

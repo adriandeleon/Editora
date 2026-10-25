@@ -1,5 +1,7 @@
 package com.editora.editops;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Finds the bracket matching the one adjacent to the caret — pure (no toolkit), so it is unit-tested.
  * {@link EditorBuffer} uses it to highlight the matching {@code () [] {}} pair.
@@ -26,7 +28,7 @@ public final class BraceMatcher {
     }
 
     /** The two matching bracket offsets (ascending) to highlight, or {@code null} if none is adjacent. */
-    public static int[] match(String text, int caret, int maxScan) {
+    public static int @Nullable [] match(String text, int caret, int maxScan) {
         int[] left = matchFrom(text, caret - 1, maxScan);
         return left != null ? left : matchFrom(text, caret, maxScan);
     }
@@ -62,12 +64,12 @@ public final class BraceMatcher {
      * <b>including both brackets</b> (VS Code's {@code selectToBracket} with {@code selectBrackets: true}),
      * or {@code null} when no bracket is adjacent.
      */
-    public static int[] selectSpan(String text, int caret, int maxScan) {
+    public static int @Nullable [] selectSpan(String text, int caret, int maxScan) {
         int[] pair = match(text, caret, maxScan);
         return pair == null ? null : new int[] {pair[0], pair[1] + 1};
     }
 
-    private static int[] matchFrom(String text, int pos, int maxScan) {
+    private static int @Nullable [] matchFrom(String text, int pos, int maxScan) {
         if (pos < 0 || pos >= text.length()) {
             return null;
         }

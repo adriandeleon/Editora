@@ -12,6 +12,7 @@ import org.commonmark.ext.gfm.tables.TableRow;
 import org.commonmark.node.Document;
 import org.commonmark.node.Node;
 import org.commonmark.node.Text;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds a CommonMark table <em>document</em> straight from CSV rows, for the CSV → PDF / Print path.
@@ -31,7 +32,7 @@ public final class CsvTableDocument {
     private CsvTableDocument() {}
 
     /** The table document for {@code csv} (first record = header row), or {@code null} when it has no rows. */
-    public static Node fromCsv(String csv) {
+    public static @Nullable Node fromCsv(String csv) {
         if (csv == null || csv.isBlank()) {
             return null;
         }
@@ -43,7 +44,7 @@ public final class CsvTableDocument {
     }
 
     /** A document holding one table: {@code rows.get(0)} is the header, short rows are padded. */
-    public static Node fromRows(List<List<String>> rows) {
+    public static @Nullable Node fromRows(List<List<String>> rows) {
         return fromRows(rows.get(0), rows.subList(1, rows.size()));
     }
 
@@ -52,7 +53,7 @@ public final class CsvTableDocument {
      * header row at all when that is null (the CSV grid with "first row is a header" off: every row is
      * data). Short rows are padded to the widest. Null when there is neither a header nor a row.
      */
-    public static Node fromRows(List<String> header, List<List<String>> rows) {
+    public static @Nullable Node fromRows(@Nullable List<String> header, List<List<String>> rows) {
         if (header == null && rows.isEmpty()) {
             return null;
         }

@@ -8,7 +8,7 @@ import java.util.Set;
 
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
-import com.editora.editor.LspTextEdit;
+import com.editora.text.LspTextEdit;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemDefaults;
 import org.eclipse.lsp4j.CompletionItemKind;

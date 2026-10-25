@@ -3,6 +3,8 @@ package com.editora.macro;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Accumulates the interleaved stream of invoked commands, typed text and key presses while a macro is being
  * recorded. Three hooks feed it — a command-execution listener (→ {@link #recordCommand}), a typed-text hook
@@ -17,7 +19,7 @@ public final class MacroRecorder {
     private boolean recording;
     private final List<MacroStep> steps = new ArrayList<>();
     /** The trailing text step's characters while it is still growing (avoids re-copying it per keystroke). */
-    private StringBuilder tail;
+    private @Nullable StringBuilder tail;
 
     private boolean tailPrompt;
 

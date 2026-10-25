@@ -94,6 +94,35 @@ class LspServerSettingsTest {
         return session.configuration(new ConfigurationParams(items)).join();
     }
 
+    /**
+     * jdtls asks for a document's indentation before every code action and formats quick fixes and generated
+     * members with the answer (Java review B8, D9).
+     */
+    @Test
+    void jdtlsIsToldEachDocumentsIndentation() {
+        var indent = new FormattingIndent(2, true);
+        assertEquals(2, LspServerSettings.javaFormatAnswer("java.format.tabSize", indent));
+        assertEquals(Boolean.TRUE, LspServerSettings.javaFormatAnswer("java.format.insertSpaces", indent));
+        assertNull(LspServerSettings.javaFormatAnswer("java.format.enabled", indent));
+        assertNull(LspServerSettings.javaFormatAnswer("java.format.tabSize", null), "unknown document: jdtls decides");
+
+        var s = session("java");
+        s.setIndentForUri(uri -> uri.endsWith("Tabbed.java") ? new FormattingIndent(8, false) : null);
+        var items = new java.util.ArrayList<ConfigurationItem>();
+        for (String section : List.of("java.format.tabSize", "java.format.insertSpaces")) {
+            var item = new ConfigurationItem();
+            item.setScopeUri("file:///p/src/Tabbed.java");
+            item.setSection(section);
+            items.add(item);
+        }
+        var unscoped = new ConfigurationItem();
+        unscoped.setSection("java.format.tabSize");
+        items.add(unscoped);
+        assertEquals(
+                java.util.Arrays.asList(8, false, null),
+                s.configuration(new ConfigurationParams(items)).join());
+    }
+
     /** The answers a session gives are its own server's — the request as the real HTML server sends it. */
     @Test
     void aSessionAnswersConfigurationForItsOwnServer() {

@@ -7,6 +7,7 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFNumbering;
 import org.apache.poi.xwpf.usermodel.XWPFStyle;
 import org.apache.poi.xwpf.usermodel.XWPFStyles;
+import org.jspecify.annotations.Nullable;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTAbstractNum;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTInd;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTLvl;
@@ -39,7 +40,7 @@ final class DocxScaffold {
     private final XWPFNumbering numbering;
     private final BigInteger bulletAbstract;
     private final BigInteger decimalAbstract;
-    private BigInteger bulletNum;
+    private @Nullable BigInteger bulletNum;
 
     DocxScaffold(XWPFDocument doc) {
         installStyles(doc.createStyles());

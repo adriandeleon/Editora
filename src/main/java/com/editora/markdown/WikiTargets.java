@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a wiki link's target names: an immutable picture of a project's files, asked for the file behind
  * {@code [[note]]}. Pure — it is given the files, and never looks at the disk.
@@ -28,20 +30,20 @@ import java.util.Map;
 public final class WikiTargets {
 
     /** A wiki target's file, and for a target written with a folder the folder it was relative to. */
-    public record Resolved(Path file, Path base) {}
+    public record Resolved(Path file, @Nullable Path base) {}
 
     private static final List<String> MARKDOWN_EXTENSIONS = List.of(".md", ".markdown", ".mdown", ".mkd", ".mkdn");
 
     /** An index with no files: every bare name is unresolved. */
     public static final WikiTargets EMPTY = new WikiTargets(null, List.of());
 
-    private final Path root;
+    private final @Nullable Path root;
     private final Map<String, List<Path>> byName = new HashMap<>();
     private final Map<String, Path> byPath = new HashMap<>();
     private final int size;
     private final List<Path> all;
 
-    public WikiTargets(Path root, Collection<Path> files) {
+    public WikiTargets(@Nullable Path root, Collection<Path> files) {
         this.root = root == null ? null : root.toAbsolutePath().normalize();
         int n = 0;
         List<Path> listed = new ArrayList<>();
@@ -73,7 +75,7 @@ public final class WikiTargets {
     }
 
     /** The project root the files were listed under, or null. */
-    public Path root() {
+    public @Nullable Path root() {
         return root;
     }
 
@@ -86,7 +88,7 @@ public final class WikiTargets {
     }
 
     /** The file {@code target} names when written in {@code doc}, or null (unknown or ambiguous). */
-    public Resolved resolve(Path doc, String target) {
+    public @Nullable Resolved resolve(Path doc, String target) {
         if (doc == null || target == null) {
             return null;
         }
@@ -125,7 +127,7 @@ public final class WikiTargets {
                 inFolder++;
             }
         }
-        if (inFolder == 1) {
+        if (inFolder == 1 && here != null) {
             return new Resolved(here, null);
         }
         return inFolder == 0 && named.size() == 1 ? new Resolved(named.get(0), null) : null;

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 
 import com.editora.editops.Commenter;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Finds the declarations in one file's text, without a language server.
@@ -125,7 +126,8 @@ public final class DeclarationScanner {
      * {@link DeclarationRules} is the precedence: the specific patterns are listed before the general
      * ones, and one line never yields two symbols.
      */
-    private static Symbol firstMatch(String lineText, List<DeclarationRules.Rule> rules, int line, String container) {
+    private static @Nullable Symbol firstMatch(
+            String lineText, List<DeclarationRules.Rule> rules, int line, String container) {
         for (DeclarationRules.Rule rule : rules) {
             if (!rule.mayMatch(lineText)) {
                 continue;

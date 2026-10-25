@@ -7,6 +7,7 @@ import javafx.scene.control.Tab;
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -22,6 +23,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         CommandRegistry registry();
 
         /** This window's project root, or null when it has no project open. */
+        @Nullable
         Path projectRoot();
 
         com.editora.lsp.LspManager lspManager();
@@ -38,19 +40,26 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
 
         boolean lspEnabled();
 
+        @Nullable
         EditorBuffer activeBuffer();
 
+        @Nullable
         ImageViewerPane imagePaneOf(Tab tab);
 
+        @Nullable
         HexViewerPane hexPaneOf(Tab tab);
 
+        @Nullable
         PdfViewerPane pdfPaneOf(Tab tab);
 
+        @Nullable
         EditorBuffer bufferOf(Tab tab);
 
         /** {@link #bufferOf}, building the editor of a restored tab the session restore has not reached yet. */
+        @Nullable
         EditorBuffer ensureBuffer(Tab tab);
 
+        @Nullable
         Path tabPath(Tab tab);
 
         Path canonicalPath(Path p);
@@ -111,7 +120,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                         out.add(new OpenFile(
                                 placeholder.path().toString(),
                                 placeholder.title(),
-                                com.editora.editor.LanguageRegistry.forFileName(
+                                com.editora.text.LanguageRegistry.forFileName(
                                         placeholder.path().toString()),
                                 false,
                                 false));
@@ -130,7 +139,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public BufferContent readBuffer(String path) {
+    public BufferContent readBuffer(@Nullable String path) {
         return mcpOnFx(() -> {
             EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);
             if (b == null) {
@@ -151,7 +160,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public java.util.List<Diagnostic> getDiagnostics(String path) {
+    public java.util.List<Diagnostic> getDiagnostics(@Nullable String path) {
         return mcpOnFx(() -> {
             Path target = path != null
                     ? Path.of(path)
@@ -165,7 +174,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                 if (!com.editora.config.PathKeys.samePath(host.canonicalPath(e.getKey()), key)) {
                     continue;
                 }
-                for (com.editora.editor.LspDiagnostic d : e.getValue()) {
+                for (com.editora.text.LspDiagnostic d : e.getValue()) {
                     out.add(new Diagnostic(
                             d.startLine() + 1, d.startCol() + 1, d.severity().name(), d.message(), d.origin()));
                 }
@@ -232,7 +241,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public String commandRefusal(String id) {
+    public @Nullable String commandRefusal(String id) {
         return McpAccess.commandRefusal(id);
     }
 
@@ -241,7 +250,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         Path file = Path.of(path);
         // What the window has, read on the FX thread; the containment check itself resolves links on disk
         // and stays here, on the MCP worker.
-        record Scope(Path root, boolean alreadyOpen) {}
+        record Scope(@Nullable Path root, boolean alreadyOpen) {}
         Scope scope = mcpOnFx(() -> new Scope(host.projectRoot(), tabShowing(file)));
         String refusal = McpAccess.openRefusal(scope.root(), file, scope.alreadyOpen());
         if (refusal != null) {
@@ -261,7 +270,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public String editBuffer(String path, String oldText, String newText, boolean replaceAll) {
+    public String editBuffer(@Nullable String path, String oldText, String newText, boolean replaceAll) {
         if (oldText == null || oldText.isEmpty()) {
             // Never "then replace everything": that takes replaceBuffer, which the client must ask for by name.
             return "old_text is required for a targeted edit.";
@@ -320,7 +329,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public String replaceBuffer(String path, String newText) {
+    public String replaceBuffer(@Nullable String path, String newText) {
         return mcpOnFx(() -> {
             EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);
             if (b == null) {
@@ -363,7 +372,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public String saveBuffer(String path) {
+    public @Nullable String saveBuffer(@Nullable String path) {
         // FX thread: start the save. The write itself runs on the save executor, so its outcome is awaited
         // here, on the MCP worker — "accepted for writing" is not "saved".
         Object started = mcpOnFx(() -> {
@@ -428,7 +437,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public java.util.List<Symbol> documentSymbols(String path) {
+    public java.util.List<Symbol> documentSymbols(@Nullable String path) {
         java.util.concurrent.CompletableFuture<java.util.List<com.editora.lsp.SymbolNode>> fut =
                 new java.util.concurrent.CompletableFuture<>();
         javafx.application.Platform.runLater(() -> {
@@ -479,7 +488,8 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        if (!state.isRepo()) {
+        Path root = state.root(); // set for a repo
+        if (!state.isRepo() || root == null) {
             return new GitState(false, null, null, null, 0, 0, java.util.List.of());
         }
         com.editora.git.GitStatus st = state.status();
@@ -488,7 +498,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             files.add(
                     new GitFileState(f.path(), String.valueOf(f.index()), String.valueOf(f.worktree()), f.origPath()));
         }
-        return new GitState(true, state.root().toString(), st.branch(), st.upstream(), st.ahead(), st.behind(), files);
+        return new GitState(true, root.toString(), st.branch(), st.upstream(), st.ahead(), st.behind(), files);
     }
 
     @Override
@@ -581,6 +591,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     /** Finds the open buffer whose file matches {@code path} (by canonical path), or null. */
+    @Nullable
     EditorBuffer openBufferForPath(String path) {
         Path key = host.canonicalPath(Path.of(path));
         for (Tab tab : host.editorArea().tabs()) {

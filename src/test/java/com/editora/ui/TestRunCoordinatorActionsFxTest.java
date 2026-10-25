@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -136,6 +138,41 @@ class TestRunCoordinatorActionsFxTest {
         public void attachDebugger(String className, String host, int port) {
             calls.add("attach " + className + " " + host + ":" + port);
         }
+
+        @Override
+        public void setPendingDebugAttach(Runnable cancel) {
+            calls.add(cancel == null ? "pending cleared" : "pending set");
+            pendingStop = cancel;
+        }
+
+        @Override
+        public boolean debugSessionActive() {
+            return sessionActive;
+        }
+    }
+
+    /** Whether the fake debugger has a session (set by the test once an attach was asked). */
+    private volatile boolean sessionActive;
+
+    /** What Debug ▸ Stop would run while a Debug Test run waits for its JVM. */
+    private Runnable pendingStop;
+
+    /** The header line of the Test Results window. */
+    private String header() throws Exception {
+        return FxTestSupport.callOnFx(
+                () -> FxTestSupport.<Label>field(coordinator.panel(), "status").getText());
+    }
+
+    private List<String> attaches() {
+        return calls.stream().filter(c -> c.startsWith("attach")).toList();
+    }
+
+    /** Waits up to {@code seconds} for the attach calls to number {@code count}. */
+    private void awaitAttaches(int count, int seconds) throws Exception {
+        for (int i = 0; i < seconds * 20 && attaches().size() < count; i++) {
+            Thread.sleep(50);
+        }
+        FxTestSupport.drainFx();
     }
 
     @BeforeEach
@@ -615,20 +652,124 @@ class TestRunCoordinatorActionsFxTest {
         assertEquals(List.of(), launched);
 
         statuses.clear();
+        int port = com.editora.test.JdwpAttachRetry.freeLoopbackPort();
+        coordinator.debugPortPicker = () -> port;
         FxTestSupport.runOnFx(() -> coordinator.debugSingleTest(BuildTool.MAVEN, target, args -> {
             launched.add(args);
             coordinator.onTestRunStart(BuildTool.MAVEN, dir, args, List.of(), List.of("mvn"));
         }));
+        // The waiting status is set after the launch, which sets the build's own (review D14).
         assertEquals(List.of(tr("status.testrunner.debugWaiting")), statuses);
         assertEquals("test", launched.get(0).get(0));
         assertEquals("-Dtest=CalcTest#adds", launched.get(0).get(1));
-        assertTrue(
-                launched.get(0).get(launched.get(0).size() - 1).startsWith("-Dmaven.surefire.debug=-agentlib:jdwp="));
-
-        FxTestSupport.runOnFx(() -> coordinator.onTestOutput(JDWP_BANNER, false));
+        // The fork's port is Editora's choice (review D1), not the system's: Surefire 3 only prints the banner
+        // that would announce a system-picked one after the suspended JVM has run.
         assertEquals(
-                List.of("attach demo.CalcTest localhost:5005"),
-                calls.stream().filter(c -> c.startsWith("attach")).toList());
+                com.editora.test.TestDebug.mavenDebugArg(port),
+                launched.get(0).get(launched.get(0).size() - 1));
+
+        // The chosen port belongs to the attach loop: Surefire 3 surfaces the banner naming it only after the
+        // attached JVM ran, when acting on it would attach a port that is gone. Another port is a banner tool's.
+        FxTestSupport.runOnFx(() -> {
+            coordinator.onTestOutput("Listening for transport dt_socket at address: " + port, false);
+            coordinator.onTestOutput("Listening for transport dt_socket at address: 5005", false);
+        });
+        assertEquals(List.of("attach demo.CalcTest localhost:5005"), attaches());
+    }
+
+    // --- Debug Test on Maven: the chosen port is polled, since Surefire 3 withholds the banner (review D1) ---
+
+    @Test
+    void aMavenTestJvmIsAttachedWhenTheChosenPortListensWithoutAnyBanner() throws Exception {
+        debugAvailable = true;
+        int port = com.editora.test.JdwpAttachRetry.freeLoopbackPort();
+        coordinator.debugPortPicker = () -> port;
+        JavaTestScanner.TestTarget target = new JavaTestScanner.TestTarget(4, "demo.CalcTest", "adds", false);
+        FxTestSupport.runOnFx(() -> coordinator.debugSingleTest(
+                BuildTool.MAVEN,
+                target,
+                args -> coordinator.onTestRunStart(BuildTool.MAVEN, dir, args, List.of(), List.of("mvn"))));
+
+        // The header says what the run is doing, instead of the whole argv; Debug ▸ Stop can end the build.
+        assertEquals(tr("testrunner.debugWaiting", port), header());
+        assertEquals(List.of("open", "pending set"), calls);
+        assertNotNull(pendingStop);
+        // Surefire's console: the test phase starts, and no JDWP banner follows (it is held until the fork ran).
+        FxTestSupport.runOnFx(() -> {
+            coordinator.onTestOutput("[INFO] --- surefire:3.5.3:test (default-test) @ demo ---", false);
+            coordinator.onTestOutput("[INFO]  T E S T S", false);
+        });
+        Thread.sleep(600);
+        assertEquals(List.of(), attaches(), "nothing listens yet: no attach");
+
+        try (ServerSocket fork = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
+            awaitAttaches(1, 5);
+            assertEquals(List.of("attach demo.CalcTest localhost:" + port), attaches(), "the fork listens");
+            sessionActive = true; // the adapter connected …
+            Thread.sleep(600);
+            assertEquals(1, attaches().size(), "attached once while it keeps listening");
+        }
+        // … and the agent stopped listening for it. Debug ▸ Stop then disconnects the adapter, and the same
+        // agent listens again while its JVM runs the test to the end: not a new fork, nothing to attach.
+        Thread.sleep(600);
+        sessionActive = false;
+        try (ServerSocket again = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
+            Thread.sleep(800);
+            FxTestSupport.drainFx();
+            assertEquals(1, attaches().size(), "the JVM that was debugged is not attached a second time");
+        }
+        // That JVM exited; a second fork of the same run binds the same port and waits suspended: attached.
+        Thread.sleep(600);
+        try (ServerSocket secondFork = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
+            awaitAttaches(2, 5);
+            assertEquals(
+                    List.of("attach demo.CalcTest localhost:" + port, "attach demo.CalcTest localhost:" + port),
+                    attaches());
+        }
+        assertTrue(calls.stream().filter("pending set"::equals).count() >= 2, calls.toString());
+
+        FxTestSupport.runOnFx(() -> coordinator.onTestExit(0));
+        settle();
+        assertEquals("pending cleared", calls.get(calls.size() - 1), "the run is over: Stop has nothing to end");
+        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "attachTask")));
+    }
+
+    @Test
+    void aMavenTestJvmThatNeverListensIsReportedAfterTheDeadline() throws Exception {
+        debugAvailable = true;
+        int port = com.editora.test.JdwpAttachRetry.freeLoopbackPort();
+        coordinator.debugPortPicker = () -> port;
+        coordinator.attachDeadlineMs = 400;
+        JavaTestScanner.TestTarget target = new JavaTestScanner.TestTarget(4, "demo.CalcTest", "adds", false);
+        FxTestSupport.runOnFx(() -> coordinator.debugSingleTest(
+                BuildTool.MAVEN,
+                target,
+                args -> coordinator.onTestRunStart(BuildTool.MAVEN, dir, args, List.of(), List.of("mvn"))));
+
+        String noAttach = tr("status.testrunner.debugNoAttach", port, 0L);
+        for (int i = 0; i < 100 && !statuses.contains(noAttach); i++) {
+            Thread.sleep(50);
+            FxTestSupport.drainFx();
+        }
+        assertEquals(List.of(tr("status.testrunner.debugWaiting"), noAttach), statuses);
+        assertEquals(noAttach, header());
+        assertEquals(List.of(), attaches());
+        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "attachTask")), "stopped polling");
+        assertNotNull(pendingStop, "the build still runs: Stop still ends it");
+        pendingStop.run();
+        assertEquals(List.of("open", "pending set", "stop MAVEN"), calls);
+    }
+
+    @Test
+    void aDebugLaunchTheBuildToolRefusedArmsNothing() throws Exception {
+        debugAvailable = true;
+        coordinator.debugPortPicker = () -> 45_001;
+        JavaTestScanner.TestTarget target = new JavaTestScanner.TestTarget(4, "demo.CalcTest", "adds", false);
+        // The launch is refused (the tool is busy, say): no run starts, so there is nothing to wait for.
+        FxTestSupport.runOnFx(() -> coordinator.debugSingleTest(BuildTool.MAVEN, target, args -> {}));
+        assertEquals(List.of(), calls);
+        assertEquals(List.of(), statuses);
+        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "attachTask")));
     }
 
     // --- how results arrive -----------------------------------------------------------------------------

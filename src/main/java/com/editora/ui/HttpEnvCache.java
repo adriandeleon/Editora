@@ -11,6 +11,8 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The env files of each {@code .http} file as last read, so the FX thread never reads them or walks folders for them
  * ({@link HttpEnvironments} does the finding and reading). The FX thread only takes what was last read
@@ -24,11 +26,11 @@ import javafx.application.Platform;
 final class HttpEnvCache {
 
     /** One file's env folder and its two env files, as read; {@link #NONE} before the first read. */
-    record Snapshot(Path dir, HttpEnvironments.EnvFiles files) {
+    record Snapshot(@Nullable Path dir, HttpEnvironments.EnvFiles files) {
         static final Snapshot NONE = new Snapshot(null, HttpEnvironments.read(null));
     }
 
-    private record Key(Path file, Path project) {}
+    private record Key(@Nullable Path file, @Nullable Path project) {}
 
     /** Reads env files, and writes saved responses, off the FX thread, in order; idles out. */
     static final ExecutorService IO = io();
@@ -46,7 +48,7 @@ final class HttpEnvCache {
     private final Map<Key, Snapshot> last = new ConcurrentHashMap<>();
 
     /** What was last read for {@code file} (null: untitled) in {@code project}; {@link Snapshot#NONE} if nothing yet. */
-    Snapshot last(Path file, Path project) {
+    Snapshot last(@Nullable Path file, @Nullable Path project) {
         return last.getOrDefault(new Key(file, project), Snapshot.NONE);
     }
 
@@ -54,7 +56,7 @@ final class HttpEnvCache {
      * Finds and reads the env files for {@code file} in {@code project} now, and remembers them. Reads files and walks
      * folders: never on the FX thread.
      */
-    Snapshot readNow(Path file, Path project) {
+    Snapshot readNow(@Nullable Path file, @Nullable Path project) {
         Path dir = HttpEnvironments.forFile(file, project);
         Snapshot read = new Snapshot(dir, HttpEnvironments.read(dir));
         last.put(new Key(file, project), read);
@@ -62,7 +64,7 @@ final class HttpEnvCache {
     }
 
     /** Reads the env files for {@code file} in {@code project} in the background, then hands them to {@code onFx}. */
-    void refresh(Path file, Path project, Consumer<Snapshot> onFx) {
+    void refresh(@Nullable Path file, @Nullable Path project, Consumer<Snapshot> onFx) {
         IO.execute(() -> {
             Snapshot read;
             try {
@@ -76,7 +78,7 @@ final class HttpEnvCache {
     }
 
     /** Forgets what was read for {@code file} (a closed buffer); other buffers of the same file read it again. */
-    void forget(Path file, Path project) {
+    void forget(@Nullable Path file, @Nullable Path project) {
         last.remove(new Key(file, project));
     }
 

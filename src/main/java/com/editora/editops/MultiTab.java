@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Tab / Shift-Tab with several carets: the buffer's own Tab at every caret, as one edit.
  *
@@ -30,7 +32,7 @@ public final class MultiTab {
     /** {@link Edits} for a caller whose document is not a String: it reads what it needs itself. */
     @FunctionalInterface
     public interface CaretEdits {
-        Indenter.TabEdit edit(int selStart, int selEnd, boolean shift);
+        Indenter.@Nullable TabEdit edit(int selStart, int selEnd, boolean shift);
     }
 
     /** One replacement, in the coordinates of the text before any of them. */
@@ -50,22 +52,23 @@ public final class MultiTab {
      * Returns null when {@code edits} declines any caret (a read-only or huge buffer), so the caller leaves
      * the key alone.
      */
-    public static Plan plan(String text, List<int[]> carets, boolean shift, Edits edits) {
+    public static @Nullable Plan plan(String text, List<int[]> carets, boolean shift, Edits edits) {
         return plan(carets, shift, (selStart, selEnd, back) -> edits.edit(text, selStart, selEnd, back));
     }
 
     /** As {@link #plan(String, List, boolean, Edits)}, without handing the document's text through. */
-    public static Plan plan(List<int[]> carets, boolean shift, CaretEdits edits) {
+    public static @Nullable Plan plan(List<int[]> carets, boolean shift, CaretEdits edits) {
         int n = carets.size();
         Indenter.TabEdit[] wanted = new Indenter.TabEdit[n];
         List<Integer> order = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             int anchor = carets.get(i)[0];
             int caret = carets.get(i)[1];
-            wanted[i] = edits.edit(Math.min(anchor, caret), Math.max(anchor, caret), shift);
-            if (wanted[i] == null) {
+            Indenter.TabEdit edit = edits.edit(Math.min(anchor, caret), Math.max(anchor, caret), shift);
+            if (edit == null) {
                 return null;
             }
+            wanted[i] = edit;
             order.add(i);
         }
         order.sort(Comparator.comparingInt((Integer i) -> wanted[i].from()).thenComparingInt(i -> wanted[i].to()));

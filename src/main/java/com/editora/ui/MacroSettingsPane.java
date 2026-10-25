@@ -43,6 +43,7 @@ import com.editora.macro.Macro;
 import com.editora.macro.MacroKey;
 import com.editora.macro.MacroService;
 import com.editora.macro.MacroStep;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -66,7 +67,7 @@ final class MacroSettingsPane extends HBox {
         ConfigManager config();
 
         /** The key-binding backend; null until the window has been given one. */
-        SettingsWindow.ShortcutActions shortcuts();
+        SettingsWindow.@Nullable ShortcutActions shortcuts();
 
         /** The saved macros changed: re-register their commands in every window. */
         void macrosChanged();
@@ -94,7 +95,7 @@ final class MacroSettingsPane extends HBox {
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
 
     /** The id of the macro whose working copy is on screen, or null. */
-    private String editingId;
+    private @Nullable String editingId;
 
     private boolean loading;
     private final EventHandler<WindowEvent> saveOnHide = e -> saveIfDirty();
@@ -267,7 +268,7 @@ final class MacroSettingsPane extends HBox {
         refresh();
     }
 
-    private void watch(Window old, Window window) {
+    private void watch(@Nullable Window old, Window window) {
         if (old != null) {
             old.removeEventHandler(WindowEvent.WINDOW_HIDING, saveOnHide);
         }
@@ -327,7 +328,7 @@ final class MacroSettingsPane extends HBox {
      * The other macro already named {@code name} (ignoring case and surrounding space), or null. Two macros of
      * one name were two identical "Macro: …" rows in the palette and the key list. Pure.
      */
-    static Macro namedLike(String name, String selfId, List<Macro> all) {
+    static @Nullable Macro namedLike(String name, @Nullable String selfId, List<Macro> all) {
         String n = name == null ? "" : name.strip();
         if (n.isEmpty()) {
             return null;
@@ -340,7 +341,7 @@ final class MacroSettingsPane extends HBox {
         return null;
     }
 
-    private Macro find(String id) {
+    private @Nullable Macro find(String id) {
         for (Macro m : macros) {
             if (m.id().equals(id)) {
                 return m;
@@ -349,12 +350,12 @@ final class MacroSettingsPane extends HBox {
         return null;
     }
 
-    private Macro selectedStored() {
+    private @Nullable Macro selectedStored() {
         return editingId == null ? null : host.config().getMacroStore().findById(editingId);
     }
 
     /** Puts {@code m} (or nothing) into the working copy. */
-    private void load(Macro m) {
+    private void load(@Nullable Macro m) {
         loading = true;
         try {
             editingId = m == null ? null : m.id();
@@ -497,7 +498,7 @@ final class MacroSettingsPane extends HBox {
         Platform.runLater(capture::requestFocus);
     }
 
-    private String chordFor(String commandId) {
+    private @Nullable String chordFor(String commandId) {
         if (host.shortcuts() == null) {
             return null;
         }
@@ -607,6 +608,9 @@ final class MacroSettingsPane extends HBox {
                         e.isMetaDown(),
                         e.isShiftDown(),
                         e.getCode().name());
+                if (token == null) { // only for a blank key-code name, which no KeyCode has
+                    return;
+                }
                 capture.setText(keyLabel(token));
                 replaceStep(index, MacroStep.key(token, prompt.isSelected()));
             });
@@ -721,7 +725,7 @@ final class MacroSettingsPane extends HBox {
      * Asks for a command from the ones that exist, by title or id — rather than a free-text id, which could
      * name nothing and then fail without a word at replay. Returns null when cancelled.
      */
-    private String chooseCommand(String current) {
+    private @Nullable String chooseCommand(@Nullable String current) {
         if (host.shortcuts() == null) {
             return null;
         }

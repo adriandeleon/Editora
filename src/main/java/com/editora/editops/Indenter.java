@@ -2,6 +2,8 @@ package com.editora.editops;
 
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Computes auto/smart indentation as the user types — pure (no toolkit), so it is unit-tested.
  * {@link EditorBuffer} calls it on Enter and when a closing token is typed.
@@ -52,7 +54,8 @@ public final class Indenter {
      *   <li><b>Caret after content</b> → insert one unit at the caret ({@code shift} dedents the line).</li>
      * </ul>
      */
-    public static TabEdit smartTab(String text, int selStart, int selEnd, String language, int tabSize, boolean shift) {
+    public static @Nullable TabEdit smartTab(
+            String text, int selStart, int selEnd, String language, int tabSize, boolean shift) {
         return smartTab(text, selStart, selEnd, language, tabSize, shift, null, null);
     }
 
@@ -61,15 +64,15 @@ public final class Indenter {
      * EditorConfig override when {@code insertSpaces != null} ({@code true} = {@code indentSize} spaces,
      * {@code false} = a tab); a {@code null} override falls back to {@link #detectUnit}.
      */
-    public static TabEdit smartTab(
+    public static @Nullable TabEdit smartTab(
             String text,
             int selStart,
             int selEnd,
             String language,
             int tabSize,
             boolean shift,
-            Boolean insertSpaces,
-            Integer indentSize) {
+            @Nullable Boolean insertSpaces,
+            @Nullable Integer indentSize) {
         return smartTab(
                 text,
                 selStart,
@@ -85,7 +88,7 @@ public final class Indenter {
      * already decided. Nothing here reads {@code text} beyond the touched lines and the bounded back-scan
      * above them, so {@link IndentWindow} can hand in a slice of a large document instead of all of it.
      */
-    static TabEdit smartTab(
+    static @Nullable TabEdit smartTab(
             String text, int selStart, int selEnd, String language, int tabSize, boolean shift, String unit) {
         Style style = styleFor(language);
         if (style == Style.PLAIN) {
@@ -297,7 +300,12 @@ public final class Indenter {
     /** As {@link #enterEdit(String, int, String, int)}, but forcing the indent unit from an EditorConfig
      *  override when {@code insertSpaces != null} (else {@link #detectUnit}). */
     public static EnterEdit enterEdit(
-            String text, int caret, String language, int tabSize, Boolean insertSpaces, Integer indentSize) {
+            String text,
+            int caret,
+            String language,
+            int tabSize,
+            @Nullable Boolean insertSpaces,
+            @Nullable Integer indentSize) {
         return enterEdit(text, caret, language, unitFor(text, tabSize, insertSpaces, indentSize, language));
     }
 
@@ -351,7 +359,7 @@ public final class Indenter {
         return closerAlignIndent(text, caret, tabSize, null);
     }
 
-    private static String closerAlignIndent(String text, int caret, int tabSize, Style style) {
+    private static String closerAlignIndent(String text, int caret, int tabSize, @Nullable Style style) {
         int ls = lineStart(text, caret);
         int curWidth = width(leadingWhitespace(text.substring(ls, lineEnd(text, caret))), tabSize);
         int pos = ls;
@@ -435,7 +443,7 @@ public final class Indenter {
      * delimiter is aligned by {@link ShellIndent}, which matches blocks instead of reading indentation.
      */
     public static String closerAlignIndent(
-            Style style, String text, int caret, int tabSize, String currentIndent, char typed, String unit) {
+            Style style, String text, int caret, int tabSize, String currentIndent, char typed, @Nullable String unit) {
         int ls = lineStart(text, caret);
         if (style == Style.SHELL) {
             String shell = ShellIndent.closer(text, caret, typed, currentIndent, unit, tabSize);
@@ -470,7 +478,7 @@ public final class Indenter {
      * {@code }}; once the opener is found, closers before it on its line ({@code int b) {}, {@code } else {})
      * are followed back to their own openers, so a multi-line header aligns to its first line.
      */
-    private static String openerLineIndent(Style style, String text, int ls, char close) {
+    private static @Nullable String openerLineIndent(Style style, String text, int ls, char close) {
         char open = close == '}' ? '{' : close == ')' ? '(' : '[';
         StringBuilder brackets = new StringBuilder();
         int depth = 0;
@@ -539,7 +547,7 @@ public final class Indenter {
      * {@code b)}. A wrapped header ({@code if a \} / {@code && b; then}) does open one, so it is judged on the
      * joined statement.
      */
-    private static boolean isWrappedBodyLine(Style style, String text, int start, int limit) {
+    private static boolean isWrappedBodyLine(@Nullable Style style, String text, int start, int limit) {
         if (style == null) {
             return false;
         }
@@ -861,12 +869,17 @@ public final class Indenter {
 
     /** The indent unit to use: an EditorConfig override when {@code insertSpaces != null} (tab, or
      *  {@code indentSize}/{@code tabSize} spaces), else the document's {@link #detectUnit detected} unit. */
-    public static String unitFor(String text, int tabSize, Boolean insertSpaces, Integer indentSize) {
+    public static String unitFor(String text, int tabSize, Boolean insertSpaces, @Nullable Integer indentSize) {
         return unitFor(text, tabSize, insertSpaces, indentSize, null);
     }
 
     /** As {@link #unitFor(String, int, Boolean, Integer)}, detecting the unit as {@code language} reads indentation. */
-    public static String unitFor(String text, int tabSize, Boolean insertSpaces, Integer indentSize, String language) {
+    public static String unitFor(
+            String text,
+            int tabSize,
+            @Nullable Boolean insertSpaces,
+            @Nullable Integer indentSize,
+            @Nullable String language) {
         if (insertSpaces == null) {
             return detectUnit(text, tabSize, language);
         }
@@ -887,7 +900,7 @@ public final class Indenter {
      * falls back to <b>spaces</b> — matching VSCode/IntelliJ's "spaces unless the file is detected to use
      * tabs" default.
      */
-    public static String detectUnit(String text, int tabSize, String language) {
+    public static String detectUnit(String text, int tabSize, @Nullable String language) {
         if (!"python".equals(language)) {
             return detectUnit(text, tabSize);
         }
@@ -976,7 +989,7 @@ public final class Indenter {
      * and comments to it, in order. A quote that opens no string (see {@link Quotes}) is ordinary text, so a
      * lone apostrophe or a Rust lifetime no longer hides the comment after it.
      */
-    private static String scanCode(Style style, String s, StringBuilder brackets) {
+    private static String scanCode(Style style, String s, @Nullable StringBuilder brackets) {
         int limit = Math.min(s.length(), MAX_SCAN);
         int cut = -1; // start of a block comment that no code follows
         for (int i = 0; i < limit; i++) {

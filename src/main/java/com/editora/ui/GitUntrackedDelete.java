@@ -6,6 +6,8 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -29,7 +31,7 @@ final class GitUntrackedDelete {
      * the Project tree's Revert passes the folder's own path, which has none, so the disk is asked too. A
      * symbolic link to a folder is a single file to {@code git clean}.
      */
-    static boolean isFolder(Path root, String pathspec) {
+    static boolean isFolder(@Nullable Path root, String pathspec) {
         if (pathspec == null) {
             return false;
         }
@@ -44,7 +46,7 @@ final class GitUntrackedDelete {
     }
 
     /** How many of {@code pathspecs} are folders ({@link #isFolder}). */
-    static int folders(Path root, List<String> pathspecs) {
+    static int folders(@Nullable Path root, List<String> pathspecs) {
         return (int) pathspecs.stream().filter(spec -> isFolder(root, spec)).count();
     }
 

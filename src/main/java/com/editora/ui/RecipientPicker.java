@@ -35,7 +35,8 @@ import javafx.scene.layout.VBox;
 
 import com.editora.crypto.Gpg;
 import com.editora.crypto.GpgKey;
-import com.editora.editor.EncryptionState;
+import com.editora.editor.crypto.EncryptionState;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -74,7 +75,7 @@ final class RecipientPicker {
             boolean applyOnSave,
             boolean formatShown,
             boolean armor,
-            String folderName) {
+            @Nullable String folderName) {
 
         /** The same request over a keyring read again (after an import). */
         Request withKeys(List<GpgKey> fresh) {
@@ -86,7 +87,7 @@ final class RecipientPicker {
     record Choice(
             EncryptionState.Mode mode,
             List<GpgKey> keys,
-            char[] passphrase,
+            char @Nullable [] passphrase,
             boolean armor,
             boolean rememberForFolder) {}
 
@@ -119,7 +120,7 @@ final class RecipientPicker {
     }
 
     /** Why a key cannot be chosen, in words, or null. */
-    static String unusableText(GpgKey key) {
+    static @Nullable String unusableText(GpgKey key) {
         GpgKey.Unusable why = key.unusable();
         if (why == null) {
             return null;
@@ -141,7 +142,8 @@ final class RecipientPicker {
         };
     }
 
-    static void show(OverlayHost host, Request req, Consumer<Choice> onAccept, Runnable onImport, Runnable onCancel) {
+    static void show(
+            OverlayHost host, Request req, Consumer<Choice> onAccept, Runnable onImport, @Nullable Runnable onCancel) {
         if (host == null) {
             return;
         }
@@ -293,7 +295,7 @@ final class RecipientPicker {
             }
 
             @Override
-            public Boolean fromString(String s) {
+            public @Nullable Boolean fromString(String s) {
                 return null;
             }
         });
@@ -496,7 +498,7 @@ final class RecipientPicker {
      * The warning under the chips: an unverified key (with its full fingerprint, to compare with its owner), or
      * that the user will not be able to open the file. Null when there is nothing to say.
      */
-    static String warningFor(List<GpgKey> chosen, boolean haveSecret) {
+    static @Nullable String warningFor(List<GpgKey> chosen, boolean haveSecret) {
         List<String> parts = new ArrayList<>();
         for (GpgKey k : chosen) {
             if (!k.verified()) {

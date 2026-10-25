@@ -11,6 +11,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -107,7 +109,7 @@ final class TableSizePicker {
      * The size after an arrow key (one step, clamped to the grid), Home (smallest) or End (largest); null
      * for any other key. Pure.
      */
-    static int[] step(int rows, int cols, KeyCode key, int maxRows, int maxCols) {
+    static int @Nullable [] step(int rows, int cols, KeyCode key, int maxRows, int maxCols) {
         return switch (key) {
             case RIGHT -> new int[] {rows, Math.min(maxCols, cols + 1)};
             case LEFT -> new int[] {rows, Math.max(1, cols - 1)};

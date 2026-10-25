@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Decides whether a build invocation is a test run (so the coordinator routes it to the Test Results window)
@@ -59,7 +60,7 @@ public final class TestRunRecognizer {
      * name a filter accepts ({@link TestSourceLocator#filterMethodName}); see {@link #mavenTestFilter} for
      * the reactor flags.
      */
-    public static List<String> singleTestTask(BuildTool tool, String className, String methodName) {
+    public static List<String> singleTestTask(BuildTool tool, String className, @Nullable String methodName) {
         String method = TestSourceLocator.filterMethodName(methodName);
         boolean wholeClass = method == null || method.isEmpty();
         return switch (tool) {
@@ -80,9 +81,14 @@ public final class TestRunRecognizer {
      * match — without it Surefire fails the first such module with "No tests matching pattern" and the
      * module that does hold the target never runs.
      */
-    public static List<String> mavenTestFilter(String selector) {
+    public static List<String> mavenTestFilter(@Nullable String selector) {
         return List.of(
                 "test", "-Dtest=" + selector, "-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false");
+    }
+
+    /** Surefire refusing a {@code -Dtest=} that matched nothing (without {@code surefire.failIfNoSpecifiedTests=false}). */
+    public static boolean isNoTestsMatchingLine(String line) {
+        return line != null && line.contains("No tests matching pattern");
     }
 
     /**

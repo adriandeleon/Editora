@@ -10,6 +10,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Finds a handful of well-known, wide-coverage font files already installed on the machine, for the PDF
  * writers to fall back on when the bundled fonts lack a glyph ({@link PdfGlyphs}). Nothing is bundled and
@@ -74,7 +76,7 @@ final class SystemFontFiles {
     /** Font directories are shallow; this bounds a walk through an unexpectedly deep tree. */
     private static final int MAX_DEPTH = 4;
 
-    private static volatile List<Path> cached;
+    private static volatile @Nullable List<Path> cached;
 
     private SystemFontFiles() {}
 

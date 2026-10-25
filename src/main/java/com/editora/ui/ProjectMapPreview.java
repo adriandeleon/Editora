@@ -44,13 +44,15 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
+import javafx.scene.transform.Scale;
 
 import com.editora.config.NoteScope;
+import com.editora.config.PathDisplay;
 import com.editora.config.TextAnchor;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LineEndings;
-import com.editora.editor.NoteDraft;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editops.LineEndings;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.notes.NoteDraft;
 import com.editora.editorconfig.EditorConfigCharset;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
@@ -58,10 +60,15 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.TwoDimensional;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
-/** A bounded, read-only editor card that floats above the Project map without participating in its zoom. */
+/**
+ * A bounded, read-only editor card on the Project map. It pans and zooms with the map — drawn at the map's
+ * zoom from its top-left corner, so its own size is in unzoomed units — and like a column it may be dragged
+ * past the visible part of the canvas.
+ */
 final class ProjectMapPreview extends StackPane {
 
     static final int MAX_PREVIEW_CHARS = 400_000;
@@ -75,6 +82,9 @@ final class ProjectMapPreview extends StackPane {
     static final double MIN_HEIGHT = 220;
     static final double EDGE_MARGIN = 14;
     private static final double TEXT_CHROME_WIDTH = 72;
+    /** A card's title bar, borders and scroll-bar room around its text, vertically. */
+    private static final double TEXT_CHROME_HEIGHT = 58;
+
     private static final int TAB_COLUMNS = 4;
     /** A card never widens itself past this many columns; longer lines scroll. */
     private static final int MAX_FIT_COLUMNS = 120;
@@ -86,7 +96,11 @@ final class ProjectMapPreview extends StackPane {
      * current text (captured on the FX thread, unsaved changes included); for any other file only the
      * {@code .editorconfig} charset the editor would decode it with.
      */
-    record Content(String text, boolean truncated, boolean open, String editorConfigCharset) {
+    record Content(
+            String text,
+            boolean truncated,
+            boolean open,
+            @Nullable String editorConfigCharset) {
         Content {
             text = text == null ? "" : text;
         }
@@ -97,7 +111,7 @@ final class ProjectMapPreview extends StackPane {
         }
 
         /** A file that is not open: it is read from disk, decoded the way the editor would open it. */
-        static Content closed(String editorConfigCharset) {
+        static Content closed(@Nullable String editorConfigCharset) {
             return new Content("", false, false, editorConfigCharset);
         }
     }
@@ -118,6 +132,16 @@ final class ProjectMapPreview extends StackPane {
         Placement resolve(double width, double height, double parentWidth, double parentHeight);
     }
 
+    /**
+     * The part of its file a declaration card shows (see {@link #showRange}).
+     *
+     * @param symbol the declaration's label, shown after the file name in the title
+     * @param line the 0-based line it is declared on: where Open puts the caret
+     * @param startLine the 0-based first line shown
+     * @param endLine the 0-based last line shown
+     */
+    record Range(String symbol, int line, int startLine, int endLine) {}
+
     interface MarkerActions {
         boolean personalNotesEnabled();
 
@@ -136,7 +160,12 @@ final class ProjectMapPreview extends StackPane {
     /** What a file looked like when it was read, to tell later whether it changed on disk. */
     private record Stamp(long size, long modifiedMillis) {}
 
-    private record Loaded(String text, Image image, boolean truncated, LoadProblem problem, Stamp stamp) {}
+    private record Loaded(
+            String text,
+            @Nullable Image image,
+            boolean truncated,
+            LoadProblem problem,
+            @Nullable Stamp stamp) {}
 
     private final Consumer<Path> onOpenFile;
     private final BorderPane frame = new BorderPane();
@@ -162,7 +191,7 @@ final class ProjectMapPreview extends StackPane {
             });
     private final AtomicLong generation = new AtomicLong();
 
-    private Path path;
+    private @Nullable Path path;
     private boolean disposed;
     private boolean placed;
     private boolean placementPending;
@@ -176,16 +205,34 @@ final class ProjectMapPreview extends StackPane {
     private String shownText = "";
     /** The text came from an open buffer rather than from disk. */
     private boolean fromBuffer;
+    /** A declaration card's lines, or null for a card that shows its whole file. */
+    private @Nullable Range range;
+    /** The whole text a declaration card's lines were cut from ({@link #shownText} is the cut). */
+    private String fullText = "";
+    /** Where the shown lines start in {@link #fullText}. */
+    private int sliceOffset;
+    /** Lines in {@link #fullText}. */
+    private int fullLines;
+    /** The text shown is cut short at the read or display cap. */
+    private boolean truncatedShown;
+    /** The declaration this card shows is no longer in its file: the card keeps its last lines. */
+    private boolean symbolMissing;
+
+    private java.util.function.@Nullable BiConsumer<Path, Integer> onOpenAt;
+    private @Nullable Runnable onOpenNarrowed;
 
     private boolean loading;
     private boolean statPending;
     private boolean missing;
-    private String editorConfigCharset;
-    private Stamp loadedStamp;
-    private PlacementResolver placementResolver;
-    private MarkerActions markerActions;
+    private @Nullable String editorConfigCharset;
+    private @Nullable Stamp loadedStamp;
+    private @Nullable PlacementResolver placementResolver;
+    private @Nullable MarkerActions markerActions;
     private double preferredWidth = DEFAULT_WIDTH;
     private double preferredHeight = DEFAULT_HEIGHT;
+    /** The map's zoom, applied from the card's top-left corner. */
+    private final Scale mapZoom = new Scale(1, 1, 0, 0);
+
     private double dragScreenX;
     private double dragScreenY;
     private double dragLayoutX;
@@ -232,7 +279,10 @@ final class ProjectMapPreview extends StackPane {
         open.setTooltip(new Tooltip(tr("project.map.preview.openHelp")));
         open.setOnAction(event -> {
             Path selected = path;
-            if (selected != null) {
+            Range shown = range;
+            if (selected != null && shown != null && onOpenAt != null) {
+                onOpenAt.accept(selected, shown.line()); // a declaration card opens the file at the declaration
+            } else if (selected != null) {
                 onOpenFile.accept(selected);
             }
         });
@@ -268,6 +318,7 @@ final class ProjectMapPreview extends StackPane {
         resizeGrip.addEventHandler(MouseEvent.MOUSE_PRESSED, this::resizePressed);
         resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
         getChildren().addAll(frame, resizeGrip);
+        getTransforms().add(mapZoom);
 
         addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
             toFront();
@@ -307,7 +358,146 @@ final class ProjectMapPreview extends StackPane {
         }
     }
 
-    void showFile(Path file, Content content, PlacementResolver placementResolver) {
+    void showFile(Path file, @Nullable Content content, PlacementResolver placementResolver) {
+        range = null;
+        show(file, content, placementResolver);
+    }
+
+    /**
+     * Shows only {@code shown}'s lines of {@code file}: a declaration's block, picked from a structure column. The
+     * gutter keeps the file's line numbers (in the narrowed colour), the title names the declaration, and Open
+     * opens the file at the declaration. The whole file is still what is read and highlighted, so the lines are
+     * coloured as they are in the editor.
+     */
+    void showRange(Path file, Range shown, @Nullable Content content, PlacementResolver placementResolver) {
+        range = shown;
+        show(file, content, placementResolver);
+    }
+
+    /**
+     * Moves a declaration card to {@code shown}'s lines — its file was edited and the declaration moved or grew.
+     * The card is not placed again; its lines are cut afresh from the text it holds.
+     */
+    void setRange(Range shown) {
+        if (disposed || range == null || shown == null || shown.equals(range)) {
+            return;
+        }
+        range = shown;
+        updateRangeChrome();
+        if (!fullText.isEmpty() && path != null) {
+            showText(fullText, truncatedShown);
+            highlight(generation.incrementAndGet(), path, fullText, truncatedShown);
+        }
+    }
+
+    /** The declaration this card shows was not found in its file the last time it was outlined. */
+    void setSymbolMissing(boolean gone) {
+        if (range == null || symbolMissing == gone) {
+            return;
+        }
+        symbolMissing = gone;
+        status.setText(idleStatus(truncatedShown));
+        if (gone) {
+            getStyleClass().add("project-map-preview-missing");
+        } else if (!missing) {
+            getStyleClass().remove("project-map-preview-missing");
+        }
+    }
+
+    @Nullable
+    Range range() {
+        return range;
+    }
+
+    /** Where a declaration card's Open goes: its file, at its declaration's line. */
+    void setOnOpenAt(java.util.function.BiConsumer<Path, Integer> callback) {
+        onOpenAt = callback;
+    }
+
+    /** The card menu's Open Narrowed: the file opens narrowed to the declaration's block. */
+    void setOnOpenNarrowed(Runnable callback) {
+        onOpenNarrowed = callback;
+    }
+
+    private void updateRangeChrome() {
+        Path shownPath = path;
+        if (shownPath == null) {
+            return;
+        }
+        String name = PathDisplay.fileName(shownPath);
+        Range shown = range;
+        if (shown == null) {
+            title.setText(name);
+            title.setTooltip(new Tooltip(shownPath.toString()));
+            setAccessibleText(tr("project.map.preview.accessible", shownPath.toString()));
+            editor.setAccessibleText(tr("project.map.preview.editorAccessible", name));
+            editor.getStyleClass().remove("narrowed");
+            editor.setParagraphGraphicFactory(LineNumberFactory.get(editor));
+            return;
+        }
+        title.setText(name + " › " + shown.symbol());
+        title.setTooltip(new Tooltip(shownPath + "\n" + rangeLabel(shown)));
+        setAccessibleText(tr("project.map.preview.symbolAccessible", shown.symbol(), shownPath.toString()));
+        editor.setAccessibleText(tr("project.map.preview.symbolEditorAccessible", shown.symbol(), name));
+        if (!editor.getStyleClass().contains("narrowed")) {
+            editor.getStyleClass().add("narrowed"); // the editor's narrowed gutter colour
+        }
+        editor.setParagraphGraphicFactory(offsetLineNumbers(shown.startLine(), shown.endLine()));
+    }
+
+    private String rangeLabel(Range shown) {
+        return tr("project.map.preview.lines", shown.startLine() + 1, shown.endLine() + 1, Math.max(1, fullLines));
+    }
+
+    /** The status line when nothing is happening: truncated, a declaration that went, or a card's lines. */
+    private String idleStatus(boolean truncated) {
+        if (truncated) {
+            return tr("project.map.preview.truncated");
+        }
+        Range shown = range;
+        if (shown == null) {
+            return "";
+        }
+        return symbolMissing ? tr("project.map.preview.symbolMissing") : fullLines > 0 ? rangeLabel(shown) : "";
+    }
+
+    /** Gutter numbers that count from the declaration's first line, as the file numbers it. */
+    private static java.util.function.IntFunction<javafx.scene.Node> offsetLineNumbers(int startLine, int endLine) {
+        String format = "%" + String.valueOf(endLine + 1).length() + "d";
+        return paragraph -> {
+            Label number = new Label(String.format(java.util.Locale.ROOT, format, startLine + paragraph + 1));
+            number.getStyleClass().add("lineno");
+            number.setAlignment(Pos.TOP_RIGHT);
+            number.setFont(Font.font("monospace", 12));
+            return number;
+        };
+    }
+
+    /**
+     * What the card shows of {@code text}: all of it, or a declaration card's lines (and where they start, in
+     * {@link #sliceOffset}). The whole text is kept in {@link #fullText}.
+     */
+    private String visible(String text) {
+        fullText = text;
+        fullLines = 1;
+        for (int i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+            fullLines++;
+        }
+        Range shown = range;
+        if (shown == null) {
+            sliceOffset = 0;
+            return text;
+        }
+        int first = Math.max(0, Math.min(shown.startLine(), fullLines - 1));
+        int last = Math.max(first, Math.min(shown.endLine(), fullLines - 1));
+        int start = com.editora.editor.fold.NarrowLines.offsetOfLine(text, first);
+        int lastStart = com.editora.editor.fold.NarrowLines.offsetOfLine(text, last);
+        int end = text.indexOf('\n', lastStart);
+        sliceOffset = start;
+        return text.substring(start, end < 0 ? text.length() : end);
+    }
+
+    private void show(Path file, @Nullable Content content, PlacementResolver placementResolver) {
         if (disposed || file == null) {
             return;
         }
@@ -315,7 +505,7 @@ final class ProjectMapPreview extends StackPane {
         path = file.toAbsolutePath().normalize();
         this.placementResolver = placementResolver;
         preferredWidth = DEFAULT_WIDTH;
-        preferredHeight = DEFAULT_HEIGHT;
+        preferredHeight = range == null ? DEFAULT_HEIGHT : fittedHeight(range);
         placed = false;
         placementPending = true;
         userMoved = false;
@@ -325,14 +515,15 @@ final class ProjectMapPreview extends StackPane {
         boolean openBuffer = content != null && content.open();
         fromBuffer = openBuffer;
         editorConfigCharset = content == null ? null : content.editorConfigCharset();
-        String name = fileName(path);
-        title.setText(name);
+        String name = PathDisplay.fileName(path);
         title.setGraphic(FileIcons.forProjectItem(name, false));
-        title.setTooltip(new Tooltip(path.toString()));
-        setAccessibleText(tr("project.map.preview.accessible", path.toString()));
         // The text area is what a screen reader lands on, and it looks like an editor: name the file it
         // shows and say it cannot be edited, since global chords typed here still act on the active tab.
-        editor.setAccessibleText(tr("project.map.preview.editorAccessible", name));
+        symbolMissing = false;
+        fullText = "";
+        fullLines = 0;
+        truncatedShown = false;
+        updateRangeChrome();
         open.setDisable(false);
         getStyleClass().remove("project-map-preview-missing");
         status.setText(openBuffer ? "" : tr("project.map.preview.loading"));
@@ -341,22 +532,22 @@ final class ProjectMapPreview extends StackPane {
         setVisible(true);
         toFront();
 
-        if (openBuffer) {
+        if (openBuffer && content != null) {
             String text = capText(content.text(), content.truncated());
             boolean truncated =
                     content.truncated() || text.length() < content.text().length();
-            preferredWidth = fittedWidth(text); // known before the card is placed, so it is placed at this size
+            // Known before the card is placed, so it is placed at this size.
+            preferredWidth = fittedWidth(visible(text));
             ensurePlaced();
             showLoaded(requested, path, new Loaded(text, null, truncated, LoadProblem.NONE, null));
             highlight(requested, path, text, truncated);
             return;
         }
         ensurePlaced();
-        loadFromDisk(requested);
+        loadFromDisk(requested, path);
     }
 
-    private void loadFromDisk(long requested) {
-        Path requestedPath = path;
+    private void loadFromDisk(long requested, Path requestedPath) {
         String charset = editorConfigCharset;
         loading = true;
         submitLatest(() -> {
@@ -378,7 +569,7 @@ final class ProjectMapPreview extends StackPane {
      * buffer's text replaces only the range that changed; any other file is re-read when its size or
      * modification time differs from what was loaded, and marked when it no longer exists.
      */
-    void refresh(Content content) {
+    void refresh(@Nullable Content content) {
         if (disposed || path == null) {
             return;
         }
@@ -386,7 +577,7 @@ final class ProjectMapPreview extends StackPane {
             String text = capText(content.text(), content.truncated());
             boolean truncated =
                     content.truncated() || text.length() < content.text().length();
-            if (fromBuffer && !missing && text.equals(shownText) && frame.getCenter() == editorScroll) {
+            if (fromBuffer && !missing && text.equals(fullText) && frame.getCenter() == editorScroll) {
                 return;
             }
             long requested = generation.incrementAndGet();
@@ -403,7 +594,7 @@ final class ProjectMapPreview extends StackPane {
             // Its tab was closed: what is on disk is the file again (unsaved text went with the tab).
             fromBuffer = false;
             loadedStamp = null;
-            loadFromDisk(generation.incrementAndGet());
+            loadFromDisk(generation.incrementAndGet(), path);
             return;
         }
         if (loading || statPending) {
@@ -423,7 +614,7 @@ final class ProjectMapPreview extends StackPane {
                 if (gone) {
                     setMissing(true);
                 } else if (missing || current != null && !current.equals(loadedStamp)) {
-                    loadFromDisk(generation.incrementAndGet());
+                    loadFromDisk(generation.incrementAndGet(), requestedPath); // equals path
                 }
             });
         });
@@ -469,6 +660,7 @@ final class ProjectMapPreview extends StackPane {
         setVisible(false);
     }
 
+    @Nullable
     Path path() {
         return path;
     }
@@ -477,7 +669,7 @@ final class ProjectMapPreview extends StackPane {
         return editor;
     }
 
-    void setMarkerActions(MarkerActions actions) {
+    void setMarkerActions(@Nullable MarkerActions actions) {
         markerActions = actions;
     }
 
@@ -499,16 +691,32 @@ final class ProjectMapPreview extends StackPane {
         onEscape = callback == null ? () -> onClose.run() : callback;
     }
 
+    /**
+     * Keeps the card, as drawn at the map's zoom, no larger than the panel. Where it stands is left alone: it
+     * sits on the canvas, which may have it partly or wholly out of view.
+     */
     void constrainTo(double parentWidth, double parentHeight) {
         if (!placed || parentWidth <= 0 || parentHeight <= 0) {
             return;
         }
-        double width = boundedSize(preferredWidth, MIN_WIDTH, parentWidth - EDGE_MARGIN * 2);
-        double height = boundedSize(preferredHeight, MIN_HEIGHT, parentHeight - EDGE_MARGIN * 2);
-        resize(width, height);
-        relocate(
-                clamp(getLayoutX(), EDGE_MARGIN, Math.max(EDGE_MARGIN, parentWidth - width - EDGE_MARGIN)),
-                clamp(getLayoutY(), EDGE_MARGIN, Math.max(EDGE_MARGIN, parentHeight - height - EDGE_MARGIN)));
+        resize(
+                boundedSize(preferredWidth, MIN_WIDTH, unzoomedRoom(parentWidth, mapScale())),
+                boundedSize(preferredHeight, MIN_HEIGHT, unzoomedRoom(parentHeight, mapScale())));
+    }
+
+    /** The map's zoom the card is drawn at. A zoom only rescales the card; it never resizes it. */
+    void setMapScale(double scale) {
+        mapZoom.setX(scale);
+        mapZoom.setY(scale);
+    }
+
+    double mapScale() {
+        return mapZoom.getX();
+    }
+
+    /** The unzoomed size that, drawn at {@code scale}, fills a panel extent inside its margins. */
+    static double unzoomedRoom(double extent, double scale) {
+        return (extent - EDGE_MARGIN * 2) / scale;
     }
 
     void dispose() {
@@ -561,11 +769,21 @@ final class ProjectMapPreview extends StackPane {
 
         java.util.List<MenuItem> items = new java.util.ArrayList<>(java.util.List.of(copy, selectAll));
         Path selected = path;
+        Range shown = range;
+        Runnable narrowed = onOpenNarrowed;
+        if (selected != null && shown != null && narrowed != null) {
+            MenuItem openNarrowed = new MenuItem(tr("project.map.preview.openNarrowed"));
+            openNarrowed.setDisable(symbolMissing || missing);
+            openNarrowed.setOnAction(ignored -> narrowed.run());
+            items.add(0, openNarrowed);
+            items.add(1, new SeparatorMenuItem());
+        }
         MarkerActions actions = markerActions;
         if (!empty && selected != null && actions != null) {
+            int fileLine = clickedLine + (shown == null ? 0 : shown.startLine());
             items.add(new SeparatorMenuItem());
             MenuItem bookmark = new MenuItem(tr("editmenu.addBookmark"), Icons.bookmark());
-            bookmark.setOnAction(ignored -> actions.addBookmark(selected, clickedLine));
+            bookmark.setOnAction(ignored -> actions.addBookmark(selected, fileLine));
             items.add(bookmark);
 
             MenuItem note = new MenuItem(tr("editmenu.addNote"), Icons.notes());
@@ -599,8 +817,15 @@ final class ProjectMapPreview extends StackPane {
         }
     }
 
+    /**
+     * The note a click or selection asks for, anchored in the file: a declaration card shows some of its lines,
+     * so its positions are moved to the file's and the anchor's context is read from the whole text.
+     */
     private NoteDraft noteDraftAt(int clickedLine) {
-        String document = editor.getText();
+        boolean ranged = range != null && fullText.length() >= sliceOffset + editor.getLength();
+        String document = ranged ? fullText : editor.getText();
+        int base = ranged ? sliceOffset : 0;
+        int lineBase = ranged && range != null ? range.startLine() : 0;
         IndexRange selection = editor.getSelection();
         if (selection.getLength() > 0) {
             int start = selection.getStart();
@@ -608,12 +833,13 @@ final class ProjectMapPreview extends StackPane {
             var startPosition = editor.offsetToPosition(start, TwoDimensional.Bias.Forward);
             var endPosition = editor.offsetToPosition(end, TwoDimensional.Bias.Forward);
             NoteScope scope = startPosition.getMajor() == endPosition.getMajor() ? NoteScope.WORD : NoteScope.RANGE;
-            String prefix = document.substring(Math.max(0, start - TextAnchor.MAX_CONTEXT), start);
-            String suffix = document.substring(end, Math.min(document.length(), end + TextAnchor.MAX_CONTEXT));
+            String prefix = document.substring(Math.max(0, base + start - TextAnchor.MAX_CONTEXT), base + start);
+            String suffix =
+                    document.substring(base + end, Math.min(document.length(), base + end + TextAnchor.MAX_CONTEXT));
             TextAnchor anchor = new TextAnchor(
-                    startPosition.getMajor(),
+                    lineBase + startPosition.getMajor(),
                     startPosition.getMinor(),
-                    endPosition.getMajor(),
+                    lineBase + endPosition.getMajor(),
                     endPosition.getMinor(),
                     editor.getSelectedText(),
                     prefix,
@@ -623,11 +849,12 @@ final class ProjectMapPreview extends StackPane {
 
         int line = Math.max(0, Math.min(clickedLine, editor.getParagraphs().size() - 1));
         String lineText = editor.getParagraph(line).getText();
-        int lineStart = editor.getAbsolutePosition(line, 0);
+        int lineStart = base + editor.getAbsolutePosition(line, 0);
         int lineEnd = lineStart + lineText.length();
         String prefix = document.substring(Math.max(0, lineStart - TextAnchor.MAX_CONTEXT), lineStart);
         String suffix = document.substring(lineEnd, Math.min(document.length(), lineEnd + TextAnchor.MAX_CONTEXT));
-        TextAnchor anchor = new TextAnchor(line, 0, line, lineText.length(), lineText, prefix, suffix);
+        TextAnchor anchor =
+                new TextAnchor(lineBase + line, 0, lineBase + line, lineText.length(), lineText, prefix, suffix);
         return new NoteDraft(NoteScope.LINE, anchor);
     }
 
@@ -654,22 +881,33 @@ final class ProjectMapPreview extends StackPane {
         if (placed) {
             return;
         }
-        double width = boundedSize(preferredWidth, MIN_WIDTH, parent.getWidth() - EDGE_MARGIN * 2);
-        double height = boundedSize(preferredHeight, MIN_HEIGHT, parent.getHeight() - EDGE_MARGIN * 2);
+        double scale = mapScale();
+        double width = boundedSize(preferredWidth, MIN_WIDTH, unzoomedRoom(parent.getWidth(), scale));
+        double height = boundedSize(preferredHeight, MIN_HEIGHT, unzoomedRoom(parent.getHeight(), scale));
         placed = true;
         placementPending = false;
         if (placementResolver != null) {
             Placement placement = placementResolver.resolve(width, height, parent.getWidth(), parent.getHeight());
-            preferredWidth = boundedSize(placement.width(), MIN_WIDTH, parent.getWidth() - EDGE_MARGIN * 2);
-            preferredHeight = boundedSize(placement.height(), MIN_HEIGHT, parent.getHeight() - EDGE_MARGIN * 2);
+            preferredWidth = boundedSize(placement.width(), MIN_WIDTH, unzoomedRoom(parent.getWidth(), scale));
+            preferredHeight = boundedSize(placement.height(), MIN_HEIGHT, unzoomedRoom(parent.getHeight(), scale));
             growLeft = placement.growLeft();
             resize(preferredWidth, preferredHeight);
             relocate(placement.x(), placement.y());
         } else {
             resize(width, height);
-            relocate(Math.max(EDGE_MARGIN, parent.getWidth() - width - 24), 24);
+            relocate(Math.max(EDGE_MARGIN, parent.getWidth() - width * scale - 24), 24);
         }
         constrainTo(parent.getWidth(), parent.getHeight());
+        // A new card opens in view; only the user (or a pan) takes it elsewhere.
+        relocate(
+                clamp(
+                        getLayoutX(),
+                        EDGE_MARGIN,
+                        Math.max(EDGE_MARGIN, parent.getWidth() - getWidth() * scale - EDGE_MARGIN)),
+                clamp(
+                        getLayoutY(),
+                        EDGE_MARGIN,
+                        Math.max(EDGE_MARGIN, parent.getHeight() - getHeight() * scale - EDGE_MARGIN)));
     }
 
     private void dragPressed(MouseEvent event) {
@@ -685,15 +923,12 @@ final class ProjectMapPreview extends StackPane {
         event.consume();
     }
 
+    /** Follows the pointer anywhere, as a column header drag does: panning brings the card back into view. */
     private void dragged(MouseEvent event) {
-        if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
+        if (!event.isPrimaryButtonDown()) {
             return;
         }
-        double x = dragLayoutX + event.getScreenX() - dragScreenX;
-        double y = dragLayoutY + event.getScreenY() - dragScreenY;
-        relocate(
-                clamp(x, EDGE_MARGIN, Math.max(EDGE_MARGIN, parent.getWidth() - getWidth() - EDGE_MARGIN)),
-                clamp(y, EDGE_MARGIN, Math.max(EDGE_MARGIN, parent.getHeight() - getHeight() - EDGE_MARGIN)));
+        relocate(dragLayoutX + event.getScreenX() - dragScreenX, dragLayoutY + event.getScreenY() - dragScreenY);
         event.consume();
     }
 
@@ -713,16 +948,20 @@ final class ProjectMapPreview extends StackPane {
         if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
             return;
         }
-        double maxWidth = Math.max(1, parent.getWidth() - getLayoutX() - EDGE_MARGIN);
-        double maxHeight = Math.max(1, parent.getHeight() - getLayoutY() - EDGE_MARGIN);
-        preferredWidth = boundedSize(resizeWidth + event.getScreenX() - resizeScreenX, MIN_WIDTH, maxWidth);
-        preferredHeight = boundedSize(resizeHeight + event.getScreenY() - resizeScreenY, MIN_HEIGHT, maxHeight);
+        // As large as the panel, wherever the card stands: one partly out of view must not shrink to fit. The
+        // pointer moves in zoomed pixels, the card's size is unzoomed: the grip stays under the pointer.
+        double scale = mapScale();
+        double maxWidth = Math.max(1, unzoomedRoom(parent.getWidth(), scale));
+        double maxHeight = Math.max(1, unzoomedRoom(parent.getHeight(), scale));
+        preferredWidth = boundedSize(resizeWidth + (event.getScreenX() - resizeScreenX) / scale, MIN_WIDTH, maxWidth);
+        preferredHeight =
+                boundedSize(resizeHeight + (event.getScreenY() - resizeScreenY) / scale, MIN_HEIGHT, maxHeight);
         resize(preferredWidth, preferredHeight);
         requestLayout();
         event.consume();
     }
 
-    private static Loaded load(Path requestedPath, String editorConfigCharset) {
+    private static Loaded load(Path requestedPath, @Nullable String editorConfigCharset) {
         Stamp stamp = stamp(requestedPath);
         try (InputStream in = Files.newInputStream(requestedPath)) {
             boolean imageFile = isImage(requestedPath);
@@ -749,7 +988,20 @@ final class ProjectMapPreview extends StackPane {
         }
     }
 
-    private static Stamp stamp(Path file) {
+    /**
+     * {@code file}'s text read and decoded the way a card reads it (the read cap, BOM, {@code .editorconfig}
+     * charset, {@code \n} line endings), for the Map's structure columns; null when it is not text a card would
+     * show — missing, unreadable, binary or an image. Off the FX thread.
+     */
+    static @Nullable String readText(Path file, @Nullable String editorConfigCharset) {
+        if (isImage(file)) {
+            return null;
+        }
+        Loaded loaded = load(file, editorConfigCharset);
+        return loaded.problem() == LoadProblem.NONE && loaded.image() == null ? loaded.text() : null;
+    }
+
+    private static @Nullable Stamp stamp(@Nullable Path file) {
         try {
             BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class);
             return new Stamp(attributes.size(), attributes.lastModifiedTime().toMillis());
@@ -765,14 +1017,14 @@ final class ProjectMapPreview extends StackPane {
      * {@code cut} says the bytes stop at the read cap: a character the cap split is dropped first, or the
      * strict decode would reject the whole file for its last byte.
      */
-    static String decode(byte[] bytes, boolean cut, String editorConfigCharset) {
+    static String decode(byte[] bytes, boolean cut, @Nullable String editorConfigCharset) {
         byte[] source = cut ? trimIncompleteTail(bytes, editorConfigCharset) : bytes;
         return LineEndings.toLf(
                 EditorConfigCharset.decodeLossless(source, editorConfigCharset).text());
     }
 
     /** {@code bytes} without a trailing UTF-8 sequence or UTF-16 unit / surrogate pair cut short. */
-    static byte[] trimIncompleteTail(byte[] bytes, String editorConfigCharset) {
+    static byte[] trimIncompleteTail(byte[] bytes, @Nullable String editorConfigCharset) {
         String declared = EditorConfigCharset.resolveName(bytes, editorConfigCharset);
         int end = bytes.length;
         if (EditorConfigCharset.UTF_8.equals(declared) || EditorConfigCharset.UTF_8_BOM.equals(declared)) {
@@ -799,13 +1051,20 @@ final class ProjectMapPreview extends StackPane {
         return end == bytes.length ? bytes : Arrays.copyOf(bytes, end);
     }
 
+    /**
+     * Colours {@code text} off the FX thread. A declaration card colours its whole file and shows the spans of
+     * its lines, so a line inside a comment or a string starts in the right state; when the whole file is past
+     * the highlighting cap its lines alone are coloured, which is right for nearly every declaration.
+     */
     private void highlight(long requested, Path requestedPath, String text, boolean truncated) {
-        if (text.isEmpty() || text.length() > MAX_HIGHLIGHT_CHARS) {
+        boolean whole = text.length() <= MAX_HIGHLIGHT_CHARS;
+        String source = whole ? text : range != null ? shownText : "";
+        if (source.isEmpty() || source.length() > MAX_HIGHLIGHT_CHARS) {
             return;
         }
         submitLatest(() -> {
-            StyleSpans<Collection<String>> spans = styles(requestedPath, text);
-            Platform.runLater(() -> showStyles(requested, requestedPath, text, truncated, spans));
+            StyleSpans<Collection<String>> spans = styles(requestedPath, source);
+            Platform.runLater(() -> showStyles(requested, requestedPath, text, whole, truncated, spans));
         });
     }
 
@@ -816,13 +1075,13 @@ final class ProjectMapPreview extends StackPane {
         loader.execute(task);
     }
 
-    private static StyleSpans<Collection<String>> styles(Path requestedPath, String text) {
+    private static @Nullable StyleSpans<Collection<String>> styles(Path requestedPath, String text) {
         if (text.isEmpty() || text.length() > MAX_HIGHLIGHT_CHARS) {
             return null;
         }
         try {
             IGrammar grammar = GrammarRegistry.shared().forFileName(requestedPath.toString());
-            return TextMateHighlighter.compute(text, grammar);
+            return grammar == null ? null : TextMateHighlighter.compute(text, grammar); // no grammar: no colours
         } catch (RuntimeException | LinkageError ignored) {
             return null;
         }
@@ -869,19 +1128,22 @@ final class ProjectMapPreview extends StackPane {
         if (first) {
             editor.moveTo(0);
             editor.scrollToPixel(0, 0);
-            fitTextWidth(loaded.text());
+            fitTextWidth(shownText);
         }
         return true;
     }
 
     /**
-     * Puts {@code text} in the editor by replacing only the range that differs from what is shown, so a
-     * refresh keeps the scroll position, the selection outside the edit and the styles of unchanged lines.
+     * Puts {@code full} in the editor — a declaration card's lines of it — by replacing only the range that
+     * differs from what is shown, so a refresh keeps the scroll position, the selection outside the edit and
+     * the styles of unchanged lines.
      */
-    private void showText(String text, boolean truncated) {
+    private void showText(String full, boolean truncated) {
         frame.setCenter(editorScroll);
         imageView.setImage(null);
         editor.setPlaceholder(null);
+        String text = visible(full);
+        truncatedShown = truncated;
         String old = shownText;
         if (!text.equals(old)) {
             int limit = Math.min(old.length(), text.length());
@@ -902,12 +1164,24 @@ final class ProjectMapPreview extends StackPane {
             editor.selectRange(anchor, caret); // replaceText leaves the caret after the replaced range
             shownText = text;
         }
-        status.setText(truncated ? tr("project.map.preview.truncated") : "");
+        status.setText(idleStatus(truncated));
     }
 
     /** Where an offset lands after {@code prefix..oldEnd} was replaced by text {@code shift} chars longer. */
     private static int movedOffset(int offset, int prefix, int oldEnd, int shift) {
         return offset <= prefix ? offset : offset >= oldEnd ? offset + shift : prefix;
+    }
+
+    /**
+     * A declaration card's height: all of its lines when they fit the default height, which most methods do —
+     * a five-line method in a card sized for a whole file was mostly empty.
+     */
+    private double fittedHeight(Range shown) {
+        Text glyph = new Text("M");
+        glyph.setFont(Font.font("Monospaced", 12 * contentZoom));
+        double lineHeight = Math.max(1, glyph.getLayoutBounds().getHeight());
+        int lines = Math.max(1, shown.endLine() - shown.startLine() + 1);
+        return Math.max(MIN_HEIGHT, Math.min(DEFAULT_HEIGHT, lines * lineHeight + TEXT_CHROME_HEIGHT));
     }
 
     /** The width that shows the text's longest line, up to {@value #MAX_FIT_COLUMNS} columns. */
@@ -934,13 +1208,14 @@ final class ProjectMapPreview extends StackPane {
             return;
         }
         if (growLeft && !userMoved) {
-            double right = getLayoutX() + getWidth();
-            double x = Math.max(EDGE_MARGIN, right - wanted);
-            preferredWidth = right - x;
+            double scale = mapScale();
+            double right = getLayoutX() + getWidth() * scale;
+            preferredWidth = Math.max(getWidth(), (right - Math.max(EDGE_MARGIN, right - wanted * scale)) / scale);
             resize(preferredWidth, getHeight());
-            relocate(x, getLayoutY());
+            relocate(right - preferredWidth * scale, getLayoutY());
         } else {
-            preferredWidth = Math.max(getWidth(), Math.min(wanted, parent.getWidth() - EDGE_MARGIN - getLayoutX()));
+            double room = (parent.getWidth() - EDGE_MARGIN - getLayoutX()) / mapScale();
+            preferredWidth = Math.max(getWidth(), Math.min(wanted, room));
             resize(preferredWidth, getHeight());
         }
         requestLayout();
@@ -966,15 +1241,31 @@ final class ProjectMapPreview extends StackPane {
     }
 
     private void showStyles(
-            long requested, Path requestedPath, String text, boolean truncated, StyleSpans<Collection<String>> spans) {
+            long requested,
+            Path requestedPath,
+            String text,
+            boolean whole,
+            boolean truncated,
+            @Nullable StyleSpans<Collection<String>> spans) {
         if (disposed || requested != generation.get() || !requestedPath.equals(path) || spans == null) {
             return;
         }
-        if (!shownText.equals(text) || editor.getLength() != text.length()) {
+        if (!fullText.equals(text) || editor.getLength() != shownText.length()) {
             return;
         }
-        editor.setStyleSpans(0, spans);
-        status.setText(truncated ? tr("project.map.preview.truncated") : "");
+        if (range == null || !whole) {
+            if (spans.length() != shownText.length()) {
+                return;
+            }
+            editor.setStyleSpans(0, spans);
+        } else {
+            int end = sliceOffset + shownText.length();
+            if (end > spans.length()) {
+                return;
+            }
+            editor.setStyleSpans(0, spans.subView(sliceOffset, end));
+        }
+        status.setText(idleStatus(truncated));
     }
 
     private static boolean looksBinary(byte[] bytes) {
@@ -991,7 +1282,7 @@ final class ProjectMapPreview extends StackPane {
     }
 
     private static boolean isImage(Path path) {
-        String name = fileName(path).toLowerCase(java.util.Locale.ROOT);
+        String name = PathDisplay.fileName(path).toLowerCase(java.util.Locale.ROOT);
         return name.endsWith(".png")
                 || name.endsWith(".jpg")
                 || name.endsWith(".jpeg")
@@ -1018,11 +1309,6 @@ final class ProjectMapPreview extends StackPane {
             end--;
         }
         return end == text.length() ? text : text.substring(0, end);
-    }
-
-    private static String fileName(Path path) {
-        Path name = path.getFileName();
-        return name == null ? path.toString() : name.toString();
     }
 
     /** {@code requested} held between the card's minimum and the room there is; the room wins when smaller. */

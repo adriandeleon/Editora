@@ -396,4 +396,48 @@ class KeymapsTest {
                 "debug.evaluate", load("/com/editora/keymaps/intellij.json").get("M-f8"));
         assertEquals("debug.restart", load("/com/editora/keymaps/emacs.json").get("C-c C-d r"));
     }
+
+    /**
+     * The "IntelliJ IDEA" keymap binds IntelliJ's own Java chords (its {@code $default.xml}), the keys an IntelliJ
+     * user tries first (Java review E1): Alt+Enter was dead, F2 renamed and Alt+Insert made a new file.
+     */
+    @org.junit.jupiter.api.Test
+    void theIntelliJKeymapHasIntelliJsJavaChords() {
+        KeymapManager km = new KeymapManager();
+        km.loadNamed("intellij", false);
+        java.util.Map<String, String> expected = new java.util.LinkedHashMap<>();
+        expected.put("M-enter", "lsp.codeActions");
+        expected.put("S-f6", "lsp.rename");
+        expected.put("f2", "lsp.nextProblem");
+        expected.put("S-f2", "lsp.previousProblem");
+        expected.put("M-insert", "lsp.generate");
+        expected.put("C-M-l", "lsp.formatDocument");
+        expected.put("C-M-o", "lsp.organizeImports");
+        expected.put("C-n", "lsp.gotoSymbol");
+        expected.put("C-M-b", "lsp.gotoImplementation");
+        expected.put("C-h", "lsp.typeHierarchy");
+        expected.put("C-M-h", "lsp.callHierarchy");
+        expected.put("C-p", "lsp.signatureHelp");
+        expected.put("C-M-left", "nav.back");
+        expected.put("C-M-v", "lsp.extractVariable");
+        expected.put("C-M-m", "lsp.extractMethod");
+        expected.put("f6", "lsp.move");
+        expected.put("C-f6", "lsp.changeSignature");
+        expected.put("C-M-S-t", "lsp.refactorThis");
+        expected.forEach((chord, command) -> org.junit.jupiter.api.Assertions.assertEquals(
+                command, km.commandFor(chord), "IntelliJ binds " + chord + " to " + command));
+    }
+
+    /** Back and Forward have a chord in every keymap, so Go to Definition has a way back (E2). */
+    @org.junit.jupiter.api.Test
+    void backAndForwardAreBoundEverywhere() {
+        for (String name : java.util.List.of("emacs", "cua", "vscode", "intellij", "sublime")) {
+            for (boolean mac : new boolean[] {false, true}) {
+                KeymapManager km = new KeymapManager();
+                km.loadNamed(name, mac);
+                org.junit.jupiter.api.Assertions.assertNotNull(km.chordFor("nav.back"), name + (mac ? " mac" : ""));
+                org.junit.jupiter.api.Assertions.assertNotNull(km.chordFor("nav.forward"), name + (mac ? " mac" : ""));
+            }
+        }
+    }
 }

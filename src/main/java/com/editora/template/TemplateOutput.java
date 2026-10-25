@@ -19,6 +19,7 @@ import java.util.function.Function;
 import com.editora.editorconfig.EditorConfigProperties;
 import com.editora.editorconfig.EditorConfigTransform;
 import com.editora.io.PathContainment;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Turns a template plus the wizard's answers into files: first a {@link Plan} (every target path worked
@@ -45,13 +46,13 @@ public final class TemplateOutput {
      */
     public record Request(
             Template template,
-            Path dir,
+            @Nullable Path dir,
             Map<String, String> answers,
             String author,
             String projectName,
-            Path projectRoot,
+            @Nullable Path projectRoot,
             LocalDateTime now,
-            Function<Path, EditorConfigProperties> editorConfig) {}
+            Function<Path, @Nullable EditorConfigProperties> editorConfig) {}
 
     /** One file to create: where, its name relative to the target folder, its text and caret offset. */
     public record Target(Path path, String relative, String text, int caret, boolean hasCursor, boolean exists) {}
@@ -60,7 +61,8 @@ public final class TemplateOutput {
      * What applying the template would do. {@code refusedPath} non-null means a path pattern did not stay
      * inside the folder and <b>nothing</b> may be written.
      */
-    public record Plan(Path dir, List<Target> targets, String refusedPath) {
+    public record Plan(
+            Path dir, List<Target> targets, @Nullable String refusedPath) {
 
         public boolean refused() {
             return refusedPath != null;
@@ -85,11 +87,16 @@ public final class TemplateOutput {
             Path dir,
             List<Target> created,
             List<Target> skipped,
-            Target failedAt,
-            String error,
+            @Nullable Target failedAt,
+            @Nullable String error,
             List<Target> notExecutable) {
 
-        Outcome(Path dir, List<Target> created, List<Target> skipped, Target failedAt, String error) {
+        Outcome(
+                Path dir,
+                List<Target> created,
+                List<Target> skipped,
+                @Nullable Target failedAt,
+                @Nullable String error) {
             this(dir, created, skipped, failedAt, error, List.of());
         }
 
@@ -98,7 +105,7 @@ public final class TemplateOutput {
         }
 
         /** The file to open: the created one that marks {@code ${cursor}}, else the first created. */
-        public Target primary() {
+        public @Nullable Target primary() {
             for (Target t : created) {
                 if (t.hasCursor()) {
                     return t;
@@ -122,12 +129,14 @@ public final class TemplateOutput {
     /** Works out every file the template would create in {@code r.dir()}. Reads the disk, writes nothing. */
     public static Plan plan(Request r) {
         Template t = r.template();
-        Path dir = r.dir().toAbsolutePath().normalize();
+        Path dir = java.util.Objects.requireNonNull(r.dir(), "a plan needs a folder; untitled() has none")
+                .toAbsolutePath()
+                .normalize();
         List<Target> targets = new ArrayList<>();
         if (t.isMultiFile()) {
             TemplateVariableResolver vars = resolver(r, "", null, "");
             Set<Path> seen = new java.util.HashSet<>();
-            for (TemplateFile f : t.files()) {
+            for (TemplateFile f : t.filesOrEmpty()) {
                 Path target = TemplateEngine.resolveTargetPath(dir, f.path(), vars);
                 if (target == null) {
                     return new Plan(dir, List.of(), TemplateEngine.expand(f.path(), vars));
@@ -158,7 +167,8 @@ public final class TemplateOutput {
         return fileName.isEmpty() ? "untitled" : fileName;
     }
 
-    private static TemplateVariableResolver resolver(Request r, String fileName, Path target, String packageName) {
+    private static TemplateVariableResolver resolver(
+            Request r, String fileName, @Nullable Path target, String packageName) {
         return new TemplateVariableResolver(
                 r.answers(),
                 r.author(),
@@ -197,11 +207,11 @@ public final class TemplateOutput {
      * As {@link #finish(String, EditorConfigProperties)} for the file {@code target}: a shell script is always
      * written with LF, whatever {@code end_of_line} says — bash cannot run a script with CRLF line endings.
      */
-    public static String finish(String text, EditorConfigProperties rules, Path target) {
+    public static String finish(String text, @Nullable EditorConfigProperties rules, @Nullable Path target) {
         if (rules != null
                 && rules.endOfLine() != null
                 && !"lf".equals(rules.endOfLine())
-                && com.editora.editor.ShellScripts.isShellScript(
+                && com.editora.text.ShellScripts.isShellScript(
                         target == null || target.getFileName() == null
                                 ? ""
                                 : target.getFileName().toString(),
@@ -238,7 +248,7 @@ public final class TemplateOutput {
      * Javadoc {@code *}) are kept, and a line that already starts with a tab is left alone. Unchanged without
      * an indentation rule.
      */
-    static String reindent(String text, EditorConfigProperties rules) {
+    static String reindent(String text, @Nullable EditorConfigProperties rules) {
         if (text == null || rules == null || (rules.insertSpaces() == null && rules.indentSize() == null)) {
             return text;
         }
@@ -269,7 +279,7 @@ public final class TemplateOutput {
     }
 
     /** Where a caret at {@code caret} in a template's text lands once {@link #reindent} has run on it. */
-    public static int caretAfterReindent(String text, int caret, EditorConfigProperties rules) {
+    public static int caretAfterReindent(String text, int caret, @Nullable EditorConfigProperties rules) {
         if (text == null) {
             return caret;
         }

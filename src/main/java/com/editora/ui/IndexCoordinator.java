@@ -13,14 +13,15 @@ import java.util.concurrent.atomic.AtomicLong;
 import javafx.application.Platform;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LanguageRegistry;
 import com.editora.index.DeclarationScanner;
 import com.editora.index.Symbol;
 import com.editora.index.SymbolIndex;
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
 import com.editora.search.RemoteFiles;
+import com.editora.text.LanguageRegistry;
 import com.editora.vfs.Vfs;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -58,7 +59,7 @@ final class IndexCoordinator {
         Path projectRoot();
 
         /** Opens {@code file} and moves the caret to the 0-based line/column. */
-        void openAndGoto(Path file, int line, int column);
+        void openAndGoto(@Nullable Path file, int line, int column);
 
         /** Honour the user's .gitignore when walking, as Find in Files and the project tree do. */
         boolean respectGitignore();
@@ -72,7 +73,7 @@ final class IndexCoordinator {
     /** What {@link #ops} is given for {@link Ops#openAndGoto}. */
     @FunctionalInterface
     interface Opener {
-        void openAndGoto(Path file, int line, int column);
+        void openAndGoto(@Nullable Path file, int line, int column);
     }
 
     /** Builds the production adapter without another long anonymous class in {@link MainController}. */
@@ -88,7 +89,7 @@ final class IndexCoordinator {
             }
 
             @Override
-            public void openAndGoto(Path file, int line, int column) {
+            public void openAndGoto(@Nullable Path file, int line, int column) {
                 opener.openAndGoto(file, line, column);
             }
 
@@ -119,7 +120,7 @@ final class IndexCoordinator {
     /** Discards the results of a walk that a project switch or a rebuild has superseded. */
     private final AtomicLong generation = new AtomicLong();
 
-    private Path indexedRoot;
+    private @Nullable Path indexedRoot;
     private boolean building;
 
     /** The last walk stopped at {@link #maxFiles} files, so the index covers only part of the project. */
@@ -174,6 +175,7 @@ final class IndexCoordinator {
      * The file a wiki link's {@code target} names when written in {@code document}, or null (unknown,
      * ambiguous, or wiki links off). The hook the preview and the link tools resolve through; never blocks.
      */
+    @Nullable
     Path resolveWikiLink(Path document, String target) {
         return WikiLinks.resolve(document, target);
     }
@@ -386,7 +388,7 @@ final class IndexCoordinator {
         }
         String text = new String(head, java.nio.charset.StandardCharsets.ISO_8859_1);
         int nl = text.indexOf('\n');
-        String extension = com.editora.editor.Shebang.extension(nl < 0 ? text : text.substring(0, nl));
+        String extension = com.editora.text.Shebang.extension(nl < 0 ? text : text.substring(0, nl));
         return extension == null ? language : LanguageRegistry.forFileName("shebang." + extension);
     }
 
@@ -497,7 +499,7 @@ final class IndexCoordinator {
      * above it, else the first below. Two functions that each declare a {@code parse} helper used to send a jump
      * from the second one to the first.
      */
-    static Symbol nearestDeclaration(List<Symbol> declarations, String name, int line) {
+    static @Nullable Symbol nearestDeclaration(List<Symbol> declarations, String name, int line) {
         Symbol above = null;
         Symbol below = null;
         for (Symbol s : declarations) {
@@ -517,7 +519,7 @@ final class IndexCoordinator {
      * The name at {@code column} of {@code line}: identifier characters, and in shell also {@code . : -}, which
      * its function names use ({@code pkg::fn}, {@code my-fn}); null when the caret is on none.
      */
-    static String nameAt(String line, int column, String language) {
+    static @Nullable String nameAt(String line, int column, String language) {
         boolean shell = "shell".equals(language);
         boolean dollar = com.editora.editops.IdentifierChars.dollarIdentifiers(language); // `$el`, `#count` in JS
         java.util.function.IntPredicate part = c -> com.editora.editops.IdentifierChars.isPart((char) c, dollar)
@@ -570,7 +572,7 @@ final class IndexCoordinator {
      * <p>Guarded against a second walk while one is running: the picker is a keystroke, and hammering it
      * would otherwise queue one full project walk per press.
      */
-    private void build(Runnable then) {
+    private void build(@Nullable Runnable then) {
         Path root = ops.projectRoot();
         if (root == null || !RemoteExec.runsFor(root)) {
             host.setStatus(tr("status.index.noProject"));
@@ -785,6 +787,36 @@ final class IndexCoordinator {
         } else {
             build(null);
         }
+    }
+
+    /** Search Everywhere's file rows for {@code query}: the name, then its folder relative to the root. */
+    List<com.editora.search.SearchEverywhere.Item> fileItems(String query) {
+        List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+        for (FileHit hit : searchFiles(query, 40)) {
+            String name = hit.file().getFileName().toString();
+            String parent = hit.relativePath().contains("/")
+                    ? hit.relativePath().substring(0, hit.relativePath().lastIndexOf('/'))
+                    : "";
+            out.add(new com.editora.search.SearchEverywhere.Item(
+                    com.editora.search.SearchEverywhere.Kind.FILE, name, parent, hit.score(), hit.file()));
+        }
+        return out;
+    }
+
+    /** Search Everywhere's symbol rows for {@code query}: the name, then its container and place. */
+    List<com.editora.search.SearchEverywhere.Item> symbolItems(String query) {
+        List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+        for (SymbolIndex.Hit hit : searchSymbols(query, 40)) {
+            String container = hit.symbol().container();
+            String where = hit.file().getFileName() + ":" + (hit.symbol().line() + 1);
+            out.add(new com.editora.search.SearchEverywhere.Item(
+                    com.editora.search.SearchEverywhere.Kind.SYMBOL,
+                    hit.symbol().name(),
+                    container.isEmpty() ? where : container + " — " + where,
+                    hit.score(),
+                    hit));
+        }
+        return out;
     }
 
     /** Ranked symbol hits for {@code query}; empty when the index has not been built. */

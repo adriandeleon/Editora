@@ -14,6 +14,7 @@ import com.editora.git.GitOutputDiffs;
 import com.editora.process.CommandLog;
 import com.editora.process.CommandLogFormat;
 import com.editora.run.StackTraceLinks;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The shared <b>Output</b> tool window: a {@link TabPane} with one {@link BuildToolPanel} tab per build
@@ -37,15 +38,15 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
     private final Map<Object, Tab> tabs = new IdentityHashMap<>();
 
     /** Applied to every console (kept so lazily-created tabs match): the editor code-area font. */
-    private String fontFamily;
+    private @Nullable String fontFamily;
 
     private int fontSize;
     /** The clicked-stack-trace-link handler shared by every console. */
-    private Consumer<StackTraceLinks.Link> onLink;
+    private @Nullable Consumer<StackTraceLinks.Link> onLink;
 
-    private Consumer<String> onUrl;
+    private @Nullable Consumer<String> onUrl;
 
-    private Consumer<GitOutputDiffs.Target> onGitDiff;
+    private @Nullable Consumer<GitOutputDiffs.Target> onGitDiff;
 
     public BuildOutputPanel() {
         getStyleClass().add("build-output-tabs");
@@ -160,7 +161,7 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
     }
 
     /** Shows the runtime {@code owner}'s current build runs under (an npm script's Node). */
-    public void setRuntime(Object owner, com.editora.run.RuntimeVersion version) {
+    public void setRuntime(Object owner, com.editora.run.@Nullable RuntimeVersion version) {
         BuildToolPanel console = consoles.get(owner);
         if (console != null) {
             console.setRuntime(version);
@@ -171,6 +172,14 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
         BuildToolPanel console = consoles.get(owner);
         if (console != null) {
             console.finished(code);
+        }
+    }
+
+    /** {@code owner}'s build ended because the user stopped it: the header reads "Stopped", not an exit code. */
+    public void stopped(Object owner) {
+        BuildToolPanel console = consoles.get(owner);
+        if (console != null) {
+            console.stopped();
         }
     }
 
@@ -185,6 +194,7 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
         BuildToolPanel console = consoles.get(owner);
         if (console == null) {
             console = new BuildToolPanel();
+            console.setTitle(toolName);
             if (onLink != null) {
                 console.setOnLink(onLink);
             }

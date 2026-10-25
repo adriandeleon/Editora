@@ -17,6 +17,7 @@ import javafx.scene.layout.Region;
 import javafx.util.StringConverter;
 
 import com.editora.config.Project;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -34,7 +35,7 @@ public class ProjectCombo extends ComboBox<Project> {
     public static final Project NO_PROJECT = new Project("", tr("projectcombo.noProject"), "");
 
     private boolean loading;
-    private Consumer<Project> onDelete;
+    private @Nullable Consumer<Project> onDelete;
 
     public ProjectCombo(Consumer<Project> onSwitch) {
         getStyleClass().add("project-combo");
@@ -45,7 +46,7 @@ public class ProjectCombo extends ComboBox<Project> {
             }
 
             @Override
-            public Project fromString(String s) {
+            public @Nullable Project fromString(String s) {
                 return null;
             }
         });
@@ -113,7 +114,10 @@ public class ProjectCombo extends ComboBox<Project> {
             delete.setTooltip(new Tooltip(tr("projectcombo.deleteTip")));
             // Delete on press without selecting the row / closing the popup unexpectedly.
             delete.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
-                onDelete.accept(p);
+                Consumer<Project> handler = onDelete;
+                if (handler != null) {
+                    handler.accept(p);
+                }
                 e.consume();
             });
             HBox box = new HBox(8, name, spacer, delete);

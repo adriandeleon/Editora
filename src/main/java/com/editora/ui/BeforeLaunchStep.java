@@ -3,10 +3,14 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
+import com.editora.build.BuildTool;
 import com.editora.config.RunConfiguration;
+import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.ProgramArgs;
 import com.editora.run.RunService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -34,7 +38,7 @@ final class BeforeLaunchStep {
         void output(String line, boolean stderr);
 
         /** The step is over: {@code launchError} non-null when it never started, else its exit {@code code}. */
-        void ended(int code, String launchError);
+        void ended(int code, @Nullable String launchError);
     }
 
     private final RunService service;
@@ -71,11 +75,35 @@ final class BeforeLaunchStep {
         return active;
     }
 
+    /** Whether the last step ended because {@link #stop} was asked (a retry must not follow a Stop). */
+    boolean wasStopped() {
+        return stopRequested;
+    }
+
     /**
      * Runs {@code cfg}'s before-launch command, if it has one, then {@code then} — or reports the failure and
      * runs nothing. With no before-launch step this is a straight call, so the common case is unchanged.
-     * {@code then} runs on the FX thread, after {@link Console#ended}.
+     * {@code then} runs on the FX thread, after {@link Console#ended}. A symbolic step ({@code maven:compile})
+     * is run through {@code executables}, which answers a tool's argv prefix — or null when the launch may
+     * not run it (the user declined to trust the project's wrapper): then nothing runs, and the gate has
+     * already said why.
      */
+    void run(
+            CoordinatorHost host,
+            RunConfiguration cfg,
+            Function<BuildTool, @Nullable List<String>> executables,
+            @Nullable Path cwd,
+            Map<String, String> environment,
+            Console console,
+            Runnable then) {
+        List<String> argv = argvFor(cfg, executables);
+        if (argv == null) {
+            return;
+        }
+        run(host, new Command(cfg.name(), argv, "status.run.beforeLaunch"), cwd, environment, console, then);
+    }
+
+    /** As {@link #run(CoordinatorHost, RunConfiguration, Function, Path, Map, Console, Runnable)} for a plain command. */
     void run(
             CoordinatorHost host,
             RunConfiguration cfg,
@@ -83,9 +111,26 @@ final class BeforeLaunchStep {
             Map<String, String> environment,
             Console console,
             Runnable then) {
+        run(host, cfg, tool -> List.of(tool.commandExample()), cwd, environment, console, then);
+    }
+
+    /**
+     * The command {@code cfg}'s before-launch field names: empty for none, the tokenized text for a plain
+     * command, a build tool's executable + goals for a symbolic step — or null when {@code executables}
+     * refused the tool (nothing may run). Pure given {@code executables}.
+     */
+    static @Nullable List<String> argvFor(
+            RunConfiguration cfg, Function<BuildTool, @Nullable List<String>> executables) {
         String command = cfg.beforeLaunch();
-        List<String> argv = command == null || command.isBlank() ? List.of() : ProgramArgs.tokenize(command);
-        run(host, new Command(cfg.name(), argv, "status.run.beforeLaunch"), cwd, environment, console, then);
+        if (command == null || command.isBlank()) {
+            return List.of();
+        }
+        BuildBeforeLaunch.Symbolic symbolic = BuildBeforeLaunch.symbolic(command);
+        if (symbolic == null) {
+            return ProgramArgs.tokenize(command);
+        }
+        List<String> executable = executables.apply(symbolic.tool());
+        return executable == null ? null : BuildBeforeLaunch.withGoals(executable, symbolic.goals());
     }
 
     /**
@@ -98,11 +143,32 @@ final class BeforeLaunchStep {
      */
     record Command(String name, List<String> argv, String statusKey) {}
 
+    /**
+     * What a failed step's status quotes: the first {@code [ERROR]} line a build tool printed (Maven's says
+     * what went wrong; its last line only says where to read more — review D4), else the last non-blank
+     * line, else the exit code.
+     */
+    static String failureDetail(String firstError, String lastLine, int code) {
+        if (firstError != null && !firstError.isBlank()) {
+            return firstError.strip();
+        }
+        return lastLine == null || lastLine.isBlank() ? "exit " + code : lastLine.strip();
+    }
+
+    /** Whether {@code line} is a build tool's error line ({@code [ERROR] …}, Gradle's {@code e: …} / {@code error: …}). */
+    static boolean isErrorLine(String line) {
+        if (line == null) {
+            return false;
+        }
+        String t = line.strip();
+        return t.startsWith("[ERROR]") || t.startsWith("error:") || t.startsWith("e: ") || t.contains(": error:");
+    }
+
     /** Runs {@code command}, then {@code then} when it exits 0 — or reports the failure and runs nothing. */
     void run(
             CoordinatorHost host,
             Command command,
-            Path cwd,
+            @Nullable Path cwd,
             Map<String, String> environment,
             Console console,
             Runnable then) {
@@ -118,6 +184,7 @@ final class BeforeLaunchStep {
         active = true;
         stopRequested = false;
         String[] lastLine = {""};
+        String[] firstError = {null};
         host.setStatus(tr(command.statusKey(), command.name()));
         console.started(String.join(" ", argv));
         service.runInDir(cwd, argv, environment, new RunService.Listener() {
@@ -130,6 +197,9 @@ final class BeforeLaunchStep {
             public void onOutput(String line, boolean stderr) {
                 if (!line.isBlank()) {
                     lastLine[0] = line; // a build tool's summary, not its banner
+                    if (firstError[0] == null && isErrorLine(line)) {
+                        firstError[0] = line;
+                    }
                 }
                 console.output(line, stderr);
             }
@@ -148,7 +218,7 @@ final class BeforeLaunchStep {
                     host.setStatus(tr(
                             command.statusKey() + "Failed",
                             command.name(),
-                            lastLine[0].isBlank() ? "exit " + code : lastLine[0].strip()));
+                            failureDetail(firstError[0], lastLine[0], code)));
                 }
             }
 

@@ -26,7 +26,7 @@ import javafx.stage.Window;
  * the common GPU maximum. {@link #paintable} reports whether the overlay's <em>region</em> currently
  * has a real size, so callers skip drawing content into a collapsed (or absurdly large) surface.
  */
-final class CanvasGuards {
+public final class CanvasGuards {
 
     /** Common maximum texture dimension, in physical output pixels. */
     static final double MAX_TEXTURE_DIM = 16384;
@@ -51,11 +51,11 @@ final class CanvasGuards {
         return Math.min(v, maxLogicalDimension);
     }
 
-    static double clampWidth(Node owner, double width) {
+    public static double clampWidth(Node owner, double width) {
         return clampDim(width, outputScale(owner, true));
     }
 
-    static double clampHeight(Node owner, double height) {
+    public static double clampHeight(Node owner, double height) {
         return clampDim(height, outputScale(owner, false));
     }
 
@@ -75,12 +75,12 @@ final class CanvasGuards {
      * Whether a region's current size is real and in range — i.e. worth painting into. Collapsed
      * ({@code ≤0}), {@code NaN}/infinite, or over-{@link #MAX_DIM} sizes return {@code false}.
      */
-    static boolean paintable(double w, double h) {
+    public static boolean paintable(double w, double h) {
         return Double.isFinite(w) && Double.isFinite(h) && w >= 1 && h >= 1 && w <= MAX_DIM && h <= MAX_DIM;
     }
 
     /** Sizes {@code canvas} to {@code owner}'s current (clamped) size; a no-op when it already matches. */
-    static void fit(Region owner, Canvas canvas) {
+    public static void fit(Region owner, Canvas canvas) {
         double w = clampWidth(owner, owner.getWidth());
         double h = clampHeight(owner, owner.getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
@@ -93,7 +93,7 @@ final class CanvasGuards {
      * Shrinks {@code canvas} to 1x1 so its viewport-sized backing texture is released. Every overlay does
      * this while it is switched off, has nothing to draw, or belongs to a tab that is not on screen.
      */
-    static void release(Canvas canvas) {
+    public static void release(Canvas canvas) {
         if (canvas.getWidth() != 1 || canvas.getHeight() != 1) {
             canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
             canvas.setWidth(1);

@@ -3,6 +3,8 @@ package com.editora.maven;
 import java.nio.file.Path;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure validation and derivation for Maven project coordinates. No toolkit, no I/O — the wizard's decisions
  * live here so they can be unit-tested.
@@ -79,18 +81,38 @@ public final class MavenCoordinates {
         return s != null && s.matches(ID);
     }
 
+    /**
+     * A version is free text to Maven, but one with whitespace inside ({@code 1.0 beta}) is a typo the
+     * command line would split into two arguments — refused here rather than discovered as a Maven error.
+     */
     public static boolean isValidVersion(String s) {
-        return s != null && !s.isBlank() && s.strip().equals(s) && !s.contains("/") && !s.contains("\\");
+        return s != null
+                && !s.isBlank()
+                && s.strip().equals(s)
+                && !s.contains("/")
+                && !s.contains("\\")
+                && s.chars().noneMatch(Character::isWhitespace);
+    }
+
+    /**
+     * The folder a typed Location means: a leading {@code ~} is the home folder, a relative path is taken
+     * against {@code base} (where the wizard started), and the result is absolute and normalized — so the
+     * form shows the folder the project will actually land in, never {@code rel-dir/demo} resolved against
+     * whatever the launcher's working directory happened to be. Blank or unparseable is {@code null}.
+     */
+    public static @Nullable Path resolveLocation(String text, @Nullable Path base, String userHome) {
+        return com.editora.config.PathKeys.resolveUserInput(text, base, userHome);
     }
 
     /**
      * The package a new project defaults to, the way IDEA derives it: {@code groupId.artifactId}, with every
-     * segment sanitised into a legal Java identifier. A groupId already ending in the artifactId is not
-     * doubled ({@code com.example} + {@code example} stays {@code com.example}).
+     * segment sanitised into a legal Java identifier and lower-cased (a package is lower case by convention,
+     * and {@code Com.Example-Org} was yielding {@code Com.Example_Org}). A groupId already ending in the
+     * artifactId is not doubled ({@code com.example} + {@code example} stays {@code com.example}).
      */
     public static String defaultPackage(String groupId, String artifactId) {
-        String g = groupId == null ? "" : groupId.strip();
-        String a = artifactId == null ? "" : artifactId.strip();
+        String g = groupId == null ? "" : groupId.strip().toLowerCase(java.util.Locale.ROOT);
+        String a = artifactId == null ? "" : artifactId.strip().toLowerCase(java.util.Locale.ROOT);
         String combined = g.isEmpty() ? a : (a.isEmpty() || g.endsWith("." + a) || g.equals(a) ? g : g + "." + a);
         StringBuilder out = new StringBuilder();
         for (String raw : combined.split("\\.")) {
@@ -131,7 +153,7 @@ public final class MavenCoordinates {
      * directory is <em>derived</em>, never chosen, which is why the wizard shows it read-only and refuses to
      * proceed when it already exists.
      */
-    public static Path projectDir(Path parentDir, String artifactId) {
+    public static @Nullable Path projectDir(@Nullable Path parentDir, String artifactId) {
         return parentDir == null || artifactId == null || artifactId.isBlank()
                 ? null
                 : parentDir.resolve(artifactId.strip()).normalize();
@@ -141,7 +163,7 @@ public final class MavenCoordinates {
      * Parses a user-typed {@code groupId:artifactId:version} into an archetype, or returns {@code null} when
      * it isn't three valid non-blank parts. Never throws — the caller reports a status.
      */
-    public static MavenArchetype parseGav(String text) {
+    public static @Nullable MavenArchetype parseGav(String text) {
         if (text == null) {
             return null;
         }

@@ -13,6 +13,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Renders source text to a searchable, light-themed PDF with an embedded monospace font, optional
@@ -57,7 +58,7 @@ public final class CodePdfWriter {
      */
     public static int write(
             String text,
-            StyleSpans<Collection<String>> spans,
+            @Nullable StyleSpans<Collection<String>> spans,
             boolean lineNumbers,
             int tabSize,
             PdfPageSpec spec,
@@ -87,7 +88,7 @@ public final class CodePdfWriter {
     /** The excerpt form on the page {@code spec} describes, with {@code meta}'s document name. */
     public static int write(
             String text,
-            StyleSpans<Collection<String>> spans,
+            @Nullable StyleSpans<Collection<String>> spans,
             boolean lineNumbers,
             int firstLineNumber,
             int tabSize,
@@ -114,7 +115,7 @@ public final class CodePdfWriter {
 
     static int write(
             String text,
-            StyleSpans<Collection<String>> spans,
+            @Nullable StyleSpans<Collection<String>> spans,
             boolean lineNumbers,
             int tabSize,
             PdfPageSpec spec,
@@ -128,7 +129,7 @@ public final class CodePdfWriter {
     /** The fallback-font form with the number of the first line (see the {@code firstLineNumber} overload). */
     private static int write(
             String text,
-            StyleSpans<Collection<String>> spans,
+            @Nullable StyleSpans<Collection<String>> spans,
             boolean lineNumbers,
             int tabSize,
             PdfPageSpec spec,
@@ -151,7 +152,7 @@ public final class CodePdfWriter {
 
     private static int render(
             String text,
-            StyleSpans<Collection<String>> spans,
+            @Nullable StyleSpans<Collection<String>> spans,
             boolean lineNumbers,
             int tabSize,
             PdfPageSpec spec,

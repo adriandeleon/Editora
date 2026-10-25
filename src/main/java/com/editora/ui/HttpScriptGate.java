@@ -9,6 +9,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.http.NodeResponseScripts;
 import com.editora.http.ResponseScripts;
 import com.editora.http.SecretGate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The HTTP Client's trust gate for response handlers, on the window side. A {@code > {% … %}} handler is code that
@@ -30,7 +31,7 @@ final class HttpScriptGate {
             EditorBuffer buffer,
             HttpClientCoordinator.WindowOps ops,
             Settings settings,
-            NodeResponseScripts.Debugger debugger) {
+            NodeResponseScripts.@Nullable Debugger debugger) {
         Path project = ops.projectRoot();
         Path file = buffer.getPath();
         Path asFile = file != null ? file : project == null ? null : project.resolve(buffer.getDisplayName());

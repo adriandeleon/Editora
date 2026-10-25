@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Debugs a Gradle task's forked JVM on a port the system picks. {@code --debug-jvm} always listens on 5005 —
  * "address in use" beside any other debug run, and every fork of a test task on the same port — and Gradle has no
@@ -52,7 +54,7 @@ public final class GradleDebugInit {
      * Writes {@link #script} to a temporary file (removed when Editora exits) and returns it, or null when it
      * cannot be written — the caller then falls back to {@code --debug-jvm}.
      */
-    public static Path write(Collection<String> taskNames) {
+    public static @Nullable Path write(Collection<String> taskNames) {
         try {
             Path file = Files.createTempFile("editora-debug-", ".gradle");
             Files.writeString(file, script(taskNames), StandardCharsets.UTF_8);

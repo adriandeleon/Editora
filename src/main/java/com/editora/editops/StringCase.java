@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Pure, unit-tested identifier case-style conversions (the String-Manipulation-plugin family):
  * {@code camelCase} / {@code PascalCase} / {@code snake_case} / {@code SCREAMING_SNAKE_CASE} /
@@ -178,7 +180,7 @@ public final class StringCase {
      * ({@link #dashIsOperator}) kebab-case is not a name, so the cycle skips it ({@code MAX_SIZE} goes on to
      * {@code MaxSize}, not {@code max-size}).
      */
-    public static String cycle(String token, String language) {
+    public static String cycle(String token, @Nullable String language) {
         boolean noKebab = dashIsOperator(language);
         // A one-word token looks the same in several styles (foo is camel, snake and kebab at once), so
         // step on until the text actually changes — otherwise the gesture is stuck on it.
@@ -224,7 +226,7 @@ public final class StringCase {
      * deliberately excluded — too ambiguous with member access). Returns {@code {start, end}} or
      * {@code null} when the caret touches no such character.
      */
-    public static int[] tokenAt(String text, int caret) {
+    public static int @Nullable [] tokenAt(String text, int caret) {
         return tokenAt(text, caret, true);
     }
 
@@ -233,7 +235,7 @@ public final class StringCase {
      * here. Where it is an operator ({@link #dashIsOperator}), {@code count-1} is a subtraction — taking it
      * as one kebab token made the case commands delete the minus ({@code Count1}).
      */
-    public static int[] tokenAt(String text, int caret, boolean dashes) {
+    public static int @Nullable [] tokenAt(String text, int caret, boolean dashes) {
         int n = text.length();
         int start = Math.clamp(caret, 0, n);
         int end = start;
@@ -275,7 +277,7 @@ public final class StringCase {
      * Whether {@code -} between two names is an operator in {@code language} rather than part of an
      * identifier (as it is in CSS, HTML, shell, Lisp-like and prose buffers, where kebab-case names live).
      */
-    public static boolean dashIsOperator(String language) {
+    public static boolean dashIsOperator(@Nullable String language) {
         return language != null && DASH_OPERATOR_LANGUAGES.contains(language);
     }
 }

@@ -279,7 +279,7 @@ class ProjectMapNoteCardFxTest {
     }
 
     @Test
-    void theCardIsDraggedAndResizedInsideThePanel() throws Exception {
+    void theCardIsDraggedPastThePanelEdgesAndResizedUpToThePanelSize() throws Exception {
         FxTestSupport.runOnFx(() -> {
             Rig r = new Rig();
             r.card.setOnActivate(() -> r.calls.add("activate"));
@@ -298,11 +298,12 @@ class ProjectMapNoteCardFxTest {
             assertEquals(140, r.card.getLayoutX());
             assertEquals(100, r.card.getLayoutY());
             javafx.event.Event.fireEvent(bar, mouse(MouseEvent.MOUSE_DRAGGED, MouseButton.PRIMARY, 9000, 9000, true));
-            assertEquals(HOST_W - 420 - margin, r.card.getLayoutX());
-            assertEquals(HOST_H - 300 - margin, r.card.getLayoutY());
-            javafx.event.Event.fireEvent(bar, mouse(MouseEvent.MOUSE_DRAGGED, MouseButton.PRIMARY, -9000, -9000, true));
-            assertEquals(margin, r.card.getLayoutX());
-            assertEquals(margin, r.card.getLayoutY());
+            assertEquals(8800, r.card.getLayoutX(), "past the panel's edge, as a column can be");
+            assertEquals(8780, r.card.getLayoutY());
+            javafx.event.Event.fireEvent(bar, mouse(MouseEvent.MOUSE_DRAGGED, MouseButton.PRIMARY, 0, 0, true));
+            assertEquals(-200, r.card.getLayoutX());
+            assertEquals(-220, r.card.getLayoutY());
+            javafx.event.Event.fireEvent(bar, mouse(MouseEvent.MOUSE_DRAGGED, MouseButton.PRIMARY, 300, 300, true));
 
             javafx.event.Event.fireEvent(grip, mouse(MouseEvent.MOUSE_PRESSED, MouseButton.SECONDARY, 0, 0, false));
             javafx.event.Event.fireEvent(grip, mouse(MouseEvent.MOUSE_DRAGGED, MouseButton.SECONDARY, 50, 50, false));
@@ -321,7 +322,7 @@ class ProjectMapNoteCardFxTest {
             r.card.constrainTo(400, 300);
             assertEquals(400 - 2 * margin, r.card.getWidth(), "a shrunken panel shrinks the card");
             assertEquals(300 - 2 * margin, r.card.getHeight());
-            assertEquals(margin, r.card.getLayoutX());
+            assertEquals(100, r.card.getLayoutX(), "but leaves it where it is on the canvas");
             double width = r.card.getWidth();
             r.card.constrainTo(0, 0);
             assertEquals(width, r.card.getWidth(), "a panel with no size yet constrains nothing");

@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -400,5 +401,99 @@ class BuildActionsTreeFxTest {
         List<BuildAction.Section> out = BuildActionsTree.filtered(List.of(group), "run");
         assertEquals(1, out.get(0).rows().size(), "narrowed to the matching row");
         assertTrue(out.get(0).collapsed());
+    }
+
+    // --- Maven pass 2 (B7 tri-state, B11 projects, B10 trust header, B30 run button) ---
+
+    /** A tri-state toggle cycles off → on → explicitly off → off, and the views share the set. */
+    @Test
+    void aTriStateToggleCyclesThroughMinusPBang() throws Exception {
+        BuildAction.Toggle dev =
+                new BuildAction.Toggle("dev", "dev", "(active unless another profile is)", true, false);
+        java.util.Set<String> shared = new java.util.LinkedHashSet<>();
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setActiveToggles(shared);
+            p.setProvider(new FakeProvider());
+            return p;
+        });
+        assertEquals(BuildActionsTree.ToggleState.OFF, BuildActionsTree.stateOf(shared, dev));
+        FxTestSupport.call(panel, "cycle", new Class<?>[] {BuildAction.Toggle.class}, dev);
+        assertEquals(java.util.Set.of("dev"), shared);
+        assertEquals(BuildActionsTree.ToggleState.ON, BuildActionsTree.stateOf(shared, dev));
+        FxTestSupport.call(panel, "cycle", new Class<?>[] {BuildAction.Toggle.class}, dev);
+        assertEquals(java.util.Set.of("!dev"), shared, "Maven's own spelling of a deactivated profile");
+        assertEquals(BuildActionsTree.ToggleState.EXPLICIT_OFF, BuildActionsTree.stateOf(shared, dev));
+        FxTestSupport.call(panel, "cycle", new Class<?>[] {BuildAction.Toggle.class}, dev);
+        assertEquals(java.util.Set.of(), shared);
+
+        BuildAction.Toggle plain = new BuildAction.Toggle("dist", "dist");
+        FxTestSupport.call(panel, "cycle", new Class<?>[] {BuildAction.Toggle.class}, plain);
+        FxTestSupport.call(panel, "cycle", new Class<?>[] {BuildAction.Toggle.class}, plain);
+        assertEquals(java.util.Set.of(), shared, "a two-state toggle has no third state");
+    }
+
+    @Test
+    void theProjectsSectionListsRootsAndSelectingOneCallsBack() throws Exception {
+        java.nio.file.Path project =
+                java.nio.file.Path.of("/x").toAbsolutePath().normalize().resolve("ws");
+        java.nio.file.Path backend = project.resolve("backend");
+        java.nio.file.Path billing = project.resolve("services").resolve("billing");
+        AtomicReference<java.nio.file.Path> picked = new AtomicReference<>();
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setOnSelectProject(picked::set);
+            p.setHeader(billing, project, BuildActionsTree.TrustState.NOT_GATED);
+            p.setProjects(List.of(backend, billing));
+            p.setProvider(null); // the Welcome tab: nothing detected, but the roots below are known
+            p.setProjects(List.of(backend, billing));
+            return p;
+        });
+        TreeView<Object> tree = treeOf(panel);
+        List<String> labels = FxTestSupport.callOnFx(() -> tree.getRoot().getChildren().get(0).getChildren().stream()
+                .map(i -> i.getValue().toString())
+                .toList());
+        assertEquals(2, labels.size(), "both roots, under one Projects section");
+        assertTrue(labels.get(1).contains("current=true"), "the detected root is marked: " + labels);
+        assertEquals("services/billing", BuildActionsTree.displayName(billing, project));
+        assertEquals("ws", BuildActionsTree.displayName(project, project));
+        FxTestSupport.runOnFx(() -> tree.getSelectionModel()
+                .select(tree.getRoot().getChildren().get(0).getChildren().get(0)));
+        assertTrue(
+                FxTestSupport.<javafx.scene.control.Button>field(panel, "runButton")
+                        .isDisabled(),
+                "Run needs a task row");
+        FxTestSupport.invoke(panel, "runSelected");
+        assertEquals(backend, picked.get(), "Enter / double-click on a project row switches the root");
+    }
+
+    @Test
+    void theHeaderShowsTheRootAndItsTrustWithRevoke() throws Exception {
+        java.nio.file.Path root =
+                java.nio.file.Path.of("/x").toAbsolutePath().normalize().resolve("repo");
+        AtomicReference<Boolean> revoked = new AtomicReference<>(false);
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setOnRevokeTrust(() -> revoked.set(true));
+            p.setHeader(root, root, BuildActionsTree.TrustState.TRUSTED);
+            return p;
+        });
+        javafx.scene.control.Label pill = FxTestSupport.field(panel, "trustPill");
+        javafx.scene.control.Hyperlink revoke = FxTestSupport.field(panel, "revokeLink");
+        javafx.scene.control.Label rootLabel = FxTestSupport.field(panel, "rootLabel");
+        assertEquals(tr("buildtree.trusted"), pill.getText());
+        assertEquals(tr("buildtree.root", "repo"), rootLabel.getText());
+        assertTrue(revoke.isVisible());
+        FxTestSupport.runOnFx(revoke::fire);
+        assertTrue(revoked.get());
+
+        FxTestSupport.runOnFx(() -> panel.setHeader(root, root, BuildActionsTree.TrustState.UNTRUSTED));
+        assertEquals(tr("buildtree.untrusted"), pill.getText());
+        assertFalse(revoke.isVisible(), "nothing to revoke");
+        FxTestSupport.runOnFx(() -> panel.setHeader(root, root, BuildActionsTree.TrustState.NOT_GATED));
+        assertFalse(pill.isVisible(), "npm and friends are not gated: no pill");
+        FxTestSupport.runOnFx(() -> panel.setHeader(null, null, BuildActionsTree.TrustState.NOT_GATED));
+        assertFalse(
+                FxTestSupport.<javafx.scene.layout.HBox>field(panel, "header").isVisible());
     }
 }

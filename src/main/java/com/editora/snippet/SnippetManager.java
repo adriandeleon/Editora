@@ -26,6 +26,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Loads and serves snippets. Each language has a bundled resource
@@ -83,6 +84,7 @@ public final class SnippetManager {
             "kotlin",
             "lua",
             "markdown",
+            "maven-pom",
             "mermaid",
             "php",
             "powershell",
@@ -99,9 +101,10 @@ public final class SnippetManager {
             "xml",
             "yaml");
 
-    /** A language that also gets another language's snippets (its own win on a clash). */
+    /** A language that also gets another language's snippets (its own win on a clash). A Maven pom is an XML
+     *  file with snippets of its own ({@code maven-pom.json}: dep, plugin, profile…) on top of XML's. */
     private static final Map<String, String> FALLBACK =
-            Map.of("javascriptreact", "javascript", "typescriptreact", "typescript");
+            Map.of("javascriptreact", "javascript", "typescriptreact", "typescript", "maven-pom", "xml");
 
     /** VS Code language ids a {@code scope} may use for a language Editora names differently. */
     private static final Map<String, String> SCOPE_ALIASES = Map.of(
@@ -244,7 +247,7 @@ public final class SnippetManager {
     }
 
     /** The snippet {@code prefix} stands for in {@code language} (the one Tab would expand), or null. */
-    public synchronized Snippet byPrefix(String language, String prefix) {
+    public synchronized @Nullable Snippet byPrefix(String language, String prefix) {
         if (prefix == null || prefix.isEmpty()) {
             return null;
         }
@@ -257,7 +260,7 @@ public final class SnippetManager {
      * words that would otherwise expand in every file type whenever Tab follows them. A global snippet the
      * user wrote (or a bundled one they edited) is deliberate and expands like any other.
      */
-    public synchronized Snippet byTabTrigger(String language, String prefix) {
+    public synchronized @Nullable Snippet byTabTrigger(String language, String prefix) {
         if (prefix == null || prefix.isEmpty()) {
             return null;
         }
@@ -276,7 +279,7 @@ public final class SnippetManager {
     }
 
     /** The language a user snippet file belongs to, or null when {@code file} is not one. */
-    public String userFileLanguage(Path file) {
+    public @Nullable String userFileLanguage(Path file) {
         if (file == null || file.getFileName() == null) {
             return null;
         }
@@ -379,7 +382,7 @@ public final class SnippetManager {
      * or {@code null} when it is fine, merely has a bad entry, or is absent. Callers that would
      * <em>write</em> the file ask here first.
      */
-    public synchronized String userFileProblem(String language) {
+    public synchronized @Nullable String userFileProblem(String language) {
         Problem p = wholeFileProblem(norm(language));
         if (p == null) {
             return null;
@@ -388,7 +391,7 @@ public final class SnippetManager {
     }
 
     /** The problem that makes {@code language}'s user file unusable, or null. */
-    public synchronized Problem wholeFileProblem(String language) {
+    public synchronized @Nullable Problem wholeFileProblem(String language) {
         String lang = norm(language);
         fileSet(lang);
         Problem p = problems.get(userFile(lang) + "|");
@@ -475,7 +478,7 @@ public final class SnippetManager {
      *
      * @throws IOException when the file exists but cannot be parsed (it is left untouched) or cannot be written
      */
-    public synchronized void saveUserEntry(String language, String oldName, Entry e) throws IOException {
+    public synchronized void saveUserEntry(String language, @Nullable String oldName, Entry e) throws IOException {
         if (e == null || e.name() == null || e.name().isBlank()) {
             return;
         }
@@ -642,7 +645,7 @@ public final class SnippetManager {
     }
 
     /** A JSON value as plain Java (map, list, string, number, boolean, null) — no data binding involved. */
-    private static Object plainValue(JsonNode node) {
+    private static @Nullable Object plainValue(JsonNode node) {
         if (node == null || node.isNull()) {
             return null;
         }
@@ -679,7 +682,7 @@ public final class SnippetManager {
     }
 
     /** The {@code prefix} value for a set of triggers: a string for one, an array for several. */
-    private static Object prefixValue(Object old, List<String> prefixes) {
+    private static Object prefixValue(@Nullable Object old, List<String> prefixes) {
         List<String> clean = new ArrayList<>();
         for (String p : prefixes == null ? List.<String>of() : prefixes) {
             if (p != null && !p.isBlank() && !clean.contains(p)) {
@@ -696,7 +699,7 @@ public final class SnippetManager {
      * The {@code prefix} value to write: when the file had an array of triggers, the array with its first
      * (the one the editor shows) replaced by {@code prefix}; otherwise the plain string.
      */
-    private static Object mergedPrefix(Object old, String prefix) {
+    private static Object mergedPrefix(@Nullable Object old, String prefix) {
         String p = prefix == null ? "" : prefix;
         List<String> olds = prefixes(old);
         if (!(old instanceof List<?>) || olds.size() < 2) {
@@ -718,7 +721,7 @@ public final class SnippetManager {
     }
 
     /** {@code old} itself when it is an array that still joins to {@code value}; else the string. */
-    private static Object keepShape(Object old, String value, String separator) {
+    private static Object keepShape(@Nullable Object old, String value, String separator) {
         String v = value == null ? "" : value;
         return old instanceof List<?> && joinText(old, separator).equals(v) ? old : v;
     }
@@ -778,19 +781,19 @@ public final class SnippetManager {
     }
 
     /** The entries of one file's text. Problems are reported against {@code file} (null = a bundled resource). */
-    private List<Raw> parse(String text, Path file) {
+    private List<Raw> parse(String text, @Nullable Path file) {
         List<Raw> out = new ArrayList<>();
         JsoncObject doc;
         try {
             doc = JsoncObject.parse(text, mapper.getFactory());
         } catch (JsoncObject.NotAnObjectException e) {
-            report(file, new Problem(file, Problem.Kind.NOT_AN_OBJECT, "", describe(e), 1));
+            report(file, Problem.Kind.NOT_AN_OBJECT, "", describe(e), 1);
             return out;
         } catch (IOException e) {
             int line = e instanceof JsonProcessingException j && j.getLocation() != null
                     ? j.getLocation().getLineNr()
                     : 0;
-            report(file, new Problem(file, Problem.Kind.SYNTAX, "", describe(e), line));
+            report(file, Problem.Kind.SYNTAX, "", describe(e), line);
             return out;
         }
         for (JsoncObject.Member m : doc.members) {
@@ -804,7 +807,7 @@ public final class SnippetManager {
                 continue; // "name": null — nothing there, as before
             }
             if (!node.isObject()) {
-                report(file, new Problem(file, Problem.Kind.BAD_ENTRY, m.name(), "", doc.lineOf(m.keyStart())));
+                report(file, Problem.Kind.BAD_ENTRY, m.name(), "", doc.lineOf(m.keyStart()));
                 continue;
             }
             JsonNode disabled = node.get("disabled");
@@ -820,7 +823,7 @@ public final class SnippetManager {
     }
 
     /** A string, a list of strings, or null — the shapes {@code prefix}/{@code body}/{@code description} take. */
-    private static Object plain(JsonNode node) {
+    private static @Nullable Object plain(JsonNode node) {
         if (node == null || node.isNull()) {
             return null;
         }
@@ -832,14 +835,12 @@ public final class SnippetManager {
         return node.isContainerNode() ? null : node.asText();
     }
 
-    private void report(Path file, Problem p) {
+    private void report(@Nullable Path file, Problem.Kind kind, String entry, String detail, int line) {
         if (file == null) {
-            LOG.log(
-                    Level.WARNING,
-                    "Bundled snippet resource problem: " + p.kind() + " " + p.entry() + " " + p.detail());
+            LOG.log(Level.WARNING, "Bundled snippet resource problem: " + kind + " " + entry + " " + detail);
             return;
         }
-        report(p);
+        report(new Problem(file, kind, entry, detail, line));
     }
 
     private void report(Problem p) {
@@ -953,7 +954,7 @@ public final class SnippetManager {
     }
 
     /** Normalizes the {@code prefix} field (a string or an array of strings) to the non-blank triggers. */
-    private static List<String> prefixes(Object prefix) {
+    private static List<String> prefixes(@Nullable Object prefix) {
         List<String> out = new ArrayList<>();
         if (prefix instanceof List<?> list) {
             for (Object p : list) {
@@ -969,7 +970,7 @@ public final class SnippetManager {
 
     /** Joins a field that may be a single string or a list of strings (VS Code allows both for
      *  {@code body} and, in some bundles, {@code description}). */
-    private static String joinText(Object value, String separator) {
+    private static String joinText(@Nullable Object value, String separator) {
         if (value instanceof List<?> parts) {
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < parts.size(); i++) {

@@ -34,6 +34,7 @@ import com.editora.search.MultiFileSearch;
 import com.editora.search.Ripgrep;
 import com.editora.search.SearchQuery;
 import com.editora.search.SearchService;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -68,6 +69,7 @@ final class SearchCoordinator {
         void closeToolWindow();
 
         /** The open buffer for {@code file}, or {@code null} if it isn't open (replace then rewrites disk). */
+        @Nullable
         EditorBuffer bufferForPath(Path file);
 
         /** True while {@code buffer}'s real content is still being loaded. */
@@ -111,7 +113,7 @@ final class SearchCoordinator {
             Runnable closeToolWindow) {}
 
     record ReplaceSupport(
-            Function<Path, EditorBuffer> bufferForPath,
+            Function<Path, @Nullable EditorBuffer> bufferForPath,
             Predicate<EditorBuffer> bufferLoading,
             HistoryRecorder recordHistory,
             Function<Path, DocumentWriteSequencer.Ticket> beginDocumentWrite) {}
@@ -150,7 +152,7 @@ final class SearchCoordinator {
             }
 
             @Override
-            public EditorBuffer bufferForPath(Path file) {
+            public @Nullable EditorBuffer bufferForPath(Path file) {
                 return replace.bufferForPath().apply(file);
             }
 
@@ -194,7 +196,7 @@ final class SearchCoordinator {
     private final java.util.concurrent.atomic.AtomicBoolean shutdown = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.Set<ReplaceJob> queuedReplaces = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** The Find in Files panel, built on its first use (the tool window's first open, or a search). */
-    private SearchPanel panel;
+    private @Nullable SearchPanel panel;
 
     private final SearchPanel.Actions panelActions;
     /**
@@ -206,7 +208,7 @@ final class SearchCoordinator {
      */
     private final ObservableList<String> historyView = javafx.collections.FXCollections.observableArrayList();
 
-    private SearchInFilesPopup popup; // lazily built on first use of the popup command
+    private @Nullable SearchInFilesPopup popup; // lazily built on first use of the popup command
 
     /** The popup's own line of searches, so it and the tool window never supersede each other. */
     private final SearchService.Channel popupChannel = service.newChannel();
@@ -219,9 +221,9 @@ final class SearchCoordinator {
         });
     }
 
-    private List<String> ripgrepProbedCommand = null;
+    private @Nullable List<String> ripgrepProbedCommand = null;
     /** The command a probe is queued or running for (FX thread); {@code null} when none is. */
-    private List<String> ripgrepProbeInFlight = null;
+    private @Nullable List<String> ripgrepProbeInFlight = null;
 
     private volatile boolean ripgrepAvailable = false;
     private boolean backendRipgrep = false; // effective backend, pushed to the panel + the popup's badge
@@ -310,14 +312,14 @@ final class SearchCoordinator {
         if (popup == null) {
             popup = new SearchInFilesPopup(host.overlayHost(), new SearchInFilesPopup.Ops() {
                 @Override
-                public Path defaultRoot() {
+                public @Nullable Path defaultRoot() {
                     return searchScopeRoot();
                 }
 
                 @Override
                 public void search(
                         SearchQuery query,
-                        Path root,
+                        @Nullable Path root,
                         String includeGlobs,
                         String excludeGlobs,
                         Consumer<SearchService.Outcome> onResult) {
@@ -359,7 +361,7 @@ final class SearchCoordinator {
         // Scope to THIS window's project root, else the active file's folder ("Current Folder").
         Path root = searchScopeRoot();
         refreshScope(); // keep the toolbar's "searching in" label in step with what we search
-        String badRegex = query.regex() ? com.editora.editor.SearchMatcher.regexError(query.text()) : null;
+        String badRegex = query.regex() ? com.editora.text.SearchMatcher.regexError(query.text()) : null;
         if (badRegex != null) {
             // Neither backend can run it (ripgrep's hits are re-matched in Java), and "No results" for a
             // pattern that never ran sends the user looking for a typo in the wrong place.
@@ -391,7 +393,7 @@ final class SearchCoordinator {
 
     private void submitFileSearch(
             SearchQuery query,
-            Path root,
+            @Nullable Path root,
             Map<Path, String> open,
             List<String> include,
             List<String> exclude,
@@ -435,7 +437,7 @@ final class SearchCoordinator {
     }
 
     /** The search behind the results currently in the panel; null until one has landed. */
-    private SearchSnapshot shown;
+    private @Nullable SearchSnapshot shown;
 
     /**
      * Replace All from the panel. The file list is the <em>shown</em> result set, so it is replaced with the
@@ -467,7 +469,7 @@ final class SearchCoordinator {
      * active file's parent folder ("Current Folder"). {@code null} (no project, no saved file) ⇒ only the
      * open buffers are searched.
      */
-    private Path searchScopeRoot() {
+    private @Nullable Path searchScopeRoot() {
         Path root = ops.projectRoot();
         if (root != null) {
             return root;
@@ -519,7 +521,7 @@ final class SearchCoordinator {
      * multi-line selection isn't a sensible search term, so it returns {@code null} and the query is left
      * untouched.
      */
-    private String selectedLineForSearch() {
+    private @Nullable String selectedLineForSearch() {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null) {
             return null;
@@ -695,7 +697,8 @@ final class SearchCoordinator {
                         replacement,
                         original -> recordBeforeWrite(file, original),
                         () -> ticket.isCurrent() && noOpenBuffer(file)));
-                return outcome.executed() ? outcome.value() : new ClosedReplace(0, false, true);
+                ClosedReplace replaced = outcome.value(); // set whenever the write ran
+                return outcome.executed() && replaced != null ? replaced : new ClosedReplace(0, false, true);
             }
         } catch (IOException | RuntimeException e) {
             return new ClosedReplace(0, false, true);
@@ -828,7 +831,7 @@ final class SearchCoordinator {
 
     static ClosedReplace replaceClosedFile(
             Path file, SearchQuery query, String replacement, Consumer<String> beforeWrite, BooleanSupplier commit) {
-        if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+        if (com.editora.text.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
             // Its text on disk is ciphertext (or a key's armor): a rewrite would corrupt it, never edit it.
             return new ClosedReplace(0, false, true);
         }

@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+import com.editora.config.PathDisplay;
+import org.jspecify.annotations.Nullable;
+
 /**
  * Locates the Microsoft <b>java-debug</b> plugin jar ({@code com.microsoft.java.debug.plugin-*.jar}) that
  * teaches a running jdtls how to debug. It is <em>not</em> part of jdtls and can't be auto-installed, so
@@ -48,19 +51,19 @@ public final class DebugAdapterLocator {
      * version numerically (dot-separated, numeric-aware; non-numeric segments compared lexically).
      * Non-matching entries are ignored. Returns the input string of the winner, or {@code null}. Pure.
      */
-    public static String selectNewest(List<String> candidates) {
+    public static @Nullable String selectNewest(List<String> candidates) {
         String best = null;
         String bestVer = null;
         for (String c : candidates == null ? List.<String>of() : candidates) {
             if (c == null) {
                 continue;
             }
-            String name = Path.of(c).getFileName().toString();
+            String name = PathDisplay.fileName(Path.of(c));
             if (!matches(name)) {
                 continue;
             }
             String ver = versionOf(name);
-            if (best == null || compareVersions(ver, bestVer) > 0) {
+            if (bestVer == null || compareVersions(ver, bestVer) > 0) {
                 best = c;
                 bestVer = ver;
             }
@@ -91,7 +94,7 @@ public final class DebugAdapterLocator {
         return 0;
     }
 
-    private static Integer parseIntOrNull(String s) {
+    private static @Nullable Integer parseIntOrNull(String s) {
         try {
             return Integer.parseInt(s);
         } catch (NumberFormatException e) {
@@ -119,7 +122,7 @@ public final class DebugAdapterLocator {
     }
 
     /** This launch's config folder (set once at startup); null: only the default folders are searched. */
-    private static volatile Path editoraConfigDir;
+    private static volatile @Nullable Path editoraConfigDir;
 
     /** Tells the locator this launch's config folder, where the in-app installer puts the java-debug jar. */
     public static void setEditoraConfigDir(Path configDir) {
@@ -269,7 +272,7 @@ public final class DebugAdapterLocator {
      * invisible. {@link #pathVersion} now only breaks ties <em>within</em> a class (among Editora-owned
      * installs, or — when none is Editora-owned — among the external roots). Pure. (#474)
      */
-    static String selectPreferredEntry(List<String> paths) {
+    static @Nullable String selectPreferredEntry(List<String> paths) {
         String best = null;
         String bestVer = null;
         boolean bestOwned = false;
@@ -279,7 +282,7 @@ public final class DebugAdapterLocator {
             }
             boolean owned = isEditoraOwned(p);
             String ver = pathVersion(p);
-            boolean take = best == null
+            boolean take = bestVer == null
                     || (owned && !bestOwned) // an Editora-owned install beats any external copy
                     || (owned == bestOwned && compareVersions(ver, bestVer) > 0); // newer within the same class
             if (take) {

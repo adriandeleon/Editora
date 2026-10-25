@@ -11,6 +11,7 @@ import com.editora.test.TapParser;
 import com.editora.test.TestNode;
 import com.editora.test.TestNodeKind;
 import com.editora.test.TestResultParser;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -28,6 +29,7 @@ final class NodeTestRunner {
 
         TestRunCoordinator testRunCoordinator();
 
+        @Nullable
         Path projectRoot();
 
         com.editora.config.Settings settings();

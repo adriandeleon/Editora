@@ -185,4 +185,135 @@ class LanguageServerSessionPromptsTest {
 
         assertEquals(List.of("Progress:Importing build", "ProgressEnd:null"), statuses);
     }
+
+    // --- jdtls's questions (Java review C1, A3) ---------------------------------------------------------------
+
+    private FakeLanguageServer jdtlsServer;
+
+    private LanguageServerSession jdtls(String... executable) {
+        jdtlsServer = new FakeLanguageServer();
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
+        var s = new LanguageServerSession(
+                spec, Path.of("/tmp"), d -> {}, (type, message) -> statuses.add(type + ":" + message));
+        var caps = new org.eclipse.lsp4j.ServerCapabilities();
+        caps.setExecuteCommandProvider(new org.eclipse.lsp4j.ExecuteCommandOptions(List.of(executable)));
+        s.attachForTest(jdtlsServer, caps);
+        return s;
+    }
+
+    private static LanguageServerSession.LanguageActionableNotification buildFileChanged() {
+        var n = new LanguageServerSession.LanguageActionableNotification();
+        n.severity = MessageType.Info;
+        n.message = "A build file was modified. Do you want to synchronize the Java classpath/configuration?";
+        n.commands = List.of(
+                new org.eclipse.lsp4j.Command(
+                        "Yes", "java.projectConfiguration.status", List.of("file:///p/pom.xml", 1)),
+                new org.eclipse.lsp4j.Command("Learn more", "java.helpCenter.learnMore", List.of()));
+        return n;
+    }
+
+    /** The buttons are the commands the server can run, and the one chosen is run (C1). */
+    @Test
+    void anActionableNotificationAsksWithTheServersCommandsAndRunsTheChoice() {
+        LanguageServerSession s = jdtls("java.projectConfiguration.status");
+        ScriptedUi ui = new ScriptedUi();
+        s.setClientUi(ui);
+        FakeLanguageServer server = jdtlsServer;
+
+        s.languageActionableNotification(buildFileChanged());
+        assertEquals(
+                List.of("java|Info|A build file was modified. Do you want to synchronize the Java"
+                        + " classpath/configuration?|[Yes]"),
+                ui.asked,
+                "a VS Code client command is not offered");
+        ui.answer.complete("Yes");
+        assertEquals(
+                "java.projectConfiguration.status",
+                server.executedCommands.get(0).getCommand());
+        assertEquals(2, server.executedCommands.get(0).getArguments().size());
+    }
+
+    @Test
+    void anActionableNotificationWithNothingToRunIsEchoed() {
+        LanguageServerSession s = jdtls(); // the server runs none of its commands
+        ScriptedUi ui = new ScriptedUi();
+        s.setClientUi(ui);
+        s.languageActionableNotification(buildFileChanged());
+        assertTrue(ui.asked.isEmpty());
+        assertEquals(
+                List.of(
+                        "Message:A build file was modified. Do you want to synchronize the Java classpath/configuration?"),
+                statuses);
+    }
+
+    private static List<Object> chooseImportsArguments() {
+        return List.of("file:///p/Ambig.java", com.google.gson.JsonParser.parseString("""
+                        [{"candidates":[{"fullyQualifiedName":"java.util.Date","id":"0"},
+                                        {"fullyQualifiedName":"java.sql.Date","id":"1"}],
+                          "range":{"start":{"line":6,"character":8},"end":{"line":6,"character":12}}},
+                         {"candidates":[{"fullyQualifiedName":"java.util.List","id":"2"},
+                                        {"fullyQualifiedName":"java.awt.List","id":"3"}],
+                          "range":{"start":{"line":7,"character":8},"end":{"line":7,"character":12}}}]
+                        """), false);
+    }
+
+    /** Organize Imports asks which class each ambiguous name means; a skipped name is left out (A3). */
+    @Test
+    void chooseImportsAsksPerNameAndAnswersTheChosenCandidates() {
+        LanguageServerSession s = jdtls();
+        List<String> asked = new ArrayList<>();
+        java.util.ArrayDeque<String> answers = new java.util.ArrayDeque<>(List.of("1", ""));
+        s.setClientUi(new LspClientUi() {
+            @Override
+            public CompletableFuture<String> chooseImport(
+                    String serverId, String simpleName, int line, List<PickItem> items) {
+                asked.add(simpleName + "@" + line
+                        + items.stream().map(PickItem::label).toList());
+                String a = answers.poll();
+                return CompletableFuture.completedFuture(a == null || a.isEmpty() ? null : a);
+            }
+
+            @Override
+            public CompletableFuture<String> chooseAction(
+                    String serverId, MessageType type, String message, List<String> actions) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public CompletableFuture<String> inputBox(
+                    String serverId, String prompt, String value, String placeHolder) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public CompletableFuture<String> quickPick(String serverId, String placeHolder, List<PickItem> items) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public void openLocation(String serverId, Path file, int line, int column) {}
+        });
+
+        Object reply = s.executeClientCommand(
+                        new ExecuteCommandParams(LanguageServerSession.CHOOSE_IMPORTS, chooseImportsArguments()))
+                .join();
+        assertEquals(List.of("Date@6[java.util.Date, java.sql.Date]", "List@7[java.util.List, java.awt.List]"), asked);
+        assertEquals(
+                "[{\"fullyQualifiedName\":\"java.sql.Date\",\"id\":\"1\"}]",
+                String.valueOf(reply).replace(" ", ""),
+                "the chosen candidate as the server sent it; the skipped name is not imported");
+
+        assertNull(s.executeClientCommand(new ExecuteCommandParams("editor.action.other", List.of()))
+                .join());
+
+        // An Organize Imports run on save asks nothing: every ambiguous name is skipped.
+        asked.clear();
+        s.quietImportChoices.incrementAndGet();
+        Object quiet = s.executeClientCommand(
+                        new ExecuteCommandParams(LanguageServerSession.CHOOSE_IMPORTS, chooseImportsArguments()))
+                .join();
+        s.quietImportChoices.decrementAndGet();
+        assertEquals(List.of(), quiet);
+        assertEquals(List.of(), asked, "no picker on save");
+    }
 }

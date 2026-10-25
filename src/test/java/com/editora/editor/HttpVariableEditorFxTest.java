@@ -7,6 +7,10 @@ import javafx.scene.input.KeyCode;
 import javafx.stage.Stage;
 
 import com.editora.completion.Completion;
+import com.editora.editor.completion.BufferCompletion;
+import com.editora.editor.completion.CompletionPopup;
+import com.editora.editor.markdown.MarkdownLintHover;
+import com.editora.editor.markdown.MarkdownLintOverlay;
 import com.editora.http.HttpVariableIndex;
 import com.editora.i18n.Messages;
 import com.editora.markdown.MarkdownLint;

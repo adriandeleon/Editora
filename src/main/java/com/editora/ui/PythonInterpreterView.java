@@ -11,6 +11,7 @@ import java.util.function.Function;
 import com.editora.run.PythonInterpreters;
 import com.editora.run.PythonInterpreters.PythonInterpreter;
 import com.editora.run.PythonInterpreters.Source;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -99,7 +100,7 @@ final class PythonInterpreterView {
      * or null when there is none worth giving (a bare name nobody found on PATH — Pyright's own lookup does no
      * worse).
      */
-    static String pythonPathForServer(PythonInterpreter interp) {
+    static @Nullable String pythonPathForServer(PythonInterpreter interp) {
         return isAbsolute(interp.executablePath()) ? interp.executablePath() : null;
     }
 
@@ -125,7 +126,7 @@ final class PythonInterpreterView {
      * What a pick stores in the project's state: a path inside the project root is kept relative (so the
      * project folder can move, and a teammate's checkout means the same thing), anything else absolute.
      */
-    static String storedChoice(Path projectRoot, String executable) {
+    static String storedChoice(@Nullable Path projectRoot, String executable) {
         if (projectRoot == null || executable == null) {
             return executable == null ? "" : executable;
         }

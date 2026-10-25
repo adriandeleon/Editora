@@ -3,10 +3,11 @@ package com.editora.office;
 import java.nio.file.Path;
 import java.util.List;
 
-import com.editora.editor.MathImages;
-import com.editora.editor.PreviewImageLoader;
+import com.editora.editor.markdown.MathImages;
+import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.mermaid.Mermaid;
 import org.apache.poi.xwpf.usermodel.Document;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Shared, pure image helpers for the office exporters: resolve a Markdown image URL to bytes (a local file
@@ -23,7 +24,7 @@ public final class OfficeImages {
      * PNG via the same JSVG path the on-screen preview uses, since Word/ODT can't embed SVG. Mirrors the PDF
      * writer's image resolution; runs on the export thread (off the FX thread), never the network on FX.
      */
-    public static byte[] load(String src, Path baseDir) {
+    public static byte @Nullable [] load(String src, @Nullable Path baseDir) {
         byte[] raw = rawBytes(src, baseDir);
         if (raw == null) {
             return null;
@@ -38,12 +39,12 @@ public final class OfficeImages {
     /** The image's bytes through the one guarded fetcher the preview uses — internal-address block re-checked
      *  on every redirect hop, UNC refusal, regular files only, and a byte cap — so exporting a document cannot
      *  reach what previewing it refuses. */
-    private static byte[] rawBytes(String src, Path baseDir) {
+    private static byte @Nullable [] rawBytes(String src, @Nullable Path baseDir) {
         return PreviewImageLoader.fetchForExport(src, baseDir);
     }
 
     /** Renders a Mermaid diagram source to PNG bytes via the {@code mmdc} CLI, or null (no command / failure). */
-    public static byte[] renderMermaid(List<String> mmdc, String source) {
+    public static byte @Nullable [] renderMermaid(@Nullable List<String> mmdc, String source) {
         if (mmdc == null || mmdc.isEmpty()) {
             return null;
         }
@@ -52,7 +53,7 @@ public final class OfficeImages {
     }
 
     /** Renders LaTeX to PNG bytes via JLaTeXMath (light), or null when math support is off / it fails. */
-    public static byte[] renderMath(String latex, boolean display) {
+    public static byte @Nullable [] renderMath(@Nullable String latex, boolean display) {
         if (!MathImages.isEnabled()) {
             return null;
         }

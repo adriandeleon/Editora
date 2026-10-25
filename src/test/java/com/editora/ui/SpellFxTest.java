@@ -15,9 +15,9 @@ import javafx.stage.Stage;
 
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
-import com.editora.editor.BufferSpell;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.SpellDictionaries;
+import com.editora.editor.spell.BufferSpell;
+import com.editora.editor.spell.SpellDictionaries;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

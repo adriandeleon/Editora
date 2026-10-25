@@ -25,6 +25,7 @@ import javafx.scene.layout.VBox;
 
 import com.editora.config.Abbreviation;
 import com.editora.config.ConfigManager;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -70,7 +71,7 @@ final class AbbreviationsEditor {
      * The other entry whose key {@code key} would repeat, ignoring case and surrounding space — expansion looks
      * keys up that way, so one of the two silently shadowed the other — or null. Pure.
      */
-    static Abbreviation duplicateOf(String key, Abbreviation self, List<Abbreviation> all) {
+    static @Nullable Abbreviation duplicateOf(String key, Abbreviation self, List<Abbreviation> all) {
         String k = nz(key).strip();
         if (k.isEmpty()) {
             return null;

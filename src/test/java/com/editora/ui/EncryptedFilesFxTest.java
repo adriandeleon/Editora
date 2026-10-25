@@ -13,7 +13,7 @@ import com.editora.crypto.Gpg;
 import com.editora.crypto.GpgKey;
 import com.editora.crypto.GpgTestHome;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.EncryptionState;
+import com.editora.editor.crypto.EncryptionState;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;

@@ -3,6 +3,8 @@ package com.editora.markdown;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The engine behind {@link MarkdownInline#toggle}: decides whether a stretch of text already carries an
  * inline marker and adds or removes exactly that marker. Pure.
@@ -31,7 +33,7 @@ final class MarkdownEmphasis {
      * @param markdown Markdown run semantics for {@code *} / {@code _} (odd run = italic, two or more =
      *     bold; {@code _x_} counts as emphasis too). False for a plain symmetric marker (Typst).
      */
-    static MarkdownEdit toggle(String text, int selStart, int selEnd, String marker, boolean markdown) {
+    static @Nullable MarkdownEdit toggle(String text, int selStart, int selEnd, String marker, boolean markdown) {
         int s = Math.max(0, Math.min(selStart, selEnd));
         int e = Math.min(text.length(), Math.max(selStart, selEnd));
         if (s == e) {
@@ -106,7 +108,7 @@ final class MarkdownEmphasis {
         return !spans.isEmpty() && spans.stream().allMatch(Span::has);
     }
 
-    private static MarkdownEdit toggleAtCaret(String text, int caret, String marker, boolean markdown) {
+    private static @Nullable MarkdownEdit toggleAtCaret(String text, int caret, String marker, boolean markdown) {
         int[] w = wordAround(text, caret);
         if (w != null) {
             // Inside a word: the word is what is meant, and the caret stays on its letter.
@@ -138,7 +140,7 @@ final class MarkdownEmphasis {
     }
 
     /** The word the caret is strictly inside of, or null (at a word's edge the caret starts new text). */
-    private static int[] wordAround(String text, int caret) {
+    private static int @Nullable [] wordAround(String text, int caret) {
         int a = caret;
         while (a > 0 && Character.isLetterOrDigit(text.charAt(a - 1))) {
             a--;

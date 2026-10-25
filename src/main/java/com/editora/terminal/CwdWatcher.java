@@ -7,6 +7,8 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Watches one process's working directory and reports it when it changes.
  *
@@ -36,7 +38,7 @@ public final class CwdWatcher implements AutoCloseable {
     }
 
     private final ScheduledFuture<?> task;
-    private volatile String last;
+    private volatile @Nullable String last;
 
     private CwdWatcher(long pid, Consumer<String> onChange) {
         task = Pool.INSTANCE.scheduleWithFixedDelay(() -> poll(pid, onChange), 0, INTERVAL_MS, TimeUnit.MILLISECONDS);

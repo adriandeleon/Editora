@@ -18,6 +18,7 @@ import com.editora.config.SearchHistory;
 import com.editora.config.Settings;
 import com.editora.config.TrustStore;
 import com.editora.config.WorkspaceState;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The versioned config files and their migration registries. Each entry knows its <b>current</b> schema
@@ -303,7 +304,19 @@ public enum ConfigSchema {
                     // v139→140: + scalaLspCommand ("" = not installed), scalaLspEnabled (on), and the sbt, Mill and
                     // Scala CLI build tools' sbtSupport/millSupport/scalaCliSupport (on) with their command overrides
                     // (""); additive, absent is the default.
-                    Map.entry(139, (Migration) ConfigMigrations::identity)),
+                    Map.entry(139, (Migration) ConfigMigrations::identity),
+                    // v140→141: + buildBeforeRun (on): a Maven/Gradle project is compiled by its build tool before
+                    // a main class runs or is debugged. Additive: absent is the default, a stored choice is kept.
+                    Map.entry(140, (Migration) ConfigMigrations::identity),
+                    // v141→142: + mavenPomCentralIndex (off): lemminx-maven may use the Maven Central index for
+                    // pom.xml completion. Additive: absent is the default (local repository only, as before).
+                    Map.entry(141, (Migration) ConfigMigrations::identity),
+                    // v142→143: + latestReleaseVersion/latestReleaseUrl/lastUpdateCheckOkEpoch, the last update
+                    // check's answer kept for the About panel. Additive bookkeeping: absent means "not checked yet".
+                    Map.entry(142, (Migration) ConfigMigrations::identity),
+                    // v143→144: + javaOrganizeImportsOnSave/javaFormatOnSave/javaCleanupOnSave and javaCleanups,
+                    // Java actions on save. Additive: absent means off, and the default clean-up list.
+                    Map.entry(143, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -365,7 +378,12 @@ public enum ConfigSchema {
                     Map.entry(20, ConfigMigrations::identity),
                     // v21→22: + deployments and a run configuration's deployment (additive; absent means every
                     // configuration runs on this machine)
-                    Map.entry(21, ConfigMigrations::identity))),
+                    Map.entry(21, ConfigMigrations::identity),
+                    // v22→23: + buildCustomHistory (additive; absent means an empty "Run custom…" prompt)
+                    Map.entry(22, ConfigMigrations::identity),
+                    // v23→24: + projectMapWindowBounds (additive; absent means a large window centred on the
+                    // editor). projectViewMode keeps its values: "MAP" now reopens the Map's own window.
+                    Map.entry(23, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
@@ -488,14 +506,20 @@ public enum ConfigSchema {
      */
     public java.util.Set<String> selfMaintainedKeys() {
         return switch (this) {
-            case SETTINGS -> java.util.Set.of("lastUpdateCheckEpoch", "dismissedUpdateVersion");
+            case SETTINGS ->
+                java.util.Set.of(
+                        "lastUpdateCheckEpoch",
+                        "dismissedUpdateVersion",
+                        "latestReleaseVersion",
+                        "latestReleaseUrl",
+                        "lastUpdateCheckOkEpoch");
             case PROJECTS -> java.util.Set.of("activeProjectId", "openProjectIds");
             default -> java.util.Set.of();
         };
     }
 
     /** The step that upgrades {@code fromVersion → fromVersion+1}, or {@code null} if none is registered. */
-    public Migration step(int fromVersion) {
+    public @Nullable Migration step(int fromVersion) {
         return steps.get(fromVersion);
     }
 }

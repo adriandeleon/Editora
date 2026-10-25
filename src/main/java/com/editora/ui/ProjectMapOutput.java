@@ -4,6 +4,8 @@ import java.util.List;
 
 import javafx.scene.image.Image;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A deferred Project Map print or PDF job. Nothing is rendered until the page size is known, so the PDF
  * destination dialog can be cancelled for free and print can re-render for the layout the user picks.
@@ -17,6 +19,7 @@ interface ProjectMapOutput {
      * Renders the complete map for pages whose printable area is {@code pageWidth} × {@code pageHeight}
      * points. Must run on the FX thread. Returns {@code null} when the map has nothing to show.
      */
+    @Nullable
     Rendered render(double pageWidth, double pageHeight);
 
     /**

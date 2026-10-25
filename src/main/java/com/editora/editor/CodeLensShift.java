@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Moves code lenses with the text they annotate when an edit adds or removes lines. Pure.
  *
@@ -10,13 +12,13 @@ import java.util.Map;
  * a debounce and a round trip away. Without this a new line above a method leaves its "3 references" on
  * whatever line now has the old number.
  */
-final class CodeLensShift {
+public final class CodeLensShift {
 
     private CodeLensShift() {}
 
     /** Groups {@code lenses} (null = none) by the line each annotates, in their given order. */
     static <L> Map<Integer, java.util.List<L>> byLine(
-            java.util.List<L> lenses, java.util.function.ToIntFunction<L> lineOf) {
+            java.util.@Nullable List<L> lenses, java.util.function.ToIntFunction<L> lineOf) {
         Map<Integer, java.util.List<L>> byLine = new HashMap<>();
         if (lenses != null) {
             for (L lens : lenses) {
@@ -31,7 +33,7 @@ final class CodeLensShift {
      * The lenses after {@code changes} to {@code area}'s text, or {@code null} when nothing moves: a change
      * that adds or removes lines moves the lenses below it and drops those inside the removed text.
      */
-    static <V> Map<Integer, V> afterChanges(
+    public static <V> @Nullable Map<Integer, V> afterChanges(
             Map<Integer, V> lenses,
             java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes,
             org.fxmisc.richtext.CodeArea area) {

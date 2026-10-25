@@ -118,4 +118,14 @@ class VariableResolverTest {
         assertEquals("x", VariableResolver.wordAt("  return x;", 10));
         assertEquals("", VariableResolver.wordAt("  return x;", 1));
     }
+
+    @Test
+    void aMultiLineSelectionLosesItsOwnIndentationForTheBody() {
+        assertEquals("a();", VariableResolver.forBody("a();"), "one line: unchanged");
+        assertEquals(
+                "a();\nif (x) {\n    b();\n}",
+                VariableResolver.forBody("        a();\n        if (x) {\n            b();\n        }\n"));
+        assertEquals("a();\n\nb();", VariableResolver.forBody("a();\n\n    b();"), "a blank line stays empty");
+        assertEquals("", VariableResolver.forBody(""));
+    }
 }

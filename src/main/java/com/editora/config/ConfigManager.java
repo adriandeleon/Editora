@@ -9,6 +9,7 @@ import java.util.Map;
 import com.editora.config.migration.ConfigMigrations;
 import com.editora.config.migration.ConfigSchema;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The <em>per-window</em> view of the configuration. Each window owns its own session state
@@ -393,7 +394,7 @@ public class ConfigManager {
     }
 
     /** See {@link #setStartupSessionScan}. */
-    private SessionScan startupSessionScan;
+    private @Nullable SessionScan startupSessionScan;
 
     /**
      * Attaches a {@link SessionScan} of the current session's open files, made off the FX thread by the launch
@@ -408,7 +409,7 @@ public class ConfigManager {
      * The attached scan when it is of this session's current open-file list, else {@code null}; either way it
      * is detached, so a later restore scans afresh.
      */
-    public SessionScan takeStartupSessionScan() {
+    public @Nullable SessionScan takeStartupSessionScan() {
         SessionScan scan = startupSessionScan;
         startupSessionScan = null;
         return scan != null && scan.covers(workspaceState.getOpenFiles()) ? scan : null;
@@ -510,7 +511,7 @@ public class ConfigManager {
      * second copy of this precedence that drifted would silently let a {@code --dev} launch hand off to the
      * production editor.
      */
-    public static Path configDirFor(String cliConfigDir, boolean dev) {
+    public static Path configDirFor(@Nullable String cliConfigDir, boolean dev) {
         return cliConfigDir != null && !cliConfigDir.isBlank() ? Path.of(cliConfigDir.trim()) : defaultConfigDir(dev);
     }
 

@@ -11,9 +11,10 @@ import javafx.util.Duration;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LanguageRegistry;
 import com.editora.markdown.WordCount;
+import com.editora.text.LanguageRegistry;
 import org.fxmisc.richtext.CodeArea;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -41,7 +42,7 @@ final class StatusWordCount {
     private long generation;
     private int documentWords = -1;
     private int selectionLength;
-    private CodeArea selectionArea;
+    private @Nullable CodeArea selectionArea;
 
     StatusWordCount(Supplier<Settings> settings) {
         this.settings = settings;
@@ -55,22 +56,22 @@ final class StatusWordCount {
         return label;
     }
 
-    static boolean counts(EditorBuffer buffer) {
+    static boolean counts(@Nullable EditorBuffer buffer) {
         return buffer != null && (buffer.isMarkdown() || LanguageRegistry.PLAINTEXT.equals(buffer.getLanguage()));
     }
 
-    private boolean enabled(EditorBuffer buffer, boolean simpleMode) {
+    private boolean enabled(@Nullable EditorBuffer buffer, boolean simpleMode) {
         Settings s = settings.get();
         return !simpleMode && s != null && s.isStatusBarWordCount() && counts(buffer);
     }
 
     /** The document changed, or another buffer is active: {@code content} is its text now (may be null). */
-    void document(EditorBuffer buffer, String content, boolean simpleMode) {
+    void document(@Nullable EditorBuffer buffer, @Nullable String content, boolean simpleMode) {
         long gen = ++generation;
         selectionPause.stop();
         selectionLength = 0;
         selectionArea = null;
-        if (!enabled(buffer, simpleMode) || content == null) {
+        if (buffer == null || !enabled(buffer, simpleMode) || content == null) {
             documentWords = -1;
             hide();
             return;

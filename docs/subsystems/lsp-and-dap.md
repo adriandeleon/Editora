@@ -17,7 +17,7 @@ gson, and `module-info` carries `opens com.editora.lsp;` (unqualified — gson r
 JDT vendor-notification DTOs, which under `mvn javafx:run` run in the unnamed module)
 and `opens com.editora.dap` (gson parses jdtls's untyped `executeCommand` results).
 
-The neutral value types ([`lsp/LspDiagnostic`](../../src/main/java/com/editora/editor/LspDiagnostic.java)
+The neutral value types ([`lsp/LspDiagnostic`](../../src/main/java/com/editora/text/LspDiagnostic.java)
 lives in `editor`; `dap/DapModels`) keep `editor`/`ui` free of any lsp4j wire type.
 
 ---
@@ -197,6 +197,33 @@ process has actually exited (it is given a moment to shut down cleanly, and stil
 meanwhile), and a restart of the same `(server, root)` waits — bounded, on the start thread — for that
 exit before launching.
 
+### One jdtls per project across windows
+
+Windows of one process share a project's Java server (Java review C12) instead of each starting a jdtls on a
+workspace of its own (`-2`), which cost another ~1.5 GB and a cold import. `LspManager.SHARED_SERVERS` (static;
+tests get a private registry from `setSessionStarterForTest`, and `shareServersForTest` joins two) maps a local
+root's Java session key to its session, and `sessionForRoot` joins one that is running before it creates
+another (`join`). A remote or container root is never shared.
+
+A `LanguageServerSession` serves its windows through `LanguageServerSession.Client`s: the window that started it
+holds `primaryClient()` (what the older setters configure), others `attach` their own. Diagnostics, status,
+refreshes, request outcomes and death reach every client. `workspace/applyEdit` and the client-UI questions
+(`showMessageRequest`, Metals' prompts, `chooseImports`) go to the client whose window has the focus
+(`LspManager.setWindowFocused`), else the longest-attached one. Each document is opened per window
+(`didOpen(uri, …, opener)`): the server hears the first open and the last close, and a second window's open is
+sent as a change, so the server holds the text of the window it last heard from (each window syncs before
+it asks).
+
+A window that closes, turns its language servers off, or lets its last document on the server go idle only
+leaves (`leaveShared`): its documents are closed on the server and its client detached. The workspace claim
+belongs to the session (`jdtlsWorkspaceBySession` is per process), so the window that finally stops the server
+releases it, whichever window started it. The last window to leave stops it.
+A restart (`restartAll`, `shutdownServer`, a changed command) stops it for every window: `reportEndedForAll`
+tells the others at once, and their `dropSession` — the session ended, not by this window (`endedHere`) —
+calls `onSharedServerEnded`, which `LspCoordinator.sharedServerEnded` answers by reopening that window's
+buffers on the new server, with no crash notice. A crash is a crash in the window whose client is told
+first and a quiet reopen in the others, so it is counted once towards the crash-loop cap.
+
 Nothing deletes a workspace on its own: there is one per Java folder ever opened, each ~40 MB before the
 project's own classes (jdtls indexes the JDK into every one). `lsp.clearJavaIndexCaches` runs
 `LspManager.clearJdtlsWorkspaces` off the FX thread: it claims each directory in the same static claim set the
@@ -309,6 +336,89 @@ drives its command.
   then by type for a renamed one; `= value` marks a new parameter). Both end in `java/getRefactorEdit`,
   which is also all an extract refactoring needs. jdtls offers Extract Interface only when
   `advancedExtractRefactoringSupport` is declared as well, and Change Signature with no flag at all.
+  With `inferSelectionSupport` jdtls offers Extract Method, Variable and Field at a bare caret; the
+  client then asks `java/inferSelection` for the candidate expressions, picks one (a picker when there
+  are several) and sends that `SelectionInfo` as the command argument. Extract to Field and Convert
+  Local to Field ask where to initialize the field when the server offers more than one
+  `initializedScopes` entry; the scope goes first in `commandArguments`. With
+  `moveRefactoringConfirmationSupport` (jdtls 1.61 final and newer) a Move Instance Method that jdtls
+  finds problems with answers `{errorMessage, confirmationToken}` and no edit; the user sees the problems
+  and the move is asked again with the token only if they continue.
+  A `java/getRefactorEdit` answer can carry a `java.action.rename` command with `{uri, offset, length}` of
+  the name it picked, offsets in the edited document (`JdtlsRefactor.renameAt`); after an extract Editora
+  puts the caret there and starts Rename. Change Signature and Move pass a `preview` to
+  `LspManager.jdtlsApplyEdit`: the planned edit goes through the rename preview when it touches other
+  files, and only the ticked files are applied.
+
+### Library source tabs
+
+A `jdt://` definition opens as a read-only, path-less buffer (`LspCoordinator.openLibraryDefinition`),
+remembered in `librarySources` with the workspace file whose session produced it. Position requests from
+such a tab — definition, hover, references, implementation, type definition, declaration and both
+hierarchy prepares — go through `navOrigin()`: the anchor file's session, asked about the tab's `jdt://`
+URI (the `…At(anchor, documentUri, …)` methods of `LspManager`). jdtls resolves the URI itself, so no
+`didOpen` is sent. References into class files are dropped (the References window is file-based); a
+hierarchy node with a `jdt://` URI opens as library source. Search Everywhere's Symbols group adds
+jdtls's `workspace/symbol` types that live in `jdt://` (`LspManager.javaLibraryTypes`), as a second batch
+after the index's own (`SearchEverywherePopup.Ops.laterSymbols`).
+
+Peek Definition goes through `navOrigin()` too, and a `jdt://` target is peeked from
+`java/classFileContents` (on the declaration, past its Javadoc) rather than opened. Move into a package that
+does not exist yet creates its folder under the current package's source root
+(`JdtlsRefactor.currentSourceRoot`), announces it with `workspace/didChangeWatchedFiles`, and sends
+`java/move` a destination that is the folder's URI string, which jdtls accepts in place of a package node.
+After each `ProjectStatus OK`, `LspCoordinator.buildAfterImport` runs one incremental `java/buildWorkspace` per
+Maven or Gradle Java root with an open file (never a loose file's invisible project, which Debug compiles itself); diagnostics jdtls then publishes on a project folder (JDK and compliance
+problems) are listed in Problems in either scope and said once in the status line.
+
+**Launch extras.** `JavaLombok` adds `-javaagent:` with the newest Lombok jar from `~/.m2` or Gradle's module
+cache when the root's build file, or a module's one level down, declares Lombok (`JdtlsLombokProbeTest` checks
+the agent against a real jdtls with `-Dlsp.probe.lombok=PATH`). `LspServerSettings.javaSettings` also sends
+vscode-java's `completion.favoriteStaticMembers` and the `compile.nullAnalysis` annotation lists, with mode
+`automatic`: vscode-java's `interactive` answers through a command only it implements.
+
+**A project's own preferences.** `JavaProjectSettings.forRoot(root)` reads IntelliJ's `ij_java_imports_layout`
+and import-on-demand counts from `.editorconfig` (`EditorConfig.rawFor`, which keeps keys Editora does not
+interpret) and the Eclipse formatter profile Spotless names (else `eclipse-formatter.xml` and friends at the root),
+and is merged into `settings.java` at `initialize` (`LspManager.withProjectSettings`) and in every push
+(`LanguageServerSession.pushConfiguration`). `JdtlsProjectStyleProbeTest` checks the star threshold, the profile
+and chain completion (`completion.chain.enabled`) against a real jdtls.
+
+**Lombok on request.** A root whose build declares Lombok, with no jar in the Maven/Gradle caches or in
+`<config>/plugins/lsp/lombok`, reports `onLombokMissing`; `LspCoordinator.offerLombok` asks once per root,
+downloads `InstallCatalog.LOMBOK` (pinned, SHA-256) with `InstallService.installLombok`, and restarts jdtls.
+
+**Actions on save.** `LspCoordinator.afterUserSave`, called by `FileWorkflowCoordinator` for explicit saves only,
+runs `LspManager.organizeImportsQuietly` (the session answers `chooseImports` with no choice while it runs) and/or
+Format Document, then saves once more when they changed the text (`Settings.javaOrganizeImportsOnSave`,
+`javaFormatOnSave`). Clean-ups go first (`javaCleanupOnSave`): `LspManager.cleanUpJava` sends jdtls's
+`java/cleanup` request, which applies the ids in `java.cleanup.actions` and answers a `WorkspaceEdit`. The ids
+(`Settings.javaCleanups`, filtered through `JavaCleanups.known`) reach the server in every configuration push.
+Editora does not use jdtls's own `java.saveActions.cleanup`, which needs `willSaveWaitUntil`; **Clean Up File**
+(`lsp.cleanUp`) sends the same request by hand.
+
+jdtls's "Javadoc comment" completion is offered only on a `/**` line that is already closed. In a Java
+buffer with the server on, the `*` that makes a line `/**` therefore inserts `* */` and requests completion
+(`EditorBuffer.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).
+
+### jdtls preferences
+
+jdtls's defaults assume vscode-java, which sends its own `package.json` defaults; several features stay
+off for a client that sends nothing. `LspServerSettings.javaSettings` is the one `java` object, sent at
+`initialize` (inside `LspManager.javaSettings`, with autobuild and the runtimes) and pushed after it:
+`signatureHelp.enabled` and `signatureHelp.description.enabled` (the Javadoc in signature help; jdtls
+reads dotted keys through the nested maps, so `description: true` resolved to no key at all),
+`completion.filteredTypes` (vscode-java's list; jdtls's own default list is not installed unless one is
+sent), `inlayHints.parameterNames.enabled = all` with `suppressWhenSameNameNumbered` plus
+`variableTypes` and `parameterTypes` (hints are requested only while the setting is on, and
+`InlayHintFilter` applies Editora's literals/all mode), and `symbols.includeSourceMethodDeclarations`.
+jdtls also asks `workspace/configuration` for `java.format.tabSize` / `insertSpaces` per document before
+every code action; the session answers from the document's recorded indent, so quick fixes and generated
+members follow the file. The completion `resolveSupport` lists `documentation`: jdtls computes an item's
+Javadoc in `completionItem/resolve` only for a client that lists it. The opt-in
+`JdtlsClientSettingsProbeTest` checks each of these against a real jdtls
+(`./mvnw test -Dtest=JdtlsClientSettingsProbeTest -Dgroups=probe -Dlsp.probe=true`, and
+`-Dlsp.probe.jdtls=PATH` for another server).
 
 `LspCoordinator.runGeneratePrompt` / `runRefactorCommand` intercept these before `applyCodeAction`;
 `LspManager.jdtlsRequest` / `jdtlsApplyEdit` send the custom requests, which must be registered on
@@ -362,8 +472,9 @@ instead of dropping it. `lspOffset` snaps a column inside a surrogate pair back 
 **What an edit destroys is shown, asked about, and kept.** `WorkspaceEditHazards` (pure) lists the deletes
 of existing paths and the creates/renames that replace an existing file. The rename preview shows them as
 rows that can be unticked (`RenamePreview.filter` drops an unticked one; `excludedButDeleted` refuses a
-ticked delete that covers an unticked row). An unpreviewed edit — code action, refactoring command,
-`workspace/applyEdit` — goes through `applyWorkspaceEditsConfirmed`, which asks before a recursive folder
+ticked delete that covers an unticked row); Change Signature and Move use the same preview. An unpreviewed
+edit — code action, other refactoring commands, `workspace/applyEdit` — goes through
+`applyWorkspaceEditsConfirmed`, which asks before a recursive folder
 delete or an overwrite. Before staging, each file about to be deleted or replaced is copied to Local
 History (`Ops.captureBeforeDestruction`, at most `MAX_CAPTURED_PER_EDIT` per edit); a failed copy refuses
 the edit.

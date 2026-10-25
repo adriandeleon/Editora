@@ -3,6 +3,8 @@ package com.editora.process;
 import java.io.IOException;
 import java.nio.file.Path;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A machine that can run a command: this one, or the host behind a remote folder. A feature that shells out
  * asks {@link ExecTargets#forPath} for the target of the file or folder it is working on, so the same code
@@ -29,7 +31,7 @@ public interface ExecTarget {
     Process start(ExecSpec spec) throws IOException;
 
     /** The name of {@code path} on this target, for a working directory or a file argument. */
-    String toTargetPath(Path path);
+    String toTargetPath(@Nullable Path path);
 
     /** The inverse of {@link #toTargetPath}: a path on this target, as Editora reaches it. */
     Path toPath(String targetPath);
@@ -54,7 +56,7 @@ public interface ExecTarget {
      * offer (the local target keeps its own under the config folder). May ask the target: call it off the FX
      * thread. The folder is not created.
      */
-    default Path cacheDir() throws IOException {
+    default @Nullable Path cacheDir() throws IOException {
         return null;
     }
 
@@ -72,7 +74,7 @@ public interface ExecTarget {
      * Editora's working folder on this target ({@link #cacheDir} through its file system, by default), or
      * {@code null} when there is none. May ask the target: call it off the FX thread.
      */
-    default TargetCache cache() throws IOException {
+    default @Nullable TargetCache cache() throws IOException {
         Path dir = cacheDir();
         return dir == null ? null : new PathTargetCache(this, dir);
     }
@@ -82,7 +84,7 @@ public interface ExecTarget {
      * when the target does not say (the local target: use {@code user.home}). May ask the target: call it off
      * the FX thread.
      */
-    default Path homeDir() throws IOException {
+    default @Nullable Path homeDir() throws IOException {
         return null;
     }
 

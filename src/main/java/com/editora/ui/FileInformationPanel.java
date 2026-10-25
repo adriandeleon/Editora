@@ -28,8 +28,9 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.LanguageRegistry;
 import com.editora.markdown.WordCount;
+import com.editora.text.LanguageRegistry;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -66,7 +67,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     private final TextField charBlockValue = value();
     private final TextField charCategoryValue = value();
 
-    private EditorBuffer attached;
+    private @Nullable EditorBuffer attached;
     /** Generation of the latest disk read / word count; a result for an older one is dropped (FX thread). */
     private long fileGen;
 
@@ -75,7 +76,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     private final ChangeListener<Number> caretListener = (o, w, n) -> refreshCaret();
     // Edits fire the whole-document word count, so ride the debounced delta stream (not textProperty, which
     // materializes the whole document on every keystroke just to notify) — and only while the panel is visible.
-    private org.reactfx.Subscription textSub;
+    private org.reactfx.@Nullable Subscription textSub;
 
     public FileInformationPanel() {
         getStyleClass().add("file-info-panel");
@@ -103,7 +104,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         requestFocus();
     }
 
-    public void attach(EditorBuffer buffer) {
+    public void attach(@Nullable EditorBuffer buffer) {
         if (attached != null) {
             attached.getArea().caretPositionProperty().removeListener(caretListener);
         }
@@ -302,7 +303,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
      * network mount, and for an SFTP file it is a server round trip — and applied when they arrive, unless a
      * newer attach has superseded them; until then the previous values stay (a few milliseconds, no flash).
      */
-    private void refreshFile(Path path) {
+    private void refreshFile(@Nullable Path path) {
         tagsValue.setText("–");
         long gen = ++fileGen;
         if (path == null) {

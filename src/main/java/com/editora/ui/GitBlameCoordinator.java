@@ -10,14 +10,15 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.function.Consumer;
 
-import com.editora.editor.BlameInfo;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.git.BlameInfo;
 import com.editora.git.BlameHeatmap;
 import com.editora.git.BlameOptions;
 import com.editora.git.BlameParser;
 import com.editora.git.GitFormat;
 import com.editora.git.GitService;
 import com.editora.git.RelativeTime;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -47,7 +48,7 @@ final class GitBlameCoordinator {
     private final Map<EditorBuffer, Revision> revisions = new WeakHashMap<>();
 
     /** Adds a buffer as a selected tab; attached by the window once it exists. */
-    private Consumer<EditorBuffer> openTab;
+    private @Nullable Consumer<EditorBuffer> openTab;
 
     /** The ignore-revs problem last shown, so one broken file is reported once and not on every refresh. */
     private String reportedProblem = "";
@@ -68,13 +69,15 @@ final class GitBlameCoordinator {
     }
 
     /** The repository of a revision tab, or {@code null} for any other buffer. */
-    Path revisionRoot(EditorBuffer buffer) {
+    @Nullable
+    Path revisionRoot(@Nullable EditorBuffer buffer) {
         Revision revision = buffer == null ? null : revisions.get(buffer);
         return revision == null ? null : revision.root();
     }
 
     /** The revision {@code buffer} shows, or {@code null} when it is not a revision tab. */
-    Revision revisionOf(EditorBuffer buffer) {
+    @Nullable
+    Revision revisionOf(@Nullable EditorBuffer buffer) {
         return buffer == null ? null : revisions.get(buffer);
     }
 
@@ -156,17 +159,18 @@ final class GitBlameCoordinator {
 
     /** Opens the read-only diff of {@code b}'s file at {@code hash} vs its parent (shared by the caret
      *  command and the gutter-annotation click). */
-    private void showCommit(EditorBuffer b, String hash) {
+    private void showCommit(@Nullable EditorBuffer b, @Nullable String hash) {
         Revision revision = revisionOf(b);
         Path root = revision != null ? revision.root() : git.repoRoot();
-        if (b == null || root == null || (revision == null && b.getPath() == null)) {
+        Path file = b == null ? null : b.getPath();
+        if (b == null || root == null || (revision == null && file == null)) {
             return;
         }
         if (hash == null || hash.isBlank()) {
             host.setStatus(tr("status.git.noBlameLine"));
             return;
         }
-        String rel = revision != null ? revision.path() : GitService.repoRelative(root, b.getPath());
+        String rel = revision != null ? revision.path() : file != null ? GitService.repoRelative(root, file) : null;
         if (rel != null) {
             // Blame follows renames: a line older than a move belongs to the file's OLD path in its commit.
             BlameParser.BlameLine line = blamed.getOrDefault(b, Map.of()).get(hash);
@@ -189,7 +193,7 @@ final class GitBlameCoordinator {
         BlameParser.BlameLine line = hash == null || hash.isBlank()
                 ? null
                 : blamed.getOrDefault(b, Map.of()).get(hash);
-        if (line == null || root == null) {
+        if (b == null || hash == null || line == null || root == null) { // a line means a buffer and a hash
             host.setStatus(tr(isEnabled() ? "status.git.noBlameLine" : "status.git.blameOffForPrevious"));
             return;
         }
@@ -197,7 +201,8 @@ final class GitBlameCoordinator {
             host.setStatus(tr("status.git.noPreviousRevision", GitFormat.shortHash(hash)));
             return;
         }
-        if (openTab == null) {
+        Consumer<EditorBuffer> open = openTab;
+        if (open == null) {
             return;
         }
         int caretLine = b.getArea().getCurrentParagraph();
@@ -214,12 +219,13 @@ final class GitBlameCoordinator {
             openRevision(
                     previous,
                     DiffSideText.decode(blob.bytes(), null, sourceCharset).text(),
-                    caretLine);
+                    caretLine,
+                    open);
         });
     }
 
     /** Opens the read-only, annotated tab for {@code revision} with {@code text}, near {@code line}. */
-    private void openRevision(Revision revision, String text, int line) {
+    private void openRevision(Revision revision, String text, int line, Consumer<EditorBuffer> openTab) {
         String name = revision.path().substring(revision.path().lastIndexOf('/') + 1);
         EditorBuffer buffer = new EditorBuffer();
         buffer.setDisplayName(name); // picks the grammar from the file's own name…
@@ -236,17 +242,18 @@ final class GitBlameCoordinator {
     }
 
     /** Fetches blame for {@code b} off-thread and pushes formatted annotations (or clears when ineligible). */
-    void refresh(EditorBuffer b) {
+    void refresh(@Nullable EditorBuffer b) {
         if (b == null) {
             return;
         }
         Revision revision = revisions.get(b);
         Path root = revision != null ? revision.root() : git.repoRoot();
+        Path file = b.getPath();
         boolean eligible = revision != null
-                || (b.getPath() != null
+                || (file != null
                         && !b.isLargeFile()
                         && !b.encryption().isEncrypted() // blame lines are ciphertext lines
-                        && RemoteExec.runsFor(b.getPath()));
+                        && RemoteExec.runsFor(file));
         if (!isEnabled() || !eligible || root == null) {
             b.setBlame(null);
             return;
@@ -265,8 +272,8 @@ final class GitBlameCoordinator {
         };
         if (revision != null) {
             git.service().blameRevisionLatest(root, revision.hash(), revision.path(), show);
-        } else {
-            git.service().blameLatest(root, b.getPath(), show);
+        } else if (file != null) { // eligible without a revision: a file
+            git.service().blameLatest(root, file, show);
         }
     }
 

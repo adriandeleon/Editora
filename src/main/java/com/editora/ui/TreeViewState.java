@@ -9,6 +9,8 @@ import java.util.function.Function;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What the user had in hand in a {@link TreeView} whose rows are about to be rebuilt from fresh data: the
  * selected rows, the focused row, and where to land when the selection itself is gone.
@@ -21,11 +23,11 @@ import javafx.scene.control.TreeView;
 final class TreeViewState {
 
     private final Set<String> selected;
-    private final String focused;
+    private final @Nullable String focused;
     /** The sibling after the last selected row, then the one before the first: where to go if all are gone. */
     private final List<String> fallbacks;
 
-    private TreeViewState(Set<String> selected, String focused, List<String> fallbacks) {
+    private TreeViewState(Set<String> selected, @Nullable String focused, List<String> fallbacks) {
         this.selected = selected;
         this.focused = focused;
         this.fallbacks = fallbacks;
@@ -52,7 +54,8 @@ final class TreeViewState {
         return new TreeViewState(selected, focused, fallbacks);
     }
 
-    private static <T> void addSibling(List<String> out, TreeItem<T> item, int step, Function<T, String> key) {
+    private static <T> void addSibling(
+            List<String> out, @Nullable TreeItem<T> item, int step, Function<T, String> key) {
         if (item == null || item.getParent() == null) {
             return;
         }

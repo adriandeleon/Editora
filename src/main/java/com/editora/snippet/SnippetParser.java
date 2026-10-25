@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Parses a TextMate/VS Code snippet body into a {@link ParsedSnippet}: the literal text to insert plus
  * the tab stops and their offset ranges. Pure (no toolkit), so it is unit-tested.
@@ -49,6 +51,7 @@ public final class SnippetParser {
     /** Resolves a snippet variable name to its value, or {@code null} when unknown. */
     @FunctionalInterface
     public interface Variables {
+        @Nullable
         String resolve(String name);
     }
 
@@ -68,8 +71,8 @@ public final class SnippetParser {
         c.ranges.keySet().stream()
                 .sorted((a, b) -> Integer.compare(a == 0 ? Integer.MAX_VALUE : a, b == 0 ? Integer.MAX_VALUE : b))
                 .forEach(n -> {
-                    List<int[]> rs = c.ranges.get(n);
-                    List<SnippetTransform> ts = c.transforms.get(n);
+                    List<int[]> rs = recorded(c.ranges, n);
+                    List<SnippetTransform> ts = recorded(c.transforms, n);
                     int primary = c.primaryIndex.getOrDefault(n, firstNonTransform(ts));
                     stops.add(new TabStop(
                             n,
@@ -190,7 +193,11 @@ public final class SnippetParser {
             // after a literal '$': "$$this" is how VS Code snippets spell "$this" (there an unknown variable
             // inserts its bare name), so the second dollar is not repeated.
             boolean afterDollar = c.pos > 0 && s.charAt(c.pos - 1) == '$';
-            c.out.append(val != null ? val : afterDollar ? s.substring(n, j) : s.substring(c.pos, j));
+            if (val != null) {
+                appendValue(c, val);
+            } else {
+                c.out.append(afterDollar ? s.substring(n, j) : s.substring(c.pos, j));
+            }
             c.pos = j;
             return true;
         }
@@ -199,7 +206,7 @@ public final class SnippetParser {
 
     /** A tab-stop number {@code s[from,to)}, or {@code null} when the digit run overflows an int (so the
      *  caller can treat the {@code $…} as literal text rather than throwing). */
-    private static Integer parseStopNumber(String s, int from, int to) {
+    private static @Nullable Integer parseStopNumber(String s, int from, int to) {
         try {
             return Integer.parseInt(s.substring(from, to));
         } catch (NumberFormatException overflow) {
@@ -368,10 +375,10 @@ public final class SnippetParser {
         if (j < s.length() && s.charAt(j) == '/') {
             SnippetTransform.Parsed p = SnippetTransform.parseAt(s, j + 1);
             if (p != null) {
-                c.out.append(p.transform().apply(value == null ? "" : value));
+                appendValue(c, p.transform().apply(value == null ? "" : value));
                 c.pos = p.end();
             } else { // malformed: the plain value, and the rest of the construct is dropped rather than typed
-                c.out.append(value == null ? "" : value);
+                appendValue(c, value == null ? "" : value);
                 int close = findBraceClose(s, i);
                 c.pos = close < 0 ? s.length() : close + 1;
             }
@@ -380,7 +387,7 @@ public final class SnippetParser {
         if (j < s.length() && s.charAt(j) == ':') {
             c.pos = j + 1;
             if (value != null && !value.isEmpty()) {
-                c.out.append(value);
+                appendValue(c, value);
                 int close = findBraceClose(s, j); // skip the default
                 c.pos = close < 0 ? s.length() : close + 1;
             } else {
@@ -392,14 +399,37 @@ public final class SnippetParser {
             return true;
         }
         int end = (j < s.length() && s.charAt(j) == '}') ? j + 1 : j;
-        c.out.append(value == null ? s.substring(c.pos, end) : value); // unknown: kept as written, see tryDollar
+        if (value == null) {
+            c.out.append(s.substring(c.pos, end)); // unknown: kept as written, see tryDollar
+        } else {
+            appendValue(c, value);
+        }
         c.pos = end;
         return true;
     }
 
+    /**
+     * Appends a variable's value; the continuation lines of a multi-line one (a selection, the clipboard) take
+     * the indentation of the body line it sits on, as VS Code adjusts them — {@code "\t$TM_SELECTED_TEXT"}
+     * wrapping two selected lines put the second one level shallower than the first.
+     */
+    private static void appendValue(Ctx c, String value) {
+        if (value.indexOf('\n') < 0) {
+            c.out.append(value);
+            return;
+        }
+        int lineStart = c.out.lastIndexOf("\n") + 1;
+        int k = lineStart;
+        while (k < c.out.length() && (c.out.charAt(k) == ' ' || c.out.charAt(k) == '\t')) {
+            k++;
+        }
+        String indent = c.out.substring(lineStart, k);
+        c.out.append(indent.isEmpty() ? value : value.replace("\n", "\n" + indent));
+    }
+
     /** Appends one leaf occurrence's text (value, transformed when {@code transform != null}) and records
      *  its range in pass 2. */
-    private static void emitOccurrence(Ctx c, int num, SnippetTransform transform) {
+    private static void emitOccurrence(Ctx c, int num, @Nullable SnippetTransform transform) {
         if (c.open.contains(num)) {
             return; // ${1:a$1} — a stop cannot mirror the default it is still defining
         }
@@ -413,7 +443,7 @@ public final class SnippetParser {
     }
 
     /** Records an occurrence that was entered at sequence number {@code open} and is being left now. */
-    private static void record(Ctx c, int num, int start, int end, SnippetTransform t, int open) {
+    private static void record(Ctx c, int num, int start, int end, @Nullable SnippetTransform t, int open) {
         c.ranges.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[] {start, end});
         c.transforms.computeIfAbsent(num, k -> new ArrayList<>()).add(t);
         c.spans.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[] {open, c.seq++});
@@ -421,7 +451,16 @@ public final class SnippetParser {
 
     /** Marks the range just recorded for {@code num} as the editable field (the value-defining one). */
     private static void markPrimary(Ctx c, int num) {
-        c.primaryIndex.putIfAbsent(num, c.ranges.get(num).size() - 1);
+        c.primaryIndex.putIfAbsent(num, recorded(c.ranges, num).size() - 1);
+    }
+
+    /** {@code map}'s list for stop {@code num}, which {@link #record} has made. */
+    private static <T> List<T> recorded(Map<Integer, List<T>> map, int num) {
+        List<T> list = map.get(num);
+        if (list == null) {
+            throw new IllegalStateException("no occurrence recorded for $" + num);
+        }
+        return list;
     }
 
     /** First occurrence that is not a transform (the fallback editable field for a stop with no

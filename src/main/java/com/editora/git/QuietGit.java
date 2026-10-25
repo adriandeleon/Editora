@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.process.ProcessRunner;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Runs git in a repository Editora itself owns (the settings-sync clone), on Editora's own initiative.
@@ -40,7 +41,7 @@ public final class QuietGit {
     private final Path dir;
     private final boolean interactive;
     private final List<String> extraConfig;
-    private Map<String, String> env;
+    private @Nullable Map<String, String> env;
 
     public QuietGit(Path dir, boolean interactive) {
         this(dir, interactive, List.of());

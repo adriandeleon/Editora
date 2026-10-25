@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -31,8 +32,6 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TextField;
-import javafx.scene.control.ToggleButton;
-import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -51,9 +50,10 @@ import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
 import com.editora.config.PersonalNote;
-import com.editora.editor.NoteDraft;
-import com.editora.editor.PersonalNoteTooltip;
+import com.editora.editor.notes.NoteDraft;
+import com.editora.editor.notes.PersonalNoteTooltip;
 import com.editora.search.FuzzyMatch;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -176,34 +176,35 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      *  markers, open diffs — which otherwise only re-evaluate on focus-regain / tab switch (#529). */
     private java.util.function.Consumer<ProjectWatchChanges.Plan> onExternalChange = plan -> {};
     /** Raw watcher events (path + kind), forwarded to LSP as didChangeWatchedFiles (#677); null = off. */
-    private volatile java.util.function.Consumer<List<FsChange>> fsChangeSink;
+    private volatile java.util.function.@Nullable Consumer<List<FsChange>> fsChangeSink;
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
-    private Consumer<Path> onNewFromTemplate;
+    private @Nullable Consumer<Path> onNewFromTemplate;
     /** Injected by MainController: "New ▸ &lt;type&gt;" on a folder, given the target dir and the file kind. */
-    private BiConsumer<Path, com.editora.template.NewFileType> onNewFile;
+    private @Nullable BiConsumer<Path, com.editora.template.NewFileType> onNewFile;
 
-    private Consumer<Path> onNewMavenProject;
+    private @Nullable Consumer<Path> onNewMavenProject;
 
     /** Supplies the Maven submenu for a folder, or null when that folder holds no Maven project. */
-    private java.util.function.Function<java.nio.file.Path, javafx.scene.control.Menu> mavenMenu;
+    private java.util.function.@Nullable Function<java.nio.file.Path, javafx.scene.control.@Nullable Menu> mavenMenu;
 
     /** The Maven submenu for a folder, or null — built fresh per right-click, since a folder gains or
      *  loses its pom while the tree is open. */
-    javafx.scene.control.Menu mavenMenuFor(java.nio.file.Path dir) {
+    javafx.scene.control.@Nullable Menu mavenMenuFor(java.nio.file.Path dir) {
         return mavenMenu == null ? null : mavenMenu.apply(dir);
     }
 
-    public void setMavenMenu(java.util.function.Function<java.nio.file.Path, javafx.scene.control.Menu> supplier) {
+    public void setMavenMenu(
+            java.util.function.Function<java.nio.file.Path, javafx.scene.control.@Nullable Menu> supplier) {
         this.mavenMenu = supplier;
     }
     /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
-    private BiConsumer<Path, Boolean> onReveal;
+    private @Nullable BiConsumer<Path, Boolean> onReveal;
     /** Injected by MainController: open a terminal at a path's folder. Args: (path, isDirectory). */
-    private BiConsumer<Path, Boolean> onOpenTerminal;
+    private @Nullable BiConsumer<Path, Boolean> onOpenTerminal;
     /** Injected by MainController: per-file Local History + Git actions for the cell menu (files only). */
-    private FileActions fileActions;
+    private @Nullable FileActions fileActions;
     /** Injected by MainController: file-level entry points into the line-anchored bookmark/note stores. */
-    private MarkerActions markerActions;
+    private @Nullable MarkerActions markerActions;
     /** Injected by MainController: whether Simple UI mode is on, which trims the cell menu. */
     private java.util.function.BooleanSupplier simpleMode = () -> false;
 
@@ -311,22 +312,34 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
-    private OverlayInput.Prompt prompt;
+    private OverlayInput.@Nullable Prompt prompt;
 
     private final TextField filterField = new TextField();
-    private final ToggleButton treeMode = new ToggleButton(tr("project.view.tree"));
-    private final ToggleButton mapModeButton = new ToggleButton(tr("project.view.map"));
+    /** Opens the Project Map in its own window (or brings that window forward). */
+    private final Button mapButton = new Button(tr("project.view.map"));
     /** Filter row: the text field plus a trailing clear ("✕") button shown only while there's text. */
     private final HBox filterBar = new HBox();
 
     private final TreeView<Path> tree = new TreeView<>();
     private final ProjectMapView mapView;
-    private boolean mapMode;
+    /** The Map's own search field, in its window above the Map (the panel's field filters the tree). */
+    private final TextField mapFilterField = new TextField();
+
+    private final PauseTransition mapFilterDebounce = new PauseTransition(Duration.millis(150));
+    /** Bumped by every Map search and by the Map window closing, so a stale result has nowhere to land. */
+    private final AtomicLong mapSearchGen = new AtomicLong();
+    /** The window the Map always opens in; built on the first open. */
+    private final ProjectMapWindow mapWindow;
+    /** The editor window this panel belongs to, for when the panel itself is not on screen. */
+    private java.util.function.Supplier<javafx.stage.@Nullable Window> editorWindow = () -> null;
+    /** The workspace remembered the Map window as open: reopen it once there is a project and a window. */
+    private boolean reopenMap;
+
     private Runnable onFocusEditor = () -> {};
     /** The tree currently holds the lazy project tree (not flat filter results) built for {@link #root}. */
     private boolean treeShowsProject;
-    /** Told when the Tree/Map choice changes, so the window can remember it. */
-    private Consumer<Boolean> onMapModeChanged = map -> {};
+    /** Told when the user opens or closes the Map window, so the workspace can remember it. */
+    private Consumer<Boolean> onMapWindowChanged = open -> {};
 
     private final StackPane placeholderPane;
     /** Shown instead of the placeholder while the window's project is on a host that is not connected. */
@@ -351,10 +364,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         t.setDaemon(true);
         return t;
     });
-    private Path pendingTreeSelection;
-    private Path pendingTreeReveal;
+    private @Nullable Path pendingTreeSelection;
+    private @Nullable Path pendingTreeReveal;
     /** Test seam for holding directory I/O without blocking the JavaFX thread. */
-    volatile Runnable beforeDirectoryListForTest;
+    volatile @Nullable Runnable beforeDirectoryListForTest;
 
     // Filesystem watcher: auto-refresh the tree when files change on disk. Watches only the root + currently
     // -expanded directories (re-synced on expand/collapse and after each refresh) so it's cheap even on huge
@@ -362,8 +375,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     // the directories whose entries came or went (applyWatchChanges). Local roots
     // only (a remote SFTP root has no local WatchService). On macOS the JDK uses a polling watcher, so external
     // changes may take a few seconds to show (the focus-regain refresh covers the immediate case).
-    private java.nio.file.WatchService watchService;
-    private Thread watchThread;
+    private java.nio.file.@Nullable WatchService watchService;
+    private @Nullable Thread watchThread;
     private final java.util.Map<java.nio.file.WatchKey, Path> watchKeys = new java.util.HashMap<>();
     private final PauseTransition watchDebounce = new PauseTransition(Duration.millis(250));
     private volatile boolean disposed;
@@ -400,7 +413,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     int directoryListCountForTest;
 
-    private Path root;
+    private @Nullable Path root;
     private boolean filtering;
     private boolean loading;
     /** Show hidden (dot) files/folders in the tree + filter search. Toggled from Settings. */
@@ -410,7 +423,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** The paths being drag-moved (in-panel drag onto a folder); empty when no drag is in progress. */
     private List<Path> draggedPaths = List.of();
     /** The active file (absolute normalized path), or {@code null} when none is active. */
-    private Path activeFile;
+    private @Nullable Path activeFile;
 
     public ProjectPanel(
             Consumer<Path> onOpenFile,
@@ -435,18 +448,18 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             Consumer<Path> onFileDeleted,
             java.util.function.Predicate<Path> isModified,
             java.util.function.Predicate<Path> isOpen,
-            java.util.function.Function<Path, ProjectMapPreview.Content> previewContent) {
+            java.util.function.Function<Path, ProjectMapPreview.@Nullable Content> previewContent) {
         this.onOpenFile = onOpenFile;
         this.onFileRenamed = onFileRenamed;
         this.onFileDeleted = onFileDeleted;
         this.isModified = isModified;
         this.isOpen = isOpen == null ? path -> false : isOpen;
-        this.mapView = new ProjectMapView(onOpenFile, isOpen, isModified, previewContent);
+        this.mapView = new ProjectMapView(this::openFromMap, isOpen, isModified, previewContent);
         this.mapView.setActive(false); // nothing is listed for the Map until it is first shown
         this.mapView.setShowHidden(showHidden);
         this.mapView.setOnExpandedChanged(this::syncWatches);
-        this.mapView.setContextMenuFactory(entry -> contextMenuFor(
-                new TreeItem<>(entry.path()), entry.directory(), entry.path().equals(root)));
+        this.mapView.setContextMenuFactory(entry -> raisingEditorWindow(contextMenuFor(
+                new TreeItem<>(entry.path()), entry.directory(), entry.path().equals(root))));
         // F2 / Delete on the map's selection run the tree's row actions (see onKey), with the same limits.
         this.mapView.setRowActions(
                 entry -> {
@@ -455,7 +468,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     }
                 },
                 entry -> deleteSelected(new TreeItem<>(entry.path())));
-        this.mapView.setEscapeActions(filterField::clear, () -> onFocusEditor.run());
+        this.mapView.setEscapeActions(mapFilterField::clear, this::leaveMap);
+        this.mapWindow = new ProjectMapWindow(buildMapWindowContent());
+        this.mapWindow.setOnHidden(this::mapWindowHidden);
+        this.mapWindow.setOnUserClosed(() -> onMapWindowChanged.accept(false));
         getStyleClass().add("project-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -534,15 +550,60 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         // Focus lands on the filter field (focusFirstItem); Down moves into the results and Enter opens the
         // selected (or first) match, so the whole flow is keyboard-only (shared with Structure/Bookmarks/Notes).
         FilterFieldNav.install(filterField, tree, this::openSelected);
-        // The same search field fronts both modes. Intercept navigation before FilterFieldNav's tree handler
-        // when Map is active, then hand focus/activation to the Canvas surface.
-        // C-n / C-p move the selection from this field in both modes (FilterFieldNav, and the filter below);
-        // outside Emacs the keymap binds them to New File / Print / Find File, which would run instead.
+        // C-n / C-p move the selection from this field (FilterFieldNav); outside Emacs the keymap binds them
+        // to New File / Print / Find File, which would run instead.
         filterField.getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("C-n", "C-p"));
-        filterField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (!mapMode) {
-                return;
+
+        // Trailing clear button — visible only while the filter has text; clicking it empties the filter
+        // (which restores the lazy tree via the debounce) and returns focus to the field.
+        Button clear = new Button("✕");
+        clear.getStyleClass().add("project-filter-clear");
+        clear.setFocusTraversable(false);
+        clear.setTooltip(new Tooltip(tr("project.filterClear")));
+        clear.setOnAction(e -> {
+            filterField.clear();
+            filterField.requestFocus();
+        });
+        clear.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        clear.managedProperty().bind(clear.visibleProperty()); // reclaim its width when hidden
+
+        mapButton.getStyleClass().add("project-view-toggle");
+        mapButton.setTooltip(new Tooltip(tr("project.view.map.tooltip")));
+        // Reachable by Tab: without it opening the Map was mouse-only (project.toggleMapView aside).
+        mapButton.setFocusTraversable(true);
+        mapButton.setOnAction(e -> openMapWindow(true));
+        HBox viewModes = new HBox(mapButton);
+        viewModes.getStyleClass().add("project-view-modes");
+        // The search field gives way in a narrow panel; the button never truncates to "M…".
+        mapButton.setMinWidth(Region.USE_PREF_SIZE);
+        viewModes.setMinWidth(Region.USE_PREF_SIZE);
+
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+        filterBar.getStyleClass().add("project-filter-bar");
+        filterBar.setAlignment(Pos.CENTER);
+        filterBar.getChildren().setAll(filterField, clear, viewModes);
+    }
+
+    /**
+     * The Project Map window's content: its own search row over the Map. The Map searches the whole project
+     * as the tree's filter does, but the two fields are separate — each window filters what it shows.
+     */
+    private VBox buildMapWindowContent() {
+        mapFilterField.setPromptText(tr("project.map.filterPrompt"));
+        mapFilterField.getStyleClass().add("project-filter");
+        mapFilterField.setId("project-map-filter");
+        mapFilterField.textProperty().addListener((o, w, n) -> {
+            if (!loading) {
+                mapFilterDebounce.playFromStart();
             }
+        });
+        mapFilterDebounce.setOnFinished(e -> searchMap());
+        // Down / Enter / C-n / C-p hand navigation to the Canvas surface; outside Emacs the keymap binds C-n /
+        // C-p to New File / Print / Find File, which would run instead.
+        mapFilterField
+                .getProperties()
+                .put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("C-n", "C-p"));
+        mapFilterField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             switch (e.getCode()) {
                 case DOWN -> {
                     mapView.focusMap();
@@ -568,95 +629,223 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         });
 
-        // Trailing clear button — visible only while the filter has text; clicking it empties the filter
-        // (which restores the lazy tree via the debounce) and returns focus to the field.
-        Button clear = new Button("✕");
-        clear.getStyleClass().add("project-filter-clear");
-        clear.setFocusTraversable(false);
-        clear.setTooltip(new Tooltip(tr("project.filterClear")));
-        clear.setOnAction(e -> {
-            filterField.clear();
-            filterField.requestFocus();
-        });
-        clear.visibleProperty().bind(filterField.textProperty().isEmpty().not());
-        clear.managedProperty().bind(clear.visibleProperty()); // reclaim its width when hidden
-
-        treeMode.getStyleClass().add("project-view-toggle");
-        mapModeButton.getStyleClass().add("project-view-toggle");
-        treeMode.setTooltip(new Tooltip(tr("project.view.tree.tooltip")));
-        mapModeButton.setTooltip(new Tooltip(tr("project.view.map.tooltip")));
-        // Reachable by Tab: without it switching to the Map was mouse-only (project.toggleMapView aside).
-        treeMode.setFocusTraversable(true);
-        mapModeButton.setFocusTraversable(true);
-        ToggleGroup modes = new ToggleGroup();
-        treeMode.setToggleGroup(modes);
-        mapModeButton.setToggleGroup(modes);
-        treeMode.setSelected(true);
-        // A selected mode cannot be cleared: clicking the already-selected toggle leaves it selected.
-        modes.selectedToggleProperty().addListener((obs, old, selected) -> {
-            if (selected == null) {
-                modes.selectToggle(old);
-                return;
-            }
-            mapMode = selected == mapModeButton;
-            showMode();
-            onMapModeChanged.accept(mapMode);
-        });
-        HBox viewModes = new HBox(treeMode, mapModeButton);
-        viewModes.getStyleClass().add("project-view-modes");
-        // The search field gives way in a narrow panel; the switch never truncates to "Tr… M…".
-        treeMode.setMinWidth(Region.USE_PREF_SIZE);
-        mapModeButton.setMinWidth(Region.USE_PREF_SIZE);
-        viewModes.setMinWidth(Region.USE_PREF_SIZE);
-
-        HBox.setHgrow(filterField, Priority.ALWAYS);
-        filterBar.getStyleClass().add("project-filter-bar");
-        filterBar.setAlignment(Pos.CENTER);
-        filterBar.getChildren().setAll(filterField, clear, viewModes);
+        HBox filterRow = new HBox(mapFilterField, ClearableField.clearButton(mapFilterField));
+        filterRow.getStyleClass().add("project-filter-bar");
+        filterRow.setAlignment(Pos.CENTER);
+        HBox.setHgrow(mapFilterField, Priority.ALWAYS);
+        VBox content = new VBox(filterRow, mapView);
+        content.getStyleClass().add("project-map-window");
+        VBox.setVgrow(mapView, Priority.ALWAYS);
+        return content;
     }
 
     /**
-     * Shows the body for the mode just chosen. Coming back from the Map, the project tree that was showing
-     * before is put back as it was — expanded folders and selection included — and only re-listed, instead
-     * of being rebuilt from the root.
+     * Opens the Project Map in its own window, or brings that window forward when it is open already. The Map
+     * never shows inside the Project tool window: it wants the room of a document, not of a side panel.
      */
-    private void showMode() {
-        boolean keepTree = !mapMode
-                && root != null
-                && treeShowsProject
-                && filterField.getText().trim().isEmpty()
-                && tree.getRoot() instanceof PathItem rootItem
-                && rootItem.showHidden == showHidden
-                && com.editora.config.PathKeys.samePath(rootItem.getValue(), root);
-        if (!keepTree) {
-            rebuildBody();
-            return;
-        }
-        searchGen.incrementAndGet(); // a Map search still in flight has nowhere to land
-        mapView.setActive(false);
-        mapView.suspendPreviews(); // cards keep their place for the next switch back to the Map
-        filtering = false;
-        getChildren().setAll(filterBar, tree);
-        refreshTree(); // files changed while the Map was showing reached the Map only
-        syncWatches();
+    public void openMapWindow(boolean focus) {
+        showMapWindow(focus, true);
     }
 
-    /** Switches between Tree and Map and moves focus into the view now showing ({@code project.toggleMapView}). */
-    public void toggleMapView() {
-        (mapMode ? treeMode : mapModeButton).setSelected(true);
+    /** {@code remember}: whether opening it is the user's choice to store (not a restore of what was stored). */
+    private void showMapWindow(boolean focus, boolean remember) {
         if (root == null) {
             return;
         }
-        if (mapMode) {
+        reopenMap = false;
+        boolean wasShowing = mapWindow.isShowing();
+        updateMapWindowTitle();
+        mapWindow.show(editorWindow());
+        if (!wasShowing) {
+            mapView.setActive(true); // the first open (and every reopen) lists the project afresh
+            syncWatches();
+            if (remember) {
+                onMapWindowChanged.accept(true);
+            }
+        }
+        if (focus) {
             mapView.focusMap();
-        } else {
-            tree.requestFocus();
         }
     }
 
-    /** Whether the Map (not the Tree) is the chosen Project view. */
-    public boolean isMapMode() {
-        return mapMode;
+    /**
+     * {@code project.toggleMapView}: opens the Map window, or closes it when it is the window in use — so the
+     * one key both summons the Map and puts it away.
+     */
+    public void toggleMapView() {
+        if (mapWindow.isFocused()) {
+            mapWindow.closeByUser();
+            leaveMap();
+        } else {
+            openMapWindow(true);
+        }
+    }
+
+    /** Whether the Project Map's window is open. */
+    public boolean isMapShowing() {
+        return mapWindow.isShowing();
+    }
+
+    /** The Map's window (for tests: its stage, its content). */
+    ProjectMapWindow mapWindow() {
+        return mapWindow;
+    }
+
+    /**
+     * The editor window this panel belongs to — the window holding the panel, or, while the Project tool
+     * window is closed, the one the controller names. The Map window copies its look and closes with it.
+     */
+    void setEditorWindow(java.util.function.Supplier<javafx.stage.@Nullable Window> window) {
+        editorWindow = window == null ? () -> null : window;
+    }
+
+    /** What the Map window's scene gets, as the editor window's did: its key dispatcher. */
+    void setMapSceneSetup(Consumer<javafx.scene.Scene> setup) {
+        mapWindow.setSceneSetup(setup);
+    }
+
+    private javafx.stage.@Nullable Window editorWindow() {
+        javafx.stage.Window own = getScene() == null ? null : getScene().getWindow();
+        return own != null ? own : editorWindow.get();
+    }
+
+    private void updateMapWindowTitle() {
+        Path name = root == null ? null : root.getFileName();
+        mapWindow.setTitle(
+                name == null ? tr("project.map.windowTitleNoName") : tr("project.map.windowTitle", name.toString()));
+    }
+
+    /** The Map window stopped showing (closed by the user, its editor window, or the project going away). */
+    private void mapWindowHidden() {
+        mapSearchGen.incrementAndGet(); // a search still in flight has nowhere to land
+        mapView.setActive(false);
+        mapView.suspendPreviews(); // cards keep their place for the next open
+        syncWatches(); // the Map's open folders need no watching now
+    }
+
+    /** Runs the Map window's search: the whole project, off the FX thread, as the tree's filter does. */
+    private void searchMap() {
+        long gen = mapSearchGen.incrementAndGet(); // invalidate any in-flight Map search
+        String q = mapFilterField.getText().trim();
+        mapView.setQuery(q);
+        syncWatches();
+        Path searchRoot = root;
+        if (q.isEmpty() || searchRoot == null || !isMapShowing()) {
+            return;
+        }
+        boolean includeHidden = showHidden;
+        boolean useGitignore = respectGitignore && com.editora.vfs.Vfs.isLocal(searchRoot);
+        submitUnlessDisposed(searchExecutor, () -> {
+            com.editora.search.GitignoreFilter gitignore = useGitignore
+                    ? com.editora.search.GitignoreFilter.load(searchRoot)
+                    : com.editora.search.GitignoreFilter.NONE;
+            List<Path> matches = search(searchRoot, q, includeHidden, gitignore, () -> gen != mapSearchGen.get());
+            Platform.runLater(() -> {
+                if (gen != mapSearchGen.get() || !isMapShowing()) {
+                    return;
+                }
+                mapView.setSearchMatches(q, matches);
+            });
+        });
+    }
+
+    /** Re-runs a Map search on show, after a setting changed what it finds. */
+    private void searchMapAgain() {
+        if (root != null && isMapShowing() && !mapFilterField.getText().isBlank()) {
+            searchMap();
+        }
+    }
+
+    /** Escape on the Map with nothing left to dismiss: back to the editor, in the editor window. */
+    private void leaveMap() {
+        raiseEditorWindow();
+        onFocusEditor.run();
+    }
+
+    /** A file opened from the Map (its rows or a preview card): opened in the editor, which comes forward. */
+    private void openFromMap(Path file) {
+        onOpenFile.accept(file);
+        raiseEditorWindow();
+    }
+
+    /**
+     * Brings the editor window in front of the Map window when the user is working in the Map — what they
+     * asked for (a file, a diff, a prompt for a name) happens there, and the Map window may be covering it.
+     */
+    private void raiseEditorWindow() {
+        if (mapWindow.isFocused() && editorWindow() instanceof javafx.stage.Stage editor) {
+            editor.toFront();
+            editor.requestFocus();
+        }
+    }
+
+    /** Property on a menu item whose action stays in the Map window (its own dialog, or nothing to show). */
+    private static final String STAYS_IN_MAP = "editora.project.staysInMap";
+
+    /**
+     * The Map window's copy of a row's context menu: each item that does its work in the editor window
+     * brings that window forward first. Rename, New Folder and Delete stay: they ask over the Map.
+     */
+    private ContextMenu raisingEditorWindow(ContextMenu menu) {
+        raiseFromItems(menu.getItems());
+        // Some items are filled in as the menu opens; wrap those too.
+        menu.addEventHandler(javafx.stage.WindowEvent.WINDOW_SHOWN, e -> raiseFromItems(menu.getItems()));
+        return menu;
+    }
+
+    private void raiseFromItems(List<MenuItem> items) {
+        for (MenuItem item : items) {
+            if (item instanceof Menu sub) {
+                raiseFromItems(sub.getItems());
+                if (sub.getProperties().putIfAbsent(STAYS_IN_MAP + ".hooked", Boolean.TRUE) == null) {
+                    sub.addEventHandler(Menu.ON_SHOWN, e -> raiseFromItems(sub.getItems()));
+                }
+                continue;
+            }
+            javafx.event.EventHandler<javafx.event.ActionEvent> action = item.getOnAction();
+            if (action == null || item.getProperties().containsKey(STAYS_IN_MAP)) {
+                continue;
+            }
+            item.getProperties().put(STAYS_IN_MAP, Boolean.FALSE); // wrapped once, never twice
+            item.setOnAction(e -> {
+                raiseEditorWindow();
+                action.handle(e);
+            });
+        }
+    }
+
+    /**
+     * Where a name is asked for: in the Map window's own overlay while the user works there; else in the
+     * editor window's.
+     */
+    private OverlayInput.@Nullable Prompt activePrompt() {
+        java.util.function.Function<OverlayHost, OverlayInput.Prompt> in = promptIn;
+        if (mapWindow.isFocused() && in != null) {
+            return in.apply(mapWindow.overlayHost());
+        }
+        return prompt;
+    }
+
+    /** The in-scene prompt shown in a given overlay host — the Map window's, while the user works there. */
+    private java.util.function.@Nullable Function<OverlayHost, OverlayInput.Prompt> promptIn;
+
+    /** Injects how a name is asked for in another window's overlay host (the Map window's). */
+    public void setPromptIn(java.util.function.Function<OverlayHost, OverlayInput.Prompt> promptIn) {
+        this.promptIn = promptIn;
+    }
+
+    /** Test seam for {@link #promptIn}: the one prompt, whichever window asks. */
+    void setMapPromptForTest(OverlayInput.Prompt prompt) {
+        Objects.requireNonNull(prompt, "prompt");
+        this.promptIn = host -> prompt;
+    }
+
+    /** Whose window a file-operation dialog belongs over: the Map's while the user works there. */
+    private javafx.stage.@Nullable Window dialogOwner() {
+        if (mapWindow.isFocused()) {
+            return mapWindow.stage();
+        }
+        return getScene() == null ? editorWindow() : getScene().getWindow();
     }
 
     /** Open editor files, so the Map's Open / Modified chips can mark the collapsed folders that hold them. */
@@ -683,7 +872,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Updates the active-file marker used for current-file emphasis in the tree. */
-    public void setActiveFile(Path file) {
+    public void setActiveFile(@Nullable Path file) {
         Path next = file == null ? null : file.toAbsolutePath().normalize();
         if (com.editora.config.PathKeys.samePath(activeFile, next)) {
             return;
@@ -693,16 +882,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.refreshStates();
     }
 
-    /** Reveals and selects a file or folder in the active Project view. */
+    /** Reveals and selects a file or folder in the project tree. */
     public void revealPath(Path path) {
         if (path == null || root == null) {
             return;
         }
         Path target = path.toAbsolutePath().normalize();
-        if (mapMode) {
-            mapView.revealPath(target);
-            return;
-        }
         if (!(tree.getRoot() instanceof PathItem item)
                 || !com.editora.config.PathKeys.isAtOrUnder(
                         target, root.toAbsolutePath().normalize())) {
@@ -715,12 +900,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Continues an asynchronous tree reveal as each directory level finishes loading. */
     private void continuePendingReveal(PathItem rootItem) {
         Path target = pendingTreeReveal;
-        if (target == null) {
+        Path projectRoot = root; // set whenever a reveal is pending (setRoot clears both)
+        if (target == null || projectRoot == null) {
             return;
         }
         TreeItem<Path> current = rootItem;
         current.setExpanded(true);
-        Path relative = root.toAbsolutePath().normalize().relativize(target);
+        Path relative = projectRoot.toAbsolutePath().normalize().relativize(target);
         for (Path segment : relative) {
             TreeItem<Path> next = current.getChildren().stream()
                     .filter(child -> child.getValue().getFileName().equals(segment))
@@ -744,16 +930,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         pendingTreeReveal = null;
     }
 
-    /** Switches to the classic explorer tree, clears filtering, and reveals {@code path}. */
+    /** Clears the tree's filter and reveals {@code path} in the project tree. */
     public void revealPathInTree(Path path) {
         loading = true;
         filterField.clear();
         loading = false;
-        if (!treeMode.isSelected()) {
-            treeMode.setSelected(true); // the mode listener rebuilds the body synchronously
-        } else {
-            rebuildBody();
-        }
+        rebuildBody();
         revealPath(path);
     }
 
@@ -783,14 +965,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /**
      * Re-scans the tree against the current filesystem so files/folders added or removed outside Editora
      * show up. Preserves the expanded folders and the selection. No-op while filtering or with no project.
-     * Cheap: only re-lists directories that are currently expanded. Called on window focus-regain.
+     * Cheap: only re-lists directories that are currently expanded. Called on window focus-regain. The Map,
+     * while its window is open, reloads too.
      */
     public void refreshTree() {
         treeRefreshCountForTest++;
         GitPathScope.learnRemote(root, false); // a repository made or removed there since (at most once a minute)
-        if (mapMode) {
+        if (isMapShowing()) {
             mapView.refresh();
-            return;
         }
         if (root == null || filtering || !(tree.getRoot() instanceof PathItem rootItem)) {
             return;
@@ -802,9 +984,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Re-lists just {@code dirs} (those the tree currently shows expanded); the rest of the tree is untouched. */
     private void refreshDirectories(java.util.Collection<Path> dirs) {
-        if (mapMode) {
+        if (isMapShowing()) {
             mapView.refresh();
-            return;
         }
         if (root == null || filtering || !(tree.getRoot() instanceof PathItem rootItem)) {
             return;
@@ -818,10 +999,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Whether the tree already has a row for {@code path} (so a save of it adds nothing to show). */
     private boolean treeShows(Path path) {
-        return !mapMode
-                && !filtering
-                && tree.getRoot() instanceof PathItem rootItem
-                && findVisible(rootItem, path) != null;
+        return !filtering && tree.getRoot() instanceof PathItem rootItem && findVisible(rootItem, path) != null;
     }
 
     /**
@@ -881,7 +1059,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         } else {
             java.util.Set<Path> dirs = new java.util.LinkedHashSet<>(plan.relistDirs());
             for (Path written : plan.localWrites()) {
-                if (written.getParent() != null && (mapMode || !treeShows(written))) {
+                if (written.getParent() != null && (isMapShowing() || !treeShows(written))) {
                     dirs.add(written.getParent()); // a first save of a new file: the row is still missing
                 }
             }
@@ -941,7 +1119,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Finds a (visible) tree item for {@code target} among the expanded items, or null if gone. */
-    private static TreeItem<Path> findVisible(TreeItem<Path> item, Path target) {
+    private static @Nullable TreeItem<Path> findVisible(TreeItem<Path> item, Path target) {
         if (com.editora.config.PathKeys.samePath(target, item.getValue())) {
             return item;
         }
@@ -958,7 +1136,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Points the tree at {@code root} (a project folder), or shows the placeholder when {@code null}. */
-    public void setRoot(Path root) {
+    public void setRoot(@Nullable Path root) {
         this.root = root;
         lastMove = List.of(); // an undo must not reach back into the project that was open before
         pendingTreeSelection = null;
@@ -967,10 +1145,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.setGitStatus(gitStatus); // recompute changed-directory ancestry against the new root
         loading = true;
         filterField.clear();
+        mapFilterField.clear();
         loading = false;
+        mapView.setQuery("");
+        if (root == null) {
+            mapWindow.closeQuietly(); // nothing to map; a project opened later does not bring it back
+            reopenMap = false;
+        } else {
+            updateMapWindowTitle();
+        }
         ensureWatchOrStop(); // start a watcher for a local root (or stop it for remote/none)
         rebuildBody(); // ends with syncWatches() — registers the new root's dirs, cancels the old root's
         GitPathScope.learnRemote(root, true); // a remote project: where its repositories are, for the menus
+        reopenMapWhenReady();
     }
 
     /**
@@ -1002,7 +1189,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** The folder the tree is currently rooted at, or {@code null} when showing the placeholder. */
-    public Path getRoot() {
+    public @Nullable Path getRoot() {
         return root;
     }
 
@@ -1015,6 +1202,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.setShowHidden(showHidden); // each Map column's default, and what the Map loads
         if (root != null) {
             rebuildBody(); // recreate the tree (PathItems capture the flag) with the new visibility
+            searchMapAgain();
         }
     }
 
@@ -1030,43 +1218,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (root != null && filtering) {
             rebuildBody(); // re-run the current filter with the new exclusion
         }
+        searchMapAgain();
     }
 
     /** Rebuilds the body: placeholder (no project), filtered flat results, or the lazy tree. */
     private void rebuildBody() {
         long gen = searchGen.incrementAndGet(); // invalidate any in-flight search
-        mapView.setActive(mapMode && root != null); // entering the Map (re)loads it; the Tree leaves it idle
         if (root == null) {
             getChildren().setAll(disconnected ? disconnectedPane : placeholderPane);
             return;
         }
         String q = filterField.getText().trim();
-        if (mapMode) {
-            filtering = !q.isEmpty();
-            mapView.setQuery(q);
-            getChildren().setAll(filterBar, mapView);
-            VBox.setVgrow(mapView, Priority.ALWAYS);
-            syncWatches();
-            if (!q.isEmpty()) {
-                Path searchRoot = root;
-                boolean includeHidden = showHidden;
-                boolean useGitignore = respectGitignore && com.editora.vfs.Vfs.isLocal(root);
-                searchExecutor.submit(() -> {
-                    com.editora.search.GitignoreFilter gitignore = useGitignore
-                            ? com.editora.search.GitignoreFilter.load(searchRoot)
-                            : com.editora.search.GitignoreFilter.NONE;
-                    List<Path> matches = search(searchRoot, q, includeHidden, gitignore, () -> gen != searchGen.get());
-                    Platform.runLater(() -> {
-                        if (gen != searchGen.get() || !mapMode) {
-                            return;
-                        }
-                        mapView.setSearchMatches(q, matches);
-                    });
-                });
-            }
-            return;
-        }
-        mapView.suspendPreviews(); // cards keep their place for the next switch back to the Map
         treeShowsProject = q.isEmpty();
         if (q.isEmpty()) {
             filtering = false;
@@ -1082,7 +1244,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             PathItem pending = new PathItem(root, includeHidden, true, true);
             pending.setExpanded(true);
             tree.setRoot(pending);
-            searchExecutor.submit(() -> {
+            submitUnlessDisposed(searchExecutor, () -> {
                 // Load the root .gitignore off the FX thread (reads one file); NONE = no exclusion.
                 com.editora.search.GitignoreFilter gitignore = useGitignore
                         ? com.editora.search.GitignoreFilter.load(searchRoot)
@@ -1138,9 +1300,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** The watcher on the host of a remote root, and the root it watches. */
-    private RemoteWatcher remoteWatcher;
+    private @Nullable RemoteWatcher remoteWatcher;
 
-    private Path remoteWatched;
+    private @Nullable Path remoteWatched;
 
     private void ensureRemoteWatch() {
         if (root == null || disposed || !watchedOnTarget(root)) {
@@ -1240,10 +1402,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (root != null) {
             desired.add(root);
         }
-        if (!mapMode && tree.getRoot() instanceof PathItem rootItem) {
+        if (tree.getRoot() instanceof PathItem rootItem) {
             collectExpanded(rootItem, desired); // expanded directories (root included)
         }
-        if (mapMode) {
+        if (isMapShowing()) {
             desired.addAll(mapView.expandedDirectories());
         }
         watchKeys.entrySet().removeIf(entry -> {
@@ -1365,6 +1527,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         return ProjectWatchChanges.isInternalName(name);
     }
 
+    /**
+     * Runs {@code task} on {@code executor} unless this panel has been disposed, which shuts both executors
+     * down. A tree can still be laid out once more as its window closes (a folder is then asked for its
+     * children) and a filter's debounce can still fire: those threw RejectedExecutionException on the FX thread.
+     */
+    private void submitUnlessDisposed(ExecutorService executor, Runnable task) {
+        if (disposed) {
+            return;
+        }
+        try {
+            executor.submit(task);
+        } catch (RejectedExecutionException shutDown) {
+            // disposed meanwhile: nothing is shown any more
+        }
+    }
+
     /** Stops the watcher + its thread; call on window close so the daemon thread + native handles are freed. */
     public void dispose() {
         disposed = true;
@@ -1383,6 +1561,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         searchExecutor.shutdownNow();
         listExecutor.shutdownNow();
+        mapFilterDebounce.stop();
+        mapWindow.closeQuietly(); // not owned by the editor window, so not closed with it by JavaFX
         mapView.dispose();
     }
 
@@ -1455,7 +1635,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     boolean dir = Files.isDirectory(p, java.nio.file.LinkOption.NOFOLLOW_LINKS);
                     String rel = useGitignore || (dir && ignore.nests())
                             ? root.relativize(p).toString().replace(java.io.File.separatorChar, '/')
-                            : null;
+                            : ""; // not needed: "" ignores nothing and nests no filter
                     if (useGitignore && ignore.ignored(rel, dir)) {
                         continue; // .gitignore'd (e.g. target/, node_modules/, *.log) — skip file + subtree
                     }
@@ -1498,9 +1678,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     // --- keyboard navigation (mirrors StructurePanel) ---
 
     private void onKey(KeyEvent e) {
-        if (mapMode) {
-            return; // the Canvas surface owns its arrows/C-n/C-p/Enter in Map mode
-        }
         // F2 renames and Delete deletes the selected row — the row actions that were reachable only from
         // the right-click menu. Only while the tree itself has the key: in the filter field they are text
         // editing keys.
@@ -1508,7 +1685,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         TreeItem<Path> selected = rowActionKey ? tree.getSelectionModel().getSelectedItem() : null;
         switch (rowKey(e.getCode(), rowActionKey && inTree(e), selected != null && selected.getValue() != null)) {
             case RENAME -> {
-                if (!selected.getValue().equals(root)) { // as the menu: the project root is never renamed
+                if (selected != null // RENAME needs a selected row
+                        && !selected.getValue().equals(root)) { // as the menu: the project root is never renamed
                     renameItem(selected);
                 }
                 e.consume();
@@ -1672,6 +1850,20 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.onNewFromTemplate = onNewFromTemplate;
     }
 
+    /**
+     * What may change before a rename: {@code (from, to, proceed)} makes the edits that go with it (a Java class
+     * renamed with its file) and then calls {@code proceed} with whether to go on. By default nothing does.
+     */
+    public interface RenameParticipant {
+        void willRename(Path from, Path to, Consumer<Boolean> proceed);
+    }
+
+    private RenameParticipant renameParticipant = (from, to, proceed) -> proceed.accept(true);
+
+    public void setRenameParticipant(RenameParticipant participant) {
+        this.renameParticipant = participant == null ? (from, to, proceed) -> proceed.accept(true) : participant;
+    }
+
     /** Injects the dirty-buffer and durable-history gate run after confirmation but before filesystem changes. */
     public void setDeletePreparation(DeletePreparation deletePreparation) {
         this.deletePreparation = deletePreparation == null
@@ -1696,7 +1888,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     private boolean confirmQuestionDialog(String message) {
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL);
-        confirm.initOwner(getScene() == null ? null : getScene().getWindow());
+        confirm.initOwner(dialogOwner());
         confirm.setTitle(tr("project.fileOperationTitle"));
         confirm.setHeaderText(null);
         cancelByDefault(confirm);
@@ -1750,19 +1942,53 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     state.get().setProjectMapFocusNewColumn(focusColumn);
                     save.run();
                 });
-        onMapModeChanged = map -> {};
-        (com.editora.config.WorkspaceState.PROJECT_VIEW_MAP.equals(stored.getProjectViewMode())
-                        ? mapModeButton
-                        : treeMode)
-                .setSelected(true);
-        onMapModeChanged = map -> {
+        mapWindow.setBoundsMemory(
+                () -> state.get().getProjectMapWindowBounds(),
+                bounds -> state.get().setProjectMapWindowBounds(bounds));
+        onMapWindowChanged = open -> {
             state.get()
                     .setProjectViewMode(
-                            map
+                            open
                                     ? com.editora.config.WorkspaceState.PROJECT_VIEW_MAP
                                     : com.editora.config.WorkspaceState.PROJECT_VIEW_TREE);
             save.run();
         };
+        reopenMap = com.editora.config.WorkspaceState.PROJECT_VIEW_MAP.equals(stored.getProjectViewMode());
+        reopenMapWhenReady();
+    }
+
+    /**
+     * Reopens the Map window the workspace remembered as open, once there is a project to map and the editor
+     * window is on screen — without taking focus from the editor, as a restored window should not.
+     */
+    private void reopenMapWhenReady() {
+        if (!reopenMap || root == null || disposed) {
+            return;
+        }
+        javafx.stage.Window window = editorWindow();
+        if (window == null) {
+            return; // asked again when the panel is next given a root
+        }
+        if (window.isShowing()) {
+            Platform.runLater(() -> {
+                if (reopenMap && root != null && !disposed) {
+                    showMapWindow(false, false);
+                    window.requestFocus();
+                }
+            });
+            return;
+        }
+        javafx.beans.value.ChangeListener<Boolean> once = new javafx.beans.value.ChangeListener<>() {
+            @Override
+            public void changed(
+                    javafx.beans.value.ObservableValue<? extends Boolean> obs, Boolean was, Boolean showing) {
+                if (showing) {
+                    window.showingProperty().removeListener(this);
+                    reopenMapWhenReady();
+                }
+            }
+        };
+        window.showingProperty().addListener(once);
     }
 
     /** Injects the window-owned print and PDF handlers for a full Project Map snapshot. */
@@ -1770,9 +1996,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.setOutputActions(print, pdf);
     }
 
-    /** Whether the Project Map is the view on screen and has something to print or export. */
+    /** Whether the Project Map's window is open and the Map has something to print or export. */
     public boolean isMapOutputAvailable() {
-        return mapMode && getScene() != null && mapView.canOutput();
+        return isMapShowing() && mapView.canOutput();
     }
 
     /** {@code projectMap.print}: what the map's Print… button does. */
@@ -1839,6 +2065,29 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.simpleMode = simpleMode;
     }
 
+    /**
+     * Where the Map's declaration cards and rows go: the file opened at a 0-based line, and the file opened
+     * narrowed to a block. Either brings the editor window forward.
+     */
+    void setMapOpenActions(
+            BiConsumer<Path, Integer> openAt, BiConsumer<Path, com.editora.text.FoldRegions.Region> openNarrowed) {
+        mapView.setOpenActions(
+                (file, line) -> {
+                    openAt.accept(file, line);
+                    raiseEditorWindow();
+                },
+                (file, block) -> {
+                    openNarrowed.accept(file, block);
+                    raiseEditorWindow();
+                });
+    }
+
+    /** The language server's outline of an open buffer, for the Map's structure columns. */
+    void setMapServerSymbols(
+            java.util.function.Function<Path, java.util.@Nullable List<com.editora.lsp.SymbolNode>> symbols) {
+        mapView.setServerSymbols(symbols);
+    }
+
     /** Injects bookmark/note actions and state used by both Project renderers. */
     public void setMarkerActions(MarkerActions markerActions) {
         this.markerActions = markerActions;
@@ -1894,22 +2143,26 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         Menu newMenu = new Menu(tr("newfile.menu.new"));
         newMenu.setGraphic(Icons.newFile());
         Path dir = dirItem.getValue();
+        BiConsumer<Path, com.editora.template.NewFileType> newFile = onNewFile;
+        Consumer<Path> newFromTemplate = onNewFromTemplate;
+        Consumer<Path> newMavenProject = onNewMavenProject;
 
-        if (onNewFile != null) {
-            newMenu.getItems().add(typeItem(com.editora.template.NewFileCatalog.PLAIN, dirItem));
+        if (newFile != null) {
+            newMenu.getItems().add(typeItem(com.editora.template.NewFileCatalog.PLAIN, dirItem, newFile));
         }
         MenuItem folder = new MenuItem(tr("project.menu.newFolder"));
         folder.setGraphic(Icons.newFolder());
         folder.setOnAction(e -> newFolder(dirItem));
+        folder.getProperties().put(STAYS_IN_MAP, Boolean.TRUE); // asks over the Map window
         newMenu.getItems().add(folder);
 
         if (simple) {
             return newMenu; // a text file or a folder: no file-type catalog, templates or Maven project
         }
-        if (onNewFile != null) {
+        if (newFile != null) {
             newMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
             for (com.editora.template.NewFileType type : com.editora.template.NewFileCatalog.topLevel()) {
-                newMenu.getItems().add(typeItem(type, dirItem));
+                newMenu.getItems().add(typeItem(type, dirItem, newFile));
             }
             for (com.editora.template.NewFileCatalog.Category category :
                     com.editora.template.NewFileCatalog.categories()) {
@@ -1917,24 +2170,24 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 // The category's own glyph is its first member's — "Java" gets the Java icon, and so on.
                 submenu.setGraphic(FileIcons.forFileName(category.types().get(0).suggestedFileName()));
                 for (com.editora.template.NewFileType type : category.types()) {
-                    submenu.getItems().add(typeItem(type, dirItem));
+                    submenu.getItems().add(typeItem(type, dirItem, newFile));
                 }
                 newMenu.getItems().add(submenu);
             }
         }
-        if (onNewFromTemplate != null || onNewMavenProject != null) {
+        if (newFromTemplate != null || newMavenProject != null) {
             newMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
-        if (onNewFromTemplate != null) {
+        if (newFromTemplate != null) {
             MenuItem fromTemplate = new MenuItem(tr("project.menu.newFromTemplate"));
             fromTemplate.setGraphic(Icons.template());
-            fromTemplate.setOnAction(e -> onNewFromTemplate.accept(dir));
+            fromTemplate.setOnAction(e -> newFromTemplate.accept(dir));
             newMenu.getItems().add(fromTemplate);
         }
-        if (onNewMavenProject != null) {
+        if (newMavenProject != null) {
             MenuItem maven = new MenuItem(tr("project.menu.newMavenProject"));
             maven.setGraphic(Icons.newFolder());
-            maven.setOnAction(e -> onNewMavenProject.accept(dir));
+            maven.setOnAction(e -> newMavenProject.accept(dir));
             newMenu.getItems().add(maven);
         }
         return newMenu;
@@ -1946,11 +2199,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * picker can never disagree about what a type is called.
      */
     static String labelFor(com.editora.template.NewFileType type) {
-        return type.hasLiteralLabel() ? type.label() : tr(type.labelKey());
+        String literal = type.label(); // null unless type.hasLiteralLabel()
+        return literal != null ? literal : tr(type.labelKey());
     }
 
     /** One "New ▸" entry: the type's label and the glyph the file will carry once it exists. */
-    private MenuItem typeItem(com.editora.template.NewFileType type, TreeItem<Path> dirItem) {
+    private MenuItem typeItem(
+            com.editora.template.NewFileType type,
+            TreeItem<Path> dirItem,
+            BiConsumer<Path, com.editora.template.NewFileType> onNewFile) {
         MenuItem item = new MenuItem(labelFor(type));
         item.setGraphic(
                 type.extension().isEmpty() && type.suggestedFileName().isEmpty()
@@ -1965,6 +2222,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Prompts for a name and creates a new subfolder inside {@code dirItem}'s directory. */
     private void newFolder(TreeItem<Path> dirItem) {
+        OverlayInput.Prompt prompt = activePrompt();
         if (prompt == null) {
             return;
         }
@@ -1992,6 +2250,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     private void renameItem(TreeItem<Path> item) {
+        OverlayInput.Prompt prompt = activePrompt();
         if (prompt == null) {
             return;
         }
@@ -2009,17 +2268,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     if (target.equals(path) || Files.exists(target)) {
                         return;
                     }
-                    try {
-                        Files.move(path, target);
-                    } catch (IOException ex) {
-                        showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
-                        return;
-                    }
-                    markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
-                    mapView.pathRenamed(path, target); // a renamed open folder stays open in the Map
-                    refreshAfterChange();
-                    onFileRenamed.accept(path, target);
+                    renameParticipant.willRename(path, target, ok -> {
+                        if (ok) {
+                            move(path, target); // says why when the file is gone or the name taken by now
+                        }
+                    });
                 });
+    }
+
+    private void move(Path path, Path target) {
+        try {
+            Files.move(path, target);
+        } catch (IOException ex) {
+            showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
+            return;
+        }
+        markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
+        mapView.pathRenamed(path, target); // a renamed open folder stays open in the Map
+        refreshAfterChange();
+        onFileRenamed.accept(path, target);
     }
 
     private void deleteItem(TreeItem<Path> item) {
@@ -2039,7 +2306,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         int trashed = trashCount(files, deleteOperations);
         Alert confirm = new Alert(
                 Alert.AlertType.CONFIRMATION, deleteQuestion(files, trashed), ButtonType.OK, ButtonType.CANCEL);
-        confirm.initOwner(getScene() == null ? null : getScene().getWindow());
+        confirm.initOwner(dialogOwner());
         confirm.setTitle(tr("project.deleteFileTitle"));
         confirm.setHeaderText(null);
         if (trashed < files.size()) {
@@ -2158,7 +2425,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      *  first — a drag that ends on a folder row is easy to make by accident. Notifies {@code onFileRenamed}
      *  per moved path so open buffers (a file, or files under a moved folder) follow, and remembers the moves
      *  so {@link #undoLastMove()} can take them back. */
-    private void moveInto(List<Path> dropped, Path targetDir) {
+    private void moveInto(List<Path> dropped, @Nullable Path targetDir) {
         List<Path> sources = pruneNestedSources(dropped);
         if (sources.isEmpty() || targetDir == null || !Files.isDirectory(targetDir)) {
             return;
@@ -2252,7 +2519,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** The files to act on for a cell action: the whole multi-selection when {@code clicked} is part of it,
      *  else just {@code clicked}. Excludes the root. */
-    private List<TreeItem<Path>> actionTargets(TreeItem<Path> clicked) {
+    private List<TreeItem<Path>> actionTargets(@Nullable TreeItem<Path> clicked) {
         List<TreeItem<Path>> sel = new ArrayList<>(tree.getSelectionModel().getSelectedItems());
         sel.removeIf(i -> i == null || i.getValue() == null || i.getValue().equals(root));
         if (clicked != null && sel.contains(clicked) && sel.size() > 1) {
@@ -2263,7 +2530,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Deletes the selected files (or just {@code clicked}); confirms once. Folders/root are skipped (delete
      *  is files-only, like the single-file menu). */
-    private void deleteSelected(TreeItem<Path> clicked) {
+    private void deleteSelected(@Nullable TreeItem<Path> clicked) {
         List<Path> files = new ArrayList<>();
         for (TreeItem<Path> it : actionTargets(clicked)) {
             if (Files.isRegularFile(it.getValue())) {
@@ -2413,7 +2680,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Shows a modal error dialog when a filesystem operation (rename/delete) fails. */
     private void showError(String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
-        alert.initOwner(getScene() == null ? null : getScene().getWindow());
+        alert.initOwner(dialogOwner());
         alert.setTitle(tr("project.fileErrorTitle"));
         alert.setHeaderText(null);
         alert.showAndWait();
@@ -2428,14 +2695,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     private void refreshAfterChange() {
         if (filtering) {
-            if (mapMode) {
-                // Re-running the search only reloads the Map when the matches changed; a deleted or renamed
-                // row that was not a match would stay on show until some unrelated refresh.
-                mapView.refresh();
+            if (isMapShowing()) {
+                mapView.refresh(); // refreshTree would have, but a filtered tree is re-searched instead
             }
             rebuildBody();
         } else {
             refreshTree();
+        }
+        if (isMapShowing() && !mapFilterField.getText().isBlank()) {
+            // Re-running the search only reloads the Map when the matches changed; the refresh above covers a
+            // deleted or renamed row that was not a match.
+            searchMap();
         }
     }
 
@@ -2475,7 +2745,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     long generation = ++loadGeneration;
                     long treeGeneration = searchGen.get();
                     Path parent = getValue();
-                    listExecutor.submit(() -> {
+                    submitUnlessDisposed(listExecutor, () -> {
                         Runnable hook = beforeDirectoryListForTest;
                         if (hook != null) {
                             hook.run();
@@ -2523,7 +2793,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             long treeGeneration = searchGen.get();
             Path parent = getValue();
             directoryListCountForTest++;
-            listExecutor.submit(() -> {
+            submitUnlessDisposed(listExecutor, () -> {
                 Runnable hook = beforeDirectoryListForTest;
                 if (hook != null) {
                     hook.run();
@@ -2690,7 +2960,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         /** The folder this cell would drop INTO — the cell's own directory (or the root); {@code null} for a
          *  file cell or the filtered view, so drops only land on folders. */
-        private Path dropTargetDir() {
+        private @Nullable Path dropTargetDir() {
             if (filtering) {
                 return null;
             }
@@ -2824,6 +3094,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** One lazily built file-management menu shared by Tree rows and Canvas map nodes. */
     private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {
+        // Read once: the actions below run later and use what was checked here.
+        FileActions fileOps = fileActions;
+        MarkerActions markerOps = markerActions;
+        BiConsumer<Path, Boolean> revealer = onReveal;
+        BiConsumer<Path, Boolean> terminalOpener = onOpenTerminal;
         ContextMenu menu = new ContextMenu();
         // Read per right-click (the menu is built for each one), so a Simple-mode toggle applies to the next.
         boolean simple = simpleMode.getAsBoolean();
@@ -2844,12 +3119,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             MenuItem rename = new MenuItem(tr("project.menu.rename"));
             rename.setGraphic(Icons.edit());
             rename.setOnAction(e -> renameItem(treeItem));
+            rename.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
             menu.getItems().add(rename);
         }
         if (canUndoMove()) {
             MenuItem undoMove = new MenuItem(tr("project.menu.undoMove"));
             undoMove.setGraphic(Icons.undo());
             undoMove.setOnAction(e -> undoLastMove());
+            undoMove.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
             menu.getItems().add(undoMove);
         }
         if (!isDir) {
@@ -2858,91 +3135,93 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // Deletes the whole multi-file selection when this row is part of it, else just this file
             // (the confirm dialog shows the count).
             delete.setOnAction(e -> deleteSelected(treeItem));
+            delete.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
             menu.getItems().add(delete);
             Path target = treeItem.getValue();
-            if (fileActions != null
+            if (fileOps != null
                     && target != null
-                    && com.editora.editor.EncryptedNames.extensionOf(String.valueOf(target.getFileName())) == null) {
+                    && com.editora.text.EncryptedNames.extensionOf(String.valueOf(target.getFileName())) == null) {
                 MenuItem encrypt = new MenuItem(tr("project.menu.encrypt"));
                 encrypt.setGraphic(Icons.lock());
-                encrypt.setOnAction(e -> fileActions.encrypt(target));
+                encrypt.setOnAction(e -> fileOps.encrypt(target));
                 menu.getItems().add(encrypt);
             }
         }
-        if (markerActions != null && !simple) {
+        if (markerOps != null && !simple) {
             Path target = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
 
             MenuItem bookmark = new MenuItem(tr(isDir ? "project.menu.addFolderBookmark" : "project.menu.addBookmark"));
             bookmark.setGraphic(Icons.bookmark());
-            bookmark.setOnAction(e -> markerActions.addBookmark(target));
+            bookmark.setOnAction(e -> markerOps.addBookmark(target));
             menu.getItems().add(bookmark);
 
             MenuItem note =
                     new MenuItem(tr(isDir ? "project.menu.addFolderPersonalNote" : "project.menu.addPersonalNote"));
             note.setGraphic(Icons.notes());
-            note.setDisable(!markerActions.personalNotesEnabled());
-            note.setOnAction(e -> markerActions.addPersonalNote(target));
+            note.setDisable(!markerOps.personalNotesEnabled());
+            note.setOnAction(e -> markerOps.addPersonalNote(target));
             menu.getItems().add(note);
         }
-        boolean terminalShown = onOpenTerminal != null && !simple;
-        if (onReveal != null || terminalShown) {
+        boolean terminalShown = terminalOpener != null && !simple;
+        if (revealer != null || terminalShown) {
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
-        if (onReveal != null) {
+        if (revealer != null) {
             MenuItem reveal = new MenuItem(tr("project.menu.revealInFileManager"));
             reveal.setGraphic(Icons.revealInFiles());
-            reveal.setOnAction(e -> onReveal.accept(treeItem.getValue(), isDir));
+            reveal.setOnAction(e -> revealer.accept(treeItem.getValue(), isDir));
+            reveal.getProperties().put(STAYS_IN_MAP, Boolean.TRUE);
             menu.getItems().add(reveal);
         }
-        if (terminalShown) {
+        if (terminalOpener != null && terminalShown) {
             MenuItem terminal = new MenuItem(tr("project.menu.openTerminal"));
             terminal.setGraphic(Icons.terminal());
-            terminal.setOnAction(e -> onOpenTerminal.accept(treeItem.getValue(), isDir));
+            terminal.setOnAction(e -> terminalOpener.accept(treeItem.getValue(), isDir));
             menu.getItems().add(terminal);
         }
         // Local History + Git act on a concrete file (not a folder).
-        if (fileActions != null && !isDir && !simple) {
+        if (fileOps != null && !isDir && !simple) {
             Path file = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
 
             MenuItem localHistory = new MenuItem(tr("project.menu.localHistory"));
             localHistory.setGraphic(Icons.history());
-            localHistory.setOnAction(e -> fileActions.showLocalHistory(file));
+            localHistory.setOnAction(e -> fileOps.showLocalHistory(file));
             menu.getItems().add(localHistory);
 
             Menu git = new Menu(tr("project.menu.git"));
             git.setGraphic(Icons.git());
             MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
             stage.setGraphic(Icons.stageAll());
-            stage.setOnAction(e -> fileActions.gitStage(file));
+            stage.setOnAction(e -> fileOps.gitStage(file));
             MenuItem unstage = new MenuItem(tr("project.menu.git.unstage"));
             unstage.setGraphic(Icons.remove());
-            unstage.setOnAction(e -> fileActions.gitUnstage(file));
+            unstage.setOnAction(e -> fileOps.gitUnstage(file));
             MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
             revert.setGraphic(Icons.undo());
-            revert.setOnAction(e -> fileActions.gitRevert(file));
+            revert.setOnAction(e -> fileOps.gitRevert(file));
             MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
             ignore.setGraphic(Icons.git());
-            ignore.setOnAction(e -> fileActions.gitAddToGitignore(file));
+            ignore.setOnAction(e -> fileOps.gitAddToGitignore(file));
             MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
             compareHead.setGraphic(Icons.diff());
-            compareHead.setOnAction(e -> fileActions.gitCompareWithHead(file));
+            compareHead.setOnAction(e -> fileOps.gitCompareWithHead(file));
             MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
             compareBranch.setGraphic(Icons.diff());
-            compareBranch.setOnAction(e -> fileActions.gitCompareWithBranch(file));
+            compareBranch.setOnAction(e -> fileOps.gitCompareWithBranch(file));
             MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
             compareRevision.setGraphic(Icons.diff());
-            compareRevision.setOnAction(e -> fileActions.gitCompareWithRevision(file));
+            compareRevision.setOnAction(e -> fileOps.gitCompareWithRevision(file));
             MenuItem compareTag = new MenuItem(tr("project.menu.git.compareTag"));
             compareTag.setGraphic(Icons.diff());
-            compareTag.setOnAction(e -> fileActions.gitCompareWithTag(file));
+            compareTag.setOnAction(e -> fileOps.gitCompareWithTag(file));
             MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
             annotate.setGraphic(Icons.blame());
-            annotate.setOnAction(e -> fileActions.gitAnnotate(file));
+            annotate.setOnAction(e -> fileOps.gitAnnotate(file));
             MenuItem fileHistory = new MenuItem(tr("project.menu.git.fileHistory"));
             fileHistory.setGraphic(Icons.gitLog());
-            fileHistory.setOnAction(e -> fileActions.gitShowFileHistory(file));
+            fileHistory.setOnAction(e -> fileOps.gitShowFileHistory(file));
             git.getItems()
                     .addAll(
                             stage,
@@ -2960,8 +3239,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
             // Disable to match the live feature toggles + the file's actual status.
             menu.setOnShowing(e -> {
-                localHistory.setDisable(!fileActions.localHistoryEnabled());
-                GitPathScope scope = fileActions.gitScope(file);
+                localHistory.setDisable(!fileOps.localHistoryEnabled());
+                GitPathScope scope = fileOps.gitScope(file);
                 git.setDisable(scope == GitPathScope.NONE); // grey out the Git submenu when there's no VCS
                 com.editora.git.GitFileStatus st =
                         gitStatus.get(file.toAbsolutePath().normalize());
@@ -2973,34 +3252,34 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             });
         }
         // On a folder: Local History plus subtree-wide Git mutation and comparison actions.
-        if (fileActions != null && isDir && !simple) {
+        if (fileOps != null && isDir && !simple) {
             Path dir = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
             MenuItem folderHistory = new MenuItem(tr("project.menu.localHistory"));
             folderHistory.setGraphic(Icons.history());
-            folderHistory.setOnAction(e -> fileActions.showLocalHistory(dir));
+            folderHistory.setOnAction(e -> fileOps.showLocalHistory(dir));
             menu.getItems().add(folderHistory);
 
             Menu git = new Menu(tr("project.menu.git"));
             git.setGraphic(Icons.git());
             MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
             stage.setGraphic(Icons.stageAll());
-            stage.setOnAction(e -> fileActions.gitStage(dir));
+            stage.setOnAction(e -> fileOps.gitStage(dir));
             MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
             revert.setGraphic(Icons.undo());
-            revert.setOnAction(e -> fileActions.gitRevert(dir));
+            revert.setOnAction(e -> fileOps.gitRevert(dir));
             MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
             compareHead.setGraphic(Icons.diff());
-            compareHead.setOnAction(e -> fileActions.gitCompareWithHead(dir));
+            compareHead.setOnAction(e -> fileOps.gitCompareWithHead(dir));
             MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
             compareBranch.setGraphic(Icons.diff());
-            compareBranch.setOnAction(e -> fileActions.gitCompareWithBranch(dir));
+            compareBranch.setOnAction(e -> fileOps.gitCompareWithBranch(dir));
             MenuItem compareTag = new MenuItem(tr("project.menu.git.compareTag"));
             compareTag.setGraphic(Icons.diff());
-            compareTag.setOnAction(e -> fileActions.gitCompareWithTag(dir));
+            compareTag.setOnAction(e -> fileOps.gitCompareWithTag(dir));
             MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
             compareRevision.setGraphic(Icons.diff());
-            compareRevision.setOnAction(e -> fileActions.gitCompareWithRevision(dir));
+            compareRevision.setOnAction(e -> fileOps.gitCompareWithRevision(dir));
             git.getItems()
                     .addAll(
                             stage,
@@ -3013,8 +3292,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             menu.getItems().add(git);
 
             menu.setOnShowing(e -> {
-                folderHistory.setDisable(!fileActions.localHistoryEnabled());
-                GitPathScope scope = fileActions.gitScope(dir);
+                folderHistory.setDisable(!fileOps.localHistoryEnabled());
+                GitPathScope scope = fileOps.gitScope(dir);
                 git.setDisable(scope == GitPathScope.NONE);
                 revert.setDisable(scope == GitPathScope.ACTIVE
                         && !gitChangedDirs.contains(dir.toAbsolutePath().normalize()));

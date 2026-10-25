@@ -8,6 +8,8 @@ import javafx.scene.paint.Paint;
 import javafx.scene.shape.Path;
 import javafx.scene.text.Text;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Reads the active editor theme's colours out of the scene, for {@link TerminalPalettes#derive}.
  *
@@ -25,7 +27,7 @@ public final class ThemeSampler {
      * Samples the theme {@code host}'s scene has applied, or returns {@code null} when the host is not in a
      * scene yet or a rule resolved to something that is not a plain colour.
      */
-    public static SyntaxColors sample(Pane host) {
+    public static @Nullable SyntaxColors sample(Pane host) {
         if (host == null || host.getScene() == null) {
             return null;
         }
@@ -74,7 +76,7 @@ public final class ThemeSampler {
         return text;
     }
 
-    private static Color backgroundOf(Background background) {
+    private static @Nullable Color backgroundOf(Background background) {
         if (background == null || background.getFills().isEmpty()) {
             return null;
         }
@@ -82,11 +84,11 @@ public final class ThemeSampler {
     }
 
     /** An opaque colour, or null: a gradient or a translucent fill cannot be a terminal ground or text. */
-    private static Color color(Paint paint) {
+    private static @Nullable Color color(Paint paint) {
         return paint instanceof Color c && c.getOpacity() > 0.99 ? c : null;
     }
 
-    private static Color orElse(Color c, Color fallback) {
+    private static Color orElse(@Nullable Color c, Color fallback) {
         return c != null ? c : fallback;
     }
 }

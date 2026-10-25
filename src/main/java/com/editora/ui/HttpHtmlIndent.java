@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Indents an HTML response body for the HTTP Client's response view, the way {@link HttpXmlIndent} does XML. A
  * lenient lexical pass, not a parser or a sanitizer: one block element per line, indented by nesting depth; a run of
@@ -62,7 +64,7 @@ final class HttpHtmlIndent {
     private static final Set<String> HEAD = Set.of("head");
 
     /** The open elements an opening {@code tag} ends when one of them is innermost (an omitted end tag), or null. */
-    private static Set<String> autoCloses(String tag) {
+    private static @Nullable Set<String> autoCloses(String tag) {
         return switch (tag) {
             case "li" -> LI;
             case "dt", "dd" -> DT_DD;
@@ -129,6 +131,7 @@ final class HttpHtmlIndent {
         }
 
         /** The formatted text, or null when a construct is left open. */
+        @Nullable
         String run() {
             int n = s.length();
             int i = 0;

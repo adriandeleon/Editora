@@ -14,11 +14,12 @@ import com.editora.config.Project;
 import com.editora.config.Settings;
 import com.editora.editops.KillRing;
 import com.editora.editops.Rectangle;
+import com.editora.editops.TextNav;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.TextNav;
 import com.editora.markdown.MarkdownTable;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -69,6 +70,10 @@ final class WindowCommandRegistrar {
          *  Project tool window builds it. */
         ProjectPanel projectPanel();
 
+        /** The Project panel, built now if it has not been — without opening the Project tool window. */
+        ProjectPanel builtProjectPanel();
+
+        @Nullable
         WindowManager windowManager();
 
         QuickOpen<Project> projectPicker();
@@ -78,6 +83,9 @@ final class WindowCommandRegistrar {
         ToolWindow projectToolWindow();
 
         ToolWindow structureToolWindow();
+
+        /** The Structure panel, built on first use (its narrowing commands act on the attached buffer). */
+        StructurePanel structurePanel();
 
         ToolWindow bookmarksToolWindow();
 
@@ -269,6 +277,7 @@ final class WindowCommandRegistrar {
 
         void setStatus(String message);
 
+        @Nullable
         EditorBuffer activeBuffer();
 
         void onNew();
@@ -287,7 +296,7 @@ final class WindowCommandRegistrar {
 
         void applyAdminSaveSupport();
 
-        void saveAsPrompt(EditorBuffer buffer);
+        void saveAsPrompt(@Nullable EditorBuffer buffer);
 
         void applyAutoSave();
 
@@ -325,7 +334,7 @@ final class WindowCommandRegistrar {
 
         void closeTabsToRight(Tab pivot);
 
-        void copyPath(EditorBuffer buffer);
+        void copyPath(@Nullable EditorBuffer buffer);
 
         void revealActiveBuffer();
 
@@ -333,7 +342,7 @@ final class WindowCommandRegistrar {
 
         void togglePin(Tab tab);
 
-        void renameFile(EditorBuffer buffer, Tab tab);
+        void renameFile(@Nullable EditorBuffer buffer, Tab tab);
 
         /** Quits after the usual questions; false when the user cancelled. */
         boolean onQuit();
@@ -350,7 +359,7 @@ final class WindowCommandRegistrar {
 
         void updateBufferToolWindows();
 
-        void maybeOfferInstall(EditorBuffer buffer);
+        void maybeOfferInstall(@Nullable EditorBuffer buffer);
 
         void onPalette();
 
@@ -430,8 +439,9 @@ final class WindowCommandRegistrar {
                 .registerCommands(host.registry()); // externalTool.run/clearOutput/rerunLast + per-tool run.<slug>
         // Project commands no-op when project support is disabled (fully gated).
         host.registry().register(Command.of("project.open", () -> {
-            if (host.projectsEnabled()) {
-                host.navigation().folderFinder.show(host.stage());
+            FileFinder folderFinder = host.navigation().folderFinder;
+            if (host.projectsEnabled() && folderFinder != null) {
+                folderFinder.show(host.stage());
             }
         }));
         host.registry().register(Command.of("project.switch", () -> {
@@ -449,11 +459,16 @@ final class WindowCommandRegistrar {
                 host.deleteProject();
             }
         }));
-        // The Tree/Map switch of the Project tool window, which this also opens so the change is on screen.
+        // The Project Map's own window: opened (or brought forward), or closed when it is the window in use.
         host.registry().register(Command.of("project.toggleMapView", () -> {
-            if (host.projectsEnabled()) {
-                host.toolWindows().open(host.projectToolWindow());
-                host.projectPanel().toggleMapView();
+            if (!host.projectsEnabled()) {
+                return;
+            }
+            ProjectPanel panel = host.builtProjectPanel(); // the Map's window needs no Project tool window
+            if (panel.isMapShowing() || panel.getRoot() != null) {
+                panel.toggleMapView();
+            } else {
+                host.setStatus(tr("status.projectMap.noProject"));
             }
         }));
         host.registry().register(Command.of("file.save", host::onSave));
@@ -2240,6 +2255,43 @@ final class WindowCommandRegistrar {
                 .register(Command.of("lsp.buildWorkspace", () -> host.ifLsp(host.lspCoordinator()::buildWorkspace)));
         host.registry()
                 .register(Command.of("lsp.organizeImports", () -> host.ifLsp(host.lspCoordinator()::organizeImports)));
+        host.registry().register(Command.of("lsp.cleanUp", () -> host.ifLsp(host.lspCoordinator()::cleanUpFile)));
+        host.registry()
+                .register(Command.of("lsp.undoRefactoring", () -> host.ifLsp(host.lspCoordinator()::undoRefactoring)));
+        host.registry().register(Command.of("lsp.generate", () -> host.ifLsp(host.lspCoordinator()::generateActions)));
+        host.registry()
+                .register(Command.of("lsp.refactorThis", () -> host.ifLsp(host.lspCoordinator()::refactorActions)));
+        // One command per refactoring, by its code-action kind, so each has a chord (IntelliJ's Ctrl+Alt+V…).
+        for (String[] r : new String[][] {
+            {"lsp.extractVariable", "refactor.extract.variable"},
+            {"lsp.extractConstant", "refactor.extract.constant"},
+            {"lsp.extractField", "refactor.extract.field"},
+            {"lsp.extractMethod", "refactor.extract.function"},
+            {"lsp.introduceParameter", "refactor.introduce.parameter"},
+            {"lsp.inline", "refactor.inline"},
+            {"lsp.move", "refactor.move"},
+            {"lsp.changeSignature", "refactor.change.signature"},
+            {"lsp.overrideMethods", "source.overrideMethods"}
+        }) {
+            String id = r[0];
+            String kind = r[1];
+            host.registry()
+                    .register(Command.of(
+                            id, () -> host.ifLsp(() -> host.lspCoordinator().refactoring(kind, id))));
+        }
+        host.registry()
+                .register(Command.of(
+                        "lsp.nextProblem",
+                        () -> host.ifLsp(() -> host.lspCoordinator().gotoProblem(true))));
+        host.registry()
+                .register(Command.of(
+                        "lsp.previousProblem",
+                        () -> host.ifLsp(() -> host.lspCoordinator().gotoProblem(false))));
+        host.registry()
+                .register(Command.of("lsp.problemAtCaret", () -> host.ifLsp(host.lspCoordinator()::problemAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "lsp.cleanJavaWorkspace", () -> host.ifLsp(host.lspCoordinator()::cleanJavaWorkspace)));
         host.registry()
                 .register(Command.of(
                         "lsp.copyQualifiedName", () -> host.ifLsp(host.lspCoordinator()::copyQualifiedName)));
@@ -2745,12 +2797,20 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("edit.narrowToDefun", host.editing()::narrowToDefun));
         host.registry().register(Command.of("edit.narrowToFoldRegion", host.editing()::narrowToFoldRegion));
         host.registry().register(Command.of("edit.widen", host.editing()::widenBuffer));
+        // The Structure window's narrow-to-fold toggle as a command, so every keymap can bind it (the window's own
+        // key is f while its tree has focus; the Emacs chords above act at the caret instead).
+        host.registry()
+                .register(Command.of(
+                        "structure.narrowFold", () -> host.structurePanel().toggleFoldCommand()));
         host.registry().register(Command.of("edit.queryReplace", host.editing()::queryReplace));
         host.registry().register(Command.of("edit.queryReplaceRegexp", host.editing()::queryReplaceRegexp));
         host.registry().register(Command.of("edit.undo", host.editing()::onUndo));
         host.registry().register(Command.of("edit.redo", host.editing()::onRedo));
         host.registry().register(Command.of("edit.cancel", host::cancel));
         host.registry().register(Command.of("edit.completion", host.editing()::triggerCompletion));
+        host.registry()
+                .register(Command.of(
+                        "lsp.smartTypeCompletion", () -> host.ifLsp(host.lspCoordinator()::smartTypeCompletion)));
         host.registry().register(Command.of("edit.completionDoc", host.editing()::toggleCompletionDoc));
         host.registry().register(Command.of("edit.toggleComment", host.editing()::toggleComment));
         host.registry()
@@ -2766,6 +2826,7 @@ final class WindowCommandRegistrar {
                         "edit.transposeLines",
                         () -> host.editing().transpose(com.editora.editops.Transposer::transposeLines)));
         host.registry().register(Command.of("edit.selectAll", host.editing()::selectAll));
+        host.registry().register(Command.of("edit.completeStatement", host.editing()::completeStatement));
         for (var line : java.util.Map.of(
                         "edit.insertLineBelow", EditorBuffer.LineCommand.INSERT_BELOW,
                         "edit.insertLineAbove", EditorBuffer.LineCommand.INSERT_ABOVE,
@@ -3207,14 +3268,18 @@ final class WindowCommandRegistrar {
     private void registerGitBranchCommands() {
         GitBranchCoordinator branches = host.gitWindows().branches;
         // A work tree opens as a project in its own window, like any other folder.
-        branches.setWindowOpener(folder -> host.windowManager()
-                .openOrFocus(host.config()
+        branches.setWindowOpener(folder -> {
+            WindowManager windows = host.windowManager(); // null only before the window is placed
+            if (windows != null) {
+                windows.openOrFocus(host.config()
                         .projects()
                         .createOrGet(
                                 folder.getFileName() == null
                                         ? folder.toString()
                                         : folder.getFileName().toString(),
-                                folder)));
+                                folder));
+            }
+        });
         java.util.Map<String, Runnable> commands = new java.util.LinkedHashMap<>();
         commands.put("git.newBranchFrom", branches::newBranchFrom);
         commands.put("git.checkoutRevision", branches::checkoutRevision);

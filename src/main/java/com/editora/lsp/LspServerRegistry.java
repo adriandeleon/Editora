@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Maps an editor language id (as resolved by {@code editor.LanguageRegistry.forFileName}) to a
  * <b>server</b> — its id, launch command, and project-root markers. The registry is server-centric, not
@@ -298,7 +300,7 @@ public final class LspServerRegistry {
 
     private LspServerRegistry() {}
 
-    private static ServerDef defFor(String languageId) {
+    private static @Nullable ServerDef defFor(String languageId) {
         for (ServerDef d : ServerDef.values()) {
             if (d.languageIds.contains(languageId)) {
                 return d;
@@ -308,7 +310,7 @@ public final class LspServerRegistry {
     }
 
     /** The server id that serves {@code languageId} (e.g. {@code typescript} for {@code javascript}), or null. */
-    public static String serverIdFor(String languageId) {
+    public static @Nullable String serverIdFor(String languageId) {
         ServerDef d = defFor(languageId);
         return d == null ? null : d.id;
     }
@@ -363,7 +365,31 @@ public final class LspServerRegistry {
                     List.of("settings.gradle.kts", "settings.gradle"),
                     List.of("build.gradle.kts", "build.gradle", "pom.xml"));
         }
+        if (MAVEN_POM_SERVER_ID.equals(serverId)) {
+            // The nearest pom first, then the repository; the coordinator then widens a pom root to the outermost
+            // pom of its contiguous chain (RootResolver.outermostContiguous), so a reactor opened without a
+            // project is one lemminx-maven JVM, not one per module (Maven review C11).
+            return List.of(List.of("pom.xml"), List.of(".git"));
+        }
         return List.of(rootMarkersForServer(serverId));
+    }
+
+    /**
+     * The name a server is shown under — in the status bar, the Settings pill and Doctor — where its program's
+     * basename would be wrong: the native lemminx download is {@code lemminx-linux-x86_64} (and
+     * {@code lemminx-win32-x86_64.exe}), the Maven server runs through {@code java}. Null for every other
+     * server, whose basename ({@code gopls}, {@code rust-analyzer}, {@code clangd}) is the right name.
+     */
+    public static @Nullable String displayNameFor(@Nullable String serverId) {
+        if (serverId == null) {
+            return null;
+        }
+        return switch (serverId) {
+            case "xml" -> "lemminx";
+            case MAVEN_POM_SERVER_ID -> "lemminx-maven";
+            case JAVA_SERVER_ID -> "jdtls";
+            default -> null;
+        };
     }
 
     /** Project-root markers for a <i>server id</i> (empty if unknown). Complements {@link #rootMarkersFor}. */
@@ -380,10 +406,12 @@ public final class LspServerRegistry {
      * Lines up to which a language keeps its server in the "large source" tier (whose minimap and language
      * server are otherwise off from {@code Settings.largeFileThreshold}, 10,000 lines by default). Pyright
      * checks a 10,000-line file in about four seconds, and long generated or vendored Python modules are
-     * common, so Python keeps it to 50,000 lines (Python review B10). 0 = the tier's default (no server).
+     * common, so Python keeps it to 50,000 lines (Python review B10). jdtls reconciles a 12,000-line file in well
+     * under a second, and large generated parsers, protobuf classes and legacy classes lost every diagnostic and
+     * navigation, so Java keeps it to 50,000 lines too (Java review C16). 0 = the tier's default (no server).
      */
     public static int heavyFileLspLineLimit(String languageId) {
-        return "python".equals(languageId) ? 50_000 : 0;
+        return "python".equals(languageId) || "java".equals(languageId) ? 50_000 : 0;
     }
 
     /** Pure: whether a file of {@code lines} lines in {@code languageId} gets its language server. */
@@ -417,7 +445,7 @@ public final class LspServerRegistry {
      * (serverId → configured command; a blank/absent entry uses the server's default), or {@code null}
      * when the language is unsupported.
      */
-    public static ServerSpec specFor(String languageId, Map<String, String> commands) {
+    public static @Nullable ServerSpec specFor(String languageId, Map<String, String> commands) {
         ServerDef d = defFor(languageId);
         if (d == null) {
             return null;
@@ -432,7 +460,8 @@ public final class LspServerRegistry {
      * else {@code configured} (the global setting) when it is a bare command name, since a path names a file
      * on this machine; else the server's default. Empty for an unknown server.
      */
-    public static List<String> remoteCommandFor(String serverId, String configured, String hostTool) {
+    public static List<String> remoteCommandFor(
+            String serverId, @Nullable String configured, @Nullable String hostTool) {
         if (hostTool != null && !hostTool.isBlank()) {
             return tokenize(hostTool);
         }

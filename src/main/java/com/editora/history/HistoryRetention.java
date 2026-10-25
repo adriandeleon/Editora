@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.editora.config.HistoryRevision;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Pure, unit-tested retention policy for the Local File History — no I/O, no FX. Decides which
@@ -207,6 +208,7 @@ public final class HistoryRetention {
         }
 
         /** Removes and returns this file's oldest evictable row, or null when it has none left. */
+        @Nullable
         HistoryRevision evictOldest(Usage project) {
             int index = oldestEvictable(list, cursor);
             if (index < 1) {
@@ -221,6 +223,7 @@ public final class HistoryRetention {
         }
 
         /** The timestamp of the row {@link #evictOldest} would remove next, or null. */
+        @Nullable
         Long nextTimestamp() {
             int index = oldestEvictable(list, cursor);
             return index < 1 ? null : list.get(index).timestamp();

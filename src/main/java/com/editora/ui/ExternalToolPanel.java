@@ -19,6 +19,7 @@ import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -40,7 +41,7 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
     private final ProgressIndicator busy = RunPanel.busySpinner();
 
     private final CodeArea output = AreaUndo.none(new CodeArea());
-    private Consumer<StackTraceLinks.Link> onLink;
+    private @Nullable Consumer<StackTraceLinks.Link> onLink;
 
     /** Tools launched and not yet {@link #ended}. */
     private int running;

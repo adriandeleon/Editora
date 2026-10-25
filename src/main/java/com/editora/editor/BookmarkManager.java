@@ -7,9 +7,11 @@ import java.util.NavigableSet;
 import java.util.TreeMap;
 
 import com.editora.config.Bookmark;
+import com.editora.editor.fold.FoldManager;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Tracks the bookmarks of a single {@link CodeArea}, keyed by 0-based line. Analogous to
@@ -39,7 +41,7 @@ public final class BookmarkManager implements LineMarks.Carrier {
     /** A marked line's text changed since the last {@link #snapshot()} (reported once, not per keystroke). */
     private boolean textStale;
     /** While narrowed, the bookmarks outside the region (in whole-document lines); {@code null} otherwise. */
-    private LineMarks.Held<Bookmark> held;
+    private LineMarks.@Nullable Held<Bookmark> held;
 
     private static final LineMarks.Kind<Bookmark> KIND = new LineMarks.Kind<>() {
         @Override
@@ -126,7 +128,7 @@ public final class BookmarkManager implements LineMarks.Carrier {
     }
 
     /** Next bookmarked line strictly after {@code fromLine}, wrapping to the first; null if none. */
-    public Integer next(int fromLine) {
+    public @Nullable Integer next(int fromLine) {
         if (byLine.isEmpty()) {
             return null;
         }
@@ -135,7 +137,7 @@ public final class BookmarkManager implements LineMarks.Carrier {
     }
 
     /** Previous bookmarked line strictly before {@code fromLine}, wrapping to the last; null if none. */
-    public Integer previous(int fromLine) {
+    public @Nullable Integer previous(int fromLine) {
         if (byLine.isEmpty()) {
             return null;
         }

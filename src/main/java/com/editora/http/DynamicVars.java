@@ -24,6 +24,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -85,7 +87,7 @@ public final class DynamicVars {
      * environment variable, a key missing from {@code .env}, an unusable date format — after putting a short
      * human-readable reason in {@code reason[0]} (when {@code reason} is non-null).
      */
-    static String resolve(String name, ZonedDateTime now, Path dir, String[] reason) {
+    static @Nullable String resolve(String name, ZonedDateTime now, @Nullable Path dir, String @Nullable [] reason) {
         if (name == null) {
             return miss(reason, "http.unresolved.reason.dynamic");
         }
@@ -153,7 +155,7 @@ public final class DynamicVars {
         return miss(reason, "http.unresolved.reason.dynamic");
     }
 
-    private static String miss(String[] reason, String key) {
+    private static @Nullable String miss(String @Nullable [] reason, String key) {
         if (reason != null && reason.length > 0) {
             reason[0] = tr(key);
         }
@@ -165,7 +167,8 @@ public final class DynamicVars {
         return utc.truncatedTo(ChronoUnit.MILLIS).format(DateTimeFormatter.ISO_INSTANT);
     }
 
-    private static String datetime(String suffix, ZonedDateTime now, boolean local, String[] reason) {
+    private static @Nullable String datetime(
+            String suffix, ZonedDateTime now, boolean local, String @Nullable [] reason) {
         // {{$datetime <format> [<amount> <unit>]}} — format is a quoted custom pattern or rfc1123/iso8601.
         String[] tok = tokens(suffix);
         String fmt = tok.length >= 1 ? tok[0] : "";
@@ -353,7 +356,7 @@ public final class DynamicVars {
      * Adds a signed {@code amount} of {@code unit} (y/M/w/d/h/m/s/ms) to {@code t} for date-math vars, or
      * {@code null} when the result is beyond the dates Java can hold ({@code 999999999 y}).
      */
-    private static ZonedDateTime applyOffset(ZonedDateTime t, int amount, String unit) {
+    private static @Nullable ZonedDateTime applyOffset(ZonedDateTime t, int amount, String unit) {
         try {
             return plus(t, amount, unit);
         } catch (java.time.DateTimeException | ArithmeticException outOfRange) {
@@ -404,7 +407,7 @@ public final class DynamicVars {
      * body files ({@link HttpPaths#contained}): a cloned repository must not be able to point {@code .env} at
      * {@code ~/.aws/credentials} and have it read under a harmless-looking {@code $dotenv} name.
      */
-    public static Map<String, String> dotenvValues(Path dir) {
+    public static @Nullable Map<String, String> dotenvValues(@Nullable Path dir) {
         if (dir == null) {
             return Map.of();
         }
@@ -463,7 +466,7 @@ public final class DynamicVars {
      * {@code $random.float(from, to)}: {@code from} inclusive, {@code to} exclusive, 0–1000 by default (IntelliJ); null
      * when a bound, or the width of the range, is not a finite number.
      */
-    private static String randFloat(String args) {
+    private static @Nullable String randFloat(String args) {
         double lo = 0;
         double hi = 1000;
         String[] parts = args.isEmpty() ? new String[0] : args.split(",");

@@ -1,5 +1,7 @@
 package com.editora.macro;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The encoding of a {@link MacroStep#KEY} step's value: a bare editing/navigation key press, with its
  * modifiers, as a string — e.g. {@code BACK_SPACE}, {@code S-DOWN} (extend the selection down),
@@ -18,7 +20,7 @@ public final class MacroKey {
     /** A decoded key step: the modifier flags plus the {@code KeyCode} name. */
     public record Decoded(boolean ctrl, boolean alt, boolean meta, boolean shift, String keyCodeName) {}
 
-    public static String encode(boolean ctrl, boolean alt, boolean meta, boolean shift, String keyCodeName) {
+    public static @Nullable String encode(boolean ctrl, boolean alt, boolean meta, boolean shift, String keyCodeName) {
         if (keyCodeName == null || keyCodeName.isBlank()) {
             return null;
         }
@@ -39,7 +41,7 @@ public final class MacroKey {
     }
 
     /** Parses {@link #encode}'s output; null for a blank/marker-only value. */
-    public static Decoded decode(String token) {
+    public static @Nullable Decoded decode(String token) {
         if (token == null || token.isBlank()) {
             return null;
         }

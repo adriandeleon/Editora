@@ -35,6 +35,8 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Text;
 
 import com.editora.config.Bookmark;
+import com.editora.config.PathDisplay;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -99,14 +101,14 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private String currentKey = "";
 
     /** In-scene single-line prompt (injected by MainController) used to edit a bookmark's note. */
-    private OverlayInput.Prompt prompt;
+    private OverlayInput.@Nullable Prompt prompt;
 
     /** The row to reselect after the next {@link #refresh()} (set just before a reorder). */
-    private Path reselectFile;
+    private @Nullable Path reselectFile;
 
-    private Integer reselectLine; // null = reselect the file header row
+    private @Nullable Integer reselectLine; // null = reselect the file header row
     /** The tree item currently being dragged (for drag-and-drop reordering). */
-    private TreeItem<Row> draggedItem;
+    private @Nullable TreeItem<Row> draggedItem;
 
     public BookmarksPanel(Supplier<Scope> source, Actions actions) {
         this.source = source;
@@ -217,7 +219,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                     continue;
                 }
                 Path file = Path.of(e.getKey());
-                boolean fileMatches = fileName(file).toLowerCase().contains(query);
+                boolean fileMatches = PathDisplay.fileName(file).toLowerCase().contains(query);
                 boolean folder = e.getValue().stream().anyMatch(Bookmark::isFolder);
                 TreeItem<Row> fileNode = new TreeItem<>(new FileRow(key, file, folder));
                 fileNode.setExpanded(true);
@@ -244,7 +246,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         applyPendingSelection();
     }
 
-    private static boolean hasAnyBookmark(Map<String, List<Bookmark>> bucket) {
+    private static boolean hasAnyBookmark(@Nullable Map<String, List<Bookmark>> bucket) {
         if (bucket == null) {
             return false;
         }
@@ -484,7 +486,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     /** Whether {@code src} may be dropped onto {@code target}: a bookmark onto a sibling, or a file onto a sibling
      *  file — both within the current project's group (the only editable bucket). */
-    private boolean canDrop(TreeItem<Row> src, TreeItem<Row> target) {
+    private boolean canDrop(@Nullable TreeItem<Row> src, TreeItem<Row> target) {
         if (src == null || target == null || src == target || !inCurrentGroup(src) || !inCurrentGroup(target)) {
             return false;
         }
@@ -497,8 +499,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 && src.getParent() == target.getParent();
     }
 
-    private void handleDrop(TreeItem<Row> src, TreeItem<Row> target, boolean after) {
-        if (!canDrop(src, target) || !reorderEnabled()) {
+    private void handleDrop(@Nullable TreeItem<Row> src, TreeItem<Row> target, boolean after) {
+        if (src == null || !canDrop(src, target) || !reorderEnabled()) {
             return;
         }
         if (src.getValue() instanceof MarkRow sm) {
@@ -555,7 +557,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private void deleteFile(FileRow f) {
         Alert confirm = new Alert(
                 Alert.AlertType.CONFIRMATION,
-                tr("bookmarks.deleteFileBody", fileName(f.file())),
+                tr("bookmarks.deleteFileBody", PathDisplay.fileName(f.file())),
                 ButtonType.OK,
                 ButtonType.CANCEL);
         confirm.initOwner(getScene() == null ? null : getScene().getWindow());
@@ -564,11 +566,6 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
             actions.deleteAll(f.projectKey(), f.file());
         }
-    }
-
-    private static String fileName(Path file) {
-        Path name = file.getFileName();
-        return name == null ? file.toString() : name.toString();
     }
 
     /**
@@ -686,9 +683,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 setTooltip(null);
                 setContextMenu(null);
             } else if (item instanceof FileRow f) {
-                setText(fileName(f.file()));
+                setText(PathDisplay.fileName(f.file()));
                 getStyleClass().add("bookmark-file-row");
-                setGraphic(FileIcons.forProjectItem(fileName(f.file()), f.folder()));
+                setGraphic(FileIcons.forProjectItem(PathDisplay.fileName(f.file()), f.folder()));
                 setTooltip(new Tooltip(f.file().toString()));
                 MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());

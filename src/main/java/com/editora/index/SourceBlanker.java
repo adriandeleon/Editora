@@ -2,6 +2,7 @@ package com.editora.index;
 
 import com.editora.editops.Commenter.CommentStyle;
 import com.editora.editops.ShellScan;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Replaces the contents of comments and string literals with spaces, preserving every offset.
@@ -38,13 +39,13 @@ final class SourceBlanker {
      * that spans lines, everything after it. In JavaScript/TypeScript regex literals are blanked too, so a
      * backtick or brace inside one is not read as a template literal or a block.
      */
-    static String blank(String text, CommentStyle style, String language) {
+    static String blank(String text, CommentStyle style, @Nullable String language) {
         if (text == null || text.isEmpty()) {
             return text == null ? "" : text;
         }
         boolean clojure = "clojure".equals(language);
         boolean scala = "scala".equals(language);
-        boolean regexLiterals = com.editora.editor.RegexLiterals.in(language);
+        boolean regexLiterals = com.editora.editops.RegexLiterals.in(language);
         char[] out = text.toCharArray();
         String lineComment = clojure ? ";" : style != null && style.hasLine() ? style.line() : null;
         String blockStart = style != null && style.hasBlock() ? style.blockStart() : null;
@@ -62,7 +63,7 @@ final class SourceBlanker {
                 i++;
                 continue;
             }
-            if (blockStart != null && text.startsWith(blockStart, i)) {
+            if (blockStart != null && blockEnd != null && text.startsWith(blockStart, i)) {
                 int end = text.indexOf(blockEnd, i + blockStart.length());
                 int stop = end < 0 ? n : end + blockEnd.length();
                 blankRange(out, i, stop);
@@ -81,7 +82,7 @@ final class SourceBlanker {
                 continue;
             }
             if (c == '/' && regexLiterals) {
-                int end = com.editora.editor.RegexLiterals.end(text, i);
+                int end = com.editora.editops.RegexLiterals.end(text, i);
                 if (end > i) {
                     blankRange(out, i, end + 1);
                     i = end + 1;

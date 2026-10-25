@@ -20,17 +20,18 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
 
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.MarkdownPrintAssets;
-import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.PreviewImageLoader;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.markdown.MarkdownPrintAssets;
+import com.editora.editor.markdown.MarkdownRenderer;
+import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.mermaid.Mermaid;
 import com.editora.pdf.ImagePaging;
 import com.editora.pdf.PageImage;
 import com.editora.pdf.PdfText;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Prepares a document for printing via {@code javafx.print} (the {@code PdfExportService} idiom): the
@@ -46,7 +47,7 @@ import org.fxmisc.richtext.model.StyleSpans;
 public final class PrintService {
 
     /** Outcome of a print: {@code ok} plus an error {@code message} on failure. */
-    public record Result(boolean ok, String message) {}
+    public record Result(boolean ok, @Nullable String message) {}
 
     /**
      * The pages of one pagination. {@link #get} may build its node on demand, so a long document need not
@@ -112,7 +113,8 @@ public final class PrintService {
     }
 
     /** Result of the off-thread prepare step: a {@link Paginator} on success, else an {@code error}. */
-    public record Prepared(Paginator paginator, String error) {
+    public record Prepared(
+            @Nullable Paginator paginator, @Nullable String error) {
         public boolean ok() {
             return paginator != null;
         }
@@ -149,7 +151,7 @@ public final class PrintService {
             boolean highlight,
             boolean lineNumbers,
             int tabSize,
-            String documentName,
+            @Nullable String documentName,
             boolean footer,
             Consumer<Prepared> onReady) {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
@@ -201,7 +203,7 @@ public final class PrintService {
             boolean highlight,
             boolean lineNumbers,
             int tabSize,
-            String documentName,
+            @Nullable String documentName,
             boolean footer,
             Consumer<Prepared> onReady) {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
@@ -221,7 +223,8 @@ public final class PrintService {
      * The highlight spans of {@code text[start, end)}, cut from the spans of the whole text; null when
      * {@code fileName} is null (no highlighting asked for) or has no grammar.
      */
-    public static StyleSpans<Collection<String>> excerptSpans(String text, int start, int end, String fileName) {
+    public static @Nullable StyleSpans<Collection<String>> excerptSpans(
+            String text, int start, int end, @Nullable String fileName) {
         IGrammar grammar = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
         if (grammar == null || end <= start) {
             return null;
@@ -237,7 +240,11 @@ public final class PrintService {
 
     /** As {@link #prepareMarkdown(String, Path, Consumer)}; with {@code footer} every page ends in a {@link PageFooter}. */
     public void prepareMarkdown(
-            String markdown, Path baseDir, String documentName, boolean footer, Consumer<Prepared> onReady) {
+            String markdown,
+            @Nullable Path baseDir,
+            @Nullable String documentName,
+            boolean footer,
+            Consumer<Prepared> onReady) {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
@@ -260,8 +267,8 @@ public final class PrintService {
     /** As {@link #prepareDocument(org.commonmark.node.Node, Path, Consumer)}; with {@code footer} every page ends in a {@link PageFooter}. */
     public void prepareDocument(
             org.commonmark.node.Node document,
-            Path baseDir,
-            String documentName,
+            @Nullable Path baseDir,
+            @Nullable String documentName,
             boolean footer,
             Consumer<Prepared> onReady) {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
@@ -280,14 +287,15 @@ public final class PrintService {
      * final by then is wrong on paper: an image still loading measures 0px and overflows its page when it
      * arrives, and highlighting applied a pulse later never reaches the printer at all.
      */
-    private static Paginator markdownPaginator(org.commonmark.node.Node ast, Path baseDir, PageFooter footer) {
+    private static Paginator markdownPaginator(
+            org.commonmark.node.Node ast, @Nullable Path baseDir, @Nullable PageFooter footer) {
         MarkdownPrintAssets assets = MarkdownPrintAssets.resolve(ast, baseDir);
         return layout -> MarkdownPrintLayout.paginate(
                 ast, baseDir, assets, layout.getPrintableWidth(), layout.getPrintableHeight(), footer);
     }
 
     /** Prepares a standalone Mermaid diagram (rendered to PNG via mmdc, scaled to fit one page). */
-    public void prepareMermaid(String source, List<String> mmdc, boolean dark, Consumer<Prepared> onReady) {
+    public void prepareMermaid(String source, @Nullable List<String> mmdc, boolean dark, Consumer<Prepared> onReady) {
         exec.submit(() -> {
             try {
                 Mermaid.Render r = Mermaid.renderPng(mmdc, source, dark);
@@ -417,13 +425,14 @@ public final class PrintService {
     }
 
     /** A code paginator whose {@link Paginator#pages} builds each page only when it is asked for. */
-    private static Paginator codePaginator(List<List<PdfText.Run>> lines, boolean lineNumbers, PageFooter footer) {
+    private static Paginator codePaginator(
+            List<List<PdfText.Run>> lines, boolean lineNumbers, @Nullable PageFooter footer) {
         return codePaginator(lines, lineNumbers, footer, 1);
     }
 
     /** The code paginator for an excerpt whose gutter counts from {@code firstLineNumber}. */
     private static Paginator codePaginator(
-            List<List<PdfText.Run>> lines, boolean lineNumbers, PageFooter footer, int firstLineNumber) {
+            List<List<PdfText.Run>> lines, boolean lineNumbers, @Nullable PageFooter footer, int firstLineNumber) {
         return new Paginator() {
             @Override
             public List<Node> paginate(PageLayout layout) {

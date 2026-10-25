@@ -38,7 +38,7 @@ another adapter the same way means its members of `MainController` become packag
 | `WindowSessionCoordinator` | Session restoration/persistence and command-line startup |
 | `TestNavigationCoordinator` | Test/stack navigation and test/main-method gutter gates |
 | `InstallPromptCoordinator` | Language-support install prompts and server picker |
-| `UpdateCoordinator` | The release check: the automatic one (`UpdateCheckScheduler`: once per session and per day, a few seconds after the first painted frame), the manual "Check for Updates", the status-bar notice and the download page; the newest release found is shared across windows |
+| `UpdateCoordinator` | The release check: the automatic one (`UpdateCheckScheduler`: once per session and per day, a few seconds after the first painted frame), the manual "Check for Updates", the status-bar notice, the download page and the About panel's update block; the last answer (newest release, its page, when) is kept in the shared preferences, so every window and the next launch go on it until the next check |
 
 The existing service coordinators continue to use `CoordinatorHost` and the shared `Services`
 adapter. Feature-specific hosts can refer to those owners when they need their capabilities. Keep
@@ -74,6 +74,31 @@ runnable, or a run has reached the console in this window" (`RunCoordinator.cons
 before-launch step, or any earlier one), independent of the active buffer's runnability. A run's own exit
 refreshes that gate with the process already gone, so a gate that only counted live processes closed the
 console on the output it had just streamed; like Test Results, the window stays available once used.
+
+A Java launch in a Maven or Gradle project builds first. jdtls runs with autobuild off, so the classpath it
+resolves is right while the class files in it are whatever the last build left: `RunCoordinator.buildBeforeLaunch`
+and `DebugCoordinator.buildToolThenLaunch` run the build tool's compile (`compile`/`test-compile` for a class under
+`src/test`; Gradle `compileJava`/`compileTestJava`) as a `BeforeLaunchStep.Command` in the Run or Debug console
+before the jdtls launch, on the project's JDK, aborting on a non-zero exit — behind `Settings.buildBeforeRun`
+("Build before Run and Debug", on). A configuration with its own before-launch step keeps that step instead; with
+the setting off, Debug keeps jdtls's workspace build and Run prints a hint to build when the JVM's first lines say
+it could not find the main class. The command's executable is the tasks tree's (`BuildCoordinator.trustedExecutable`:
+the project's wrapper after the trust gate, the project-scoped command override, else the PATH command), which the
+no-jdtls Maven fallback uses too: `MavenClasspathResolver.plan` builds the `dependency:build-classpath` command with
+that prefix and the launch's scope (`-Dmdep.includeScope=runtime`, `test` for a test class), and the coordinator runs
+it as a before-launch step — its output streams, Stop kills it, a second Run is refused, and a failure's status
+quotes Maven's first `[ERROR]` line (`BeforeLaunchStep.failureDetail`). Both commands carry the Maven tasks tree's
+active profiles and flags (`BuildCoordinator.activeToggleArgs` → `RunCoordinator.Ops.mavenToggleArgs`; the tree's
+reactor switch is dropped, `MavenClasspath.withoutReactorArgs`), and both choose the module's reactor themselves:
+`MavenReactor.describe` walks the ancestors' `<modules>` (a `modules/` folder without a pom included), bounded by
+the open project, and a module its reactor lists builds from the root with `-pl <module> -am`; when Maven answers
+"Could not find the selected project in the reactor", the fallback runs the module alone (`Plan.singleModule`) and
+the console says which mode ran. A saved configuration's fallback resolves the module `projectName` (= the
+artifactId) or the main class's source file names (`MavenReactor.locateModule`), not the routing file's. With no
+JDK selected the program runs on `$JAVA_HOME/bin/java` when the inherited environment names one
+(`JdkToolchain.inheritedJavaExecutable`), i.e. the JDK Maven just compiled with. A configuration's before-launch text may be
+symbolic — `maven:compile`, `gradle:compileJava` (`run.BuildBeforeLaunch.symbolic`) — resolved through the same
+executable at run time; the configuration seeded for a generated Maven project stores that.
 
 The Run and Debug windows' runtime chip comes from `run.RuntimeProbe`, which asks the launched argv's first
 word (`RuntimeVersion.probeFor`: `java`, a Python, `node`/npm, `bash`, `zsh`, `fish`, GNU `make`) for its version

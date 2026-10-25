@@ -10,6 +10,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
@@ -59,6 +60,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -184,7 +186,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     Stage stage;
     ConfigManager config;
     CommandRegistry registry;
-    private KeymapManager keymap;
+    KeymapManager keymap;
     /** Keyboard macros (record/replay/save/run); see {@link MacroCoordinator}. Created in {@link #init}. */
     MacroCoordinator macroCoordinator;
 
@@ -202,7 +204,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     SnippetCoordinator snippetCoordinator;
 
     /** Shared across windows (owned by WindowManager); plugin classes load once, instances are per-window. */
-    private com.editora.plugin.PluginManager pluginManager;
+    private com.editora.plugin.@Nullable PluginManager pluginManager;
     /** Plugin support (discovery/apply/install + the per-window PluginContext); see {@link PluginCoordinator}. */
     PluginCoordinator pluginCoordinator;
 
@@ -211,16 +213,17 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The Project panel; null until {@link #projectPanel()} builds it. */
     ProjectPanel projectPanel;
     /** What the Project tree is rooted at (null: the placeholder), applied to the panel when it is built. */
-    private Path projectRoot;
+    private @Nullable Path projectRoot;
     /** The last Git status pushed to the Project tree, applied to the panel when it is built. */
-    private java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> projectGitStatus;
+    private java.util.@Nullable Map<java.nio.file.Path, com.editora.git.GitFileStatus> projectGitStatus;
 
     private ProjectDeleteCoordinator projectDeletes;
-    private ProjectManager projects;
+    ProjectManager projects;
     /** The multi-window coordinator (null in single-window/test use); set right after {@link #init}. */
+    @Nullable
     WindowManager windowManager;
     /** This window's project ({@code null} = the no-project/global window). */
-    private Project windowProject;
+    private @Nullable Project windowProject;
     /** This window's project key ({@code ""} = global), kept in sync with {@link #windowProject}. */
     private String projectKey = "";
 
@@ -239,17 +242,17 @@ public class MainController implements com.editora.mcp.McpBridge {
     ToolWindow notesToolWindow;
     ToolWindow fileInfoToolWindow;
     /** The File Information / Undo History / Structure panels; each null until its accessor builds it. */
-    private FileInformationPanel fileInfoPanel;
+    private @Nullable FileInformationPanel fileInfoPanel;
 
     ToolWindow undoHistoryToolWindow;
-    private UndoHistoryPanel undoHistoryPanel;
-    private StructurePanel structurePanel;
+    private @Nullable UndoHistoryPanel undoHistoryPanel;
+    private @Nullable StructurePanel structurePanel;
     /** Bookmarks feature; owns the panel/jump-picker/persistence. Built in {@link #init} (needs config). */
     BookmarkCoordinator bookmarkCoordinator;
 
     ToolWindow searchToolWindow;
     private ToolWindow todoToolWindow;
-    private MarkdownLintPanel markdownLintPanel;
+    private @Nullable MarkdownLintPanel markdownLintPanel;
     ToolWindow markdownLintToolWindow;
 
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) — owned by RemoteCoordinator ---
@@ -278,8 +281,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     // registry to an LLM agent. Static so only the first window with the feature on starts it (the
     // setting is shared); that window's controller is the bridge. (Multi-window caveat: if the owner
     // window closes, the server stops until a settings re-apply re-arms it from another window.)
-    private static com.editora.mcp.McpServer mcpServer;
-    private static MainController mcpOwner;
+    private static com.editora.mcp.@Nullable McpServer mcpServer;
+    private static @Nullable MainController mcpOwner;
     /** LSP: manager (one server per workspace root). Diagnostics route to {@link #lspCoordinator} via the
      *  thin {@link #onLspDiagnostics} delegate — a method ref (not a direct field read) so it isn't an
      *  illegal forward reference to the later-declared coordinator; the field read defers to call time. */
@@ -335,19 +338,20 @@ public class MainController implements com.editora.mcp.McpBridge {
     InstallCoordinator installCoordinator;
 
     /** The Commit panel; null until {@link #gitPanel()} builds it. The state it shows is tracked below. */
-    private GitPanel gitPanel;
+    private @Nullable GitPanel gitPanel;
 
-    private com.editora.git.GitStatus lastGitStatus;
-    private com.editora.git.GitOperation lastGitOperation;
-    private String lastGitRefusal;
+    private com.editora.git.@Nullable GitStatus lastGitStatus;
+    private com.editora.git.@Nullable GitOperation lastGitOperation;
+    private @Nullable String lastGitRefusal;
     private boolean gitAiAvailable;
     ToolWindow commitToolWindow;
     /** The Git Log panel; null until {@link #gitLogPanel()} builds it. */
-    private GitLogPanel gitLogPanel;
+    private @Nullable GitLogPanel gitLogPanel;
 
     GitLogPanel.Actions gitLogOps; // reused by the git.log.* palette commands (act on the selected commit)
     private ToolWindow gitLogToolWindow;
     /** GitHub PR/issue tool window; available only inside a GitHub repo. Null until {@link #githubPanel()}. */
+    @Nullable
     GitHubPanel githubPanel;
 
     ToolWindow githubToolWindow;
@@ -358,7 +362,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private NoUndoGuard noUndoGuard;
 
     ToolbarCoordinator toolbarCoordinator;
-    private java.util.Map<String, javafx.scene.Node> toolbarBaseWidgets;
+    private java.util.@Nullable Map<String, javafx.scene.Node> toolbarBaseWidgets;
 
     ToolWindow fileHistoryToolWindow;
 
@@ -369,7 +373,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
     /** The tab currently being dragged to reorder the strip, or null. */
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
-    private String currentEditorThemeCss;
+    private @Nullable String currentEditorThemeCss;
 
     /** The app-wide recent-files list ({@code SharedConfig}); the search/agent histories are read from there too. */
     private RecentFiles recentFiles;
@@ -378,13 +382,13 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
     WelcomePane welcomePane;
     /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
-    private Tab welcomeTab;
+    private @Nullable Tab welcomeTab;
     /** The single open Doctor tab (external-tool health screen), or null — the {@code welcomeTab} pattern. */
-    private Tab doctorTab;
+    private @Nullable Tab doctorTab;
     /** The hint the editor area shows once its last tab is closed (Open File, Command Palette, …). */
-    private EditorEmptyState editorEmptyState;
+    private @Nullable EditorEmptyState editorEmptyState;
     /** Opens external URLs (the Welcome page's home-page link) in the system browser; set from {@code App}. */
-    private javafx.application.HostServices hostServices;
+    private javafx.application.@Nullable HostServices hostServices;
 
     public void installZenOverlay(StackPane sceneRoot) {
         chrome.installZenOverlay(sceneRoot);
@@ -396,12 +400,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public BufferContent readBuffer(String path) {
+    public BufferContent readBuffer(@Nullable String path) {
         return mcpBridge.readBuffer(path);
     }
 
     @Override
-    public java.util.List<Diagnostic> getDiagnostics(String path) {
+    public java.util.List<Diagnostic> getDiagnostics(@Nullable String path) {
         return mcpBridge.getDiagnostics(path);
     }
 
@@ -427,17 +431,17 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public String editBuffer(String path, String oldText, String newText, boolean replaceAll) {
+    public String editBuffer(@Nullable String path, String oldText, String newText, boolean replaceAll) {
         return mcpBridge.editBuffer(path, oldText, newText, replaceAll);
     }
 
     @Override
-    public String replaceBuffer(String path, String newText) {
+    public String replaceBuffer(@Nullable String path, String newText) {
         return mcpBridge.replaceBuffer(path, newText);
     }
 
     @Override
-    public String saveBuffer(String path) {
+    public @Nullable String saveBuffer(@Nullable String path) {
         return mcpBridge.saveBuffer(path);
     }
 
@@ -447,7 +451,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public java.util.List<Symbol> documentSymbols(String path) {
+    public java.util.List<Symbol> documentSymbols(@Nullable String path) {
         return mcpBridge.documentSymbols(path);
     }
 
@@ -478,7 +482,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         startup(projectDir, targets, newFile, false);
     }
 
-    public void startup(Path projectDir, List<OpenTarget> targets, String newFile, boolean noSession) {
+    public void startup(
+            @Nullable Path projectDir, List<OpenTarget> targets, @Nullable String newFile, boolean noSession) {
         sessions.startup(projectDir, targets, newFile, noSession);
         recovery.offerLeftovers(); // unsaved edits a previous run did not get to close with (first window only)
     }
@@ -487,6 +492,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         sessions.startupDiffUi(left, right);
     }
 
+    @Initializer
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
         this.stage = stage;
         // Wrap the FXML-injected tab strip before anything reads tabs; every later access goes through this.
@@ -535,7 +541,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public Integer prefixArgument() {
+            public @Nullable Integer prefixArgument() {
                 return editing.currentPrefixArg;
             }
 
@@ -567,12 +573,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public EditorBuffer bufferForKey(String fileKey) {
+            public @Nullable EditorBuffer bufferForKey(String fileKey) {
                 return bufferOf(tabForKey(fileKey));
             }
 
             @Override
-            public EditorBuffer bufferForPath(java.nio.file.Path file) {
+            public @Nullable EditorBuffer bufferForPath(java.nio.file.Path file) {
                 return bufferOf(tabForPath(file));
             }
 
@@ -613,7 +619,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public void notesStored(java.util.Map<String, ?> bucket, String fileKey) {
+            public void notesStored(java.util.Map<String, ?> bucket, @Nullable String fileKey) {
                 marksStored(MarkMerge.Kind.NOTES, bucket, fileKey);
             }
         });
@@ -635,7 +641,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public EditorBuffer bufferForPath(java.nio.file.Path file) {
+            public @Nullable EditorBuffer bufferForPath(java.nio.file.Path file) {
                 return bufferOf(tabForPath(file));
             }
 
@@ -672,7 +678,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public void bookmarksStored(java.util.Map<String, ?> bucket, String fileKey) {
+            public void bookmarksStored(java.util.Map<String, ?> bucket, @Nullable String fileKey) {
                 marksStored(MarkMerge.Kind.BOOKMARKS, bucket, fileKey);
             }
         });
@@ -692,7 +698,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public Path projectRoot() {
+            public @Nullable Path projectRoot() {
                 // This window's project, not the ProjectManager's active one (the last-focused window's): it is
                 // what $WORKSPACE_FOLDER and $WORKSPACE_NAME expand to in this window's snippets.
                 return windowProjectRoot();
@@ -815,7 +821,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setImportConfig(() -> registry.run("config.import")); // Advanced → Import…
         this.settingsWindow.setMcpActions(new SettingsWindow.McpActions( // the MCP page's status and buttons
                 () -> mcpServer == null || !mcpServer.isRunning() ? "" : mcpServer.url(), this::copyMcpEndpoint, () -> {
-                    mcpServer.newToken(); // the buttons only show while it runs
+                    if (mcpServer != null) { // the buttons only show while it runs
+                        mcpServer.newToken();
+                    }
                     setStatus(tr("status.mcp.newToken"));
                 }));
         this.settingsWindow.setRemoteConnect(site -> remoteCoordinator.connect(site)); // Remote page's Connect…
@@ -1095,7 +1103,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * cell, so re-deriving the gate/context snapshot here costs nothing measurable — unlike the predicate
      * itself, which runs over the whole registry.
      */
-    private String disabledCommandReason(String commandId) {
+    private @Nullable String disabledCommandReason(String commandId) {
         Chrome.DisabledReason reason = Chrome.disabledReason(commandId, paletteGates(), paletteContext());
         if (reason == null) {
             return jumpPossible(commandId) ? null : tr("status.debug.jumpUnsupported");
@@ -1146,8 +1154,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 git.operationInProgress(),
                 b != null && b.hasExportablePreview() && !b.previewShowsError(),
                 b != null
-                        || (imagePaneOf(activeTab()) != null
-                                && imagePaneOf(activeTab()).printableImage() != null),
+                        || (imagePaneOf(activeTab()) instanceof ImageViewerPane image
+                                && image.printableImage() != null),
                 b != null
                         && b.getFocusedArea() != null
                         && b.getFocusedArea().getSelection().getLength() > 0,
@@ -1262,7 +1270,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * before {@link #startup}, so the project panel root, title, and combo reflect <em>this</em> window's
      * project (not the globally last-focused one).
      */
-    public void setWindowContext(WindowManager windowManager, Project project) {
+    public void setWindowContext(WindowManager windowManager, @Nullable Project project) {
         indexCoordinator.onProjectChanged(); // the previous project's symbols mean nothing here
         this.windowManager = windowManager;
         settingsWindow.setSettingsSync(windowManager == null ? null : windowManager.settingsSync());
@@ -1343,9 +1351,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The Structure panel, built on its first use; it attaches the active buffer as it is built. */
-    private StructurePanel structurePanel() {
+    StructurePanel structurePanel() {
         if (structurePanel == null) {
             structurePanel = new StructurePanel(bookmarkCoordinator, notesCoordinator);
+            structurePanel.setNarrowActions(editing.structureNarrowActions());
+            structurePanel.setSimpleMode(chrome::simpleModeActive);
+            structurePanel.setChordLookup(id -> keymap == null ? null : keymap.displayChord(id));
             EditorBuffer active = activeBuffer();
             structurePanel.attach(active);
             lspCoordinator.requestStructureSymbols(active); // the LSP outline, when the server offers one
@@ -1436,16 +1447,21 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::isPathModified,
                 this::hasFileOpen,
                 this::projectMapPreviewContent);
+        panel.setEditorWindow(() -> stage); // the Map window opens even while the Project tool window is closed
+        panel.setMapSceneSetup(toolWindows::setUpSecondaryScene);
         panel.setRememberedMapState(config::getWorkspaceState, config::save);
         panel.setOpenFiles(() -> editorArea.tabs().stream()
                 .map(MainController::tabPath)
                 .filter(java.util.Objects::nonNull)
                 .toList());
         panel.setPrompt(this::promptText); // in-scene rename prompt
+        panel.setPromptIn(host -> (title, label, initial, onAccept) ->
+                promptTextIn(host, title, label, initial, onAccept)); // the same, over the Map window
         panel.setOnFocusEditor(toolWindows::focusEditor); // Escape on the Project Map
         panel.setDeletePreparation(projectDeletes);
         panel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
         panel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
+        panel.setRenameParticipant(lspManager::willRenameFile); // a .java file or package takes its class along (B15)
         panel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
         panel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         panel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
@@ -1471,6 +1487,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setFileActions(new ProjectTreeFileActions(
                 git, gitWindows, diffCoordinator, historyCoordinator, fileWorkflows, this::localHistoryEnabled));
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
+        panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
+        panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));
         panel.setSimpleMode(chrome::simpleModeActive);
         panel.setShowHidden(config.getSettings().isProjectShowHidden());
         panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
@@ -1486,12 +1504,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** What the Project tree is rooted at: the built panel's own root, else the one recorded for its build. */
-    private Path projectRoot() {
+    private @Nullable Path projectRoot() {
         return projectPanel != null ? projectPanel.getRoot() : projectRoot;
     }
 
     /** Points the Project tree at {@code root} ({@code null}: the placeholder), now or when the panel is built. */
-    private void setProjectRoot(Path root) {
+    private void setProjectRoot(@Nullable Path root) {
         projectRoot = root;
         if (projectPanel != null) {
             projectPanel.setRoot(root);
@@ -1851,7 +1869,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * bookkeeping.) If the project has an open window, it is closed first (saving its dirty buffers); a
      * cancelled save prompt aborts the deletion.
      */
-    void deleteProject(Project p) {
+    void deleteProject(@Nullable Project p) {
         if (p == null || p.id().isEmpty()) {
             setStatus(tr("status.noProjectToDelete"));
             return;
@@ -1893,7 +1911,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (b == null) {
             // A non-buffer tab: show an image viewer's file path; else just the app name (Welcome, etc.).
             Path img = tabPath(editorArea.selectedTab());
-            stage.setTitle(img != null ? homeCollapsed(img.toString()) + " — " + app : app);
+            stage.setTitle(
+                    img != null ? com.editora.config.PathDisplay.collapseHome(img.toString()) + " — " + app : app);
             return;
         }
         Path p = b.getPath();
@@ -1901,7 +1920,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // templates), and concatenating that rendered a literal "null — … — Editora" title. Fall back to
         // the buffer's tab title ("untitled"), so the title bar always agrees with the tab.
         String file = p != null
-                ? homeCollapsed(p.toString())
+                ? com.editora.config.PathDisplay.collapseHome(p.toString())
                 : b.getDisplayName() != null ? b.getDisplayName() : b.getTitle();
         // The OS title bar renders plain text only (no color/italic/weight, so the tab's amber-italic
         // dirty styling can't be mirrored here) — use a prominent leading "●" as the unsaved marker so
@@ -1928,14 +1947,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         com.editora.config.PathKeys.invalidateCanonicalCache(); // stale resolutions must not survive a move (#680)
         indexCoordinator.onFileRenamed(old, target);
         RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
-        if (placeholder != null) {
+        if (tab != null && placeholder != null) {
             // A restored tab not built yet: its read, when it comes, must find the file where it now is. The
             // path-keyed stores are remapped by the caller; the tab has no buffer-side state to move.
             placeholder.relocate(target);
             tabHeaders.contentHeader(tab, placeholder);
             tab.setTooltip(TabHeaders.tooltip(target));
-        } else if (bufferOf(tab) != null) {
-            EditorBuffer buffer = bufferOf(tab);
+        } else if (tab != null && bufferOf(tab) instanceof EditorBuffer buffer) {
             buffer.setPath(target);
             editorSettings.applyEditorConfig(buffer);
             lspCoordinator.documentPathChanged(buffer, old, oldLspAlreadyClosed);
@@ -1967,7 +1985,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                     continue;
                 }
-                if (com.editora.config.PathKeys.isUnder(pn, oldNorm)) { // never a tab on another file system
+                if (b != null && com.editora.config.PathKeys.isUnder(pn, oldNorm)) { // never on another file system
                     Path moved = target.resolve(oldNorm.relativize(pn));
                     fileWorkflows.invalidatePendingWrite(p);
                     b.setPath(moved);
@@ -2092,14 +2110,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (!navigation.navigating && buffer.getPath() != null) {
             navigation.recordJumpToLine(origin, buffer, line);
         }
-        Platform.runLater(() -> {
-            try {
-                buffer.showParagraphAtTopClearOfStickyScroll(area, line);
-            } catch (RuntimeException ignored) {
-                // Viewport not ready; ignore.
-            }
-        });
-        area.requestFollowCaret();
+        buffer.jumps().reveal(area, line, false);
         area.requestFocus();
     }
 
@@ -2133,6 +2144,24 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         fileWorkflows.openThen(file, () -> navigateToLine(navigation.areaLine(activeBuffer(), line)));
+    }
+
+    /**
+     * A Project Map declaration's Open Narrowed: opens {@code file} and narrows it to {@code block} (0-based
+     * document lines), as the Structure window's Narrow to Fold Region does for a picked symbol.
+     */
+    private void openNarrowedFromMap(Path file, com.editora.text.FoldRegions.Region block) {
+        fileWorkflows.openThen(file, () -> {
+            EditorBuffer buffer = activeBuffer();
+            Path open = buffer == null ? null : buffer.getPath();
+            if (buffer != null
+                    && open != null
+                    && com.editora.config.PathKeys.samePath(
+                            open.toAbsolutePath().normalize(),
+                            file.toAbsolutePath().normalize())) {
+                editing.narrowToFoldRegionAt(buffer, block.startLine(), block);
+            }
+        });
     }
 
     /**
@@ -2530,7 +2559,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
-                    public String chordFor(String commandId) {
+                    public @Nullable String chordFor(String commandId) {
                         return keymap.displayChord(commandId);
                     }
 
@@ -2542,6 +2571,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     @Override
                     public void editConfiguration(String name) {
                         runConfigurations.runConfigEditor.accept(name);
+                    }
+
+                    @Override
+                    public @Nullable List<String> buildExecutable(BuildTool tool, Path root) {
+                        return buildExecutableFor(tool, root);
                     }
 
                     @Override
@@ -2558,7 +2592,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
-                    public void setStatusDebug(String text) {
+                    public void setStatusDebug(@Nullable String text) {
                         statusBar.setDebug(text);
                     }
 
@@ -2573,12 +2607,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
-                    public String programArgs(Path path) {
+                    public String programArgs(@Nullable Path path) {
                         return programArgsFor(path);
                     }
 
                     @Override
-                    public Path projectRoot() {
+                    public @Nullable Path projectRoot() {
                         return windowProjectRoot();
                     }
 
@@ -2598,7 +2632,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
-                    public void openPath(Path file) {
+                    public void openPath(@Nullable Path file) {
                         fileWorkflows.openPath(file, true); // no "Already open" echo on every stop and step
                     }
 
@@ -2608,7 +2642,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
-                    public EditorBuffer bufferForPath(Path file) {
+                    public @Nullable EditorBuffer bufferForPath(@Nullable Path file) {
                         return bufferOf(tabForPath(file));
                     }
 
@@ -2667,7 +2701,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
-                    public void breakpointsStored(java.util.Map<String, ?> bucket, String fileKey) {
+                    public void breakpointsStored(java.util.Map<String, ?> bucket, @Nullable String fileKey) {
                         marksStored(MarkMerge.Kind.BREAKPOINTS, bucket, fileKey);
                     }
                 });
@@ -2765,18 +2799,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
         containerCoordinator = new ContainerCoordinator(coordinatorHost, new ContainerCoordinator.Ops() {
             @Override
-            public Path projectRoot() {
+            public @Nullable Path projectRoot() {
                 return windowProjectRoot();
             }
 
             @Override
-            public boolean execAllowed(String targetId) {
-                return config.remoteExecAllowed(targetId);
+            public boolean execAllowed(@Nullable String targetId) {
+                return targetId != null && config.remoteExecAllowed(targetId);
             }
 
             @Override
-            public void setExecAllowed(String targetId, boolean allowed) {
-                config.setRemoteExecAllowed(targetId, allowed);
+            public void setExecAllowed(@Nullable String targetId, boolean allowed) {
+                if (targetId != null) config.setRemoteExecAllowed(targetId, allowed);
             }
 
             @Override
@@ -2859,11 +2893,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
-    /** Home-collapses an absolute folder path for a scope label (e.g. {@code ~/proj}). */
-    private static String homeCollapsed(String full) {
-        return com.editora.config.PathDisplay.collapseHome(full);
-    }
-
     /** Starts AceJump on the active buffer: type a character, then a label, to jump the caret. */
     void startAceJump() {
         EditorBuffer b = activeBuffer();
@@ -2913,7 +2942,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public Project windowProject() {
+            public @Nullable Project windowProject() {
                 return windowProject;
             }
 
@@ -2931,9 +2960,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             public void openRemoteProject(
                     Project project,
                     com.editora.vfs.RemoteConnection conn,
-                    com.editora.vfs.RemoteFileSystems.LiveConnection live,
-                    char[] secret) {
-                windowManager.openRemoteProject(project, conn, live, secret);
+                    com.editora.vfs.RemoteFileSystems.@Nullable LiveConnection live,
+                    char @Nullable [] secret) {
+                if (windowManager != null) { // null only before the window is placed
+                    windowManager.openRemoteProject(project, conn, live, secret);
+                }
                 refreshProjectPanelList();
             }
 
@@ -2973,7 +3004,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public void setProjectRoot(Path root) {
+            public void setProjectRoot(@Nullable Path root) {
                 MainController.this.setProjectRoot(root);
             }
 
@@ -2983,7 +3014,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public Path activeProjectRoot() {
+            public @Nullable Path activeProjectRoot() {
                 return windowProjectRoot(); // this window's, not the ProjectManager's active (last-opened) one
             }
 
@@ -3008,7 +3039,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public void invalidatePendingWrite(Path path) {
+            public void invalidatePendingWrite(@Nullable Path path) {
                 fileWorkflows.invalidatePendingWrite(path);
             }
         };
@@ -3042,7 +3073,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public EditorBuffer openBufferFor(java.nio.file.Path file) {
+            public @Nullable EditorBuffer openBufferFor(java.nio.file.Path file) {
                 return bufferOf(tabForPath(file));
             }
 
@@ -3054,7 +3085,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public java.nio.file.Path projectRoot() {
+            public java.nio.file.@Nullable Path projectRoot() {
                 return windowProject != null && projectsEnabled() ? windowProject.rootPath() : null;
             }
         };
@@ -3152,12 +3183,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
         @Override
-        public CodeArea activeArea() {
+        public @Nullable CodeArea activeArea() {
             return MainController.this.activeArea();
         }
 
@@ -3240,12 +3271,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Project windowProject() {
+        public @Nullable Project windowProject() {
             return enabledWindowProject();
         }
 
         @Override
-        public WindowManager windowManager() {
+        public @Nullable WindowManager windowManager() {
             return windowManager;
         }
 
@@ -3256,7 +3287,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public String homeCollapsed(String full) {
-            return MainController.this.homeCollapsed(full);
+            return com.editora.config.PathDisplay.collapseHome(full);
         }
 
         @Override
@@ -3270,7 +3301,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
@@ -3359,7 +3390,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public WindowManager windowManager() {
+                public @Nullable WindowManager windowManager() {
                     return windowManager;
                 }
 
@@ -3384,12 +3415,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public Tab welcomeTab() {
+                public @Nullable Tab welcomeTab() {
                     return welcomeTab;
                 }
 
                 @Override
-                public Tab doctorTab() {
+                public @Nullable Tab doctorTab() {
                     return doctorTab;
                 }
 
@@ -3534,7 +3565,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public EditorBuffer activeBuffer() {
+                public @Nullable EditorBuffer activeBuffer() {
                     return MainController.this.activeBuffer();
                 }
 
@@ -3549,7 +3580,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public EditorBuffer bufferOf(Tab tab) {
+                public @Nullable EditorBuffer bufferOf(Tab tab) {
                     return MainController.this.bufferOf(tab);
                 }
 
@@ -3560,7 +3591,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void promptText(
-                        String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+                        String title, String label, @Nullable String initial, Consumer<String> onAccept) {
                     MainController.this.promptText(title, label, initial, onAccept);
                 }
 
@@ -3634,7 +3665,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public String homeCollapsed(String full) {
-                    return MainController.this.homeCollapsed(full);
+                    return com.editora.config.PathDisplay.collapseHome(full);
                 }
 
                 @Override
@@ -3663,7 +3694,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public EditorBuffer activeBuffer() {
+                public @Nullable EditorBuffer activeBuffer() {
                     return MainController.this.activeBuffer();
                 }
 
@@ -3678,28 +3709,28 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public String programArgsFor(Path path) {
+                public String programArgsFor(@Nullable Path path) {
                     return MainController.this.programArgsFor(path);
                 }
 
                 @Override
-                public String suggestedMainClass() {
+                public @Nullable String suggestedMainClass() {
                     return MainController.this.suggestedMainClass();
                 }
 
                 @Override
-                public com.editora.config.RunConfiguration suggestedScriptConfiguration() {
+                public com.editora.config.@Nullable RunConfiguration suggestedScriptConfiguration() {
                     return MainController.this.suggestedScriptConfiguration();
                 }
 
                 @Override
-                public Path windowProjectRoot() {
+                public @Nullable Path windowProjectRoot() {
                     return MainController.this.windowProjectRoot();
                 }
 
                 @Override
                 public void promptText(
-                        String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+                        String title, String label, @Nullable String initial, Consumer<String> onAccept) {
                     MainController.this.promptText(title, label, initial, onAccept);
                 }
             });
@@ -3780,7 +3811,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Project windowProject() {
+        public @Nullable Project windowProject() {
             return enabledWindowProject();
         }
 
@@ -3821,7 +3852,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public String homeCollapsed(String full) {
-            return MainController.this.homeCollapsed(full);
+            return com.editora.config.PathDisplay.collapseHome(full);
         }
 
         @Override
@@ -3845,7 +3876,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void openAndGoto(Path file, int line0, int col0) {
+        public void openAndGoto(@Nullable Path file, int line0, int col0) {
             MainController.this.openAndGoto(file, line0, col0);
         }
 
@@ -3865,22 +3896,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
         @Override
-        public java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
+        public java.util.List<com.editora.editor.undo.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
             return MainController.this.undoHistoryCheckpoints();
         }
 
         @Override
-        public void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c) {
+        public void restoreUndoCheckpoint(com.editora.editor.undo.UndoHistory.Checkpoint c) {
             MainController.this.restoreUndoCheckpoint(c);
         }
 
         @Override
-        public CodeArea activeArea() {
+        public @Nullable CodeArea activeArea() {
             return MainController.this.activeArea();
         }
 
@@ -3905,17 +3936,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void openPathPreview(Path file) {
-            MainController.this.openPathPreview(file);
+        public void openPathPreview(@Nullable Path file) {
+            if (file != null) {
+                MainController.this.openPathPreview(file);
+            }
         }
 
         @Override
-        public EditorBuffer bufferOf(Tab tab) {
+        public @Nullable EditorBuffer bufferOf(@Nullable Tab tab) {
             return MainController.this.bufferOf(tab);
         }
 
         @Override
-        public Tab tabForPath(Path file) {
+        public @Nullable Tab tabForPath(@Nullable Path file) {
             return MainController.this.tabForPath(file);
         }
 
@@ -3962,7 +3995,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Path activeProjectRoot() {
+        public @Nullable Path activeProjectRoot() {
             return MainController.this.windowProjectRoot();
         }
 
@@ -4012,12 +4045,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
         @Override
-        public EditorBuffer bufferOf(Tab tab) {
+        public @Nullable EditorBuffer bufferOf(@Nullable Tab tab) {
             return MainController.this.bufferOf(tab);
         }
 
@@ -4110,7 +4143,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer openBufferFor(Path target) {
+        public @Nullable EditorBuffer openBufferFor(Path target) {
             return MainController.this.openBufferFor(target);
         }
 
@@ -4125,7 +4158,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
@@ -4218,6 +4251,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public @Nullable StructurePanel structurePanelIfBuilt() {
+            return structurePanel;
+        }
+
+        @Override
         public FileBreadcrumb breadcrumb() {
             return breadcrumb;
         }
@@ -4303,12 +4341,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
         @Override
-        public CodeArea activeArea() {
+        public @Nullable CodeArea activeArea() {
             return MainController.this.activeArea();
         }
 
@@ -4350,7 +4388,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Path projectRoot() {
+        public @Nullable Path projectRoot() {
             return windowProjectRoot();
         }
 
@@ -4390,37 +4428,37 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
         @Override
-        public ImageViewerPane imagePaneOf(Tab tab) {
+        public @Nullable ImageViewerPane imagePaneOf(Tab tab) {
             return MainController.this.imagePaneOf(tab);
         }
 
         @Override
-        public HexViewerPane hexPaneOf(Tab tab) {
+        public @Nullable HexViewerPane hexPaneOf(Tab tab) {
             return MainController.this.hexPaneOf(tab);
         }
 
         @Override
-        public PdfViewerPane pdfPaneOf(Tab tab) {
+        public @Nullable PdfViewerPane pdfPaneOf(Tab tab) {
             return MainController.this.pdfPaneOf(tab);
         }
 
         @Override
-        public EditorBuffer bufferOf(Tab tab) {
+        public @Nullable EditorBuffer bufferOf(@Nullable Tab tab) {
             return MainController.this.bufferOf(tab);
         }
 
         @Override
-        public EditorBuffer ensureBuffer(Tab tab) {
+        public @Nullable EditorBuffer ensureBuffer(Tab tab) {
             return MainController.this.ensureBuffer(tab);
         }
 
         @Override
-        public Path tabPath(Tab tab) {
+        public @Nullable Path tabPath(Tab tab) {
             return MainController.this.tabPath(tab);
         }
 
@@ -4463,7 +4501,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Path projectRoot() {
+        public @Nullable Path projectRoot() {
             return MainController.this.projectRoot();
         }
 
@@ -4533,7 +4571,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
@@ -4558,12 +4596,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void updateTabMeta(Tab tab, EditorBuffer buffer) {
-            MainController.this.updateTabMeta(tab, buffer);
+        public void updateTabMeta(@Nullable Tab tab, EditorBuffer buffer) {
+            if (tab != null) MainController.this.updateTabMeta(tab, buffer);
         }
 
         @Override
-        public void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed) {
+        public void bufferPathChanged(EditorBuffer buffer, @Nullable Path oldPath, boolean oldAlreadyClosed) {
             lspCoordinator.documentPathChanged(buffer, oldPath, oldAlreadyClosed);
             debugCoordinator.bufferPathChanged(buffer, oldPath);
             bookmarkCoordinator.bufferPathChanged(buffer, oldPath); // Save As: its marks go with it
@@ -4598,22 +4636,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer bufferOf(Tab tab) {
+        public @Nullable EditorBuffer bufferOf(@Nullable Tab tab) {
             return MainController.this.bufferOf(tab);
         }
 
         @Override
-        public EditorBuffer ensureBuffer(Tab tab) {
+        public @Nullable EditorBuffer ensureBuffer(Tab tab) {
             return MainController.this.ensureBuffer(tab);
         }
 
         @Override
-        public Tab tabFor(EditorBuffer buffer) {
+        public @Nullable Tab tabFor(EditorBuffer buffer) {
             return MainController.this.tabFor(buffer);
         }
 
         @Override
-        public Tab tabForPath(Path file) {
+        public @Nullable Tab tabForPath(@Nullable Path file) {
             return MainController.this.tabForPath(file);
         }
 
@@ -4648,7 +4686,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Path tabPath(Tab tab) {
+        public @Nullable Path tabPath(Tab tab) {
             return MainController.this.tabPath(tab);
         }
 
@@ -4658,7 +4696,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Tab tabForBuffer(EditorBuffer buffer) {
+        public @Nullable Tab tabForBuffer(EditorBuffer buffer) {
             return MainController.this.tabForBuffer(buffer);
         }
 
@@ -4669,8 +4707,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Path pathOf(java.io.File file) {
-            return MainController.this.pathOf(file);
+        public @Nullable Path pathOf(java.io.File file) {
+            return file == null ? null : file.toPath();
         }
 
         @Override
@@ -4707,7 +4745,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final WindowSessionCoordinator sessions = new WindowSessionCoordinator(new WindowSessionCoordinator.Host() {
 
         @Override
-        public Project windowProject() {
+        public @Nullable Project windowProject() {
             return windowProject;
         }
 
@@ -4742,7 +4780,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void setProjectRoot(Path root) {
+        public void setProjectRoot(@Nullable Path root) {
             MainController.this.setProjectRoot(root);
         }
 
@@ -4877,22 +4915,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer bufferOf(Tab tab) {
+        public @Nullable EditorBuffer bufferOf(@Nullable Tab tab) {
             return MainController.this.bufferOf(tab);
         }
 
         @Override
-        public Tab tabForPath(Path file) {
+        public @Nullable Tab tabForPath(@Nullable Path file) {
             return MainController.this.tabForPath(file);
         }
 
         @Override
-        public Path tabPath(Tab tab) {
+        public @Nullable Path tabPath(Tab tab) {
             return MainController.this.tabPath(tab);
         }
 
         @Override
-        public Path windowProjectRoot() {
+        public @Nullable Path windowProjectRoot() {
             return MainController.this.windowProjectRoot();
         }
 
@@ -4902,7 +4940,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Tab tabForBuffer(EditorBuffer buffer) {
+        public @Nullable Tab tabForBuffer(EditorBuffer buffer) {
             return MainController.this.tabForBuffer(buffer);
         }
 
@@ -4931,7 +4969,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public Project windowProject() {
+                public @Nullable Project windowProject() {
                     return windowProject;
                 }
 
@@ -5016,22 +5054,22 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public EditorBuffer activeBuffer() {
+                public @Nullable EditorBuffer activeBuffer() {
                     return MainController.this.activeBuffer();
                 }
 
                 @Override
-                public EditorBuffer bufferOf(Tab tab) {
+                public @Nullable EditorBuffer bufferOf(@Nullable Tab tab) {
                     return MainController.this.bufferOf(tab);
                 }
 
                 @Override
-                public EditorBuffer ensureBuffer(Tab tab) {
+                public @Nullable EditorBuffer ensureBuffer(@Nullable Tab tab) {
                     return MainController.this.ensureBuffer(tab);
                 }
 
                 @Override
-                public Tab tabForPath(Path file) {
+                public @Nullable Tab tabForPath(Path file) {
                     return MainController.this.tabForPath(file);
                 }
             });
@@ -5139,7 +5177,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
@@ -5149,12 +5187,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void setStatus(String message) {
+        public void setStatus(@Nullable String message) {
             MainController.this.setStatus(message);
         }
 
         @Override
-        public void setError(String message) {
+        public void setError(@Nullable String message) {
             MainController.this.setError(message);
         }
 
@@ -5240,7 +5278,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void setStatusBarBranch(String branch, int ahead, int behind) {
+        public void setStatusBarBranch(@Nullable String branch, int ahead, int behind) {
             statusBar.setGitBranch(branch, ahead, behind);
         }
 
@@ -5262,7 +5300,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void setGitPanelStatus(com.editora.git.GitStatus status) {
+        public void setGitPanelStatus(com.editora.git.@Nullable GitStatus status) {
             lastGitStatus = status; // a panel not built yet shows it when it is
             if (gitPanel != null) {
                 gitPanel.setStatus(status);
@@ -5307,7 +5345,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Path projectRoot() {
+        public @Nullable Path projectRoot() {
             // This window's project, not the ProjectManager's active one (the last-focused window's): with no
             // tab open, the Git context is the project root, and a window left behind another project's window
             // used to declare its own repository "not a Git repository".
@@ -5366,12 +5404,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void openCommitFileDiff(String hash, String repoRel, String origRepoRel) {
+        public void openCommitFileDiff(String hash, String repoRel, @Nullable String origRepoRel) {
             diffCoordinator.diffCommitFile(hash, repoRel, origRepoRel);
         }
 
         @Override
-        public void openPath(Path file) {
+        public void openPath(@Nullable Path file) {
             fileWorkflows.openPath(file);
         }
     });
@@ -5395,24 +5433,24 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer openBufferFor(Path target) {
+        public @Nullable EditorBuffer openBufferFor(Path target) {
             return MainController.this.openBufferFor(target);
         }
 
         @Override
-        public EditorBuffer openBackgroundBuffer(Path target) {
+        public @Nullable EditorBuffer openBackgroundBuffer(Path target) {
             return MainController.this.openBackgroundBuffer(target);
         }
 
         @Override
-        public void openBackgroundBufferAsync(Path target, java.util.function.Consumer<EditorBuffer> done) {
+        public void openBackgroundBufferAsync(Path target, java.util.function.Consumer<@Nullable EditorBuffer> done) {
             MainController.this.openBackgroundBufferAsync(target, done);
         }
 
         @Override
-        public void discardBackgroundBuffer(EditorBuffer buffer) {
-            Tab tab = tabFor(buffer);
-            if (tab != null && !buffer.isDirty()) {
+        public void discardBackgroundBuffer(@Nullable EditorBuffer buffer) {
+            Tab tab = buffer == null ? null : tabFor(buffer);
+            if (tab != null && buffer != null && !buffer.isDirty()) {
                 editorArea.remove(tab);
             }
         }
@@ -5438,7 +5476,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public DiffViewerPane activeDiffPane() {
+        public @Nullable DiffViewerPane activeDiffPane() {
             Tab t = editorArea.selectedTab();
             if (t == null) {
                 return null;
@@ -5453,12 +5491,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Path finderStartDir() {
+        public @Nullable Path finderStartDir() {
             return navigation.finderStartDir();
         }
 
         @Override
-        public String editorConfigCharset(Path file) {
+        public @Nullable String editorConfigCharset(@Nullable Path file) {
             return editorConfigCharsetFor(file);
         }
 
@@ -5514,7 +5552,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public void setStatusBarChecks(com.editora.github.ChecksParser.ChecksSummary summary) {
+                public void setStatusBarChecks(com.editora.github.ChecksParser.@Nullable ChecksSummary summary) {
                     statusBar.setGitHubChecks(github.checksPrNumber(), summary);
                 }
 
@@ -5594,62 +5632,14 @@ public class MainController implements com.editora.mcp.McpBridge {
     final LogViewerCoordinator logViewer = new LogViewerCoordinator(coordinatorHost);
 
     /** New Maven Project wizard; owns the archetype picker/form and the archetype:generate run. */
-    final MavenProjectCoordinator mavenProjectCoordinator = new MavenProjectCoordinator(
-            coordinatorHost,
-            new MavenProjectCoordinator.Ops() {
-                @Override
-                public java.nio.file.Path defaultParentDir() {
-                    return templateActions.defaultNewDir();
-                }
-
-                @Override
-                public EditorBuffer openBuffer(java.nio.file.Path file) {
-                    return bufferOf(tabForPath(file));
-                }
-
-                @Override
-                public void openProject(
-                        java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
-                    if (!projectsEnabled()) {
-                        return; // still generated on disk; just not registered as a project
-                    }
-                    Project project = projects.createOrGet(name, root);
-                    projects.save();
-                    seedNewProjectSession(project, root, name, main);
-                    if (windowManager != null) {
-                        windowManager.openOrFocus(project);
-                    }
-                }
-
-                @Override
-                public void openPath(java.nio.file.Path file) {
-                    fileWorkflows.openPath(file);
-                }
-
-                @Override
-                public com.editora.command.KeymapManager keymap() {
-                    return keymap;
-                }
-
-                @Override
-                public boolean confirmArchetype(com.editora.maven.MavenArchetype archetype) {
-                    return confirmArchetypeGenerate(archetype);
-                }
-
-                @Override
-                public void refreshProjectTree() {
-                    if (projectPanel != null) {
-                        projectPanel.refreshTree();
-                    }
-                }
-            },
-            buildOutputPanel);
+    final MavenProjectCoordinator mavenProjectCoordinator =
+            new MavenProjectCoordinator(coordinatorHost, new MavenProjectWindowOps(this), buildOutputPanel);
 
     /** External Tools feature; owns the service/console panel/commands (the tool window stays here). */
     final ExternalToolCoordinator externalToolCoordinator =
             new ExternalToolCoordinator(coordinatorHost, new ExternalToolCoordinator.Ops() {
                 @Override
-                public java.nio.file.Path projectRoot() {
+                public java.nio.file.@Nullable Path projectRoot() {
                     return windowProject != null ? windowProject.rootPath() : null;
                 }
 
@@ -5674,15 +5664,46 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  active project's marker file, streaming tasks to a per-tool console (see {@link BuildCoordinator}). */
     final List<BuildCoordinator> buildCoordinators = createBuildCoordinators();
 
+    /**
+     * The argv prefix Run and Debug start {@code tool} with from {@code root}: the tool's tasks tree decides
+     * (its wrapper, the override, the PATH command) and asks for trust as it would for its own run; null when
+     * trust was declined. With the tool's support turned off there is no tree — then the user's own command
+     * (the override, else the PATH command), never a repository's wrapper, which nothing has gated.
+     */
+    @Nullable
+    List<String> buildExecutableFor(BuildTool tool, java.nio.file.@Nullable Path root) {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.tool() == tool && root != null) {
+                return c.trustedExecutable(root);
+            }
+        }
+        String hostTool = com.editora.process.ExecTargets.remoteTool(root, tool.id());
+        return com.editora.build.BuildExecutable.resolve(
+                List.of(),
+                hostTool != null ? hostTool : coordinatorHost.projectScope().buildCommand(tool, config.getSettings()),
+                tool.commandExample());
+    }
+
     private List<BuildCoordinator> createBuildCoordinators() {
         List<BuildCoordinator> list = new ArrayList<>();
         for (BuildTool tool : BuildTool.enabled()) {
             list.add(new BuildCoordinator(
                     tool,
                     coordinatorHost,
-                    new BuildCoordinator.Ops() {
+                    // Trust, the custom-task history and the build-file link live in BuildTrustOps.
+                    new BuildTrustOps(
+                            () -> config,
+                            () -> stage,
+                            this::saveTrustDecision,
+                            () -> {
+                                if (settingsWindow != null) {
+                                    settingsWindow.refreshTrustedFolders();
+                                }
+                            },
+                            this::requestSave,
+                            file -> fileWorkflows.openPath(file)) {
                         @Override
-                        public java.nio.file.Path projectRoot() {
+                        public java.nio.file.@Nullable Path projectRoot() {
                             return windowProject != null ? windowProject.rootPath() : null;
                         }
 
@@ -5724,22 +5745,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                             if (settingsWindow != null) {
                                 settingsWindow.refreshBuildToolStatus();
                             }
-                        }
-
-                        @Override
-                        public boolean isTrusted(java.nio.file.Path root) {
-                            return config.getTrustStore().isTrusted(root);
-                        }
-
-                        @Override
-                        public boolean confirmTrust(java.nio.file.Path root, java.nio.file.Path wrapper) {
-                            return MainController.this.confirmTrustFolder(root, wrapper);
-                        }
-
-                        @Override
-                        public void trust(java.nio.file.Path root) {
-                            config.getTrustStore().trust(root);
-                            saveTrustDecision(); // durable: a security decision must survive a crash
                         }
                     },
                     buildOutputPanel));
@@ -5787,7 +5792,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         showCliTranscript(GitConsoleLog.raisesConsole(entry) ? owner : null);
     }
 
-    private void showCliTranscript(Object owner) {
+    private void showCliTranscript(@Nullable Object owner) {
         // The console's stripe is gated on a build tool being detected; a repo with no build file still has
         // git, so the first logged command is what makes the window reachable there.
         refreshBuildOutputAvailability();
@@ -5827,7 +5832,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The coordinator for a specific build tool (for the palette gate / Settings status reads). */
-    private BuildCoordinator buildCoordinator(BuildTool tool) {
+    @Nullable
+    BuildCoordinator buildCoordinator(BuildTool tool) {
         for (BuildCoordinator c : buildCoordinators) {
             if (c.tool() == tool) {
                 return c;
@@ -5879,7 +5885,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             c.title(),
                             chords.getOrDefault(c.id(), ""),
                             c.description(),
-                            all ? 0 : m.score(),
+                            m == null ? 0 : m.score(),
                             enabled,
                             c));
                 }
@@ -5889,32 +5895,19 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public java.util.List<com.editora.search.SearchEverywhere.Item> files(String query) {
-            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
-            for (IndexCoordinator.FileHit hit : indexCoordinator.searchFiles(query, 40)) {
-                String name = hit.file().getFileName().toString();
-                String parent = hit.relativePath().contains("/")
-                        ? hit.relativePath().substring(0, hit.relativePath().lastIndexOf('/'))
-                        : "";
-                out.add(new com.editora.search.SearchEverywhere.Item(
-                        com.editora.search.SearchEverywhere.Kind.FILE, name, parent, hit.score(), hit.file()));
-            }
-            return out;
+            return indexCoordinator.fileItems(query);
         }
 
         @Override
         public java.util.List<com.editora.search.SearchEverywhere.Item> symbols(String query) {
-            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
-            for (com.editora.index.SymbolIndex.Hit hit : indexCoordinator.searchSymbols(query, 40)) {
-                String container = hit.symbol().container();
-                String where = hit.file().getFileName() + ":" + (hit.symbol().line() + 1);
-                out.add(new com.editora.search.SearchEverywhere.Item(
-                        com.editora.search.SearchEverywhere.Kind.SYMBOL,
-                        hit.symbol().name(),
-                        container.isEmpty() ? where : container + " — " + where,
-                        hit.score(),
-                        hit));
-            }
-            return out;
+            return indexCoordinator.symbolItems(query);
+        }
+
+        @Override
+        public void laterSymbols(
+                String query,
+                java.util.function.Consumer<java.util.List<com.editora.search.SearchEverywhere.Item>> cb) {
+            lspCoordinator.libraryTypeItems(query, cb);
         }
 
         @Override
@@ -5923,7 +5916,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public String disabledReason(com.editora.search.SearchEverywhere.Item item) {
+        public @Nullable String disabledReason(com.editora.search.SearchEverywhere.Item item) {
             // Only a command can be listed-but-inert; a file or symbol row is always actionable.
             return item.payload() instanceof Command c ? disabledCommandReason(c.id()) : null;
         }
@@ -5944,6 +5937,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 case java.nio.file.Path file -> fileWorkflows.openPath(file);
                 case com.editora.index.SymbolIndex.Hit hit ->
                     openAndGoto(hit.file(), hit.symbol().line(), hit.symbol().column());
+                case com.editora.lsp.LspManager.WorkspaceSymbolMatch library -> lspCoordinator.openLibraryType(library);
                 default -> {
                     // Unreachable: every Item this window builds carries one of the three above.
                 }
@@ -5962,7 +5956,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     final TerminalCoordinator terminalCoordinator =
             new TerminalCoordinator(coordinatorHost, new TerminalCoordinator.Ops() {
                 @Override
-                public java.nio.file.Path workingDirectory() {
+                public java.nio.file.@Nullable Path workingDirectory() {
                     java.nio.file.Path root = windowProjectRoot();
                     if (root != null) {
                         return root; // a remote project's root: its terminals run on the host
@@ -6011,7 +6005,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
         @Override
-        public java.nio.file.Path projectRoot() {
+        public java.nio.file.@Nullable Path projectRoot() {
             return (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null;
         }
 
@@ -6033,7 +6027,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public String homeCollapsed(String absolutePath) {
-            return MainController.this.homeCollapsed(absolutePath);
+            return com.editora.config.PathDisplay.collapseHome(absolutePath);
         }
 
         @Override
@@ -6187,19 +6181,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void attachJavaDebugger(Path anchor, int port, Runnable stopOwner) {
-            debugCoordinator.attachToPort(anchor, "localhost", port, stopOwner);
+        public void attachJavaDebugger(@Nullable Path anchor, int port, Runnable stopOwner) {
+            if (anchor != null) debugCoordinator.attachToPort(anchor, "localhost", port, stopOwner);
         }
 
         @Override
         public com.editora.terminal.ProgramRun runInTerminal(
-                String title,
-                Path dir,
+                @Nullable String title,
+                @Nullable Path dir,
                 List<String> command,
                 Map<String, String> env,
                 java.util.function.IntConsumer onExit)
                 throws java.io.IOException {
-            return terminalCoordinator.runProgram(title, dir, command, env, onExit);
+            return terminalCoordinator.runProgram(title != null ? title : "", dir, command, env, onExit);
         }
 
         @Override
@@ -6219,7 +6213,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public String programArgs(java.nio.file.Path path) {
+        public String programArgs(java.nio.file.@Nullable Path path) {
             return programArgsFor(path);
         }
 
@@ -6240,7 +6234,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public java.nio.file.Path javaProjectRoot(java.nio.file.Path file) {
+        public java.nio.file.@Nullable Path javaProjectRoot(java.nio.file.Path file) {
             return JavaProjectRoot.find(file);
         }
 
@@ -6260,7 +6254,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public java.nio.file.Path projectRoot() {
+        public java.nio.file.@Nullable Path projectRoot() {
             return windowProjectRoot();
         }
 
@@ -6290,7 +6284,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             dapManager.resolveMainClasses(
                     routingFile,
                     opts -> cb.accept(opts.stream()
-                            .map(o -> new com.editora.run.JavaMainClass(o.mainClass(), o.projectName(), o.filePath()))
+                            .map(o -> new com.editora.run.JavaMainClass(
+                                    java.util.Objects.requireNonNullElse(o.mainClass(), ""),
+                                    o.projectName(),
+                                    o.filePath()))
                             .toList()));
         }
 
@@ -6327,20 +6324,35 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void resolveMavenClasspath(java.nio.file.Path root, java.util.function.Consumer<List<String>> cb) {
-            resolveMavenClasspath(root, "", cb);
+            resolveMavenClasspath(root, "", List.of("mvn"), com.editora.maven.MavenClasspath.Scope.RUNTIME, cb);
         }
 
         @Override
         public void resolveMavenClasspath(
-                java.nio.file.Path root, String jdkHome, java.util.function.Consumer<List<String>> cb) {
-            Thread t = new Thread(
-                    () -> {
-                        List<String> result = com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome);
-                        Platform.runLater(() -> cb.accept(result));
-                    },
-                    "editora-maven-cp");
-            t.setDaemon(true);
-            t.start();
+                java.nio.file.Path root,
+                String jdkHome,
+                List<String> executable,
+                com.editora.maven.MavenClasspath.Scope scope,
+                java.util.function.Consumer<List<String>> cb) {
+            Thread.ofVirtual().name("editora-maven-cp").start(() -> {
+                List<String> result =
+                        com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome, executable, scope);
+                Platform.runLater(() -> cb.accept(result));
+            });
+        }
+
+        @Override
+        public @Nullable List<String> buildExecutable(BuildTool tool, java.nio.file.@Nullable Path root) {
+            return buildExecutableFor(tool, root);
+        }
+
+        @Override
+        public List<String> mavenToggleArgs() {
+            return buildCoordinators.stream()
+                    .filter(c -> c.tool() == BuildTool.MAVEN)
+                    .findFirst()
+                    .map(BuildCoordinator::activeToggleArgs)
+                    .orElse(List.of());
         }
 
         @Override
@@ -6362,7 +6374,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public boolean runBuildTask(BuildTool tool, java.nio.file.Path root, List<String> taskArgs) {
+        public boolean runBuildTask(BuildTool tool, java.nio.file.@Nullable Path root, List<String> taskArgs) {
             for (BuildCoordinator c : buildCoordinators) {
                 if (c.tool() == tool && c.isEnabled()) {
                     c.runTaskAt(root, taskArgs, List.of());
@@ -6395,13 +6407,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void jumpToTest(com.editora.test.TestNode node, BuildTool tool) {
+        public void jumpToTest(com.editora.test.TestNode node, @Nullable BuildTool tool) {
             testNavigation.jumpToTestSource(node, tool);
         }
 
         @Override
-        public void runTest(BuildTool tool, Path root, List<String> taskArgs, List<String> toggleArgs) {
-            testNavigation.buildCoordinatorFor(tool).ifPresent(c -> c.runTaskAt(root, taskArgs, toggleArgs));
+        public void runTest(
+                @Nullable BuildTool tool, @Nullable Path root, List<String> taskArgs, List<String> toggleArgs) {
+            if (tool != null) {
+                testNavigation.buildCoordinatorFor(tool).ifPresent(c -> c.runTaskAt(root, taskArgs, toggleArgs));
+            }
         }
 
         @Override
@@ -6428,6 +6443,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             testNavigation.resolveTestClassAnchor(
                     className, a -> debugCoordinator.attachToPort(a, host, port, testRunCoordinator::stop));
         }
+
+        @Override
+        public void setPendingDebugAttach(@Nullable Runnable cancel) {
+            debugCoordinator.setPendingAttach(cancel);
+        }
+
+        @Override
+        public boolean debugSessionActive() {
+            return dapManager.isActive();
+        }
     });
 
     /** LSP UI/lifecycle integration; the shared manager remains here because DAP and MCP also use it. */
@@ -6439,11 +6464,11 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public String homeCollapsed(String absolutePath) {
-            return MainController.homeCollapsed(absolutePath);
+            return com.editora.config.PathDisplay.collapseHome(absolutePath);
         }
 
         @Override
-        public void openAndGoto(Path file, int line0, int col0) {
+        public void openAndGoto(@Nullable Path file, int line0, int col0) {
             MainController.this.openAndGoto(file, line0, col0);
         }
 
@@ -6454,8 +6479,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.setDisplayName(title);
             buffer.setContent(content);
             buffer.setLanguageOverride(language);
+            buffer.setViewMode(true); // read-only library source; set first, or the status bar says "Editable" (B16)
             addBuffer(buffer, true);
-            buffer.setViewMode(true); // library source is for reading, not editing
             return buffer;
         }
 
@@ -6486,7 +6511,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer bufferForPath(Path file) {
+        public @Nullable EditorBuffer bufferForPath(@Nullable Path file) {
             return bufferOf(tabForPath(file));
         }
 
@@ -6496,18 +6521,33 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer openBackgroundBuffer(Path file) {
+        public @Nullable EditorBuffer openBackgroundBuffer(Path file) {
             return MainController.this.openBackgroundBuffer(file);
         }
 
         @Override
-        public void openBackgroundBufferAsync(Path file, java.util.function.Consumer<EditorBuffer> done) {
+        public void openBackgroundBufferAsync(Path file, java.util.function.Consumer<@Nullable EditorBuffer> done) {
             MainController.this.openBackgroundBufferAsync(file, done);
         }
 
         @Override
-        public void fileRenamed(Path from, Path to) {
-            onProjectFileRenamed(from, to, true); // old URI was closed by the workspace transaction
+        public boolean saveBuffer(EditorBuffer buffer) {
+            return fileWorkflows.saveSynchronously(buffer);
+        }
+
+        @Override
+        public void closeBackgroundBuffer(EditorBuffer buffer) {
+            Tab tab = tabFor(buffer);
+            if (tab != null && !buffer.isDirty()) {
+                editorArea.remove(tab);
+            }
+        }
+
+        @Override
+        public void fileRenamed(@Nullable Path from, Path to) {
+            if (from != null) {
+                onProjectFileRenamed(from, to, true); // old URI was closed by the workspace transaction
+            }
             if (projectPanel != null) {
                 projectPanel.refreshTree();
             }
@@ -6521,8 +6561,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void fileDeleted(Path file) {
-            onProjectFileDeleted(file);
+        public void fileDeleted(@Nullable Path file) {
+            if (file != null) {
+                onProjectFileDeleted(file);
+            }
             if (projectPanel != null) {
                 projectPanel.refreshTree();
             }
@@ -6539,12 +6581,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void setStatusBarLsp(String label) {
+        public void setStatusBarLsp(@Nullable String label) {
             statusBar.setLsp(label);
         }
 
         @Override
-        public void setStatusBarPython(String text, String tooltip) {
+        public void setStatusBarPython(@Nullable String text, @Nullable String tooltip) {
             statusBar.setPythonInterpreter(text, tooltip);
         }
 
@@ -6586,7 +6628,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public StructurePanel structurePanel() {
+        public @Nullable StructurePanel structurePanel() {
             return structurePanel;
         }
 
@@ -6596,7 +6638,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Path lspProjectRoot() {
+        public @Nullable Path lspProjectRoot() {
             return windowProjectRoot(); // this window's project, not the last-focused window's
         }
 
@@ -6614,8 +6656,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Path canonicalize(Path file) {
-            return canonicalPath(file);
+        public @Nullable Path canonicalize(@Nullable Path file) {
+            return file == null ? null : canonicalPath(file);
         }
     });
 
@@ -6653,7 +6695,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public Path projectRoot() {
+                public @Nullable Path projectRoot() {
                     return windowProjectRoot(); // this window's, not the ProjectManager's active (last-opened) one
                 }
 
@@ -6683,7 +6725,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public com.editora.http.NodeResponseScripts.Debugger scriptDebugger() {
+                public com.editora.http.NodeResponseScripts.@Nullable Debugger scriptDebugger() {
                     if (debugCoordinator == null || !debugCoordinator.debugEffectiveFor("javascript")) {
                         return null;
                     }
@@ -6701,7 +6743,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public java.nio.file.Path envDir(EditorBuffer buffer) {
+        public java.nio.file.@Nullable Path envDir(EditorBuffer buffer) {
             return httpClient.envDirFor(buffer);
         }
 
@@ -6731,19 +6773,19 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     final AgentCoordinator agentCoordinator = new AgentCoordinator(coordinatorHost, new AgentCoordinator.Ops() {
         @Override
-        public Path projectRoot() {
+        public @Nullable Path projectRoot() {
             // This window's project, not the ProjectManager's active one (the window opened last): it is the
             // folder the agent works in and the boundary of what it may read and write.
             return windowProjectRoot();
         }
 
         @Override
-        public EditorBuffer bufferForPath(String path) {
+        public @Nullable EditorBuffer bufferForPath(String path) {
             return mcpBridge.openBufferForPath(path);
         }
 
         @Override
-        public EditorBuffer bufferInAnotherWindow(Path file) {
+        public @Nullable EditorBuffer bufferInAnotherWindow(Path file) {
             if (windowManager != null) {
                 Path key = canonicalPath(file);
                 for (EditorBuffer other : windowManager.buffersAtOrUnder(file)) {
@@ -6757,13 +6799,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void recordHistory(Path file, String content, java.util.function.Consumer<Boolean> completion) {
+        public void recordHistory(Path file, @Nullable String content, Consumer<Boolean> completion) {
             historyCoordinator.recordDurably(
                     file, content, com.editora.config.HistoryRevision.REASON_EXTERNAL, completion);
         }
 
         @Override
-        public String editorConfigCharset(Path file) {
+        public @Nullable String editorConfigCharset(Path file) {
             return editorConfigCharsetFor(file);
         }
 
@@ -6807,7 +6849,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void openPath(Path file) {
+        public void openPath(@Nullable Path file) {
             fileWorkflows.openPath(file);
         }
 
@@ -6837,7 +6879,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     final AiCoordinator aiCoordinator = new AiCoordinator(coordinatorHost, new AiCoordinator.Ops() {
         @Override
-        public Path repoRoot() {
+        public @Nullable Path repoRoot() {
             return git.repoRoot();
         }
 
@@ -6926,6 +6968,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public @Nullable String lspServerFailure(String serverId) {
+                    return lspCoordinator.serverFailure(serverId);
+                }
+
+                @Override
                 public void installServer(String serverId, java.util.function.Consumer<Boolean> onDone) {
                     installCoordinator.installServer(serverId, onDone);
                 }
@@ -6952,8 +6999,28 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public java.nio.file.Path projectRoot() {
+                public java.nio.file.@Nullable Path projectRoot() {
                     return windowProjectRoot();
+                }
+
+                @Override
+                public java.nio.file.@Nullable Path buildRoot(BuildTool tool) {
+                    for (BuildCoordinator c : buildCoordinators) {
+                        if (c.tool() == tool) {
+                            return c.markerRoot();
+                        }
+                    }
+                    return null;
+                }
+
+                @Override
+                public @Nullable String buildExecutableSummary(BuildTool tool) {
+                    for (BuildCoordinator c : buildCoordinators) {
+                        if (c.tool() == tool) {
+                            return c.executableSummary();
+                        }
+                    }
+                    return null;
                 }
 
                 @Override
@@ -6967,7 +7034,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public com.editora.plugin.PluginManager plugins() {
+                public com.editora.plugin.@Nullable PluginManager plugins() {
                     return pluginManager;
                 }
 
@@ -7064,7 +7131,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** This window rewrote a file's notes, bookmarks or breakpoints: the other windows re-read them. */
-    private void marksStored(MarkMerge.Kind kind, java.util.Map<String, ?> bucket, String fileKey) {
+    private void marksStored(MarkMerge.Kind kind, java.util.Map<String, ?> bucket, @Nullable String fileKey) {
         if (windowManager != null) {
             windowManager.broadcastMarksChanged(this, new MarkMerge.Change(kind, bucket, fileKey));
         }
@@ -7107,76 +7174,6 @@ public class MainController implements com.editora.mcp.McpBridge {
      * the workspace-trust gate cannot cover it: that only fires when a repo ships an {@code mvnw}, and a
      * brand-new empty directory has none. Default button is Cancel, so dismissing never grants consent.
      */
-    /**
-     * Gives a freshly generated Maven project a run configuration named after it, so Run works on the first
-     * click instead of sending the user to Edit Configurations.
-     *
-     * <p>Written into the <b>new project's</b> session file before {@code openOrFocus} builds its window —
-     * that window loads {@code projects/<id>.json} on construction, so seeding afterwards would be a race,
-     * and writing it into <em>this</em> window's state would put the configuration in the wrong project.
-     * <p><b>Deliberately does not call {@code ConfigManager.load()}.</b> That runs
-     * {@code SharedConfig.load()}, which replaces the shared {@code Settings} instance every open window
-     * holds <em>by reference</em> and re-reads every shared store from disk — corrupting live windows in
-     * order to write one file. A brand-new project needs no load: {@code ConfigManager} starts with a fresh
-     * {@code WorkspaceState}, which is exactly the right starting point, and an existing session file is
-     * left strictly alone.
-     *
-     * <p>The open file matters as much as the configuration: a Java launch resolves its classpath through
-     * jdtls routed via an <b>open Java file</b>, so a window that opens on {@code pom.xml} alone has nothing
-     * to route through and Run reports "open a Java file from the project".
-     *
-     * <p>No main class means no configuration: a webapp or plugin archetype has nothing to launch, and a
-     * configuration that fails at the click is worse than none at all.
-     */
-    private void seedNewProjectSession(
-            Project project, java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
-        if (main == null || main.fqn() == null || main.fqn().isBlank()) {
-            return;
-        }
-        try {
-            java.nio.file.Path stateFile = projects.stateFile(project);
-            if (java.nio.file.Files.exists(stateFile)) {
-                return; // an existing project reused by name keeps its own session
-            }
-            ConfigManager seeded = new ConfigManager(config.shared(), stateFile);
-            WorkspaceState state = seeded.getWorkspaceState(); // fresh defaults; see the note above
-            // workingDir = the project root, so the launch resolves against this project even with several
-            // open, and a relative path in the program behaves as it would from a terminal there.
-            // projectName = the artifactId, which is what jdtls names an imported Maven project. Blank works
-            // too (Run falls back to jdtls's own enumeration), but naming it lets the very first launch
-            // resolve directly instead of round-tripping an enumeration first.
-            // beforeLaunch = compile. archetype:generate writes SOURCES only, and Editora runs jdtls with
-            // autobuild disabled, so nothing has produced target/classes yet: the resolved classpath is
-            // correct and the JVM still dies with ClassNotFoundException on the very first Run. A
-            // before-launch step is the mechanism for exactly this — a non-zero exit aborts the launch, so a
-            // failed compile never runs a stale binary. Bare `mvn` rather than a resolved absolute path:
-            // this is persisted, and a path would rot the moment the user changed their Maven install.
-            state.setRunConfigurations(List.of(new com.editora.config.RunConfiguration(
-                    name, "java", "", main.fqn(), name, "", "", root.toString(), "", "mvn -q compile")));
-            state.setSelectedRunConfig(name);
-            state.setOpenFiles(List.of(new WorkspaceState.OpenFile(main.file().toString(), 0, false)));
-            state.setActiveFile(main.file().toString());
-            seeded.save();
-        } catch (RuntimeException e) {
-            // The project is generated and open either way; a missing configuration is a papercut, not a
-            // reason to fail the whole flow.
-            LOG.log(java.util.logging.Level.WARNING, "could not seed the new project's session", e);
-        }
-    }
-
-    private boolean confirmArchetypeGenerate(com.editora.maven.MavenArchetype archetype) {
-        ButtonType proceed = new ButtonType(tr("dialog.mavenProject.trustAccept"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = new Alert(
-                Alert.AlertType.WARNING,
-                tr("dialog.mavenProject.trustBody", archetype.gav()),
-                ButtonType.CANCEL,
-                proceed);
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("dialog.mavenProject.trustTitle"));
-        confirm.setHeaderText(tr("dialog.mavenProject.trustHeader", archetype.artifactId()));
-        confirm.getDialogPane().setMinWidth(520);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == proceed;
-    }
 
     /**
      * The HTTP Client's secrets gate: a {@code .http} request in {@code file} that reads {@code reads} (the secret
@@ -7185,7 +7182,8 @@ public class MainController implements com.editora.mcp.McpBridge {
      * file's own folder — both canonical, the way the trust store compares them (see {@link HttpSecretGate#trustRoot}).
      */
     private boolean confirmHttpSecretReads(Path file, List<String> hosts, List<String> reads) {
-        Path dir = com.editora.config.PathKeys.canonical(file.toAbsolutePath().getParent());
+        Path dir = com.editora.config.PathKeys.canonical(
+                java.util.Objects.requireNonNull(file.toAbsolutePath().getParent(), "a file is in a folder"));
         if (config.getTrustStore().isTrusted(dir)) {
             return true;
         }
@@ -7201,7 +7199,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Whether the response handlers of {@code file} may run: its folder is trusted, or the user trusts it now. */
     private boolean confirmHttpScripts(Path file) {
-        Path dir = com.editora.config.PathKeys.canonical(file.toAbsolutePath().getParent());
+        Path dir = com.editora.config.PathKeys.canonical(
+                java.util.Objects.requireNonNull(file.toAbsolutePath().getParent(), "a file is in a folder"));
         if (config.getTrustStore().isTrusted(dir)) {
             return true;
         }
@@ -7213,11 +7212,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         config.getTrustStore().trust(root);
         saveTrustDecision(); // durable: a security decision must survive a crash
         return true;
-    }
-
-    private boolean confirmTrustFolder(java.nio.file.Path root, java.nio.file.Path wrapper) {
-        TrustPrompts.Prompt prompt = TrustPrompts.buildWrapper(stage, root, wrapper);
-        return prompt.alert().showAndWait().orElse(ButtonType.CANCEL) == prompt.trust();
     }
 
     /**
@@ -7308,7 +7302,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Thin LspManager diagnostics callback — delegates to {@link LspCoordinator#onDiagnostics} (kept here
      *  only to avoid an illegal forward reference at the manager's field initializer; see {@link #lspManager}). */
-    private void onLspDiagnostics(Path file, java.util.List<com.editora.editor.LspDiagnostic> diagnostics) {
+    private void onLspDiagnostics(Path file, java.util.List<com.editora.text.LspDiagnostic> diagnostics) {
         lspCoordinator.onDiagnostics(file, diagnostics);
     }
 
@@ -7339,14 +7333,14 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
-    private void openAndGoto(Path file, int line0, int col0) {
+    private void openAndGoto(@Nullable Path file, int line0, int col0) {
         NavigationHistory.Location origin = navigation.navigating ? null : navigation.captureCurrent();
         fileWorkflows.openPath(file);
         Platform.runLater(() -> navigation.landJump(origin, file, line0, col0));
     }
 
     /** The open buffer for {@code target} (canonical-path match), or null if not open. */
-    private EditorBuffer openBufferFor(Path target) {
+    private @Nullable EditorBuffer openBufferFor(Path target) {
         return OpenBufferLifecycle.bufferForPath(editorArea, MainController::bufferOf, target);
     }
 
@@ -7365,7 +7359,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * answer synchronously (a merge pane's save-before-close, the workspace-edit transaction's fallback for a
      * tab closed mid-transaction); everything else goes through {@link #openBackgroundBufferAsync}.
      */
-    private EditorBuffer openBackgroundBuffer(Path target) {
+    private @Nullable EditorBuffer openBackgroundBuffer(Path target) {
         Tab placeholder = tabForPath(target);
         if (RestorePlaceholder.of(placeholder) != null) {
             // The file is open, as a restored tab that has not been built yet: build it (read on the caller's
@@ -7405,7 +7399,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * the FX thread is left with the document swap and the tab. The shell is disposed when the read fails, the
      * file is binary, or the file was opened by other means while the read ran.
      */
-    private void openBackgroundBufferAsync(Path target, java.util.function.Consumer<EditorBuffer> done) {
+    private void openBackgroundBufferAsync(Path target, java.util.function.Consumer<@Nullable EditorBuffer> done) {
         EditorBuffer existing = openBufferFor(target);
         if (existing != null) {
             done.accept(existing);
@@ -7763,7 +7757,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         EditorBuffer buffer = activeBuffer();
         boolean bufferWasSplit = buffer != null && buffer.getSplit() != EditorBuffer.Split.NONE;
         boolean groupsWereSplit = editorArea.unsplit();
-        if (bufferWasSplit) {
+        if (bufferWasSplit && buffer != null) {
             buffer.setSplit(EditorBuffer.Split.NONE);
         }
         if (!groupsWereSplit && !bufferWasSplit) {
@@ -7813,11 +7807,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** A toolbar button whose tooltip shows the live chord for {@code commandId} (refreshed on keymap switch). */
-    private record ToolbarTip(Button button, String base, String commandId) {}
+    private record ToolbarTip(
+            Button button, String base, @Nullable String commandId) {}
 
     private final java.util.List<ToolbarTip> toolbarTips = new java.util.ArrayList<>();
 
-    private void setupButton(Button button, Node icon, String tooltip, String commandId) {
+    private void setupButton(Button button, Node icon, String tooltip, @Nullable String commandId) {
         button.setGraphic(icon);
         button.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
         // Drop any chord baked into the i18n label (e.g. "Save (C-x C-s)"); the live chord is appended below
@@ -7827,7 +7822,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyToolbarTip(button, base, commandId);
     }
 
-    private void applyToolbarTip(Button button, String base, String commandId) {
+    private void applyToolbarTip(Button button, String base, @Nullable String commandId) {
         String chord = commandId == null ? null : invertBindings().get(commandId);
         button.setTooltip(new Tooltip(chord == null || chord.isEmpty() ? base : base + " (" + chord + ")"));
     }
@@ -7852,12 +7847,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         EditorBuffer buffer = activeBuffer();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        boolean hasBuffer = buffer != null;
-        boolean editable = hasBuffer && buffer.isEditable();
+        boolean editable = buffer != null && buffer.isEditable();
         boolean hasSelection = area != null && area.getSelection().getLength() > 0;
         // The dirty PROPERTY, not isDirty(): the exact answer can compare the whole document (a dirty buffer edited
         // back to its saved length), deferred to the 150 ms settle on purpose; the property's listener re-runs this.
-        saveButton.setDisable(!hasBuffer || !buffer.dirtyProperty().get());
+        saveButton.setDisable(buffer == null || !buffer.dirtyProperty().get());
         undoButton.setDisable(area == null || !area.isUndoAvailable());
         redoButton.setDisable(area == null || !area.isRedoAvailable());
         cutButton.setDisable(!hasSelection || !editable);
@@ -7945,7 +7939,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    public void setStatus(String message) {
+    public void setStatus(@Nullable String message) {
         statusBar.setMessage(message);
     }
 
@@ -7957,10 +7951,11 @@ public class MainController implements com.editora.mcp.McpBridge {
      * "Saved" and wrong for "could not save" — a background failure landing while someone is typing is
      * overwritten a moment later with nothing left to notice.
      */
-    public void setError(String message) {
+    public void setError(@Nullable String message) {
         statusBar.setMessage(message, MessageLog.Severity.ERROR);
     }
 
+    @Nullable
     EditorBuffer activeBuffer() {
         return bufferOf(editorArea.selectedTab());
     }
@@ -7968,7 +7963,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     // --- Undo History popup (the QuickOpen mirror of the Undo History tool window) ---
 
     /** Checkpoints of the active buffer, newest-first, seeding a baseline when empty (like the panel). */
-    private java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
+    private java.util.List<com.editora.editor.undo.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
         EditorBuffer b = activeBuffer();
         if (b == null) {
             return java.util.List.of();
@@ -7979,14 +7974,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         return b.getUndoHistory().entriesNewestFirst();
     }
 
-    private void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c) {
+    private void restoreUndoCheckpoint(com.editora.editor.undo.UndoHistory.Checkpoint c) {
         EditorBuffer b = activeBuffer();
         if (b != null) {
             b.restoreUndoCheckpoint(c);
         }
     }
 
-    private CodeArea activeArea() {
+    private @Nullable CodeArea activeArea() {
         EditorBuffer buffer = activeBuffer();
         return buffer == null ? null : buffer.getFocusedArea();
     }
@@ -8013,7 +8008,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Adds a tab with the file's {@code .editorconfig} result in hand ({@code null}: resolve it here, an
      *  ancestor-directory walk on FX). A load prepared on the worker passes its result: one walk, off FX. */
     private Tab addBuffer(
-            EditorBuffer buffer, boolean select, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+            EditorBuffer buffer,
+            boolean select,
+            com.editora.editorconfig.@Nullable EditorConfigProperties editorConfig) {
         wireBuffer(buffer, editorConfig);
         Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
         attachBufferTab(tab, buffer);
@@ -8077,14 +8074,15 @@ public class MainController implements com.editora.mcp.McpBridge {
      * The buffer in {@code tab}, built now when the tab is still a restore placeholder; {@code null} for a
      * viewer or the Welcome page. For callers that need the editor itself rather than the file on disk.
      */
-    private EditorBuffer ensureBuffer(Tab tab) {
+    private @Nullable EditorBuffer ensureBuffer(@Nullable Tab tab) {
         EditorBuffer buffer = bufferOf(tab);
         return buffer != null ? buffer : sessions.materialize(tab, false);
     }
 
     /** Everything a buffer is wired to before it has a tab: handlers, settings, feature coordinators.
      *  {@code editorConfig} null: resolve the file's {@code .editorconfig} here, an ancestor walk on FX. */
-    private void wireBuffer(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+    private void wireBuffer(
+            EditorBuffer buffer, com.editora.editorconfig.@Nullable EditorConfigProperties editorConfig) {
         // Spell checking: share the user dictionary + persist "Add to Dictionary" (before applyViewSettings,
         // which sets the per-file language and enables checking).
         editorSettings.spell().wire(buffer);
@@ -8093,7 +8091,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
         buffer.setBookmarkToggleRequest(bookmarkCoordinator::onBookmarkToggleRequest);
         buffer.setOnNotesChanged(() -> notesCoordinator.schedulePersistNotes(buffer));
-        buffer.setOnNarrowChanged(() -> editing.afterNarrowChanged(buffer));
+        buffer.setOnNarrowChanged(() -> {
+            editing.afterNarrowChanged(buffer);
+            if (structurePanel != null) {
+                structurePanel.narrowChanged(buffer); // its Widen / Defun / Fold segments mirror the buffer
+            }
+        });
         NoUndoGuard.install(buffer, noUndoGuard);
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
@@ -8131,12 +8134,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAdminEditAvailable(
                 fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file
         // .http: the request ▶, the editor menu's Run All Requests (active buffer), the running request's ■
-        buffer.setHttpHooks(new com.editora.editor.HttpHooks(
+        buffer.setHttpHooks(new com.editora.editor.http.HttpHooks(
                 line -> httpClient.runRequest(buffer, line),
                 httpClient::runFile,
                 () -> httpClient.cancelRun(buffer),
                 () -> httpRunTooltip(keymap),
-                null,
+                com.editora.editor.http.HttpHooks.NO_LINT,
                 null));
         buffer.setHttpDebugHandler(line -> httpClient.debugRequest(buffer, line)); // editor menu → Debug Request
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
@@ -8152,7 +8155,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());
-        java.util.function.Function<Path, EditorBuffer> open = this::openBufferFor;
+        java.util.function.Function<Path, @Nullable EditorBuffer> open = this::openBufferFor;
         buffer.setOpenUrlHandler(u -> HeadingLinks.open(
                 u, buffer, windowProjectRoot(), hostServices, fileWorkflows, open, this::openAndGoto, this::setStatus));
         buffer.setAiActionHandlers(aiCoordinator::explainSelection, aiCoordinator::rewriteSelection); // AI sel. bar
@@ -8160,17 +8163,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setInsertTableHandler(previews::markdownInsertTable); // Markdown format-bar "insert table" button
         buffer.setInsertTypstTableHandler(() -> previews.showTableSizePicker(buffer::insertTypstTable)); // Typst #table
         buffer.setTypstImageHandler(() -> editing.insertImageFromChooser(buffer)); // Typst "Insert Image" menu
-        buffer.setPreviewExportPngHandler(typst::exportPng); // Typst preview right-click → PNG
-        buffer.setPreviewExportSvgHandler(typst::exportSvg); // Typst preview right-click → SVG
+        buffer.previewMenu().setExportPng(typst::exportPng); // Typst preview right-click → PNG
+        buffer.previewMenu().setExportSvg(typst::exportSvg); // Typst preview right-click → SVG
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
         buffer.setHtmlPreviewDirtyListener(() -> htmlPreview.onBufferEdited(buffer));
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
-        buffer.setPreviewExportPdfHandler(exports::exportPreviewPdf); // preview right-click menu
-        buffer.setPreviewPrintHandler(exports::printPreview);
+        buffer.previewMenu().setExportPdf(exports::exportPreviewPdf); // preview right-click menu
+        buffer.previewMenu().setPrint(exports::printPreview);
         buffer.setPomViewToggleHandler(previews::togglePomView); // pom preview right-click: summary ⇄ XML tree
-        buffer.setPreviewExportDocxHandler(exports::exportPreviewDocx); // preview → MS Word
-        buffer.setPreviewExportOdtHandler(exports::exportPreviewOdt); // preview → OpenDocument
-        buffer.setPreviewExportJsonHandler(exports::exportMarkwhenJson); // Markwhen preview → JSON
+        buffer.previewMenu().setExportDocx(exports::exportPreviewDocx); // preview → MS Word
+        buffer.previewMenu().setExportOdt(exports::exportPreviewOdt); // preview → OpenDocument
+        buffer.previewMenu().setExportJson(exports::exportMarkwhenJson); // Markwhen preview → JSON
         buffer.setTypstRootResolver(this::resolveTypstRoot); // typst --root: nearest typst.toml / project root
         buffer.setOnMarkwhenViewChanged(() -> previews.persistMarkwhenView(buffer)); // persist timeline/calendar choice
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
@@ -8311,7 +8314,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     void onOpen() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("dialog.openFile.title"));
-        Path file = pathOf(chooser.showOpenDialog(stage));
+        java.io.File chosen = chooser.showOpenDialog(stage);
+        Path file = chosen == null ? null : chosen.toPath();
         if (file != null) {
             fileWorkflows.openPath(file);
         }
@@ -8340,7 +8344,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The enabled project whose root is the closest ancestor of {@code file}, or {@code null}. */
-    private Project owningProject(Path file) {
+    private @Nullable Project owningProject(Path file) {
         if (projects == null || !projectsEnabled()) {
             return null;
         }
@@ -8398,7 +8402,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * what something is — and without this every glance costs a permanent tab, so the strip fills with
      * files nobody chose to keep. One reusable slot bounds that at one.
      */
-    private Tab previewTab;
+    private @Nullable Tab previewTab;
 
     /**
      * Opens {@code file} in the preview slot: the previous preview tab is replaced rather than added to.
@@ -8435,7 +8439,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Makes {@code tab} permanent — it was chosen, not glanced at. No-op for any other tab. */
-    private void promoteTab(Tab tab) {
+    private void promoteTab(@Nullable Tab tab) {
         if (tab == null || tab != previewTab) {
             return;
         }
@@ -8529,24 +8533,25 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The {@link ImageViewerPane} in {@code tab}, or {@code null} for a buffer / non-image tab. */
-    private static ImageViewerPane imagePaneOf(Tab tab) {
+    private static @Nullable ImageViewerPane imagePaneOf(Tab tab) {
         return tab != null && tab.getUserData() instanceof ImageViewerPane pane ? pane : null;
     }
 
     /** The {@link HexViewerPane} in {@code tab}, or {@code null} for a buffer / non-hex tab. */
-    private static HexViewerPane hexPaneOf(Tab tab) {
+    private static @Nullable HexViewerPane hexPaneOf(Tab tab) {
         return tab != null && tab.getUserData() instanceof HexViewerPane pane ? pane : null;
     }
 
     /** The {@link PdfViewerPane} in {@code tab}, or {@code null} for a buffer / non-PDF tab. */
-    private static PdfViewerPane pdfPaneOf(Tab tab) {
+    private static @Nullable PdfViewerPane pdfPaneOf(Tab tab) {
         return tab != null && tab.getUserData() instanceof PdfViewerPane pane ? pane : null;
     }
 
     /** The file's resolved {@code .editorconfig} charset, or null (EditorConfig off / remote / no rule). The
      *  BOM check that overrides it lives in {@link com.editora.editorconfig.EditorConfigCharset#resolveName}. */
-    String editorConfigCharsetFor(Path file) {
-        if (editorSettings.editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)) {
+    @Nullable
+    String editorConfigCharsetFor(@Nullable Path file) {
+        if (file != null && editorSettings.editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)) {
             return com.editora.editorconfig.EditorConfig.resolveFor(file).charset();
         }
         return null;
@@ -8602,7 +8607,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Welcome tab) — every {@code tab.userData} read must go through here, since {@code userData} is
      * {@code Object} and a raw cast would throw {@link ClassCastException} on a non-buffer tab.
      */
-    private static EditorBuffer bufferOf(Tab tab) {
+    static @Nullable EditorBuffer bufferOf(@Nullable Tab tab) {
         return tab != null && tab.getUserData() instanceof EditorBuffer b ? b : null;
     }
 
@@ -8620,7 +8625,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Emacs registers ({@code C-x r s / i / SPC / j}) for this window. */
     final RegisterCommands registers = new RegisterCommands(new RegisterCommands.Host() {
         @Override
-        public EditorBuffer activeBuffer() {
+        public @Nullable EditorBuffer activeBuffer() {
             return MainController.this.activeBuffer();
         }
 
@@ -8635,7 +8640,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public Integer prefixArgument() {
+        public @Nullable Integer prefixArgument() {
             return editing.currentPrefixArg;
         }
 
@@ -8794,7 +8799,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Copies the buffer's absolute path to the system clipboard. */
-    void copyPath(EditorBuffer buffer) {
+    void copyPath(@Nullable EditorBuffer buffer) {
         if (buffer == null || buffer.getPath() == null) {
             return;
         }
@@ -8831,7 +8836,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Reveals {@code path} in the OS file manager. Used by the palette command, the tab context menu,
      * and the Project tool window. No-op (with a status hint) for an unsaved or remote file.
      */
-    void revealInFileManager(Path path, boolean isDir, boolean local) {
+    void revealInFileManager(@Nullable Path path, boolean isDir, boolean local) {
         if (path == null) {
             setStatus(tr("status.reveal.noFile"));
             return;
@@ -8851,7 +8856,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * tool window, or the system's terminal when Settings → Terminal says so. Shared by the command, tab menu,
      * breadcrumb and tree.
      */
-    void openTerminalAt(Path path, boolean isDir, boolean local) {
+    void openTerminalAt(@Nullable Path path, boolean isDir, boolean local) {
         if (path == null) {
             setStatus(tr("status.reveal.noFile"));
             return;
@@ -8899,7 +8904,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Prompts for a new name for the buffer's file; see {@link #renameFileTo}. */
-    void renameFile(EditorBuffer buffer, Tab tab) {
+    void renameFile(@Nullable EditorBuffer buffer, Tab tab) {
         if (buffer != null && buffer.getPath() != null) {
             Path old = buffer.getPath();
             String name = old.getFileName().toString();
@@ -8962,7 +8967,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         alert.getDialogPane().lookupButton(discard).getStyleClass().add("danger");
     }
 
-    private Tab tabFor(EditorBuffer buffer) {
+    private @Nullable Tab tabFor(EditorBuffer buffer) {
         for (Tab tab : editorArea.tabs()) {
             if (tab.getUserData() == buffer) {
                 return tab;
@@ -9003,12 +9008,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         return file != null && tabForPath(file) != null;
     }
 
-    private Tab tabForPath(Path file) {
-        return OpenBufferLifecycle.tabForPath(editorArea, MainController::tabPath, file); // buffer or viewer path
+    @Nullable
+    Tab tabForPath(@Nullable Path file) {
+        return file == null ? null : OpenBufferLifecycle.tabForPath(editorArea, MainController::tabPath, file);
     }
 
     /** The file backing {@code tab} (a buffer / image viewer / hex viewer path), or {@code null} for none. */
-    private static Path tabPath(Tab tab) {
+    private static @Nullable Path tabPath(Tab tab) {
         EditorBuffer buffer = bufferOf(tab);
         if (buffer != null) {
             return buffer.getPath();
@@ -9254,8 +9260,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The remembered program-arguments string for {@code path} ("" when none); shared with debug launches. */
-    private String programArgsFor(Path path) {
-        String s = config.getWorkspaceState().getProgramArgs().get(path.toString());
+    private String programArgsFor(@Nullable Path path) {
+        String s = path == null
+                ? null
+                : config.getWorkspaceState().getProgramArgs().get(path.toString());
         return s == null ? "" : s;
     }
 
@@ -9293,7 +9301,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows::openPath,
                 this::openExternalUrl,
                 config.isDev() ? com.editora.AppInfo.gitCommit() : "", // build commit shown only in --dev
-                UpdateCoordinator.latestKnown()); // "Update available" row when a newer release is known
+                updates); // what the last update check found, and "Check now"
     }
 
     /**
@@ -9403,7 +9411,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * about what "the obvious main class here" is.
      */
     /** A configuration for the active Python, shell, Groovy or Kotlin file (Add / Save as Run Configuration), or null. */
-    com.editora.config.RunConfiguration suggestedScriptConfiguration() {
+    com.editora.config.@Nullable RunConfiguration suggestedScriptConfiguration() {
         EditorBuffer b = activeBuffer();
         if (b == null || b.getPath() == null) {
             return null;
@@ -9417,9 +9425,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 : com.editora.run.ScriptRunCommand.isJvmScript(b.getLanguage())
                                         ? b.getLanguage()
                                         : null;
+        if (type == null) return null;
         return com.editora.run.RunConfigDefaults.forScript(type, b.getPath(), windowProjectRoot());
     }
 
+    @Nullable
     String suggestedMainClass() {
         EditorBuffer b = activeBuffer();
         if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
@@ -9444,13 +9454,14 @@ public class MainController implements com.editora.mcp.McpBridge {
      * not change it), so a window behind it would act on somebody else's project. Every coordinator's
      * {@code projectRoot()} / {@code activeProjectRoot()} reads {@code windowProject} for that reason.
      */
+    @Nullable
     Path windowProjectRoot() {
         Project project = enabledWindowProject();
         return project == null ? null : project.rootPath();
     }
 
     /** This window's project, or null when it has none or Projects are switched off. */
-    private Project enabledWindowProject() {
+    private @Nullable Project enabledWindowProject() {
         return windowProject != null && projectsEnabled() ? windowProject : null;
     }
 
@@ -9545,8 +9556,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else {
             map.put(file.toString(), lines);
         }
-        List<Integer> manual =
-                com.editora.editor.ManualFolds.toFlat(buffer.getFoldManager().manualRegions());
+        List<Integer> manual = com.editora.editor.fold.ManualFolds.toFlat(
+                buffer.getFoldManager().manualRegions());
         var manualMap = config.getWorkspaceState().getManualFoldRegions();
         if (manual.isEmpty()) {
             manualMap.remove(file.toString());
@@ -9572,9 +9583,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         List<Integer> manual = config.getWorkspaceState().getManualFoldRegions().get(file.toString());
-        List<Integer> saved = config.getWorkspaceState().getFoldedRegions().get(file.toString());
+        List<Integer> saved = config.getWorkspaceState().getFoldedRegions().getOrDefault(file.toString(), List.of());
         buffer.getFoldManager()
-                .restore(manual == null ? List.of() : com.editora.editor.ManualFolds.fromFlat(manual), saved);
+                .restore(manual == null ? List.of() : com.editora.editor.fold.ManualFolds.fromFlat(manual), saved);
     }
 
     /**
@@ -9620,7 +9631,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The tab hosting {@code buffer}, or null if not open. */
-    private Tab tabForBuffer(EditorBuffer buffer) {
+    private @Nullable Tab tabForBuffer(EditorBuffer buffer) {
         for (Tab t : editorArea.tabs()) {
             if (t.getUserData() == buffer) {
                 return t;
@@ -9682,14 +9693,12 @@ public class MainController implements com.editora.mcp.McpBridge {
      * (export/print).
      */
     private java.nio.file.Path resolveTypstRoot(java.nio.file.Path file) {
-        if (file == null) {
-            return null;
-        }
         java.nio.file.Path marker = com.editora.lsp.RootResolver.findMarkerRoot(file, java.util.List.of("typst.toml"));
         if (marker != null) {
             return marker;
         }
-        return com.editora.lsp.RootResolver.resolve(windowProjectRoot(), file, java.util.List.of());
+        java.nio.file.Path root = com.editora.lsp.RootResolver.resolve(windowProjectRoot(), file, java.util.List.of());
+        return root != null ? root : file; // resolve answers null only for a null file
     }
 
     private String projectMapBaseName() {
@@ -9790,7 +9799,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return com.editora.config.PathKeys.canonicalKey(buffer.getPath());
     }
 
-    private Tab tabForKey(String fileKey) {
+    private @Nullable Tab tabForKey(String fileKey) {
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null && b.getPath() != null && noteKey(b).equals(fileKey)) {
@@ -9806,7 +9815,13 @@ public class MainController implements com.editora.mcp.McpBridge {
      * field text; the caller trims/validates. Cancelling does nothing. Also the {@link OverlayInput.Prompt}
      * the tool-window panels call (so they don't need the overlay host / keymap directly).
      */
-    void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+    void promptText(String title, String label, @Nullable String initial, Consumer<String> onAccept) {
+        promptTextIn(overlayHost, title, label, initial, onAccept);
+    }
+
+    /** {@link #promptText} in another of this window's scenes (the Project Map window has its own host). */
+    void promptTextIn(
+            OverlayHost host, String title, String label, @Nullable String initial, Consumer<String> onAccept) {
         Label promptLabel = new Label(label);
         TextField field = new TextField(initial == null ? "" : initial);
         field.setPrefColumnCount(32);
@@ -9814,15 +9829,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         com.editora.command.TextInputKeymap.install(field, keymap);
         VBox body = new VBox(6, promptLabel, field);
         OverlayInput.show(
-                overlayHost,
-                title,
-                body,
-                field,
-                tr("dialog.ok"),
-                null,
-                () -> onAccept.accept(field.getText()),
-                null,
-                false);
+                host, title, body, field, tr("dialog.ok"), null, () -> onAccept.accept(field.getText()), null, false);
     }
 
     /** Opens the Debug Log window (captured java.util.logging output + uncaught exceptions). Backs the
@@ -9945,10 +9952,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The selection policy for caret-movement commands: extend from the mark when it's active. */
     SelectionPolicy selPolicy() {
         return editing.markActive() ? SelectionPolicy.ADJUST : SelectionPolicy.CLEAR;
-    }
-
-    private static Path pathOf(java.io.File file) {
-        return file == null ? null : file.toPath();
     }
 
     // --- Keyboard macros (record / replay / save / run): see MacroCoordinator ---

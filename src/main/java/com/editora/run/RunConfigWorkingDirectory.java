@@ -3,6 +3,7 @@ package com.editora.run;
 import java.nio.file.Path;
 
 import com.editora.config.RunConfiguration;
+import org.jspecify.annotations.Nullable;
 
 /** Resolves the working directory for a non-Java saved run configuration. */
 public final class RunConfigWorkingDirectory {
@@ -25,7 +26,7 @@ public final class RunConfigWorkingDirectory {
      * the same from its gutter ▶ and from its configuration. A Python module ({@code python -m}) has no folder of
      * its own and runs at the project root.
      */
-    public static Path resolve(RunConfiguration cfg, Path projectRoot) {
+    public static @Nullable Path resolve(RunConfiguration cfg, @Nullable Path projectRoot) {
         Path scriptFolder = scriptFolder(cfg);
         if (cfg.workingDir().isBlank() && ScriptRunCommand.PYTHON.equals(cfg.type())) {
             Path script = script(cfg, projectRoot, null);
@@ -59,7 +60,7 @@ public final class RunConfigWorkingDirectory {
      * The script a Python or shell configuration runs, resolved against its working directory {@code dir}
      * (where the interpreter will look for a relative path); {@code null} for other types or a blank target.
      */
-    public static Path script(RunConfiguration cfg, Path dir) {
+    public static @Nullable Path script(RunConfiguration cfg, @Nullable Path dir) {
         if (!isFileScript(cfg) || cfg.target().isBlank()) {
             return null;
         }
@@ -76,7 +77,7 @@ public final class RunConfigWorkingDirectory {
      * relative to the working directory {@code dir} (how older configurations could be written) still resolves
      * there. With no project, it is relative to {@code dir}. {@code null} for other types or a blank target.
      */
-    public static Path script(RunConfiguration cfg, Path projectRoot, Path dir) {
+    public static @Nullable Path script(RunConfiguration cfg, @Nullable Path projectRoot, @Nullable Path dir) {
         if (!isFileScript(cfg) || cfg.target().isBlank()) {
             return null;
         }
@@ -98,7 +99,7 @@ public final class RunConfigWorkingDirectory {
     }
 
     /** An absolute script target's folder; null for a relative or non-file target. */
-    private static Path scriptFolder(RunConfiguration cfg) {
+    private static @Nullable Path scriptFolder(RunConfiguration cfg) {
         if (!isFileScript(cfg) || cfg.target().isBlank()) {
             return null;
         }

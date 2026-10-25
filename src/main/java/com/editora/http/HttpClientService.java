@@ -37,6 +37,8 @@ import java.util.function.IntConsumer;
 
 import javafx.application.Platform;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -158,10 +160,10 @@ public final class HttpClientService {
     public static final class Handle {
         private final AtomicBoolean cancelled = new AtomicBoolean();
         private final CompletableFuture<Void> delivered = new CompletableFuture<>();
-        private volatile CompletableFuture<?> pending;
-        private volatile InputStream stream;
+        private volatile @Nullable CompletableFuture<?> pending;
+        private volatile @Nullable InputStream stream;
         /** The request body of the exchange in flight, whose files a cancel closes (they stay open otherwise). */
-        private volatile RequestBodies.Content body;
+        private volatile RequestBodies.@Nullable Content body;
 
         public void cancel() {
             if (cancelled.compareAndSet(false, true)) {
@@ -271,7 +273,7 @@ public final class HttpClientService {
     public Handle run(
             HttpFile.Parsed parsed,
             RunEnvironment environment,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             SecretGate gate,
             ResponseScripts scripts,
@@ -340,7 +342,7 @@ public final class HttpClientService {
     public Handle runAll(
             List<HttpFile.Parsed> parsed,
             RunEnvironment environment,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses responses,
             SecretGate gate,
             ResponseScripts scripts,
@@ -390,10 +392,10 @@ public final class HttpClientService {
             Handle handle,
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             Session session,
-            SecretApproval.Grant approval,
+            SecretApproval.@Nullable Grant approval,
             ResponseScripts scripts) {
         ResponseScripts.PreResult pre = preRequest(handle, request, vars, baseDir, captured, scripts);
         if (pre.notSent() != null) {
@@ -447,7 +449,7 @@ public final class HttpClientService {
             Handle handle,
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             ResponseScripts scripts) {
         if (request.preScripts().isEmpty()) {
@@ -555,10 +557,10 @@ public final class HttpClientService {
             Handle handle,
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             Session session,
-            SecretApproval.Grant approval) {
+            SecretApproval.@Nullable Grant approval) {
         HttpVars.Unresolved unresolved = new HttpVars.Unresolved();
         try {
             return execute(handle, request, vars, baseDir, captured, session, approval, unresolved);
@@ -591,10 +593,10 @@ public final class HttpClientService {
             Handle handle,
             HttpFile.Parsed request,
             Map<String, String> vars,
-            Path baseDir,
+            @Nullable Path baseDir,
             CapturedResponses captured,
             Session session,
-            SecretApproval.Grant approval,
+            SecretApproval.@Nullable Grant approval,
             HttpVars.Unresolved unresolved) {
         // The clock is a real instant in the user's zone: $timestamp/$isoTimestamp are UTC whatever the zone.
         ZonedDateTime now = ZonedDateTime.now();
@@ -773,9 +775,9 @@ public final class HttpClientService {
             java.net.http.HttpHeaders headers,
             byte[] body,
             boolean truncated,
-            Stop stopped,
-            String undecoded,
-            String overLayered,
+            @Nullable Stop stopped,
+            @Nullable String undecoded,
+            @Nullable String overLayered,
             HttpClient.Version version,
             URI uri,
             List<URI> redirects) {}
@@ -797,9 +799,9 @@ public final class HttpClientService {
             String method,
             List<String[]> headers,
             Duration timeout,
-            Duration idle,
+            @Nullable Duration idle,
             HttpRequest.BodyPublisher publisher,
-            String authOverride)
+            @Nullable String authOverride)
             throws IOException, InterruptedException {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(timeout);
         for (String[] h : headers) {
@@ -834,7 +836,7 @@ public final class HttpClientService {
                 prev = prev.get().previousResponse()) {
             redirects.add(0, prev.get().uri());
         }
-        AtomicReference<Stop> stopped = new AtomicReference<>();
+        AtomicReference<@Nullable Stop> stopped = new AtomicReference<>();
         try (InputStream raw = resp.body()) {
             handle.stream = raw;
             if (handle.isCancelled()) {
@@ -871,7 +873,7 @@ public final class HttpClientService {
      * or once nothing has arrived for {@code idle} (when set), recording which in {@code stopped}.
      */
     private ScheduledFuture<?> watch(
-            InputStream in, AtomicReference<Stop> stopped, AtomicLong lastRead, Duration idle) {
+            InputStream in, AtomicReference<@Nullable Stop> stopped, AtomicLong lastRead, @Nullable Duration idle) {
         long start = System.nanoTime();
         long deadline = bodyDeadline.toNanos();
         long idleNanos = idle == null ? Long.MAX_VALUE : idle.toNanos();
@@ -902,7 +904,7 @@ public final class HttpClientService {
             ByteArrayOutputStream out,
             int max,
             Handle handle,
-            AtomicReference<Stop> stopped,
+            AtomicReference<@Nullable Stop> stopped,
             AtomicLong lastRead)
             throws IOException {
         byte[] buf = new byte[16 * 1024];
@@ -928,7 +930,7 @@ public final class HttpClientService {
         return false;
     }
 
-    private static void closeQuietly(InputStream in) {
+    private static void closeQuietly(@Nullable InputStream in) {
         if (in != null) {
             try {
                 in.close();

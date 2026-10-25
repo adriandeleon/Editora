@@ -11,6 +11,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
 import com.editora.build.BuildTool;
+import org.jspecify.annotations.Nullable;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.xml.sax.InputSource;
@@ -34,7 +35,7 @@ public final class JUnitXmlParser implements TestResultParser {
     }
 
     @Override
-    public ParsedSuite parseReportFile(Path file) {
+    public @Nullable ParsedSuite parseReportFile(Path file) {
         try {
             String xml = Files.readString(file);
             return parse(xml);
@@ -44,7 +45,7 @@ public final class JUnitXmlParser implements TestResultParser {
     }
 
     /** Parses a JUnit XML {@code <testsuite>} document; {@code null} if the root isn't a testsuite. */
-    public ParsedSuite parse(String xml) throws IOException, SAXException, ParserConfigurationException {
+    public @Nullable ParsedSuite parse(String xml) throws IOException, SAXException, ParserConfigurationException {
         Element suite = document(xml);
         if (suite == null || !"testsuite".equals(suite.getNodeName())) {
             return null;
@@ -58,7 +59,7 @@ public final class JUnitXmlParser implements TestResultParser {
                 suiteName, tests, text(firstChild(suite, "system-out")), text(firstChild(suite, "system-err")));
     }
 
-    private ParsedTest parseCase(Element tc, String suiteName) {
+    private ParsedTest parseCase(Element tc, @Nullable String suiteName) {
         String method = attr(tc, "name", "");
         String className = attr(tc, "classname", suiteName);
         long durationMs = seconds(attr(tc, "time", ""));
@@ -84,6 +85,37 @@ public final class JUnitXmlParser implements TestResultParser {
             status = TestStatus.SKIPPED;
             failureMessage = attr(skipped, "message", null);
         }
+        // Surefire's reruns (rerunFailingTestsCount): a <flakyFailure>/<flakyError> per failed try before the
+        // pass, a <rerunFailure>/<rerunError> per failed retry after the first failure. The leaf keeps the
+        // count and the traces of every try (review D16).
+        List<Element> reruns = new ArrayList<>();
+        for (String tag : RERUN_TAGS) {
+            reruns.addAll(childElements(tc, tag));
+        }
+        if (!reruns.isEmpty()) {
+            StringBuilder tries = new StringBuilder();
+            int n = 0;
+            for (Element rerun : reruns) {
+                tries.append(tries.isEmpty() ? "" : "\n\n")
+                        .append("--- ")
+                        .append(rerun.getNodeName())
+                        .append(' ')
+                        .append(++n);
+                String type = attr(rerun, "type", null);
+                String message = attr(rerun, "message", null);
+                if (type != null || message != null) {
+                    tries.append(": ")
+                            .append(type != null ? type : "")
+                            .append(type != null && message != null ? ": " : "")
+                            .append(message != null ? message : "");
+                }
+                String trace = text(rerun);
+                if (trace != null) {
+                    tries.append('\n').append(trace);
+                }
+            }
+            stackTrace = stackTrace == null ? tries.toString() : stackTrace + "\n\n" + tries;
+        }
         String fileHint = TestSourceLocator.fileHint(className, tool);
         // Per-testcase captured output when the runner writes it (Surefire's is usually suite-level, but a
         // <testcase><system-out> does occur) — without this a passing test's detail pane had nothing to show.
@@ -91,10 +123,23 @@ public final class JUnitXmlParser implements TestResultParser {
         String err = text(firstChild(tc, "system-err"));
         String captured = out == null ? err : (err == null ? out : out + "\n" + err);
         return new ParsedTest(
-                className, method, status, durationMs, failureType, failureMessage, stackTrace, captured, fileHint, 0);
+                className,
+                method,
+                status,
+                durationMs,
+                failureType,
+                failureMessage,
+                stackTrace,
+                captured,
+                fileHint,
+                0,
+                reruns.size());
     }
 
-    private static long seconds(String time) {
+    /** Surefire's rerun elements, in the order they are read. */
+    static final List<String> RERUN_TAGS = List.of("flakyFailure", "flakyError", "rerunFailure", "rerunError");
+
+    private static long seconds(@Nullable String time) {
         if (time == null || time.isBlank()) {
             return 0;
         }
@@ -119,7 +164,7 @@ public final class JUnitXmlParser implements TestResultParser {
         return builder.parse(new InputSource(new StringReader(xml))).getDocumentElement();
     }
 
-    private static Element firstChild(Element parent, String tag) {
+    private static @Nullable Element firstChild(Element parent, String tag) {
         if (parent == null) {
             return null;
         }
@@ -143,14 +188,14 @@ public final class JUnitXmlParser implements TestResultParser {
         return out;
     }
 
-    private static String attr(Element el, String name, String fallback) {
+    private static @Nullable String attr(Element el, String name, @Nullable String fallback) {
         if (el == null || !el.hasAttribute(name)) {
             return fallback;
         }
         return el.getAttribute(name);
     }
 
-    private static String text(Element el) {
+    private static @Nullable String text(@Nullable Element el) {
         if (el == null) {
             return null;
         }

@@ -15,6 +15,8 @@ import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import org.jspecify.annotations.Nullable;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -40,7 +42,7 @@ final class GitManagerOverlay<T> {
     private final List<Action<T>> actions;
     private final ListView<T> list = new ListView<>();
     private final List<Button> buttons = new ArrayList<>();
-    private OverlayHost overlayHost;
+    private @Nullable OverlayHost overlayHost;
 
     GitManagerOverlay(
             String title,
@@ -125,10 +127,11 @@ final class GitManagerOverlay<T> {
 
     private void fire(Action<T> action) {
         T selected = list.getSelectionModel().getSelectedItem();
-        if (action.needsSelection() && selected == null) {
+        OverlayHost shownIn = overlayHost; // set by show(), which made the buttons
+        if (shownIn == null || (action.needsSelection() && selected == null)) {
             return;
         }
-        overlayHost.hide();
+        shownIn.hide();
         action.run().accept(selected);
     }
 

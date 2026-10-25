@@ -60,6 +60,21 @@
 .text.maven-build-success { -fx-fill: -color-success-fg; -fx-font-weight: bold; }
 .text.maven-build-failure { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
 
+/* The same levels and verdicts inside a console that carries `.editor-area` (the Output tabs, the Run and
+   External Tools consoles). The compound selectors above have specificity 0,2,0 — the same as every editor
+   theme's `.editor-area .text { -fx-fill }`, which loads later and so won: a Maven [ERROR] line kept only its
+   bold weight and BUILD SUCCESS / FAILURE never showed green or red under Editora Light or any other named
+   theme (Maven review B3). Restated with the `.editor-area` prefix (0,3,0), as run-stderr below already is.
+   BuildConsoleColorsFxTest checks the rendered Text fills under the editor themes. */
+.editor-area .text.log-error     { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
+.editor-area .text.log-warn      { -fx-fill: -color-warning-fg; -fx-font-weight: bold; }
+.editor-area .text.log-info      { -fx-fill: -color-success-fg; }
+.editor-area .text.log-debug     { -fx-fill: -color-fg-muted; }
+.editor-area .text.log-trace     { -fx-fill: -color-fg-subtle; }
+.editor-area .text.log-timestamp { -fx-fill: -color-accent-fg; }
+.editor-area .text.maven-build-success { -fx-fill: -color-success-fg; -fx-font-weight: bold; }
+.editor-area .text.maven-build-failure { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
+
 /* Run console (com.editora.ui.RunPanel): stderr lines are tinted so error output — e.g. a Python
    traceback — stands out from normal stdout. Applied via setStyleSpans, not a grammar. */
 /* `.editor-area` in front: these consoles carry that class, and every editor theme's
@@ -168,7 +183,8 @@
 .text.sem-function  { -fx-fill: #8250df; }
 .text.sem-type      { -fx-fill: #953800; }
 .text.sem-macro     { -fx-fill: #953800; }
-.text.sem-constant  { -fx-fill: #0550ae; } /* readonly/static emphasis */
+.text.sem-constant  { -fx-fill: #0550ae; } /* a static final (readonly) variable or property */
+.text.sem-static { -fx-font-style: italic; } /* a static member: its own colour, in italics (Java review A14) */
 .text.sem-deprecated { -fx-fill: #6e7781; -fx-strikethrough: true; } /* TextMate can never do this */
 
 /* Matching-bracket highlight (combined with the bracket's token class, so it keeps its color). A
