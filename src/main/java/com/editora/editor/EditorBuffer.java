@@ -1084,6 +1084,11 @@ public class EditorBuffer implements TabContent {
         completionActions.triggerCompletion();
     }
 
+    /** Opens the completion list with only what {@code filter} keeps of the server's items (Smart Type). */
+    public void triggerCompletion(java.util.function.UnaryOperator<List<com.editora.completion.Completion>> filter) {
+        completionActions.triggerCompletion(filter);
+    }
+
     public void setLspCompletionSource(com.editora.completion.CompletionSource source) {
         completionActions.setLspCompletionSource(source);
     }

@@ -7719,6 +7719,71 @@ final class LspCoordinator {
      * {@code ,}, and the typing-pause refresh while the popup is up — stays silent. A response with no
      * signatures hides the popup, which is also how it closes once the caret leaves the call.
      */
+    /**
+     * Smart Type completion (IntelliJ's Ctrl+Shift+Space, Java only): the completion list cut down to what fits
+     * the type expected at the caret. The type comes from the code ({@link com.editora.lsp.JavaExpectedType}),
+     * or for a call's argument from signature help; where none is stated the full list opens, and says so.
+     */
+    void smartTypeCompletion() {
+        EditorBuffer b = host.activeBuffer();
+        Path path = b == null ? null : lspPath(b);
+        if (b == null || path == null || !LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
+            host.setStatus(tr("status.lsp.smartTypeJavaOnly"));
+            if (b != null) {
+                b.triggerCompletion();
+            }
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        int caret = area.getCaretPosition();
+        long version = b.docVersion();
+        var expected = com.editora.lsp.JavaExpectedType.at(area.getText(), caret);
+        if (expected == null) {
+            host.setStatus(tr("status.lsp.smartTypeUnknown"));
+            b.triggerCompletion();
+            return;
+        }
+        String type = expected.type();
+        if (type != null) {
+            showSmartType(b, type, expected.afterNew());
+            return;
+        }
+        lspManager.changeDocument(path, b.text());
+        lspManager.signatureHelp(path, area.getCurrentParagraph(), area.getCaretColumn(), null, false, null, help -> {
+            if (b != host.activeBuffer()
+                    || b.isDisposed()
+                    || version != b.docVersion()
+                    || caret != area.getCaretPosition()) {
+                return;
+            }
+            var active = com.editora.lsp.SignatureFormat.resolve(help);
+            String parameter = active == null
+                            || active.paramStart() < 0
+                            || active.paramEnd() > active.label().length()
+                    ? null
+                    : com.editora.lsp.JavaExpectedType.parameterType(
+                            active.label().substring(active.paramStart(), active.paramEnd()));
+            if (parameter == null) {
+                host.setStatus(tr("status.lsp.smartTypeUnknown"));
+                b.triggerCompletion();
+            } else {
+                showSmartType(b, parameter, expected.afterNew());
+            }
+        });
+    }
+
+    private void showSmartType(EditorBuffer b, String type, boolean afterNew) {
+        host.setStatus(tr("status.lsp.smartType", type));
+        b.triggerCompletion(items -> {
+            List<com.editora.completion.Completion> kept =
+                    com.editora.lsp.SmartTypeFilter.filter(items, type, afterNew);
+            if (kept.isEmpty() && !items.isEmpty()) {
+                Platform.runLater(() -> host.setStatus(tr("status.lsp.smartTypeNone", type)));
+            }
+            return kept;
+        });
+    }
+
     void signatureHelp(boolean manual) {
         signatureHelp(manual, null);
     }

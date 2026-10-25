@@ -162,7 +162,8 @@ final class MenuBarModel {
                                 "edit.deleteLine",
                                 SEPARATOR,
                                 "edit.stringOps",
-                                "edit.completion")),
+                                "edit.completion",
+                                "lsp.smartTypeCompletion")),
                 new MenuSpec(
                         "menubar.find",
                         List.of(

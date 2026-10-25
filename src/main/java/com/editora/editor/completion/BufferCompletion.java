@@ -140,6 +140,9 @@ public final class BufferCompletion {
     long completionGen;
     private long renderGen;
     private @Nullable CompletionSource completionSource;
+    /** Smart Type completion's filter over the server's list, for the list it opened; null = all of it. */
+    private java.util.function.@Nullable UnaryOperator<List<Completion>> lspFilter;
+
     private Runnable cancelRequest = () -> {};
     private @Nullable CompletionSession session;
     private @Nullable CompletionSession shownSession;
@@ -960,6 +963,16 @@ public final class BufferCompletion {
         updateCompletion(a, true);
     }
 
+    /**
+     * A manual trigger whose list shows only what {@code filter} keeps of the server's items, and none of the
+     * local ones (Smart Type completion). The filter lasts until the list closes.
+     */
+    public void triggerCompletion(java.util.function.UnaryOperator<List<Completion>> filter) {
+        hidePopup();
+        lspFilter = filter;
+        triggerCompletion();
+    }
+
     /** Recomputes the word at the caret and shows/refreshes/hides the popup. {@code manual} lowers the
      *  minimum prefix length so an explicit invoke works on a single character. */
     public void updateCompletion(CodeArea a, boolean manual) {
@@ -1536,6 +1549,7 @@ public final class BufferCompletion {
         cancelRequest = () -> {};
         session = null;
         shownSession = null;
+        lspFilter = null;
         completionAnchor = null;
         completionAnchorStart = -1;
         localShown = false;
@@ -1641,14 +1655,16 @@ public final class BufferCompletion {
         if (result == null) {
             return;
         }
-        var items = result.items();
+        var smart = lspFilter;
+        var items = smart == null ? result.items() : smart.apply(result.items());
+        List<Completion> local = smart == null ? localItems : List.of();
         int line = a.getCurrentParagraph();
         int column = a.getCaretColumn();
         String beforeCaret = a.getText(
                 Math.max(a.getAbsolutePosition(line, 0), a.getCaretPosition() - PREFIX_LOOKBACK), a.getCaretPosition());
         long filter = CompletionTrace.now();
-        java.util.concurrent.CompletableFuture.supplyAsync(() -> mergeCompletions(
-                        CompletionEngine.filterLsp(items, prefix, line, column, beforeCaret), localItems))
+        java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                        mergeCompletions(CompletionEngine.filterLsp(items, prefix, line, column, beforeCaret), local))
                 .thenAccept(merged -> Platform.runLater(() -> {
                     if (render != renderGen
                             || context != session
