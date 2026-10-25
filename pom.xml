@@ -52,7 +52,7 @@
         <pdfbox.version>3.0.8</pdfbox.version>
         <poi.version>6.0.0</poi.version>
         <lucene.version>10.5.2</lucene.version>
-        <javadiffutils.version>4.17</javadiffutils.version>
+        <javadiffutils.version>4.18</javadiffutils.version>
         <!-- Do not bump without reading docs/dependencies.md (sshd-osgi): 2.17+ changed
              SftpFileSystem.getDefaultDir() in a way RemoteFileSystems depends on, and 2.20.0 is wanted
              (CVE-2026-94002, SFTP client memory exhaustion). -->
