@@ -904,7 +904,10 @@ final class LspCoordinator {
         forEachCrashedBuffer(serverId, root, b -> {
             b.setLspActive(false);
             clearDiagnostics(lspPath(b));
-            syncBufferWhenShown(b);
+            // At once, shown or not: deferred, a background tab's problems left the Problems window until it was
+            // next shown (third review CT9). The server is already starting for the other window.
+            deferredLsp.remove(b);
+            syncBuffer(b);
         });
         updateStatusBar();
     }
@@ -1226,7 +1229,17 @@ final class LspCoordinator {
             for (LspDiagnostic d : listed) {
                 if (d.severity().ordinal() <= LspDiagnostic.Severity.WARNING.ordinal()
                         && announcedProjectProblems.add(key + "\u0000" + d.message())) {
-                    host.setError(tr("status.lsp.projectProblem", PathDisplay.fileName(file), d.message()));
+                    // the project's folder name, not "pom.xml"; a warning is not said as an error (CT8)
+                    Path project = java.nio.file.Files.isDirectory(file) ? file : file.getParent();
+                    String text = tr(
+                            "status.lsp.projectProblem",
+                            project == null ? PathDisplay.fileName(file) : PathDisplay.fileName(project),
+                            d.message());
+                    if (d.severity() == LspDiagnostic.Severity.ERROR) {
+                        host.setError(text);
+                    } else {
+                        host.setStatus(text);
+                    }
                     break;
                 }
             }
@@ -3188,23 +3201,33 @@ final class LspCoordinator {
         return settle;
     }
 
-    /** Servers whose project did not import cleanly since the last restart or reload: never "ready" over that. */
+    /** Servers whose project did not import since the last restart, reload or clean: never "ready" over that. */
     private final java.util.Set<String> importFailed = new java.util.HashSet<>();
+
+    /** Servers whose project imported with build problems (a missing dependency): ready, but said so. */
+    private final java.util.Set<String> importWarned = new java.util.HashSet<>();
 
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
         if (line != null) {
             String server = line.serverId() == null ? "LSP" : serverProgram(line.serverId());
+            String id = String.valueOf(line.serverId());
             if (line.problem()) {
-                // The reason is in the server's log only (a Gradle exception), and Problems often has nothing
-                // to show: say the reason here, never jdtls's raw "WARNING" (re-review CN2, CN9).
-                importFailed.add(String.valueOf(line.serverId()));
+                // jdtls says WARNING both for an import that threw (a Gradle build that does not run: it logs the
+                // exception) and for one that worked with build problems (a missing Maven artifact: nothing
+                // logged). Only the first is "did not import" (re-review CN2, third review CT2); its reason is in
+                // the log only, so it is said here.
                 String reason = lspManager.lastServerError(line.serverId());
-                host.setError(
-                        reason == null
-                                ? tr("status.lsp.importProblem", server)
-                                : tr("status.lsp.importProblemWhy", server, reason));
-            } else if (line.ready() && importFailed.contains(String.valueOf(line.serverId()))) {
+                if (reason == null) {
+                    importWarned.add(id);
+                    host.setStatus(tr("status.lsp.importProblem", server));
+                } else {
+                    importFailed.add(id);
+                    host.setError(tr("status.lsp.importProblemWhy", server, reason.replaceFirst("[.\\s]+$", "")));
+                }
+            } else if (line.ready() && importFailed.contains(id)) {
                 host.setError(tr("status.lsp.readyImportFailed", server)); // not "Loaded and ready" over it
+            } else if (line.ready() && importWarned.remove(id)) {
+                host.setStatus(tr("status.lsp.readyWithProblems", server));
             } else {
                 host.setStatus(
                         line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
@@ -3228,6 +3251,7 @@ final class LspCoordinator {
         startBlocked.clear();
         failingServers.clear();
         importFailed.clear();
+        importWarned.clear();
         statusNarrator.forget(null);
         lspManager.restartAll(); // a Java server shared with another window restarts for both
         clearAllDiagnostics();
@@ -4471,11 +4495,20 @@ final class LspCoordinator {
      * notification, so the only observable result is fresh diagnostics arriving.
      */
     void reloadProject() {
+        boolean failed = importFailed.remove(LspServerRegistry.JAVA_SERVER_ID);
         importFailed.clear(); // the import runs again: its outcome is said afresh
+        importWarned.clear();
         EditorBuffer b = host.activeBuffer(); // a pom.xml tab counts, whichever server (if any) edits it
         Path path = b == null ? null : lspPath(b);
         if (path == null) {
             host.setStatus(tr("status.lsp.unavailable"));
+            return;
+        }
+        if (failed && lspManager.hasJavaSession(path)) {
+            // An import that threw made no Java project, so java/projectConfigurationUpdate updated nothing:
+            // Problems emptied and no file was checked again (third review CT1). Start the server over instead.
+            restartJavaServer(path);
+            host.setStatus(tr("status.lsp.projectReimporting"));
             return;
         }
         if (lspManager.reloadProjectConfiguration(path)) {
@@ -4516,10 +4549,67 @@ final class LspCoordinator {
         correctedSourceRoots.clear();
         builtAfterImport.clear(); // the fresh import builds again
         announcedProjectProblems.clear();
+        importFailed.clear(); // the fresh import says its own outcome (third review CT3)
+        importWarned.clear();
+        java.util.List<EditorBuffer> java = javaBuffersOf(path);
+        clearProjectProblems(); // the dead server's "project:1" entries would stay for good
         lspManager.cleanJavaWorkspace(path, deleted -> {
             host.setStatus(tr(deleted ? "status.lsp.javaWorkspaceCleaned" : "status.lsp.javaWorkspaceKept"));
-            applyGating(); // reopen the project's files: the server starts again on a fresh workspace
+            applyGating();
+            // Reopen the project's files now, not when each tab is next shown: run from a pom.xml or build.gradle
+            // tab, nothing started the server again (third review CT5).
+            reopenNow(java);
         });
+    }
+
+    /** Restarts {@code path}'s Java server in this window, its open Java files reopened on the new one. */
+    private void restartJavaServer(Path path) {
+        java.util.List<EditorBuffer> java = javaBuffersOf(path);
+        statusNarrator.forget(LspServerRegistry.JAVA_SERVER_ID);
+        clearProjectProblems();
+        stopServer(LspServerRegistry.JAVA_SERVER_ID);
+        applyGating();
+        reopenNow(java);
+    }
+
+    /**
+     * The open Java files of {@code path}'s project: those its Java server has open, else, from a build file,
+     * the {@code .java} files under the build file's folder.
+     */
+    private java.util.List<EditorBuffer> javaBuffersOf(Path path) {
+        java.util.List<EditorBuffer> out = new java.util.ArrayList<>();
+        Path dir = path.getParent();
+        host.forEachBuffer(b -> {
+            Path p = lspPath(b);
+            if (p == null) {
+                return;
+            }
+            boolean served = LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(p));
+            boolean underBuildFile = dir != null && p.toString().endsWith(".java") && p.startsWith(dir);
+            if (served || underBuildFile) {
+                out.add(b);
+            }
+        });
+        return out;
+    }
+
+    /** Syncs {@code buffers} at once, shown or not: their server starts (or they join it) now. */
+    private void reopenNow(java.util.List<EditorBuffer> buffers) {
+        for (EditorBuffer b : buffers) {
+            if (!b.isDisposed()) {
+                deferredLsp.remove(b);
+                syncBuffer(b);
+            }
+        }
+    }
+
+    /** Drops the Problems entries of projects (rather than files): their server is going away. */
+    private void clearProjectProblems() {
+        for (Path p : java.util.List.copyOf(problems.keySet())) {
+            if (LspManager.projectLevel(p) && bufferForLspPath(p) == null) {
+                clearDiagnostics(p);
+            }
+        }
     }
 
     /** Java roots already offered a Lombok download in this window. */

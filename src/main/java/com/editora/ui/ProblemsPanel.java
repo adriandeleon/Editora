@@ -310,6 +310,9 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
     /** Friendly display name for a file's programming language (proper nouns, deliberately untranslated). */
     private static String languageOf(Path file) {
+        if (java.nio.file.Files.isDirectory(file)) {
+            return tr("problems.project"); // a project's own problems arrive on its folder: not "Plaintext" (CT8)
+        }
         String name = com.editora.text.LanguageNames.display(LanguageRegistry.forFileName(file.toString()));
         return name.isEmpty() ? "Other" : name;
     }

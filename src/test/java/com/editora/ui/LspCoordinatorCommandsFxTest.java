@@ -1445,8 +1445,8 @@ class LspCoordinatorCommandsFxTest {
         fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(jdk)));
         assertEquals(
                 tr("status.lsp.projectProblem", root.getFileName().toString(), jdk.message()),
-                fx.host.lastError(),
-                "a problem of the project, not a file, is said");
+                fx.host.lastStatus(),
+                "a problem of the project, not a file, is said; a warning not as an error (third review CT8)");
         assertTrue(
                 FxTestSupport.callOnFx(() -> fx.coordinator.problems()).containsKey(fx.ops.canonicalize(root)),
                 "and listed although no tab shows the folder");
@@ -1758,6 +1758,41 @@ class LspCoordinatorCommandsFxTest {
 
         fx.run(() -> fx.coordinator.onServerStatus("java", "ServiceReady", "ServiceReady"));
         awaitError(tr("status.lsp.readyImportFailed", "jdtls"));
+    }
+
+    @Test
+    void anImportWithBuildProblemsIsLoadedNotFailed() throws Exception {
+        fx.open("A.java", SOURCE);
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "WARNING")); // a missing artifact: no log
+        awaitStatus(tr("status.lsp.importProblem", "jdtls"));
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyWithProblems", "jdtls")); // not "did not import" (third review CT2)
+    }
+
+    @Test
+    void reloadAfterAFailedImportStartsTheServerOverAndCleanForgetsTheFailure() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(
+                fx.manager, b.getPath(), "Oct 25, 2026, 3:13:16\u202FPM Could not fetch model of type 'Map'.");
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "WARNING"));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not fetch model of type 'Map'")); // CT7
+        int notified = fx.server().rawNotifications.size();
+
+        fx.run(() -> fx.coordinator.reloadProject());
+
+        assertEquals(tr("status.lsp.projectReimporting"), fx.host.lastStatus(), "third review CT1");
+        assertTrue(
+                fx.server().rawNotifications.stream()
+                        .skip(notified)
+                        .noneMatch(r -> r.method().equals("java/projectConfigurationUpdate")),
+                "no update of a project that does not exist");
+
+        LspTestHooks.logError(fx.manager, b.getPath(), "Could not fetch model again");
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "WARNING"));
+        fx.run(() -> fx.coordinator.cleanJavaWorkspace());
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.onServerStatus("java", "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.ready", "jdtls")); // the fresh import says its own outcome (CT3)
     }
 
     @Test
