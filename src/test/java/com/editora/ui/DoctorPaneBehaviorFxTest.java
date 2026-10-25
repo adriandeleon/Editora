@@ -20,6 +20,7 @@ import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -126,6 +127,33 @@ class DoctorPaneBehaviorFxTest {
             Node after = FxTestSupport.callOnFx(() -> s.stage().getScene().getFocusOwner());
             assertTrue(isInside(after, s.pane()), "focus left the Doctor page: " + after);
             assertEquals("fold:opt:lsp", after.getProperties().get("doctor.role"));
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
+
+    /** An install older than its pin keeps its install action, labelled Update; a plain warning gets none. */
+    @Test
+    void anOutdatedInstallOffersUpdateAndAPlainWarningDoesNot() throws Exception {
+        DoctorCheck outdated = DoctorCheck.checking("lsp.groovy", "lsp", "Groovy", "gls")
+                .withInstall(DoctorCheck.Install.SERVER, "groovy")
+                .outdated("0.4.1 — /x/gls", "doctor.tip.pinOutdated", "0.4.1", "0.4.8");
+        DoctorCheck failing = DoctorCheck.checking("lsp.xml", "lsp", "XML", "lemminx")
+                .withInstall(DoctorCheck.Install.SERVER, "xml")
+                .warn("lemminx", "doctor.tip.serverFailing");
+        Shown s = show(List.of(outdated, failing));
+        try {
+            Button update = FxTestSupport.callOnFx(() -> button(row(s.pane(), "lsp.groovy"), "install"));
+            assertNotNull(update, "Update is offered");
+            assertEquals(com.editora.i18n.Messages.tr("doctor.action.update"), update.getText());
+            assertNull(
+                    FxTestSupport.callOnFx(() -> button(row(s.pane(), "lsp.xml"), "install")),
+                    "a server that fails is not reinstalled by a warning's button");
+
+            FxTestSupport.runOnFx(() -> s.pane().installStarted("lsp.groovy"));
+            FxTestSupport.drainFx();
+            Button busy = FxTestSupport.callOnFx(() -> button(row(s.pane(), "lsp.groovy"), "install"));
+            assertEquals(com.editora.i18n.Messages.tr("doctor.action.updating"), busy.getText());
         } finally {
             FxTestSupport.runOnFx(s.stage()::hide);
         }

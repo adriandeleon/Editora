@@ -507,7 +507,7 @@ class DoctorCatalogFxTest {
         DoctorCheck oldResult = spec(specs(host, new Ops()), "run.java").probe().get();
         assertEquals(DoctorStatus.WARN, oldResult.status());
         assertEquals("doctor.tip.javaOld", oldResult.tipKey());
-        assertEquals(List.of("17"), oldResult.tipArgs());
+        assertEquals(List.of("17", "25"), oldResult.tipArgs(), "the version found, then the floor (VersionFloor)");
 
         Path gone = dir.resolve("jdk-gone");
         host.settings.setMavenJdkHome(gone.toString());

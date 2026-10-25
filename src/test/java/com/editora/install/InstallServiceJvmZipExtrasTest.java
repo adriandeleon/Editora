@@ -71,9 +71,13 @@ class InstallServiceJvmZipExtrasTest {
         return config.resolve("plugins/lsp/maven");
     }
 
+    /** The jars installed, without the version receipt every pinned install leaves (InstallReceiptTest). */
     private List<String> installed() throws IOException {
         try (var list = Files.list(dest())) {
-            return list.map(p -> p.getFileName().toString()).sorted().toList();
+            return list.map(p -> p.getFileName().toString())
+                    .filter(n -> !n.equals(InstallReceipt.FILE_NAME))
+                    .sorted()
+                    .toList();
         }
     }
 

@@ -67,12 +67,16 @@ class InstallServiceFailedInstallTest {
     }
 
     /** The names directly inside {@code dir} (empty when it does not exist). */
+    /** The install's files, without the version receipt every pinned install leaves (InstallReceiptTest). */
     private static List<String> children(Path dir) throws IOException {
         if (!Files.isDirectory(dir)) {
             return List.of();
         }
         try (Stream<Path> list = Files.list(dir)) {
-            return list.map(p -> p.getFileName().toString()).sorted().toList();
+            return list.map(p -> p.getFileName().toString())
+                    .filter(n -> !n.equals(InstallReceipt.FILE_NAME))
+                    .sorted()
+                    .toList();
         }
     }
 

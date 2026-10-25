@@ -51,6 +51,10 @@ class DoctorCoordinatorFxTest {
         InstallCatalog.Lang installedLang;
         boolean installedTypstCli;
         String openedSettingsKey;
+        boolean updateAsked;
+        List<String> servers = List.of("java", "json");
+        java.util.Map<String, List<String>> argv = new java.util.HashMap<>();
+        java.nio.file.Path config;
 
         @Override
         public com.editora.mermaid.MermaidService mermaidService() {
@@ -84,7 +88,18 @@ class DoctorCoordinatorFxTest {
 
         @Override
         public List<String> lspServerIds() {
-            return List.of("java", "json");
+            return servers;
+        }
+
+        @Override
+        public java.nio.file.Path configDir() {
+            return config;
+        }
+
+        @Override
+        public void installServer(String serverId, boolean update, Consumer<Boolean> onDone) {
+            updateAsked = update;
+            installServer(serverId, onDone);
         }
 
         @Override
@@ -94,7 +109,7 @@ class DoctorCoordinatorFxTest {
 
         @Override
         public List<String> lspServerArgv(String serverId) {
-            return List.of(serverId + "-server");
+            return argv.getOrDefault(serverId, List.of(serverId + "-server"));
         }
 
         @Override
@@ -208,6 +223,97 @@ class DoctorCoordinatorFxTest {
         DoctorCheck debugpy = spec(specs, "debug.python").probe().get();
         assertEquals(DoctorStatus.MISSING, debugpy.status());
         assertEquals(List.of(python), debugpy.tipArgs());
+    }
+
+    @org.junit.jupiter.api.io.TempDir
+    java.nio.file.Path sandbox;
+
+    /**
+     * Editora's own Groovy server in a fresh config dir, with a receipt saying {@code version} (none when null),
+     * and the server's command pointing into it. The launcher is a plain file marked executable: it is never run.
+     */
+    private FakeOps withEditorasGroovyServer(String name, String version) throws Exception {
+        FakeOps ops = new FakeOps();
+        ops.config = java.nio.file.Files.createDirectories(sandbox.resolve(name));
+        java.nio.file.Path dir = java.nio.file.Files.createDirectories(ops.config.resolve("plugins/lsp/groovy"));
+        java.nio.file.Path launcher = java.nio.file.Files.writeString(dir.resolve("gls-launcher"), "never run");
+        launcher.toFile().setExecutable(true);
+        if (version != null) {
+            new com.editora.install.InstallReceipt("gls", version, null).write(dir);
+        }
+        ops.servers = List.of("groovy");
+        ops.argv.put("groovy", List.of(launcher.toString()));
+        return ops;
+    }
+
+    private static DoctorCheck groovyRow(FakeOps ops) throws Exception {
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(new FakeHost(), ops));
+        List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
+        return spec(specs, "lsp.groovy").probe().get();
+    }
+
+    /** Editora's copy older than the pin warns, names both versions and offers Update. */
+    @Test
+    void anOutdatedCopyOfEditorasOffersUpdate() throws Exception {
+        DoctorCheck row = groovyRow(withEditorasGroovyServer("old", "0.4.1"));
+
+        assertEquals(DoctorStatus.WARN, row.status());
+        assertTrue(row.update());
+        assertEquals("doctor.tip.pinOutdated", row.tipKey());
+        assertEquals(List.of("0.4.1", InstallCatalog.GLS_VERSION), row.tipArgs());
+        assertEquals(DoctorCheck.Install.SERVER, row.install());
+        assertTrue(row.detail().startsWith("0.4.1 — "), row.detail());
+    }
+
+    /** An install from before receipts whose files do not say which release it is also offers Update. */
+    @Test
+    void aCopyOfEditorasWithNoKnownVersionOffersUpdate() throws Exception {
+        DoctorCheck row = groovyRow(withEditorasGroovyServer("unknown", null));
+
+        assertEquals(DoctorStatus.WARN, row.status());
+        assertTrue(row.update());
+        assertEquals("doctor.tip.pinUnknown", row.tipKey());
+    }
+
+    /** The pinned version is simply OK, with the version shown. */
+    @Test
+    void theCopyOfThePinnedVersionIsOk() throws Exception {
+        DoctorCheck row = groovyRow(withEditorasGroovyServer("current", InstallCatalog.GLS_VERSION));
+
+        assertEquals(DoctorStatus.OK, row.status());
+        assertFalse(row.update());
+        assertTrue(row.detail().startsWith(InstallCatalog.GLS_VERSION + " — "), row.detail());
+    }
+
+    /** A server that is not Editora's own and says nothing of its version is left as it is. */
+    @Test
+    void aServerOutsideEditorasFolderIsNotJudged() throws Exception {
+        FakeOps ops = withEditorasGroovyServer("elsewhere", "0.4.1");
+        java.nio.file.Path own = java.nio.file.Files.writeString(sandbox.resolve("own-gls"), "never run");
+        own.toFile().setExecutable(true);
+        ops.argv.put("groovy", List.of(own.toString()));
+
+        DoctorCheck row = groovyRow(ops);
+
+        assertEquals(DoctorStatus.OK, row.status());
+        assertFalse(row.update());
+    }
+
+    /** Update routes to the installer as an update, which reinstalls although the server is found. */
+    @Test
+    void updateAsksTheInstallerToReplaceTheCopy() throws Exception {
+        FakeOps ops = new FakeOps();
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(new FakeHost(), ops));
+        doctor.probeOverrideForTest = spec -> spec.placeholder().ok("");
+        DoctorCheck outdated = DoctorCheck.checking("lsp.groovy", "lsp", "Groovy", "gls")
+                .withInstall(DoctorCheck.Install.SERVER, "groovy")
+                .outdated("0.4.1", "doctor.tip.pinOutdated", "0.4.1", "0.4.8");
+
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.call(doctor, "install", new Class<?>[] {DoctorCheck.class}, outdated));
+
+        assertEquals("groovy", ops.installedServer);
+        assertTrue(ops.updateAsked);
     }
 
     private static DoctorService.CheckSpec spec(List<DoctorService.CheckSpec> specs, String id) {

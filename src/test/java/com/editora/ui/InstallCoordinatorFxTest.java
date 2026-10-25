@@ -75,6 +75,8 @@ class InstallCoordinatorFxTest {
         final Set<String> dap = new HashSet<>();
         boolean typstCli;
         int redetected;
+        final List<String> stopped = new ArrayList<>();
+        final List<String> restarted = new ArrayList<>();
 
         Window(Path configDir) {
             this.configDir = configDir;
@@ -108,6 +110,16 @@ class InstallCoordinatorFxTest {
         @Override
         public void reapplyToolSupport() {
             redetected++;
+        }
+
+        @Override
+        public void stopServer(String serverId) {
+            stopped.add(serverId);
+        }
+
+        @Override
+        public void restartServer(String serverId) {
+            restarted.add(serverId);
         }
     }
 
@@ -326,6 +338,73 @@ class InstallCoordinatorFxTest {
             assertEquals(List.of(tr("status.install.already", tr("install.lang.maven-pom"))), rig.host.statuses);
             assertEquals(List.of(), rig.web.requests());
             assertEquals(0, rig.window.redetected);
+        }
+    }
+
+    /** Editora's own Maven server, as an earlier Editora left it: the jars plus the receipt of {@code version}. */
+    private static void installedMavenServer(Rig rig, String version) throws Exception {
+        Path dest = Files.createDirectories(rig.dir("plugins/lsp/maven"));
+        Files.writeString(dest.resolve("lemminx.jar"), "old");
+        new com.editora.install.InstallReceipt("lemminx-maven", version, null).write(dest);
+        rig.window.lsp.add("maven-pom");
+    }
+
+    /**
+     * Doctor's Update: a server that is found is installed again at the pinned version, stopped while its folder is
+     * replaced and started again on the new copy, and the new copy's receipt names the pin.
+     */
+    @Test
+    void updateReplacesAServerThatIsThereAndRestartsIt() throws Exception {
+        assumeTrue(onPath("java"), "the Maven pom.xml server needs java on PATH");
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "update");
+            installedMavenServer(rig, InstallCatalog.LEMMINX_MAVEN_VERSION);
+            rig.web.serve(InstallCatalog.LEMMINX_MAVEN_ZIP_URL, mavenBundle("2"));
+
+            FxTestSupport.runOnFx(() -> rig.coordinator.installServer("maven-pom", true, rig.outcomes::add));
+            rig.settle();
+
+            assertEquals(List.of(true), rig.outcomes, String.valueOf(rig.alerts));
+            Path dest = rig.dir("plugins/lsp/maven");
+            assertEquals("2", Files.readString(dest.resolve("lemminx.jar")));
+            assertEquals(
+                    InstallCatalog.LEMMINX_MAVEN_VERSION,
+                    com.editora.install.InstallReceipt.read(dest).version());
+            assertEquals(List.of("maven-pom"), rig.window.stopped);
+            assertEquals(List.of("maven-pom"), rig.window.restarted);
+        }
+    }
+
+    /** A plain Install replaces Editora's copy that is older than the pin, instead of calling it installed (D8). */
+    @Test
+    void installReplacesAnOutdatedCopyOfEditoras() throws Exception {
+        assumeTrue(onPath("java"), "the Maven pom.xml server needs java on PATH");
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "outdated");
+            installedMavenServer(rig, "0.1.0");
+            rig.web.serve(InstallCatalog.LEMMINX_MAVEN_ZIP_URL, mavenBundle("2"));
+
+            rig.installServer("maven-pom");
+            rig.settle();
+
+            assertEquals(List.of(true), rig.outcomes, String.valueOf(rig.alerts));
+            assertEquals("2", Files.readString(rig.dir("plugins/lsp/maven/lemminx.jar")));
+        }
+    }
+
+    /** A current copy is still "already installed" to a plain Install: only Update fetches it again. */
+    @Test
+    void aCurrentCopyIsNotFetchedAgainByInstall() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "current");
+            installedMavenServer(rig, InstallCatalog.LEMMINX_MAVEN_VERSION);
+
+            rig.installServer("maven-pom");
+            rig.settle();
+
+            assertEquals(List.of(true), rig.outcomes);
+            assertEquals(List.of(), rig.web.requests());
+            assertEquals(List.of(), rig.window.stopped);
         }
     }
 

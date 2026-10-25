@@ -42,7 +42,7 @@ public final class JsLaunch {
      * The oldest Node.js major that runs the vscode-js-debug server itself. The program being debugged may be
      * older: js-debug then runs on another Node and debugs it through the inspector.
      */
-    public static final int MIN_ADAPTER_NODE_MAJOR = 18;
+    public static final int MIN_ADAPTER_NODE_MAJOR = com.editora.install.VersionFloor.NODE_JS_DEBUG.major();
 
     /**
      * The {@code launch} request for {@code program}. {@code runtime} is the Node command (its executable, then

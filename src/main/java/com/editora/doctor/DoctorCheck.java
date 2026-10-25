@@ -25,7 +25,8 @@ public record DoctorCheck(
         String installArg,
         String settingsKey,
         String enableKey,
-        String helpUrl) {
+        String helpUrl,
+        boolean update) {
 
     /** Which in-app installer (if any) can fix a missing tool; {@code installArg} carries its argument. */
     public enum Install {
@@ -43,7 +44,8 @@ public record DoctorCheck(
     /**
      * The row's main fix, in the order the pane offers it: an in-app {@link Install}, turning a switched-off
      * feature on ({@code enableKey}, e.g. {@code lsp}), or a page saying how to install a tool Editora cannot
-     * fetch ({@code helpUrl}). {@code settingsKey} is always offered beside it.
+     * fetch ({@code helpUrl}). {@code settingsKey} is always offered beside it. {@code update} marks a row whose
+     * install is older than the version Editora pins: its install action reads Update ({@link #outdated}).
      */
     public DoctorCheck {
         command = command == null ? "" : command;
@@ -59,7 +61,7 @@ public record DoctorCheck(
 
     /** The id-to-label core every row starts from; outcome, actions and keys are added by the copies below. */
     public DoctorCheck(String id, String sectionKey, String label, String command, DoctorStatus status) {
-        this(id, sectionKey, label, command, status, "", "", List.of(), Install.NONE, "", "", "", "");
+        this(id, sectionKey, label, command, status, "", "", List.of(), Install.NONE, "", "", "", "", false);
     }
 
     /** A fresh row in the transient {@link DoctorStatus#CHECKING} state (shown while its probe runs). */
@@ -75,6 +77,29 @@ public record DoctorCheck(
     /** Resolved degraded-but-working (optional tool absent, unauthenticated, old version). */
     public DoctorCheck warn(String detail, String tipKey, String... tipArgs) {
         return withOutcome(DoctorStatus.WARN, detail, tipKey, List.of(tipArgs));
+    }
+
+    /**
+     * Resolved working but older than the version Editora installs and is tested with ({@code PinnedVersions}): a
+     * warning whose {@link Install} action the pane offers as Update, which replaces it with the pinned one.
+     */
+    public DoctorCheck outdated(String detail, String tipKey, String... tipArgs) {
+        DoctorCheck warned = warn(detail, tipKey, tipArgs);
+        return new DoctorCheck(
+                id,
+                sectionKey,
+                label,
+                command,
+                warned.status(),
+                warned.detail(),
+                warned.tipKey(),
+                warned.tipArgs(),
+                install,
+                installArg,
+                settingsKey,
+                enableKey,
+                helpUrl,
+                true);
     }
 
     /**
@@ -115,7 +140,8 @@ public record DoctorCheck(
                 arg,
                 settingsKey,
                 enableKey,
-                helpUrl);
+                helpUrl,
+                update);
     }
 
     /** Copy without an install action (its fix is something else, such as turning on another feature). */
@@ -138,7 +164,8 @@ public record DoctorCheck(
                 installArg,
                 key,
                 enableKey,
-                helpUrl);
+                helpUrl,
+                update);
     }
 
     /** Copy carrying the feature a "Turn on" action switches on ({@code lsp}, {@code debug}, …). */
@@ -156,7 +183,8 @@ public record DoctorCheck(
                 installArg,
                 settingsKey,
                 key,
-                helpUrl);
+                helpUrl,
+                update);
     }
 
     /** Copy carrying a "How to install" page, for a tool Editora has no installer for. */
@@ -174,7 +202,8 @@ public record DoctorCheck(
                 installArg,
                 settingsKey,
                 enableKey,
-                url);
+                url,
+                update);
     }
 
     /** Copy with a different command column (e.g. none, for a server with no command configured). */
@@ -192,7 +221,8 @@ public record DoctorCheck(
                 installArg,
                 settingsKey,
                 enableKey,
-                helpUrl);
+                helpUrl,
+                update);
     }
 
     private DoctorCheck withOutcome(DoctorStatus status, String detail, String tipKey, List<String> tipArgs) {
@@ -209,6 +239,7 @@ public record DoctorCheck(
                 installArg,
                 settingsKey,
                 enableKey,
-                helpUrl);
+                helpUrl,
+                false);
     }
 }

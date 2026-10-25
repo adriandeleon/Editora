@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Doctor: Update for servers and tools older than Editora's.** Editora installs jdtls, the JavaScript debugger,
+  the Maven pom.xml server, Groovy's gls, Metals, the Kotlin server, clojure-lsp, ShellCheck and shfmt at the
+  exact release it is tested with. When a new Editora moves to a newer release, Doctor now marks a copy installed
+  under the old one with a warning that names both versions and an **Update…** button, which installs the new
+  release and restarts the server on it. Each install now records its version (`.editora-install` in its folder);
+  for copies from before this, Doctor reads the version from the files or from `--version` where it can, and
+  offers Update where it cannot tell (a Kotlin server from an earlier Editora). Install also replaces Editora's
+  own copy that is known to be older, as it already did for jdtls.
 - **Complete Statement** (`edit.completeStatement`, Code ▸ Complete Statement; Ctrl+Shift+Enter / Cmd+Shift+Enter in
   the IntelliJ keymaps), as IntelliJ's Complete Current Statement: in Java, C, C++, C#, JavaScript, TypeScript, PHP
   and Kotlin it closes the line's open string and brackets, adds the `;` (not in Kotlin) or the `{ }` block a

@@ -830,12 +830,17 @@ final class DoctorPane extends Region implements TabContent {
 
         private void addActions(DoctorCheck c, HBox box) {
             DoctorStatus st = c.status();
+            boolean update = c.update() && st == DoctorStatus.WARN;
             if (c.install() != DoctorCheck.Install.NONE
-                    && (st == DoctorStatus.MISSING || st == DoctorStatus.OPTIONAL)) {
+                    && (update || st == DoctorStatus.MISSING || st == DoctorStatus.OPTIONAL)) {
                 boolean busy = installing.contains(c.id());
                 // Not disabled while busy (a disabled button drops the focus): it says so and ignores clicks;
-                // the installer itself refuses a second run.
-                Button install = action(tr(busy ? "doctor.action.installing" : "doctor.action.install"), "install");
+                // the installer itself refuses a second run. An install older than Editora's pin offers the same
+                // installer as Update, which replaces it with the pinned version.
+                String text = update
+                        ? (busy ? "doctor.action.updating" : "doctor.action.update")
+                        : (busy ? "doctor.action.installing" : "doctor.action.install");
+                Button install = action(tr(text), "install");
                 install.getStyleClass().add(busy ? "doctor-installing" : "doctor-install");
                 install.setOnAction(e -> {
                     if (!installing.contains(c.id())) {

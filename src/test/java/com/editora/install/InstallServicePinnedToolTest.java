@@ -131,9 +131,34 @@ class InstallServicePinnedToolTest {
         assertEquals("the checker", Files.readString(installed));
         try (var list = Files.list(installed.getParent())) {
             assertEquals(
-                    List.of(installed.getFileName().toString()),
-                    list.map(p -> p.getFileName().toString()).toList(),
-                    "only the program is kept");
+                    List.of(InstallReceipt.FILE_NAME, installed.getFileName().toString()),
+                    list.map(p -> p.getFileName().toString()).sorted().toList(),
+                    "only the program is kept, with the receipt that says which release it is");
         }
+    }
+
+    @Test
+    void anInstallRecordsThePinnedVersionItPutDown() throws IOException {
+        serveAsRecipe("shfmt", "#!/bin/sh\necho v3.14.1\n".getBytes());
+
+        assertTrue(install("shfmt").ok());
+
+        Path dir = InstallCatalog.installedToolPath(config, "shfmt").getParent();
+        InstallReceipt receipt = InstallReceipt.read(dir);
+        assertEquals("shfmt", receipt.id());
+        assertEquals(InstallCatalog.SHFMT_VERSION, receipt.version());
+        assertTrue(receipt.installedAt() != null);
+        PinnedVersions.Pin pin = PinnedVersions.forStep("shfmt").orElseThrow();
+        assertEquals(PinnedVersions.Freshness.CURRENT, PinnedVersions.installedFreshness(pin, config));
+    }
+
+    @Test
+    void aRefusedDownloadWritesNoReceipt() {
+        serveAsRecipe("shfmt", "the real one".getBytes());
+        service.setPinnedToolsForTest(t -> InstallCatalog.pinnedTool(t)); // the real hash: the body does not match
+
+        assertFalse(install("shfmt").ok());
+
+        assertEquals(null, InstallReceipt.read(config.resolve(InstallCatalog.toolDir("shfmt"))));
     }
 }
