@@ -907,14 +907,12 @@ final class DoctorCoordinator {
                 com.editora.install.JdtlsVersion installed = com.editora.install.JdtlsVersion.installed(Path.of(path));
                 if (installed != null) {
                     String detail = installed.label() + " — " + path;
-                    String pinned = com.editora.install.JdtlsVersion.pinned().label();
-                    if (installed.compareTo(com.editora.install.JdtlsVersion.pinned()) >= 0) {
-                        return base.ok(detail);
-                    }
-                    // Install… replaces only the copy Editora installed; another is updated where it came from (CN4).
-                    return com.editora.install.JdtlsVersion.outdatedEditoraCopy(Path.of(path), host.configDir()) != null
-                            ? base.warn(detail, "doctor.tip.jdtlsOutdated", pinned)
-                            : base.withoutInstall().warn(detail, "doctor.tip.jdtlsOutdatedElsewhere", pinned);
+                    return installed.compareTo(com.editora.install.JdtlsVersion.pinned()) < 0
+                            ? base.warn(
+                                    detail,
+                                    "doctor.tip.jdtlsOutdated",
+                                    com.editora.install.JdtlsVersion.pinned().label())
+                            : base.ok(detail);
                 }
             }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).

@@ -830,7 +830,8 @@ final class DoctorPane extends Region implements TabContent {
 
         private void addActions(DoctorCheck c, HBox box) {
             DoctorStatus st = c.status();
-            if (c.offersInstall()) {
+            if (c.install() != DoctorCheck.Install.NONE
+                    && (st == DoctorStatus.MISSING || st == DoctorStatus.OPTIONAL)) {
                 boolean busy = installing.contains(c.id());
                 // Not disabled while busy (a disabled button drops the focus): it says so and ignores clicks;
                 // the installer itself refuses a second run.

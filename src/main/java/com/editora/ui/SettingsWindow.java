@@ -7928,21 +7928,6 @@ public class SettingsWindow {
                                     lspCheck.isSelected());
                             return;
                         }
-                        var oldJdtls = found && JAVA_SERVER.equals(srv.id())
-                                ? com.editora.install.JdtlsVersion.outdatedEditoraCopy(
-                                        Path.of(com.editora.doctor.DoctorProbes.resolvedPath(argv)),
-                                        config.getConfigDir())
-                                : null;
-                        if (oldJdtls != null) { // "Installed" over the jdtls Doctor calls outdated (re-review CN4)
-                            status.showProblem(
-                                    tr(
-                                            "settings.lsp.jdtlsOutdated",
-                                            oldJdtls.label(),
-                                            com.editora.install.JdtlsVersion.pinned()
-                                                    .label()),
-                                    lspCheck.isSelected());
-                            return;
-                        }
                         status.show(
                                 found,
                                 found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "",
@@ -7960,7 +7945,6 @@ public class SettingsWindow {
     }
 
     private static final String MAVEN_POM = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
-    private static final String JAVA_SERVER = com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID;
 
     /** The argv the LSP page shows for {@code serverId}: its global command, blank ⇒ the default. */
     private List<String> lspArgv(String serverId) {

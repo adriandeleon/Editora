@@ -34,12 +34,6 @@ class DoctorCoordinatorFxTest {
 
     private static final class FakeHost extends CoordinatorHostStub {
         final Settings settings = new Settings();
-        java.nio.file.@org.jspecify.annotations.Nullable Path configDir;
-
-        @Override
-        public java.nio.file.@org.jspecify.annotations.Nullable Path configDir() {
-            return configDir;
-        }
 
         @Override
         public Settings settings() {
@@ -57,9 +51,6 @@ class DoctorCoordinatorFxTest {
         InstallCatalog.Lang installedLang;
         boolean installedTypstCli;
         String openedSettingsKey;
-
-        @org.jspecify.annotations.Nullable
-        List<String> javaArgv;
 
         @Override
         public com.editora.mermaid.MermaidService mermaidService() {
@@ -103,7 +94,7 @@ class DoctorCoordinatorFxTest {
 
         @Override
         public List<String> lspServerArgv(String serverId) {
-            return javaArgv != null && serverId.equals("java") ? javaArgv : List.of(serverId + "-server");
+            return List.of(serverId + "-server");
         }
 
         @Override
@@ -248,50 +239,6 @@ class DoctorCoordinatorFxTest {
         // The per-server LSP rows came from the Ops-provided id list.
         assertTrue(rows.stream().anyMatch(r -> r.id().equals("lsp.json")));
         assertTrue(rows.stream().anyMatch(r -> r.id().equals("lsp.java")));
-    }
-
-    @Test
-    void anOutdatedJdtlsOffersInstallOnlyWhenItIsEditorasOwn(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
-            throws Exception {
-        FakeHost host = new FakeHost();
-        host.configDir = dir.resolve("config");
-        FakeOps ops = new FakeOps();
-        ops.javaArgv = List.of(jdtls(host.configDir.resolve("plugins/lsp/java")).toString());
-        DoctorCheck own = javaRow(host, ops);
-        assertEquals(DoctorStatus.WARN, own.status());
-        assertEquals("doctor.tip.jdtlsOutdated", own.tipKey());
-        assertTrue(own.offersInstall(), "the tip says Click Install…, so the row has it (CN4)");
-
-        ops.javaArgv = List.of(jdtls(dir.resolve("opt/jdtls")).toString());
-        DoctorCheck elsewhere = javaRow(host, ops);
-        assertEquals(DoctorStatus.WARN, elsewhere.status());
-        assertEquals("doctor.tip.jdtlsOutdatedElsewhere", elsewhere.tipKey());
-        assertFalse(elsewhere.offersInstall(), "Install… replaces only the copy Editora installed");
-    }
-
-    private static java.nio.file.Path jdtls(java.nio.file.Path home) throws Exception {
-        java.nio.file.Files.createFile(java.nio.file.Files.createDirectories(home.resolve("plugins"))
-                .resolve("org.eclipse.jdt.ls.core_1.61.0.202607301809.jar"));
-        java.nio.file.Path launcher = java.nio.file.Files.createFile(
-                java.nio.file.Files.createDirectories(home.resolve("bin")).resolve("jdtls"));
-        assertTrue(launcher.toFile().setExecutable(true));
-        return launcher;
-    }
-
-    private static DoctorCheck javaRow(FakeHost host, FakeOps ops) throws Exception {
-        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
-        FxTestSupport.runOnFx(doctor::runChecks);
-        long deadline = System.currentTimeMillis() + 10_000;
-        while (true) {
-            DoctorCheck java = FxTestSupport.callOnFx(() -> doctor.pane().currentChecks()).stream()
-                    .filter(r -> r.id().equals("lsp.java"))
-                    .findFirst()
-                    .orElseThrow();
-            if (java.status() != DoctorStatus.CHECKING || System.currentTimeMillis() > deadline) {
-                return java;
-            }
-            Thread.sleep(20);
-        }
     }
 
     @Test

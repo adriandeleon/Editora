@@ -34,22 +34,4 @@ class JdtlsVersionTest {
         assertEquals(new JdtlsVersion(1, 61, 0, 202607301809L), JdtlsVersion.installed(launcher));
         assertNull(JdtlsVersion.installed(home.resolve("nowhere")));
     }
-
-    @Test
-    void onlyEditorasOwnOutdatedCopyIsOneInstallCanReplace(@TempDir Path dir) throws Exception {
-        Path config = dir.resolve("config");
-        Path own = jdtls(config.resolve("plugins/lsp/java"), "1.61.0.202607301809");
-        Path elsewhere = jdtls(dir.resolve("opt/jdtls"), "1.61.0.202607301809");
-        assertEquals(new JdtlsVersion(1, 61, 0, 202607301809L), JdtlsVersion.outdatedEditoraCopy(own, config));
-        assertNull(JdtlsVersion.outdatedEditoraCopy(elsewhere, config), "Install… would not touch it (CN4)");
-        assertNull(JdtlsVersion.outdatedEditoraCopy(own, null));
-        Files.createFile(own.getParent().getParent().resolve("plugins/org.eclipse.jdt.ls.core_9.0.0.209912311200.jar"));
-        assertNull(JdtlsVersion.outdatedEditoraCopy(own, config), "a current copy is not outdated");
-    }
-
-    private static Path jdtls(Path home, String version) throws Exception {
-        Files.createFile(Files.createDirectories(home.resolve("plugins"))
-                .resolve("org.eclipse.jdt.ls.core_" + version + ".jar"));
-        return Files.createFile(Files.createDirectories(home.resolve("bin")).resolve("jdtls"));
-    }
 }
