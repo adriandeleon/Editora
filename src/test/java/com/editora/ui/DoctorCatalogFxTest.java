@@ -153,7 +153,7 @@ class DoctorCatalogFxTest {
         }
 
         @Override
-        public void installLang(InstallCatalog.Lang lang, boolean update, Consumer<Boolean> onDone) {
+        public void installLang(InstallCatalog.Lang lang, String updateStep, Consumer<Boolean> onDone) {
             onDone.accept(true);
         }
 

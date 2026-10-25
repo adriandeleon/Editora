@@ -645,4 +645,17 @@ class InstallCatalogTest {
             assertTrue(inBundle || jars.stream().anyMatch(j -> j.fileName().startsWith(prefix)), prefix);
         }
     }
+
+    @Test
+    void aStepNamesTheServersItProvides() {
+        assertEquals(List.of("java"), InstallCatalog.serversOfStep("jdtls"));
+        assertEquals(List.of("typescript"), InstallCatalog.serversOfStep("typescript-language-server"));
+        assertEquals(
+                List.of("json", "html", "css"),
+                InstallCatalog.serversOfStep("vscode-langservers-extracted"),
+                "one npm package serves three servers");
+        assertEquals(List.of("kotlin"), InstallCatalog.serversOfStep(InstallCatalog.KOTLIN_LSP_STEP));
+        assertEquals(List.of(), InstallCatalog.serversOfStep("js-debug"), "a debugger is no language server");
+        assertEquals(List.of(), InstallCatalog.serversOfStep(null));
+    }
 }

@@ -80,6 +80,19 @@ class DoctorCheckTest {
     }
 
     @Test
+    void newerIsAWorkingRowWhoseInstallReadsUpdate() {
+        DoctorCheck c = DoctorCheck.checking("lsp.python", "lsp", "Python", "pyright-langserver")
+                .withInstall(DoctorCheck.Install.LANG, "PYTHON")
+                .newer("pyright 1.1.411 — /x/pyright-langserver", "1.1.411", "1.1.414");
+
+        assertEquals(DoctorStatus.OK, c.status());
+        assertTrue(c.update());
+        assertEquals("doctor.tip.newerAvailable", c.tipKey());
+        assertEquals(List.of("1.1.411", "1.1.414"), c.tipArgs());
+        assertEquals("pyright 1.1.411 — /x/pyright-langserver", c.detail());
+    }
+
+    @Test
     void optionalIsTheNeutralAbsentStateAndKeepsItsActions() {
         DoctorCheck c = DoctorCheck.checking("lsp.lua", "lsp", "Lua", "lua-language-server")
                 .withInstall(DoctorCheck.Install.SERVER, "lua")

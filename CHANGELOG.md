@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Doctor: Check for Newer Versions.** A button in Doctor's header asks npm, the Go module proxy, GitHub and
+  HashiCorp for the latest release of each working language server or tool that Editora installs at its latest
+  release (Pyright, typescript-language-server, the JSON/HTML/CSS, Bash, YAML, Dockerfile, TOML and Astro servers,
+  gopls, clangd, lua-language-server, tinymist, terraform-ls and the Mermaid CLI). Ones with a newer release move to
+  **Updates available** at the top, with **Update…**. Nothing is looked up until you click, and a Refresh keeps
+  what the check found. Pinned servers are not looked up: a new Editora release brings their new versions.
+- **Doctor: Update for a TypeScript server without tsserver.** The warning for a typescript-language-server with no
+  TypeScript, or with TypeScript 7 (which has no tsserver), now has the **Update…** button its tip mentioned; it
+  reinstalls the server with TypeScript 6. Update on a row of the Java, Python or JavaScript support now
+  reinstalls only that row's tool.
+
 - **Surround With** (`snippets.surround`, Code ▸ Surround With…; Ctrl+Alt+T / Cmd+Alt+T in the IntelliJ keymaps)
   lists only the snippets that wrap a selection and puts the selection inside the chosen one; with nothing
   selected it wraps the current line.

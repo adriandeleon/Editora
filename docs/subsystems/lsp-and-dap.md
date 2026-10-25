@@ -914,6 +914,16 @@ install …@latest`, rustup, the GitHub `releases/latest` archives).
   copy; a ShellCheck/shfmt path set in Settings gets only the warning.
 - **Bumping a pin** is the version constant (and its hashes) in `InstallCatalog`; the receipt and Doctor follow.
   `PinnedVersionsTest` fails when a new exact-release installer has no `PinnedVersions` entry.
+- **Newer releases.** Doctor's **Check for Newer Versions** (header button; nothing is asked otherwise) looks up
+  the latest release of each working server or tool that Editora installs at "latest" (`install/LatestVersions`:
+  npm, the Go module proxy, GitHub and HashiCorp releases; pinned installs are never looked up) and remembers the
+  answers for the window, so a Refresh keeps them. A row whose installed version (the npm `package.json` beside
+  the launcher, else what `version`/`--version` prints) is older becomes `DoctorCheck.newer`: still OK, but
+  listed under "Updates available" with Update, which runs its installer again — and installers at "latest" take
+  the newest release. Update on a language bundle's row reinstalls only that row's step
+  (`DoctorCoordinator.updateStepFor`, `InstallCoordinator.installSupport(lang, updateStep, …)`). Not looked up:
+  servers a toolchain updates itself (rust-analyzer via rustup, gem, dotnet, composer), the XML server, the typst
+  CLI and debugpy.
 - **Floors.** The tools Editora finds rather than installs have minimum versions, all in `install/VersionFloor`
   (JDK for Run, `gh`, Node.js for js-debug and for HTTP scripts). Compare with `VersionFloor.metBy` where the
   version is read, and pass `minimum()` to the Doctor tip rather than writing the number into a message.

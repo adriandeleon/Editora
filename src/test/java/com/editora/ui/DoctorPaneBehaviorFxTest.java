@@ -159,6 +159,44 @@ class DoctorPaneBehaviorFxTest {
         }
     }
 
+    /**
+     * A working server with a newer release moves out of its folded all-OK section into "Updates available", above
+     * the sections, with its tip and an Update button; the summary counts it.
+     */
+    @Test
+    void aNewerReleaseIsShownUnderUpdatesAvailable() throws Exception {
+        DoctorCheck newer = DoctorCheck.checking("lsp.python", "lsp", "Python", "pyright-langserver")
+                .withInstall(DoctorCheck.Install.LANG, "PYTHON")
+                .newer("pyright 1.1.411 — /x/pyright-langserver", "1.1.411", "1.1.414");
+        DoctorCheck json = DoctorCheck.checking("lsp.json", "lsp", "JSON", "vscode-json-language-server")
+                .withInstall(DoctorCheck.Install.SERVER, "json")
+                .ok("/x/vscode-json-language-server");
+        Shown s = show(List.of(gitOk(), json, newer));
+        try {
+            List<String> texts = FxTestSupport.callOnFx(() -> body(s.pane()).getChildren().stream()
+                    .filter(n -> n instanceof javafx.scene.control.Label)
+                    .map(n -> ((javafx.scene.control.Label) n).getText())
+                    .toList());
+            assertEquals(com.editora.i18n.Messages.tr("doctor.section.updates"), texts.get(0), String.valueOf(texts));
+            Node row = FxTestSupport.callOnFx(() -> row(s.pane(), "lsp.python"));
+            assertNotNull(row, "shown although its section has only OK rows (folded)");
+            Button update = FxTestSupport.callOnFx(() -> button(row, "install"));
+            assertEquals(com.editora.i18n.Messages.tr("doctor.action.update"), update.getText());
+            String tip = com.editora.i18n.Messages.tr("doctor.tip.newerAvailable", "1.1.411", "1.1.414");
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> row.lookupAll(".doctor-tip").stream()
+                            .anyMatch(n -> tip.equals(((javafx.scene.control.Label) n).getText()))),
+                    "the tip says which version is newer");
+            assertTrue(
+                    FxTestSupport.callOnFx(
+                            () -> s.pane().lookupAll(".doctor-summary-updates").size() == 1),
+                    "the summary counts it");
+            assertNull(FxTestSupport.callOnFx(() -> row(s.pane(), "lsp.json")), "the plain OK row stays folded");
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
+
     @Test
     void aNewRunKeepsTheLastResultsUntilTheirProbesReturn() throws Exception {
         Shown s = show(List.of(gitOk(), xmlMissing()));
