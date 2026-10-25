@@ -481,6 +481,12 @@ final class ProjectMapView extends VBox {
         previewConnectorCanvas.setMouseTransparent(true);
         StackPane host = new StackPane(surface, previewConnectorCanvas, noMatchesLabel, zoomBar);
         host.getStyleClass().add("project-map-host");
+        // Cards sit on the canvas and may reach past its edges (dragged, panned or zoomed there): the part
+        // outside is not drawn, and takes no clicks, over the filter bar above or anything else around.
+        Rectangle hostClip = new Rectangle();
+        hostClip.widthProperty().bind(host.widthProperty());
+        hostClip.heightProperty().bind(host.heightProperty());
+        host.setClip(hostClip);
         StackPane.setAlignment(zoomBar, Pos.BOTTOM_LEFT);
         StackPane.setMargin(zoomBar, new Insets(ZOOM_BAR_MARGIN));
         // Centred across the canvas but near its top: the selection usually sits in the middle.

@@ -1,6 +1,7 @@
 package com.editora.sync;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,24 @@ class SyncMergeTest {
                     .append("\"}");
         }
         return sb.append("]}").toString();
+    }
+
+    private static SyncMerge.FileResult keybindings(String base, String mine, String theirs) {
+        return SyncMerge.merge(SyncCategory.KEYBINDINGS, "keybindings.json", base, mine, theirs);
+    }
+
+    /** A {@code keybindings.json} of the emacs keymap's Windows/Linux overrides: chord, command, chord, … */
+    private static String keyFile(String... pairs) {
+        StringBuilder sb = new StringBuilder("{\"formatVersion\":1,\"keymaps\":{\"emacs\":{\"windowsLinux\":{");
+        for (int i = 0; i < pairs.length; i += 2) {
+            sb.append(i == 0 ? "" : ",")
+                    .append('"')
+                    .append(pairs[i])
+                    .append("\":\"")
+                    .append(pairs[i + 1])
+                    .append('"');
+        }
+        return sb.append("}}}}").toString();
     }
 
     // --- dictionary ------------------------------------------------------------------------------------
@@ -237,5 +256,45 @@ class SyncMergeTest {
         assertNull(SyncCategory.of("snippets/deep/java.json"));
         assertNull(SyncCategory.of("snippets/../settings.json"));
         assertNull(SyncCategory.of("settings.json"));
+    }
+
+    // --- key bindings ----------------------------------------------------------------------------------
+
+    @Test
+    void keyBindingsChangedOnBothSidesAreAllKeptChordByChord() {
+        SyncMerge.FileResult r = keybindings(
+                keyFile("C-x s", "file.save"),
+                keyFile("C-x s", "file.save", "C-c a", "mine.cmd"),
+                keyFile("C-c b", "their.cmd"));
+        assertEquals(
+                KeybindingsFile.text(
+                        Map.of("emacs\twindowsLinux\tC-c a", "mine.cmd", "emacs\twindowsLinux\tC-c b", "their.cmd")),
+                r.text());
+        assertEquals(
+                List.of("emacs: C-c b", "emacs: C-x s"),
+                r.received().stream().sorted().toList());
+        assertEquals(List.of("emacs: C-c a"), r.sent());
+        assertTrue(r.conflicts().isEmpty());
+    }
+
+    @Test
+    void aChordBoundDifferentlyOnBothSidesKeepsThisMachinesCommand() {
+        SyncMerge.FileResult r =
+                keybindings(keyFile("C-c a", "old"), keyFile("C-c a", "mine.cmd"), keyFile("C-c a", "their.cmd"));
+        assertEquals(KeybindingsFile.text(Map.of("emacs\twindowsLinux\tC-c a", "mine.cmd")), r.text());
+        assertEquals(List.of("emacs: C-c a"), r.conflicts());
+    }
+
+    @Test
+    void anUnbindIsAnEntryLikeABinding() {
+        SyncMerge.FileResult r = keybindings(null, null, keyFile("C-x C-s", ""));
+        assertEquals(List.of("emacs: C-x C-s"), r.received());
+        assertTrue(r.text().contains("\"C-x C-s\" : \"\""), r.text());
+    }
+
+    @Test
+    void aKeyBindingsFileFromANewerEditoraIsLeftAlone() {
+        SyncMerge.FileResult r = keybindings(null, keyFile("C-c a", "x"), "{\"formatVersion\":99}");
+        assertEquals(SyncMerge.Skip.REMOTE_NEWER, r.skip());
     }
 }

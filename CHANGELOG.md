@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   TypeScript, or with TypeScript 7 (which has no tsserver), now has the **Update…** button its tip mentioned; it
   reinstalls the server with TypeScript 6. Update on a row of the Java, Python or JavaScript support now
   reinstalls only that row's tool.
-
+- **Settings sync carries your shortcuts.** A new **Shortcuts** switch on Settings ▸ Sync (on by default) syncs
+  the key bindings you changed, in every keymap and for both Windows/Linux and macOS, as `keybindings.json` in the
+  sync repository. They merge chord by chord like snippets; which keymap each computer uses stays its own. A change
+  syncs shortly after you rebind, reset or switch keymaps. Settings schema 145→146, additive.
 - **Surround With** (`snippets.surround`, Code ▸ Surround With…; Ctrl+Alt+T / Cmd+Alt+T in the IntelliJ keymaps)
   lists only the snippets that wrap a selection and puts the selection inside the chosen one; with nothing
   selected it wraps the current line.
@@ -191,7 +194,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project Map preview and note cards move and zoom with the map.** Panning carries a card along with the
   columns under it, zooming scales it with them (the card's − / + still sizes its text on top), and a card can
   be dragged past the edge of the visible canvas the way a column can, instead of stopping at the panel's edge. Its resize grip now allows up to the panel's
-  size wherever the card stands, and resizing the panel no longer pushes cards back inside it.
+  size wherever the card stands, and resizing the panel no longer pushes cards back inside it. Whatever part of a
+  card lies outside the map is clipped, so a card never paints over the Map's filter bar or breadcrumbs.
 - **Refactor: the preview's right-click menu owns its own state and moved to `editor.markdown`.** `PreviewMenu` is now an object the buffer holds: the seven export and print actions the window injects, and what the pointer was on when the menu opened, live in it instead of in eleven `EditorBuffer` fields read from outside. The window injects the actions through `buffer.previewMenu()` (`setExportPdf`, `setPrint`, …) in place of seven `setPreview…Handler` setters. `EditorBuffer` is 58 lines shorter, which restores room under the 10,000-line cap. Internal-only — no behavior, dependency, or `module-info` change.
 - **jdtls is pinned to 1.63.0** (from 1.62.0), checked against the jdtls probes. Doctor now names the installed
   jdtls version and warns when it is older than the pinned one, and Install replaces an older copy of Editora's

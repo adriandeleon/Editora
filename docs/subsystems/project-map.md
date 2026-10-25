@@ -86,7 +86,8 @@ height are unzoomed; placement, overlap, connectors and size limits work on the 
 moves its card — like a column header, anywhere, including out of view, where panning finds it again — each
 lower corner resizes it up to the panel's size at the current zoom, and each editor scrolls independently.
 A resized panel bounds a card's size but never moves it; a zoom never resizes a card, so one zoomed in may
-outgrow the panel as a column does. The card's own − / + buttons scale its text on top of the map's zoom. Opening another file
+outgrow the panel as a column does. The map area (`canvasHost`) clips its children, so whatever part of a card
+lies outside it is neither drawn nor clickable — never over the filter bar or breadcrumbs above. The card's own − / + buttons scale its text on top of the map's zoom. Opening another file
 keeps existing cards visible; clicking an already-previewed file focuses its existing card, and each
 close button removes only that card. An accent connector runs from every preview to its source file row
 and follows map pan/zoom plus card movement and resizing.

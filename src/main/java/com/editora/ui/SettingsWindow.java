@@ -4369,6 +4369,7 @@ public class SettingsWindow {
     private @Nullable CheckBox syncAbbreviationsCheck;
     private @Nullable CheckBox syncTemplatesCheck;
     private @Nullable CheckBox syncDictionaryCheck;
+    private @Nullable CheckBox syncKeybindingsCheck;
     private @Nullable CheckBox syncAutoCheck;
     private @Nullable Spinner<Integer> syncIntervalSpinner;
     /** A message about the connect attempt in progress; shown instead of the service's state until it ends. */
@@ -4569,11 +4570,18 @@ public class SettingsWindow {
         syncAbbreviationsCheck = syncCategoryCheck("settings.sync.abbreviations", Settings::setSyncAbbreviations);
         syncTemplatesCheck = syncCategoryCheck("settings.sync.templates", Settings::setSyncTemplates);
         syncDictionaryCheck = syncCategoryCheck("settings.sync.dictionary", Settings::setSyncDictionary);
+        syncKeybindingsCheck = syncCategoryCheck("settings.sync.keybindings", Settings::setSyncKeybindings);
         checkRow(what, Category.SYNC, syncSnippetsCheck, null, "sync snippets");
         checkRow(what, Category.SYNC, syncAbbreviationsCheck, null, "sync abbreviations abbrev");
         checkRow(what, Category.SYNC, syncTemplatesCheck, null, "sync templates file project");
         checkRow(what, Category.SYNC, syncDictionaryCheck, null, "sync spell check personal dictionary words");
-        cardRow(what, Category.SYNC, note(tr("settings.sync.notSynced")), "sync not synced preferences keymap macros");
+        checkRow(
+                what,
+                Category.SYNC,
+                syncKeybindingsCheck,
+                tr("settings.sync.keybindings.desc"),
+                "sync keybindings key bindings shortcuts keymap rebind");
+        cardRow(what, Category.SYNC, note(tr("settings.sync.notSynced")), "sync not synced preferences macros");
 
         Card when = card(p, null);
         syncAutoCheck = new CheckBox(tr("settings.sync.auto"));
@@ -4640,6 +4648,7 @@ public class SettingsWindow {
                 || syncAbbreviationsCheck == null
                 || syncTemplatesCheck == null
                 || syncDictionaryCheck == null
+                || syncKeybindingsCheck == null
                 || syncAutoCheck == null
                 || syncIntervalSpinner == null) {
             return; // all made by syncPage(), which build() runs before any load()
@@ -4650,6 +4659,7 @@ public class SettingsWindow {
         syncAbbreviationsCheck.setSelected(settings.isSyncAbbreviations());
         syncTemplatesCheck.setSelected(settings.isSyncTemplates());
         syncDictionaryCheck.setSelected(settings.isSyncDictionary());
+        syncKeybindingsCheck.setSelected(settings.isSyncKeybindings());
         syncAutoCheck.setSelected(settings.isSyncAuto());
         syncIntervalSpinner.getValueFactory().setValue(settings.getSyncIntervalMinutes());
         syncIntervalSpinner.setDisable(!settings.isSyncAuto());
