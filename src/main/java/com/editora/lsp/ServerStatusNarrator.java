@@ -32,8 +32,15 @@ public final class ServerStatusNarrator {
     /** How long the server must have been quiet before it is called ready, or work must run before it shows. */
     public static final long QUIET_MILLIS = 800;
 
-    /** A line to show: either the server's own {@code text}, or the narrator's "ready" line ({@code text} null). */
-    public record Line(@Nullable String serverId, @Nullable String text) {
+    /**
+     * A line to show: either the server's own {@code text}, or the narrator's "ready" line ({@code text} null).
+     * {@code problem}: the server reports that the project did not import cleanly ({@code text} its word for it).
+     */
+    public record Line(@Nullable String serverId, @Nullable String text, boolean problem) {
+        public Line(@Nullable String serverId, @Nullable String text) {
+            this(serverId, text, false);
+        }
+
         public boolean ready() {
             return text == null;
         }
@@ -44,6 +51,7 @@ public final class ServerStatusNarrator {
         boolean announced; // the ready line has been shown for this run of the server
         boolean failed;
         boolean narratesStartup; // sends its own "Starting" statuses (jdtls): only its own ready counts
+        boolean serviceReady; // jdtls said ServiceReady: its later "Starting" lines are progress, not a restart
         int outstanding; // progress Begins without an End yet
 
         @Nullable
@@ -113,17 +121,23 @@ public final class ServerStatusNarrator {
             case "starting" -> {
                 s.failed = false;
                 s.narratesStartup = true;
-                if (!s.announced) {
+                if (!s.announced && !s.serviceReady) {
                     s.ready = false; // jdtls: the handshake is done but the project is still importing
                 }
-                return show(serverId, s, msg);
+                // Gradle's import keeps sending "Starting" after ServiceReady and never another ready word: it
+                // is progress, and readiness waits for the quiet that follows it (Java review C8).
+                return show(serverId, s, startingText(msg));
             }
             case "started" -> {
                 // jdtls's "Ready" here comes before the import is finished; the ready line comes later.
                 return isReadyWord(msg) ? null : show(serverId, s, msg);
             }
             case "projectstatus" -> {
-                return "ok".equalsIgnoreCase(msg) ? null : show(serverId, s, msg);
+                if (msg == null || "ok".equalsIgnoreCase(msg)) {
+                    return null;
+                }
+                s.lastShown = msg;
+                return new Line(serverId, msg, true); // "WARNING"/"ERROR": the import went wrong (Java review C17)
             }
             default -> {
                 if (t.contains("ready")) {
@@ -134,6 +148,7 @@ public final class ServerStatusNarrator {
                     }
                     s.ready = true;
                     s.failed = false;
+                    s.serviceReady = s.narratesStartup;
                     return isReadyWord(msg) ? null : show(serverId, s, msg);
                 }
                 return show(serverId, s, msg);
@@ -188,6 +203,24 @@ public final class ServerStatusNarrator {
         }
         s.lastShown = msg;
         return new Line(serverId, msg);
+    }
+
+    private static final java.util.regex.Pattern PERCENT = java.util.regex.Pattern.compile("^(\\d+)%\\s*");
+
+    /**
+     * jdtls's startup line without a percentage it got wrong: past 100 it counts on to 1000, 1005, 1100 while it
+     * refreshes, which read as nonsense and made each step a new line. 0–100 is kept.
+     */
+    static @Nullable String startingText(@Nullable String msg) {
+        if (msg == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = PERCENT.matcher(msg);
+        if (m.find() && m.group(1).length() <= 6 && Integer.parseInt(m.group(1)) > 100) {
+            String rest = msg.substring(m.end());
+            return rest.isBlank() ? null : rest;
+        }
+        return msg;
     }
 
     private static boolean isReadyWord(@Nullable String msg) {

@@ -959,6 +959,19 @@ class LspManagerFeatureRequestsFxTest {
         assertEquals(List.of(new LspManager.WorkspaceSymbolMatch("B", "demo", "class", target, 3, 6)), older);
         assertEquals("B", FakeLanguageServer.last(fake.workspaceSymbols).getQuery());
 
+        // jdtls answers JDK and dependency types under jdt:// (Java review B3): kept as library symbols.
+        String jdt = "jdt://contents/java.base/java.util/ArrayList.class?=demo";
+        fake.symbolInformationResponse = List.of(
+                info,
+                new SymbolInformation(
+                        "ArrayList", SymbolKind.Class, new Location(jdt, range(40, 13, 22)), "java.util"));
+        List<LspManager.WorkspaceSymbolMatch> withLibrary =
+                await(cb -> manager.workspaceSymbols(file, "ArrayList", cb));
+        assertEquals(
+                new LspManager.WorkspaceSymbolMatch("ArrayList", "java.util", "class", null, 40, 13, jdt),
+                withLibrary.get(1));
+        assertEquals("java.base", withLibrary.get(1).locationLabel());
+
         fake.symbolInformationResponse = null;
         var uriOnly = new WorkspaceSymbol(
                 "C",
@@ -1257,17 +1270,40 @@ class LspManagerFeatureRequestsFxTest {
     }
 
     @Test
-    void refreshingProjectDiagnosticsReportsWhetherTheBuildRan() throws Exception {
+    void refreshingProjectDiagnosticsReportsWhatTheBuildFound() throws Exception {
         var fake = open();
-        assertTrue(this.<Boolean>await(cb -> manager.refreshProjectDiagnostics(file, cb)));
+        fake.rawResponse = 1; // BuildWorkspaceStatus.SUCCEED
+        assertEquals(
+                LspManager.BuildOutcome.SUCCEEDED,
+                this.<LspManager.BuildOutcome>await(cb -> manager.refreshProjectDiagnostics(file, cb)));
         assertEquals("java/buildWorkspace", fake.rawRequests.get(0).method());
         assertEquals(Boolean.TRUE, fake.rawRequests.get(0).params(), "a full build, not an incremental one");
+        fake.rawResponse = 2; // WITH_ERROR: no longer reported as "Project built" (Java review C15)
+        assertEquals(
+                LspManager.BuildOutcome.WITH_ERRORS,
+                this.<LspManager.BuildOutcome>await(cb -> manager.refreshProjectDiagnostics(file, cb)));
+
+        // A build file in the project is served by the project's Java server (Java review C2).
+        Path pom = root.resolve("pom.xml");
+        assertTrue(manager.hasJavaSession(pom));
+        assertEquals(
+                LspManager.BuildOutcome.WITH_ERRORS,
+                this.<LspManager.BuildOutcome>await(cb -> manager.refreshProjectDiagnostics(pom, cb)));
+        assertTrue(manager.reloadProjectConfiguration(pom));
 
         fake.failEverything = true;
-        assertFalse(this.<Boolean>await(cb -> manager.refreshProjectDiagnostics(file, cb)));
-        Path other = unopened();
-        assertFalse(this.<Boolean>await(cb -> manager.refreshProjectDiagnostics(other, cb)));
-        assertFalse(this.<Boolean>await(cb -> manager.refreshProjectDiagnostics(null, cb)));
+        assertEquals(
+                LspManager.BuildOutcome.UNAVAILABLE,
+                this.<LspManager.BuildOutcome>await(cb -> manager.refreshProjectDiagnostics(file, cb)));
+        Path elsewhere = Path.of("/elsewhere/B.java");
+        assertFalse(manager.hasJavaSession(elsewhere));
+        assertEquals(
+                LspManager.BuildOutcome.UNAVAILABLE,
+                this.<LspManager.BuildOutcome>await(cb -> manager.refreshProjectDiagnostics(elsewhere, cb)));
+        assertFalse(manager.reloadProjectConfiguration(elsewhere));
+        assertEquals(
+                LspManager.BuildOutcome.UNAVAILABLE,
+                this.<LspManager.BuildOutcome>await(cb -> manager.refreshProjectDiagnostics(null, cb)));
     }
 
     @Test

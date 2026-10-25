@@ -819,15 +819,17 @@ public final class StatusBar extends HBox {
         applyLspStatusVisibility();
     }
 
-    /** Applies the LSP segment + loading-bar visibility from the stored state — both suppressed in Simple
-     *  mode. The progress bar is only set indeterminate while actually shown; a fixed value otherwise stops
-     *  the animation timeline (which would keep pulsing the scene and starve repaints — see field comment). */
+    /** Applies the LSP segment + loading-bar visibility from the stored state — the segment is suppressed in
+     *  Simple mode, the loading bar is not: it is transient, and without it nothing showed that a language server
+     *  (jdtls takes over a gigabyte) was importing (Java review C20). The progress bar is only set indeterminate
+     *  while actually shown; a fixed value otherwise stops the animation timeline (which would keep pulsing the
+     *  scene and starve repaints — see field comment). */
     private void applyLspStatusVisibility() {
         boolean showLsp = !lspServerName.isBlank() && !simpleMode;
         lsp.setText(lspServerName.isBlank() ? "" : tr("statusbar.lsp", lspServerName));
         lsp.setVisible(showLsp);
         lsp.setManaged(showLsp);
-        boolean showProgress = lspLoadingState && !simpleMode;
+        boolean showProgress = lspLoadingState;
         lspProgress.setProgress(showProgress ? ProgressBar.INDETERMINATE_PROGRESS : 0);
         lspProgress.setVisible(showProgress);
         lspProgress.setManaged(showProgress);

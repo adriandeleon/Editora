@@ -43,6 +43,7 @@ import com.editora.config.RulerColumns;
 import com.editora.diagram.DiagramKind;
 import com.editora.editops.AutoClose;
 import com.editora.editops.BraceMatcher;
+import com.editora.editops.CommentContinuation;
 import com.editora.editops.Commenter;
 import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
@@ -1885,6 +1886,16 @@ public class EditorBuffer implements TabContent {
         insertAtCaret(TypstMarkup.OUTLINE);
     }
 
+    /** Whether {@code a}'s caret line is on screen as last laid out ({@code false} before the first layout). */
+    private static boolean caretParagraphVisible(CodeArea a) {
+        try {
+            int par = a.getCurrentParagraph();
+            return par >= a.firstVisibleParToAllParIndex() && par <= a.lastVisibleParToAllParIndex();
+        } catch (RuntimeException notLaidOut) {
+            return false;
+        }
+    }
+
     /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
     public @Nullable String linkUnderCaret() {
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -1893,6 +1904,13 @@ public class EditorBuffer implements TabContent {
 
     private void installOverlays() {
         columnRuler.heightProperty().bind(root.heightProperty());
+        // A bottom tool window opening (Problems, Run) shrinks the editor from below and the caret line could
+        // drop out of view; keep it in view when it was in view before (Java review A20).
+        area.heightProperty().addListener((obs, old, now) -> {
+            if (now.doubleValue() < old.doubleValue() && caretParagraphVisible(area)) {
+                javafx.application.Platform.runLater(area::requestFollowCaret);
+            }
+        });
         // Re-measure the ruler whenever the rendered text moves: horizontal scroll, and any layout
         // change (first paint, resize, vertical scroll, gutter widening). Always deferred via
         // runLater so we never query character bounds synchronously inside the layout pass — doing
@@ -8575,6 +8593,10 @@ public class EditorBuffer implements TabContent {
                 return;
             }
             char typed = e.getCharacter().charAt(0);
+            if (typed == '*' && closeJavadocOpening(a)) {
+                e.consume();
+                return;
+            }
             // Fires while the caret is still where the user typed and the document has no ';' yet — the
             // state the server's answer is expressed in. Never consumes, so the char inserts as normal.
             maybeSmartSemicolon(a, typed); // #746
@@ -8583,6 +8605,29 @@ public class EditorBuffer implements TabContent {
             // position and its staleness baseline must describe the line with the character in it.
             Platform.runLater(() -> maybeOnTypeFormat(a, typed));
         });
+    }
+
+    /**
+     * In Java with the language server on, the {@code *} that makes a line {@code /**} also closes it —
+     * {@code /**|*}{@code /} — and asks for completion there, where jdtls offers the declaration's Javadoc
+     * template ({@link CommentContinuation#closesDocOpening}). Enter instead still splits the comment.
+     */
+    private boolean closeJavadocOpening(CodeArea a) {
+        if (!lspActive || !"java".equals(language) || hugeFile) {
+            return false;
+        }
+        int caret = a.getCaretPosition();
+        String line = a.getParagraph(a.getCurrentParagraph()).getText();
+        int col = a.getCaretColumn();
+        String before = line.substring(0, col);
+        if (!before.strip().equals("/*") // cheap first: the whole text only on a "/*" line
+                || !CommentContinuation.closesDocOpening(a.getText(), caret, before, line.substring(col))) {
+            return false;
+        }
+        a.insertText(caret, "* */");
+        a.moveTo(caret + 1);
+        triggerCompletion();
+        return true;
     }
 
     /** Async smart-semicolon lookup; delivers the target {@code {line, character}} or null on the FX thread. */

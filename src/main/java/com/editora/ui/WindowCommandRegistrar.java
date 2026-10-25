@@ -2256,6 +2256,42 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of("lsp.organizeImports", () -> host.ifLsp(host.lspCoordinator()::organizeImports)));
         host.registry()
+                .register(Command.of("lsp.undoRefactoring", () -> host.ifLsp(host.lspCoordinator()::undoRefactoring)));
+        host.registry().register(Command.of("lsp.generate", () -> host.ifLsp(host.lspCoordinator()::generateActions)));
+        host.registry()
+                .register(Command.of("lsp.refactorThis", () -> host.ifLsp(host.lspCoordinator()::refactorActions)));
+        // One command per refactoring, by its code-action kind, so each has a chord (IntelliJ's Ctrl+Alt+V…).
+        for (String[] r : new String[][] {
+            {"lsp.extractVariable", "refactor.extract.variable"},
+            {"lsp.extractConstant", "refactor.extract.constant"},
+            {"lsp.extractField", "refactor.extract.field"},
+            {"lsp.extractMethod", "refactor.extract.function"},
+            {"lsp.introduceParameter", "refactor.introduce.parameter"},
+            {"lsp.inline", "refactor.inline"},
+            {"lsp.move", "refactor.move"},
+            {"lsp.changeSignature", "refactor.change.signature"},
+            {"lsp.overrideMethods", "source.overrideMethods"}
+        }) {
+            String id = r[0];
+            String kind = r[1];
+            host.registry()
+                    .register(Command.of(
+                            id, () -> host.ifLsp(() -> host.lspCoordinator().refactoring(kind, id))));
+        }
+        host.registry()
+                .register(Command.of(
+                        "lsp.nextProblem",
+                        () -> host.ifLsp(() -> host.lspCoordinator().gotoProblem(true))));
+        host.registry()
+                .register(Command.of(
+                        "lsp.previousProblem",
+                        () -> host.ifLsp(() -> host.lspCoordinator().gotoProblem(false))));
+        host.registry()
+                .register(Command.of("lsp.problemAtCaret", () -> host.ifLsp(host.lspCoordinator()::problemAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "lsp.cleanJavaWorkspace", () -> host.ifLsp(host.lspCoordinator()::cleanJavaWorkspace)));
+        host.registry()
                 .register(Command.of(
                         "lsp.copyQualifiedName", () -> host.ifLsp(host.lspCoordinator()::copyQualifiedName)));
         host.registry()

@@ -221,16 +221,24 @@ final class MenuBarModel {
                                 "lsp.gotoImplementation",
                                 "lsp.gotoTypeDefinition",
                                 "lsp.findReferences",
+                                "nav.relatedFile", // test ⇄ subject, palette-only before (Java review B21)
                                 SEPARATOR,
                                 "nav.aceJump",
                                 "bookmarks.jump")),
                 new MenuSpec(
                         "menubar.code",
+                        // Generate and every refactoring had no menu entry: the caret's code-action list was the
+                        // only way in (Java review E3).
                         List.of(
                                 "lsp.codeActions",
-                                "lsp.rename",
+                                "lsp.generate",
+                                submenu("menubar.code.refactor"),
                                 "lsp.formatDocument",
                                 "lsp.organizeImports",
+                                SEPARATOR,
+                                "lsp.nextProblem",
+                                "lsp.previousProblem",
+                                "lsp.problemAtCaret",
                                 SEPARATOR,
                                 "lsp.hover",
                                 "lsp.signatureHelp",
@@ -238,7 +246,26 @@ final class MenuBarModel {
                                 "lsp.typeHierarchy",
                                 SEPARATOR,
                                 "snippets.insert",
-                                "edit.expandAbbrev")),
+                                "edit.expandAbbrev"),
+                        List.of(new MenuSpec(
+                                "menubar.code.refactor",
+                                List.of(
+                                        "lsp.refactorThis",
+                                        SEPARATOR,
+                                        "lsp.rename",
+                                        "lsp.changeSignature",
+                                        "lsp.move",
+                                        SEPARATOR,
+                                        "lsp.extractVariable",
+                                        "lsp.extractConstant",
+                                        "lsp.extractField",
+                                        "lsp.extractMethod",
+                                        "lsp.introduceParameter",
+                                        "lsp.inline",
+                                        SEPARATOR,
+                                        "lsp.overrideMethods",
+                                        SEPARATOR,
+                                        "lsp.undoRefactoring")))),
                 new MenuSpec(
                         "menubar.run",
                         // Every debugger action has a place here (review C10): Pause, Restart, Run to Cursor,

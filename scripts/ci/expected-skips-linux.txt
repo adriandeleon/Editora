@@ -4,6 +4,7 @@
 # Opt-in probes: need a real JDT LS, debug adapter, Node or Codex login (-Dgroups=probe and friends).
 com.editora.ai.CodexAiProbeTest
 com.editora.lsp.JavaProjectEditingProbeTest
+com.editora.lsp.JdtlsClientSettingsProbeTest
 com.editora.lsp.JdtlsCompactSourceProbeTest
 com.editora.lsp.JdtlsCrossFileRenameProbeFxTest
 com.editora.lsp.JdtlsDynamicRegistrationProbeTest

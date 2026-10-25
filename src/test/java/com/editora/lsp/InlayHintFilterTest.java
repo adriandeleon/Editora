@@ -188,6 +188,10 @@ class InlayHintFilterTest {
         // kind is optional in the protocol; without the fallback an unkinded ": String" would be filterable.
         assertTrue(LspManager.isParameterHint(null, "count:"));
         assertFalse(LspManager.isParameterHint(null, ": String"));
+        assertTrue(LspManager.isParameterHint(null, "...args:"));
+        assertTrue(LspManager.isParameterHint(null, "x ="));
+        assertFalse(LspManager.isParameterHint(null, "String"), "jdtls's unkinded lambda-parameter type");
+        assertFalse(LspManager.isParameterHint(null, ": List<Integer>"));
         assertTrue(LspManager.isParameterHint(org.eclipse.lsp4j.InlayHintKind.Parameter, ": odd"));
         assertFalse(LspManager.isParameterHint(org.eclipse.lsp4j.InlayHintKind.Type, "count:"));
     }

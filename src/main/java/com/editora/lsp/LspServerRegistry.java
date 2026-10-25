@@ -406,10 +406,12 @@ public final class LspServerRegistry {
      * Lines up to which a language keeps its server in the "large source" tier (whose minimap and language
      * server are otherwise off from {@code Settings.largeFileThreshold}, 10,000 lines by default). Pyright
      * checks a 10,000-line file in about four seconds, and long generated or vendored Python modules are
-     * common, so Python keeps it to 50,000 lines (Python review B10). 0 = the tier's default (no server).
+     * common, so Python keeps it to 50,000 lines (Python review B10). jdtls reconciles a 12,000-line file in well
+     * under a second, and large generated parsers, protobuf classes and legacy classes lost every diagnostic and
+     * navigation, so Java keeps it to 50,000 lines too (Java review C16). 0 = the tier's default (no server).
      */
     public static int heavyFileLspLineLimit(String languageId) {
-        return "python".equals(languageId) ? 50_000 : 0;
+        return "python".equals(languageId) || "java".equals(languageId) ? 50_000 : 0;
     }
 
     /** Pure: whether a file of {@code lines} lines in {@code languageId} gets its language server. */

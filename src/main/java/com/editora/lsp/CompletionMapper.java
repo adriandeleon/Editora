@@ -71,7 +71,11 @@ public final class CompletionMapper {
                     .withReplaceRange(replaceRangeOf(item))
                     .withSnippet(snippetOf(item, label))
                     .withProtocol(new Completion.Protocol(
-                            item.getFilterText(),
+                            // Without a filterText the match ran over "name(params)", so items.st offered
+                            // addAll(Collection<? extends Item> c) and equals(Object o) (Java review A16).
+                            item.getFilterText() != null
+                                    ? item.getFilterText()
+                                    : item.getLabel().strip(),
                             replacementRangeOf(item),
                             item.getCommitCharacters(),
                             item.getInsertTextMode() == null

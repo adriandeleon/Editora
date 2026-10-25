@@ -40,6 +40,13 @@ public final class JdtlsRefactor {
     public static final String EXTRACT_INTERFACE = "extractInterface";
     public static final String CHANGE_SIGNATURE = "changeSignature";
 
+    /**
+     * The refactorings jdtls offers at a bare caret once {@code inferSelectionSupport} names them: the client
+     * asks {@code java/inferSelection} which expression the user means.
+     */
+    private static final Set<String> INFERS_SELECTION = Set.of(
+            "extractMethod", "extractVariable", "extractVariableAllOccurrence", "extractConstant", "extractField");
+
     /** One refactoring command: its name, the {@code CodeActionParams} it was offered for, and its info. */
     public record Request(
             String name, JsonElement params, @Nullable JsonObject info) {
@@ -71,6 +78,157 @@ public final class JdtlsRefactor {
             }
             return false;
         }
+    }
+
+    /**
+     * Whether {@code request} was offered at a bare caret for a refactoring whose expression the server has to
+     * infer — Extract Method, Variable, Constant or Field with an empty range.
+     */
+    public static boolean needsInferredSelection(Request request) {
+        return INFERS_SELECTION.contains(request.name()) && emptyRange(request.params());
+    }
+
+    private static boolean emptyRange(@Nullable JsonElement params) {
+        if (params == null || !params.isJsonObject()) {
+            return false;
+        }
+        JsonElement range = params.getAsJsonObject().get("range");
+        if (range == null || !range.isJsonObject()) {
+            return false;
+        }
+        JsonElement start = range.getAsJsonObject().get("start");
+        JsonElement end = range.getAsJsonObject().get("end");
+        return start != null && start.equals(end);
+    }
+
+    /** The parameter of {@code java/inferSelection}. */
+    public static JsonObject inferSelectionParams(String command, JsonElement context) {
+        JsonObject out = new JsonObject();
+        out.addProperty("command", command);
+        out.add("context", context);
+        return out;
+    }
+
+    /**
+     * One expression a {@code java/inferSelection} answer offers: its source text, the server object to send
+     * back, and the scopes a field extracted from it may be initialized in.
+     */
+    public record Selection(String name, JsonObject raw, List<String> initializedScopes) {
+
+        /** The expression on one line, cut to a picker row's width. */
+        public String label() {
+            String flat = name.strip().replaceAll("\\s+", " ");
+            return flat.length() > 80 ? flat.substring(0, 79) + "…" : flat;
+        }
+    }
+
+    /** The expressions of a {@code java/inferSelection} answer, innermost first as the server orders them. */
+    public static List<Selection> selections(@Nullable JsonElement response) {
+        List<Selection> out = new ArrayList<>();
+        if (response == null || !response.isJsonArray()) {
+            return out;
+        }
+        for (JsonObject o : objects(response)) {
+            String name = string(o, "name");
+            if (name != null && o.has("offset") && o.has("length")) {
+                out.add(new Selection(name, o, strings(o.get("params"))));
+            }
+        }
+        return out;
+    }
+
+    /** Where a field may be initialized ({@code initializedScopes} of Extract to Field / Convert to Field). */
+    public static List<String> initializedScopes(Request request) {
+        JsonObject info = request.info();
+        return info == null ? List.of() : strings(info.get("initializedScopes"));
+    }
+
+    /**
+     * The {@code commandArguments} of {@code java/getRefactorEdit} for an extraction: the chosen
+     * initialization scope, then the chosen expression, each only when there is one (the order jdtls reads).
+     */
+    public static JsonArray extractArguments(@Nullable String scope, @Nullable Selection selection) {
+        JsonArray out = new JsonArray();
+        if (scope != null) {
+            out.add(scope);
+        }
+        if (selection != null) {
+            out.add(selection.raw());
+        }
+        return out;
+    }
+
+    /**
+     * The {@code confirmationToken} of a {@code java/move} answer: jdtls found problems, listed in its
+     * {@code errorMessage}, and applies the move only when asked again with this token. Null otherwise.
+     */
+    public static @Nullable String confirmationToken(@Nullable JsonElement response) {
+        if (response == null || !response.isJsonObject()) {
+            return null;
+        }
+        String token = string(response.getAsJsonObject(), "confirmationToken");
+        return token == null || token.isBlank() ? null : token;
+    }
+
+    /** Where a refactoring's new name sits in the edited document: a character offset and length. */
+    public record RenameAt(String uri, int offset, int length) {}
+
+    /**
+     * The new name a {@code java/getRefactorEdit} answer asks to rename: its {@code command} is
+     * {@code java.action.rename} with a {@code {uri, offset, length}} argument, offsets in the document as
+     * edited. vscode-java starts an inline rename there; without it every extract kept the server's name
+     * ({@code d}, {@code getTotal}) (Java review B12). Null when there is none.
+     */
+    public static @Nullable RenameAt renameAt(@Nullable JsonElement response) {
+        if (response == null || !response.isJsonObject()) {
+            return null;
+        }
+        JsonElement command = response.getAsJsonObject().get("command");
+        if (command == null || !command.isJsonObject()) {
+            return null;
+        }
+        JsonObject c = command.getAsJsonObject();
+        JsonElement args = c.get("arguments");
+        if (!"java.action.rename".equals(string(c, "command"))
+                || args == null
+                || !args.isJsonArray()
+                || args.getAsJsonArray().isEmpty()
+                || !args.getAsJsonArray().get(0).isJsonObject()) {
+            return null;
+        }
+        JsonObject at = args.getAsJsonArray().get(0).getAsJsonObject();
+        String uri = string(at, "uri");
+        JsonElement offset = at.get("offset");
+        JsonElement length = at.get("length");
+        if (uri == null
+                || offset == null
+                || length == null
+                || !offset.isJsonPrimitive()
+                || !length.isJsonPrimitive()
+                || !offset.getAsJsonPrimitive().isNumber()
+                || !length.getAsJsonPrimitive().isNumber()) {
+            return null;
+        }
+        return new RenameAt(uri, offset.getAsInt(), length.getAsInt());
+    }
+
+    /** {@code params} (a {@code java/move} parameter) asked again with {@code token}. */
+    public static JsonObject withConfirmationToken(JsonObject params, String token) {
+        JsonObject out = params.deepCopy();
+        out.addProperty("confirmationToken", token);
+        return out;
+    }
+
+    private static List<String> strings(@Nullable JsonElement array) {
+        List<String> out = new ArrayList<>();
+        if (array != null && array.isJsonArray()) {
+            for (JsonElement e : array.getAsJsonArray()) {
+                if (e != null && e.isJsonPrimitive()) {
+                    out.add(e.getAsString());
+                }
+            }
+        }
+        return out;
     }
 
     /** The request a command carries, or null when it is not {@link #COMMAND} or has no usable arguments. */
@@ -128,7 +286,23 @@ public final class JdtlsRefactor {
                 out.add(d);
             }
         }
+        // jdtls lists each source root's packages in turn, main and test mixed by name; test roots go last, so
+        // a main class isn't moved into src/test by picking the first of two "com.example.geo" (Java review B20).
+        out.sort(java.util.Comparator.comparingInt(d -> isCurrent(d) ? 0 : inTestRoot(d.detail()) ? 2 : 1));
         return out;
+    }
+
+    private static boolean isCurrent(Destination d) {
+        return d.raw().isJsonObject() && bool(d.raw().getAsJsonObject(), "isParentOfSelectedFile");
+    }
+
+    /** Whether a package's path lies in a Maven/Gradle test root ({@code src/test/java}, {@code src/test/kotlin}). */
+    static boolean inTestRoot(@Nullable String path) {
+        if (path == null) {
+            return false;
+        }
+        String p = path.replace('\\', '/');
+        return p.contains("/src/test/") || p.endsWith("/src/test");
     }
 
     /** The parameters and fields an instance method can move to ({@code name : Type}). */

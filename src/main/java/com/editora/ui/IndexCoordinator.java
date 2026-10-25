@@ -789,6 +789,36 @@ final class IndexCoordinator {
         }
     }
 
+    /** Search Everywhere's file rows for {@code query}: the name, then its folder relative to the root. */
+    List<com.editora.search.SearchEverywhere.Item> fileItems(String query) {
+        List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+        for (FileHit hit : searchFiles(query, 40)) {
+            String name = hit.file().getFileName().toString();
+            String parent = hit.relativePath().contains("/")
+                    ? hit.relativePath().substring(0, hit.relativePath().lastIndexOf('/'))
+                    : "";
+            out.add(new com.editora.search.SearchEverywhere.Item(
+                    com.editora.search.SearchEverywhere.Kind.FILE, name, parent, hit.score(), hit.file()));
+        }
+        return out;
+    }
+
+    /** Search Everywhere's symbol rows for {@code query}: the name, then its container and place. */
+    List<com.editora.search.SearchEverywhere.Item> symbolItems(String query) {
+        List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+        for (SymbolIndex.Hit hit : searchSymbols(query, 40)) {
+            String container = hit.symbol().container();
+            String where = hit.file().getFileName() + ":" + (hit.symbol().line() + 1);
+            out.add(new com.editora.search.SearchEverywhere.Item(
+                    com.editora.search.SearchEverywhere.Kind.SYMBOL,
+                    hit.symbol().name(),
+                    container.isEmpty() ? where : container + " — " + where,
+                    hit.score(),
+                    hit));
+        }
+        return out;
+    }
+
     /** Ranked symbol hits for {@code query}; empty when the index has not been built. */
     List<SymbolIndex.Hit> searchSymbols(String query, int limit) {
         return isEnabled() ? index.search(query, limit) : List.of();

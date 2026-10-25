@@ -165,7 +165,7 @@ class LspCoordinatorCodeActionsFxTest {
                         .map(com.editora.editor.lsp.CodeAction::title)
                         .toList());
         assertTrue(buffer.offered.get(0).preferred());
-        assertEquals("quickfix", buffer.offered.get(1).kind());
+        assertEquals(tr("lsp.codeAction.group.fix"), buffer.offered.get(1).kind(), "a word, not the LSP kind (A17)");
         assertEquals(
                 range(1, 4, 13),
                 FakeLanguageServer.last(fx.server().codeActions).getRange());
@@ -654,18 +654,145 @@ class LspCoordinatorCodeActionsFxTest {
     /** A refactoring that needs no choice from the user is one request away. */
     @Test
     void aRefactoringWithNothingToAskAppliesDirectly() throws Exception {
-        offer(refactoring("Extract to variable", "extractVariable", null));
-        answers.put("java/getRefactorEdit", insertAtTop("// extracted\n"));
+        offer(refactoring("Introduce Parameter...", "introduceParameter", null));
+        answers.put("java/getRefactorEdit", insertAtTop("// introduced\n"));
 
-        runAction("Extract to variable");
+        runAction("Introduce Parameter...");
 
         assertEquals(List.of("java/getRefactorEdit"), rawMethods());
-        assertEquals("extractVariable", lastRawParams().get("command").getAsString());
-        assertEquals("// extracted\n" + SOURCE, content());
+        assertEquals("introduceParameter", lastRawParams().get("command").getAsString());
+        assertEquals(0, lastRawParams().getAsJsonArray("commandArguments").size());
+        assertEquals("// introduced\n" + SOURCE, content());
 
         answers.put("java/getRefactorEdit", null);
-        runAction("Extract to variable");
-        assertEquals(tr("status.lsp.codeActionFailed", "Extract to variable"), fx.host.lastStatus());
+        runAction("Introduce Parameter...");
+        assertEquals(tr("status.lsp.codeActionFailed", "Introduce Parameter..."), fx.host.lastStatus());
+    }
+
+    private static final String TWO_EXPRESSIONS =
+            "[{\"name\":\"count\",\"offset\":14,\"length\":5},{\"name\":\"count + 1\",\"offset\":14,\"length\":9}]";
+
+    /**
+     * Extract at a bare caret (Java review D7): the server is asked which expressions are there, the user picks
+     * one when there are several, and that expression goes back as the command's argument.
+     */
+    @Test
+    void anExtractionAtACaretAsksWhichExpression() throws Exception {
+        offer(refactoring("Extract to method", "extractMethod", null));
+        answers.put("java/inferSelection", json(TWO_EXPRESSIONS));
+        answers.put("java/getRefactorEdit", insertAtTop("// extracted\n"));
+
+        runAction("Extract to method");
+        assertEquals(List.of("java/inferSelection"), rawMethods(), "nothing is extracted before the choice");
+        assertEquals("extractMethod", lastRawParams().get("command").getAsString());
+        assertEquals(json(PARAMS), lastRawParams().get("context"));
+        assertEquals(2, fx.pickerRows().size(), "both expressions are offered: " + fx.pickerRows());
+        fx.run(() -> fx.choose(1));
+
+        JsonObject sent = lastRawParams();
+        assertEquals("extractMethod", sent.get("command").getAsString());
+        assertEquals(
+                "count + 1",
+                sent.getAsJsonArray("commandArguments")
+                        .get(0)
+                        .getAsJsonObject()
+                        .get("name")
+                        .getAsString());
+        assertEquals("// extracted\n" + SOURCE, content());
+    }
+
+    @Test
+    void aSingleInferredExpressionIsNotAskedAndNoneIsReported() throws Exception {
+        offer(refactoring("Extract to local variable", "extractVariable", null));
+        answers.put("java/inferSelection", json("[{\"name\":\"count\",\"offset\":14,\"length\":5}]"));
+        answers.put("java/getRefactorEdit", insertAtTop("// extracted\n"));
+
+        runAction("Extract to local variable");
+        assertEquals(List.of("java/inferSelection", "java/getRefactorEdit"), rawMethods());
+        assertEquals("// extracted\n" + SOURCE, content());
+
+        fx.server().rawRequests.clear();
+        answers.put("java/inferSelection", json("[]"));
+        runAction("Extract to local variable");
+        assertEquals(tr("status.lsp.refactorNoExpression", "Extract to local variable"), fx.host.lastStatus());
+        assertEquals(List.of("java/inferSelection"), rawMethods());
+    }
+
+    /** Extract to field asks where the field is initialized when the server offers more than one place (D10). */
+    @Test
+    void anExtractedFieldAsksWhereItIsInitialized() throws Exception {
+        offer(refactoring("Extract to field", "extractField", null));
+        answers.put(
+                "java/inferSelection",
+                json("[{\"name\":\"count\",\"offset\":14,\"length\":5,"
+                        + "\"params\":[\"Current method\",\"Field declaration\"]}]"));
+        answers.put("java/getRefactorEdit", insertAtTop("// field\n"));
+
+        runAction("Extract to field");
+        assertEquals(List.of("Current method", "Field declaration"), fx.pickerRows());
+        fx.run(() -> fx.choose(1));
+
+        var arguments = lastRawParams().getAsJsonArray("commandArguments");
+        assertEquals("Field declaration", arguments.get(0).getAsString(), "the scope first");
+        assertEquals("count", arguments.get(1).getAsJsonObject().get("name").getAsString(), "then the expression");
+        assertEquals("// field\n" + SOURCE, content());
+
+        // Convert local to field: the scopes come with the action, nothing to infer.
+        fx.server().rawRequests.clear();
+        offer(refactoring(
+                "Convert local variable to field",
+                "convertVariableToField",
+                "{\"initializedScopes\":[\"Current method\",\"Class constructors\"]}"));
+        runAction("Convert local variable to field");
+        assertEquals(List.of(), rawMethods(), "nothing is asked of the server before the choice");
+        fx.run(() -> fx.choose(0));
+        assertEquals(
+                "Current method",
+                lastRawParams().getAsJsonArray("commandArguments").get(0).getAsString());
+    }
+
+    /**
+     * A move jdtls finds problems with comes back as those problems and a token (D11): nothing changes until the
+     * user agrees, and then the move is asked for again with the token.
+     */
+    @Test
+    void aMoveWithProblemsIsAppliedOnlyAfterTheUserAgrees() throws Exception {
+        offer(refactoring("Move method", JdtlsRefactor.MOVE_INSTANCE_METHOD, null));
+        answers.put(
+                "java/getMoveDestinations",
+                json("{\"destinations\":[{\"bindingKey\":\"k\",\"name\":\"helper\",\"type\":\"Helper\"}]}"));
+        JsonObject moved = new JsonObject();
+        moved.add("edit", insertAtTop("// moved\n"));
+        fx.server().rawHandler = raw -> {
+            if (!raw.method().equals("java/move")) {
+                return answers.get(raw.method());
+            }
+            boolean confirmed = com.editora.lsp.LspManager.asJson(raw.params())
+                    .getAsJsonObject()
+                    .has("confirmationToken");
+            return confirmed ? moved : json("{\"errorMessage\":\"helper may be null\",\"confirmationToken\":\"t-1\"}");
+        };
+        List<String> shown = new ArrayList<>();
+        fx.coordinator.moveProblemsConfirmer = problems -> {
+            shown.add(problems);
+            return false;
+        };
+
+        runAction("Move method");
+        fx.run(() -> fx.choose(0));
+        assertEquals(List.of("helper may be null"), shown);
+        assertEquals(SOURCE, content(), "declined: nothing moved");
+        assertEquals(tr("status.lsp.refactorCancelled", "Move method"), fx.host.lastStatus());
+        assertEquals(1, rawMethods().stream().filter("java/move"::equals).count());
+
+        fx.coordinator.moveProblemsConfirmer = problems -> true;
+        runAction("Move method");
+        fx.run(() -> fx.choose(0));
+        assertEquals("t-1", lastRawParams().get("confirmationToken").getAsString());
+        assertEquals(
+                "helper",
+                lastRawParams().getAsJsonObject("destination").get("name").getAsString());
+        assertEquals("// moved\n" + SOURCE, content());
     }
 
     // --- rename (#676, #768) -------------------------------------------------------------------------
@@ -804,5 +931,68 @@ class LspCoordinatorCodeActionsFxTest {
                 .findAny()
                 .orElse(null));
         assertEquals("class User {\n    int n = new A().count;\n}\n", Files.readString(user.getPath()));
+    }
+
+    /**
+     * After an extract, Rename opens on the name jdtls picked (Java review B12): the answer's
+     * {@code java.action.rename} command names it by offset in the edited document.
+     */
+    @Test
+    void anExtractionOpensRenameOnTheNameTheServerPicked() throws Exception {
+        offer(refactoring("Extract to local variable", "extractVariable", null));
+        answers.put("java/inferSelection", json("[{\"name\":\"count\",\"offset\":14,\"length\":5}]"));
+        String edited = "// extracted\n" + SOURCE;
+        int offset = edited.indexOf("count");
+        JsonObject answer = new JsonObject();
+        answer.add("edit", insertAtTop("// extracted\n"));
+        answer.add(
+                "command",
+                json("{\"title\":\"Rename\",\"command\":\"java.action.rename\",\"arguments\":[{\"uri\":\""
+                        + buffer.getPath().toUri() + "\",\"offset\":" + offset + ",\"length\":5}]}"));
+        answers.put("java/getRefactorEdit", answer);
+
+        runAction("Extract to local variable");
+
+        assertEquals(edited, content());
+        assertEquals(offset, (int)
+                FxTestSupport.callOnFx(() -> buffer.getFocusedArea().getCaretPosition()));
+        assertEquals("count", fx.lastPrompt().initial(), "Rename is open on the new name");
+    }
+
+    /** Change Signature lists the files it changes and applies only the ticked ones (Java review B20). */
+    @Test
+    void aChangeSignatureThatTouchesAnotherFileIsPreviewed() throws Exception {
+        Path other = root.resolve("B.java");
+        String otherSource = "class B {\n    void use() {}\n}\n";
+        java.nio.file.Files.writeString(other, otherSource);
+        offer(refactoring("Change signature", JdtlsRefactor.CHANGE_SIGNATURE, null));
+        answers.put("java/getChangeSignatureInfo", json(SIGNATURE));
+        JsonObject edit = insertAtTop("// signature\n");
+        edit.getAsJsonObject("changes")
+                .add(
+                        other.toUri().toString(),
+                        json("[{\"range\":{\"start\":{\"line\":0,\"character\":0},"
+                                + "\"end\":{\"line\":0,\"character\":0}},\"newText\":\"// caller\\n\"}]"));
+        answers.put("java/getRefactorEdit", edit);
+
+        runAction("Change signature");
+        fx.run(() -> fx.lastPrompt().onAccept().accept("public String hello(int n)"));
+
+        // B.java has no tab: its text is read off the FX thread before the edit is planned and previewed.
+        for (int i = 0; i < 100 && !FxTestSupport.callOnFx(fx.host.overlay::isShowing); i++) {
+            Thread.sleep(20);
+            fx.settle();
+        }
+        assertEquals(SOURCE, content(), "nothing is applied before the preview is answered");
+        List<String> rows = tickedLabels();
+        assertEquals(2, rows.size(), "both files are listed: " + rows);
+        assertTrue(rows.stream().allMatch(r -> r.startsWith("[x] ")), "ticked to start with");
+        FxTestSupport.runOnFx(() -> fx.checkboxes().stream()
+                .filter(box -> box.getText().contains("B.java"))
+                .forEach(box -> box.setSelected(false)));
+        fx.run(fx::acceptTicked);
+
+        assertEquals("// signature\n" + SOURCE, content());
+        assertEquals(otherSource, java.nio.file.Files.readString(other), "the unticked file is left alone");
     }
 }

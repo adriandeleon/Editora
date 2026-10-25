@@ -219,6 +219,10 @@ final class EditingCoordinator {
 
     void onUndo() {
         if (!undoIsOff() && !previewOnly()) {
+            // A file the last refactoring changed: undo it in every file at once, if the user wants (Java review B1).
+            if (host.lspCoordinator().offerRefactoringUndo(host.activeBuffer())) {
+                return;
+            }
             undoOrRedo(false);
         }
     }

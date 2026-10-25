@@ -161,7 +161,8 @@ final class LspServerSettings {
         return analysis;
     }
 
-    private static Map<String, Object> javaSettings(boolean onTypeFormatting) {
+    /** The {@code java} object pushed to jdtls; {@code LspManager} sends the same keys at {@code initialize}. */
+    static Map<String, Object> javaSettings(boolean onTypeFormatting) {
         // jdtls ADVERTISES signatureHelpProvider but its handler returns an empty result unless
         // `java.signatureHelp.enabled` is set — it ships OFF (VS Code's Java extension sets it in its
         // own defaults, which is why it "just works" there). Verified by driving a real jdtls: same
@@ -169,7 +170,9 @@ final class LspServerSettings {
         // class of bug as #468's provideFormatter.
         Map<String, Object> signatureHelp = new HashMap<>();
         signatureHelp.put("enabled", true);
-        signatureHelp.put("description", true); // include the javadoc in the signature popup
+        // The Javadoc in the popup. jdtls reads `java.signatureHelp.description.enabled`; a bare
+        // `description: true` resolved to no key at all, so the description never came (Java review A2).
+        signatureHelp.put("description", Map.of("enabled", true));
         // Same shape of gate for smart-semicolon detection (#746): jdtls advertises
         // java.edit.smartSemicolonDetection unconditionally, but its handler answers null until this
         // preference is set — verified against a real jdtls (null for every argument shape before,
@@ -190,6 +193,55 @@ final class LspServerSettings {
         // implementations lens at all.
         java.put("referencesCodeLens", Map.of("enabled", true));
         java.put("implementationCodeLens", "all");
+        // The rest are preferences vscode-java sends from its own defaults, which jdtls's defaults assume a
+        // client provides (Java review A9, A10, A15, B3). Each was verified against a real jdtls by
+        // JdtlsClientSettingsProbeTest.
+        //
+        // jdtls holds a default type filter but installs it only when the client sends one: without it
+        // JDK internals (sun.*, com.sun.*, jdk.internal.*) filled completion and the import quick fixes.
+        java.put("completion", Map.of("filteredTypes", FILTERED_TYPES));
+        // Inlay hints are requested only while Settings.inlayHints is on, so the server side can be generous:
+        // every parameter name (InlayHintFilter applies Editora's literals/all mode on top — jdtls's own
+        // default, "literals", made the "all" mode a no-op), and the inferred types of `var` and lambda
+        // parameters, which jdtls leaves off by default.
+        Map<String, Object> inlayHints = new HashMap<>();
+        inlayHints.put("parameterNames", Map.of("enabled", "all", "suppressWhenSameNameNumbered", true));
+        inlayHints.put("variableTypes", Map.of("enabled", true));
+        inlayHints.put("parameterTypes", Map.of("enabled", true));
+        java.put("inlayHints", inlayHints);
+        // workspace/symbol answers types only unless asked for methods too.
+        java.put("symbols", Map.of("includeSourceMethodDeclarations", true));
+        // A pom.xml or build.gradle change reaches the classpath on its own. jdtls's default, "interactive",
+        // asks a question per change, and a pom edit never took effect until it was answered (Java review C1).
+        java.put("configuration", Map.of("updateBuildConfiguration", "automatic"));
         return java;
+    }
+
+    /** vscode-java's {@code java.completion.filteredTypes} default: types never offered or imported. */
+    static final java.util.List<String> FILTERED_TYPES = java.util.List.of(
+            "java.awt.*",
+            "com.sun.*",
+            "sun.*",
+            "jdk.*",
+            "org.graalvm.*",
+            "io.micrometer.shaded.*",
+            "java.beans.*",
+            "java.util.Hashtable",
+            "java.util.Vector");
+
+    /**
+     * jdtls's {@code workspace/configuration} question for a document's indentation, asked before every code
+     * action so that quick fixes and generated members are formatted like the file (Java review B8, D9): the
+     * answer, or null when {@code section} is not one of those two keys or the document's indent is unknown.
+     */
+    static @Nullable Object javaFormatAnswer(String section, @Nullable FormattingIndent indent) {
+        if (indent == null) {
+            return null;
+        }
+        return switch (section == null ? "" : section) {
+            case "java.format.tabSize" -> indent.tabSize();
+            case "java.format.insertSpaces" -> indent.insertSpaces();
+            default -> null;
+        };
     }
 }

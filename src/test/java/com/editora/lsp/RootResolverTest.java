@@ -257,4 +257,27 @@ class RootResolverTest {
         Files.createFile(proj.resolve("pom.xml"));
         assertEquals(proj.toAbsolutePath().normalize(), RootResolver.outermostContiguous(proj, "pom.xml", null, home));
     }
+
+    /** One jdtls per Maven reactor or Gradle build, not per module, outside a project too (Java review C10). */
+    @org.junit.jupiter.api.Test
+    void javaRootsWidenToTheirBuild(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        var home = dir.resolve("home");
+        var reactor = java.nio.file.Files.createDirectories(home.resolve("work/reactor/app"));
+        java.nio.file.Files.writeString(reactor.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.writeString(reactor.getParent().resolve("pom.xml"), "<project/>");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                reactor.getParent(), RootResolver.javaBuildRoot(reactor, null, home), "the reactor's root");
+
+        var gradle = java.nio.file.Files.createDirectories(home.resolve("work/build/lib"));
+        java.nio.file.Files.writeString(gradle.resolve("build.gradle"), "");
+        java.nio.file.Files.writeString(gradle.getParent().resolve("settings.gradle"), "include 'lib'");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                gradle.getParent(), RootResolver.javaBuildRoot(gradle, null, home), "the Gradle build's root");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                gradle, RootResolver.javaBuildRoot(gradle, gradle, home), "never above the project");
+
+        var single = java.nio.file.Files.createDirectories(home.resolve("work/single"));
+        java.nio.file.Files.writeString(single.resolve("pom.xml"), "<project/>");
+        org.junit.jupiter.api.Assertions.assertEquals(single, RootResolver.javaBuildRoot(single, null, home));
+    }
 }

@@ -314,7 +314,8 @@ class LspServerRegistryTest {
     void pythonKeepsItsServerInTheLargeFileTier() {
         assertTrue(LspServerRegistry.lspAllowedForSize("python", true, 12_000));
         assertFalse(LspServerRegistry.lspAllowedForSize("python", true, 50_000));
-        assertFalse(LspServerRegistry.lspAllowedForSize("java", true, 12_000));
+        assertTrue(LspServerRegistry.lspAllowedForSize("java", true, 12_000), "Java keeps jdtls to 50,000 lines (C16)");
+        assertFalse(LspServerRegistry.lspAllowedForSize("typescript", true, 12_000));
         assertTrue(LspServerRegistry.lspAllowedForSize("java", false, 12_000), "below the tier: always");
     }
 }

@@ -19,6 +19,25 @@ import static org.junit.jupiter.api.Assertions.*;
 class JavaServerEnvironmentTest {
     private static final String OPTION = "-Djava.lsp.joinOnCompletion=true";
 
+    /** Every option jdtls gets by default, except those whose prefix is in {@code chosen}. */
+    private static List<String> options(String... chosen) {
+        return JavaServerEnvironment.OPTIONS.stream()
+                .filter(o -> java.util.Arrays.stream(chosen).noneMatch(c -> c.startsWith(o.prefix())))
+                .map(JavaServerEnvironment.Option::value)
+                .toList();
+    }
+
+    private static List<String> launcherArgs(String... chosen) {
+        return options(chosen).stream().map(o -> "--jvm-arg=" + o).toList();
+    }
+
+    private static List<String> concat(List<String> head, List<String> middle, List<String> tail) {
+        var out = new java.util.ArrayList<String>(head);
+        out.addAll(middle);
+        out.addAll(tail);
+        return out;
+    }
+
     @TempDir
     Path dir;
 
@@ -37,7 +56,7 @@ class JavaServerEnvironmentTest {
 
         List<String> command = JavaServerEnvironment.configure("java", List.of(jdtls, "-data", "/ws"), env);
 
-        assertEquals(List.of(jdtls, "--jvm-arg=" + OPTION, "-data", "/ws"), command);
+        assertEquals(concat(List.of(jdtls), launcherArgs("-Xmx2g"), List.of("-data", "/ws")), command);
         assertEquals("-Xmx2g", env.get("JDK_JAVA_OPTIONS"));
         assertEquals(command, JavaServerEnvironment.configure("java", command, env), "not added twice");
     }
@@ -48,7 +67,7 @@ class JavaServerEnvironmentTest {
         Path bat = Files.writeString(jdtls.resolveSibling("jdtls.bat"), "python \"%~dp0/jdtls\" %*\r\n");
         var env = new HashMap<String, String>();
         assertEquals(
-                List.of(bat.toString(), "--jvm-arg=" + OPTION),
+                concat(List.of(bat.toString()), launcherArgs(), List.of()),
                 JavaServerEnvironment.configure("java", List.of(bat.toString()), env));
 
         Path onPath = Files.createDirectories(dir.resolve("usr/bin")).resolve("jdtls");
@@ -58,7 +77,7 @@ class JavaServerEnvironmentTest {
             return; // no symlinks here (Windows without the privilege)
         }
         assertEquals(
-                List.of(onPath.toString(), "--jvm-arg=" + OPTION),
+                concat(List.of(onPath.toString()), launcherArgs(), List.of()),
                 JavaServerEnvironment.configure("java", List.of(onPath.toString()), env));
         assertTrue(env.isEmpty());
     }
@@ -68,7 +87,10 @@ class JavaServerEnvironmentTest {
         var env = new HashMap<String, String>();
         for (String java : List.of("java", "/opt/jdk-25/bin/java", "C:\\jdk\\bin\\java.exe")) {
             assertEquals(
-                    List.of(java, OPTION, "-Xmx1g", "-jar", "org.eclipse.equinox.launcher_1.7.0.jar", "-data", "/ws"),
+                    concat(
+                            List.of(java),
+                            options("-Xmx1g"),
+                            List.of("-Xmx1g", "-jar", "org.eclipse.equinox.launcher_1.7.0.jar", "-data", "/ws")),
                     JavaServerEnvironment.configure(
                             "java",
                             List.of(java, "-Xmx1g", "-jar", "org.eclipse.equinox.launcher_1.7.0.jar", "-data", "/ws"),
@@ -100,8 +122,12 @@ class JavaServerEnvironmentTest {
     @Test
     void respectsCommandAndEnvironmentOverridesAndOtherServers() throws Exception {
         var env = new HashMap<String, String>();
-        List<String> explicit = List.of(launcher().toString(), "--jvm-arg=-Djava.lsp.joinOnCompletion=false");
-        assertEquals(explicit, JavaServerEnvironment.configure("java", explicit, env));
+        String jdtls = launcher().toString();
+        List<String> explicit = List.of(jdtls, "--jvm-arg=-Djava.lsp.joinOnCompletion=false");
+        assertEquals(
+                concat(List.of(jdtls), launcherArgs("-Djava.lsp.joinOnCompletion"), explicit.subList(1, 2)),
+                JavaServerEnvironment.configure("java", explicit, env),
+                "an explicit false is kept; the other options still come");
         assertTrue(env.isEmpty());
         assertEquals(List.of("pylsp"), JavaServerEnvironment.configure("python", List.of("pylsp"), env));
         assertEquals(
@@ -112,8 +138,55 @@ class JavaServerEnvironmentTest {
             env.put(key, "-Djava.lsp.joinOnCompletion=false");
             var before = new HashMap<>(env);
             List<String> command = List.of("java", "-jar", "server.jar");
-            assertEquals(command, JavaServerEnvironment.configure("java", command, env));
+            assertEquals(
+                    concat(List.of("java"), options("-Djava.lsp.joinOnCompletion"), command.subList(1, 3)),
+                    JavaServerEnvironment.configure("java", command, env));
             assertEquals(before, env);
         }
+    }
+
+    /**
+     * Eclipse's project files stay in jdtls's workspace (Java review C3), and the heap is capped (C11); a user's
+     * own {@code -Xmx} or GC choice wins.
+     */
+    @Test
+    void metadataStaysOutOfTheProjectAndTheHeapIsCappedUnlessChosen() throws Exception {
+        String jdtls = launcher().toString();
+        var env = new HashMap<String, String>();
+        List<String> command = JavaServerEnvironment.configure("java", List.of(jdtls), env);
+        assertTrue(command.contains("--jvm-arg=-Djava.import.generatesMetadataFilesAtProjectRoot=false"));
+        assertTrue(command.contains("--jvm-arg=-Xmx2G"));
+        assertTrue(command.contains("--jvm-arg=-XX:+UseParallelGC"));
+
+        List<String> own = JavaServerEnvironment.configure(
+                "java", List.of(jdtls, "--jvm-arg=-Xmx6G", "--jvm-arg=-XX:+UseZGC"), env);
+        assertFalse(own.contains("--jvm-arg=-Xmx2G"));
+        assertFalse(own.contains("--jvm-arg=-XX:+UseParallelGC"));
+        assertTrue(own.contains("--jvm-arg=-Xmx6G"));
+    }
+
+    /** A wrapper only gets the option jdtls needs through the environment: heap flags would reach debuggees. */
+    @Test
+    void onlyTheJoinOptionGoesThroughTheEnvironment() {
+        var env = new HashMap<String, String>();
+        JavaServerEnvironment.configure("java", List.of("my-jdtls"), env);
+        assertEquals(OPTION, env.get("JDK_JAVA_OPTIONS"));
+    }
+
+    /** jdtls's launcher refuses a Java older than 21; Editora can name one it found (Java review C5). */
+    @Test
+    void theLauncherCanBeToldWhichJavaToRunOn() throws Exception {
+        String jdtls = launcher().toString();
+        assertEquals(
+                List.of(jdtls, "--java-executable=/jdk21/bin/java", "-data", "/ws"),
+                JavaServerEnvironment.withJavaExecutable(
+                        List.of(jdtls, "-data", "/ws"), "/jdk21/bin/java", JavaServerEnvironment::isJdtlsLauncher));
+        List<String> named = List.of(jdtls, "--java-executable=/mine/java");
+        assertEquals(named, JavaServerEnvironment.withJavaExecutable(named, "/jdk21/bin/java", e -> true));
+        assertEquals(List.of(jdtls), JavaServerEnvironment.withJavaExecutable(List.of(jdtls), null, e -> true));
+        assertEquals(
+                List.of("java", "-jar", "x.jar"),
+                JavaServerEnvironment.withJavaExecutable(
+                        List.of("java", "-jar", "x.jar"), "/jdk21/bin/java", e -> true));
     }
 }

@@ -581,4 +581,79 @@ class SearchEverywhereFxTest {
             hide();
         }
     }
+
+    /** A language server's classes arrive after the index's own symbols and join them, for the live query only. */
+    @Test
+    void lateSymbolsJoinTheListForTheQueryTheyAnswer() throws Exception {
+        java.util.Map<String, java.util.function.Consumer<List<Item>>> parked = new java.util.HashMap<>();
+        SearchEverywherePopup local = FxTestSupport.callOnFx(() -> new SearchEverywherePopup(
+                FxTestSupport.<OverlayHost>field(fx.controller, "overlayHost"), new SearchEverywherePopup.Ops() {
+                    @Override
+                    public List<Item> commands(String query) {
+                        return List.of();
+                    }
+
+                    @Override
+                    public List<Item> files(String query) {
+                        return List.of();
+                    }
+
+                    @Override
+                    public List<Item> symbols(String query) {
+                        return List.of(new Item(Kind.SYMBOL, "My" + query, "", 50, "project"));
+                    }
+
+                    @Override
+                    public void laterSymbols(String query, java.util.function.Consumer<List<Item>> cb) {
+                        parked.put(query, cb);
+                    }
+
+                    @Override
+                    public void ensureIndex(Runnable then) {
+                        then.run();
+                    }
+
+                    @Override
+                    public void choose(Item item) {}
+
+                    @Override
+                    public String disabledReason(Item item) {
+                        return null;
+                    }
+
+                    @Override
+                    public void openDocs(Item item) {}
+                }));
+        java.util.function.Supplier<List<String>> labels = () -> {
+            javafx.collections.ObservableList<Object> list = FxTestSupport.field(local, "rows");
+            return list.stream()
+                    .map(SearchEverywhereFxTest::itemOf)
+                    .filter(java.util.Objects::nonNull)
+                    .map(Item::label)
+                    .toList();
+        };
+        java.util.function.Consumer<String> typeLocal = q -> {
+            FxTestSupport.<javafx.scene.control.TextField>field(local, "input").setText(q);
+            FxTestSupport.invoke(local, "refresh");
+        };
+        try {
+            FxTestSupport.runOnFxUnchecked(() -> {
+                local.show("");
+                typeLocal.accept("Lis");
+                typeLocal.accept("List");
+            });
+            assertEquals(List.of("MyList"), FxTestSupport.callOnFx(labels::get));
+            FxTestSupport.runOnFxUnchecked(
+                    () -> parked.get("Lis").accept(List.of(new Item(Kind.SYMBOL, "Lisp", "", 40, "stale"))));
+            assertEquals(List.of("MyList"), FxTestSupport.callOnFx(labels::get), "an older query's answer is dropped");
+            FxTestSupport.runOnFxUnchecked(() ->
+                    parked.get("List").accept(List.of(new Item(Kind.SYMBOL, "List", "java.util", 49, "library"))));
+            assertEquals(
+                    List.of("MyList", "List"),
+                    FxTestSupport.callOnFx(labels::get),
+                    "the library class joins the symbols, after a better project match (E8)");
+        } finally {
+            hide();
+        }
+    }
 }

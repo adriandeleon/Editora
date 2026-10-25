@@ -33,10 +33,18 @@ public final class SemanticTokenMapper {
         if (hasMod(modBits, modLegend, "deprecated")) {
             return base + " sem-deprecated";
         }
-        if (hasMod(modBits, modLegend, "readonly") || hasMod(modBits, modLegend, "static")) {
-            return base.equals("sem-constant") ? base : base + " sem-constant"; // avoid "sem-constant sem-constant"
+        if (base.equals("sem-constant")) {
+            return base; // avoid "sem-constant sem-constant"
         }
-        return base;
+        // Readonly values and static fields take the constant colour; a static method or nested type keeps its own
+        // colour in italics, as IntelliJ draws it — the constant colour made String.format read like a field (Java
+        // review A14).
+        boolean isStatic = hasMod(modBits, modLegend, "static");
+        boolean variable = "variable".equals(type) || "property".equals(type);
+        if (hasMod(modBits, modLegend, "readonly") || isStatic && variable) {
+            return base + " sem-constant";
+        }
+        return isStatic ? base + " sem-static" : base;
     }
 
     /** The base {@code sem-*} class for a semantic token type, or {@code null} to defer to TextMate. */

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Java: Extract Method, Variable and Field at the caret, Introduce Parameter, and a warning before a risky
+  move.** Editora now declares jdtls's `inferSelectionSupport`: with nothing selected the extract actions are
+  offered, and Editora asks the server which expressions are there and lets you pick one when there are several.
+  Introduce Parameter is offered as its own refactoring. Extract to Field and Convert Local to Field ask where
+  to initialize the field when there is a choice. A Move Instance Method that jdtls finds problems with (jdtls
+  1.61 final and newer) now shows those problems and moves only if you continue; before, it was applied anyway.
+- **Java: Go to Symbol in Workspace finds methods and JDK or library types.** jdtls was never asked for method
+  symbols, and its matches inside JDK or dependency classes (`jdt://`) were dropped. They are listed after the
+  project's own, labelled with their module or jar, and open as library source.
+
 - **File structure in the Project Map.** A file row whose language the Structure tool window can outline
   (Java, Python, JavaScript/TypeScript, Kotlin, Markdown headings, Typst, `.http` requests, Clojure, poms…)
   gets a Structure icon before its preview eye. It opens a column of the file's declarations, the way a
@@ -32,7 +42,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status-bar update notice now also comes back after a restart until the release is opened or installed, instead
   of waiting for the next day's check.
 
+- **Java: Undo Last Refactoring.** A rename, move or other refactoring that changed several files can be undone in
+  all of them at once: Undo in one of its files asks whether to undo it everywhere, and **LSP: Undo Last
+  Refactoring** does it from the palette. Renamed files move back and created ones are removed. Before, Undo
+  reverted one file and left the rest of the project renamed.
+- **Java: renaming a `.java` file or a package folder in the Project tree renames the class or package.** The
+  tree asks jdtls (`workspace/willRenameFiles`) for the edits first, so references, `package` lines and imports
+  follow; before, the class kept its old name and the project stopped compiling.
+
+- **Java: Generate, Refactor This and a command per refactoring.** **LSP: Generate…** lists the generators
+  (getters/setters, constructors, toString, equals/hashCode, overrides, delegates), **LSP: Refactor This…** the
+  refactorings at the caret, and Extract Variable / Constant / Field / Method, Introduce Parameter, Inline, Move,
+  Change Signature and Override/Implement Methods each have a command that runs the one jdtls offers there. They
+  are in a new **Code ▸ Refactor** submenu; before, all of them were reachable only through the quick-fix list.
+- **Next / Previous Problem and Show Problem at Caret.** Jump between the file's errors (warnings when there
+  are none) and read the one under the caret without the mouse.
+- **The "IntelliJ IDEA" keymap uses IntelliJ's Java chords:** Alt+Enter for quick fixes, Shift+F6 Rename,
+  F2/Shift+F2 next/previous problem, Ctrl+F1 problem at caret, Alt+Insert Generate, Ctrl+Alt+L/O format and
+  organize imports, Ctrl+N / Ctrl+Alt+Shift+N symbols, Ctrl+Alt+B implementations, Ctrl+Shift+B type,
+  Ctrl+H / Ctrl+Alt+H hierarchies, Ctrl+P parameter info, Ctrl+Alt+V/C/F/M/P/N, F6 Move, Ctrl+F6 Change
+  Signature, Ctrl+Alt+Shift+T Refactor This, Ctrl+O Override, Ctrl+Alt+Left/Right Back/Forward (and the macOS
+  equivalents). F2 is no longer Rename and Alt+Insert no longer New File (now Ctrl+Alt+Insert) in that keymap.
+  The default Emacs keymap gains a `C-c l` prefix for the language-server commands, `M-g M-n`/`M-g M-p` for
+  problems and `M-,`/`C-M-,` for back/forward; every keymap now binds Back and Forward.
+
+- **LSP: Clean Java Workspace and Restart.** Stops the project's Java server, deletes its index and the classpath
+  and source folders it worked out, and imports the project afresh — the cure for a stale or corrupt jdtls
+  workspace, which Restart Language Servers kept and Clear Java Index Caches skipped while in use.
+- **Java: navigation inside library source.** In a JDK or dependency tab opened by Go to Definition, hover, Find
+  References, Go to Implementation / Type Definition / Declaration and the call and type hierarchies now work, asked
+  of the server that opened it; before, only Go to Definition did and the rest said "No language server for this
+  file". JDK and library nodes in the hierarchies open as library source too.
+- **Java: `/**` gives the declaration's Javadoc.** Typing `/**` above a method or class closes the comment and offers
+  jdtls's "Javadoc comment" template, with `@param`, `@return` and `@throws` for that declaration. Enter instead
+  still splits the comment as before.
+- **Java: rename what an extraction created.** After Extract Method, Variable, Constant or Field the caret is on the
+  name jdtls picked (`d`, `getTotal`) and Rename opens on it.
+- **Java: Search Everywhere finds JDK and library classes.** With a Java server running, `List`, `Assertions` and
+  the other classes the project's index cannot see are listed under Symbols after the project's own, and open as
+  library source.
+- **Format Document formats only the selection when there is one** (`textDocument/rangeFormatting`), whole lines,
+  as IntelliJ's Reformat Code does; before, the whole file was reformatted under a selection.
+- **Change Signature and Move show their files before applying.** When they change other files, the rename preview
+  lists them, ticked, and an unticked file is left alone; before, both applied unseen.
+- **Related File (test ⇄ subject) is in the Navigate menu**, and on `C-c S-t` (`C-c T`) in the Emacs keymap.
+
 ### Changed
+
+- **jdtls is pinned to 1.63.0** (from 1.62.0), checked against the jdtls probes. Doctor now names the installed
+  jdtls version and warns when it is older than the pinned one, and Install replaces an older copy of Editora's
+  own instead of saying it is already installed. Installs made before a pin bump used to keep their server for
+  good.
+- **Java files up to 50,000 lines keep the language server** in the large-file tier, as Python files do. jdtls
+  checks a 12,000-line file in well under a second; above 10,000 lines Java files lost diagnostics, completion
+  and navigation.
+- **One Java server per Maven reactor or Gradle build outside a project.** Opening files of two modules of one
+  reactor in a window without a project started a jdtls per module (1.4 GB each) that could not see the other
+  module; the root is now the reactor's or the Gradle build's. A second window on a project another window
+  already serves says that it starts a server of its own.
+- **Simple mode shows the language-server loading bar,** so a server importing a project in the background is
+  visible.
+- **Fold All leaves a Java, Kotlin, Scala, Groovy or C# file's one top-level type open** and folds its members,
+  imports and comments, the outline IntelliJ's Collapse All gives; before, the file folded to a single line.
+- **Type Hierarchy on an interface opens on its subtypes,** the implementations, instead of an empty Supertypes view.
+- **The References window shows code for files without a tab,** read in the background, names each file's folder so
+  two `Main.java` can be told apart, and says what was searched ("5 references to area in 4 files"). It no
+  longer lists the declaration itself.
+- **Completion, quick-fix, hover and signature popups open above the caret line** when there is no room below it,
+  instead of being pushed up over the line being typed.
+- **Static methods and nested types are italic in their own colour,** as in IntelliJ; before, a language server's
+  `static` modifier gave them the constant colour, so `String.format` read like a field.
+- **Java: Generate hashCode() and equals() starts with every field ticked**, and Enter with nothing ticked in a
+  Generate list says so instead of closing silently. The list's rows are taller and it shows twelve at a time.
+- **Java: Move lists the test source folders' packages after the main ones,** so a main class is not moved into
+  `src/test` by picking the first of two identical package names.
 
 - **Refactor: the text model the editor shares with other packages moved to a new `com.editora.text`.** The LSP value types (`LspTextEdit`, `LspDiagnostic`, `SemanticToken`, `OccurrenceSpan`), `FoldRegions`, the search matcher with `CaseFold` and `SearchMatches`, all of language detection (`LanguageRegistry`, `LanguageNames`, `ConfigFileType`, `ShellFiles`, `ShellScripts`, `Shebang`, `Modeline`) and `EncryptedNames` leave the editor sub-packages, with 13 tests. `lsp`, `search`, `crypto`, `template` and `editops` no longer depend on the editor; `editor.language` is gone, its classes having no presentation in them. `text` has its own 0.95 coverage floor. Internal-only — no behavior, dependency, or `module-info` change.
 - **Refactor: the editor's toolkit-free helpers moved to the core packages they belong to.** `AceLabels`,
@@ -46,6 +129,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java: a folder of `.java` files with packages but no build file is no longer red everywhere.** jdtls guessed
+  each file's own folder as its source folder, so `src/demo/Main.java` declaring `package demo` was flagged as
+  being in the wrong package and nothing in it resolved. Editora now tells jdtls the source folder the package
+  declaration implies as soon as the file is open, the correction Debug already made at launch.
+- **Java: whole-project Problems drops errors that were fixed.** With Problems showing the whole project, saving
+  a Java file now runs a quiet incremental build, so errors in files that are not open clear once their cause is
+  fixed, instead of staying until Build Project was run again.
+- **The quick-fix list puts the fix first.** It listed jdtls's actions in the server's order, so "Extract
+  interface..." was preselected and the fix for the squiggle sat below ten generators. Fixes now come first, then
+  assists, refactorings and source actions; repeated titles are dropped, rows say "Fix", "Refactor" or "Generate"
+  instead of LSP kind ids, and for Java the generators moved to Generate. Typing filters the list instead of
+  editing the code behind it, and the fixes for a line's problem are offered from anywhere on that line, not
+  only with the caret on the squiggle.
+- **Java: a refactoring that moves or creates files leaves the disk consistent.** A class rename, Move or
+  Extract Interface changed files on disk but left their new text unsaved, so the project did not compile until
+  every tab was saved. Every file such a refactoring touches is now saved. A file the refactoring opened only to
+  change it is saved and its tab closed, instead of a dirty tab per file.
+- **Java: a rename that clashes with an existing name is reported.** jdtls applies it anyway; Editora now checks
+  the renamed files afterwards and says how many new errors it left and how to undo it.
+- **Java: a pom.xml or build.gradle change reaches the classpath.** jdtls asked "A build file was modified. Do you
+  want to synchronize the Java classpath/configuration?" in the status line, where it could not be answered, so a
+  dependency added to the pom stayed unresolved. Build files now sync on save (`updateBuildConfiguration:
+  automatic`), and jdtls's other questions come with buttons that run its answer.
+- **Java: Organize Imports works when a name is ambiguous.** With one `Date` or `List` that could be two classes it
+  did nothing and said "Imports already organized". It now asks which class each such name means, and imports the
+  rest either way.
+- **Java: paste with imports only imports what the pasted code uses.** jdtls resolved every missing import of the
+  file, so pasting `int z = 1;` could add an unrelated `import java.time.LocalDate;`.
+- **Java: Reload Project Configuration and Build Project work from the pom.xml tab,** where they reached the pom
+  language server instead of jdtls. Build Project now says when the build found errors ("Project built with
+  errors: see Problems") instead of "Project built".
+- **Java: opening a project no longer writes Eclipse files into it.** jdtls put `.project`, `.classpath` and
+  `.settings/` into every imported project and module, where they showed up in `git status`. They now stay in
+  jdtls's own workspace (`-Djava.import.generatesMetadataFilesAtProjectRoot=false`, as vscode-java does). Files
+  written by earlier versions are not removed.
+- **Java: Gradle projects import when a newer JDK is installed.** The newest JDK on the machine became jdtls's
+  default runtime, and Gradle ran on it; with JDK 27 installed every Gradle 9 import failed while the status bar
+  read "1100% Starting Java Language Server". The default is now Settings ▸ Build Tools ▸ Default JDK, else
+  `JAVA_HOME`, else the newest, and Gradle is told to run on it.
+- **Java: jdtls starts when `JAVA_HOME` points at a JDK older than 21.** Editora now hands jdtls's launcher a JDK
+  21 or newer that it finds (the Default JDK when it qualifies), and when there is none it says so instead of
+  reporting that the server "keeps crashing".
+- **Java: jdtls's memory is capped.** It started with `-Xms1G` and no limit, 1.3–2.5 GB for a small project; it now
+  gets vscode-java's defaults (`-Xmx2G`, parallel GC, a small initial heap). A `-Xmx` or GC flag of your own on
+  the command or in `JDK_JAVA_OPTIONS` still wins.
+- **Java: Gradle projects reach "Loaded and ready", and the import narration makes sense.** A Gradle import kept
+  sending "Starting" lines after jdtls said it was ready, which kept the ready line from ever coming.
+  Percentages past 100 ("1100% Starting Java Language Server") are dropped, and a failed import ("WARNING") is
+  reported as an error that says where to look. Opening another file into a server that is already running no
+  longer says "Starting Java language server…".
+
+- **Java: the completion documentation popup shows Javadoc.** jdtls computes an item's Javadoc in
+  `completionItem/resolve` only when the client lists `documentation` among the properties it resolves; Editora
+  listed only `additionalTextEdits`, so the popup showed the return type and nothing else.
+- **Java: signature help shows the method's Javadoc.** The setting was sent as `java.signatureHelp.description`;
+  jdtls reads `java.signatureHelp.description.enabled`.
+- **Java: completion and import quick fixes no longer offer JDK internals** (`sun.*`, `com.sun.*`, `jdk.*`),
+  nor `java.awt.*`, `java.beans.*`, `Hashtable` or `Vector`. jdtls installs its type filter only when the client
+  sends one; Editora now sends vscode-java's list.
+- **Java: inlay hints follow the "all arguments" mode and show inferred types.** jdtls filtered parameter-name
+  hints to literals on its own, so the "all" mode changed nothing; it now sends every name and Editora's filter
+  applies the mode. `var` declarations and lambda parameters get their inferred type, hints for numbered names
+  such as `List.of(e1:, e2:)` are dropped, and an unkinded hint without a trailing `:` or `=` (jdtls's lambda
+  parameter type) counts as a type hint, which the literals mode never removes.
+- **Java: quick fixes and generated members follow the file's indentation.** jdtls asks the client for
+  `java.format.tabSize` and `insertSpaces` before every code action and got no answer, so Generate toString,
+  Create method and the other generators indented with tabs in space-indented files.
 - **Jumps no longer flicker, and their target is never hidden under the sticky-scroll rows.** A click in the
   Structure panel, Go to Line, a jump to a line from a bookmark, TODO or the Problems list, Go to Definition, a
   search hit and the fold motions all repainted the editor over two or three frames: the caret moved before the
@@ -54,6 +204,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the row clicked and the row left no longer flash unstyled black text. Go to Line and the fold motions put a
   line above the view below the pinned headers instead of under them, a line already in view is not scrolled
   to, and a jump to the line just inside a method no longer lands under that method's own header.
+- **Java: Go to Definition into library source lands on the declaration,** shown below the sticky header, rather
+  than on the first line of its Javadoc, under the header; the status bar no longer stays on "Loading library source…" or reads "Editable"
+  for the read-only tab.
+- **Java: Find References says when it failed or timed out** ("the language server may still be indexing") instead
+  of "No references found".
+- **Java: completion matches the name, not the parameters.** Without a filter text from the server, `items.st`
+  offered `addAll(Collection<? extends Item> c)` and `equals(Object o)` because the parameter list was matched.
+- **Opening Problems keeps the caret line in view.** A bottom tool window opening scrolled the line being edited off
+  the screen.
+- **Problems no longer shows jdtls's numeric problem ids** (`[67108964]`), which linked nowhere.
+- **New Java files in Gradle source sets get the right package.** In `src/integrationTest/java` or
+  `src/testFixtures/java` the source-set folders became part of the package name.
+
 
 ## [0.24.0] - 2026-10-24
 

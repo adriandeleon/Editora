@@ -90,6 +90,41 @@ public final class RootResolver {
         return outermostContiguous(root, marker, projectRoot, home == null || home.isBlank() ? null : Path.of(home));
     }
 
+    /**
+     * The root jdtls should import for a module at {@code root} (Java review C10): the outermost of a contiguous
+     * chain of {@code pom.xml} folders (a Maven reactor), else the nearest folder at most four levels up holding a
+     * {@code settings.gradle(.kts)} (a Gradle build), else {@code root}. Never above {@code projectRoot} nor a
+     * folder too broad to import. Without it each module of a reactor opened outside a project started a jdtls of
+     * its own (1.4 GB each) that could not see its sibling modules.
+     */
+    public static Path javaBuildRoot(Path root, @Nullable Path projectRoot) {
+        String home = System.getProperty("user.home");
+        return javaBuildRoot(root, projectRoot, home == null || home.isBlank() ? null : Path.of(home));
+    }
+
+    static Path javaBuildRoot(Path root, @Nullable Path projectRoot, @Nullable Path home) {
+        if (root == null) {
+            return root;
+        }
+        Path reactor = outermostContiguous(root, "pom.xml", projectRoot, home);
+        if (!reactor.equals(root.toAbsolutePath().normalize()) || Files.isRegularFile(root.resolve("pom.xml"))) {
+            return reactor;
+        }
+        Path pr = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
+        Path current = root.toAbsolutePath().normalize();
+        for (int hops = 0; hops <= 4 && current != null; hops++) {
+            if (pr != null && !current.startsWith(pr) || hops > 0 && tooBroad(current, home)) {
+                break;
+            }
+            if (Files.isRegularFile(current.resolve("settings.gradle"))
+                    || Files.isRegularFile(current.resolve("settings.gradle.kts"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        return root;
+    }
+
     /** {@link #outermostContiguous(Path, String, Path)} with the home directory supplied (tests). */
     static Path outermostContiguous(Path root, String marker, @Nullable Path projectRoot, @Nullable Path home) {
         if (root == null || marker == null || !Files.isRegularFile(root.resolve(marker))) {

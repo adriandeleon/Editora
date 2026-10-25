@@ -123,7 +123,7 @@ public final class InstallCatalog {
      * those behaviours with {@code JdtlsUpgradeProbeTest} (opt-in; it measures all three against the new
      * tarball); the milestone list is at {@code https://download.eclipse.org/jdtls/milestones/}.
      */
-    public static final String JDTLS_VERSION = "1.62.0";
+    public static final String JDTLS_VERSION = "1.63.0";
 
     /**
      * The TypeScript the language servers that need its {@code tsserver} are installed with. TypeScript 7 is
@@ -134,7 +134,7 @@ public final class InstallCatalog {
     public static final String TYPESCRIPT_PACKAGE = "typescript@6";
 
     /** The build stamp of the {@link #JDTLS_VERSION} tarball. */
-    public static final String JDTLS_BUILD = "202610131109";
+    public static final String JDTLS_BUILD = "202610191322";
 
     /** Eclipse JDT-LS pinned milestone; extracts to top-level {@code bin/ config/ features/ plugins/}. */
     public static final String JDTLS_TARBALL_URL = "https://download.eclipse.org/jdtls/milestones/"

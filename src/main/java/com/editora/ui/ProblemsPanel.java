@@ -334,6 +334,9 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
             msg = msg.substring(0, 200) + "…";
         }
         String code = d.code() == null ? "" : d.code().strip();
+        if (d.href() == null && code.chars().allMatch(Character::isDigit)) {
+            code = ""; // jdtls's numeric problem ids (67108964) link nowhere and read as noise (Java review A18)
+        }
         return (d.startLine() + 1) + ":  " + msg + (code.isEmpty() ? "" : "  [" + code + "]");
     }
 

@@ -309,6 +309,54 @@ drives its command.
   then by type for a renamed one; `= value` marks a new parameter). Both end in `java/getRefactorEdit`,
   which is also all an extract refactoring needs. jdtls offers Extract Interface only when
   `advancedExtractRefactoringSupport` is declared as well, and Change Signature with no flag at all.
+  With `inferSelectionSupport` jdtls offers Extract Method, Variable and Field at a bare caret; the
+  client then asks `java/inferSelection` for the candidate expressions, picks one (a picker when there
+  are several) and sends that `SelectionInfo` as the command argument. Extract to Field and Convert
+  Local to Field ask where to initialize the field when the server offers more than one
+  `initializedScopes` entry; the scope goes first in `commandArguments`. With
+  `moveRefactoringConfirmationSupport` (jdtls 1.61 final and newer) a Move Instance Method that jdtls
+  finds problems with answers `{errorMessage, confirmationToken}` and no edit; the user sees the problems
+  and the move is asked again with the token only if they continue.
+  A `java/getRefactorEdit` answer can carry a `java.action.rename` command with `{uri, offset, length}` of
+  the name it picked, offsets in the edited document (`JdtlsRefactor.renameAt`); after an extract Editora
+  puts the caret there and starts Rename. Change Signature and Move pass a `preview` to
+  `LspManager.jdtlsApplyEdit`: the planned edit goes through the rename preview when it touches other
+  files, and only the ticked files are applied.
+
+### Library source tabs
+
+A `jdt://` definition opens as a read-only, path-less buffer (`LspCoordinator.openLibraryDefinition`),
+remembered in `librarySources` with the workspace file whose session produced it. Position requests from
+such a tab — definition, hover, references, implementation, type definition, declaration and both
+hierarchy prepares — go through `navOrigin()`: the anchor file's session, asked about the tab's `jdt://`
+URI (the `…At(anchor, documentUri, …)` methods of `LspManager`). jdtls resolves the URI itself, so no
+`didOpen` is sent. References into class files are dropped (the References window is file-based); a
+hierarchy node with a `jdt://` URI opens as library source. Search Everywhere's Symbols group adds
+jdtls's `workspace/symbol` types that live in `jdt://` (`LspManager.javaLibraryTypes`), as a second batch
+after the index's own (`SearchEverywherePopup.Ops.laterSymbols`).
+
+jdtls's "Javadoc comment" completion is offered only on a `/**` line that is already closed. In a Java
+buffer with the server on, the `*` that makes a line `/**` therefore inserts `* */` and requests completion
+(`EditorBuffer.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).
+
+### jdtls preferences
+
+jdtls's defaults assume vscode-java, which sends its own `package.json` defaults; several features stay
+off for a client that sends nothing. `LspServerSettings.javaSettings` is the one `java` object, sent at
+`initialize` (inside `LspManager.javaSettings`, with autobuild and the runtimes) and pushed after it:
+`signatureHelp.enabled` and `signatureHelp.description.enabled` (the Javadoc in signature help; jdtls
+reads dotted keys through the nested maps, so `description: true` resolved to no key at all),
+`completion.filteredTypes` (vscode-java's list; jdtls's own default list is not installed unless one is
+sent), `inlayHints.parameterNames.enabled = all` with `suppressWhenSameNameNumbered` plus
+`variableTypes` and `parameterTypes` (hints are requested only while the setting is on, and
+`InlayHintFilter` applies Editora's literals/all mode), and `symbols.includeSourceMethodDeclarations`.
+jdtls also asks `workspace/configuration` for `java.format.tabSize` / `insertSpaces` per document before
+every code action; the session answers from the document's recorded indent, so quick fixes and generated
+members follow the file. The completion `resolveSupport` lists `documentation`: jdtls computes an item's
+Javadoc in `completionItem/resolve` only for a client that lists it. The opt-in
+`JdtlsClientSettingsProbeTest` checks each of these against a real jdtls
+(`./mvnw test -Dtest=JdtlsClientSettingsProbeTest -Dgroups=probe -Dlsp.probe=true`, and
+`-Dlsp.probe.jdtls=PATH` for another server).
 
 `LspCoordinator.runGeneratePrompt` / `runRefactorCommand` intercept these before `applyCodeAction`;
 `LspManager.jdtlsRequest` / `jdtlsApplyEdit` send the custom requests, which must be registered on
@@ -362,8 +410,9 @@ instead of dropping it. `lspOffset` snaps a column inside a surrogate pair back 
 **What an edit destroys is shown, asked about, and kept.** `WorkspaceEditHazards` (pure) lists the deletes
 of existing paths and the creates/renames that replace an existing file. The rename preview shows them as
 rows that can be unticked (`RenamePreview.filter` drops an unticked one; `excludedButDeleted` refuses a
-ticked delete that covers an unticked row). An unpreviewed edit — code action, refactoring command,
-`workspace/applyEdit` — goes through `applyWorkspaceEditsConfirmed`, which asks before a recursive folder
+ticked delete that covers an unticked row); Change Signature and Move use the same preview. An unpreviewed
+edit — code action, other refactoring commands, `workspace/applyEdit` — goes through
+`applyWorkspaceEditsConfirmed`, which asks before a recursive folder
 delete or an overwrite. Before staging, each file about to be deleted or replaced is copied to Local
 History (`Ops.captureBeforeDestruction`, at most `MAX_CAPTURED_PER_EDIT` per edit); a failed copy refuses
 the edit.

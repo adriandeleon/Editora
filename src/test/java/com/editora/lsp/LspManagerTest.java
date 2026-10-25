@@ -627,14 +627,87 @@ class LspManagerTest {
                 "jdtls offers Extract Interface only with both flags");
     }
 
+    /**
+     * Extract at a bare caret (the expression picker over {@code java/inferSelection}), Introduce Parameter
+     * through {@code java/getRefactorEdit}, and the move confirmation are driven by {@code LspCoordinator}
+     * (Java review D7, D11).
+     */
+    @Test
+    void theInferredSelectionAndMoveConfirmationFlowsAreDeclared() {
+        var caps = LspManager.javaExtendedClientCapabilities();
+
+        assertEquals(List.of("extractMethod", "extractVariable", "extractField"), caps.get("inferSelectionSupport"));
+        assertEquals(Boolean.TRUE, caps.get("advancedIntroduceParameterRefactoringSupport"));
+        assertEquals(Boolean.TRUE, caps.get("moveRefactoringConfirmationSupport"));
+    }
+
     /** Each of these changes an answer into something that needs a client flow Editora does not have. */
     @Test
     void theCapabilitiesWithoutAClientFlowAreNotDeclared() {
         var caps = LspManager.javaExtendedClientCapabilities();
 
-        assertFalse(caps.containsKey("inferSelectionSupport"), "extract with no selection: an expression picker");
-        assertFalse(caps.containsKey("advancedIntroduceParameterRefactoringSupport"), "needs inferSelection");
         assertFalse(caps.containsKey("advancedOrganizeImportsSupport"), "an ambiguous-import chooser");
+        assertEquals(Boolean.TRUE, caps.get("executeClientCommandSupport"), "the import chooser answers it (A3)");
+    }
+
+    /**
+     * jdtls reads its preferences by dotted key ({@code java.signatureHelp.description.enabled}), walking the
+     * nested maps. A value placed one level too high resolves to no key at all, which is how the signature
+     * Javadoc stayed off (Java review A2) — so these are checked by their flattened names, in both channels.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void theJavaPreferencesReachJdtlsUnderTheirReadKeys() {
+        Map<String, Object> init = (Map<String, Object>)
+                ((Map<String, Object>) LspManager.javaInitOptions(List.of()).get("settings")).get("java");
+        Map<String, Object> pushed =
+                (Map<String, Object>) LspServerSettings.push("java", false).get("java");
+        for (Map<String, Object> java : List.of(init, pushed)) {
+            Map<String, Object> keys = flatten("java", java);
+            assertEquals(Boolean.TRUE, keys.get("java.signatureHelp.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.signatureHelp.description.enabled"));
+            assertEquals(LspServerSettings.FILTERED_TYPES, keys.get("java.completion.filteredTypes"));
+            assertEquals("all", keys.get("java.inlayHints.parameterNames.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.inlayHints.parameterNames.suppressWhenSameNameNumbered"));
+            assertEquals(Boolean.TRUE, keys.get("java.inlayHints.variableTypes.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.inlayHints.parameterTypes.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.symbols.includeSourceMethodDeclarations"));
+            assertEquals(Boolean.TRUE, keys.get("java.edit.smartSemicolonDetection.enabled"));
+            assertEquals(Boolean.FALSE, keys.get("java.format.onType.enabled"));
+            assertEquals(Boolean.TRUE, keys.get("java.referencesCodeLens.enabled"));
+            assertEquals("all", keys.get("java.implementationCodeLens"));
+            assertEquals("automatic", keys.get("java.configuration.updateBuildConfiguration"), "Java review C1");
+        }
+        assertEquals(Boolean.FALSE, flatten("java", init).get("java.autobuild.enabled"), "init keeps autobuild off");
+    }
+
+    /** Gradle runs on the projects' default JDK, the user's (Java review C4), not on what jdtls runs on. */
+    @SuppressWarnings("unchecked")
+    @Test
+    void gradleRunsOnTheDefaultRuntime() {
+        var jdks = List.of(new JavaRuntimes.Jdk(27, "/jdk27"), new JavaRuntimes.Jdk(25, "/jdk25"));
+        Map<String, Object> java = (Map<String, Object>)
+                ((Map<String, Object>) LspManager.javaInitOptions(List.of(), false, jdks, "/jdk25")
+                                .get("settings"))
+                        .get("java");
+        Map<String, Object> keys = flatten("java", java);
+        assertEquals("/jdk25", keys.get("java.import.gradle.java.home"));
+        assertEquals("automatic", keys.get("java.configuration.updateBuildConfiguration"), "kept beside the runtimes");
+        List<Map<String, Object>> runtimes = (List<Map<String, Object>>) keys.get("java.configuration.runtimes");
+        assertEquals("/jdk25", JavaRuntimes.defaultPath(runtimes));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> flatten(String prefix, Map<String, Object> map) {
+        Map<String, Object> out = new java.util.HashMap<>();
+        map.forEach((k, v) -> {
+            if (v instanceof Map<?, ?> nested) {
+                out.putAll(flatten(prefix + "." + k, (Map<String, Object>) nested));
+            } else {
+                out.put(prefix + "." + k, v);
+            }
+        });
+        return out;
     }
 
     /** The options object must still carry what it did before — the flags are additive to it. */
@@ -753,5 +826,60 @@ class LspManagerTest {
                 LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, script),
                 "a user's own launcher has no folder to check");
         assertFalse(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, java.util.List.of()));
+    }
+
+    /** A bare caret on no squiggle carries the diagnostics of its line, or quick fixes vanish off the token (A5). */
+    @Test
+    void aCaretOffTheSquiggleStillCarriesItsLinesDiagnostics() {
+        var onLine = new org.eclipse.lsp4j.Diagnostic(
+                new org.eclipse.lsp4j.Range(
+                        new org.eclipse.lsp4j.Position(4, 8), new org.eclipse.lsp4j.Position(4, 23)),
+                "Unhandled exception");
+        var elsewhere = new org.eclipse.lsp4j.Diagnostic(
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(9, 0), new org.eclipse.lsp4j.Position(9, 3)),
+                "Other");
+        var caret =
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 0));
+        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), caret));
+        var onToken = new org.eclipse.lsp4j.Range(
+                new org.eclipse.lsp4j.Position(4, 10), new org.eclipse.lsp4j.Position(4, 10));
+        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), onToken));
+        var selection =
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 2));
+        assertEquals(
+                List.of(),
+                LspManager.contextDiagnostics(List.of(onLine, elsewhere), selection),
+                "a selection is exact");
+    }
+
+    /** Fixes first, then assists, refactorings, source; duplicates dropped; preferred first (A4). */
+    @Test
+    void codeActionsAreGroupedByKindAndDeduplicated() {
+        var items = List.of(
+                new LspManager.CodeActionItem("Generate toString()...", "source.generate.toString", false, "a"),
+                new LspManager.CodeActionItem("Extract interface...", "refactor.extract.interface", false, "b"),
+                new LspManager.CodeActionItem("Organize imports", "quickassist", false, "c"),
+                new LspManager.CodeActionItem("Import 'LocalDate'", "quickfix", false, "d"),
+                new LspManager.CodeActionItem("Organize imports", "source.organizeImports", false, "e"),
+                new LspManager.CodeActionItem("Surround with try/catch", "quickfix", false, "f"));
+        assertEquals(
+                List.of(
+                        "Import 'LocalDate'",
+                        "Surround with try/catch",
+                        "Organize imports",
+                        "Extract interface...",
+                        "Generate toString()..."),
+                CodeActionKinds.arrange(items, i -> true).stream()
+                        .map(LspManager.CodeActionItem::title)
+                        .toList());
+        assertEquals(
+                List.of("Generate toString()...", "Organize imports"),
+                CodeActionKinds.arrange(items, i -> CodeActionKinds.group(i.kind()) == CodeActionKinds.Group.SOURCE)
+                        .stream()
+                        .map(LspManager.CodeActionItem::title)
+                        .toList());
+        assertTrue(CodeActionKinds.matches("refactor.extract.function", "refactor.extract"));
+        assertFalse(CodeActionKinds.matches("refactor.extracted", "refactor.extract"));
+        assertEquals(CodeActionKinds.Group.ASSIST, CodeActionKinds.group(""));
     }
 }

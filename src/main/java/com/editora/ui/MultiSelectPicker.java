@@ -32,6 +32,9 @@ import static com.editora.i18n.Messages.tr;
  */
 public final class MultiSelectPicker {
 
+    private static final double ROW_HEIGHT = 30;
+    private static final int VISIBLE_ROWS = 12;
+
     private MultiSelectPicker() {}
 
     /** One row: its display label and whether it starts ticked (jdtls pre-selects sensible defaults). */
@@ -59,7 +62,10 @@ public final class MultiSelectPicker {
             list.getItems().add(cb);
         }
         list.getSelectionModel().select(0);
-        list.setPrefHeight(Math.min(360, 28.0 * items.size() + 16));
+        // A fixed row height, and the card no taller than its rows: it filled the window yet showed about two
+        // rows, hiding the rename preview's "moves to …" row (Java review B10).
+        list.setFixedCellSize(ROW_HEIGHT);
+        list.setPrefHeight(Math.min(VISIBLE_ROWS, items.size()) * ROW_HEIGHT + 4);
 
         Label heading = new Label(title);
         heading.getStyleClass().add("overlay-title");
@@ -77,6 +83,7 @@ public final class MultiSelectPicker {
         card.getStyleClass().add("multi-select-picker");
         card.setPadding(new Insets(12));
         card.setPrefWidth(520);
+        card.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         // The card owns its keys: without this the global KeyDispatcher would take C-n/C-p as caret motion.
         card.getProperties().put("editora.ownsKeys", true);
 
@@ -95,10 +102,12 @@ public final class MultiSelectPicker {
                     }
                 }
                 e.consume();
-                host.hide();
-                if (!chosen.isEmpty()) {
-                    onAccept.accept(chosen);
+                if (chosen.isEmpty()) {
+                    hint.setText(tr("picker.nothingSelected")); // closing silently read as "done" (B9)
+                    return;
                 }
+                host.hide();
+                onAccept.accept(chosen);
             } else if (PickerKeys.navigate(
                     list, PickerKeys.action(e, com.editora.command.TextInputKeymap.sharedKeymap(), false))) {
                 e.consume(); // arrows, PageUp/PageDown, Home/End and the keymap's line-up/down chords

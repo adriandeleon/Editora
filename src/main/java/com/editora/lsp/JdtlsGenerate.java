@@ -137,7 +137,9 @@ public final class JdtlsGenerate {
                 continue;
             }
             JsonObject o = e.getAsJsonObject();
-            out.add(new Candidate(label(o), bool(o, "isSelected"), e));
+            // jdtls marks nothing selected for hashCode/equals, and Enter with nothing ticked generated nothing:
+            // every field takes part, as vscode-java preselects them (Java review B9).
+            out.add(new Candidate(label(o), kind == Kind.HASH_CODE_EQUALS || bool(o, "isSelected"), e));
         }
         return out;
     }

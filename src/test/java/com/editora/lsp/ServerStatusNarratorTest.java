@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ServerStatusNarratorTest {
@@ -63,6 +64,53 @@ class ServerStatusNarratorTest {
                         "READY"),
                 shown);
         assertFalse(narrator.pending());
+    }
+
+    /**
+     * A Gradle import, as jdtls 1.61 sent it (Java review C8): "Starting" lines keep coming after the worded
+     * ServiceReady and no ready word follows, so readiness waited for ever. Percentages past 100 are dropped
+     * (C17) and the run of identical lines they leave collapses.
+     */
+    @Test
+    void aGradleImportIsCalledReadyAndItsPercentagesPast100AreDropped() {
+        status("Launching", null);
+        status("Starting", "0% Starting Java Language Server");
+        status("ServiceReady", null);
+        status("Starting", "70% Starting Java Language Server - Refreshing '/project'.");
+        status("ProjectStatus", "OK");
+        status("Starting", "100% Starting Java Language Server - Refreshing '/project'.");
+        status("Starting", "1000% Starting Java Language Server - Refreshing '/project'.");
+        status("Starting", "1005% Starting Java Language Server - Refreshing '/project'.");
+        status("Starting", "1100% Starting Java Language Server - Refreshing '/project'.");
+        status("Started", "Ready");
+        status("ServiceReady", "ServiceReady");
+        status("Starting", "1100% Starting Java Language Server - Synchronize Gradle project demo");
+        status("Starting", "1100% Starting Java Language Server");
+        quiet();
+
+        assertEquals(
+                List.of(
+                        "0% Starting Java Language Server",
+                        "70% Starting Java Language Server - Refreshing '/project'.",
+                        "100% Starting Java Language Server - Refreshing '/project'.",
+                        "Starting Java Language Server - Refreshing '/project'.",
+                        "Starting Java Language Server - Synchronize Gradle project demo",
+                        "Starting Java Language Server",
+                        "READY"),
+                shown);
+    }
+
+    /** "ProjectStatus WARNING" was shown as the bare word; it is a failed import, said as one (C17, C4). */
+    @Test
+    void aProjectThatDidNotImportIsReportedAsAProblem() {
+        status("Starting", "50% Starting Java Language Server");
+        var line = narrator.onStatus("java", "ProjectStatus", "WARNING", now);
+        assertTrue(line.problem());
+        assertEquals("WARNING", line.text());
+        assertNull(narrator.onStatus("java", "ProjectStatus", "OK", now));
+        assertFalse(new ServerStatusNarrator.Line("java", "x").problem());
+        assertNull(ServerStatusNarrator.startingText("1100%"), "nothing left to say");
+        assertEquals("42% x", ServerStatusNarrator.startingText("42% x"));
     }
 
     @Test
