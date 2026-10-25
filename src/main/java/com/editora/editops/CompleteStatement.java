@@ -110,6 +110,17 @@ public final class CompleteStatement {
      */
     public static Indenter.TabEdit edit(
             String text, int selStart, int selEnd, Style style, String unit, IntFunction<Indenter.EnterEdit> enterAt) {
+        return edit(text, selStart, selEnd, style, unit, enterAt, false);
+    }
+
+    private static Indenter.TabEdit edit(
+            String text,
+            int selStart,
+            int selEnd,
+            Style style,
+            String unit,
+            IntFunction<Indenter.EnterEdit> enterAt,
+            boolean atStatementEnd) {
         int caret = Math.max(0, Math.min(Math.max(selStart, selEnd), text.length()));
         int ls = TextNav.lineStart(text, caret);
         int le = text.indexOf('\n', caret);
@@ -117,6 +128,21 @@ public final class CompleteStatement {
         Scan s = scan(text, ls, le);
         if (s == null || s.lastCode < ls) { // inside a comment or a text block, or no code on the line
             return newLine(text, caret, enterAt);
+        }
+        if (!atStatementEnd && s.openQuote == 0) {
+            // A statement that goes on below (a chain, a ternary, wrapped arguments) is completed where it ends,
+            // not split here (re-review AN1).
+            int open = 0;
+            for (Open o : s.stack) {
+                if (o.statementBrace) {
+                    break;
+                }
+                open++;
+            }
+            int end = continuedTo(text, le, open, endsUnfinished(text, s.lastCode));
+            if (end > le) {
+                return edit(text, end, end, style, unit, enterAt, true);
+            }
         }
         StringBuilder closers = new StringBuilder();
         if (s.openQuote != 0) {
@@ -131,6 +157,9 @@ public final class CompleteStatement {
         String head = s.head.toString().strip();
         String h = (head + closers).replaceAll("\\s+", " ").strip();
         if (h.isEmpty()) {
+            if (atStatementEnd && s.endedFirstCode >= 0 && s.endedFirstCode < ls) { // a statement of several lines
+                return lineAfter(le, leading(text, TextNav.lineStart(text, s.endedFirstCode)));
+            }
             return emptyHead(text, s, le, enterAt, caret, unit);
         }
         Open enclosing =
@@ -153,15 +182,131 @@ public final class CompleteStatement {
                     return new Indenter.TabEdit(s.lastCode, end, moved, at, at);
                 }
                 if (head.endsWith(";") || add.isEmpty()) {
-                    return newLine(text, caret, enterAt);
+                    return atStatementEnd ? lineAfter(le, indent) : newLine(text, caret, enterAt);
                 }
                 int at = end + add.length();
                 return new Indenter.TabEdit(end, end, add, at, at);
             }
             default -> {
-                return newLine(text, caret, enterAt);
+                if (closers.length() > 0 && ANNOTATIONS.matcher(h).matches()) { // `@SuppressWarnings("x"` (AN9)
+                    Indenter.EnterEdit enter = enterAt.apply(end);
+                    int at = end + closers.length() + enter.caretOffset();
+                    return new Indenter.TabEdit(end, end, closers + enter.insert(), at, at);
+                }
+                return atStatementEnd ? lineAfter(le, indent) : newLine(text, caret, enterAt);
             }
         }
+    }
+
+    /** A new line after a statement that took several lines, at the indent of its first. */
+    private static Indenter.TabEdit lineAfter(int le, String indent) {
+        int at = le + 1 + indent.length();
+        return new Indenter.TabEdit(le, le, "\n" + indent, at, at);
+    }
+
+    /** Characters that, starting the next line, continue the statement above it. */
+    private static final String CONTINUES = ".?:)],+-*/%&|^<>=!";
+
+    /** Whether the code ending at {@code last} leaves its statement unfinished: an operator, a comma, an arrow. */
+    private static boolean endsUnfinished(String text, int last) {
+        if (last < 0) {
+            return false;
+        }
+        char c = text.charAt(last);
+        if ((c == '+' || c == '-') && last > 0 && text.charAt(last - 1) == c) {
+            return false; // i++ / i--
+        }
+        return ",+-*/%&|^?:=<>!.(".indexOf(c) >= 0;
+    }
+
+    /**
+     * The end of the last line of a statement that goes on past {@code le}, or -1 when it ends there: brackets
+     * still open ({@code open}) that a later line closes, an operator ending this line, or a next line that
+     * starts with one ({@code .map(…)}, {@code : "b"}, {@code && ready}). A line that opens a block ends it; a
+     * {@code ;} reached with brackets still open means they never close, and nothing is continued.
+     */
+    private static int continuedTo(String text, int le, int open, boolean unfinished) {
+        Lexer lx = new Lexer(text, text.length());
+        int depth = open;
+        int braces = 0;
+        int last = -1;
+        int i = le;
+        boolean pending = unfinished;
+        while (true) {
+            int next = nextCode(text, lx, i);
+            if (next < 0) {
+                return depth > 0 ? -1 : last;
+            }
+            if (depth == 0 && braces == 0 && !pending && CONTINUES.indexOf(text.charAt(next)) < 0) {
+                return last;
+            }
+            int lineEnd = text.indexOf('\n', next);
+            lineEnd = lineEnd < 0 ? text.length() : lineEnd;
+            int lastCode = -1;
+            boolean opensBlock = false;
+            for (int k = next; k < lineEnd; ) {
+                int skipped = lx.skip(k);
+                if (skipped >= 0) {
+                    if (text.charAt(k) == '"' || text.charAt(k) == '\'' || text.charAt(k) == '`') {
+                        lastCode = skipped - 1;
+                    }
+                    k = skipped;
+                    if (k > lineEnd) {
+                        lineEnd = text.indexOf('\n', k);
+                        lineEnd = lineEnd < 0 ? text.length() : lineEnd;
+                    }
+                    continue;
+                }
+                char c = text.charAt(k);
+                if (!Character.isWhitespace(c)) {
+                    lastCode = k;
+                    switch (c) {
+                        case '(', '[' -> depth++;
+                        case ')', ']' -> depth--;
+                        case '{' -> {
+                            if (depth == 0 && braces == 0) {
+                                opensBlock = true;
+                            }
+                            braces++;
+                        }
+                        case '}' -> braces--;
+                        case ';' -> {
+                            if (braces == 0 && depth > 0) {
+                                return -1; // the brackets of the caret's line never close
+                            }
+                        }
+                        default -> {}
+                    }
+                    if (depth < 0 || braces < 0) {
+                        return -1;
+                    }
+                }
+                k++;
+            }
+            last = lineEnd;
+            i = lineEnd;
+            if (opensBlock || (depth == 0 && braces == 0 && lastCode >= 0 && text.charAt(lastCode) == ';')) {
+                return last;
+            }
+            pending = endsUnfinished(text, lastCode);
+        }
+    }
+
+    /** The next code character at or after {@code from} (past whitespace and comments), or -1. */
+    private static int nextCode(String text, Lexer lx, int from) {
+        for (int i = from; i < text.length(); ) {
+            char c = text.charAt(i);
+            if (Character.isWhitespace(c)) {
+                i++;
+                continue;
+            }
+            if (c == '/' && i + 1 < text.length() && (text.charAt(i + 1) == '/' || text.charAt(i + 1) == '*')) {
+                i = lx.skip(i);
+                continue;
+            }
+            return i;
+        }
+        return -1;
     }
 
     private enum Kind {
@@ -221,7 +366,7 @@ public final class CompleteStatement {
         int ls = TextNav.lineStart(text, caret);
         if (top != null && top.statementBrace && top.pos == s.lastCode && top.pos >= ls) {
             String body = "\n" + top.indent + unit;
-            String close = closedLater(text, le) ? "" : "\n" + top.indent + "}";
+            String close = closedLater(text, le, top.indent) ? "" : "\n" + top.indent + "}";
             int at = le + body.length();
             return new Indenter.TabEdit(le, le, body + close, at, at);
         }
@@ -233,8 +378,11 @@ public final class CompleteStatement {
         return newLine(text, caret, enterAt);
     }
 
-    /** Whether a `}` after {@code from} closes the brace just before it. */
-    private static boolean closedLater(String text, int from) {
+    /**
+     * Whether a `}` after {@code from} closes the brace just before it: the first one left unmatched, at that
+     * brace's {@code indent}. One further left belongs to the enclosing block (re-review AN9).
+     */
+    private static boolean closedLater(String text, int from, String indent) {
         Lexer lx = new Lexer(text, text.length());
         int depth = 0;
         for (int i = from; i < text.length(); ) {
@@ -247,7 +395,9 @@ public final class CompleteStatement {
             if (c == '{') {
                 depth++;
             } else if (c == '}' && depth-- == 0) {
-                return true;
+                int ls = TextNav.lineStart(text, i - 1);
+                String before = text.substring(ls, i - 1);
+                return !before.isBlank() || before.equals(indent);
             }
         }
         return false;
@@ -270,6 +420,9 @@ public final class CompleteStatement {
         final Deque<Open> stack = new ArrayDeque<>();
         StringBuilder head = new StringBuilder();
         int firstCode = -1;
+        /** Where the statement a {@code ;} ended began, or -1. */
+        int endedFirstCode = -1;
+
         int lastCode = -1;
         int codeEnd;
         char openQuote;
@@ -399,6 +552,7 @@ public final class CompleteStatement {
                     if (top != null && !top.statementBrace) {
                         s.head.append(';');
                     } else {
+                        s.endedFirstCode = s.firstCode;
                         reset(s);
                         s.closedOwner = null;
                     }
