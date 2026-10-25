@@ -61,6 +61,11 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Java LSP re-review (2026-10-25) fix-next list** — all eleven groups: refactorings announce the files they
+      write and Project-tree renames undo as one; Move ▸ New package's real folder; Complete Statement and
+      Smart Type gaps; Surround With and Generate narrowed; live project settings and excluded types; the shared
+      server's clean race; failed imports explained; the outdated-jdtls button; navigation polish; small fixes.
+      Left open: renaming from a `package` line (jdtls refuses it) and the two website pages (BN10, EN8).
 - [x] **Java LSP review (2026-10-24) leftovers** — clean-ups / organize imports / format on save, chain
       completion, the project's import layout and formatter profile and Lombok downloads (#1333); Complete
       Statement (#1340); Smart Type completion (#1341); one jdtls shared between windows (C12, #1342).

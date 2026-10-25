@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Surround With** (`snippets.surround`, Code ▸ Surround With…; Ctrl+Alt+T / Cmd+Alt+T in the IntelliJ keymaps)
+  lists only the snippets that wrap a selection and puts the selection inside the chosen one; with nothing
+  selected it wraps the current line.
+- **Java: Excluded types** (Settings ▸ Code Completion ▸ Language server features): the packages and types
+  completion, auto-import, Go to Symbol and Search Everywhere leave out. The default is vscode-java's list plus
+  `java.awt.*`. Settings schema 144→145, additive.
+- **Go to Implementation lists library implementations.** When an implementation lives in the JDK or a dependency,
+  every implementation is listed in a picker with its package, instead of one being opened with no word of the
+  others.
+
 - **Complete Statement** (`edit.completeStatement`, Code ▸ Complete Statement; Ctrl+Shift+Enter / Cmd+Shift+Enter in
   the IntelliJ keymaps), as IntelliJ's Complete Current Statement: in Java, C, C++, C#, JavaScript, TypeScript, PHP
   and Kotlin it closes the line's open string and brackets, adds the `;` (not in Kotlin) or the `{ }` block a
@@ -139,6 +149,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **IntelliJ keymap (macOS): ⌘N is Generate in the editor**, as in IntelliJ, and New in the Project tree; New File
+  moves to ⌃⌘N. ⌃I is Override/Implement Methods, and ⌘[ / ⌘] go back and forward. On Linux and Windows,
+  Alt+Insert is New in the Project tree too.
+- **Generate (Alt+Insert) lists only generators**, and Override/Implement Methods sits next to it in the Code menu;
+  jdtls's generator quick assists no longer crowd Alt+Enter, and Inline (Ctrl+Alt+N) no longer offers Make
+  Static.
+- **Menu rows drop the palette's "LSP:" prefix**, and the editor's LSP submenu gains Peek Definition, Refactor
+  This… and Generate….
+- **Go to Symbol and Search Everywhere rank the exact class first** and a library class nested in another last,
+  and leave out the excluded types (no more `sun.*` or `Arrays.ArrayList` above `java.util.ArrayList`).
+- **The Default JDK's hint says what it drives** (Gradle imports and the Java server's default JDK too), and
+  changing it while jdtls runs says to restart the language servers.
+- **Plurals:** "1 file", "1 change", "1 reference", "1 item" in the References, Problems, hierarchy, rename
+  preview and refactoring-undo counts, in all six languages.
+
 - **Project Map preview and note cards move and zoom with the map.** Panning carries a card along with the
   columns under it, zooming scales it with them (the card's − / + still sizes its text on top), and a card can
   be dragged past the edge of the visible canvas the way a column can, instead of stopping at the panel's edge. Its resize grip now allows up to the panel's
@@ -187,6 +212,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   works on RichTextFX types. Internal-only — no behavior, dependency, or `module-info` change.
 
 ### Fixed
+
+- **Java: refactorings no longer leave the language server behind.** A file a rename or move wrote without a tab
+  is announced to jdtls, so the next rename finds it; a file it creates is announced too.
+- **Java: renaming or moving a file in the Project tree saves and undoes as one refactoring.** The class is renamed
+  with its file, the files jdtls changed are saved, and Undo Last Refactoring moves it back.
+- **Java: Move ▸ New package… creates the folder in the project**, not at jdtls's workspace path, and only main
+  source roots are offered for main code.
+- **Java: Complete Statement leaves a wrapped statement whole** (a stream chain, a ternary, arguments over several
+  lines) and closes a new block when the next `}` belongs to the enclosing one.
+- **Java: Smart Type completion** finds the type behind a qualifier (`String s = user.`), in a ternary branch and
+  at a varargs argument.
+- **Java: the project's code style follows `.editorconfig` and formatter changes** without a restart, and the quiet
+  import chooser answers only for the document it was raised for. jdtls's bundle reload no longer logs an error
+  on every start.
+- **Java: Clean Java Workspace wins against another window's restart**, and a window joining a ready shared server
+  says it is ready.
+- **Java: a failed import says why** (jdtls's logged reason, not a raw "(WARNING)") and is not then called "Loaded
+  and ready"; project-level problems (in `pom.xml` or a Gradle build file) reach Problems when it lists only open
+  files; a plain-folder file is no longer red until reopened; the post-import build runs for Maven projects only.
+- **Doctor: the outdated-jdtls warning has its Install… button**, and Settings ▸ LSP no longer calls that jdtls
+  "Installed".
+- **Java navigation:** a library class opened from Go to Symbol lands on its declaration, not its package line;
+  Structure no longer shows a method's return type twice; implementation, type definition and declaration report
+  a failed request instead of "nothing found"; a refused rename or code action says the server's reason.
+- **Rename and move previews** are as wide as their rows, show project-relative paths and where a moved file goes,
+  and say Enter applies.
+- **Java editing:** `/**` + Enter lines the closing `*/` up; one Undo reverts everything the actions on save did;
+  lambda type hints keep their space (`String s ->`); completion matches a method on its name, not its parameter
+  list; signature help shows the active parameter's own description; "Initialize the field in" shows translated
+  choices; a second file opened while jdtls starts no longer says "Starting…" again.
 
 - **Java: a folder of `.java` files with packages but no build file is no longer red everywhere.** jdtls guessed
   each file's own folder as its source folder, so `src/demo/Main.java` declaring `package demo` was flagged as
