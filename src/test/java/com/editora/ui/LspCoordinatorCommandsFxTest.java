@@ -1490,4 +1490,33 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(tr("status.lsp.cleanedUp"), fx.host.lastStatus());
         assertTrue(FxTestSupport.callOnFx(b::getContent).contains("@Override"));
     }
+
+    // --- a Java server shared with another window (C12) ----------------------------------------------
+
+    @Test
+    void anotherWindowRestartingTheSharedJavaServerReopensThisWindowsFileQuietly() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        Path file = b.getPath();
+        LspManager other = new LspManager((f, d) -> {}, (t, m) -> {});
+        try {
+            LspTestHooks.useFakeSessions(other);
+            other.configure(true, java.util.Map.of("java", "jdtls"));
+            LspTestHooks.shareServers(fx.manager, other);
+            other.openDocument(file, LspTestHooks.sessionRoot(fx.manager, file), "java", SOURCE);
+            FakeLanguageServer first = fx.server();
+            assertEquals(1, first.opened.size(), "the other window's open of the same file is not a second open");
+
+            fx.host.statuses.clear();
+            fx.run(other::restartAll);
+            fx.settle();
+
+            assertTrue(fx.manager.isManaged(file), "reopened on the new server");
+            assertTrue(fx.server() != first, "a new server");
+            assertFalse(
+                    fx.host.statuses.contains(tr("status.lsp.crashed", "Java")),
+                    "no crash notice for another window's restart: " + fx.host.statuses);
+        } finally {
+            other.shutdownAll();
+        }
+    }
 }

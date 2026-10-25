@@ -154,14 +154,12 @@ final class LanguageServerSession implements LanguageClient {
      *  later crash so the manager can safely discard only an unusable jdtls cache. */
     private volatile boolean initializedOnce;
 
-    private volatile Runnable onDead = () -> {};
     private final java.util.concurrent.atomic.AtomicBoolean deadReported =
             new java.util.concurrent.atomic.AtomicBoolean();
     private volatile boolean disposed;
     /** Set when {@link #start()} threw before the server was up (not when it was disposed meanwhile). */
     private volatile boolean startFailed;
 
-    private volatile Consumer<String> onRefresh = kind -> {};
     // Written on the LSP4J init thread (initialize().whenComplete), read on the FX thread (capabilities()).
     // volatile gives the FX reader the happens-before edge so it can't transiently see null after init completed.
     private volatile @Nullable ServerCapabilities capabilities;
@@ -223,10 +221,8 @@ final class LanguageServerSession implements LanguageClient {
      * failure — before any mapping of the failure to "nothing" that the request's caller does. How the manager
      * notices a server that fails every request inside itself (Maven review C2).
      */
-    private volatile java.util.function.BiConsumer<String, Throwable> onRequestOutcome = (method, error) -> {};
-
     void setOnRequestOutcome(java.util.function.BiConsumer<String, Throwable> listener) {
-        this.onRequestOutcome = listener == null ? (method, error) -> {} : listener;
+        primary.onRequestOutcome = listener == null ? (method, error) -> {} : listener;
     }
 
     /** {@link #bounded(CompletableFuture)} whose outcome is reported to {@link #setOnRequestOutcome} as {@code method}. */
@@ -234,7 +230,9 @@ final class LanguageServerSession implements LanguageClient {
         CompletableFuture<T> bounded = bounded(request);
         bounded.whenComplete((value, error) -> {
             if (!(error instanceof java.util.concurrent.CancellationException)) {
-                onRequestOutcome.accept(method, error); // a cancellation is the client's doing, not an outcome
+                for (Client c : clients) { // a cancellation is the client's doing, not an outcome
+                    c.onRequestOutcome.accept(method, error);
+                }
             }
         });
         return bounded;
@@ -303,11 +301,122 @@ final class LanguageServerSession implements LanguageClient {
      * default is a no-op so the extra constructors need no change.
      */
     void setOnDead(Runnable onDead) {
-        this.onDead = onDead == null ? () -> {} : onDead;
+        primary.onDead = onDead == null ? () -> {} : onDead;
     }
 
     void setOnRefresh(Consumer<String> onRefresh) {
-        this.onRefresh = onRefresh == null ? kind -> {} : onRefresh;
+        primary.onRefresh = onRefresh == null ? kind -> {} : onRefresh;
+    }
+
+    // --- Windows sharing this server (Java review C12) ------------------------------------------
+
+    /**
+     * One window's ends of this session: where its diagnostics, status, refreshes and death go, and how it
+     * answers what the server asks. A Java server is shared by every window on its project: each window
+     * attaches a client of its own, notifications reach them all, a question the server asks goes to the
+     * focused one, and the server is stopped only once the last one has left. The window that started the
+     * session holds {@link #primaryClient()}, which the setters above configure.
+     */
+    static final class Client {
+        final Consumer<PublishDiagnosticsParams> diagnostics;
+        final java.util.function.BiConsumer<String, String> status;
+        volatile Runnable onDead = () -> {};
+        volatile Consumer<String> onRefresh = kind -> {};
+        volatile java.util.function.BiConsumer<String, Throwable> onRequestOutcome = (method, error) -> {};
+        volatile java.util.function.BiConsumer<org.eclipse.lsp4j.WorkspaceEdit, Consumer<Boolean>> onApplyEdit =
+                (edit, respond) -> respond.accept(false);
+        volatile @Nullable LspClientUi ui;
+        volatile java.util.function.Function<String, @Nullable FormattingIndent> indentForUri = uri -> null;
+        volatile java.util.function.BooleanSupplier focused = () -> false;
+
+        Client(
+                @Nullable Consumer<PublishDiagnosticsParams> diagnostics,
+                java.util.function.@Nullable BiConsumer<String, String> status) {
+            this.diagnostics = diagnostics == null ? params -> {} : diagnostics;
+            this.status = status == null ? (type, message) -> {} : status;
+        }
+    }
+
+    private final Client primary;
+    private final List<Client> clients = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private volatile boolean shared;
+
+    /** The client of the window that started this session. */
+    Client primaryClient() {
+        return primary;
+    }
+
+    /** Adds another window's client; false when this session can no longer serve one (disposed or dead). */
+    boolean attach(Client client) {
+        synchronized (clients) {
+            if (disposed || deadReported.get()) {
+                return false;
+            }
+            clients.add(client);
+            shared = true;
+            return true;
+        }
+    }
+
+    /** Removes a window's client; returns how many are left. */
+    int detach(Client client) {
+        synchronized (clients) {
+            clients.remove(client);
+            return clients.size();
+        }
+    }
+
+    int clientCount() {
+        return clients.size();
+    }
+
+    /**
+     * After a deliberate {@link #dispose()} of a server other windows used: tells every window it has gone now,
+     * not when the process exits (an in-process server has none), so theirs reopen on a new one.
+     */
+    void reportEndedForAll() {
+        if (disposed) {
+            markDead();
+        }
+    }
+
+    /** Whether a second window ever attached. */
+    boolean wasShared() {
+        return shared;
+    }
+
+    /** Where a question from the server goes: the focused window's client, else the longest-attached one. */
+    private Client routed() {
+        Client first = null;
+        for (Client c : clients) {
+            if (first == null) {
+                first = c;
+            }
+            if (c.focused.getAsBoolean()) {
+                return c;
+            }
+        }
+        return first == null ? primary : first;
+    }
+
+    private void refresh(String kind) {
+        for (Client c : clients) {
+            c.onRefresh.accept(kind);
+        }
+    }
+
+    /** The window UI a question goes to: the routed client's, else any client's. */
+    private @Nullable LspClientUi clientUi() {
+        LspClientUi ui = routed().ui;
+        if (ui != null) {
+            return ui;
+        }
+        for (Client c : clients) {
+            if (c.ui != null) {
+                return c.ui;
+            }
+        }
+        return null;
     }
 
     /** The argv this session launches (or launched) — package-private so a test can see which command won. */
@@ -330,11 +439,21 @@ final class LanguageServerSession implements LanguageClient {
         this.serverId = spec.serverId();
         this.command = spec.command();
         this.root = root;
-        this.onDiagnostics = onDiagnostics;
+        this.primary = new Client(onDiagnostics, onStatus);
+        clients.add(primary);
+        this.onDiagnostics = params -> {
+            for (Client c : clients) {
+                c.diagnostics.accept(params);
+            }
+        };
         // A disposed session keeps reading for a moment while its server exits gracefully; nothing the
         // server says in that time (progress, "shutting down") may reach the status bar of a session that
         // is already gone — a progress Begin would start a loading bar no End will ever stop.
-        java.util.function.BiConsumer<String, String> sink = onStatus == null ? (t, m) -> {} : onStatus;
+        java.util.function.BiConsumer<String, String> sink = (t, m) -> {
+            for (Client c : clients) {
+                c.status.accept(t, m);
+            }
+        };
         this.onStatus = (type, message) -> {
             if (!disposed) {
                 sink.accept(type, message);
@@ -969,10 +1088,22 @@ final class LanguageServerSession implements LanguageClient {
      * A document's indentation by its wire URI, for the TypeScript server's {@code formattingOptions} question
      * and jdtls's {@code java.format.tabSize} / {@code insertSpaces}.
      */
-    private volatile java.util.function.Function<String, @Nullable FormattingIndent> indentForUri = uri -> null;
-
     void setIndentForUri(java.util.function.Function<String, @Nullable FormattingIndent> lookup) {
-        indentForUri = lookup == null ? uri -> null : lookup;
+        primary.indentForUri = lookup == null ? uri -> null : lookup;
+    }
+
+    /** The first answer any window gives for a document's indentation. */
+    private @Nullable FormattingIndent indentForUri(@Nullable String uri) {
+        if (uri == null) {
+            return null;
+        }
+        for (Client c : clients) {
+            FormattingIndent indent = c.indentForUri.apply(uri);
+            if (indent != null) {
+                return indent;
+            }
+        }
+        return null;
     }
 
     /** A folder put first on the local server's PATH (the resolved Node.js's bin folder), or null. */
@@ -1104,7 +1235,9 @@ final class LanguageServerSession implements LanguageClient {
                 // minute over a corpse (#666). A null message stops the bar without writing to the echo area.
                 onStatus.accept("Error", null);
             }
-            onDead.run();
+            for (Client c : clients) {
+                c.onDead.run();
+            }
         }
     }
 
@@ -1183,7 +1316,29 @@ final class LanguageServerSession implements LanguageClient {
 
     // --- Document synchronization (full-text) ---------------------------------------------------
 
+    /** Which windows have each document open: the server is told of the first open and the last close. */
+    private final Map<String, java.util.Set<Object>> openers = new ConcurrentHashMap<>();
+
     void didOpen(String uri, String languageId, String text) {
+        didOpen(uri, languageId, text, primary);
+    }
+
+    /**
+     * Opens {@code uri} for {@code opener} (a window). A document another window already has open is not opened
+     * again: the server gets this window's text as a change, so it holds what the window it last heard from
+     * sees, and each window sends its text before it asks about the document.
+     */
+    void didOpen(String uri, String languageId, String text, Object opener) {
+        java.util.Set<Object> by = openers.computeIfAbsent(uri, u -> ConcurrentHashMap.newKeySet());
+        boolean first;
+        synchronized (by) {
+            first = by.isEmpty();
+            by.add(opener);
+        }
+        if (!first && versions.containsKey(uri)) {
+            didChange(uri, text);
+            return;
+        }
         versions.put(uri, 1);
         whenReady(() -> {
             versions.put(uri, 1);
@@ -1304,6 +1459,21 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     void didClose(String uri) {
+        didClose(uri, primary);
+    }
+
+    /** Closes {@code uri} for {@code opener}; the server hears of it once no window has it open. */
+    void didClose(String uri, Object opener) {
+        java.util.Set<Object> by = openers.get(uri);
+        if (by != null) {
+            synchronized (by) {
+                by.remove(opener);
+                if (!by.isEmpty()) {
+                    return;
+                }
+            }
+            openers.remove(uri, by);
+        }
         versions.remove(uri);
         whenReady(() -> {
             versions.remove(uri);
@@ -1485,11 +1655,8 @@ final class LanguageServerSession implements LanguageClient {
 
     /** Handler for a server-initiated {@code workspace/applyEdit}: {@code accept(edit, respond)} — the
      *  handler applies (on whatever thread it marshals to) and answers via {@code respond}. Default: refuse. */
-    private volatile java.util.function.BiConsumer<org.eclipse.lsp4j.WorkspaceEdit, Consumer<Boolean>> onApplyEdit =
-            (edit, respond) -> respond.accept(false);
-
     void setOnApplyEdit(java.util.function.BiConsumer<org.eclipse.lsp4j.WorkspaceEdit, Consumer<Boolean>> handler) {
-        this.onApplyEdit = handler == null ? (edit, respond) -> respond.accept(false) : handler;
+        primary.onApplyEdit = handler == null ? (edit, respond) -> respond.accept(false) : handler;
     }
 
     /** {@code window/workDoneProgress/create} — the server allocates a progress token. Accepted (we key
@@ -1561,10 +1728,11 @@ final class LanguageServerSession implements LanguageClient {
             return out; // a server that is being shut down must not edit the workspace on its way out
         }
         try {
-            onApplyEdit.accept(
-                    params == null ? null : params.getEdit(),
-                    applied -> out.complete(
-                            new org.eclipse.lsp4j.ApplyWorkspaceEditResponse(Boolean.TRUE.equals(applied))));
+            routed().onApplyEdit
+                    .accept( // the window the user is working in made the request that led here
+                            params == null ? null : params.getEdit(),
+                            applied -> out.complete(
+                                    new org.eclipse.lsp4j.ApplyWorkspaceEditResponse(Boolean.TRUE.equals(applied))));
         } catch (RuntimeException e) {
             out.complete(new org.eclipse.lsp4j.ApplyWorkspaceEditResponse(false));
         }
@@ -2181,25 +2349,25 @@ final class LanguageServerSession implements LanguageClient {
      */
     @Override
     public CompletableFuture<Void> refreshDiagnostics() {
-        onRefresh.accept("diagnostics");
+        refresh("diagnostics");
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> refreshSemanticTokens() {
-        onRefresh.accept("semanticTokens");
+        refresh("semanticTokens");
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> refreshInlayHints() {
-        onRefresh.accept("inlayHints");
+        refresh("inlayHints");
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> refreshFoldingRanges() {
-        onRefresh.accept("foldingRanges");
+        refresh("foldingRanges");
         return CompletableFuture.completedFuture(null);
     }
 
@@ -2225,7 +2393,7 @@ final class LanguageServerSession implements LanguageClient {
             }
         }
         if (changed && !disposed) {
-            onRefresh.accept("capabilities");
+            refresh("capabilities");
         }
         return CompletableFuture.completedFuture(null);
     }
@@ -2255,7 +2423,7 @@ final class LanguageServerSession implements LanguageClient {
             }
         }
         if (changed) {
-            onRefresh.accept("capabilities");
+            refresh("capabilities");
         }
         return CompletableFuture.completedFuture(null);
     }
@@ -2460,7 +2628,7 @@ final class LanguageServerSession implements LanguageClient {
                         TypeScriptServer.SERVER_ID.equals(serverId)
                                 ? TypeScriptServer.answer(
                                         item.getSection(),
-                                        item.getScopeUri() == null ? null : indentForUri.apply(item.getScopeUri()))
+                                        item.getScopeUri() == null ? null : indentForUri(item.getScopeUri()))
                                 : answerFor(item));
             }
         }
@@ -2471,7 +2639,7 @@ final class LanguageServerSession implements LanguageClient {
     private @Nullable Object answerFor(org.eclipse.lsp4j.ConfigurationItem item) {
         Object answer = LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde(), pythonPath);
         if (answer == null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && item.getScopeUri() != null) {
-            answer = LspServerSettings.javaFormatAnswer(item.getSection(), indentForUri.apply(item.getScopeUri()));
+            answer = LspServerSettings.javaFormatAnswer(item.getSection(), indentForUri(item.getScopeUri()));
         }
         return answer;
     }
@@ -2481,12 +2649,10 @@ final class LanguageServerSession implements LanguageClient {
         onStatus.accept("Message", messageParams.getMessage());
     }
 
-    /** Where the user is asked a server's questions; null (a test, a headless session) answers none. */
-    private volatile @Nullable LspClientUi clientUi;
-
-    /** Sets where this server's questions go ({@link LspManager} hands a wrapper that runs on the FX thread). */
+    /** Sets where this server's questions go ({@link LspManager} hands a wrapper that runs on the FX thread);
+     *  none (a test, a headless session) answers none. */
     void setClientUi(LspClientUi ui) {
-        this.clientUi = ui;
+        primary.ui = ui;
     }
 
     /**
@@ -2497,7 +2663,7 @@ final class LanguageServerSession implements LanguageClient {
      */
     @Override
     public CompletableFuture<MessageActionItem> showMessageRequest(ShowMessageRequestParams params) {
-        LspClientUi ui = clientUi;
+        LspClientUi ui = clientUi();
         if (ui == null || disposed || params == null || params.getMessage() == null) {
             return CompletableFuture.completedFuture(null);
         }
@@ -2535,7 +2701,7 @@ final class LanguageServerSession implements LanguageClient {
      */
     @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("metals/executeClientCommand")
     public void metalsExecuteClientCommand(org.eclipse.lsp4j.ExecuteCommandParams params) {
-        LspClientUi ui = clientUi;
+        LspClientUi ui = clientUi();
         if (ui == null || disposed || params == null || params.getCommand() == null) {
             return;
         }
@@ -2560,7 +2726,7 @@ final class LanguageServerSession implements LanguageClient {
     /** {@code metals/inputBox}: a line of text from the user, or {@code cancelled}. */
     @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("metals/inputBox")
     public CompletableFuture<MetalsInputBoxResult> metalsInputBox(MetalsInputBoxParams params) {
-        LspClientUi ui = clientUi;
+        LspClientUi ui = clientUi();
         if (ui == null || disposed || params == null) {
             return CompletableFuture.completedFuture(MetalsInputBoxResult.cancel());
         }
@@ -2573,7 +2739,7 @@ final class LanguageServerSession implements LanguageClient {
     /** {@code metals/quickPick}: one of the offered items, by id, or {@code cancelled}. */
     @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("metals/quickPick")
     public CompletableFuture<MetalsQuickPickResult> metalsQuickPick(MetalsQuickPickParams params) {
-        LspClientUi ui = clientUi;
+        LspClientUi ui = clientUi();
         if (ui == null || disposed || params == null || params.items == null || params.items.isEmpty()) {
             return CompletableFuture.completedFuture(MetalsQuickPickResult.cancel());
         }
@@ -2758,7 +2924,7 @@ final class LanguageServerSession implements LanguageClient {
                 }
             }
         }
-        LspClientUi ui = clientUi;
+        LspClientUi ui = clientUi();
         if (ui == null || runnable.isEmpty() || disposed) {
             onStatus.accept("Message", message);
             return;
@@ -2810,7 +2976,7 @@ final class LanguageServerSession implements LanguageClient {
      */
     @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("workspace/executeClientCommand")
     public CompletableFuture<Object> executeClientCommand(org.eclipse.lsp4j.ExecuteCommandParams params) {
-        LspClientUi ui = clientUi;
+        LspClientUi ui = clientUi();
         if (params == null || !CHOOSE_IMPORTS.equals(params.getCommand()) || ui == null || disposed) {
             return CompletableFuture.completedFuture(null);
         }

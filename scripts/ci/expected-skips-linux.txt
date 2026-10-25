@@ -12,6 +12,7 @@ com.editora.lsp.JdtlsExtensionContractProbeTest
 com.editora.lsp.JdtlsInlayRangeProbeTest
 com.editora.lsp.JdtlsLombokProbeTest
 com.editora.lsp.JdtlsProjectStyleProbeTest
+com.editora.lsp.JdtlsSharedServerProbeTest
 com.editora.lsp.JdtlsJavaScriptShadowProbeTest
 com.editora.lsp.JdtlsPasteProbeTest
 com.editora.lsp.JdtlsProbeTest

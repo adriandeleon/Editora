@@ -97,6 +97,41 @@ public final class LspManager {
     private final Map<String, LanguageServerSession> sessionsByRoot = new ConcurrentHashMap<>();
     private final Map<String, LanguageServerSession> sessionByDocUri = new ConcurrentHashMap<>();
 
+    /**
+     * The Java servers of every window in this process, by session key (Java review C12). A second window on a
+     * project joins the server already running for it instead of starting another jdtls on a second workspace,
+     * which cost another 1.5 GB and a cold import. Tests get a registry of their own ({@link
+     * #setSessionStarterForTest}), so no test joins another's server unless it asks to.
+     */
+    private static final Map<String, LanguageServerSession> SHARED_SERVERS = new ConcurrentHashMap<>();
+
+    private volatile Map<String, LanguageServerSession> sharedServers = SHARED_SERVERS;
+
+    /** This window's client on each session it uses: the primary one on a session it started. */
+    private final Map<LanguageServerSession, LanguageServerSession.Client> clientOf = new ConcurrentHashMap<>();
+
+    /** Sessions this window stopped, so the drop that follows is not taken for another window's doing. */
+    private final java.util.Set<LanguageServerSession> endedHere = ConcurrentHashMap.newKeySet();
+
+    /** Whether this window has the focus: a question a shared server asks goes to the focused window. */
+    private volatile java.util.function.BooleanSupplier windowFocused = () -> false;
+
+    public void setWindowFocused(java.util.function.BooleanSupplier focused) {
+        windowFocused = focused == null ? () -> false : focused;
+    }
+
+    /** Told (on the FX thread) when another window restarted a server this window shared: its documents reopen. */
+    private volatile java.util.function.BiConsumer<String, Path> onSharedServerEnded = (serverId, root) -> {};
+
+    public void setOnSharedServerEnded(java.util.function.BiConsumer<String, Path> handler) {
+        onSharedServerEnded = handler == null ? (serverId, root) -> {} : handler;
+    }
+
+    /** Lets {@code other} share this manager's servers, as two windows do (tests only). */
+    void shareServersForTest(LspManager other) {
+        other.sharedServers = sharedServers;
+    }
+
     private volatile boolean enabled;
     /** Set by {@link #close()}: the owning window is gone, so nothing may start a server here again. */
     private volatile boolean closed;
@@ -816,7 +851,7 @@ public final class LspManager {
                 session.alias(uri, DocumentUris.of(shadow), JavaScriptShadow::wireText);
             }
         }
-        session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text);
+        session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text, this);
     }
 
     /** Where the stand-in {@code .java} files for Java scripts live (see {@link JavaScriptShadow}); lazily made. */
@@ -925,7 +960,7 @@ public final class LspManager {
         rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
         deleteJavaScriptShadow(javaScriptShadows.remove(uri));
         if (s != null) {
-            s.didClose(uri);
+            s.didClose(uri, this);
             maybeScheduleEviction(s);
         }
     }
@@ -1040,7 +1075,9 @@ public final class LspManager {
             return; // replaced, already dropped, pinned, or a document reopened during the grace period
         }
         sessionsByRoot.remove(key, session);
-        disposeDeliberately(key, session);
+        if (!leaveShared(key, session)) {
+            disposeDeliberately(key, session);
+        }
     }
 
     /** How long a restarted session waits for the one it replaces to finish exiting. */
@@ -1060,7 +1097,12 @@ public final class LspManager {
      */
     private void disposeDeliberately(String key, LanguageServerSession session) {
         requestErrors.forget(key);
-        session.dispose();
+        sharedServers.remove(key, session);
+        clientOf.remove(session);
+        endHere(session);
+        if (session.wasShared()) {
+            session.reportEndedForAll(); // the other windows reopen their documents on a new server
+        }
         String workspace = jdtlsWorkspaceBySession.remove(session);
         CompletableFuture<Void> gone =
                 session.exited().whenComplete((done, error) -> releaseJdtlsWorkspaceName(workspace));
@@ -1114,7 +1156,11 @@ public final class LspManager {
      * it starts nothing, so there is no "starting" to announce (Java review C18).
      */
     public boolean isRunning(String serverId, Path root) {
-        LanguageServerSession s = sessionsByRoot.get(sessionKey(serverId, root));
+        String key = sessionKey(serverId, root);
+        LanguageServerSession s = sessionsByRoot.get(key);
+        if (s == null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
+            s = sharedServers.get(key); // another window's, which opening a document here joins (C12)
+        }
         return s != null && !s.isDisposed() && s.isInitialized();
     }
 
@@ -1328,6 +1374,103 @@ public final class LspManager {
         return serverId + SESSION_KEY_SEP;
     }
 
+    /** Where a session's status reaches this window: its status bar, and a refresh once the server is ready. */
+    private java.util.function.BiConsumer<String, String> statusSink(
+            String serverId, java.util.function.Supplier<LanguageServerSession> session) {
+        return (type, msg) -> Platform.runLater(() -> {
+            if (closed) {
+                return;
+            }
+            ServerStatusListener named = onServerStatus;
+            if (named != null) {
+                named.status(serverId, type, msg);
+            } else {
+                onStatus.accept(type, msg);
+            }
+            if (announcesReady(type)) {
+                // Capabilities are known now (and jdtls says this again when it has finished
+                // importing): the gates and data of this session's documents are due a refresh.
+                onRefreshRequested.refreshRequested("capabilities", session.get());
+            }
+        });
+    }
+
+    /** Points this window's {@code client} of {@code session} at this manager. */
+    private void configureClient(LanguageServerSession.Client client, String key, LanguageServerSession session) {
+        client.onRequestOutcome = (method, error) -> noteRequestOutcome(session, method, error);
+        client.indentForUri = documentIndents::get; // TypeScript's formattingOptions, jdtls's java.format.*
+        // Drop the session the moment it can no longer serve requests — the process died on its own, or the
+        // handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps returning true
+        // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
+        // dead for the rest of the session while the status bar still names the server.
+        client.onDead = () -> dropSession(key, session);
+        client.onRefresh = kind -> Platform.runLater(() -> onRefreshRequested.refreshRequested(kind, session));
+        client.onApplyEdit = (edit, respond) -> onServerApplyEdit(session, edit, respond); // server-side fix (#670)
+        client.ui = fxClientUi; // showMessageRequest and Metals' prompts, answered on the FX thread
+        client.focused = () -> windowFocused.getAsBoolean();
+    }
+
+    /**
+     * Joins the server another window runs for this project (Java review C12), or null when it can no longer
+     * take a window (it stopped meanwhile). The documents this window opens on it are counted with the other
+     * window's, and it hears the server's diagnostics and status as the other window does.
+     */
+    private @Nullable LanguageServerSession join(String key, LanguageServerSession session) {
+        LanguageServerSession.Client client = new LanguageServerSession.Client(
+                params -> onPublishDiagnostics(session, params), statusSink(session.serverId(), () -> session));
+        configureClient(client, key, session);
+        if (!session.attach(client)) {
+            sharedServers.remove(key, session);
+            return null;
+        }
+        LanguageServerSession prev = sessionsByRoot.putIfAbsent(key, session);
+        if (prev != null && prev != session) {
+            session.detach(client);
+            return prev;
+        }
+        clientOf.put(session, client);
+        ensureRootWatcher(session.root());
+        if (session.isInitialized()) {
+            // Ready before this window came: its documents' gates and data are due now, not at a status that
+            // was said before it joined.
+            Platform.runLater(() -> {
+                if (!closed) {
+                    onRefreshRequested.refreshRequested("capabilities", session);
+                }
+            });
+        }
+        return session;
+    }
+
+    /**
+     * Leaves a session another window still uses: this window's documents on it are closed (the server keeps
+     * them while the other window has them open) and its client detached. False when this window is its last
+     * user, and the caller stops it.
+     */
+    private boolean leaveShared(String key, LanguageServerSession session) {
+        LanguageServerSession.Client client = clientOf.get(session);
+        if (client == null || session.clientCount() <= 1) {
+            return false;
+        }
+        sessionByDocUri.forEach((uri, s) -> {
+            if (s == session) {
+                session.didClose(uri, this);
+            }
+        });
+        sessionByDocUri.values().removeIf(s -> s == session);
+        pendingApplyExpected.remove(session);
+        requestErrors.forget(key);
+        session.detach(client);
+        clientOf.remove(session);
+        return true; // its workspace claim stays with the session, for the window that stops it to release
+    }
+
+    /** Disposes {@code session} as this window's own doing. */
+    private void endHere(LanguageServerSession session) {
+        endedHere.add(session);
+        session.dispose();
+    }
+
     private @Nullable LanguageServerSession sessionForRoot(Path root, String languageId) {
         String serverId = LspServerRegistry.serverIdFor(languageId);
         if (serverId == null) {
@@ -1342,6 +1485,15 @@ public final class LspManager {
         LspServerRegistry.ServerSpec spec = LspServerRegistry.specFor(languageId, commands);
         if (spec == null) {
             return null;
+        }
+        boolean shareable =
+                LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && com.editora.process.ExecTargets.runsHere(root);
+        if (shareable) {
+            LanguageServerSession running = sharedServers.get(key);
+            LanguageServerSession joined = running == null ? null : join(key, running);
+            if (joined != null) {
+                return joined;
+            }
         }
         // jdtls: give each project root its own Eclipse workspace (-data) so it never deadlocks on the shared
         // default workspace's .lock. Created on demand; jdtls reuses it across sessions (its index persists).
@@ -1358,45 +1510,37 @@ public final class LspManager {
                 spec,
                 root,
                 params -> onPublishDiagnostics(diagnosticSource[0], params),
-                (type, msg) -> Platform.runLater(() -> {
-                    ServerStatusListener named = onServerStatus;
-                    if (named != null) {
-                        named.status(spec.serverId(), type, msg);
-                    } else {
-                        onStatus.accept(type, msg);
-                    }
-                    if (announcesReady(type)) {
-                        // Capabilities are known now (and jdtls says this again when it has finished
-                        // importing): the gates and data of this session's documents are due a refresh.
-                        onRefreshRequested.refreshRequested("capabilities", diagnosticSource[0]);
-                    }
-                }));
+                statusSink(spec.serverId(), () -> diagnosticSource[0]));
         diagnosticSource[0] = session;
-        session.setOnRequestOutcome((method, error) -> noteRequestOutcome(session, method, error));
+        configureClient(session.primaryClient(), key, session);
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         session.setJavaCleanups(javaCleanups);
         session.setBashIde(bashIde);
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);
         }
-        session.setIndentForUri(documentIndents::get); // TypeScript's formattingOptions, jdtls's java.format.*
-        // Drop the session the moment it can no longer serve requests — the process died on its own, or the
-        // handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps returning true
-        // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
-        // dead for the rest of the session while the status bar still names the server.
-        session.setOnDead(() -> dropSession(key, session));
-        session.setOnRefresh(kind -> Platform.runLater(() -> onRefreshRequested.refreshRequested(kind, session)));
-        session.setOnApplyEdit(
-                (edit, respond) -> onServerApplyEdit(session, edit, respond)); // server-side quick fix (#670)
-        session.setClientUi(fxClientUi); // showMessageRequest and Metals' prompts, answered on the FX thread
         if (claimedWorkspace != null) {
             jdtlsWorkspaceBySession.put(session, claimedWorkspace);
         }
+        if (shareable) {
+            LanguageServerSession rival = sharedServers.putIfAbsent(key, session);
+            if (rival != null) {
+                // Another window started one in the same moment: join it, and drop this un-started one.
+                LanguageServerSession joined = join(key, rival);
+                if (joined != null) {
+                    releaseJdtlsWorkspace(session);
+                    return joined;
+                }
+                sharedServers.replace(key, rival, session); // it died in between: this one takes its place
+            }
+        }
         LanguageServerSession prev = sessionsByRoot.putIfAbsent(key, session);
         if (prev != null) {
+            sharedServers.remove(key, session);
             releaseJdtlsWorkspace(session); // this un-started session's claim must not leak
             return prev; // another open created it first (rare) — use that one; this un-started session is dropped
         }
+        clientOf.put(session, session.primaryClient());
         if (sessionStarterForTest != null) {
             // The production path below creates the workspace on startExec. The fake starter is deliberately
             // synchronous, so preserve that test seam's observable contract without moving production I/O back
@@ -1500,7 +1644,7 @@ public final class LspManager {
                 if (serverJava.missing() && JavaServerEnvironment.isJdtlsLauncher(startCommand.get(0))) {
                     // The launcher would refuse with "jdtls requires at least Java 21" on its stderr, and the
                     // user would only see a crash loop: say what is missing instead, and do not retry.
-                    session.dispose();
+                    endHere(session);
                     dropSession(key, session);
                     StartRefusal refusal = new StartRefusal(
                             StartRefusal.Kind.NO_JAVA_FOR_SERVER, String.valueOf(JavaRuntimes.SERVER_MIN_MAJOR));
@@ -1527,7 +1671,7 @@ public final class LspManager {
                 // astro-ls cannot initialize without a TypeScript SDK, and the only one on offer belongs
                 // to a folder that is not trusted to choose code that runs. Disposed first, so the drop
                 // reads as deliberate (no crash notice, no auto-restart).
-                session.dispose();
+                endHere(session);
                 dropSession(key, session);
                 Platform.runLater(() -> onStartWithheld.accept(serverId, root));
                 return;
@@ -1537,7 +1681,7 @@ public final class LspManager {
                 TypeScriptServer.Choice choice = typeScriptChoice(root, sdkCeiling, startCommand, loose);
                 if (!choice.starts()) {
                     // Not a crash and not worth retrying: the same start would only fail (or run a folder's code).
-                    session.dispose();
+                    endHere(session);
                     dropSession(key, session);
                     StartRefusal refusal = choice.outcome() == TypeScriptServer.Outcome.WITHHELD_UNTRUSTED
                             ? new StartRefusal(StartRefusal.Kind.UNTRUSTED_TYPESCRIPT, root.toString())
@@ -1663,6 +1807,7 @@ public final class LspManager {
 
     void setSessionStarterForTest(Consumer<LanguageServerSession> starter) {
         this.sessionStarterForTest = starter;
+        sharedServers = new ConcurrentHashMap<>(); // no joining another test's server (see shareServersForTest)
     }
 
     /** Sets the session-crashed callback (see {@link #onSessionCrashed}); marshaled to the FX thread. */
@@ -1697,8 +1842,12 @@ public final class LspManager {
      */
     private static final java.util.Set<String> claimedJdtlsWorkspaces = ConcurrentHashMap.newKeySet();
 
-    /** This manager's session → the jdtls workspace dir name it claimed (released on drop/shutdown). */
-    private final Map<LanguageServerSession, String> jdtlsWorkspaceBySession = new ConcurrentHashMap<>();
+    /**
+     * Session → the jdtls workspace dir name claimed for it, released when it is dropped or shut down. Kept per
+     * process, not per window: a server two windows share (C12) holds its claim until the window that stops it
+     * releases it, whichever window started it.
+     */
+    private static final Map<LanguageServerSession, String> jdtlsWorkspaceBySession = new ConcurrentHashMap<>();
 
     /** Claims the first free workspace dir name for {@code baseName}: the canonical hash dir when free (so
      *  the persisted index is reused), else {@code <base>-2}, {@code -3}, … A suffixed dir costs a second
@@ -1773,7 +1922,10 @@ public final class LspManager {
     /** Removes a session that can no longer serve requests, so the next open starts a fresh one. */
     private void dropSession(String key, LanguageServerSession session) {
         requestErrors.forget(key);
-        sessionsByRoot.remove(key, session);
+        boolean wasMine = sessionsByRoot.remove(key, session);
+        sharedServers.remove(key, session);
+        clientOf.remove(session);
+        boolean endedByThisWindow = endedHere.remove(session);
         sessionByDocUri.values().removeIf(s -> s == session);
         pendingApplyExpected.remove(session);
         String workspaceName = jdtlsWorkspaceBySession.remove(session);
@@ -1786,7 +1938,8 @@ public final class LspManager {
         if (!session.isDisposed() && refused != null && !LspServerRegistry.JAVA_SERVER_ID.equals(session.serverId())) {
             // The server answered initialize with an error and exited: the same start would only be refused
             // again, so say why instead of restarting it into the crash-loop cap (Node review B3).
-            session.dispose();
+            endHere(session);
+            endedHere.remove(session);
             releaseJdtlsWorkspaceName(workspaceName);
             StartRefusal refusal = new StartRefusal(StartRefusal.Kind.SERVER_REFUSED, refused);
             Platform.runLater(() -> {
@@ -1800,7 +1953,8 @@ public final class LspManager {
             boolean failedJdtlsInitialization = workspaceName != null
                     && LspServerRegistry.JAVA_SERVER_ID.equals(session.serverId())
                     && !session.initializedOnce();
-            session.dispose(); // hygiene: stop its executor + untrack the dead process
+            endHere(session); // hygiene: stop its executor + untrack the dead process
+            endedHere.remove(session);
             if (failedJdtlsInitialization) {
                 repairAfterExit(key, session.exited(), workspaceName);
             } else {
@@ -1809,6 +1963,14 @@ public final class LspManager {
             Platform.runLater(() -> onSessionCrashed.accept(session.serverId(), session.root()));
         } else {
             releaseJdtlsWorkspaceName(workspaceName);
+            if (wasMine && session.wasShared() && !endedByThisWindow) {
+                // Another window restarted the server this one shared, or saw it crash first: reopen quietly.
+                Platform.runLater(() -> {
+                    if (!closed) {
+                        onSharedServerEnded.accept(session.serverId(), session.root());
+                    }
+                });
+            }
         }
     }
 
@@ -4909,8 +5071,25 @@ public final class LspManager {
         return closed;
     }
 
-    /** Shuts down every running server (best-effort) and clears all routing state. */
+    /**
+     * Stops this window's servers (best-effort) and clears all routing state. A Java server another window
+     * still uses keeps running for it; this window only leaves it.
+     */
     public void shutdownAll() {
+        endAll(false);
+    }
+
+    /** Restarts every server this window uses: one it shares with another window is stopped for both. */
+    public void restartAll() {
+        endAll(true);
+    }
+
+    private void endAll(boolean everywhere) {
+        Map<String, LanguageServerSession> sessions = new java.util.HashMap<>(sessionsByRoot);
+        sessionsByRoot.clear(); // before they stop: this window's own drop must not read as another's
+        if (!everywhere) {
+            sessions.entrySet().removeIf(e -> leaveShared(e.getKey(), e.getValue()));
+        }
         sessionByDocUri.clear();
         rawDiagnostics.clear();
         semanticTokenState.clear();
@@ -4921,10 +5100,7 @@ public final class LspManager {
         pendingApplyExpected.clear();
         javaScriptShadows.values().forEach(LspManager::deleteJavaScriptShadow);
         javaScriptShadows.clear();
-        for (Map.Entry<String, LanguageServerSession> entry : sessionsByRoot.entrySet()) {
-            disposeDeliberately(entry.getKey(), entry.getValue());
-        }
-        sessionsByRoot.clear();
+        sessions.forEach(this::disposeDeliberately);
     }
 
     /** Shuts down every session for {@code serverId} (e.g. when that server's per-server toggle goes off). */
@@ -4944,10 +5120,10 @@ public final class LspManager {
             if (started != null
                     && !started.equals(
                             com.editora.process.ExecTargets.forPath(s.root()).id())) {
+                it.remove(); // before it stops: this window's own drop must not read as another's
                 sessionByDocUri.values().removeIf(v -> v == s);
                 pendingApplyExpected.remove(s);
                 disposeDeliberately(e.getKey(), s);
-                it.remove();
                 any = true;
             }
         }
@@ -4960,10 +5136,11 @@ public final class LspManager {
         while (it.hasNext()) {
             var e = it.next();
             if (e.getKey().startsWith(prefix)) {
-                sessionByDocUri.values().removeIf(s -> s == e.getValue());
-                pendingApplyExpected.remove(e.getValue());
-                disposeDeliberately(e.getKey(), e.getValue());
-                it.remove();
+                LanguageServerSession s = e.getValue();
+                it.remove(); // before it stops: this window's own drop must not read as another's
+                sessionByDocUri.values().removeIf(v -> v == s);
+                pendingApplyExpected.remove(s);
+                disposeDeliberately(e.getKey(), s);
             }
         }
     }
