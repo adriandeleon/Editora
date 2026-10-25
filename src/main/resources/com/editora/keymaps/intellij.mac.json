@@ -69,6 +69,7 @@
   "M-S-j": "edit.undoLastCaret",
   "S-enter": "edit.insertLineBelow",
   "M-Cmd-enter": "edit.insertLineAbove",
+  "Cmd-S-enter": "edit.completeStatement",
   "Cmd-backspace": "edit.deleteLine",
   "M-f8": "debug.evaluate",
   "M-Cmd-f8": "debug.showValue",

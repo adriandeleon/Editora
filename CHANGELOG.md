@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Complete Statement** (`edit.completeStatement`, Code ▸ Complete Statement; Ctrl+Shift+Enter / Cmd+Shift+Enter in
+  the IntelliJ keymaps), as IntelliJ's Complete Current Statement: in Java, C, C++, C#, JavaScript, TypeScript, PHP
+  and Kotlin it closes the line's open string and brackets, adds the `;` (not in Kotlin) or the `{ }` block a
+  control header, type or method needs, and leaves the caret where the next code goes. A finished statement gets a
+  new line below; other languages get Insert Line Below. Every caret, one undo step.
 - **Java: Smart Type completion** (`lsp.smartTypeCompletion`, Edit menu; Ctrl+Shift+Space in the IntelliJ keymaps),
   as IntelliJ's: the completion list holds only what fits the type expected at the caret. The type comes from a
   declaration (`String s = `), an assignment, `return` (the method's return type), a condition (`if (`, `&&`) or
