@@ -83,6 +83,9 @@ final class DoctorPane extends Region implements TabContent {
 
         /** The report was copied (the coordinator says so in the status bar). */
         default void reportCopied() {}
+
+        /** "Check for Newer Versions": ask where each server is published whether a newer release exists. */
+        default void checkNewer() {}
     }
 
     /** Narrowest the centered column gets before the page scrolls horizontally; tips wrap, so it is not scaled. */
@@ -102,6 +105,9 @@ final class DoctorPane extends Region implements TabContent {
 
     /** The pseudo section the amber and red rows are gathered in, above every real section. */
     static final String ATTENTION = "attention";
+
+    /** The pseudo section, below {@link #ATTENTION}, of working tools a newer release exists for. */
+    static final String UPDATES = "updates";
 
     private static final String ROLE = "doctor.role";
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
@@ -135,6 +141,7 @@ final class DoctorPane extends Region implements TabContent {
     private final Node refreshIcon = Icons.refresh();
     private final Button copyReport = new Button(tr("doctor.action.copyReport"));
     private final Node copyIcon = Icons.copy();
+    private final Button checkNewer = new Button(tr("doctor.action.checkNewer"));
 
     private boolean running;
     private @Nullable LocalTime checkedAt;
@@ -142,6 +149,7 @@ final class DoctorPane extends Region implements TabContent {
     private List<String> lastPlan = List.of();
     private boolean pulsePending;
     private @Nullable Node attentionHeader;
+    private @Nullable Node updatesHeader;
 
     DoctorPane(Actions actions) {
         this.actions = actions;
@@ -331,10 +339,13 @@ final class DoctorPane extends Region implements TabContent {
     private List<String> plan() {
         List<String> plan = new ArrayList<>();
         List<String> attentionIds = new ArrayList<>();
+        List<String> updateIds = new ArrayList<>();
         LinkedHashMap<String, List<DoctorCheck>> sections = new LinkedHashMap<>();
         for (DoctorCheck c : checks.values()) {
             if (c.status().needsAttention()) {
                 attentionIds.add(c.id());
+            } else if (newerAvailable(c)) {
+                updateIds.add(c.id());
             } else {
                 sections.computeIfAbsent(c.sectionKey(), k -> new ArrayList<>()).add(c);
             }
@@ -342,6 +353,10 @@ final class DoctorPane extends Region implements TabContent {
         if (!attentionIds.isEmpty()) {
             plan.add("H:" + ATTENTION);
             attentionIds.forEach(id -> plan.add("R:" + id));
+        }
+        if (!updateIds.isEmpty()) {
+            plan.add("H:" + UPDATES);
+            updateIds.forEach(id -> plan.add("R:" + id));
         }
         for (var e : sections.entrySet()) {
             String sec = e.getKey();
@@ -374,6 +389,7 @@ final class DoctorPane extends Region implements TabContent {
         FocusKey focus = focusKey();
         List<Node> nodes = new ArrayList<>();
         attentionHeader = null;
+        updatesHeader = null;
         for (String token : plan) {
             String kind = token.substring(0, 1);
             String rest = token.substring(2);
@@ -383,6 +399,8 @@ final class DoctorPane extends Region implements TabContent {
                     if (ATTENTION.equals(rest)) {
                         label.getStyleClass().add("doctor-attention");
                         attentionHeader = label;
+                    } else if (UPDATES.equals(rest)) {
+                        updatesHeader = label;
                     }
                     nodes.add(label);
                 }
@@ -598,7 +616,15 @@ final class DoctorPane extends Region implements TabContent {
         // Never disabled while a run is in flight: a focused button that is disabled loses the keyboard focus. A
         // second Refresh simply starts over; the summary says a run is going and how far it got.
         refresh.setOnAction(e -> actions.refresh());
-        HBox statusLine = new HBox(12, summary, spacer, copyReport, refresh);
+        checkNewer.getStyleClass().add("doctor-check-newer");
+        checkNewer.setMinWidth(Region.USE_PREF_SIZE);
+        // Like Refresh, never disabled while it runs (the focus would drop): it says so, and a second click waits.
+        checkNewer.setOnAction(e -> {
+            if (!checkingNewer) {
+                actions.checkNewer();
+            }
+        });
+        HBox statusLine = new HBox(12, summary, spacer, copyReport, checkNewer, refresh);
         statusLine.setAlignment(Pos.CENTER_LEFT);
         statusLine.getStyleClass().add("doctor-status-line");
 
@@ -618,6 +644,14 @@ final class DoctorPane extends Region implements TabContent {
         }
         if (s.issues() == 0 && !running) {
             parts.add(summaryText(tr("doctor.summary.noProblems"), "doctor-summary-clear"));
+        }
+        long updates =
+                checks.values().stream().filter(DoctorPane::newerAvailable).count();
+        if (updates > 0) {
+            Hyperlink link = new Hyperlink(tr("doctor.summary.updates", updates));
+            link.getStyleClass().addAll("doctor-summary-link", "doctor-summary-updates");
+            link.setOnAction(e -> scrollTo(updatesHeader));
+            parts.add(link);
         }
         parts.add(summaryText(tr("doctor.summary.ok", s.ok()), null));
         if (s.optional() > 0) {
@@ -723,7 +757,22 @@ final class DoctorPane extends Region implements TabContent {
     }
 
     private static boolean showsTip(DoctorCheck c) {
-        return !c.tipKey().isEmpty() && c.status() != DoctorStatus.OK && c.status() != DoctorStatus.CHECKING;
+        return !c.tipKey().isEmpty()
+                && (c.status() != DoctorStatus.OK || c.update())
+                && c.status() != DoctorStatus.CHECKING;
+    }
+
+    /** A working tool with a newer release published (Check for Newer Versions found one). */
+    private static boolean newerAvailable(DoctorCheck c) {
+        return c.status() == DoctorStatus.OK && c.update();
+    }
+
+    private boolean checkingNewer;
+
+    /** Check for Newer Versions started ({@code true}) or finished: the button says it is asking. */
+    void checkingNewer(boolean on) {
+        checkingNewer = on;
+        checkNewer.setText(tr(on ? "doctor.action.checkingNewer" : "doctor.action.checkNewer"));
     }
 
     static String statusWord(DoctorStatus status) {
@@ -830,7 +879,7 @@ final class DoctorPane extends Region implements TabContent {
 
         private void addActions(DoctorCheck c, HBox box) {
             DoctorStatus st = c.status();
-            boolean update = c.update() && st == DoctorStatus.WARN;
+            boolean update = c.update() && (st == DoctorStatus.WARN || st == DoctorStatus.OK);
             if (c.install() != DoctorCheck.Install.NONE
                     && (update || st == DoctorStatus.MISSING || st == DoctorStatus.OPTIONAL)) {
                 boolean busy = installing.contains(c.id());

@@ -1112,6 +1112,37 @@ public final class InstallCatalog {
         }
     }
 
+    /**
+     * The language servers install step {@code stepId} provides: a language bundle's server (jdtls → {@code java},
+     * Pyright → {@code python}, typescript-language-server → {@code typescript}) or every installable server whose
+     * install includes the step (one npm package serves JSON, HTML and CSS). Empty for a debugger or a tool. Pure.
+     */
+    public static List<String> serversOfStep(@Nullable String stepId) {
+        if (stepId == null) {
+            return List.of();
+        }
+        switch (stepId) {
+            case "jdtls" -> {
+                return List.of("java");
+            }
+            case "pyright" -> {
+                return List.of("python");
+            }
+            case "typescript-language-server" -> {
+                return List.of("typescript");
+            }
+            default -> {
+                List<String> servers = new ArrayList<>();
+                for (String server : installableServerIds()) {
+                    if (serverInstall(server).orElse(List.of()).stream().anyMatch(s -> s.id().equals(stepId))) {
+                        servers.add(server);
+                    }
+                }
+                return List.copyOf(servers);
+            }
+        }
+    }
+
     /** A per-OS binary-archive recipe. */
     public record ArchiveSpec(
             String apiUrl,

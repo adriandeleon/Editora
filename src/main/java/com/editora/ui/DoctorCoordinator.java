@@ -24,6 +24,7 @@ import com.editora.doctor.DoctorService;
 import com.editora.git.GitService;
 import com.editora.github.GitHubService;
 import com.editora.install.InstallCatalog;
+import com.editora.install.LatestVersions;
 import com.editora.install.PinnedVersions;
 import com.editora.process.ElevatedSave;
 import com.editora.run.RunService;
@@ -87,8 +88,8 @@ final class DoctorCoordinator {
         /** Installs {@code serverId}; {@code update} (Doctor's Update) also replaces a copy older than its pin. */
         void installServer(String serverId, boolean update, Consumer<Boolean> onDone);
 
-        /** Installs {@code lang}'s support; {@code update} also reinstalls its pinned steps. */
-        void installLang(InstallCatalog.Lang lang, boolean update, Consumer<Boolean> onDone);
+        /** Installs what {@code lang}'s support lacks; {@code updateStep} is a step to install again although it is there. */
+        void installLang(InstallCatalog.Lang lang, @Nullable String updateStep, Consumer<Boolean> onDone);
 
         void installTypstCli(Consumer<Boolean> onDone);
 
@@ -209,6 +210,11 @@ final class DoctorCoordinator {
             public void reportCopied() {
                 host.setStatus(tr("doctor.reportCopied"));
             }
+
+            @Override
+            public void checkNewer() {
+                DoctorCoordinator.this.checkNewer();
+            }
         });
     }
 
@@ -231,10 +237,87 @@ final class DoctorCoordinator {
                     pane.updateCheck(probeOverrideForTest.apply(spec));
                 }
             }
-            pane.endRun();
+            runDone();
             return;
         }
-        service.run(specs, pane::updateCheck, pane::endRun);
+        service.run(specs, pane::updateCheck, this::runDone);
+    }
+
+    private void runDone() {
+        pane.endRun();
+        if (newerReport != null) {
+            int failed = newerReport;
+            newerReport = null;
+            long found = pane.currentChecks().stream()
+                    .filter(c -> c.status() == com.editora.doctor.DoctorStatus.OK && c.update())
+                    .count();
+            host.setStatus(
+                    found > 0
+                            ? tr("status.doctor.newerFound", found)
+                            : failed > 0 ? tr("status.doctor.newerUnchecked", failed) : tr("status.doctor.newerNone"));
+        }
+    }
+
+    // --- Check for Newer Versions --------------------------------------------------------------------
+
+    /**
+     * The latest release of each published package, by {@link LatestVersions.Source#key()}, as the last Check for
+     * Newer Versions found it. Kept for the window's life, so a Refresh still shows what is newer without asking
+     * the network again.
+     */
+    private final Map<String, String> latestKnown = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Set while a check's re-run is going: how many sources could not be asked, for the status line after it. */
+    private @Nullable Integer newerReport;
+
+    /** Test seam: the lookup Check for Newer Versions makes (the network, unless a test answers). */
+    Function<List<LatestVersions.Source>, LatestVersions.Found> latestLookupForTest =
+            sources -> LatestVersions.fetch(sources, "Editora/" + com.editora.AppInfo.VERSION);
+
+    /**
+     * Check for Newer Versions: asks where each working server or tool that Editora installs at its latest release is
+     * published (npm, PyPI, the Go proxy, GitHub, HashiCorp) for its newest release, off the FX thread, then checks
+     * again: a row whose installed version is older moves to "Updates available" with Update.
+     */
+    void checkNewer() {
+        List<LatestVersions.Source> sources = new ArrayList<>();
+        for (DoctorCheck c : pane.currentChecks()) {
+            LatestVersions.Source source = latestSourceFor(c.id());
+            if (source != null && c.status() == com.editora.doctor.DoctorStatus.OK) {
+                sources.add(source);
+            }
+        }
+        if (sources.isEmpty()) {
+            host.setStatus(tr("status.doctor.newerNothing"));
+            return;
+        }
+        pane.checkingNewer(true);
+        host.setStatus(tr("status.doctor.newerChecking"));
+        Thread.ofVirtual().name("doctor-newer-versions").start(() -> {
+            LatestVersions.Found found = latestLookupForTest.apply(sources);
+            javafx.application.Platform.runLater(() -> {
+                latestKnown.putAll(found.latest());
+                pane.checkingNewer(false);
+                newerReport = found.failed();
+                runChecks();
+            });
+        });
+    }
+
+    /** Where the tool of row {@code rowId} is published, for a tool Editora installs at its latest release. */
+    static LatestVersions.@Nullable Source latestSourceFor(String rowId) {
+        if ("mmdc".equals(rowId)) {
+            return LatestVersions.MERMAID_CLI;
+        }
+        return rowId.startsWith("lsp.")
+                ? LatestVersions.forServer(rowId.substring(4)).orElse(null)
+                : null;
+    }
+
+    /** The latest release last found for row {@code rowId}'s tool, or null. Read on the FX thread. */
+    private @Nullable String latestFor(String rowId) {
+        LatestVersions.Source source = latestSourceFor(rowId);
+        return source == null ? null : latestKnown.get(source.key());
     }
 
     /**
@@ -303,13 +386,34 @@ final class DoctorCoordinator {
         boolean update = check.update(); // Update: replace an install older than its pin, not only a missing one
         switch (check.install()) {
             case SERVER -> ops.installServer(check.installArg(), update, done);
-            case LANG -> ops.installLang(InstallCatalog.Lang.valueOf(check.installArg()), update, done);
+            case LANG ->
+                ops.installLang(
+                        InstallCatalog.Lang.valueOf(check.installArg()),
+                        update ? updateStepFor(check.id()) : null,
+                        done);
             case TYPST_CLI -> ops.installTypstCli(done);
             case TOOL -> ops.installTool(check.installArg(), update, done);
             case NONE -> {
                 /* no action */
             }
         }
+    }
+
+    /**
+     * The install step a language bundle's row updates: the bundle installs a server and a debugger (and Mermaid a
+     * browser), and Update on one row reinstalls that row's tool only. Null for any other row.
+     */
+    static @Nullable String updateStepFor(String rowId) {
+        return switch (rowId) {
+            case "lsp.java" -> "jdtls";
+            case "debug.java" -> "java-debug";
+            case "lsp.python" -> "pyright";
+            case "debug.python" -> "debugpy";
+            case "lsp.typescript" -> "typescript-language-server";
+            case "debug.javascript" -> "js-debug";
+            case "mmdc" -> "mmdc";
+            default -> null;
+        };
     }
 
     // --- the check catalog -------------------------------------------------------------------------
@@ -472,7 +576,7 @@ final class DoctorCoordinator {
                         "maid", "preview", tr("doctor.label.mermaidLinter"), String.join(" ", maidCmd))
                 .withSettings("mermaid");
         if (s.isMermaidSupport()) {
-            specs.add(versionedTool(mmdc, mmdcCmd, "mmdc", "--version"));
+            specs.add(versionedTool(mmdc, mmdcCmd, "mmdc", "--version", latestFor(mmdc.id())));
             // The linter is optional: without it diagrams still render, only live linting is off.
             specs.add(probe(maid, base -> {
                 DoctorProbes.Presence p = DoctorProbes.version(maidCmd);
@@ -495,8 +599,8 @@ final class DoctorCoordinator {
                 .withSettings("diagrams");
         if (s.isDiagramSupport()) {
             // Both reject --version: dot prints its version only for -V, PlantUML for -version (review D3).
-            specs.add(versionedTool(dot, dotCmd, "dot", "-V"));
-            specs.add(versionedTool(puml, pumlCmd, "plantuml", "-version"));
+            specs.add(versionedTool(dot, dotCmd, "dot", "-V", null));
+            specs.add(versionedTool(puml, pumlCmd, "plantuml", "-version", null));
         } else {
             specs.add(terminal(offRow(
                     DoctorCheck.checking("diagrams", "preview", tr("doctor.label.diagramsOff"), "")
@@ -509,7 +613,7 @@ final class DoctorCoordinator {
                 .withSettings("typst")
                 .withInstall(DoctorCheck.Install.TYPST_CLI, "");
         if (s.isTypstSupport()) {
-            specs.add(versionedTool(typst, typstCmd, "typst", "--version"));
+            specs.add(versionedTool(typst, typstCmd, "typst", "--version", null));
         } else {
             specs.add(terminal(offRow(typst.withoutInstall(), "typst")));
         }
@@ -874,9 +978,10 @@ final class DoctorCoordinator {
         Path tsserver = com.editora.lsp.TypeScriptServer.installedTsserver(exe);
         if (tsserver == null) {
             String version = com.editora.lsp.TypeScriptServer.installedPackageVersion(exe);
+            // Update reinstalls typescript-language-server with the TypeScript 6 it needs (updateStepFor).
             return version.isEmpty()
-                    ? base.warn(path, "doctor.tip.typescriptSdkMissing")
-                    : base.warn(path, "doctor.tip.typescriptSdkWithoutTsserver", version);
+                    ? base.outdated(path, "doctor.tip.typescriptSdkMissing")
+                    : base.outdated(path, "doctor.tip.typescriptSdkWithoutTsserver", version);
         }
         String version = com.editora.lsp.TypeScriptServer.sdkVersion(tsserver);
         return base.ok(version.isEmpty() ? path : tr("doctor.detail.typescriptSdk", version, path));
@@ -900,6 +1005,7 @@ final class DoctorCoordinator {
         String failing = ops.lspServerFailure(serverId);
         PinnedVersions.Pin pin = PinnedVersions.forServer(serverId).orElse(null);
         Path config = host.configDir();
+        String latest = latestFor(row.id());
         return probe(row, base -> {
             if (argv.isEmpty()) {
                 // No command at all (an uninstalled maven-pom): say that, not "not found on PATH" (review A3).
@@ -921,7 +1027,8 @@ final class DoctorCoordinator {
                         argv.get(0));
             }
             if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
-                return typeScriptServerRow(base, argv, path); // found is not enough: it needs a tsserver (E4)
+                // found is not enough: it needs a tsserver (E4)
+                return withNewer(typeScriptServerRow(base, argv, path), serverId, argv, path, latest);
             }
             if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
                 // `java` found is not enough either: the command loads a folder of jars, and an emptied folder or
@@ -946,8 +1053,39 @@ final class DoctorCoordinator {
             }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
             String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";
-            return base.ok(version.isEmpty() ? path : version + " — " + path);
+            return withNewer(base.ok(version.isEmpty() ? path : version + " — " + path), serverId, argv, path, latest);
         });
+    }
+
+    /**
+     * {@code ok} — a working server's row — as a "newer release available" row when Check for Newer Versions found
+     * a {@code latest} release newer than the one installed. The installed version is the npm package's beside the
+     * launcher, or what the server prints ({@code gopls version}, {@code --version} for the archives). Runs on the
+     * probe pool.
+     */
+    private static DoctorCheck withNewer(
+            DoctorCheck ok, String serverId, List<String> argv, String path, @Nullable String latest) {
+        LatestVersions.Source source = LatestVersions.forServer(serverId).orElse(null);
+        if (latest == null || source == null || ok.status() != com.editora.doctor.DoctorStatus.OK) {
+            return ok;
+        }
+        String installed = switch (source.registry()) {
+            case NPM -> {
+                String named = DoctorRules.npmPackageVersion(Path.of(path)); // "name version"
+                yield named.startsWith(source.name() + " ")
+                        ? named.substring(source.name().length() + 1)
+                        : null;
+            }
+            case GO ->
+                com.editora.install.Versions.firstNumber(
+                        DoctorProbes.output(withArgs(List.of(argv.get(0)), "version")));
+            default ->
+                com.editora.install.Versions.firstNumber(
+                        DoctorProbes.output(withArgs(List.of(argv.get(0)), "--version")));
+        };
+        return installed != null && LatestVersions.isNewer(latest, installed)
+                ? ok.newer(ok.detail(), installed, latest)
+                : ok;
     }
 
     /**
@@ -1144,8 +1282,9 @@ final class DoctorCoordinator {
     // --- helpers -----------------------------------------------------------------------------------
 
     /** A standard "present + version, else missing" tool row, asking for the version with {@code versionArg}. */
+    /** As a tool row; {@code latest} is its newest release as Check for Newer Versions found it, or null. */
     private static DoctorService.CheckSpec versionedTool(
-            DoctorCheck placeholder, List<String> cmd, String toolName, String versionArg) {
+            DoctorCheck placeholder, List<String> cmd, String toolName, String versionArg, @Nullable String latest) {
         return probe(placeholder, base -> {
             DoctorProbes.Presence p = DoctorProbes.version(cmd, versionArg);
             if (!p.present()) {
@@ -1156,7 +1295,11 @@ final class DoctorCoordinator {
                         toolName);
             }
             // A found tool that printed no version still says where it is, so no green row has an empty column.
-            return base.ok(p.version().isBlank() ? DoctorProbes.resolvedPath(cmd) : p.version());
+            DoctorCheck ok = base.ok(p.version().isBlank() ? DoctorProbes.resolvedPath(cmd) : p.version());
+            String installed = com.editora.install.Versions.firstNumber(p.version());
+            return latest != null && installed != null && LatestVersions.isNewer(latest, installed)
+                    ? ok.newer(ok.detail(), installed, latest)
+                    : ok;
         });
     }
 

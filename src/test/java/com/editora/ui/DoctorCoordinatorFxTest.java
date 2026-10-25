@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -35,6 +36,12 @@ class DoctorCoordinatorFxTest {
     private static final class FakeHost extends CoordinatorHostStub {
         final Settings settings = new Settings();
         java.nio.file.Path config;
+        final List<String> statuses = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public void setStatus(String message) {
+            statuses.add(message);
+        }
 
         @Override
         public Settings settings() {
@@ -115,7 +122,7 @@ class DoctorCoordinatorFxTest {
         }
 
         @Override
-        public void installLang(InstallCatalog.Lang lang, boolean update, Consumer<Boolean> onDone) {
+        public void installLang(InstallCatalog.Lang lang, String updateStep, Consumer<Boolean> onDone) {
             installedLang = lang;
             onDone.accept(true);
         }
@@ -295,6 +302,73 @@ class DoctorCoordinatorFxTest {
 
         assertEquals(DoctorStatus.OK, row.status());
         assertFalse(row.update());
+    }
+
+    /**
+     * Check for Newer Versions asks for the latest release of each working server installed at its latest (here a
+     * global npm Pyright), checks again, and the row whose installed version is older offers Update; the status
+     * line says how many. Only that row's probe runs for real; the lookup is answered by the test.
+     */
+    @Test
+    void checkForNewerVersionsFindsAnOlderNpmServer() throws Exception {
+        java.nio.file.Path pkg = java.nio.file.Files.createDirectories(sandbox.resolve("npm/lib/node_modules/pyright"));
+        java.nio.file.Files.writeString(pkg.resolve("package.json"), "{\"name\":\"pyright\",\"version\":\"1.1.400\"}");
+        java.nio.file.Path launcher = java.nio.file.Files.writeString(pkg.resolve("langserver.index.js"), "never run");
+        launcher.toFile().setExecutable(true);
+        FakeOps ops = new FakeOps();
+        ops.servers = List.of("python");
+        ops.argv.put("python", List.of(launcher.toString(), "--stdio"));
+        FakeHost host = new FakeHost();
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
+        doctor.probeOverrideForTest = spec -> spec.placeholder().id().equals("lsp.python")
+                ? spec.probe().get()
+                : spec.placeholder().optional(""); // nothing else is installed
+        List<List<com.editora.install.LatestVersions.Source>> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        doctor.latestLookupForTest = sources -> {
+            asked.add(sources);
+            return new com.editora.install.LatestVersions.Found(java.util.Map.of("npm:pyright", "1.1.414"), 0);
+        };
+        FxTestSupport.runOnFx(doctor::runChecks);
+        assertFalse(rowOf(doctor, "lsp.python").update(), "nothing is said to be newer before anyone asks");
+
+        FxTestSupport.runOnFx(doctor::checkNewer);
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (!rowOf(doctor, "lsp.python").update() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+            FxTestSupport.drainFx();
+        }
+
+        DoctorCheck row = rowOf(doctor, "lsp.python");
+        assertEquals(DoctorStatus.OK, row.status());
+        assertTrue(row.update(), String.valueOf(row));
+        assertEquals(List.of("1.1.400", "1.1.414"), row.tipArgs());
+        assertEquals(
+                List.of(List.of(new com.editora.install.LatestVersions.Source(
+                        com.editora.install.LatestVersions.Registry.NPM, "pyright"))),
+                asked,
+                "only the working server installed at its latest is looked up");
+        assertTrue(host.statuses.contains(tr("status.doctor.newerFound", 1L)), String.valueOf(host.statuses));
+
+        FxTestSupport.runOnFx(doctor::runChecks);
+        assertTrue(rowOf(doctor, "lsp.python").update(), "a plain Refresh keeps what the check found");
+        assertEquals(1, asked.size(), "without asking the network again");
+    }
+
+    private static DoctorCheck rowOf(DoctorCoordinator doctor, String id) throws Exception {
+        return FxTestSupport.callOnFx(() -> doctor.pane().currentChecks().stream()
+                .filter(r -> r.id().equals(id))
+                .findFirst()
+                .orElseThrow());
+    }
+
+    /** Update on a language bundle's row reinstalls that row's tool only. */
+    @Test
+    void updateOnABundlesRowNamesItsOwnStep() {
+        assertEquals("typescript-language-server", DoctorCoordinator.updateStepFor("lsp.typescript"));
+        assertEquals("jdtls", DoctorCoordinator.updateStepFor("lsp.java"));
+        assertEquals("js-debug", DoctorCoordinator.updateStepFor("debug.javascript"));
+        assertEquals("mmdc", DoctorCoordinator.updateStepFor("mmdc"));
+        assertNull(DoctorCoordinator.updateStepFor("lsp.json"));
     }
 
     /** Update routes to the installer as an update, which reinstalls although the server is found. */
