@@ -3258,6 +3258,11 @@ final class LspCoordinator {
                 pendingProjectRecheck = path;
                 projectRecheck.playFromStart();
             }
+        } else if (path != null && path.toString().endsWith(".java") && lspManager.hasJavaSession(path)) {
+            // A tab jdtls never opened (restored, or open across a restart, and not shown since): without this the
+            // server kept its old text, and the next rename skipped the file (Java review 3, BT2).
+            lspManager.notifyWatchedFiles(java.util.List.of(
+                    new com.editora.lsp.LspManager.WatchedFile(path, com.editora.lsp.LspManager.WatchedKind.CHANGED)));
         }
     }
 

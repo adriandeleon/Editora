@@ -1651,6 +1651,25 @@ class LspWorkspaceEditFxTest {
     }
 
     /**
+     * A tab the server never opened (restored and not shown since, or open across a restart) that the user saves
+     * is announced as changed, or jdtls kept its old text and the next rename skipped it (Java review 3, BT2).
+     */
+    @Test
+    void savingATabTheServerNeverOpenedTellsTheServer() throws Exception {
+        useControlledCoordinator(LspCoordinator.WorkspaceFileOperations.SYSTEM, Runnable::run);
+        EditorBuffer a = openBuffer("A.java", "class A {}\n");
+        manager.openDocument(a.getPath(), root, "java", "class A {}\n");
+        EditorBuffer b = openBuffer("B.java", "class B { void grow() {} }\n");
+        assertFalse(manager.isManaged(b.getPath()), "precondition: a deferred tab");
+
+        FxTestSupport.runOnFx(() -> coordinator.notifyDocumentSaved(b, b.getContent()));
+
+        assertTrue(
+                fakes.get(0).fileEvents().contains("Changed " + b.getPath().toUri()),
+                fakes.get(0).fileEvents().toString());
+    }
+
+    /**
      * A Project-tree rename of an open file: the edits jdtls wants go in, the tree moves the file, and then the
      * whole of it is saved, undone as one, and told to the server (re-review BN3).
      */
