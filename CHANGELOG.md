@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for copies from before this, Doctor reads the version from the files or from `--version` where it can, and
   offers Update where it cannot tell (a Kotlin server from an earlier Editora). Install also replaces Editora's
   own copy that is known to be older, as it already did for jdtls.
+- **A Clojure debugging sample.** `samples/debug/clojure/` is the same shelf as a small standalone Clojure CLI
+  project (four namespaces, a script, six green clojure.test tests) with a `break here` comment at every spot
+  worth a breakpoint: a `loop/recur` whose bindings change on every pass, an anonymous fn, a recursion, three
+  named worker threads, a caught and an uncaught exception, and a script's top-level forms. `clojure -M:run`
+  and `clojure -M:test` run it outside Editora.
 - **Complete Statement** (`edit.completeStatement`, Code ▸ Complete Statement; Ctrl+Shift+Enter / Cmd+Shift+Enter in
   the IntelliJ keymaps), as IntelliJ's Complete Current Statement: in Java, C, C++, C#, JavaScript, TypeScript, PHP
   and Kotlin it closes the line's open string and brackets, adds the `;` (not in Kotlin) or the `{ }` block a
@@ -147,6 +152,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Project Map preview and note cards move and zoom with the map.** Panning carries a card along with the
+  columns under it, zooming scales it with them (the card's − / + still sizes its text on top), and a card can
+  be dragged past the edge of the visible canvas the way a column can, instead of stopping at the panel's edge. Its resize grip now allows up to the panel's
+  size wherever the card stands, and resizing the panel no longer pushes cards back inside it.
 - **Refactor: the preview's right-click menu owns its own state and moved to `editor.markdown`.** `PreviewMenu` is now an object the buffer holds: the seven export and print actions the window injects, and what the pointer was on when the menu opened, live in it instead of in eleven `EditorBuffer` fields read from outside. The window injects the actions through `buffer.previewMenu()` (`setExportPdf`, `setPrint`, …) in place of seven `setPreview…Handler` setters. `EditorBuffer` is 58 lines shorter, which restores room under the 10,000-line cap. Internal-only — no behavior, dependency, or `module-info` change.
 - **jdtls is pinned to 1.63.0** (from 1.62.0), checked against the jdtls probes. Doctor now names the installed
   jdtls version and warns when it is older than the pinned one, and Install replaces an older copy of Editora's

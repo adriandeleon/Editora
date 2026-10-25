@@ -44,6 +44,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
+import javafx.scene.transform.Scale;
 
 import com.editora.config.NoteScope;
 import com.editora.config.PathDisplay;
@@ -63,7 +64,11 @@ import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
-/** A bounded, read-only editor card that floats above the Project map without participating in its zoom. */
+/**
+ * A bounded, read-only editor card on the Project map. It pans and zooms with the map — drawn at the map's
+ * zoom from its top-left corner, so its own size is in unzoomed units — and like a column it may be dragged
+ * past the visible part of the canvas.
+ */
 final class ProjectMapPreview extends StackPane {
 
     static final int MAX_PREVIEW_CHARS = 400_000;
@@ -225,6 +230,9 @@ final class ProjectMapPreview extends StackPane {
     private @Nullable MarkerActions markerActions;
     private double preferredWidth = DEFAULT_WIDTH;
     private double preferredHeight = DEFAULT_HEIGHT;
+    /** The map's zoom, applied from the card's top-left corner. */
+    private final Scale mapZoom = new Scale(1, 1, 0, 0);
+
     private double dragScreenX;
     private double dragScreenY;
     private double dragLayoutX;
@@ -310,6 +318,7 @@ final class ProjectMapPreview extends StackPane {
         resizeGrip.addEventHandler(MouseEvent.MOUSE_PRESSED, this::resizePressed);
         resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
         getChildren().addAll(frame, resizeGrip);
+        getTransforms().add(mapZoom);
 
         addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
             toFront();
@@ -682,16 +691,32 @@ final class ProjectMapPreview extends StackPane {
         onEscape = callback == null ? () -> onClose.run() : callback;
     }
 
+    /**
+     * Keeps the card, as drawn at the map's zoom, no larger than the panel. Where it stands is left alone: it
+     * sits on the canvas, which may have it partly or wholly out of view.
+     */
     void constrainTo(double parentWidth, double parentHeight) {
         if (!placed || parentWidth <= 0 || parentHeight <= 0) {
             return;
         }
-        double width = boundedSize(preferredWidth, MIN_WIDTH, parentWidth - EDGE_MARGIN * 2);
-        double height = boundedSize(preferredHeight, MIN_HEIGHT, parentHeight - EDGE_MARGIN * 2);
-        resize(width, height);
-        relocate(
-                clamp(getLayoutX(), EDGE_MARGIN, Math.max(EDGE_MARGIN, parentWidth - width - EDGE_MARGIN)),
-                clamp(getLayoutY(), EDGE_MARGIN, Math.max(EDGE_MARGIN, parentHeight - height - EDGE_MARGIN)));
+        resize(
+                boundedSize(preferredWidth, MIN_WIDTH, unzoomedRoom(parentWidth, mapScale())),
+                boundedSize(preferredHeight, MIN_HEIGHT, unzoomedRoom(parentHeight, mapScale())));
+    }
+
+    /** The map's zoom the card is drawn at. A zoom only rescales the card; it never resizes it. */
+    void setMapScale(double scale) {
+        mapZoom.setX(scale);
+        mapZoom.setY(scale);
+    }
+
+    double mapScale() {
+        return mapZoom.getX();
+    }
+
+    /** The unzoomed size that, drawn at {@code scale}, fills a panel extent inside its margins. */
+    static double unzoomedRoom(double extent, double scale) {
+        return (extent - EDGE_MARGIN * 2) / scale;
     }
 
     void dispose() {
@@ -856,22 +881,33 @@ final class ProjectMapPreview extends StackPane {
         if (placed) {
             return;
         }
-        double width = boundedSize(preferredWidth, MIN_WIDTH, parent.getWidth() - EDGE_MARGIN * 2);
-        double height = boundedSize(preferredHeight, MIN_HEIGHT, parent.getHeight() - EDGE_MARGIN * 2);
+        double scale = mapScale();
+        double width = boundedSize(preferredWidth, MIN_WIDTH, unzoomedRoom(parent.getWidth(), scale));
+        double height = boundedSize(preferredHeight, MIN_HEIGHT, unzoomedRoom(parent.getHeight(), scale));
         placed = true;
         placementPending = false;
         if (placementResolver != null) {
             Placement placement = placementResolver.resolve(width, height, parent.getWidth(), parent.getHeight());
-            preferredWidth = boundedSize(placement.width(), MIN_WIDTH, parent.getWidth() - EDGE_MARGIN * 2);
-            preferredHeight = boundedSize(placement.height(), MIN_HEIGHT, parent.getHeight() - EDGE_MARGIN * 2);
+            preferredWidth = boundedSize(placement.width(), MIN_WIDTH, unzoomedRoom(parent.getWidth(), scale));
+            preferredHeight = boundedSize(placement.height(), MIN_HEIGHT, unzoomedRoom(parent.getHeight(), scale));
             growLeft = placement.growLeft();
             resize(preferredWidth, preferredHeight);
             relocate(placement.x(), placement.y());
         } else {
             resize(width, height);
-            relocate(Math.max(EDGE_MARGIN, parent.getWidth() - width - 24), 24);
+            relocate(Math.max(EDGE_MARGIN, parent.getWidth() - width * scale - 24), 24);
         }
         constrainTo(parent.getWidth(), parent.getHeight());
+        // A new card opens in view; only the user (or a pan) takes it elsewhere.
+        relocate(
+                clamp(
+                        getLayoutX(),
+                        EDGE_MARGIN,
+                        Math.max(EDGE_MARGIN, parent.getWidth() - getWidth() * scale - EDGE_MARGIN)),
+                clamp(
+                        getLayoutY(),
+                        EDGE_MARGIN,
+                        Math.max(EDGE_MARGIN, parent.getHeight() - getHeight() * scale - EDGE_MARGIN)));
     }
 
     private void dragPressed(MouseEvent event) {
@@ -887,15 +923,12 @@ final class ProjectMapPreview extends StackPane {
         event.consume();
     }
 
+    /** Follows the pointer anywhere, as a column header drag does: panning brings the card back into view. */
     private void dragged(MouseEvent event) {
-        if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
+        if (!event.isPrimaryButtonDown()) {
             return;
         }
-        double x = dragLayoutX + event.getScreenX() - dragScreenX;
-        double y = dragLayoutY + event.getScreenY() - dragScreenY;
-        relocate(
-                clamp(x, EDGE_MARGIN, Math.max(EDGE_MARGIN, parent.getWidth() - getWidth() - EDGE_MARGIN)),
-                clamp(y, EDGE_MARGIN, Math.max(EDGE_MARGIN, parent.getHeight() - getHeight() - EDGE_MARGIN)));
+        relocate(dragLayoutX + event.getScreenX() - dragScreenX, dragLayoutY + event.getScreenY() - dragScreenY);
         event.consume();
     }
 
@@ -915,10 +948,14 @@ final class ProjectMapPreview extends StackPane {
         if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
             return;
         }
-        double maxWidth = Math.max(1, parent.getWidth() - getLayoutX() - EDGE_MARGIN);
-        double maxHeight = Math.max(1, parent.getHeight() - getLayoutY() - EDGE_MARGIN);
-        preferredWidth = boundedSize(resizeWidth + event.getScreenX() - resizeScreenX, MIN_WIDTH, maxWidth);
-        preferredHeight = boundedSize(resizeHeight + event.getScreenY() - resizeScreenY, MIN_HEIGHT, maxHeight);
+        // As large as the panel, wherever the card stands: one partly out of view must not shrink to fit. The
+        // pointer moves in zoomed pixels, the card's size is unzoomed: the grip stays under the pointer.
+        double scale = mapScale();
+        double maxWidth = Math.max(1, unzoomedRoom(parent.getWidth(), scale));
+        double maxHeight = Math.max(1, unzoomedRoom(parent.getHeight(), scale));
+        preferredWidth = boundedSize(resizeWidth + (event.getScreenX() - resizeScreenX) / scale, MIN_WIDTH, maxWidth);
+        preferredHeight =
+                boundedSize(resizeHeight + (event.getScreenY() - resizeScreenY) / scale, MIN_HEIGHT, maxHeight);
         resize(preferredWidth, preferredHeight);
         requestLayout();
         event.consume();
@@ -1171,13 +1208,14 @@ final class ProjectMapPreview extends StackPane {
             return;
         }
         if (growLeft && !userMoved) {
-            double right = getLayoutX() + getWidth();
-            double x = Math.max(EDGE_MARGIN, right - wanted);
-            preferredWidth = right - x;
+            double scale = mapScale();
+            double right = getLayoutX() + getWidth() * scale;
+            preferredWidth = Math.max(getWidth(), (right - Math.max(EDGE_MARGIN, right - wanted * scale)) / scale);
             resize(preferredWidth, getHeight());
-            relocate(x, getLayoutY());
+            relocate(right - preferredWidth * scale, getLayoutY());
         } else {
-            preferredWidth = Math.max(getWidth(), Math.min(wanted, parent.getWidth() - EDGE_MARGIN - getLayoutX()));
+            double room = (parent.getWidth() - EDGE_MARGIN - getLayoutX()) / mapScale();
+            preferredWidth = Math.max(getWidth(), Math.min(wanted, room));
             resize(preferredWidth, getHeight());
         }
         requestLayout();

@@ -78,8 +78,15 @@ stored in workspace state and restored when the editor is reopened.
 | Click **?** | Show the mouse and keyboard model in a popover |
 | Click the overview | Recenter the canvas around that content position |
 
-Floating previews stay at screen scale instead of participating in canvas zoom. Each title bar moves
-its card, each lower corner resizes it, and each editor scrolls independently. Opening another file
+Preview and note cards sit on the canvas: a pan or zoom carries each card's corner with the map under it
+and draws the card at the map's zoom from that corner (`MapSurface.moveCardsWithViewport`, run after every
+paint, sets each card's `setMapScale`), so cards shrink and grow with the columns. A card's own width and
+height are unzoomed; placement, overlap, connectors and size limits work on the card as drawn
+(`ProjectMapView.cardScale`), and the resize grip divides the pointer's movement by the zoom. Each title bar
+moves its card — like a column header, anywhere, including out of view, where panning finds it again — each
+lower corner resizes it up to the panel's size at the current zoom, and each editor scrolls independently.
+A resized panel bounds a card's size but never moves it; a zoom never resizes a card, so one zoomed in may
+outgrow the panel as a column does. The card's own − / + buttons scale its text on top of the map's zoom. Opening another file
 keeps existing cards visible; clicking an already-previewed file focuses its existing card, and each
 close button removes only that card. An accent connector runs from every preview to its source file row
 and follows map pan/zoom plus card movement and resizing.
@@ -90,7 +97,8 @@ else on the other — when at least the card's minimum size fits there; otherwis
 against the panel edge, which is the normal case in a tool-window-wide panel. It is then shifted or
 cascaded clear of the cards already open. **Placement never pans the map**, and a card is never smaller
 than its minimum (340 × 220 for code, 300 × 180 for notes) unless the panel itself is. Text that arrives
-after a card was placed only widens it where it stands, by at most 120 columns and never past the panel;
+after a card was placed only widens it where it stands, by at most 120 columns and never past the panel
+(a card already partly out of view is never narrowed);
 a card the user moved keeps its position and one the user resized keeps its size.
 
 Up to eight cards remain open, code and note cards together; a ninth replaces the least recently used

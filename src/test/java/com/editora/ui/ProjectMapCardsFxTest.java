@@ -52,6 +52,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -292,22 +293,25 @@ class ProjectMapCardsFxTest {
                     openNotes(map, file);
                     ProjectMapNotePreview note = noteCards(map).get(file);
                     assertNotNull(note);
+                    // Cards are drawn at the map's zoom: the minimum and the room compare as drawn.
+                    double noteMinimum = ProjectMapNotePreview.MIN_WIDTH * note.mapScale();
                     assertEquals(
-                            Math.min(ProjectMapNotePreview.MIN_WIDTH, room),
-                            Math.min(ProjectMapNotePreview.MIN_WIDTH, note.getWidth()),
+                            Math.min(noteMinimum, room),
+                            Math.min(noteMinimum, drawnWidth(note)),
                             0.5,
-                            () -> "at " + panelWidth + " px the note card must not collapse: " + note.getWidth());
+                            () -> "at " + panelWidth + " px the note card must not collapse: " + drawnWidth(note));
                     assertTrue(note.getHeight() >= ProjectMapNotePreview.MIN_HEIGHT);
                     assertInside(note, map.host);
 
                     openPreview(map, file);
                     ProjectMapPreview code = codeCards(map).get(file);
                     assertNotNull(code);
+                    double codeMinimum = ProjectMapPreview.MIN_WIDTH * code.mapScale();
                     assertEquals(
-                            Math.min(ProjectMapPreview.MIN_WIDTH, room),
-                            Math.min(ProjectMapPreview.MIN_WIDTH, code.getWidth()),
+                            Math.min(codeMinimum, room),
+                            Math.min(codeMinimum, drawnWidth(code)),
                             0.5,
-                            () -> "at " + panelWidth + " px the code card keeps its minimum: " + code.getWidth());
+                            () -> "at " + panelWidth + " px the code card keeps its minimum: " + drawnWidth(code));
                     assertTrue(code.getHeight() >= ProjectMapPreview.MIN_HEIGHT);
                     assertInside(code, map.host);
 
@@ -339,13 +343,15 @@ class ProjectMapCardsFxTest {
                 placed[0] = card.getLayoutX();
                 placed[1] = card.getLayoutY();
                 placed[2] = card.getWidth();
-                placed[3] = FxTestSupport.<Double>field(map.surface, "offsetX") - 175;
+                placed[3] = FxTestSupport.<Double>field(map.surface, "offsetX") + 175;
                 setField(map.surface, "offsetX", placed[3]);
+                FxTestSupport.invoke(map.surface, "repaint");
+                assertEquals(275, card.getLayoutX(), 0.001, "the card pans with the map under it");
             });
             ProjectMapPreview card = FxTestSupport.callOnFx(() -> codeCards(map).get(file));
             waitFor(() -> statusOf(card).isEmpty(), "the file must finish loading");
             FxTestSupport.runOnFx(() -> {
-                assertEquals(100, card.getLayoutX(), 0.001, "a dragged card stays where it was put");
+                assertEquals(275, card.getLayoutX(), 0.001, "a dragged card stays where it was put");
                 assertEquals(200, card.getLayoutY(), 0.001);
                 assertEquals(placed[3], (double) FxTestSupport.field(map.surface, "offsetX"), 0.001, "no second pan");
                 assertTrue(card.getWidth() > placed[2], "long lines still widen the card");
@@ -353,6 +359,73 @@ class ProjectMapCardsFxTest {
                         card.getWidth() < 1_000,
                         () -> "but not to the whole panel for one long line: " + card.getWidth());
                 assertInside(card, map.host);
+            });
+        } finally {
+            map.close();
+        }
+    }
+
+    @Test
+    void cardsPanAndZoomWithTheMapAndCanBeDraggedOutOfView() throws Exception {
+        root = projectRoot();
+        Path file = Files.writeString(root.resolve("Notes.txt"), "text\n");
+        MapFixture map = openMap(1_200, 800, path -> null);
+        try {
+            waitForRow(map, file);
+            FxTestSupport.runOnFx(() -> openPreview(map, file));
+            ProjectMapPreview card = FxTestSupport.callOnFx(() -> codeCards(map).get(file));
+            waitFor(() -> card.getWidth() > 0, "the card must be placed");
+            FxTestSupport.runOnFx(() -> {
+                double x = card.getLayoutX();
+                double y = card.getLayoutY();
+                double width = card.getWidth();
+                double height = card.getHeight();
+                double offsetX = FxTestSupport.field(map.surface, "offsetX");
+                double offsetY = FxTestSupport.field(map.surface, "offsetY");
+
+                setField(map.surface, "offsetX", offsetX - 900);
+                setField(map.surface, "offsetY", offsetY + 60);
+                FxTestSupport.invoke(map.surface, "repaint");
+                assertEquals(x - 900, card.getLayoutX(), 0.001, "a pan carries the card with the map");
+                assertEquals(y + 60, card.getLayoutY(), 0.001);
+
+                double beforeX = card.getLayoutX();
+                double beforeY = card.getLayoutY();
+                double fromX = FxTestSupport.field(map.surface, "offsetX");
+                double fromY = FxTestSupport.field(map.surface, "offsetY");
+                double fromZoom = FxTestSupport.field(map.surface, "zoom");
+                FxTestSupport.call(map.surface, "zoomBy", new Class<?>[] {double.class}, 0.5);
+                FxTestSupport.invoke(map.surface, "repaint");
+                double ratio = (double) FxTestSupport.field(map.surface, "zoom") / fromZoom;
+                assertNotEquals(1.0, ratio, 0.001, "the zoom must change");
+                assertEquals(
+                        (double) FxTestSupport.field(map.surface, "offsetX") + (beforeX - fromX) * ratio,
+                        card.getLayoutX(),
+                        0.001,
+                        "a zoom keeps the card's corner on the same point of the map");
+                assertEquals(
+                        (double) FxTestSupport.field(map.surface, "offsetY") + (beforeY - fromY) * ratio,
+                        card.getLayoutY(),
+                        0.001);
+                assertEquals(
+                        (double) FxTestSupport.field(map.surface, "zoom"),
+                        card.mapScale(),
+                        0.001,
+                        "and draws the card at the map's zoom");
+                assertEquals(width, card.getWidth(), 0.001, "its own, unzoomed size is unchanged");
+                assertEquals(height, card.getHeight(), 0.001);
+                assertEquals(
+                        width * card.mapScale(), drawnWidth(card), 0.001, "so it is drawn smaller, as the columns are");
+
+                HBox titleBar = FxTestSupport.field(card, "titleBar");
+                double startX = card.getLayoutX();
+                FxTestSupport.invokeWith(card, "dragPressed", MouseEvent.class, mouse(titleBar, 30, 12, true));
+                FxTestSupport.invokeWith(card, "dragged", MouseEvent.class, mouse(titleBar, 30 + 3_000, 12, false));
+                assertEquals(startX + 3_000, card.getLayoutX(), 0.001, "dragged off the canvas in view");
+                map.view.resize(1_100, 760);
+                map.view.layout();
+                assertEquals(startX + 3_000, card.getLayoutX(), 0.001, "a resized panel leaves it there");
+                assertEquals(width, card.getWidth(), 0.001);
             });
         } finally {
             map.close();
@@ -860,13 +933,24 @@ class ProjectMapCardsFxTest {
 
     private static void assertInside(Region card, Region host) {
         assertTrue(
-                card.getLayoutX() >= 0 && card.getLayoutX() + card.getWidth() <= host.getWidth() + 0.5,
-                () -> "the card must lie inside the panel: x " + card.getLayoutX() + ", width " + card.getWidth()
+                card.getLayoutX() >= 0 && card.getLayoutX() + drawnWidth(card) <= host.getWidth() + 0.5,
+                () -> "the card must lie inside the panel: x " + card.getLayoutX() + ", width " + drawnWidth(card)
                         + ", panel " + host.getWidth());
         assertTrue(
-                card.getLayoutY() >= 0 && card.getLayoutY() + card.getHeight() <= host.getHeight() + 0.5,
-                () -> "the card must lie inside the panel: y " + card.getLayoutY() + ", height " + card.getHeight()
+                card.getLayoutY() >= 0 && card.getLayoutY() + drawnHeight(card) <= host.getHeight() + 0.5,
+                () -> "the card must lie inside the panel: y " + card.getLayoutY() + ", height " + drawnHeight(card)
                         + ", panel " + host.getHeight());
+    }
+
+    /** A card's width as drawn at the map's zoom (its bounds in parent would add the drop shadow). */
+    private static double drawnWidth(Region card) {
+        return card.localToParent(card.getWidth(), 0).getX()
+                - card.localToParent(0, 0).getX();
+    }
+
+    private static double drawnHeight(Region card) {
+        return card.localToParent(0, card.getHeight()).getY()
+                - card.localToParent(0, 0).getY();
     }
 
     /** True when the region holds a pixel that is not the white page. */
