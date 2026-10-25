@@ -235,8 +235,14 @@ final class NavigationCoordinator {
                 tr("nav.snippets.prompt"),
                 () -> {
                     EditorBuffer b = host.activeBuffer();
-                    return new ArrayList<>(
-                            host.snippets().forLanguage(b == null ? "global" : b.snippetLanguage(b.getLanguage())));
+                    var all = host.snippets().forLanguage(b == null ? "global" : b.snippetLanguage(b.getLanguage()));
+                    if (b == null) {
+                        return new ArrayList<>(all);
+                    }
+                    var area = b.getFocusedArea(); // over a selection only what wraps it (AN4)
+                    var sel = area.getSelection();
+                    return new ArrayList<>(com.editora.snippet.SurroundSnippets.forSelection(
+                            all, area.getText(), sel.getStart(), sel.getEnd()));
                 },
                 com.editora.snippet.SnippetPreview::label,
                 com.editora.snippet.SnippetPreview::detail,

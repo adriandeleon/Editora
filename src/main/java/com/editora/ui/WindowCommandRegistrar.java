@@ -1496,6 +1496,9 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "snippets.insert", () -> host.snippetCoordinator().showPicker()));
+        host.registry()
+                .register(Command.of(
+                        "snippets.surround", () -> host.snippetCoordinator().surround()));
         // A user file that does not parse loads as "no snippets"; reload says so rather than claim success.
         host.registry()
                 .register(Command.of(

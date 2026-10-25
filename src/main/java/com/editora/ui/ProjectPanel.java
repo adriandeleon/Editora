@@ -485,8 +485,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         tree.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         tree.setCellFactory(t -> new PathCell());
         RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
-        // F2 / Delete are row actions here (see onKey), even in keymaps that bind F2 to a global command.
-        tree.getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("f2", "delete"));
+        // F2 / Delete / Alt+Insert are row actions here (see onKey), even in keymaps that bind them to a global
+        // command: the IntelliJ keymap's Alt+Insert is Generate in the editor and New in the Project view (EN1).
+        tree.getProperties()
+                .put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("f2", "delete", "M-insert"));
         VBox.setVgrow(tree, Priority.ALWAYS);
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
@@ -1681,9 +1683,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         // F2 renames and Delete deletes the selected row — the row actions that were reachable only from
         // the right-click menu. Only while the tree itself has the key: in the filter field they are text
         // editing keys.
-        boolean rowActionKey = rowKey(e.getCode(), true, true) != RowKey.NONE; // else: no lookups
+        boolean alt = e.isAltDown() && !e.isControlDown() && !e.isMetaDown() && !e.isShiftDown();
+        boolean rowActionKey = rowKey(e.getCode(), alt, true, true) != RowKey.NONE; // else: no lookups
         TreeItem<Path> selected = rowActionKey ? tree.getSelectionModel().getSelectedItem() : null;
-        switch (rowKey(e.getCode(), rowActionKey && inTree(e), selected != null && selected.getValue() != null)) {
+        switch (rowKey(e.getCode(), alt, rowActionKey && inTree(e), selected != null && selected.getValue() != null)) {
+            case NEW -> {
+                if (selected != null) {
+                    showNewMenu(selected.isLeaf() && selected.getParent() != null ? selected.getParent() : selected);
+                }
+                e.consume();
+                return;
+            }
             case RENAME -> {
                 if (selected != null // RENAME needs a selected row
                         && !selected.getValue().equals(root)) { // as the menu: the project root is never renamed
@@ -1747,7 +1757,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     enum RowKey {
         NONE,
         RENAME,
-        DELETE
+        DELETE,
+        NEW
     }
 
     /**
@@ -1756,14 +1767,31 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * Pure — tested.
      */
     static RowKey rowKey(javafx.scene.input.KeyCode code, boolean inTree, boolean hasSelection) {
+        return rowKey(code, false, inTree, hasSelection);
+    }
+
+    /** As above, with Alt held: Alt+Insert is New in the selected folder, as in IntelliJ's Project view. */
+    static RowKey rowKey(javafx.scene.input.KeyCode code, boolean alt, boolean inTree, boolean hasSelection) {
         if (!inTree || !hasSelection) {
             return RowKey.NONE;
         }
         return switch (code) {
-            case F2 -> RowKey.RENAME;
-            case DELETE -> RowKey.DELETE;
+            case F2 -> alt ? RowKey.NONE : RowKey.RENAME;
+            case DELETE -> alt ? RowKey.NONE : RowKey.DELETE;
+            case INSERT -> alt ? RowKey.NEW : RowKey.NONE;
             default -> RowKey.NONE;
         };
+    }
+
+    /** The folder's New ▸ entries as a popup at its row (Alt+Insert in the tree). */
+    private void showNewMenu(TreeItem<Path> dirItem) {
+        Menu entries = newMenu(dirItem, simpleMode.getAsBoolean());
+        javafx.scene.control.ContextMenu popup = new javafx.scene.control.ContextMenu();
+        popup.getItems().setAll(new java.util.ArrayList<>(entries.getItems()));
+        javafx.geometry.Bounds row = RowContextMenu.selectedRowOnScreen(tree);
+        if (row != null) {
+            popup.show(tree, row.getMinX() + RowContextMenu.anchorX(row.getWidth()), row.getMaxY());
+        }
     }
 
     /** Whether a key event is aimed at the file tree (or one of its cells) rather than the filter field. */

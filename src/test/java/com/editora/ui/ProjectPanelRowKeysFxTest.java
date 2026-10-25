@@ -42,6 +42,11 @@ class ProjectPanelRowKeysFxTest {
         assertEquals(RowKey.NONE, ProjectPanel.rowKey(KeyCode.F2, true, false), "nothing selected");
         assertEquals(RowKey.NONE, ProjectPanel.rowKey(KeyCode.ENTER, true, true));
         assertEquals(RowKey.NONE, ProjectPanel.rowKey(KeyCode.BACK_SPACE, true, true));
+        // Alt+Insert is New in the tree, as in IntelliJ's Project view, though the keymap gives it to Generate (EN1).
+        assertEquals(RowKey.NEW, ProjectPanel.rowKey(KeyCode.INSERT, true, true, true));
+        assertEquals(RowKey.NONE, ProjectPanel.rowKey(KeyCode.INSERT, false, true, true), "plain Insert");
+        assertEquals(RowKey.NONE, ProjectPanel.rowKey(KeyCode.INSERT, true, false, true), "not from the filter field");
+        assertEquals(RowKey.NONE, ProjectPanel.rowKey(KeyCode.F2, true, true, true), "Alt+F2 is not F2");
     }
 
     /** A panel whose tree holds {@code dir} with one file selected, and a prompt that records what it was asked. */
@@ -90,13 +95,24 @@ class ProjectPanelRowKeysFxTest {
         Harness h = harness();
         FxTestSupport.runOnFx(() -> {
             assertEquals(
-                    java.util.Set.of("f2", "delete"),
+                    java.util.Set.of("f2", "delete", "M-insert"),
                     h.tree().getProperties().get(com.editora.command.KeyDispatcher.CLAIMED_KEYS));
             assertTrue(!h.panel().getProperties().containsKey(com.editora.command.KeyDispatcher.CLAIMED_KEYS));
             // The filter field claims only its own selection chords (C-n / C-p), never the row keys.
             assertEquals(
                     java.util.Set.of("C-n", "C-p"),
                     h.filter().getProperties().get(com.editora.command.KeyDispatcher.CLAIMED_KEYS));
+        });
+    }
+
+    @Test
+    void altInsertInTheTreeIsTakenAsNew() throws Exception {
+        Harness h = harness();
+        FxTestSupport.runOnFx(() -> {
+            KeyEvent e = new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.INSERT, false, false, true, false)
+                    .copyFor(h.tree(), h.tree());
+            FxTestSupport.invokeWith(h.panel(), "onKey", KeyEvent.class, e);
+            assertTrue(e.isConsumed(), "the tree's New, not the editor's Generate");
         });
     }
 

@@ -440,9 +440,10 @@ class LspCoordinatorCodeActionsFxTest {
     /** Move into a package that does not exist yet: typed, its folder created, named by URI (Java review B20). */
     @Test
     void moveFileOffersANewPackageAndCreatesItsFolder() throws Exception {
-        Path current = root.resolve("src").resolve("demo");
+        Path current = java.nio.file.Files.createDirectories(root.resolve("src").resolve("demo"));
+        // As jdtls answers: `uri` is the folder on disk, `path` the Eclipse workspace path (re-review BN2).
         String packages = "{\"destinations\":[{\"displayName\":\"demo\",\"uri\":\"" + current.toUri()
-                + "\",\"path\":" + new com.google.gson.JsonPrimitive(current.toString())
+                + "\",\"path\":\"/p/src/demo\""
                 + ",\"project\":\"p\",\"isDefaultPackage\":false,\"isParentOfSelectedFile\":true},"
                 + "{\"displayName\":\"demo.other\",\"uri\":\"file:///p/demo/other\",\"path\":\"/p/demo/other\","
                 + "\"project\":\"p\",\"isDefaultPackage\":false,\"isParentOfSelectedFile\":false}]}";

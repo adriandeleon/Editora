@@ -5370,17 +5370,23 @@ final class LspCoordinator {
         // list is about the caret (Java review A4). Other servers' source actions stay in it.
         showCodeActions(
                 (serverId, item) -> !LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
-                        || com.editora.lsp.CodeActionKinds.group(item.kind())
-                                != com.editora.lsp.CodeActionKinds.Group.SOURCE,
+                        || (com.editora.lsp.CodeActionKinds.group(item.kind())
+                                        != com.editora.lsp.CodeActionKinds.Group.SOURCE
+                                && !com.editora.lsp.CodeActionKinds.isJavaGeneratorAssist(item)),
                 "status.lsp.noCodeActions",
                 null);
     }
 
-    /** Generate (IntelliJ's Alt+Insert): the source actions here — getters, constructors, toString, overrides. */
+    /**
+     * Generate (IntelliJ's Alt+Insert): getters, constructors, toString, overrides. For Java only the generators;
+     * Organize Imports and the clean-ups have commands of their own (re-review BN6).
+     */
     void generateActions() {
         showCodeActions(
-                (serverId, item) -> com.editora.lsp.CodeActionKinds.group(item.kind())
-                        == com.editora.lsp.CodeActionKinds.Group.SOURCE,
+                (serverId, item) -> LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
+                        ? com.editora.lsp.CodeActionKinds.isJavaGenerator(item.kind())
+                        : com.editora.lsp.CodeActionKinds.group(item.kind())
+                                == com.editora.lsp.CodeActionKinds.Group.SOURCE,
                 "status.lsp.noGenerate",
                 null);
     }

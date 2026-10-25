@@ -43,6 +43,41 @@ public final class CodeActionKinds {
         return Group.ASSIST;
     }
 
+    /**
+     * Whether a jdtls action of {@code kind} is a generator, which Generate lists: the {@code source.generate.*}
+     * kinds and Override/Implement. Organize Imports, Sort Members and "Change modifiers to final" are source
+     * actions too, but they generate nothing (re-review BN6, EN3).
+     */
+    public static boolean isJavaGenerator(String kind) {
+        return (matches(kind, "source.generate") && !"source.generate.finalModifiers".equals(kind))
+                || "source.overrideMethods".equals(kind);
+    }
+
+    /**
+     * Whether a jdtls quick assist repeats a generator or a source action that has a command of its own:
+     * "Generate Getter for 'x'", "Generate Constructors", "Override/Implement Methods...", "Sort Members…". jdtls
+     * offers them on a class name in the quick-fix list as well as under Generate (Java review A4, B11, E4).
+     */
+    public static boolean isJavaGeneratorAssist(LspManager.CodeActionItem item) {
+        if (!"quickassist".equals(item.kind())) {
+            return false;
+        }
+        String command = null;
+        if (item.raw() instanceof org.eclipse.lsp4j.CodeAction action && action.getCommand() != null) {
+            command = action.getCommand().getCommand();
+        } else if (item.raw() instanceof org.eclipse.lsp4j.Command c) {
+            command = c.getCommand();
+        }
+        if (command != null && command.startsWith("java.action.") && command.endsWith("Prompt")) {
+            return true;
+        }
+        String t = item.title();
+        return t.startsWith("Generate ")
+                || t.startsWith("Override/Implement Methods")
+                || t.startsWith("Sort Members")
+                || t.startsWith("Change modifiers to final");
+    }
+
     /** Whether {@code kind} is {@code prefix} or one of its sub-kinds ({@code refactor.extract} ⊂ {@code refactor}). */
     public static boolean matches(String kind, String prefix) {
         return kind != null && (kind.equals(prefix) || kind.startsWith(prefix + "."));
