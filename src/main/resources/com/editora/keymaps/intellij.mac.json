@@ -14,6 +14,7 @@
   "Cmd-S-7": "edit.toggleComment",
   "Cmd-divide": "edit.toggleComment",
   "C-space": "edit.completion",
+  "C-S-space": "lsp.smartTypeCompletion",
   "Cmd-f": "find.show",
   "Cmd-r": "find.replace",
   "Cmd-S-f": "search.inFiles",

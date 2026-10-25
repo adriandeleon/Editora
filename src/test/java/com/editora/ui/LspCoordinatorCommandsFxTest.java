@@ -1490,4 +1490,92 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(tr("status.lsp.cleanedUp"), fx.host.lastStatus());
         assertTrue(FxTestSupport.callOnFx(b::getContent).contains("@Override"));
     }
+
+    // --- Smart Type completion ----------------------------------------------------------------------
+
+    private static org.eclipse.lsp4j.CompletionItem typed(String label, String type, int relevance) {
+        var item = new org.eclipse.lsp4j.CompletionItem(label);
+        item.setKind(org.eclipse.lsp4j.CompletionItemKind.Field);
+        var details = new org.eclipse.lsp4j.CompletionItemLabelDetails();
+        details.setDescription(type);
+        item.setLabelDetails(details);
+        item.setSortText(String.valueOf(999_999_999L - relevance * 16L - 5));
+        return item;
+    }
+
+    private void serverOffers(org.eclipse.lsp4j.CompletionItem... items) {
+        fx.server().completionFuture =
+                java.util.concurrent.CompletableFuture.completedFuture(Either.forLeft(List.of(items)));
+    }
+
+    /** Waits for the completion request to reach the server, which takes a worker hop. */
+    private void awaitCompletions(int count) throws Exception {
+        for (int i = 0; i < 200 && fx.server().completions.size() < count; i++) {
+            Thread.sleep(10);
+            fx.settle();
+        }
+        assertEquals(count, fx.server().completions.size(), "the list was asked for");
+    }
+
+    /** Waits for the status a completion's render sets from the worker it filters on. */
+    private void awaitStatus(String expected) throws Exception {
+        for (int i = 0; i < 200 && !expected.equals(fx.host.lastStatus()); i++) {
+            Thread.sleep(10);
+            fx.settle();
+        }
+        assertEquals(expected, fx.host.lastStatus());
+    }
+
+    @Test
+    void smartTypeCompletionFiltersToTheDeclaredType() throws Exception {
+        fx.capabilities.setCompletionProvider(new org.eclipse.lsp4j.CompletionOptions());
+        EditorBuffer b = fx.open("A.java", "class A {\n    void f() {\n        String s = \n    }\n}\n");
+        FxTestSupport.runOnFx(() -> fx.coordinator.wireBuffer(b)); // the completion source, as addBuffer does
+        fx.caret(b, 2, 19);
+        serverOffers(typed("name", "String", 82), typed("names", "List<String>", 52));
+        int before = fx.server().completions.size();
+        fx.run(() -> fx.coordinator.smartTypeCompletion());
+        assertEquals(tr("status.lsp.smartType", "String"), fx.host.lastStatus());
+        awaitCompletions(before + 1);
+
+        serverOffers(typed("names", "List<String>", 52));
+        fx.run(() -> fx.coordinator.smartTypeCompletion());
+        awaitStatus(tr("status.lsp.smartTypeNone", "String"));
+    }
+
+    @Test
+    void smartTypeCompletionAsksSignatureHelpForAnArgument() throws Exception {
+        EditorBuffer b = fx.open("A.java", "class A {\n    void f() {\n        take(\n    }\n}\n");
+        fx.caret(b, 2, 13);
+        var signature = new org.eclipse.lsp4j.SignatureInformation("take(int n) : void");
+        signature.setParameters(List.of(new org.eclipse.lsp4j.ParameterInformation("int n")));
+        var help = new org.eclipse.lsp4j.SignatureHelp(List.of(signature), 0, 0);
+        fx.server().signatureHelpResponse = help;
+        fx.run(() -> fx.coordinator.smartTypeCompletion());
+        assertEquals(tr("status.lsp.smartType", "int"), fx.host.lastStatus());
+
+        fx.server().signatureHelpResponse = null;
+        fx.run(() -> fx.coordinator.smartTypeCompletion());
+        assertEquals(tr("status.lsp.smartTypeUnknown"), fx.host.lastStatus(), "no signature: the whole list");
+    }
+
+    @Test
+    void smartTypeCompletionWithNothingExpectedOpensTheWholeList() throws Exception {
+        fx.capabilities.setCompletionProvider(new org.eclipse.lsp4j.CompletionOptions());
+        EditorBuffer b = fx.open("A.java", "class A {\n    void f() {\n        \n    }\n}\n");
+        FxTestSupport.runOnFx(() -> fx.coordinator.wireBuffer(b)); // the completion source, as addBuffer does
+        fx.caret(b, 2, 8);
+        int before = fx.server().completions.size();
+        fx.run(() -> fx.coordinator.smartTypeCompletion());
+        assertEquals(tr("status.lsp.smartTypeUnknown"), fx.host.lastStatus());
+        awaitCompletions(before + 1);
+
+        EditorBuffer plain = FxTestSupport.callOnFx(EditorBuffer::new);
+        FxTestSupport.runOnFx(() -> {
+            fx.show(plain);
+            fx.host.active = plain;
+        });
+        fx.run(() -> fx.coordinator.smartTypeCompletion());
+        assertEquals(tr("status.lsp.smartTypeJavaOnly"), fx.host.lastStatus());
+    }
 }
