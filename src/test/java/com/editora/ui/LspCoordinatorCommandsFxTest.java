@@ -1303,6 +1303,9 @@ class LspCoordinatorCommandsFxTest {
     void anImportIsBuiltOnceSoProjectProblemsArriveAndAreSaid() throws Exception {
         fx.open("A.java", SOURCE);
         fx.server().rawRequests.clear();
+        fx.run(() -> fx.coordinator.buildAfterImport());
+        assertTrue(fx.server().rawRequests.isEmpty(), "a folder without a build file is not built (Debug compiles it)");
+        Files.writeString(root.resolve("pom.xml"), "<project/>");
         fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "OK"));
         fx.run(() -> fx.coordinator.buildAfterImport()); // what the import timer runs
         fx.run(() -> fx.coordinator.buildAfterImport());

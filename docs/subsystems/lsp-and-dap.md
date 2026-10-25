@@ -341,7 +341,7 @@ does not exist yet creates its folder under the current package's source root
 (`JdtlsRefactor.currentSourceRoot`), announces it with `workspace/didChangeWatchedFiles`, and sends
 `java/move` a destination that is the folder's URI string, which jdtls accepts in place of a package node.
 After each `ProjectStatus OK`, `LspCoordinator.buildAfterImport` runs one incremental `java/buildWorkspace` per
-Java root with an open file; diagnostics jdtls then publishes on a project folder (JDK and compliance
+Maven or Gradle Java root with an open file (never a loose file's invisible project, which Debug compiles itself); diagnostics jdtls then publishes on a project folder (JDK and compliance
 problems) are listed in Problems in either scope and said once in the status line.
 
 **Launch extras.** `JavaLombok` adds `-javaagent:` with the newest Lombok jar from `~/.m2` or Gradle's module

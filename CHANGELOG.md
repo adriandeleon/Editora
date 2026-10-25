@@ -237,8 +237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src/testFixtures/java` the source-set folders became part of the package name.
 - **Java: a project's JDK and compliance problems appear after it is imported.** jdtls reports them on the project
   folder, and only a build produced them: a project expecting Java 8 on a machine without one showed odd errors
-  and no reason until Build Project. One quiet build now follows each import, and such a problem is said in the
-  status line and listed in Problems in either scope.
+  and no reason until Build Project. One quiet build now follows each Maven or Gradle import, and such a problem is
+  said in the status line and listed in Problems in either scope.
 
 
 ## [0.24.0] - 2026-10-24

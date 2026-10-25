@@ -3057,10 +3057,28 @@ final class LspCoordinator {
                 return;
             }
             Path root = lspRootFor(b, LspServerRegistry.JAVA_SERVER_ID);
-            if (root != null && builtAfterImport.add(root)) {
+            if (root != null && hasJavaBuildFile(root) && builtAfterImport.add(root)) {
                 lspManager.buildJavaWorkspace(path, false, outcome -> {});
             }
         });
+    }
+
+    /**
+     * Whether {@code root} is a Maven or Gradle project — where a JDK or compliance level is declared, the
+     * problems the post-import build is for. A loose file's invisible project is left unbuilt: Debug compiles
+     * such a file into a folder of its own because jdtls never builds it, and must keep doing so.
+     */
+    private static boolean hasJavaBuildFile(Path root) {
+        if (com.editora.vfs.Vfs.isRemote(root)) {
+            return false;
+        }
+        for (String name :
+                List.of("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")) {
+            if (java.nio.file.Files.isRegularFile(root.resolve(name))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Holds the Maven server's ready status until its own initialization progress ends (C18). */
