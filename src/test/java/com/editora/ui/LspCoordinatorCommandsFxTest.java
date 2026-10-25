@@ -1064,4 +1064,226 @@ class LspCoordinatorCommandsFxTest {
             assertEquals(List.of("cmd-for-" + id), FxTestSupport.callOnFx(() -> fx.coordinator.serverArgv(id)), id);
         }
     }
+
+    // --- problems at the caret (Java review A6) ------------------------------------------------------
+
+    private static final String PROBLEMS = "class A {\n    int a = x;\n    int b = y;\n    int c = 1;\n}\n";
+
+    private static com.editora.text.LspDiagnostic problem(
+            int line, int from, int to, com.editora.text.LspDiagnostic.Severity severity, String message) {
+        return new com.editora.text.LspDiagnostic(line, from, line, to, severity, message, null, "jdtls");
+    }
+
+    private int[] caretOf(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(() -> new int[] {
+            b.getFocusedArea().getCurrentParagraph(), b.getFocusedArea().getCaretColumn()
+        });
+    }
+
+    @Test
+    void nextAndPreviousProblemWalkTheErrorsWrappingAndSayEach() throws Exception {
+        EditorBuffer b = fx.open("A.java", PROBLEMS);
+        var x = problem(1, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "x cannot be resolved");
+        var y = problem(2, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "y cannot be resolved");
+        var unused = problem(3, 8, 9, com.editora.text.LspDiagnostic.Severity.WARNING, "c is never used");
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(unused, y, x)));
+        fx.caret(b, 0, 0);
+
+        fx.run(() -> fx.coordinator.gotoProblem(true));
+        assertEquals(List.of(1, 12), List.of(caretOf(b)[0], caretOf(b)[1]));
+        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastError());
+        fx.run(() -> fx.coordinator.gotoProblem(true));
+        assertEquals(2, caretOf(b)[0]);
+        fx.run(() -> fx.coordinator.gotoProblem(true));
+        assertEquals(1, caretOf(b)[0], "errors only while there are any, wrapping past the warning");
+        fx.run(() -> fx.coordinator.gotoProblem(false));
+        assertEquals(2, caretOf(b)[0], "backwards wraps to the last");
+
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(unused)));
+        fx.run(() -> fx.coordinator.gotoProblem(false));
+        assertEquals(3, caretOf(b)[0], "with no errors the warnings are walked");
+        assertEquals(tr("status.lsp.problem", 4, "c is never used"), fx.host.lastStatus());
+
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of()));
+        fx.run(() -> fx.coordinator.gotoProblem(true));
+        assertEquals(tr("status.lsp.noProblems"), fx.host.lastStatus());
+    }
+
+    @Test
+    void showProblemAtCaretSaysTheLinesProblem() throws Exception {
+        EditorBuffer b = fx.open("A.java", PROBLEMS);
+        var hint = problem(1, 4, 7, com.editora.text.LspDiagnostic.Severity.HINT, "could be final");
+        var x = problem(1, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "x cannot be resolved");
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(hint, x)));
+
+        fx.caret(b, 1, 12);
+        fx.run(() -> fx.coordinator.problemAtCaret());
+        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastError(), "the one at the caret");
+        fx.caret(b, 1, 0);
+        fx.host.errors.clear();
+        fx.run(() -> fx.coordinator.problemAtCaret());
+        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastError(), "the line's worst");
+        fx.caret(b, 3, 0);
+        fx.run(() -> fx.coordinator.problemAtCaret());
+        assertEquals(tr("status.lsp.noProblemHere"), fx.host.lastStatus());
+    }
+
+    // --- Format Selection (Java review A13) ----------------------------------------------------------
+
+    @Test
+    void aSelectionIsFormattedAloneWholeLines() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        fx.server().formattingResponse =
+                List.of(new org.eclipse.lsp4j.TextEdit(new Range(new Position(1, 0), new Position(1, 4)), "  "));
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().selectRange(1, 6, 2, 0)); // ends at line 2's start
+
+        fx.run(() -> fx.coordinator.formatDocument());
+
+        assertTrue(fx.server().formattings.isEmpty(), "the whole file is not reformatted");
+        var asked = FakeLanguageServer.last(fx.server().rangeFormattings).getRange();
+        assertEquals(new Range(new Position(1, 0), new Position(1, "    void go() {}".length())), asked);
+        assertEquals(tr("status.lsp.selectionFormatted"), fx.host.lastStatus());
+        assertEquals("class A {\n  void go() {}\n}\n", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    // --- references that fail (Java review B13) ------------------------------------------------------
+
+    @Test
+    void aFailedReferencesRequestIsReportedAsAFailure() throws Exception {
+        fx.open("A.java", SOURCE);
+        fx.server().failEverything = true;
+        fx.run(() -> fx.coordinator.findReferences());
+        assertTrue(
+                fx.host
+                        .lastError()
+                        .startsWith(tr("status.lsp.referencesFailed", "").strip()),
+                "not \"No references\": " + fx.host.lastError());
+    }
+
+    // --- inside library source (Java review B7) ------------------------------------------------------
+
+    @Test
+    void hoverAndReferencesInsideLibrarySourceAskAboutItsUri() throws Exception {
+        Path a = fx.open("A.java", SOURCE).getPath();
+        fx.ops.readOnlyOpener = this::libraryBuffer;
+        fx.server().rawResponse =
+                "package java.lang;\n\npublic final class String {\n    int length() { return 0; }\n}\n";
+        fx.server().definitionResponse = List.of(location(JDT_STRING, 3, 8));
+        fx.run(() -> fx.coordinator.gotoDefinition());
+        EditorBuffer library = fx.ops.readOnlyDocs.get(0).buffer();
+        FxTestSupport.runOnFx(() -> fx.host.active = library);
+
+        fx.server().hoverResponse = new Hover(new MarkupContent("markdown", "int length()"));
+        fx.run(() -> fx.coordinator.showHover());
+        assertEquals(
+                JDT_STRING,
+                FakeLanguageServer.last(fx.server().hovers).getTextDocument().getUri());
+
+        fx.server().referenceResponse = List.of(at(a, 1, 9), location(JDT_STRING, 9, 1), at(a, 0, 6));
+        fx.run(() -> fx.coordinator.findReferences());
+        assertEquals(
+                JDT_STRING,
+                FakeLanguageServer.last(fx.server().references)
+                        .getTextDocument()
+                        .getUri());
+        assertFalse(
+                FakeLanguageServer.last(fx.server().references).getContext().isIncludeDeclaration(),
+                "the declaration is not a usage (B5)");
+
+        fx.server().implementationResponse = List.of(at(a, 1, 9));
+        fx.capabilities.setImplementationProvider(Either.forLeft(true));
+        fx.run(() -> fx.coordinator.gotoImplementation());
+        assertEquals(
+                JDT_STRING,
+                FakeLanguageServer.last(fx.server().implementations)
+                        .getTextDocument()
+                        .getUri());
+        assertEquals(1, fx.ops.jumps.size(), "the project's implementation is opened");
+    }
+
+    // --- Search Everywhere's library classes (Java review E8) ----------------------------------------
+
+    @Test
+    void theServersLibraryClassesBecomeSearchRowsAndOpenAsLibrarySource() throws Exception {
+        Path a = fx.open("A.java", SOURCE).getPath();
+        fx.ops.readOnlyOpener = this::libraryBuffer;
+        fx.server().workspaceSymbolResponse = List.of(
+                new WorkspaceSymbol(
+                        "String", SymbolKind.Class, Either.forLeft(location(JDT_STRING, 2, 19)), "java.lang"),
+                new WorkspaceSymbol("Strings", SymbolKind.Class, Either.forLeft(at(a, 0, 6)), "demo"),
+                new WorkspaceSymbol("strip", SymbolKind.Method, Either.forLeft(location(JDT_STRING, 9, 4)), "String"),
+                new WorkspaceSymbol("Unrelated", SymbolKind.Class, Either.forLeft(location(JDT_STRING, 1, 0)), ""));
+        List<com.editora.search.SearchEverywhere.Item> rows = new java.util.ArrayList<>();
+
+        fx.run(() -> fx.coordinator.libraryTypeItems("Str", rows::addAll));
+
+        assertEquals(
+                List.of("String"),
+                rows.stream()
+                        .map(com.editora.search.SearchEverywhere.Item::label)
+                        .toList(),
+                "library types only: not the project's class, a method, or a name that does not match");
+        assertEquals("java.lang", rows.get(0).detail());
+
+        fx.server().rawResponse = "package java.lang;\n\npublic final class String {}\n";
+        fx.run(() -> fx.coordinator.openLibraryType(
+                (LspManager.WorkspaceSymbolMatch) rows.get(0).payload()));
+        assertEquals(1, fx.ops.readOnlyDocs.size());
+        assertEquals("String.class", fx.ops.readOnlyDocs.get(0).title());
+
+        List<com.editora.search.SearchEverywhere.Item> none = new java.util.ArrayList<>(List.of(rows.get(0)));
+        fx.run(() -> fx.coordinator.libraryTypeItems(" ", r -> {
+            none.clear();
+            none.addAll(r);
+        }));
+        assertTrue(none.isEmpty(), "a blank query asks nothing");
+    }
+
+    // --- Clean Java Workspace (Java review C14) ------------------------------------------------------
+
+    @Test
+    void cleanJavaWorkspaceNeedsAJavaFileAndSaysWhatHappened() throws Exception {
+        EditorBuffer loose = FxTestSupport.callOnFx(EditorBuffer::new);
+        FxTestSupport.runOnFx(() -> {
+            fx.show(loose);
+            fx.host.active = loose;
+        });
+        fx.run(() -> fx.coordinator.cleanJavaWorkspace());
+        assertEquals(tr("status.lsp.unavailable"), fx.host.lastStatus());
+
+        fx.open("A.java", SOURCE);
+        fx.run(() -> fx.coordinator.cleanJavaWorkspace());
+        assertTrue(fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")));
+        assertEquals(
+                tr("status.lsp.javaWorkspaceKept"),
+                fx.host.lastStatus(),
+                "a session with no workspace of Editora's own keeps it");
+    }
+
+    // --- a server whose requests fail (Maven review C2) ----------------------------------------------
+
+    @Test
+    void aFailingRequestIsSaidOnceAndAServerThatKeepsFailingIsGivenUp() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+
+        fx.run(() -> fx.coordinator.onRequestError("java", root, "textDocument/hover", "NPE in hover", true, false));
+        assertEquals(
+                tr(
+                        "status.lsp.requestError",
+                        tr("install.lang.java"),
+                        LspCoordinator.methodLabel("textDocument/hover")),
+                fx.host.lastStatus());
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.onRequestError("java", root, "textDocument/hover", "NPE in hover", false, false));
+        assertTrue(fx.host.statuses.isEmpty(), "an unannounced repeat stays quiet");
+        assertNull(FxTestSupport.callOnFx(() -> fx.coordinator.serverFailure("java")));
+
+        fx.run(() -> fx.coordinator.onRequestError("java", root, "textDocument/hover", "NPE in hover", true, true));
+        assertEquals("NPE in hover", FxTestSupport.callOnFx(() -> fx.coordinator.serverFailure("java")));
+        assertTrue(
+                fx.host.statuses.contains(tr("status.lsp.requestErrors", tr("install.lang.java"))),
+                String.valueOf(fx.host.statuses));
+        assertFalse(FxTestSupport.callOnFx(b::isLspActive), "its tabs are no longer served");
+        assertEquals("unknownMethod", LspCoordinator.methodLabel("unknownMethod"));
+    }
 }

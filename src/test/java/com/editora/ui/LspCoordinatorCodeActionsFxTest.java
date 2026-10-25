@@ -932,4 +932,67 @@ class LspCoordinatorCodeActionsFxTest {
                 .orElse(null));
         assertEquals("class User {\n    int n = new A().count;\n}\n", Files.readString(user.getPath()));
     }
+
+    /**
+     * After an extract, Rename opens on the name jdtls picked (Java review B12): the answer's
+     * {@code java.action.rename} command names it by offset in the edited document.
+     */
+    @Test
+    void anExtractionOpensRenameOnTheNameTheServerPicked() throws Exception {
+        offer(refactoring("Extract to local variable", "extractVariable", null));
+        answers.put("java/inferSelection", json("[{\"name\":\"count\",\"offset\":14,\"length\":5}]"));
+        String edited = "// extracted\n" + SOURCE;
+        int offset = edited.indexOf("count");
+        JsonObject answer = new JsonObject();
+        answer.add("edit", insertAtTop("// extracted\n"));
+        answer.add(
+                "command",
+                json("{\"title\":\"Rename\",\"command\":\"java.action.rename\",\"arguments\":[{\"uri\":\""
+                        + buffer.getPath().toUri() + "\",\"offset\":" + offset + ",\"length\":5}]}"));
+        answers.put("java/getRefactorEdit", answer);
+
+        runAction("Extract to local variable");
+
+        assertEquals(edited, content());
+        assertEquals(offset, (int)
+                FxTestSupport.callOnFx(() -> buffer.getFocusedArea().getCaretPosition()));
+        assertEquals("count", fx.lastPrompt().initial(), "Rename is open on the new name");
+    }
+
+    /** Change Signature lists the files it changes and applies only the ticked ones (Java review B20). */
+    @Test
+    void aChangeSignatureThatTouchesAnotherFileIsPreviewed() throws Exception {
+        Path other = root.resolve("B.java");
+        String otherSource = "class B {\n    void use() {}\n}\n";
+        java.nio.file.Files.writeString(other, otherSource);
+        offer(refactoring("Change signature", JdtlsRefactor.CHANGE_SIGNATURE, null));
+        answers.put("java/getChangeSignatureInfo", json(SIGNATURE));
+        JsonObject edit = insertAtTop("// signature\n");
+        edit.getAsJsonObject("changes")
+                .add(
+                        other.toUri().toString(),
+                        json("[{\"range\":{\"start\":{\"line\":0,\"character\":0},"
+                                + "\"end\":{\"line\":0,\"character\":0}},\"newText\":\"// caller\\n\"}]"));
+        answers.put("java/getRefactorEdit", edit);
+
+        runAction("Change signature");
+        fx.run(() -> fx.lastPrompt().onAccept().accept("public String hello(int n)"));
+
+        // B.java has no tab: its text is read off the FX thread before the edit is planned and previewed.
+        for (int i = 0; i < 100 && !FxTestSupport.callOnFx(fx.host.overlay::isShowing); i++) {
+            Thread.sleep(20);
+            fx.settle();
+        }
+        assertEquals(SOURCE, content(), "nothing is applied before the preview is answered");
+        List<String> rows = tickedLabels();
+        assertEquals(2, rows.size(), "both files are listed: " + rows);
+        assertTrue(rows.stream().allMatch(r -> r.startsWith("[x] ")), "ticked to start with");
+        FxTestSupport.runOnFx(() -> fx.checkboxes().stream()
+                .filter(box -> box.getText().contains("B.java"))
+                .forEach(box -> box.setSelected(false)));
+        fx.run(fx::acceptTicked);
+
+        assertEquals("// signature\n" + SOURCE, content());
+        assertEquals(otherSource, java.nio.file.Files.readString(other), "the unticked file is left alone");
+    }
 }
