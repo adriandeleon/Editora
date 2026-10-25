@@ -43,6 +43,11 @@ public final class CodeActionKinds {
         return Group.ASSIST;
     }
 
+    /** jdtls's Make Static, which it offers with kind {@code refactor.inline}; its titles are English only. */
+    public static boolean isMakeStatic(String title) {
+        return title.strip().toLowerCase(java.util.Locale.ROOT).startsWith("make static");
+    }
+
     /**
      * Whether a jdtls action of {@code kind} is a generator, which Generate lists: the {@code source.generate.*}
      * kinds and Override/Implement. Organize Imports, Sort Members and "Change modifiers to final" are source

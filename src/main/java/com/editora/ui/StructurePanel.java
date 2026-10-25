@@ -1626,6 +1626,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             if (d.startsWith("[")) {
                 return " " + d; // a Clojure parameter vector: `add! [item]`, not `add!([item])`
             }
+            if (d.startsWith(":") && n.label() != null && n.label().indexOf('(') >= 0) {
+                // jdtls names a method `add(Shape)` and sends only ` : void`: no "add(Shape)(: void)" (BN5)
+                return n.returnRuns().isEmpty() ? " " + d : "";
+            }
             return d.startsWith("(") ? d : "(" + d + ")";
         }
 

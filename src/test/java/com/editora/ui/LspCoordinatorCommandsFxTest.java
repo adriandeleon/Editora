@@ -148,23 +148,43 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(0, fx.ops.referencesWindowOpened);
         assertEquals(new Position(1, 9), fx.server().implementations.get(0).getPosition());
 
-        // Several: the file-backed ones are listed, a library one (no path) is left out.
-        fx.server().implementationResponse = List.of(at(impl, 1, 7), location(JDT_STRING, 5, 0), at(other, 0, 6));
+        // Several in files: the References window, titled as implementations (re-review BN9).
+        fx.server().implementationResponse = List.of(at(impl, 1, 7), at(other, 0, 6));
         fx.run(() -> fx.coordinator.gotoImplementation());
         assertEquals(1, fx.ops.referencesWindowOpened);
         assertEquals(1, fx.ops.jumps.size(), "several implementations do not jump on their own");
         Label summary = FxTestSupport.field(fx.coordinator.referencesPanel(), "summary");
-        assertEquals(tr("references.summary", 2, 2), FxTestSupport.callOnFx(summary::getText));
+        String text = FxTestSupport.callOnFx(summary::getText);
+        assertTrue(text.startsWith("2 implementations of "), text);
+        assertTrue(text.endsWith(" in 2 files"), text);
+
+        // A library one among them: every one is listed in a picker, the library class by its name (BN4).
+        fx.server().implementationResponse = List.of(at(impl, 1, 7), location(JDT_STRING, 5, 0), at(other, 0, 6));
+        fx.run(() -> fx.coordinator.gotoImplementation());
+        assertEquals(3, FxTestSupport.callOnFx(fx::pickerRows).size());
+        assertEquals(1, fx.ops.referencesWindowOpened, "not the References window, which would drop it");
+        FxTestSupport.runOnFx(() -> fx.choose(2));
+        fx.settle();
+        assertEquals(new LspCoordinatorFixture.Jump(other, 0, 6), fx.ops.jumps.get(fx.ops.jumps.size() - 1));
+
+        fx.server().failEverything = true; // an error is not "No implementations found" (B13)
+        fx.run(() -> fx.coordinator.gotoImplementation());
+        assertTrue(
+                fx.host
+                        .lastError()
+                        .startsWith(tr("status.lsp.navigationFailed", "").strip()),
+                fx.host.lastError());
+        fx.server().failEverything = false;
 
         fx.server().implementationResponse = List.of();
         fx.run(() -> fx.coordinator.gotoImplementation());
         assertEquals(tr("status.lsp.noImplementations"), fx.host.lastStatus());
     }
 
-    /** Every implementation lives inside a dependency: there is no file list to show, so the first one is
-     *  opened as library source. */
+    /** Every implementation lives inside a dependency: a picker names them all, and the chosen one opens as
+     *  library source (re-review BN4: it opened the first with no word of the others). */
     @Test
-    void implementationsOnlyInsideLibrariesOpenTheFirstAsLibrarySource() throws Exception {
+    void implementationsOnlyInsideLibrariesAreListedAndTheChosenOneOpens() throws Exception {
         fx.capabilities.setImplementationProvider(Either.forLeft(true));
         fx.open("A.java", SOURCE);
         fx.server().rawResponse = "package java.lang;\nfinal class String {}\n";
@@ -172,6 +192,16 @@ class LspCoordinatorCommandsFxTest {
                 List.of(location(JDT_STRING, 1, 0), location("jdt://contents/x/Other.class", 0, 0));
 
         fx.run(() -> fx.coordinator.gotoImplementation());
+        assertEquals(2, FxTestSupport.callOnFx(fx::pickerRows).size());
+        assertEquals(
+                "String",
+                LspCoordinator.implementationLabel(new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING)));
+        assertEquals(
+                "java.lang",
+                LspCoordinator.implementationDetail(
+                        new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING), null));
+        FxTestSupport.runOnFx(() -> fx.choose(0));
+        fx.settle();
 
         assertEquals(0, fx.ops.referencesWindowOpened);
         assertEquals(1, fx.ops.readOnlyDocs.size());

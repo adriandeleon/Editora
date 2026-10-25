@@ -327,7 +327,8 @@ final class MainMenuBar {
             String id = e.getKey();
             Row row = e.getValue();
             MenuItem item = row.item();
-            String title = registry.get(id).map(Command::title).orElse(id);
+            String title = com.editora.editor.MenuTitles.of(
+                    registry.get(id).map(Command::title).orElse(id));
             String chord = chords.get(id);
             boolean bound = chord != null && !chord.isBlank();
             // No accelerators (see the class javadoc), so the chord is written by hand — into its own
@@ -386,7 +387,7 @@ final class MainMenuBar {
         }
         String mark = toggle.isOn() ? CHECK : "\u2002\u2002"; // two en spaces ≈ the mark's width
         if (row.title() != null) {
-            row.title().setText(mark + command.title());
+            row.title().setText(mark + com.editora.editor.MenuTitles.of(command.title()));
         } else {
             String text = row.item().getText();
             String bare = text.startsWith(CHECK) || text.startsWith("\u2002\u2002") ? text.substring(2) : text;

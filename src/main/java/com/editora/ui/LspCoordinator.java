@@ -3484,6 +3484,14 @@ final class LspCoordinator {
                 cb.accept(java.util.List.of());
             }
         });
+        buffer.setLspCommandRunner(id -> {
+            switch (id) {
+                case "lsp.peekDefinition" -> peekDefinition();
+                case "lsp.refactorThis" -> refactorActions();
+                case "lsp.generate" -> generateActions();
+                default -> {}
+            }
+        });
         buffer.setLspNavActions(
                 this::gotoDefinition,
                 this::findReferences,
@@ -3970,7 +3978,23 @@ final class LspCoordinator {
             then.accept(scopes.isEmpty() ? null : scopes.get(0));
             return;
         }
-        pickOne(item.title(), tr("picker.refactor.initializeIn"), scopes, s -> s, s -> "", then::accept);
+        pickOne(
+                item.title(),
+                tr("picker.refactor.initializeIn"),
+                scopes,
+                LspCoordinator::scopeLabel,
+                s -> "",
+                then::accept);
+    }
+
+    /** jdtls's {@code InitializeScope} name in the UI language; the English value is what goes back (DN5). */
+    static String initializeScopeLabel(String scope) {
+        return switch (scope) {
+            case "Field declaration" -> tr("picker.refactor.scope.field");
+            case "Current method" -> tr("picker.refactor.scope.method");
+            case "Class constructors" -> tr("picker.refactor.scope.constructors");
+            default -> scope;
+        };
     }
 
     /**
@@ -4164,8 +4188,18 @@ final class LspCoordinator {
                 prompt,
                 targets,
                 JdtlsRefactor.Destination::label,
-                d -> java.util.Objects.requireNonNullElse(d.detail(), ""), // the picker shows null as ""
+                d -> d.detail() == null ? "" : destinationDetail(d.detail()),
                 onChoose);
+    }
+
+    /** A destination's folder relative to the project when it is a path there (re-review BN8), else as given. */
+    private String destinationDetail(String detail) {
+        try {
+            Path p = Path.of(detail);
+            return p.isAbsolute() && java.nio.file.Files.exists(p) ? projectRelative(p) : detail;
+        } catch (java.nio.file.InvalidPathException e) {
+            return detail;
+        }
     }
 
     /** Extract Interface: which methods, the interface's name, and the package it is created in. */
@@ -4277,6 +4311,7 @@ final class LspCoordinator {
                             com.editora.lsp.RenamePreview.totalEdits(mapped),
                             rows.size()),
                     rows,
+                    tr("picker.hint.apply"),
                     keep -> {
                         var kept = new java.util.LinkedHashSet<>(keep);
                         com.editora.lsp.WorkspaceEditMapper.Mapped filtered = java.util.Objects.requireNonNull(
@@ -4955,21 +4990,51 @@ final class LspCoordinator {
                         openTarget(anchor, targets.get(0));
                         return;
                     }
-                    // The References window is keyed by file; a library target has no path, so it can only be
-                    // opened directly. Show the file-backed ones, and fall back to opening a library target
-                    // when every implementation lives inside a dependency.
-                    List<LspManager.Target> inFiles = new java.util.ArrayList<>(targets.size());
-                    for (LspManager.Target t : targets) {
-                        if (t.file() != null) {
-                            inFiles.add(t);
-                        }
+                    EditorBuffer active = host.activeBuffer();
+                    String symbol = active == null ? null : wordAtCaret(active.getFocusedArea());
+                    if (targets.stream().allMatch(t -> t.file() != null)) {
+                        showInReferencesWindow(targets, symbol, true);
+                        return;
                     }
-                    if (inFiles.isEmpty()) {
-                        openTarget(anchor, targets.get(0));
-                    } else {
-                        showInReferencesWindow(inFiles);
-                    }
+                    // The References window is keyed by file and a library target has none: list them all in a
+                    // picker instead of opening one unexplained class (re-review BN4).
+                    java.nio.file.Path base = ops.lspProjectRoot();
+                    pickOne(
+                            symbol == null
+                                    ? tr("picker.implementations.title")
+                                    : tr("picker.implementations.of", symbol),
+                            tr("picker.implementations.prompt"),
+                            targets,
+                            t -> implementationLabel(t),
+                            t -> implementationDetail(t, base),
+                            chosen -> openTarget(anchor, chosen));
                 });
+    }
+
+    /** An implementation's picker row: its class (a library's {@code ArrayList}) or its file's name. */
+    static String implementationLabel(LspManager.Target t) {
+        if (t.file() != null) {
+            return t.file().getFileName().toString();
+        }
+        String title = LspManager.classFileTitle(t.classFileUri());
+        return title.endsWith(".class") ? title.substring(0, title.length() - ".class".length()) : title;
+    }
+
+    /** Where it is: the library class's package, or the file relative to the project, with its line. */
+    static String implementationDetail(LspManager.Target t, java.nio.file.@Nullable Path base) {
+        if (t.file() != null) {
+            Path file = t.file();
+            String where = base != null && file.startsWith(base)
+                    ? base.relativize(file).toString()
+                    : file.toString();
+            return where + ":" + (t.line() + 1);
+        }
+        String uri = t.classFileUri() == null ? "" : t.classFileUri();
+        int q = uri.indexOf('?');
+        String path = q >= 0 ? uri.substring(0, q) : uri;
+        int last = path.lastIndexOf('/');
+        int before = last > 0 ? path.lastIndexOf('/', last - 1) : -1;
+        return before >= 0 ? path.substring(before + 1, last) : "";
     }
 
     /** Go to Type Definition ({@code lsp.gotoTypeDefinition}, #736) — from a symbol to its type's declaration. */
@@ -4998,7 +5063,8 @@ final class LspCoordinator {
                 @Nullable String documentUri,
                 int line,
                 int character,
-                Consumer<List<LspManager.Target>> cb);
+                Consumer<List<LspManager.Target>> cb,
+                Consumer<String> onError);
     }
 
     /**
@@ -5025,11 +5091,24 @@ final class LspCoordinator {
         long version = b.docVersion();
         long generation = ++navigationRequestGeneration;
         syncForRequest(origin); // sync latest text before the request
-        request.run(path, origin.libraryUri(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
-            if (navigationRequestCurrent(b, origin.ownPath(), version, generation)) {
-                onTargets.accept(path, targets);
-            }
-        });
+        request.run(
+                path,
+                origin.libraryUri(),
+                area.getCurrentParagraph(),
+                area.getCaretColumn(),
+                targets -> {
+                    if (navigationRequestCurrent(b, origin.ownPath(), version, generation)) {
+                        onTargets.accept(path, targets);
+                    }
+                },
+                why -> { // a failed request said "No implementations found" (Java review B13)
+                    if (navigationRequestCurrent(b, origin.ownPath(), version, generation)) {
+                        host.setError(
+                                "timeout".equals(why)
+                                        ? tr("status.lsp.navigationTimedOut")
+                                        : tr("status.lsp.navigationFailed", why));
+                    }
+                });
     }
 
     private boolean navigationRequestCurrent(
@@ -5076,6 +5155,12 @@ final class LspCoordinator {
 
     /** As above, naming the {@code symbol} the list is about in its summary. */
     private void showInReferencesWindow(List<LspManager.Target> targets, @Nullable String symbol) {
+        showInReferencesWindow(targets, symbol, false);
+    }
+
+    /** As above; {@code implementations} titles the list "2 implementations of area()" (re-review BN9). */
+    private void showInReferencesWindow(
+            List<LspManager.Target> targets, @Nullable String symbol, boolean implementations) {
         List<String> previews = previewLines(targets, f -> {
             EditorBuffer buffer = bufferForLspPath(f);
             return buffer == null ? null : buffer.getContent();
@@ -5096,7 +5181,7 @@ final class LspCoordinator {
             }
         }
         ReferencesPanel panel = referencesPanel();
-        panel.setReferences(refs, symbol, ops.lspProjectRoot());
+        panel.setReferences(refs, symbol, ops.lspProjectRoot(), implementations);
         ops.openReferencesWindow();
         if (!unread.isEmpty()) {
             readPreviewsFromDisk(panel, panel.generation(), unread);
@@ -5217,7 +5302,10 @@ final class LspCoordinator {
             @Override
             public void query(
                     String text, java.util.function.Consumer<java.util.List<LspManager.WorkspaceSymbolMatch>> cb) {
-                lspManager.workspaceSymbols(anchor, text, cb);
+                lspManager.workspaceSymbols(
+                        anchor,
+                        text,
+                        ms -> cb.accept(SymbolRanking.withoutExcluded(ms, lspManager.javaFilteredTypes())));
             }
 
             @Override
@@ -5234,9 +5322,40 @@ final class LspCoordinator {
         if (file != null) {
             ops.openAndGoto(file, match.line(), match.character());
         } else {
-            openLibraryDefinition(
-                    anchor, new LspManager.Target(null, match.line(), match.character(), match.libraryUri()));
+            var target = new LspManager.Target(null, match.line(), match.character(), match.libraryUri());
+            if (match.line() > 0) {
+                openLibraryDefinition(anchor, target);
+                return;
+            }
+            // jdtls places a class-file type at line 0, its package line: find the declaration (BN7).
+            openLibraryDefinition(anchor, target, () -> true, opened -> {
+                int line = typeDeclarationLine(opened.getContent(), match.name());
+                if (line >= 0) {
+                    gotoInBuffer(opened, line, -1);
+                }
+            });
         }
+    }
+
+    private static final java.util.regex.Pattern TYPE_KEYWORD =
+            java.util.regex.Pattern.compile("\\b(?:class|interface|enum|record|@interface)\\s+(\\w+)\\b");
+
+    /** The line declaring type {@code name} in Java source, or -1; comment lines are skipped. Pure. */
+    static int typeDeclarationLine(String content, String name) {
+        String[] lines = content.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String t = lines[i].strip();
+            if (t.startsWith("*") || t.startsWith("/")) {
+                continue;
+            }
+            var m = TYPE_KEYWORD.matcher(lines[i]);
+            while (m.find()) {
+                if (m.group(1).equals(name)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
     /** The file or project a Java request goes through when no tab names one: the active file, else the project. */
@@ -5253,7 +5372,8 @@ final class LspCoordinator {
             cb.accept(List.of());
             return;
         }
-        lspManager.javaLibraryTypes(anchor, query, cb);
+        lspManager.javaLibraryTypes(
+                anchor, query, ms -> cb.accept(SymbolRanking.withoutExcluded(ms, lspManager.javaFilteredTypes())));
     }
 
     /**
@@ -5265,7 +5385,7 @@ final class LspCoordinator {
         libraryTypes(query, matches -> {
             List<com.editora.search.SearchEverywhere.Item> out = new java.util.ArrayList<>();
             for (LspManager.WorkspaceSymbolMatch m : matches) {
-                int score = com.editora.search.FuzzyMatch.scoreOf(m.name(), query);
+                int score = SymbolRanking.score(m, query);
                 if (score != com.editora.search.FuzzyMatch.NO_SCORE) {
                     out.add(new com.editora.search.SearchEverywhere.Item(
                             com.editora.search.SearchEverywhere.Kind.SYMBOL,
@@ -5453,7 +5573,10 @@ final class LspCoordinator {
      */
     void refactoring(String kind, String commandId) {
         showCodeActions(
-                (serverId, item) -> com.editora.lsp.CodeActionKinds.matches(item.kind(), kind),
+                (serverId, item) -> com.editora.lsp.CodeActionKinds.matches(item.kind(), kind)
+                        // jdtls files Make Static under refactor.inline too: not what Ctrl+Alt+N asked for (EN6)
+                        && !(kind.equals("refactor.inline")
+                                && com.editora.lsp.CodeActionKinds.isMakeStatic(item.title())),
                 "status.lsp.noRefactoringHere",
                 commandId);
     }
@@ -5716,9 +5839,14 @@ final class LspCoordinator {
             }
             host.setStatus(tr("status.lsp.renaming"));
             beginReportedEdit();
-            lspManager.previewRename(path, line, col, name, mapped -> {
-                if (mapped == null) {
-                    reportEdit(false, "", tr("status.lsp.renameFailed", name));
+            lspManager.previewRename(path, line, col, name, (mapped, why) -> {
+                if (mapped == null) { // with the server's reason when it gave one (re-review BN9)
+                    reportEdit(
+                            false,
+                            "",
+                            why == null || why.isBlank()
+                                    ? tr("status.lsp.renameFailed", name)
+                                    : tr("status.lsp.renameFailedWhy", name, why));
                     return;
                 }
                 withDiskView(resourcePaths(mapped), files -> {
@@ -5755,17 +5883,22 @@ final class LspCoordinator {
                 host.overlayHost(),
                 tr("lsp.rename.previewTitle", name, com.editora.lsp.RenamePreview.totalEdits(mapped), rows.size()),
                 rows,
+                tr("picker.hint.apply"),
                 keep -> applyPreviewed(mapped, new java.util.LinkedHashSet<>(keep), listed, name));
     }
 
     /** One preview row: the path, then what happens to it — deletes and replacements spelled out. */
     String previewLabel(com.editora.lsp.RenamePreview.FileChange change) {
-        String label = ops.homeCollapsed(change.file().toString());
+        String label = projectRelative(change.file());
         if (change.edits() > 0) {
             label += "  ·  " + tr("lsp.rename.editCount", change.edits());
         }
         if (change.renamedTo() != null) {
-            label += "  ·  " + tr("lsp.rename.movesTo", change.renamedTo().getFileName());
+            // where it goes, not just its new name: a move keeps the name (re-review BN8)
+            Path to = change.renamedTo();
+            boolean sameFolder =
+                    java.util.Objects.equals(to.getParent(), change.file().getParent());
+            label += "  ·  " + tr("lsp.rename.movesTo", sameFolder ? to.getFileName() : projectRelative(to));
         }
         if (change.overwrites()) {
             label += "  ·  " + tr("lsp.rename.overwrites");
@@ -5778,6 +5911,14 @@ final class LspCoordinator {
                                     : "lsp.rename.deletesFile");
         }
         return label;
+    }
+
+    /** {@code file} relative to the project, else with {@code ~} for the home folder: rows were absolute (B10). */
+    private String projectRelative(Path file) {
+        Path root = ops.lspProjectRoot();
+        return root != null && file.startsWith(root) && !file.equals(root)
+                ? root.relativize(file).toString()
+                : ops.homeCollapsed(file.toString());
     }
 
     /**

@@ -897,6 +897,7 @@ public class EditorBuffer implements TabContent {
     private Runnable lspHoverAction = () -> {};
     private Runnable lspFormatAction = () -> {};
     private Runnable lspCodeActionsAction = () -> {};
+    private java.util.function.Consumer<String> lspCommand = id -> {}; // runs a command id (Refactor, Generate)
     private Runnable lspRenameAction = () -> {};
     private Runnable lspGotoImplementationAction = () -> {};
     private Runnable lspGotoTypeDefinitionAction = () -> {};
@@ -2244,8 +2245,26 @@ public class EditorBuffer implements TabContent {
         if (lspRenameAvailable) { // rename the right-clicked symbol
             items.add(lspItem("command.lsp.rename", MenuIcons.rename(), offset, lspRenameAction));
         }
+        items.add(
+                1,
+                lspItem(
+                        "command.lsp.peekDefinition",
+                        MenuIcons.find(),
+                        offset,
+                        () -> lspCommand.accept("lsp.peekDefinition")));
+        if (lspCodeActionsAvailable) { // Refactor and Generate had no right-click entry (Java review B14)
+            items.add(lspItem(
+                    "command.lsp.refactorThis",
+                    MenuIcons.codeAction(),
+                    offset,
+                    () -> lspCommand.accept("lsp.refactorThis")));
+            if ("java".equals(language)) {
+                items.add(lspItem(
+                        "command.lsp.generate", MenuIcons.add(), offset, () -> lspCommand.accept("lsp.generate")));
+            }
+        }
         if (lspFormatAvailable) {
-            MenuItem format = new MenuItem(tr("command.lsp.formatDocument"));
+            MenuItem format = new MenuItem(MenuTitles.of(tr("command.lsp.formatDocument")));
             format.setGraphic(MenuIcons.code());
             format.setOnAction(e -> lspFormatAction.run()); // whole-document — no caret positioning needed
             items.add(format);
@@ -2254,7 +2273,7 @@ public class EditorBuffer implements TabContent {
     }
 
     private MenuItem lspItem(String titleKey, Node icon, int offset, Runnable action) {
-        MenuItem item = new MenuItem(tr(titleKey));
+        MenuItem item = new MenuItem(MenuTitles.of(tr(titleKey)));
         item.setGraphic(icon);
         item.setOnAction(e -> {
             menuView.moveTo(offset); // in the view that was right-clicked
@@ -4302,6 +4321,11 @@ public class EditorBuffer implements TabContent {
         this.lspRenameAction = rename == null ? () -> {} : rename;
         this.lspGotoImplementationAction = gotoImplementation == null ? () -> {} : gotoImplementation;
         this.lspGotoTypeDefinitionAction = gotoTypeDefinition == null ? () -> {} : gotoTypeDefinition;
+    }
+
+    /** Runs a command by id from the right-click LSP menu: Peek Definition, Refactor This…, Generate…. */
+    public void setLspCommandRunner(java.util.function.Consumer<String> run) {
+        this.lspCommand = run;
     }
 
     /** Whether to offer "Go to Implementation" in the right-click menu (the server's capability, #735). */

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,6 +35,13 @@ class LspContextMenuFxTest {
     /** Builds the submenu the context menu inserts, optionally with every optional action advertised. */
     private static Menu lspMenu(boolean allCapabilities) {
         EditorBuffer buffer = new EditorBuffer();
+        try { // Generate is a Java server's (the field, not a grammar load)
+            var language = EditorBuffer.class.getDeclaredField("language");
+            language.setAccessible(true);
+            language.set(buffer, "java");
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
         buffer.setLspActive(true);
         if (allCapabilities) {
             buffer.setLspImplementationAvailable(true);
@@ -74,8 +82,13 @@ class LspContextMenuFxTest {
                     "command.lsp.hover",
                     "command.lsp.codeActions",
                     "command.lsp.rename",
-                    "command.lsp.formatDocument")) {
-                assertTrue(labels.contains(tr(key)), tr(key) + " is missing from the LSP submenu");
+                    "command.lsp.formatDocument",
+                    "command.lsp.peekDefinition",
+                    "command.lsp.refactorThis",
+                    "command.lsp.generate")) {
+                String label = com.editora.editor.MenuTitles.of(tr(key));
+                assertTrue(labels.contains(label), label + " is missing from the LSP submenu");
+                assertFalse(label.startsWith("LSP"), "the submenu is already called LSP (B14)");
             }
         });
     }
@@ -85,10 +98,13 @@ class LspContextMenuFxTest {
     void aServerWithNoOptionalCapabilitiesStillGetsTheNavigationActions() throws Exception {
         FxTestSupport.runOnFx(() -> {
             assertEquals(
-                    List.of(
-                            tr("command.lsp.gotoDefinition"),
-                            tr("command.lsp.findReferences"),
-                            tr("command.lsp.hover")),
+                    java.util.stream.Stream.of(
+                                    "command.lsp.gotoDefinition",
+                                    "command.lsp.peekDefinition",
+                                    "command.lsp.findReferences",
+                                    "command.lsp.hover")
+                            .map(k -> com.editora.editor.MenuTitles.of(tr(k)))
+                            .toList(),
                     labels(lspMenu(false)));
         });
     }

@@ -165,7 +165,7 @@ final class WorkspaceSymbolPopup {
      *
      * <p>{@code workspace/symbol} decides what matches, and servers differ wildly in what order they hand
      * it back — jdtls in particular returns something close to index order, so an exact name can sit below
-     * a dozen incidental hits. This does not re-filter (a symbol the server chose to return is kept even
+     * a dozen incidental hits. An exact name comes first, and a library class nested in another last. This does not re-filter (a symbol the server chose to return is kept even
      * if the name alone doesn't match — the server may have matched on the container), it only sorts;
      * anything unmatched keeps its server order at the end. Between equally good names, the project's own
      * symbol comes before a JDK or library one.
@@ -177,8 +177,8 @@ final class WorkspaceSymbolPopup {
         record Scored(WorkspaceSymbolMatch match, int score, int index) {}
         List<Scored> scored = new java.util.ArrayList<>(matches.size());
         for (int i = 0; i < matches.size(); i++) {
-            FuzzyMatch.Match m = FuzzyMatch.of(matches.get(i).name(), query);
-            scored.add(new Scored(matches.get(i), m == null ? Integer.MIN_VALUE : m.score(), i));
+            int score = SymbolRanking.score(matches.get(i), query); // exact name first, nested library last (EN2)
+            scored.add(new Scored(matches.get(i), score == FuzzyMatch.NO_SCORE ? Integer.MIN_VALUE : score, i));
         }
         scored.sort(java.util.Comparator.comparingInt((Scored s) -> s.score())
                 .reversed()

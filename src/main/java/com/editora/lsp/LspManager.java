@@ -3164,19 +3164,30 @@ public final class LspManager {
      */
     public void previewRename(
             Path file, int line, int character, String newName, Consumer<WorkspaceEditMapper.Mapped> cb) {
+        previewRename(file, line, character, newName, (mapped, why) -> cb.accept(mapped));
+    }
+
+    /** As above, with the server's reason when it refused the rename ("Rename to x failed" said nothing — BN9). */
+    public void previewRename(
+            Path file,
+            int line,
+            int character,
+            String newName,
+            java.util.function.BiConsumer<WorkspaceEditMapper.@Nullable Mapped, @Nullable String> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
-            Platform.runLater(() -> cb.accept(null));
+            Platform.runLater(() -> cb.accept(null, null));
             return;
         }
         EditBasis basis = editBasis(s);
         s.rename(uri(file), new Position(line, character), newName).whenComplete((edit, e) -> {
             EditPlan plan = e != null || edit == null ? EditPlan.REFUSED : planWorkspaceEdit(edit, basis);
+            String why = e == null ? null : failureReason(e);
             Platform.runLater(() -> {
                 if (!plan.blocked().isEmpty()) {
                     onEditBlocked.accept(plan.blocked());
                 }
-                cb.accept(plan.mapped());
+                cb.accept(plan.mapped(), why);
             });
         });
     }
@@ -3963,13 +3974,25 @@ public final class LspManager {
     /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
     public void implementationAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
+        implementationAt(anchor, documentUri, line, character, cb, null);
+    }
+
+    /** As above; {@code onError} (when given) hears a failed or timed-out request (Java review B13). */
+    public void implementationAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
         requestLocations(
                 sessionFor(anchor),
                 documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
                 line,
                 character,
                 LanguageServerSession::implementation,
-                cb);
+                cb,
+                onError);
     }
 
     /** Go to Type Definition ({@code textDocument/typeDefinition}, #736) — from a symbol to its type. */
@@ -3980,13 +4003,25 @@ public final class LspManager {
     /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
     public void typeDefinitionAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
+        typeDefinitionAt(anchor, documentUri, line, character, cb, null);
+    }
+
+    /** As above; {@code onError} (when given) hears a failed or timed-out request (Java review B13). */
+    public void typeDefinitionAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
         requestLocations(
                 sessionFor(anchor),
                 documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
                 line,
                 character,
                 LanguageServerSession::typeDefinition,
-                cb);
+                cb,
+                onError);
     }
 
     /** Go to Declaration ({@code textDocument/declaration}, #736). */
@@ -3997,13 +4032,25 @@ public final class LspManager {
     /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
     public void declarationAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
+        declarationAt(anchor, documentUri, line, character, cb, null);
+    }
+
+    /** As above; {@code onError} (when given) hears a failed or timed-out request (Java review B13). */
+    public void declarationAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
         requestLocations(
                 sessionFor(anchor),
                 documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
                 line,
                 character,
                 LanguageServerSession::declaration,
-                cb);
+                cb,
+                onError);
     }
 
     /** True if {@code file}'s server is ready and advertises {@code implementationProvider} (#735). */
@@ -4057,7 +4104,7 @@ public final class LspManager {
             int line,
             int character,
             Consumer<List<Target>> cb) {
-        requestLocations(s, documentUri, line, character, LanguageServerSession::definition, cb);
+        requestLocations(s, documentUri, line, character, LanguageServerSession::definition, cb, null);
     }
 
     private void requestLocations(
@@ -4066,12 +4113,18 @@ public final class LspManager {
             int line,
             int character,
             LocationRequest request,
-            Consumer<List<Target>> cb) {
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
         if (s == null || documentUri == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
         request.run(s, documentUri, new Position(line, character)).whenComplete((result, error) -> {
+            if (error != null && onError != null) {
+                String why = failureReason(error); // not an empty list, which reads as "none found" (B13)
+                Platform.runLater(() -> onError.accept(why));
+                return;
+            }
             List<Target> targets = new ArrayList<>();
             if (error == null && result != null) {
                 if (result.isLeft()) {
@@ -4509,6 +4562,14 @@ public final class LspManager {
         }));
     }
 
+    /** Why a request failed, as {@code onError} callbacks hear it: {@code "timeout"}, or the server's message. */
+    static String failureReason(Throwable error) {
+        Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                ? error.getCause()
+                : error;
+        return cause instanceof java.util.concurrent.TimeoutException ? "timeout" : String.valueOf(cause.getMessage());
+    }
+
     public void references(Path file, int line, int character, Consumer<List<Target>> cb) {
         references(file, line, character, cb, null);
     }
@@ -4538,13 +4599,7 @@ public final class LspManager {
         s.references(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
                 .whenComplete((locations, error) -> {
                     if (error != null && onError != null) {
-                        Throwable cause =
-                                error instanceof java.util.concurrent.CompletionException && error.getCause() != null
-                                        ? error.getCause()
-                                        : error;
-                        String why = cause instanceof java.util.concurrent.TimeoutException
-                                ? "timeout"
-                                : String.valueOf(cause.getMessage());
+                        String why = failureReason(error);
                         Platform.runLater(() -> onError.accept(why));
                         return;
                     }
