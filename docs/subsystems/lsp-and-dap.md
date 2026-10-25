@@ -364,7 +364,11 @@ downloads `InstallCatalog.LOMBOK` (pinned, SHA-256) with `InstallService.install
 **Actions on save.** `LspCoordinator.afterUserSave`, called by `FileWorkflowCoordinator` for explicit saves only,
 runs `LspManager.organizeImportsQuietly` (the session answers `chooseImports` with no choice while it runs) and/or
 Format Document, then saves once more when they changed the text (`Settings.javaOrganizeImportsOnSave`,
-`javaFormatOnSave`).
+`javaFormatOnSave`). Clean-ups go first (`javaCleanupOnSave`): `LspManager.cleanUpJava` sends jdtls's
+`java/cleanup` request, which applies the ids in `java.cleanup.actions` and answers a `WorkspaceEdit`. The ids
+(`Settings.javaCleanups`, filtered through `JavaCleanups.known`) reach the server in every configuration push.
+Editora does not use jdtls's own `java.saveActions.cleanup`, which needs `willSaveWaitUntil`; **Clean Up File**
+(`lsp.cleanUp`) sends the same request by hand.
 
 jdtls's "Javadoc comment" completion is offered only on a `/**` line that is already closed. In a Java
 buffer with the server on, the `*` that makes a line `/**` therefore inserts `* */` and requests completion

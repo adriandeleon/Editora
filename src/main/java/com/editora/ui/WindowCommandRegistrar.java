@@ -2255,6 +2255,7 @@ final class WindowCommandRegistrar {
                 .register(Command.of("lsp.buildWorkspace", () -> host.ifLsp(host.lspCoordinator()::buildWorkspace)));
         host.registry()
                 .register(Command.of("lsp.organizeImports", () -> host.ifLsp(host.lspCoordinator()::organizeImports)));
+        host.registry().register(Command.of("lsp.cleanUp", () -> host.ifLsp(host.lspCoordinator()::cleanUpFile)));
         host.registry()
                 .register(Command.of("lsp.undoRefactoring", () -> host.ifLsp(host.lspCoordinator()::undoRefactoring)));
         host.registry().register(Command.of("lsp.generate", () -> host.ifLsp(host.lspCoordinator()::generateActions)));

@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   save a Java file, jdtls organizes its imports and/or formats it, and the file is saved again when that changed
   it, as IntelliJ's Actions on Save do. Both are off by default; autosave never runs them, and an ambiguous import
   is left out rather than asked about. Settings schema 143→144, additive.
+- **Java: clean-ups.** **Code ▸ Clean Up File** applies the jdtls clean-ups chosen under Settings ▸ Code
+  Completion ▸ Language server features (add `@Override` and `@Deprecated`, drop redundant modifiers, qualify
+  members, add `final`, pattern-matching `instanceof`, switch expressions, lambdas, try-with-resources, text
+  blocks and more; 19 in all, four on by default). **Clean up on save (Java)** runs them after an explicit save,
+  before organizing imports and formatting.
 - **Java: Lombok on request.** A project whose build declares Lombok but has not downloaded it yet is offered
   Lombok 1.18.48 from Maven Central (checked by SHA-256 into `plugins/lsp/lombok`); its Java server then restarts
   with Lombok as its agent.

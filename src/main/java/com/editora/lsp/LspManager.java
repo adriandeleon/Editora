@@ -265,6 +265,53 @@ public final class LspManager {
         javaDefaultJdk = home == null ? "" : home;
     }
 
+    /** The clean-ups jdtls's {@code java/cleanup} runs ({@code java.cleanup.actions}); every Java session gets them. */
+    private volatile List<String> javaCleanups = List.of();
+
+    public void setJavaCleanups(List<String> cleanups) {
+        javaCleanups = JavaCleanups.known(cleanups);
+        for (LanguageServerSession session : sessionsByRoot.values()) {
+            if (LspServerRegistry.JAVA_SERVER_ID.equals(session.serverId())) {
+                session.setJavaCleanups(javaCleanups);
+            }
+        }
+    }
+
+    /**
+     * Runs the chosen clean-ups on {@code file} ({@code java/cleanup}) and applies the edit; {@code cb} on the FX
+     * thread with whether the text changed. Nothing to run, or no Java server, is {@link OrganizeOutcome#UNCHANGED}
+     * / {@link OrganizeOutcome#FAILED}.
+     */
+    public void cleanUpJava(Path file, Consumer<OrganizeOutcome> cb) {
+        LanguageServerSession s = javaSessionFor(file);
+        if (s == null || file == null || sessionFor(file) != s) {
+            Platform.runLater(() -> cb.accept(OrganizeOutcome.FAILED));
+            return;
+        }
+        if (javaCleanups.isEmpty()) {
+            Platform.runLater(() -> cb.accept(OrganizeOutcome.UNCHANGED));
+            return;
+        }
+        EditBasis expected = editBasis(s);
+        s.rawRequest("java/cleanup", new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)))
+                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .whenComplete((r, e) -> {
+                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
+                    Platform.runLater(() -> {
+                        if (e != null) {
+                            cb.accept(OrganizeOutcome.FAILED);
+                        } else if (edit == null || !changesText(edit)) {
+                            cb.accept(OrganizeOutcome.UNCHANGED);
+                        } else {
+                            applyWorkspaceEdit(
+                                    edit,
+                                    expected,
+                                    ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.FAILED));
+                        }
+                    });
+                });
+    }
+
     /**
      * Tells jdtls whether to format as you type. jdtls registers its on-type formatting provider only while
      * {@code java.format.onType.enabled} is set, so this is sent at {@code initialize}, pushed after it, and
@@ -1327,6 +1374,7 @@ public final class LspManager {
         diagnosticSource[0] = session;
         session.setOnRequestOutcome((method, error) -> noteRequestOutcome(session, method, error));
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
+        session.setJavaCleanups(javaCleanups);
         session.setBashIde(bashIde);
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);

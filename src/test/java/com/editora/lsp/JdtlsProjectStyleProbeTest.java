@@ -47,6 +47,17 @@ class JdtlsProjectStyleProbeTest {
             }
             """;
 
+    /** A method that overrides without saying so: the addOverride clean-up adds the annotation. */
+    private static final String SHAPE = """
+            package demo;
+
+            class Shape {
+                public String toString() {
+                    return "shape";
+                }
+            }
+            """;
+
     /** Chain completion needs the call open, which leaves the file unparsed: a file of its own. */
     private static final String CHAIN = """
             package demo;
@@ -120,6 +131,7 @@ class JdtlsProjectStyleProbeTest {
         Path src = Files.createDirectories(project.resolve("src/main/java/demo"));
         Files.writeString(src.resolve("App.java"), APP);
         Files.writeString(src.resolve("Chain.java"), CHAIN);
+        Files.writeString(src.resolve("Shape.java"), SHAPE);
         Files.writeString(
                 project.resolve(".editorconfig"),
                 "root = true\n[*.java]\nij_java_class_count_to_use_import_on_demand = 3\n");
@@ -146,6 +158,7 @@ class JdtlsProjectStyleProbeTest {
                     }
                 },
                 LspManager.withProjectSettings("java", LspManager.javaInitOptions(List.of()), project));
+        s.setJavaCleanups(List.of("addOverride"));
         try {
             assertTrue(s.start());
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
@@ -204,6 +217,13 @@ class JdtlsProjectStyleProbeTest {
             String formatted = applied(APP, edits);
             System.out.println("PROBE formatted = " + formatted.replace("\n", "\\n"));
             assertTrue(formatted.contains("long go()\n    {"), "the profile's next-line method brace");
+            // Clean-ups (java/cleanup) run the actions pushed in java.cleanup.actions.
+            String shape = src.resolve("Shape.java").toUri().toString();
+            s.didOpen(shape, "java", SHAPE);
+            String cleaned = String.valueOf(LspManager.asJson(
+                    get(s.rawRequest("java/cleanup", new org.eclipse.lsp4j.TextDocumentIdentifier(shape)))));
+            System.out.println("PROBE cleanup = " + cleaned.replace('\n', ' '));
+            assertTrue(cleaned.contains("@Override"), "the addOverride clean-up ran");
         } finally {
             s.dispose();
         }

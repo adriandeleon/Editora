@@ -1435,4 +1435,58 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(1, fx.server().formattings.size(), "format only: no Organize Imports");
         assertTrue(fx.ops.saved.isEmpty(), "nothing changed: no second save");
     }
+
+    // --- Java clean-ups ------------------------------------------------------------------------------
+
+    private static final String OVERRIDES =
+            "class A {\n    public String toString() {\n        return \"a\";\n    }\n}\n";
+
+    private Object addOverride(EditorBuffer b) {
+        return com.google.gson.JsonParser.parseString(
+                "{\"changes\":{\"" + b.getPath().toUri() + "\":[{\"range\":{"
+                        + "\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":1,\"character\":0}},"
+                        + "\"newText\":\"    @Override\\n\"}]}}");
+    }
+
+    @Test
+    void cleanUpOnSaveRunsTheChosenCleanUpsAndSavesAgain() throws Exception {
+        EditorBuffer b = fx.open("A.java", OVERRIDES);
+        fx.ops.saves = true;
+        fx.host.settings.setJavaCleanupOnSave(true);
+        fx.run(() -> fx.coordinator.applySupport()); // the default clean-ups reach the manager
+        fx.server().rawHandler = raw -> "java/cleanup".equals(raw.method()) ? addOverride(b) : null;
+
+        fx.run(() -> fx.coordinator.afterUserSave(b));
+        fx.settle();
+
+        assertTrue(FxTestSupport.callOnFx(b::getContent).contains("    @Override\n    public String toString()"));
+        assertEquals(List.of(b), fx.ops.saved);
+        assertEquals(
+                List.of("java/cleanup"),
+                fx.server().rawRequests.stream()
+                        .map(FakeLanguageServer.Raw::method)
+                        .toList(),
+                "clean-up only: no Organize Imports, no Format");
+    }
+
+    @Test
+    void cleanUpFileSaysWhatItDid() throws Exception {
+        EditorBuffer b = fx.open("A.java", OVERRIDES);
+        fx.host.settings.setJavaCleanups(List.of());
+        fx.run(() -> fx.coordinator.cleanUpFile());
+        assertEquals(tr("status.lsp.cleanupNoneChosen"), fx.host.lastStatus());
+
+        fx.host.settings.setJavaCleanups(List.of("addOverride"));
+        fx.run(() -> fx.coordinator.applySupport()); // Settings applied: the list reaches the manager
+        fx.server().rawHandler = raw -> null;
+        fx.run(() -> fx.coordinator.cleanUpFile());
+        fx.settle();
+        assertEquals(tr("status.lsp.cleanupNothing"), fx.host.lastStatus());
+
+        fx.server().rawHandler = raw -> "java/cleanup".equals(raw.method()) ? addOverride(b) : null;
+        fx.run(() -> fx.coordinator.cleanUpFile());
+        fx.settle();
+        assertEquals(tr("status.lsp.cleanedUp"), fx.host.lastStatus());
+        assertTrue(FxTestSupport.callOnFx(b::getContent).contains("@Override"));
+    }
 }

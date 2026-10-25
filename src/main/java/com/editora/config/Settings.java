@@ -324,6 +324,14 @@ public class Settings {
     private boolean javaOrganizeImportsOnSave;
     /** As above, formatting the file (IntelliJ's Actions on Save, Reformat Code). Off by default. */
     private boolean javaFormatOnSave;
+    /** As above, running jdtls's clean-ups ({@link #javaCleanups}) first. Off by default. */
+    private boolean javaCleanupOnSave;
+    /** The jdtls clean-up ids that Clean Up File and clean-up on save run ({@code java.cleanup.actions}). */
+    private java.util.List<String> javaCleanups = new java.util.ArrayList<>(DEFAULT_JAVA_CLEANUPS);
+
+    /** Clean-ups that only state what the code already means: on by default once clean-up is switched on. */
+    public static final java.util.List<String> DEFAULT_JAVA_CLEANUPS =
+            java.util.List.of("addOverride", "addDeprecated", "redundantModifiers", "redundantSuperCall");
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
     private boolean editorConfigSupport = true;
     /** Highlight configured patterns (TODO/FIXME/…) in the editor + list them in the TODO tool window. */
@@ -1937,6 +1945,23 @@ public class Settings {
 
     public void setJavaFormatOnSave(boolean javaFormatOnSave) {
         this.javaFormatOnSave = javaFormatOnSave;
+    }
+
+    public boolean isJavaCleanupOnSave() {
+        return javaCleanupOnSave;
+    }
+
+    public void setJavaCleanupOnSave(boolean javaCleanupOnSave) {
+        this.javaCleanupOnSave = javaCleanupOnSave;
+    }
+
+    public java.util.List<String> getJavaCleanups() {
+        return javaCleanups == null ? java.util.List.of() : javaCleanups;
+    }
+
+    public void setJavaCleanups(java.util.List<String> javaCleanups) {
+        this.javaCleanups =
+                javaCleanups == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(javaCleanups);
     }
 
     public void setLspOnTypeFormatting(boolean lspOnTypeFormatting) {

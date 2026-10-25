@@ -1353,6 +1353,7 @@ final class LspCoordinator {
                         ? null
                         : config.getConfigDir().resolve(com.editora.install.InstallCatalog.LOMBOK_SUBPATH));
         lspManager.setOnLombokMissing(this::offerLombok);
+        lspManager.setJavaCleanups(host.settings().getJavaCleanups());
         applyOnTypeFormatting();
         // The commands that actually launch: the global ones, with this project's overrides laid over them
         // when (and only when) its folder is trusted. Building this from the global settings alone meant a
@@ -3195,12 +3196,13 @@ final class LspCoordinator {
      * stale answer would be wrong for the new text. Never on autosave.
      */
     void afterUserSave(EditorBuffer buffer) {
+        boolean cleanup = host.settings().isJavaCleanupOnSave();
         boolean organize = host.settings().isJavaOrganizeImportsOnSave();
         boolean format = host.settings().isJavaFormatOnSave();
         Path path = buffer == null ? null : lspPath(buffer);
         if (buffer == null
                 || path == null
-                || !(organize || format)
+                || !(cleanup || organize || format)
                 || savingAfterActions.remove(buffer)
                 || !buffer.isEditable()
                 || !LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
@@ -3222,14 +3224,51 @@ final class LspCoordinator {
                 saveIfActionsChanged(buffer, saved);
             });
         };
-        if (!organize) {
-            formatThenSave.run();
+        Runnable organizeThenRest = () -> {
+            if (!organize || buffer.isDisposed()) {
+                formatThenSave.run();
+                return;
+            }
+            lspManager.changeDocument(path, buffer.text()); // after a clean-up, Organize Imports sees its result
+            CodeArea area = buffer.getArea();
+            int last = Math.max(0, area.getParagraphs().size() - 1);
+            lspManager.organizeImportsQuietly(
+                    path, last, area.getParagraph(last).length(), outcome -> formatThenSave.run());
+        };
+        if (!cleanup) {
+            organizeThenRest.run();
             return;
         }
-        CodeArea area = buffer.getArea();
-        int last = Math.max(0, area.getParagraphs().size() - 1);
-        lspManager.organizeImportsQuietly(
-                path, last, area.getParagraph(last).length(), outcome -> formatThenSave.run());
+        lspManager.cleanUpJava(path, outcome -> organizeThenRest.run());
+    }
+
+    /**
+     * {@code lsp.cleanUp} (LSP: Clean Up File): runs the clean-ups chosen in Settings on the active Java file now,
+     * as clean-up on save does — {@code @Override} added, redundant modifiers dropped and so on.
+     */
+    void cleanUpFile() {
+        EditorBuffer b = host.activeBuffer();
+        Path path = b == null ? null : lspPath(b);
+        if (b == null || path == null || !LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
+            host.setStatus(tr("status.lsp.unavailable"));
+            return;
+        }
+        if (!ops.activeEditable()) {
+            return;
+        }
+        if (host.settings().getJavaCleanups().isEmpty()) {
+            host.setStatus(tr("status.lsp.cleanupNoneChosen"));
+            return;
+        }
+        lspManager.changeDocument(path, b.text());
+        lspManager.cleanUpJava(
+                path,
+                outcome -> host.setStatus(tr(
+                        switch (outcome) {
+                            case ORGANIZED -> "status.lsp.cleanedUp";
+                            case UNCHANGED -> "status.lsp.cleanupNothing";
+                            case UNSUPPORTED, FAILED -> "status.lsp.cleanupFailed";
+                        })));
     }
 
     /** Saves {@code buffer} again when the actions on save changed what was saved, and nothing else did. */

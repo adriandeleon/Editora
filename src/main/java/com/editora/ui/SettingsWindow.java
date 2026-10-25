@@ -270,6 +270,10 @@ public class SettingsWindow {
     private CheckBox onTypeFormattingCheck;
     private CheckBox javaOrganizeImportsOnSaveCheck;
     private CheckBox javaFormatOnSaveCheck;
+    private CheckBox javaCleanupOnSaveCheck;
+    /** "4 chosen": how many clean-ups Clean Up File and clean-up on save run. */
+    private final Label javaCleanupsCount = new Label();
+
     private CheckBox pasteImportsCheck;
     private CheckBox smartSemicolonCheck;
     private CheckBox spellCheckBox;
@@ -1351,6 +1355,7 @@ public class SettingsWindow {
         javaOrganizeImportsOnSaveCheck =
                 viewCheck(tr("settings.javaOrganizeImportsOnSave"), Settings::setJavaOrganizeImportsOnSave);
         javaFormatOnSaveCheck = viewCheck(tr("settings.javaFormatOnSave"), Settings::setJavaFormatOnSave);
+        javaCleanupOnSaveCheck = viewCheck(tr("settings.javaCleanupOnSave"), Settings::setJavaCleanupOnSave);
         // The per-source toggles are only meaningful while the master switch is on.
         autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
             autocompleteProseCheck.setDisable(!now);
@@ -4081,6 +4086,22 @@ public class SettingsWindow {
                 tr("settings.javaOnSave.note"),
                 "organize optimize imports on save actions java jdtls");
         checkRow(lsp, Category.COMPLETION, javaFormatOnSaveCheck, null, "format reformat on save actions java jdtls");
+        checkRow(lsp, Category.COMPLETION, javaCleanupOnSaveCheck, null, "clean up cleanup on save actions java jdtls");
+        javafx.scene.control.Button chooseCleanups =
+                new javafx.scene.control.Button(tr("settings.javaCleanups.choose"));
+        chooseCleanups.setOnAction(
+                e -> JavaCleanupsDialog.show(stage, config.getSettings().getJavaCleanups(), ids -> {
+                    config.getSettings().setJavaCleanups(ids);
+                    showJavaCleanupsCount();
+                    apply();
+                }));
+        controlRow(
+                lsp,
+                Category.COMPLETION,
+                tr("settings.javaCleanups"),
+                tr("settings.javaCleanups.note"),
+                new HBox(10, javaCleanupsCount, chooseCleanups),
+                "clean up cleanups override final redundant modifiers lambda java jdtls");
         SettingsDependents.bind(lspCheck.selectedProperty(), rowsSince(firstLspRow));
         return p;
     }
@@ -8787,6 +8808,8 @@ public class SettingsWindow {
             smartSemicolonCheck.setSelected(settings.isLspSmartSemicolon());
             javaOrganizeImportsOnSaveCheck.setSelected(settings.isJavaOrganizeImportsOnSave());
             javaFormatOnSaveCheck.setSelected(settings.isJavaFormatOnSave());
+            javaCleanupOnSaveCheck.setSelected(settings.isJavaCleanupOnSave());
+            showJavaCleanupsCount();
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
             pdfPageFooterCheck.setSelected(settings.isPdfPageFooter());
@@ -9380,6 +9403,8 @@ public class SettingsWindow {
             smartSemicolonCheck.setSelected(s.isLspSmartSemicolon());
             javaOrganizeImportsOnSaveCheck.setSelected(s.isJavaOrganizeImportsOnSave());
             javaFormatOnSaveCheck.setSelected(s.isJavaFormatOnSave());
+            javaCleanupOnSaveCheck.setSelected(s.isJavaCleanupOnSave());
+            showJavaCleanupsCount();
         } finally {
             loading = prev;
         }
@@ -9535,6 +9560,12 @@ public class SettingsWindow {
     /** The editor-font picker choices (bundled monospace families first, then system monospace). */
     public static List<String> fontFamilyChoices() {
         return FontChoices.forThisMachine();
+    }
+
+    private void showJavaCleanupsCount() {
+        javaCleanupsCount.setText(tr(
+                "settings.javaCleanups.count",
+                config.getSettings().getJavaCleanups().size()));
     }
 
     private void apply() {

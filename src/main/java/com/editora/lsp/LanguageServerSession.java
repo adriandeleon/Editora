@@ -904,6 +904,19 @@ final class LanguageServerSession implements LanguageClient {
         return pythonPath;
     }
 
+    /** jdtls's {@code java.cleanup.actions}: the clean-ups {@code java/cleanup} runs (Settings → Java clean-ups). */
+    private volatile List<String> javaCleanups = List.of();
+
+    /** Sets {@link #javaCleanups} and, for a running Java server, pushes them. */
+    void setJavaCleanups(List<String> cleanups) {
+        List<String> next = cleanups == null ? List.of() : List.copyOf(cleanups);
+        boolean changed = !next.equals(javaCleanups);
+        javaCleanups = next;
+        if (changed && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
     /** Sets {@link #javaOnTypeFormatting} and, for a running Java server, pushes the changed preference. */
     void setJavaOnTypeFormatting(boolean enabled) {
         boolean changed = javaOnTypeFormatting != enabled;
@@ -927,10 +940,10 @@ final class LanguageServerSession implements LanguageClient {
         if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && settings.get("java") instanceof Map<?, ?> javaMap) {
             @SuppressWarnings("unchecked")
             Map<String, Object> own = (Map<String, Object>) javaMap;
-            Map<String, Object> project = JavaProjectSettings.forRoot(root);
-            if (!project.isEmpty()) {
-                settings = Map.of("java", JavaProjectSettings.merge(own, project)); // the project's own style
-            }
+            Map<String, Object> merged = JavaProjectSettings.merge(own, JavaProjectSettings.forRoot(root));
+            // The clean-ups java/cleanup runs; never jdtls's own on-save switch (Editora runs them after a save).
+            merged.put("cleanup", Map.of("actions", javaCleanups));
+            settings = Map.of("java", merged); // the project's own style, and the chosen clean-ups
         }
         try {
             server().getWorkspaceService()
