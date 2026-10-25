@@ -545,6 +545,19 @@ class ProjectMapPreviewCardFxTest {
                 double width = r.card.getWidth();
                 r.card.constrainTo(0, 0);
                 assertEquals(width, r.card.getWidth(), "a panel with no size yet constrains nothing");
+
+                // Drawn at a map zoom, the card's size is unzoomed: the grip stays under the pointer, and the
+                // panel bounds the card as drawn.
+                r.card.setMapScale(0.5);
+                javafx.event.Event.fireEvent(
+                        grip, mouse(MouseEvent.MOUSE_PRESSED, MouseButton.PRIMARY, 500, 400, true));
+                javafx.event.Event.fireEvent(
+                        grip, mouse(MouseEvent.MOUSE_DRAGGED, MouseButton.PRIMARY, 550, 450, true));
+                assertEquals(width + 100, r.card.getWidth(), 0.001, "50 px at 50% is 100 px of card");
+                r.card.setMapScale(2);
+                r.card.constrainTo(500, 400);
+                assertEquals((500 - 2 * ProjectMapPreview.EDGE_MARGIN) / 2, r.card.getWidth(), 0.001);
+                assertEquals(100, r.card.getLayoutX(), "a zoom never moves the card itself");
             });
         }
     }

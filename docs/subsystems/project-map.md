@@ -79,10 +79,14 @@ stored in workspace state and restored when the editor is reopened.
 | Click the overview | Recenter the canvas around that content position |
 
 Preview and note cards sit on the canvas: a pan or zoom carries each card's corner with the map under it
-(`MapSurface.moveCardsWithViewport`, run after every paint), while the card keeps its own screen size
-instead of participating in canvas zoom. Each title bar moves its card — like a column header, anywhere,
-including out of view, where panning finds it again — each lower corner resizes it up to the panel's size,
-and each editor scrolls independently. A resized panel bounds a card's size but never moves it. Opening another file
+and draws the card at the map's zoom from that corner (`MapSurface.moveCardsWithViewport`, run after every
+paint, sets each card's `setMapScale`), so cards shrink and grow with the columns. A card's own width and
+height are unzoomed; placement, overlap, connectors and size limits work on the card as drawn
+(`ProjectMapView.cardScale`), and the resize grip divides the pointer's movement by the zoom. Each title bar
+moves its card — like a column header, anywhere, including out of view, where panning finds it again — each
+lower corner resizes it up to the panel's size at the current zoom, and each editor scrolls independently.
+A resized panel bounds a card's size but never moves it; a zoom never resizes a card, so one zoomed in may
+outgrow the panel as a column does. The card's own − / + buttons scale its text on top of the map's zoom. Opening another file
 keeps existing cards visible; clicking an already-previewed file focuses its existing card, and each
 close button removes only that card. An accent connector runs from every preview to its source file row
 and follows map pan/zoom plus card movement and resizing.
