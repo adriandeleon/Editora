@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Complete Statement** (`edit.completeStatement`, Code ▸ Complete Statement; Ctrl+Shift+Enter / Cmd+Shift+Enter in
+  the IntelliJ keymaps), as IntelliJ's Complete Current Statement: in Java, C, C++, C#, JavaScript, TypeScript, PHP
+  and Kotlin it closes the line's open string and brackets, adds the `;` (not in Kotlin) or the `{ }` block a
+  control header, type or method needs, and leaves the caret where the next code goes. A finished statement gets a
+  new line below; other languages get Insert Line Below. Every caret, one undo step.
 - **Java: organize imports and format on save.** Two settings under Settings ▸ Code Completion ▸ Language server features: after you
   save a Java file, jdtls organizes its imports and/or formats it, and the file is saved again when that changed
   it, as IntelliJ's Actions on Save do. Both are off by default; autosave never runs them, and an ambiguous import

@@ -67,6 +67,36 @@ class LineCommandFxTest {
     }
 
     @Test
+    void completeStatementFinishesTheLineAtEveryCaretAsOneUndoStep() throws Exception {
+        withBuffer("java", "class A {\n    void f() {\n        g(1\n        h(2\n    }\n}\n", buffer -> {
+            buffer.getArea().moveTo(36); // after "g(1"
+            addCaret(buffer, 48); // after "h(2"
+            assertTrue(buffer.completeStatement());
+            assertEquals("class A {\n    void f() {\n        g(1);\n        h(2);\n    }\n}\n", buffer.getContent());
+            buffer.getArea().undo();
+            assertEquals("class A {\n    void f() {\n        g(1\n        h(2\n    }\n}\n", buffer.getContent());
+            assertFalse(buffer.getArea().isUndoAvailable(), "one undo step");
+        });
+        withBuffer("java", "class A {\n    void f() {\n        if (ok\n    }\n}\n", buffer -> {
+            buffer.getArea().moveTo(39); // after "if (ok"
+            assertTrue(buffer.completeStatement());
+            assertEquals(
+                    "class A {\n    void f() {\n        if (ok) {\n            \n        }\n    }\n}\n",
+                    buffer.getContent());
+            assertEquals(55, buffer.getArea().getCaretPosition(), "on the block's empty line, after its indent");
+        });
+    }
+
+    @Test
+    void completeStatementInALanguageItDoesNotKnowOpensALineBelow() throws Exception {
+        withBuffer("python", "if ok:\n    run(1\n", buffer -> {
+            buffer.getArea().moveTo(16);
+            assertTrue(buffer.completeStatement());
+            assertEquals("if ok:\n    run(1\n        \n", buffer.getContent(), "Enter's own indent there");
+        });
+    }
+
+    @Test
     void selectLineGrowsEverySelectionByWholeLines() throws Exception {
         withBuffer("plain", "one\ntwo\nthree\nfour\n", buffer -> {
             buffer.getArea().moveTo(1);
