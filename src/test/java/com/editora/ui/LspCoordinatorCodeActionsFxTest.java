@@ -778,6 +778,32 @@ class LspCoordinatorCodeActionsFxTest {
 
         runAction("Extract to field");
         assertEquals(List.of("Current method", "Field declaration"), fx.pickerRows());
+        String shown = FxTestSupport.callOnFx(
+                () -> { // each row as its cell draws it
+                    @SuppressWarnings("unchecked")
+                    javafx.scene.control.ListView<Object> list = (javafx.scene.control.ListView<Object>)
+                            fx.overlayCard().lookup(".list-view");
+                    StringBuilder all = new StringBuilder();
+                    for (int i = 0; i < list.getItems().size(); i++) {
+                        javafx.scene.control.ListCell<Object> cell =
+                                list.getCellFactory().call(list);
+                        cell.updateListView(list);
+                        cell.updateIndex(i);
+                        all.append(cell.getText()).append('|');
+                        if (cell.getGraphic() instanceof javafx.scene.Parent g) {
+                            for (javafx.scene.Node n : g.lookupAll("*")) {
+                                if (n instanceof javafx.scene.control.Labeled l) {
+                                    all.append(l.getText()).append('|');
+                                } else if (n instanceof javafx.scene.text.Text t) {
+                                    all.append(t.getText()).append('|');
+                                }
+                            }
+                        }
+                    }
+                    return all.toString();
+                });
+        assertTrue(shown.contains(tr("picker.refactor.scope.method")), "the rows read translated: " + shown);
+        assertFalse(shown.contains("settings.scope"), "never a raw key (third review DN5): " + shown);
         fx.run(() -> fx.choose(1));
 
         var arguments = lastRawParams().getAsJsonArray("commandArguments");

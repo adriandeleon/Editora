@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lists only the snippets that wrap a selection and puts the selection inside the chosen one; with nothing
   selected it wraps the current line.
 - **Java: Excluded types** (Settings ▸ Code Completion ▸ Language server features): the packages and types
-  completion, auto-import, Go to Symbol and Search Everywhere leave out. The default is vscode-java's list plus
-  `java.awt.*`. Settings schema 144→145, additive.
+  completion, auto-import, Go to Symbol and Search Everywhere leave out. The default is vscode-java's list,
+  which includes `java.awt.*`. Settings schema 144→145, additive.
 - **Go to Implementation lists library implementations.** When an implementation lives in the JDK or a dependency,
   every implementation is listed in a picker with its package, instead of one being opened with no word of the
   others.
@@ -237,7 +237,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines) and closes a new block when the next `}` belongs to the enclosing one.
 - **Java: Smart Type completion** finds the type behind a qualifier (`String s = user.`), in a ternary branch and
   at a varargs argument.
-- **Java: the project's code style follows `.editorconfig` and formatter changes** without a restart, and the quiet
+- **Java: the project's code style follows `.editorconfig` and formatter-profile changes** without a restart, and the quiet
   import chooser answers only for the document it was raised for. jdtls's bundle reload no longer logs an error
   on every start.
 - **Java: Clean Java Workspace wins against another window's restart**, and a window joining a ready shared server
@@ -313,9 +313,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listed only `additionalTextEdits`, so the popup showed the return type and nothing else.
 - **Java: signature help shows the method's Javadoc.** The setting was sent as `java.signatureHelp.description`;
   jdtls reads `java.signatureHelp.description.enabled`.
-- **Java: completion and import quick fixes no longer offer JDK internals** (`sun.*`, `com.sun.*`, `jdk.*`),
-  nor `java.awt.*`, `java.beans.*`, `Hashtable` or `Vector`. jdtls installs its type filter only when the client
-  sends one; Editora now sends vscode-java's list.
+- **Java: completion and import quick fixes no longer offer JDK internals** (`sun.*`, `com.sun.*`, `jdk.*`) or
+  `java.awt.*`. jdtls installs its type filter only when the client sends one; Editora now sends vscode-java's list,
+  editable as Excluded types.
 - **Java: inlay hints follow the "all arguments" mode and show inferred types.** jdtls filtered parameter-name
   hints to literals on its own, so the "all" mode changed nothing; it now sends every name and Editora's filter
   applies the mode. `var` declarations and lambda parameters get their inferred type, hints for numbered names

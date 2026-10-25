@@ -422,7 +422,7 @@ reads dotted keys through the nested maps, so `description: true` resolved to no
 sent), `inlayHints.parameterNames.enabled = all` with `suppressWhenSameNameNumbered` plus
 `variableTypes` and `parameterTypes` (hints are requested only while the setting is on, and
 `InlayHintFilter` applies Editora's literals/all mode), and `symbols.includeSourceMethodDeclarations`.
-`completion.filteredTypes` is the Settings value `javaExcludedTypes` (vscode-java's list plus `java.awt.*` by
+`completion.filteredTypes` is the Settings value `javaExcludedTypes` (vscode-java's list, which includes `java.awt.*`, by
 default). jdtls applies it to completion and quick fixes only, so `SymbolRanking` drops the same library types
 from Go to Symbol and Search Everywhere, ranks an exact name first and a library class nested in another last.
 `java.completion.importOrder`, the star thresholds and the formatter profile come from the project

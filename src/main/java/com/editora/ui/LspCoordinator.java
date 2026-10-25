@@ -4075,7 +4075,7 @@ final class LspCoordinator {
                 item.title(),
                 tr("picker.refactor.initializeIn"),
                 scopes,
-                LspCoordinator::scopeLabel,
+                LspCoordinator::initializeScopeLabel, // jdtls's scope names, translated (third review DN5)
                 s -> "",
                 then::accept);
     }
