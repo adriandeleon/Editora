@@ -16,6 +16,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 import javafx.event.Event;
+import javafx.geometry.Point2D;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
@@ -430,6 +431,53 @@ class ProjectMapCardsFxTest {
         } finally {
             map.close();
         }
+    }
+
+    @Test
+    void aCardPastTheTopOfTheMapIsNotDrawnOverTheFilterBar() throws Exception {
+        root = projectRoot();
+        Path file = Files.writeString(root.resolve("Clip.txt"), "text\n".repeat(40));
+        MapFixture map = openMap(1_200, 800, path -> null);
+        try {
+            waitForRow(map, file);
+            FxTestSupport.runOnFx(() -> openPreview(map, file));
+            ProjectMapPreview card = FxTestSupport.callOnFx(() -> codeCards(map).get(file));
+            waitFor(() -> card.getWidth() > 0, "the card must be placed");
+            FxTestSupport.runOnFx(() -> {
+                double hostTop = map.host.localToScene(0, 0).getY();
+                assertTrue(hostTop > 20, () -> "the filter bar must sit above the map: " + hostTop);
+                // Once low in the map, once reaching well above its top, as a drag, pan or zoom can leave it.
+                card.relocate(card.getLayoutX(), 300);
+                Image inside = map.scene.snapshot(null);
+                card.relocate(card.getLayoutX(), -drawnHeight(card) / 2);
+                Image across = map.scene.snapshot(null);
+
+                Point2D left = map.host.localToScene(card.getLayoutX(), 0);
+                int fromX = (int) Math.max(0, left.getX());
+                int toX = (int) Math.min(across.getWidth(), left.getX() + drawnWidth(card));
+                assertTrue(
+                        differs(inside, across, fromX, (int) hostTop + 4, toX, (int) hostTop + 40),
+                        "the card is drawn in the map under the bar");
+                assertFalse(
+                        differs(inside, across, fromX, 0, toX, (int) hostTop),
+                        "but nothing of it above the map, over the filter bar and breadcrumbs");
+            });
+        } finally {
+            map.close();
+        }
+    }
+
+    private static boolean differs(Image a, Image b, int fromX, int fromY, int toX, int toY) {
+        PixelReader first = a.getPixelReader();
+        PixelReader second = b.getPixelReader();
+        for (int y = Math.max(0, fromY); y < toY; y++) {
+            for (int x = Math.max(0, fromX); x < toX; x++) {
+                if (first.getArgb(x, y) != second.getArgb(x, y)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     // --- Content -----------------------------------------------------------------------------------------
