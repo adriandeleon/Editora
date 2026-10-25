@@ -5176,12 +5176,18 @@ final class LspCoordinator {
                     // The References window is keyed by file and a library target has none: list them all in a
                     // picker instead of opening one unexplained class (re-review BN4).
                     java.nio.file.Path base = ops.lspProjectRoot();
+                    List<String> excluded = lspManager.javaFilteredTypes();
+                    List<LspManager.Target> listed = targets.stream() // no sun.awt.util.IdentityArrayList (BN4)
+                            .filter(t -> t.file() != null
+                                    || !SymbolRanking.excluded(
+                                            libraryPackage(t) + "." + implementationLabel(t), excluded))
+                            .toList();
                     pickOne(
                             symbol == null
                                     ? tr("picker.implementations.title")
                                     : tr("picker.implementations.of", symbol),
                             tr("picker.implementations.prompt"),
-                            targets,
+                            listed.isEmpty() ? targets : listed,
                             t -> implementationLabel(t),
                             t -> implementationDetail(t, base),
                             chosen -> openTarget(anchor, chosen));
@@ -5194,7 +5200,7 @@ final class LspCoordinator {
             return t.file().getFileName().toString();
         }
         String title = LspManager.classFileTitle(t.classFileUri());
-        return title.endsWith(".class") ? title.substring(0, title.length() - ".class".length()) : title;
+        return title.replaceFirst("\\.(class|java)$", "");
     }
 
     /** Where it is: the library class's package, or the file relative to the project, with its line. */
@@ -5206,6 +5212,14 @@ final class LspCoordinator {
                     : file.toString();
             return where + ":" + (t.line() + 1);
         }
+        // the line tells apart the classes one file holds: AbstractList's SubList, its iterators (third review BN4)
+        String pkg = libraryPackage(t);
+        String line = tr("structure.line", t.line() + 1);
+        return pkg.isEmpty() ? line : pkg + "  ·  " + line;
+    }
+
+    /** The package of a library target's class file ({@code java.util}), or "". */
+    static String libraryPackage(LspManager.Target t) {
         String uri = t.classFileUri() == null ? "" : t.classFileUri();
         int q = uri.indexOf('?');
         String path = q >= 0 ? uri.substring(0, q) : uri;

@@ -197,9 +197,14 @@ class LspCoordinatorCommandsFxTest {
                 "String",
                 LspCoordinator.implementationLabel(new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING)));
         assertEquals(
-                "java.lang",
+                "java.lang  ·  " + tr("structure.line", 2),
                 LspCoordinator.implementationDetail(
-                        new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING), null));
+                        new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING), null),
+                "the line tells apart the classes one file holds (third review BN4)");
+        assertEquals(
+                "IdentityArrayList",
+                LspCoordinator.implementationLabel(new com.editora.lsp.LspManager.Target(
+                        null, 1, 0, "jdt://contents/java.desktop/sun.awt.util/IdentityArrayList.java?=x")));
         FxTestSupport.runOnFx(() -> fx.choose(0));
         fx.settle();
 
