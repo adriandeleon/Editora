@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 145;
+    public static final int SCHEMA_VERSION = 146;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -432,12 +432,14 @@ public class Settings {
     private String syncRepoUrl = "";
     /** The branch of {@link #syncRepoUrl} that holds the data. */
     private String syncBranch = "main";
-    /** Which kinds of data are synced; all four by default. */
+    /** Which kinds of data are synced; all five by default. */
     private boolean syncSnippets = true;
 
     private boolean syncAbbreviations = true;
     private boolean syncTemplates = true;
     private boolean syncDictionary = true;
+    /** The key-binding overrides of every keymap (not which keymap is active); see {@code sync.KeybindingsFile}. */
+    private boolean syncKeybindings = true;
     /** Sync on startup, shortly after a local change, and every {@link #syncIntervalMinutes} minutes. */
     private boolean syncAuto = true;
     /** Minutes between automatic syncs; at least 1. */
@@ -2808,6 +2810,14 @@ public class Settings {
 
     public void setSyncDictionary(boolean syncDictionary) {
         this.syncDictionary = syncDictionary;
+    }
+
+    public boolean isSyncKeybindings() {
+        return syncKeybindings;
+    }
+
+    public void setSyncKeybindings(boolean syncKeybindings) {
+        this.syncKeybindings = syncKeybindings;
     }
 
     public boolean isSyncAuto() {

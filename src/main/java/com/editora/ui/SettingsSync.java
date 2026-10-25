@@ -11,7 +11,9 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -33,6 +35,7 @@ import com.editora.config.SharedConfig;
 import com.editora.git.QuietGit;
 import com.editora.github.GitHubService;
 import com.editora.sync.FileSyncTarget;
+import com.editora.sync.KeybindingsFile;
 import com.editora.sync.SyncAccount;
 import com.editora.sync.SyncCategory;
 import com.editora.sync.SyncEngine;
@@ -118,6 +121,8 @@ final class SettingsSync {
     boolean storedCredentialsKept;
     /** This computer's name for commit messages; looked up off the FX thread (it can be a DNS query). */
     private volatile String machine = "";
+    /** The key-binding overrides as {@link #keymapReloaded} last saw them ({@link KeybindingsFile#render}). */
+    private @Nullable String keybindingsSeen;
 
     SettingsSync(SharedConfig shared, WindowManager windows) {
         this.shared = shared;
@@ -125,6 +130,7 @@ final class SettingsSync {
         dirty.setOnFinished(e -> request(false, false));
         startup.setOnFinished(e -> request(false, false));
         worker.execute(() -> machine = machineName());
+        keybindingsSeen = KeybindingsFile.render(shared.getSettings());
         settingsChanged();
     }
 
@@ -210,10 +216,23 @@ final class SettingsSync {
         }
     }
 
-    /** The user changed a snippet, an abbreviation, a template or a dictionary word: sync soon. */
+    /** The user changed a snippet, an abbreviation, a template, a dictionary word or a key binding: sync soon. */
     void markDirty() {
         if (!applying && active() && shared.getSettings().isSyncAuto()) {
             dirty.playFromStart();
+        }
+    }
+
+    /**
+     * The shared keymap was rebuilt — after a rebind, a reset, a keymap switch, a hand-edited
+     * {@code settings.json}, but also after a plugin or a setting changed: syncs soon only when the key-binding
+     * overrides are not what they were.
+     */
+    void keymapReloaded() {
+        String now = KeybindingsFile.render(shared.getSettings());
+        if (!Objects.equals(now, keybindingsSeen)) {
+            keybindingsSeen = now;
+            markDirty();
         }
     }
 
@@ -264,6 +283,9 @@ final class SettingsSync {
         }
         if (s.isSyncDictionary()) {
             out.add(SyncCategory.DICTIONARY);
+        }
+        if (s.isSyncKeybindings()) {
+            out.add(SyncCategory.KEYBINDINGS);
         }
         return out;
     }
@@ -442,7 +464,11 @@ final class SettingsSync {
 
     // --- writing a run's result into the live stores -------------------------------------------------------
 
-    /** The config directory's files, written on the FX thread so no store is saving at the same moment. */
+    /**
+     * The config directory's files, written on the FX thread so no store is saving at the same moment. The key
+     * bindings are not a file here but part of the live {@link Settings}: they are read and written on the FX
+     * thread, and saved with {@code settings.json}.
+     */
     private final class LiveTarget extends FileSyncTarget {
 
         LiveTarget() {
@@ -450,20 +476,79 @@ final class SettingsSync {
         }
 
         @Override
+        public Map<String, String> read(Set<SyncCategory> categories) throws IOException {
+            Set<SyncCategory> files = EnumSet.noneOf(SyncCategory.class);
+            files.addAll(categories);
+            boolean keybindings = files.remove(SyncCategory.KEYBINDINGS);
+            Map<String, String> out = super.read(files);
+            if (keybindings) {
+                String text = onFx(() -> KeybindingsFile.render(shared.getSettings()));
+                if (text != null) {
+                    out.put(KeybindingsFile.PATH, text);
+                }
+            }
+            return out;
+        }
+
+        @Override
         public boolean apply(Map<String, String> expected, Map<String, String> changes) throws IOException {
-            CompletableFuture<Boolean> done = new CompletableFuture<>();
-            Platform.runLater(() -> {
+            return Boolean.TRUE.equals(onFx(() -> {
                 applying = true;
                 try {
                     boolean written = writeFiles(expected, changes);
                     if (written) {
                         reload(changes.keySet());
                     }
-                    done.complete(written);
-                } catch (IOException | RuntimeException e) {
-                    done.completeExceptionally(e);
+                    return written;
                 } finally {
                     applying = false;
+                }
+            }));
+        }
+
+        private boolean writeFiles(Map<String, String> expected, Map<String, String> changes) throws IOException {
+            return super.apply(expected, changes);
+        }
+
+        @Override
+        protected @Nullable String current(String path) throws IOException {
+            return KeybindingsFile.PATH.equals(path)
+                    ? KeybindingsFile.render(shared.getSettings())
+                    : super.current(path);
+        }
+
+        @Override
+        protected void write(String path, @Nullable String text) throws IOException {
+            if (!KeybindingsFile.PATH.equals(path)) {
+                super.write(path, text);
+                return;
+            }
+            KeybindingsFile.apply(shared.getSettings(), text);
+            shared.saveSettings();
+        }
+
+        @Override
+        protected boolean backupTo(String path, Path copy) throws IOException {
+            if (!KeybindingsFile.PATH.equals(path)) {
+                return super.backupTo(path, copy);
+            }
+            String text = current(path);
+            if (text == null) {
+                return false;
+            }
+            Files.createDirectories(copy.getParent());
+            Files.writeString(copy, text);
+            return true;
+        }
+
+        /** Runs {@code work} on the FX thread and waits for its result. */
+        private <T> @Nullable T onFx(Callable<@Nullable T> work) throws IOException {
+            CompletableFuture<@Nullable T> done = new CompletableFuture<>();
+            Platform.runLater(() -> {
+                try {
+                    done.complete(work.call());
+                } catch (Exception e) {
+                    done.completeExceptionally(e);
                 }
             });
             try {
@@ -476,10 +561,6 @@ final class SettingsSync {
                 Thread.currentThread().interrupt();
                 throw new IOException(e);
             }
-        }
-
-        private boolean writeFiles(Map<String, String> expected, Map<String, String> changes) throws IOException {
-            return super.apply(expected, changes);
         }
     }
 
@@ -504,6 +585,9 @@ final class SettingsSync {
         }
         if (changed.contains(SyncCategory.SNIPPETS) || changed.contains(SyncCategory.TEMPLATES)) {
             windows.refreshFileBackedSettings();
+        }
+        if (changed.contains(SyncCategory.KEYBINDINGS)) {
+            windows.reloadSharedKeymap(); // every window, and the Keymaps page of every open Settings window
         }
     }
 
@@ -560,6 +644,7 @@ final class SettingsSync {
                 case ABBREVIATIONS -> tr("settings.sync.abbreviations");
                 case TEMPLATES -> tr("settings.sync.templates");
                 case DICTIONARY -> tr("settings.sync.dictionary");
+                case KEYBINDINGS -> tr("settings.sync.keybindings");
             };
         } catch (IllegalArgumentException e) {
             return name;

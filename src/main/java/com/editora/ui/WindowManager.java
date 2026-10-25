@@ -1524,6 +1524,7 @@ public class WindowManager {
                 settings.getKeymap(),
                 pluginKeymaps,
                 settings.keybindingsFor(com.editora.command.KeymapManager.isMac()));
+        settingsSync.keymapReloaded(); // a changed key binding is synced like a changed snippet
         broadcastSettingsApplied();
         // Every open Settings window shows the keymap: its combo, the shortcut list, the chord chips and the
         // Macros key-binding row. The window that made the change refreshes itself; the others are told here.

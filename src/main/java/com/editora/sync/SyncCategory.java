@@ -13,7 +13,12 @@ public enum SyncCategory {
     /** {@code templates/<id>.json}. */
     TEMPLATES("templates/", true),
     /** {@code dictionary.txt}. */
-    DICTIONARY("dictionary.txt", false);
+    DICTIONARY("dictionary.txt", false),
+    /**
+     * {@code keybindings.json}: the key-binding overrides of every keymap, for both platforms. In the config
+     * directory they live in {@code settings.json}; {@link KeybindingsFile} renders them as this file.
+     */
+    KEYBINDINGS(KeybindingsFile.PATH, false);
 
     private final String path;
     private final boolean directory;

@@ -319,7 +319,10 @@ public enum ConfigSchema {
                     Map.entry(143, (Migration) ConfigMigrations::identity),
                     // v144→145: + javaExcludedTypes, the types jdtls never offers or imports. Additive: absent is
                     // the default list.
-                    Map.entry(144, (Migration) ConfigMigrations::identity)),
+                    Map.entry(144, (Migration) ConfigMigrations::identity),
+                    // v145→146: + syncKeybindings (on): settings sync carries the key-binding overrides. Additive:
+                    // absent is on, like the other sync categories, and does nothing until sync is connected.
+                    Map.entry(145, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

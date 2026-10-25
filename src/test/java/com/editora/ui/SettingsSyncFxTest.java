@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 import javafx.scene.control.Label;
 
 import com.editora.command.CommandRegistry;
+import com.editora.command.KeymapManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.QuietGit;
@@ -186,6 +187,48 @@ class SettingsSyncFxTest {
 
     @Test
     @Order(4)
+    void keyBindingsChangedOnEitherComputerReachTheOtherAndTheLiveKeymap() throws Exception {
+        String keymap = FxTestSupport.callOnFx(settings::getKeymap);
+        String platform = KeymapManager.isMac() ? "macOS" : "windowsLinux";
+        writeOther(
+                "keybindings.json",
+                "{\"formatVersion\":1,\"keymaps\":{\"" + keymap + "\":{\"" + platform
+                        + "\":{\"C-c z\":\"file.save\"}},\"zzother\":{\"" + platform
+                        + "\":{\"C-c y\":\"file.open\"}}}}");
+        assertTrue(otherSyncs().ok());
+
+        SettingsSync.State state = syncNow();
+        assertEquals(SettingsSync.Phase.IDLE, state.phase(), state.report().detail());
+        assertEquals(
+                "file.save",
+                FxTestSupport.callOnFx(
+                        () -> settings.keybindingsFor(KeymapManager.isMac()).get("C-c z")));
+        KeymapManager live = FxTestSupport.field(fx.windowManager, "keymap");
+        assertEquals("file.save", FxTestSupport.callOnFx(() -> live.bindings().get("C-c z")), "used without a restart");
+        assertEquals(
+                "file.open",
+                FxTestSupport.callOnFx(() -> (KeymapManager.isMac()
+                                ? settings.getKeymapKeybindingsMac()
+                                : settings.getKeymapKeybindings())
+                        .get("zzother")
+                        .get("C-c y")),
+                "another keymap's binding waits for a switch to that keymap");
+
+        FxTestSupport.runOnFx(() -> {
+            settings.keybindingsFor(KeymapManager.isMac()).put("C-c x", "file.close");
+            fx.windowManager.reloadSharedKeymap();
+        });
+        state = syncNow();
+        assertEquals(SettingsSync.Phase.IDLE, state.phase(), state.report().detail());
+        assertEquals(1, state.report().sent().size());
+        assertTrue(otherSyncs().ok());
+        String theirs = Files.readString(other.resolve("keybindings.json"));
+        assertTrue(theirs.contains("\"C-c x\" : \"file.close\""), theirs);
+        assertTrue(theirs.contains("\"C-c z\" : \"file.save\""), theirs);
+    }
+
+    @Test
+    @Order(5)
     void aFailingSyncIsMarkedInTheStatusBarAndClearsWhenItWorksAgain() throws Exception {
         FxTestSupport.runOnFx(() -> {
             settings.setSyncRepoUrl(tmp.resolve("gone.git").toString());
@@ -206,7 +249,7 @@ class SettingsSyncFxTest {
     }
 
     @Test
-    @Order(5)
+    @Order(6)
     void disconnectingKeepsTheDataAndStopsSyncing() throws Exception {
         FxTestSupport.runOnFx(() -> {
             settings.setSyncEnabled(false);
