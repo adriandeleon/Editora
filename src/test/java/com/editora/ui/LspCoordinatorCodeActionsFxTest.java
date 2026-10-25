@@ -206,7 +206,7 @@ class LspCoordinatorCodeActionsFxTest {
     void anActionThatDoesNothingIsReportedAsFailed() throws Exception {
         offer(new CodeAction("Hollow"));
         runAction("Hollow");
-        assertEquals(tr("status.lsp.codeActionFailed", "Hollow"), fx.host.lastStatus());
+        assertEquals(tr("status.lsp.codeActionNoChange", "Hollow"), fx.host.lastStatus()); // said as such (ET1)
         assertEquals(SOURCE, content());
     }
 
@@ -947,7 +947,19 @@ class LspCoordinatorCodeActionsFxTest {
         offer(makeStatic, inline);
         fx.run(() -> fx.coordinator.refactoring("refactor.inline", "lsp.inline"));
         assertEquals(
-                tr("status.lsp.codeActionApplied", "Inline Method"), fx.host.lastStatus(), "EN6: the lone one runs");
+                List.of("Inline Method"),
+                buffer.offered.stream()
+                        .map(com.editora.editor.lsp.CodeAction::title)
+                        .toList(),
+                "EN6: no Make Static; ET1: Inline Method is chosen from its list, not run by the chord alone");
+        fx.run(() -> buffer.pick("Inline Method"));
+        assertEquals(tr("status.lsp.codeActionApplied", "Inline Method"), fx.host.lastStatus());
+
+        CodeAction refused = new CodeAction("Inline Method"); // jdtls resolves a failed final check to no edit
+        refused.setKind("refactor.inline");
+        offer(refused);
+        runAction("Inline Method");
+        assertEquals(tr("status.lsp.codeActionNoChange", "Inline Method"), fx.host.lastStatus(), "not a bare failure");
 
         CodeAction toString = new CodeAction("Generate toString()");
         toString.setKind("source.generate.toString");

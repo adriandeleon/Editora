@@ -5782,7 +5782,12 @@ final class LspCoordinator {
                 host.setStatus(loneCommand == null ? tr(emptyKey) : tr(emptyKey, tr("command." + loneCommand)));
                 return;
             }
-            if (loneCommand != null && items.size() == 1) {
+            // Inline Method rewrites every call and deletes the method: it is chosen from its one-row list, never
+            // run by the chord alone (third review ET1).
+            if (loneCommand != null
+                    && items.size() == 1
+                    && !com.editora.lsp.CodeActionKinds.isInlineMethod(
+                            items.get(0).title())) {
                 applyChosenAction(path, items, codeActionRow(items.get(0)));
                 return;
             }
@@ -5941,12 +5946,14 @@ final class LspCoordinator {
                 ok -> reportEdit(
                         ok,
                         tr("status.lsp.codeActionApplied", applied.title()),
-                        lspManager.lastCodeActionFailure() == null // the server's reason when it gave one (BN9)
-                                ? tr("status.lsp.codeActionFailed", applied.title())
-                                : tr(
+                        lspManager.lastCodeActionFailure() != null // the server's reason when it gave one (BN9)
+                                ? tr(
                                         "status.lsp.codeActionFailedWhy",
                                         applied.title(),
-                                        lspManager.lastCodeActionFailure())));
+                                        lspManager.lastCodeActionFailure())
+                                : lspManager.lastCodeActionEmpty() // resolved to no change at all (ET1)
+                                        ? tr("status.lsp.codeActionNoChange", applied.title())
+                                        : tr("status.lsp.codeActionFailed", applied.title())));
     }
 
     /**

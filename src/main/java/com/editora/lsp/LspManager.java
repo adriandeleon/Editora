@@ -4360,6 +4360,7 @@ public final class LspManager {
      */
     public void applyCodeAction(Path file, Object raw, Consumer<Boolean> cb) {
         lastCodeActionFailure = null;
+        lastCodeActionEmpty = false;
         LanguageServerSession s = sessionFor(file);
         // No request time: an edit already inside this action was computed at some earlier, unknown moment,
         // so nothing can show a closed file is still what the server saw.
@@ -4427,9 +4428,17 @@ public final class LspManager {
         return lastCodeActionFailure;
     }
 
+    /** Whether the last code action resolved to neither an edit nor a command: nothing to apply (ET1). */
+    private volatile boolean lastCodeActionEmpty;
+
+    public boolean lastCodeActionEmpty() {
+        return lastCodeActionEmpty;
+    }
+
     /** Applies a code action together with the request-time snapshots captured when it was listed. */
     public void applyCodeAction(Path file, CodeActionItem item, Consumer<Boolean> cb) {
         lastCodeActionFailure = null;
+        lastCodeActionEmpty = false;
         if (item == null) {
             Platform.runLater(() -> cb.accept(false));
             return;
@@ -4497,7 +4506,9 @@ public final class LspManager {
                     file, action.getCommand(), commandExpected, commandOk -> cb.accept(editApplied && commandOk));
             return;
         }
-        // No command and no edit either ⇒ nothing was done — report failure, not a silent success.
+        // No command and no edit either ⇒ nothing was done — report failure, not a silent success. jdtls answers
+        // so when a refactoring's final check fails (Inline Method on a method with several returns).
+        lastCodeActionEmpty = !editPresent;
         cb.accept(editPresent && editOk);
     }
 
