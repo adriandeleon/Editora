@@ -60,6 +60,9 @@ Thumbs.db
 /samples/build-tools/npm/node_modules/
 # The Clojure CLI caches a project's classpath beside its deps.edn when the debug sample is run.
 /samples/debug/clojure/.cpcache/
+# clojure-lsp and clj-kondo write their caches beside the deps.edn they analyse.
+/samples/debug/clojure/.clj-kondo/
+/samples/debug/clojure/.lsp/
 
 # Corpus log samples are intentionally tracked (the global *.log above would drop them)
 !/samples/log/*.log
