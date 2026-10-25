@@ -15,6 +15,7 @@ import com.editora.install.InstallCatalog.Lang;
 import com.editora.install.InstallCatalog.Prereq;
 import com.editora.install.InstallCatalog.Step;
 import com.editora.install.InstallService;
+import com.editora.install.PinnedVersions;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -55,6 +56,12 @@ final class InstallCoordinator {
         default boolean toolAvailable(String toolId) {
             return false;
         }
+
+        /**
+         * Stops a running server whose install is about to be replaced (an update); the {@link
+         * #reapplyToolSupport} that follows the install starts it again on whichever copy is then in place.
+         */
+        default void stopServer(String serverId) {}
     }
 
     private final CoordinatorHost host;
@@ -99,13 +106,24 @@ final class InstallCoordinator {
      * already running, or it failed). Used by the editor banner to clear its spinner + hide on success.
      */
     void installSupport(Lang lang, java.util.function.Consumer<Boolean> onResult) {
+        installSupport(lang, false, onResult);
+    }
+
+    /**
+     * As {@link #installSupport(Lang, java.util.function.Consumer)}; {@code update} (Doctor's Update) also
+     * reinstalls the steps whose version Editora pins, whatever the copy there says, so they hold the pinned one.
+     */
+    void installSupport(Lang lang, boolean update, java.util.function.Consumer<Boolean> onResult) {
         if (installing.contains(lang)) {
             host.setStatus(tr("status.install.inProgress"));
             onResult.accept(false);
             return;
         }
         List<Step> all = InstallCatalog.steps(lang);
-        List<Step> missing = all.stream().filter(s -> !stepInstalled(s)).toList();
+        List<Step> missing = all.stream()
+                .filter(s -> !stepInstalled(s)
+                        || (update && PinnedVersions.forStep(s.id()).isPresent()))
+                .toList();
         if (missing.isEmpty()) {
             host.setStatus(tr("status.install.already", langName(lang)));
             onResult.accept(true);
@@ -122,6 +140,8 @@ final class InstallCoordinator {
             }
             installing.add(lang);
             host.setStatus(tr("status.install.installing", langName(lang)));
+            List<String> replaced = runningServersOf(plan.runnable());
+            replaced.forEach(ops::stopServer);
             service.install(
                     plan.runnable(),
                     ops.configDir(),
@@ -132,6 +152,9 @@ final class InstallCoordinator {
                             postInstall(lang);
                             host.setStatus(doneMessage(lang, plan));
                         } else {
+                            if (!replaced.isEmpty()) {
+                                ops.reapplyToolSupport(); // a failed install leaves the old copy: run it again
+                            }
                             host.setStatus(tr("status.install.failed", langName(lang)));
                             alert(Alert.AlertType.ERROR, result.message());
                         }
@@ -164,6 +187,14 @@ final class InstallCoordinator {
 
     /** As {@link #installServer(String)} but reports the settled outcome (banner spinner/hide). */
     void installServer(String serverId, java.util.function.Consumer<Boolean> onResult) {
+        installServer(serverId, false, onResult);
+    }
+
+    /**
+     * As {@link #installServer(String, java.util.function.Consumer)}; {@code update} (Doctor's Update) installs
+     * the pinned version even though a server is found, and points the server's command at it.
+     */
+    void installServer(String serverId, boolean update, java.util.function.Consumer<Boolean> onResult) {
         List<Step> steps = InstallCatalog.serverInstall(serverId).orElse(List.of());
         if (steps.isEmpty()) {
             onResult.accept(false);
@@ -174,7 +205,10 @@ final class InstallCoordinator {
             onResult.accept(false);
             return;
         }
-        if (ops.lspAvailable(serverId)) {
+        boolean outdated = PinnedVersions.forServer(serverId)
+                .map(pin -> editoraCopyOutdated(pin.stepId()))
+                .orElse(false);
+        if (ops.lspAvailable(serverId) && !update && !outdated) {
             host.setStatus(tr("status.install.already", serverName(serverId)));
             onResult.accept(true);
             return;
@@ -199,6 +233,8 @@ final class InstallCoordinator {
             }
             installingServers.add(serverId);
             host.setStatus(tr("status.install.installing", serverName(serverId)));
+            List<String> replaced = runningServersOf(steps);
+            replaced.forEach(ops::stopServer);
             service.install(
                     steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
                         installingServers.remove(serverId);
@@ -209,6 +245,9 @@ final class InstallCoordinator {
                             ops.reapplyToolSupport();
                             host.setStatus(tr("status.install.done", serverName(serverId)));
                         } else {
+                            if (!replaced.isEmpty()) {
+                                ops.reapplyToolSupport(); // a failed install leaves the old copy: run it again
+                            }
                             host.setStatus(tr("status.install.failed", serverName(serverId)));
                             alert(Alert.AlertType.ERROR, result.message());
                         }
@@ -286,10 +325,18 @@ final class InstallCoordinator {
 
     /** Installs the pinned tools {@code toolIds} that are missing and reports the settled outcome. */
     void installTools(List<String> toolIds, java.util.function.Consumer<Boolean> onResult) {
+        installTools(toolIds, false, onResult);
+    }
+
+    /**
+     * As {@link #installTools(List, java.util.function.Consumer)}; {@code update} (Doctor's Update) installs the
+     * pinned version of each even where one is found.
+     */
+    void installTools(List<String> toolIds, boolean update, java.util.function.Consumer<Boolean> onResult) {
         final String key = "tools:" + String.join(",", toolIds);
         List<String> missing = toolIds.stream()
                 .filter(id -> com.editora.install.InstallCatalog.pinnedTool(id).isPresent())
-                .filter(id -> !ops.toolAvailable(id))
+                .filter(id -> update || !ops.toolAvailable(id) || editoraCopyOutdated(id))
                 .toList();
         String names = String.join(
                 ", ", toolIds.stream().map(InstallCoordinator::toolName).toList());
@@ -386,7 +433,7 @@ final class InstallCoordinator {
     private boolean stepInstalled(Step step) {
         return switch (step.id()) {
             // Editora's own jdtls older than the pinned one counts as missing, so Install replaces it (D8).
-            case "jdtls" -> ops.lspAvailable("java") && !editoraJdtlsOutdated();
+            case "jdtls" -> ops.lspAvailable("java") && !editoraCopyOutdated(step.id());
             case "java-debug" -> ops.dapAvailable("java");
             case "pyright" -> ops.lspAvailable("python");
             // Found where the installer puts it, whether or not debugging is switched on (detection only runs
@@ -397,17 +444,38 @@ final class InstallCoordinator {
                                         "", Path.of(System.getProperty("user.home", "")))
                                 .isPresent();
             case "typescript-language-server" -> ops.lspAvailable("typescript");
-            case "js-debug" -> ops.dapAvailable("javascript");
+            case "js-debug" -> ops.dapAvailable("javascript") && !editoraCopyOutdated(step.id());
             case "mmdc" -> ops.mmdcAvailable();
             default -> false;
         };
     }
 
-    private boolean editoraJdtlsOutdated() {
-        Path config = ops.configDir();
-        com.editora.install.JdtlsVersion installed =
-                config == null ? null : com.editora.install.JdtlsVersion.installed(config.resolve("plugins/lsp/java"));
-        return installed != null && installed.compareTo(com.editora.install.JdtlsVersion.pinned()) < 0;
+    /**
+     * The servers that {@code steps} reinstall while they run (an update, or an outdated copy Install replaces):
+     * they are stopped first, so none runs on files being swapped out; the support re-applied afterwards starts
+     * them again.
+     */
+    private List<String> runningServersOf(List<Step> steps) {
+        return steps.stream()
+                .map(s -> PinnedVersions.forStep(s.id())
+                        .map(PinnedVersions.Pin::serverId)
+                        .orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .filter(ops::lspAvailable)
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * Whether Editora's own copy of a pinned step is older than the version this Editora installs — its receipt
+     * says so, or its files do — so Install replaces it rather than saying it is already there (D8). Reads files
+     * only. A copy whose version cannot be told is left alone here; Doctor offers Update for it.
+     */
+    private boolean editoraCopyOutdated(String stepId) {
+        return PinnedVersions.forStep(stepId)
+                .map(pin ->
+                        PinnedVersions.installedFreshness(pin, ops.configDir()) == PinnedVersions.Freshness.OUTDATED)
+                .orElse(false);
     }
 
     private String langName(Lang lang) {

@@ -1,5 +1,6 @@
 package com.editora.doctor;
 
+import com.editora.install.VersionFloor;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -31,11 +32,11 @@ public final class DoctorRules {
     }
 
     /**
-     * The Run feature's JDK health: compact-source run needs JDK 25+ → OK; an older JDK runs other
-     * languages but not Java → WARN; no parseable java at all → MISSING.
+     * The Run feature's JDK health: compact-source run needs {@link VersionFloor#JAVA_RUN} (JDK 25) → OK; an older
+     * JDK runs other languages but not Java → WARN; no parseable java at all → MISSING.
      */
     public static DoctorStatus javaRunStatus(int major) {
-        if (major >= 25) {
+        if (major >= VersionFloor.JAVA_RUN.major()) {
             return DoctorStatus.OK;
         }
         return major >= 1 ? DoctorStatus.WARN : DoctorStatus.MISSING;
