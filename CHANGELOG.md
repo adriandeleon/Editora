@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Java: Smart Type completion** (`lsp.smartTypeCompletion`, Edit menu; Ctrl+Shift+Space in the IntelliJ keymaps),
+  as IntelliJ's: the completion list holds only what fits the type expected at the caret. The type comes from a
+  declaration (`String s = `), an assignment, `return` (the method's return type), a condition (`if (`, `&&`) or
+  a call's argument (signature help). Fields, variables and methods of a fitting type stay, `null` for an object
+  and `true`/`false` for a boolean; after `new`, the classes that implement the type. Where the code states no
+  type the full list opens, and the status bar says so.
 - **Java: organize imports and format on save.** Two settings under Settings ▸ Code Completion ▸ Language server features: after you
   save a Java file, jdtls organizes its imports and/or formats it, and the file is saved again when that changed
   it, as IntelliJ's Actions on Save do. Both are off by default; autosave never runs them, and an ambiguous import

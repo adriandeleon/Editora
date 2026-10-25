@@ -128,6 +128,28 @@ class JavaTypingCompletionFxTest {
         return CompletionMapper.map(List.of(item)).getFirst();
     }
 
+    @SuppressWarnings("unchecked")
+    private List<String> shownLabels() throws Exception {
+        return FxTestSupport.callOnFx(
+                () -> ((javafx.scene.control.ListView<Completion>) FxTestSupport.field(popup(), "list"))
+                        .getItems().stream().map(Completion::label).toList());
+    }
+
+    @Test
+    void aFilteredTriggerShowsOnlyWhatTheFilterKeepsUntilTheListCloses() throws Exception {
+        FxTestSupport.runOnFx(() -> buffer.triggerCompletion(items ->
+                items.stream().filter(c -> c.label().startsWith("println")).toList()));
+        respond(0, false, method("print(String)", "print(${1:s})", 11, 11), method("println()", "println()", 11, 11));
+        expectCompletion("println");
+        assertEquals(List.of("println()"), shownLabels());
+
+        press("ESCAPE");
+        invoke();
+        respond(1, false, method("print(String)", "print(${1:s})", 11, 11), method("println()", "println()", 11, 11));
+        expectCompletion("print");
+        assertEquals(2, shownLabels().size(), "a plain trigger after it shows the whole list");
+    }
+
     @Test
     void typeFilterBackspaceAndAcceptWithoutAnotherServerRoundTrip() throws Exception {
         invoke();

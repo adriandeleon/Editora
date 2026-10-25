@@ -2808,6 +2808,9 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("edit.redo", host.editing()::onRedo));
         host.registry().register(Command.of("edit.cancel", host::cancel));
         host.registry().register(Command.of("edit.completion", host.editing()::triggerCompletion));
+        host.registry()
+                .register(Command.of(
+                        "lsp.smartTypeCompletion", () -> host.ifLsp(host.lspCoordinator()::smartTypeCompletion)));
         host.registry().register(Command.of("edit.completionDoc", host.editing()::toggleCompletionDoc));
         host.registry().register(Command.of("edit.toggleComment", host.editing()::toggleComment));
         host.registry()
