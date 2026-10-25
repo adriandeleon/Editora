@@ -503,11 +503,13 @@ class LspCoordinatorHooksFxTest {
 
     @Test
     void aCrashLeavesAnotherProjectsBuffersAlone() throws Exception {
+        // Two sibling projects: neither is a module of the other (a pom chain is one reactor, C10).
         Path otherProject = Files.createDirectories(root.resolve("other"));
         Files.writeString(otherProject.resolve("pom.xml"), "<project/>");
-        Files.writeString(root.resolve("pom.xml"), "<project/>");
+        Path mine = Files.createDirectories(root.resolve("mine"));
+        Files.writeString(mine.resolve("pom.xml"), "<project/>");
         EditorBuffer elsewhere = fx.open("other/B.java", "class B {}\n");
-        EditorBuffer here = fx.open("A.java", SOURCE);
+        EditorBuffer here = fx.open("mine/A.java", SOURCE);
         assertEquals(2, fx.fakes.size(), "two project roots, two servers");
 
         FxTestSupport.runOnFx(() -> LspTestHooks.simulateServerDeath(fx.manager, here.getPath()));

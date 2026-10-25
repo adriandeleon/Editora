@@ -1390,6 +1390,15 @@ public final class LspManager {
             String workspaceName = null;
             if (workspaceBaseName != null && workspaceBase != null) {
                 workspaceName = claimUsableJdtlsWorkspaceName(workspaceBase, workspaceBaseName);
+                if (!workspaceName.equals(workspaceBaseName)) {
+                    // Another window (or an earlier server still exiting) holds this project's workspace: this
+                    // one imports it again on a server of its own. Said, not hidden (Java review C12).
+                    Platform.runLater(() -> {
+                        if (!closed) {
+                            onSecondServer.accept(serverId, root);
+                        }
+                    });
+                }
                 jdtlsWorkspaceBySession.put(session, workspaceName);
                 // shutdown may race the off-thread claim after the session was put in sessionsByRoot.
                 // Do not leave a claim behind or start a process that its window no longer owns.
@@ -4379,6 +4388,13 @@ public final class LspManager {
     }
 
     /** Told (on the FX thread) that a server was <b>not started</b> because it would need untrusted code. */
+    /** Told when a Java server starts on a second workspace for a project another window already serves. */
+    private volatile BiConsumer<String, Path> onSecondServer = (id, root) -> {};
+
+    public void setOnSecondServer(BiConsumer<String, Path> callback) {
+        this.onSecondServer = callback == null ? (id, root) -> {} : callback;
+    }
+
     private volatile BiConsumer<String, Path> onStartWithheld = (id, root) -> {};
 
     public void setOnStartWithheld(BiConsumer<String, Path> callback) {
@@ -5225,6 +5241,58 @@ public final class LspManager {
                         applyWorkspaceEdit(edit, expected, proceed);
                     }
                 }));
+    }
+
+    /**
+     * Clean Java Workspace (Java review C14): stops the Java server of {@code file}'s project and deletes its
+     * jdtls workspace — the index, the source folders and classpath it worked out — so the next open imports the
+     * project afresh. Restart Language Servers kept that workspace, and Clear Java Index Caches skips the ones in
+     * use, so a wrong source folder or a corrupt index survived both. {@code done} (FX thread) is told whether
+     * the workspace was deleted; the caller re-opens the project's files.
+     */
+    public void cleanJavaWorkspace(Path file, Consumer<Boolean> done) {
+        LanguageServerSession s = javaSessionFor(file);
+        Path base = jdtlsWorkspaceBase;
+        String name = s == null ? null : jdtlsWorkspaceBySession.get(s);
+        String key = null;
+        for (var e : sessionsByRoot.entrySet()) {
+            if (e.getValue() == s) {
+                key = e.getKey();
+            }
+        }
+        if (s == null || base == null || name == null || key == null) {
+            Platform.runLater(() -> done.accept(false));
+            return;
+        }
+        sessionsByRoot.remove(key);
+        sessionByDocUri.values().removeIf(x -> x == s);
+        pendingApplyExpected.remove(s);
+        disposeDeliberately(key, s);
+        String exitedKey = key;
+        Path workspace = base.resolve(name);
+        Thread.ofVirtual().name("jdtls-clean").start(() -> {
+            awaitPriorExit(exitedKey);
+            boolean deleted = false;
+            for (int attempt = 0; attempt < 50 && !deleted; attempt++) {
+                if (claimedJdtlsWorkspaces.add(name)) {
+                    try {
+                        deleted = deleteUnlockedJdtlsWorkspace(workspace);
+                    } finally {
+                        claimedJdtlsWorkspaces.remove(name);
+                    }
+                }
+                if (!deleted) {
+                    try {
+                        Thread.sleep(100); // the process is still letting go of its lock
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+            boolean result = deleted;
+            Platform.runLater(() -> done.accept(result));
+        });
     }
 
     /** Whether a jdtls serves {@code file}'s project, whichever server edits the file itself. */

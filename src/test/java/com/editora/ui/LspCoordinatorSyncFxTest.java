@@ -249,10 +249,26 @@ class LspCoordinatorSyncFxTest {
     @Test
     void aHeavyFileIsNotManaged() throws Exception {
         EditorBuffer b = javaBuffer("A.java");
-        FxTestSupport.runOnFx(() -> b.setHeavyFile(true));
+        FxTestSupport.runOnFx(() -> {
+            b.setContent("class A {}\n" + "\n".repeat(50_000)); // past Java's own limit (C16)
+            b.setHeavyFile(true);
+        });
         sync(b);
 
         assertFalse(manager.isManaged(b.getPath()), "heavy-file mode must skip LSP");
+    }
+
+    /** jdtls keeps a large Java file up to 50,000 lines (Java review C16). */
+    @Test
+    void aLargeJavaFileKeepsItsServer() throws Exception {
+        EditorBuffer b = javaBuffer("A.java");
+        FxTestSupport.runOnFx(() -> {
+            b.setContent("class A {}\n" + "\n".repeat(12_000));
+            b.setHeavyFile(true);
+        });
+        sync(b);
+
+        assertTrue(manager.isManaged(b.getPath()));
     }
 
     /** A server whose own toggle is off must not serve its buffers. */

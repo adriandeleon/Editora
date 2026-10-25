@@ -66,7 +66,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The default Emacs keymap gains a `C-c l` prefix for the language-server commands, `M-g M-n`/`M-g M-p` for
   problems and `M-,`/`C-M-,` for back/forward; every keymap now binds Back and Forward.
 
+- **LSP: Clean Java Workspace and Restart.** Stops the project's Java server, deletes its index and the classpath
+  and source folders it worked out, and imports the project afresh — the cure for a stale or corrupt jdtls
+  workspace, which Restart Language Servers kept and Clear Java Index Caches skipped while in use.
+
 ### Changed
+
+- **jdtls is pinned to 1.63.0** (from 1.62.0), checked against the jdtls probes. Doctor now names the installed
+  jdtls version and warns when it is older than the pinned one, and Install replaces an older copy of Editora's
+  own instead of saying it is already installed. Installs made before a pin bump used to keep their server for
+  good.
+- **Java files up to 50,000 lines keep the language server** in the large-file tier, as Python files do. jdtls
+  checks a 12,000-line file in well under a second; above 10,000 lines Java files lost diagnostics, completion
+  and navigation.
+- **One Java server per Maven reactor or Gradle build outside a project.** Opening files of two modules of one
+  reactor in a window without a project started a jdtls per module (1.4 GB each) that could not see the other
+  module; the root is now the reactor's or the Gradle build's. A second window on a project another window
+  already serves says that it starts a server of its own.
+- **Simple mode shows the language-server loading bar,** so a server importing a project in the background is
+  visible.
 
 - **Refactor: the text model the editor shares with other packages moved to a new `com.editora.text`.** The LSP value types (`LspTextEdit`, `LspDiagnostic`, `SemanticToken`, `OccurrenceSpan`), `FoldRegions`, the search matcher with `CaseFold` and `SearchMatches`, all of language detection (`LanguageRegistry`, `LanguageNames`, `ConfigFileType`, `ShellFiles`, `ShellScripts`, `Shebang`, `Modeline`) and `EncryptedNames` leave the editor sub-packages, with 13 tests. `lsp`, `search`, `crypto`, `template` and `editops` no longer depend on the editor; `editor.language` is gone, its classes having no presentation in them. `text` has its own 0.95 coverage floor. Internal-only — no behavior, dependency, or `module-info` change.
 - **Refactor: the editor's toolkit-free helpers moved to the core packages they belong to.** `AceLabels`,

@@ -385,7 +385,8 @@ final class InstallCoordinator {
     /** Maps a catalog step to its current detected-availability via the existing per-feature detectors. */
     private boolean stepInstalled(Step step) {
         return switch (step.id()) {
-            case "jdtls" -> ops.lspAvailable("java");
+            // Editora's own jdtls older than the pinned one counts as missing, so Install replaces it (D8).
+            case "jdtls" -> ops.lspAvailable("java") && !editoraJdtlsOutdated();
             case "java-debug" -> ops.dapAvailable("java");
             case "pyright" -> ops.lspAvailable("python");
             // Found where the installer puts it, whether or not debugging is switched on (detection only runs
@@ -400,6 +401,13 @@ final class InstallCoordinator {
             case "mmdc" -> ops.mmdcAvailable();
             default -> false;
         };
+    }
+
+    private boolean editoraJdtlsOutdated() {
+        Path config = ops.configDir();
+        com.editora.install.JdtlsVersion installed =
+                config == null ? null : com.editora.install.JdtlsVersion.installed(config.resolve("plugins/lsp/java"));
+        return installed != null && installed.compareTo(com.editora.install.JdtlsVersion.pinned()) < 0;
     }
 
     private String langName(Lang lang) {

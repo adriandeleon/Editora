@@ -2290,6 +2290,9 @@ final class WindowCommandRegistrar {
                 .register(Command.of("lsp.problemAtCaret", () -> host.ifLsp(host.lspCoordinator()::problemAtCaret)));
         host.registry()
                 .register(Command.of(
+                        "lsp.cleanJavaWorkspace", () -> host.ifLsp(host.lspCoordinator()::cleanJavaWorkspace)));
+        host.registry()
+                .register(Command.of(
                         "lsp.copyQualifiedName", () -> host.ifLsp(host.lspCoordinator()::copyQualifiedName)));
         host.registry()
                 .register(Command.of("lsp.reloadProject", () -> host.ifLsp(host.lspCoordinator()::reloadProject)));

@@ -509,6 +509,10 @@ final class LspCoordinator {
         });
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
+        lspManager.setOnSecondServer((serverId, root) -> host.setStatus(tr(
+                "status.lsp.secondServer",
+                serverLabel(serverId),
+                root.getFileName() == null ? root : root.getFileName())));
         lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setOnStartRefused(this::onStartRefused);
         lspManager.setOnRequestError(this::onRequestError);
@@ -2603,6 +2607,10 @@ final class LspCoordinator {
             // A module pom's root is its reactor's: one lemminx-maven JVM per reactor, not per module (C11).
             return com.editora.lsp.RootResolver.outermostContiguous(resolved, "pom.xml", ops.lspProjectRoot());
         }
+        if (resolved != null && com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
+            // A module's root is its build's: one jdtls per reactor or Gradle build, as a project gets (C10).
+            return com.editora.lsp.RootResolver.javaBuildRoot(resolved, ops.lspProjectRoot());
+        }
         return resolved;
     }
 
@@ -4000,6 +4008,25 @@ final class LspCoordinator {
         workspaceExecutor.execute(() -> {
             LspManager.JdtlsCacheClearResult result = LspManager.clearJdtlsWorkspaces(base);
             Platform.runLater(() -> host.setStatus(javaCachesClearedStatus(result)));
+        });
+    }
+
+    /**
+     * Clean Java Workspace and Restart ({@code lsp.cleanJavaWorkspace}): the active file's Java project starts
+     * over with a fresh jdtls workspace (Java review C14), the cure for a stale index or classpath.
+     */
+    void cleanJavaWorkspace() {
+        EditorBuffer b = host.activeBuffer();
+        Path path = b == null ? null : lspPath(b);
+        if (path == null || !lspManager.hasJavaSession(path)) {
+            host.setStatus(tr("status.lsp.unavailable"));
+            return;
+        }
+        host.setStatus(tr("status.lsp.javaWorkspaceCleaning"));
+        correctedSourceRoots.clear();
+        lspManager.cleanJavaWorkspace(path, deleted -> {
+            host.setStatus(tr(deleted ? "status.lsp.javaWorkspaceCleaned" : "status.lsp.javaWorkspaceKept"));
+            applyGating(); // reopen the project's files: the server starts again on a fresh workspace
         });
     }
 

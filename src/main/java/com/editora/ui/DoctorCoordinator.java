@@ -902,6 +902,19 @@ final class DoctorCoordinator {
             if (failing != null) {
                 return base.warn(failing, "doctor.tip.serverFailing"); // it starts, then fails every request (C2)
             }
+            if (com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
+                // Which jdtls, and whether it is older than the build Editora is measured against (Java review D8).
+                com.editora.install.JdtlsVersion installed = com.editora.install.JdtlsVersion.installed(Path.of(path));
+                if (installed != null) {
+                    String detail = installed.label() + " — " + path;
+                    return installed.compareTo(com.editora.install.JdtlsVersion.pinned()) < 0
+                            ? base.warn(
+                                    detail,
+                                    "doctor.tip.jdtlsOutdated",
+                                    com.editora.install.JdtlsVersion.pinned().label())
+                            : base.ok(detail);
+                }
+            }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
             String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";
             return base.ok(version.isEmpty() ? path : version + " — " + path);
