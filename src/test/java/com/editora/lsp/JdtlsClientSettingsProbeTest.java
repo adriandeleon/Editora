@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -518,7 +519,13 @@ class JdtlsClientSettingsProbeTest {
             }
 
             // B20: Move into a package that does not exist yet: the folder is created, announced, and named by URI.
-            Path fresh = src.resolve("fresh");
+            // Its source root comes from jdtls's own answer, whose `path` is a workspace path (re-review BN2).
+            JsonElement here = LspManager.asJson(get(s.rawRequest(
+                    "java/getMoveDestinations", JdtlsRefactor.moveParams("moveResource", useUri, null, null))));
+            String sourceRoot = JdtlsRefactor.currentSourceRoot(here);
+            record("BN2 source root", sourceRoot);
+            assertEquals(src.getParent().toString(), sourceRoot, "BN2: the source folder on disk: " + here);
+            Path fresh = Path.of(sourceRoot).resolve("demo").resolve("fresh");
             Files.createDirectories(fresh);
             s.didChangeWatchedFiles(List.of(new org.eclipse.lsp4j.FileEvent(
                     fresh.toUri().toString(), org.eclipse.lsp4j.FileChangeType.Created)));

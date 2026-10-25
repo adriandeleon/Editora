@@ -4012,6 +4012,10 @@ final class LspCoordinator {
                     String sourceRoot =
                             "moveResource".equals(moveKind) ? JdtlsRefactor.currentSourceRoot(answer) : null;
                     List<JdtlsRefactor.Destination> rows = new java.util.ArrayList<>(targets);
+                    if (!JdtlsRefactor.inTestRoot(path.toString())) {
+                        // main code does not move into src/test: those packages are for tests (B20)
+                        rows.removeIf(d -> JdtlsRefactor.inTestRoot(d.detail()));
+                    }
                     JdtlsRefactor.Destination newPackage = new JdtlsRefactor.Destination(
                             tr("picker.refactor.newPackage"), "", com.google.gson.JsonNull.INSTANCE);
                     if (sourceRoot != null && !com.editora.vfs.Vfs.isRemote(path)) {
@@ -4038,6 +4042,10 @@ final class LspCoordinator {
             String name = typed == null ? "" : typed.strip();
             if (!JdtlsRefactor.isPackageName(name)) {
                 host.setError(tr("status.lsp.refactorBadPackage", name));
+                return;
+            }
+            if (!java.nio.file.Files.isDirectory(root)) { // never create a folder tree somewhere else (BN2)
+                host.setError(tr("status.lsp.refactorPackageNotCreated", name, root.toString()));
                 return;
             }
             Path folder = root.resolve(name.replace('.', java.io.File.separatorChar));

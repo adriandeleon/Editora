@@ -279,7 +279,7 @@ public final class JdtlsRefactor {
             if (current && !includeCurrent) {
                 continue;
             }
-            Destination d = new Destination(name, string(o, "path"), e);
+            Destination d = new Destination(name, folderOf(o), e);
             if (current) {
                 out.add(0, d);
             } else {
@@ -296,8 +296,19 @@ public final class JdtlsRefactor {
         return d.raw().isJsonObject() && bool(d.raw().getAsJsonObject(), "isParentOfSelectedFile");
     }
 
+    /**
+     * A package node's folder on disk, from its {@code uri}. Its {@code path} is the Eclipse workspace path
+     * ({@code /geo-demo/src/main/java/com/example}: the project's name, then the folders inside it), which is no
+     * place on disk (re-review BN2); it is shown only when there is no {@code uri}.
+     */
+    private static @Nullable String folderOf(JsonObject node) {
+        String uri = string(node, "uri");
+        java.nio.file.Path folder = uri == null ? null : DocumentUris.toPath(uri);
+        return folder != null ? folder.toString() : string(node, "path");
+    }
+
     /** Whether a package's path lies in a Maven/Gradle test root ({@code src/test/java}, {@code src/test/kotlin}). */
-    static boolean inTestRoot(@Nullable String path) {
+    public static boolean inTestRoot(@Nullable String path) {
         if (path == null) {
             return false;
         }
@@ -306,9 +317,9 @@ public final class JdtlsRefactor {
     }
 
     /**
-     * The source folder a {@code java/getMoveDestinations} answer's current package lies in — the path of the
-     * node marked {@code isParentOfSelectedFile}, less its package's folders — where a typed new package is
-     * created (Java review B20). Null when the answer marks none.
+     * The source folder a {@code java/getMoveDestinations} answer's current package lies in — the folder of the
+     * node marked {@code isParentOfSelectedFile} (its {@code uri}), less its package's folders — where a typed new
+     * package is created (Java review B20). Null when the answer marks none or gives it no {@code uri}.
      */
     public static @Nullable String currentSourceRoot(@Nullable JsonElement response) {
         for (JsonElement e : destinations(response)) {
@@ -316,14 +327,14 @@ public final class JdtlsRefactor {
                 continue;
             }
             JsonObject o = e.getAsJsonObject();
-            String path = string(o, "path");
-            if (path == null) {
+            String uri = string(o, "uri");
+            java.nio.file.Path p = uri == null ? null : DocumentUris.toPath(uri); // never `path`: see folderOf
+            if (p == null) {
                 return null;
             }
             if (bool(o, "isDefaultPackage")) {
-                return path;
+                return p.toString();
             }
-            java.nio.file.Path p = java.nio.file.Path.of(path);
             int segments = String.valueOf(string(o, "displayName")).split("\\.").length;
             for (int i = 0; i < segments && p != null; i++) {
                 p = p.getParent();
