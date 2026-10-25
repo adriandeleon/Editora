@@ -92,21 +92,23 @@ class JavaRuntimesTest {
                 new JavaRuntimes.Jdk(17, "/jdk17"),
                 new JavaRuntimes.Jdk(21, "/jdk21"),
                 new JavaRuntimes.Jdk(25, "/jdk25"));
-        String sep = java.io.File.separator;
         String exe = java.io.File.separatorChar == '\\' ? "java.exe" : "java";
+        // As the code builds it: on Windows Path.of turns "/jdk25" into "\jdk25".
+        java.util.function.Function<String, String> javaIn =
+                home -> java.nio.file.Path.of(home, "bin", exe).toString();
 
         assertEquals(new JavaRuntimes.ServerJava(null, false), JavaRuntimes.serverJava(21, jdks, null), "fine as is");
         assertEquals(new JavaRuntimes.ServerJava(null, false), JavaRuntimes.serverJava(0, jdks, null), "unknown: left");
         assertEquals(
-                new JavaRuntimes.ServerJava("/jdk25" + sep + "bin" + sep + exe, false),
+                new JavaRuntimes.ServerJava(javaIn.apply("/jdk25"), false),
                 JavaRuntimes.serverJava(17, jdks, null),
                 "the newest that qualifies");
         assertEquals(
-                new JavaRuntimes.ServerJava("/jdk21" + sep + "bin" + sep + exe, false),
+                new JavaRuntimes.ServerJava(javaIn.apply("/jdk21"), false),
                 JavaRuntimes.serverJava(17, jdks, "/jdk21"),
                 "the user's choice when it qualifies");
         assertEquals(
-                new JavaRuntimes.ServerJava("/jdk25" + sep + "bin" + sep + exe, false),
+                new JavaRuntimes.ServerJava(javaIn.apply("/jdk25"), false),
                 JavaRuntimes.serverJava(17, jdks, "/jdk17"),
                 "not when it is too old itself");
         assertEquals(
