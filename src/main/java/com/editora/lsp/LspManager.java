@@ -715,6 +715,11 @@ public final class LspManager {
     }
 
     /** {@link #clientUi} reached from a session's reader thread: every call is posted to the FX thread. */
+    /** The client UI sessions are given, which answers on the FX thread (tests). */
+    LspClientUi clientUiForTest() {
+        return fxClientUi;
+    }
+
     private final LspClientUi fxClientUi = new LspClientUi() {
         @Override
         public java.util.concurrent.CompletableFuture<String> chooseAction(
@@ -755,12 +760,20 @@ public final class LspManager {
             var answer = new java.util.concurrent.CompletableFuture<String>();
             Platform.runLater(() -> {
                 LspClientUi ui = clientUi;
-                if (ui == null || closed) {
+                if (ui == null || closed || answer.isDone()) {
                     answer.complete(null);
                     return;
                 }
                 try {
-                    ask.apply(ui).whenComplete((v, e) -> answer.complete(e == null ? v : null));
+                    var shown = ask.apply(ui);
+                    shown.whenComplete((v, e) -> answer.complete(e == null ? v : null));
+                    // The session cancels the question when the request that asked it ends: the picker goes too.
+                    // Cancelling only this wrapper left the picker on screen, answering nothing (sixth review DV1).
+                    answer.whenComplete((v, e) -> {
+                        if (answer.isCancelled()) {
+                            shown.cancel(false);
+                        }
+                    });
                 } catch (RuntimeException e) {
                     LOG.log(java.util.logging.Level.FINE, "server question not shown", e);
                     answer.complete(null);
@@ -769,6 +782,12 @@ public final class LspManager {
             return answer;
         }
     };
+
+    /** Whether {@code file}'s server is waiting on the user's answer to an import question (sixth review AS2). */
+    public boolean questionOpen(Path file) {
+        LanguageServerSession s = file == null ? null : sessionFor(file);
+        return s != null && s.questionOpen();
+    }
 
     /** Restarts {@code serverId} (dispose + drop its cached sessions) so the next {@code openDocument}
      *  re-initializes it — e.g. to reload jdtls with the java-debug bundle. The controller re-opens the
@@ -2701,6 +2720,20 @@ public final class LspManager {
             return;
         }
         Path at = file.toAbsolutePath().normalize();
+        refreshStyleUnder(at);
+        String name = at.getFileName() == null ? "" : at.getFileName().toString();
+        if (name.equals(".settings") || name.equals("config")) {
+            // the folder came, or went, with its profile: read again once the files in it have landed too (DN4)
+            CompletableFuture.delayedExecutor(1, java.util.concurrent.TimeUnit.SECONDS)
+                    .execute(() -> Platform.runLater(() -> {
+                        if (!closed) {
+                            refreshStyleUnder(at);
+                        }
+                    }));
+        }
+    }
+
+    private void refreshStyleUnder(Path at) {
         for (Map.Entry<String, LanguageServerSession> e : sessionsByRoot.entrySet()) {
             LanguageServerSession s = e.getValue();
             if (e.getKey().startsWith(sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID))

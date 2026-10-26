@@ -260,6 +260,34 @@ public final class JavaRuntimes {
         return List.copyOf(out);
     }
 
+    /**
+     * The JDK jdtls gives a project by default when neither it nor another JDK of its version has sources, else
+     * null: its parameters read {@code arg0} and its methods have no docs, which Doctor says how to fix (sixth review
+     * DF1). The default is {@code preferredHome}'s when it is among {@code jdks}, else the newest.
+     */
+    public static @Nullable Jdk withoutSources(List<Jdk> jdks, @Nullable String preferredHome) {
+        String preferred = realPath(preferredHome);
+        Jdk chosen = null;
+        for (Jdk j : jdks == null ? List.<Jdk>of() : jdks) {
+            if (j == null || j.path() == null || j.major() <= 0) {
+                continue;
+            }
+            if (j.path().equals(preferred)) {
+                chosen = j;
+                break;
+            }
+            if (chosen == null || j.major() > chosen.major()) {
+                chosen = j;
+            }
+        }
+        if (chosen == null) {
+            return null;
+        }
+        int major = chosen.major();
+        boolean any = jdks.stream().anyMatch(j -> j != null && j.major() == major && hasSources(j.path()));
+        return any ? null : chosen;
+    }
+
     /** Whether the JDK at {@code home} has its sources ({@code lib/src.zip}, or {@code src.zip} for Java 8). */
     static boolean hasSources(String home) {
         try {

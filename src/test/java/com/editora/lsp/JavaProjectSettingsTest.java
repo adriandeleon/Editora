@@ -171,4 +171,12 @@ class JavaProjectSettingsTest {
                 Map.of("filteredTypes", List.of("sun.*"), "importOrder", List.of("java")), merged.get("completion"));
         assertEquals(false, merged.get("autobuild"));
     }
+
+    /** A style folder that comes or goes is a style change: a checkout writes it with its profile (sixth DN4). */
+    @Test
+    void theStyleFoldersAreStyleSources() {
+        assertTrue(JavaProjectSettings.isStyleSource(root.resolve(".settings")));
+        assertTrue(JavaProjectSettings.isStyleSource(root.resolve("config")));
+        assertTrue(!JavaProjectSettings.isStyleSource(root.resolve("src")));
+    }
 }

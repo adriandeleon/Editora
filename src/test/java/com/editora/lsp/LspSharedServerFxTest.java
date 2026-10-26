@@ -461,4 +461,36 @@ class LspSharedServerFxTest {
         assertFalse(a.isManaged(two));
         assertTrue(LspManager.isHeldForInstall("java") == false);
     }
+
+    /** A question the session cancels takes the window's picker down with it (sixth review DV1). */
+    @Test
+    void aCancelledImportQuestionClosesThePicker() throws Exception {
+        CompletableFuture<String> shown = new CompletableFuture<>();
+        java.util.concurrent.atomic.AtomicBoolean up = new java.util.concurrent.atomic.AtomicBoolean();
+        a.setClientUi(new LspClientUi() {
+            @Override
+            public CompletableFuture<String> chooseAction(
+                    String serverId, MessageType type, String message, List<String> actions) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public CompletableFuture<String> inputBox(String serverId, String prompt, String value, String hint) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public CompletableFuture<String> quickPick(String serverId, String placeHolder, List<PickItem> items) {
+                up.set(true);
+                return shown;
+            }
+
+            @Override
+            public void openLocation(String serverId, Path file, int line, int column) {}
+        });
+        CompletableFuture<String> asked = a.clientUiForTest().chooseImport("java", "Date", 3, List.of());
+        awaitFx(up::get, "the question shown");
+        asked.cancel(false);
+        awaitFx(shown::isCancelled, "the picker to be cancelled too");
+    }
 }

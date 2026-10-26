@@ -4771,6 +4771,12 @@ final class LspCoordinator {
         if (path == null) {
             return;
         }
+        if (lspManager.questionOpen(path)) {
+            // jdtls answers a second organize with no edit while the first waits on the user: that said "Imports
+            // already organized" beside the open question (sixth review AS2)
+            host.setStatus(tr("status.lsp.answerImportQuestion"));
+            return;
+        }
         CodeArea area = b.getFocusedArea();
         int lastLine = Math.max(0, area.getParagraphs().size() - 1);
         int lastChar = area.getParagraph(lastLine).length();

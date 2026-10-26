@@ -272,4 +272,20 @@ class JavaRuntimesTest {
         assertNull(out.get(0).get("default"));
         assertNull(out.get(1).get("javadoc"), "no javadoc url: JDT already has the release's docs");
     }
+
+    /** Doctor's hint: the default JDK has no sources and no JDK of its version has them (sixth review DF1). */
+    @Test
+    void aDefaultJdkWithNoSourcesAnywhereIsNamed(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path distro = java.nio.file.Files.createDirectories(dir.resolve("distro21/lib"));
+        java.nio.file.Path sdk = java.nio.file.Files.createDirectories(dir.resolve("sdk21/lib"));
+        java.nio.file.Files.writeString(sdk.resolve("src.zip"), "zip");
+        String distroHome = distro.getParent().toString();
+        var bare = new JavaRuntimes.Jdk(21, distroHome);
+        assertEquals(bare, JavaRuntimes.withoutSources(List.of(bare), distroHome));
+        assertNull(
+                JavaRuntimes.withoutSources(
+                        List.of(bare, new JavaRuntimes.Jdk(21, sdk.getParent().toString())), distroHome),
+                "a twin with sources stands in");
+    }
 }

@@ -238,6 +238,11 @@ final class LanguageServerSession implements LanguageClient {
         return question;
     }
 
+    /** Whether the server is waiting on the user's answer to a question it asked. */
+    boolean questionOpen() {
+        return !openQuestions.isEmpty();
+    }
+
     /** Takes down every open question: what it asked for is gone (the request ended, or the server did). */
     private void closeQuestions() {
         for (CompletableFuture<?> question : List.copyOf(openQuestions)) {

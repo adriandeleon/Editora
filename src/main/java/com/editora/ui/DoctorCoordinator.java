@@ -1025,7 +1025,14 @@ final class DoctorCoordinator {
         }
         int major = com.editora.lsp.JavaRuntimes.javaMajor(runs);
         String shown = major > 0 ? runs + " (Java " + major + ")" : runs.toString();
-        return row.withDetail(row.detail() + " · " + tr("doctor.detail.jdtlsRunsOn", shown));
+        DoctorCheck named = row.withDetail(row.detail() + " · " + tr("doctor.detail.jdtlsRunsOn", shown));
+        // the project's JDK with no sources: parameters read arg0, and how to fix it is said here (sixth review DF1)
+        var bare = com.editora.lsp.JavaRuntimes.withoutSources(
+                com.editora.lsp.JavaRuntimes.discover(),
+                com.editora.lsp.JavaRuntimes.preferredHome(defaultJdk, System.getenv("JAVA_HOME")));
+        return bare == null || named.status() != com.editora.doctor.DoctorStatus.OK
+                ? named
+                : named.warn(named.detail(), "doctor.tip.jdkNoSources", String.valueOf(bare.major()), bare.path());
     }
 
     /**
