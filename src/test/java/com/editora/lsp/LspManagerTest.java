@@ -641,12 +641,16 @@ class LspManagerTest {
         assertEquals(Boolean.TRUE, caps.get("moveRefactoringConfirmationSupport"));
     }
 
-    /** Each of these changes an answer into something that needs a client flow Editora does not have. */
+    /**
+     * The import chooser answers jdtls's {@code chooseImports} client command (A3), which resolving "Add all missing
+     * imports" also asks once {@code advancedOrganizeImportsSupport} is declared (fourth review D6; checked live by
+     * {@code JdtlsClientSettingsProbeTest}).
+     */
     @Test
-    void theCapabilitiesWithoutAClientFlowAreNotDeclared() {
+    void theImportChooserFlowIsDeclared() {
         var caps = LspManager.javaExtendedClientCapabilities();
 
-        assertFalse(caps.containsKey("advancedOrganizeImportsSupport"), "an ambiguous-import chooser");
+        assertEquals(Boolean.TRUE, caps.get("advancedOrganizeImportsSupport"), "Add all missing imports asks (D6)");
         assertEquals(Boolean.TRUE, caps.get("executeClientCommandSupport"), "the import chooser answers it (A3)");
     }
 
