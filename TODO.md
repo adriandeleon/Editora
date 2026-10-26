@@ -61,6 +61,12 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Java LSP fifth review (2026-10-25) fix-next list** — drag-moves record every file's edit; the counter and
+      the bulb are their file's; restart, reload and status per project; the import chooser holds its request;
+      formatter profiles reset and watched in project windows; Run Context runs a project main; fold-all keeps
+      the caret; small fixes. Left open: Paste with imports drops a second type (A11); Smart Type after a varargs
+      argument (AN2, upstream); Go to Super Method, Safe Delete and the other absent IntelliJ chords; jdtls
+      rewriting an existing Eclipse `.settings` (DV4, upstream); a Doctor hint for a JDK without sources.
 - [x] **Java LSP third review (2026-10-25) fix-next list** — drag-moves and never-opened tabs reach jdtls; failed
       imports recoverable; the scope picker regression; Inline Method; loose-file roots; Smart Type generics;
       ranking and pickers; Surround With, Ctrl+J and menu prefixes; small fixes. Left open: renaming from a
