@@ -117,6 +117,41 @@ class JavaRuntimesTest {
                 "nothing new enough: say so");
     }
 
+    /**
+     * jdtls 1.63's bundles need Java 25 though its launcher checks for 21: the floor is read from the install, so a
+     * launcher on 21 is given the 25 Editora found (sixth review DS1).
+     */
+    @Test
+    void theFloorIsReadFromTheInstalledJdtlsBundles(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path plugins = java.nio.file.Files.createDirectories(dir.resolve("jdtls/plugins"));
+        java.nio.file.Path bin = java.nio.file.Files.createDirectories(dir.resolve("jdtls/bin"));
+        java.nio.file.Path launcher = java.nio.file.Files.writeString(bin.resolve("jdtls"), "#!/bin/sh\n");
+        var manifest = new java.util.jar.Manifest();
+        manifest.getMainAttributes().put(java.util.jar.Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().putValue("Bundle-RequiredExecutionEnvironment", "JavaSE-25");
+        try (var out = new java.util.jar.JarOutputStream(
+                java.nio.file.Files.newOutputStream(plugins.resolve("org.eclipse.jdt.core_3.48.0.jar")), manifest)) {
+            out.putNextEntry(new java.util.jar.JarEntry("a.txt"));
+            out.closeEntry();
+        }
+        assertEquals(25, JavaRuntimes.serverMinMajor(launcher.toString()));
+        assertEquals(
+                21, JavaRuntimes.serverMinMajor(dir.resolve("none/bin/jdtls").toString()), "unknown: 21");
+
+        List<JavaRuntimes.Jdk> jdks = List.of(new JavaRuntimes.Jdk(21, "/jdk21"), new JavaRuntimes.Jdk(25, "/jdk25"));
+        String exe = java.io.File.separatorChar == '\\' ? "java.exe" : "java";
+        assertEquals(
+                new JavaRuntimes.ServerJava(
+                        java.nio.file.Path.of("/jdk25", "bin", exe).toString(), false),
+                JavaRuntimes.serverJava(21, jdks, "/jdk21", 25),
+                "a launcher on 21 runs jdtls on the 25");
+        assertEquals(
+                new JavaRuntimes.ServerJava(null, true),
+                JavaRuntimes.serverJava(21, List.of(new JavaRuntimes.Jdk(21, "/jdk21")), null, 25),
+                "none new enough: said, not a crash loop");
+    }
+
     @Test
     void oneEntryPerExecutionEnvironment() {
         // sdkman's "current" symlink and its target are the same JDK reached two ways; two entries naming

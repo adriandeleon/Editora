@@ -304,8 +304,86 @@ public final class JavaRuntimes {
         }
     }
 
-    /** jdtls's own floor: its launcher refuses an older Java. */
+    /** jdtls's launcher's own floor, which is what is known when its bundles cannot be read. */
     static final int SERVER_MIN_MAJOR = 21;
+
+    /** The floor each jdtls install's bundles state, by its {@code plugins} folder. */
+    private static final java.util.Map<String, Integer> BUNDLE_FLOORS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * The oldest Java the jdtls whose launcher is {@code launcher} runs on: the newest
+     * {@code Bundle-RequiredExecutionEnvironment} of its core bundles, never below {@link #SERVER_MIN_MAJOR}. jdtls
+     * 1.63's {@code org.eclipse.jdt.core} and {@code org.eclipse.core.resources} need Java 25 while its launcher
+     * still checks for 21, so on a JDK 21 it crash-looped (sixth review DS1); read from the install, the next pin
+     * follows by itself.
+     */
+    public static int serverMinMajor(@Nullable String launcher) {
+        java.nio.file.Path exe = launcher == null || launcher.isBlank() ? null : onPath(launcher);
+        java.nio.file.Path plugins;
+        try {
+            java.nio.file.Path bin = exe == null ? null : exe.toRealPath().getParent();
+            plugins = bin == null || bin.getParent() == null
+                    ? null
+                    : bin.getParent().resolve("plugins");
+        } catch (java.io.IOException | RuntimeException e) {
+            plugins = null;
+        }
+        if (plugins == null || !java.nio.file.Files.isDirectory(plugins)) {
+            return SERVER_MIN_MAJOR;
+        }
+        java.nio.file.Path dir = plugins;
+        return BUNDLE_FLOORS.computeIfAbsent(dir.toString(), k -> Math.max(SERVER_MIN_MAJOR, bundleFloor(dir)));
+    }
+
+    /** The newest {@code JavaSE-N} the core bundles in {@code plugins} require; 0 when none says. */
+    static int bundleFloor(java.nio.file.Path plugins) {
+        int floor = 0;
+        try (var jars = java.nio.file.Files.list(plugins)) {
+            for (java.nio.file.Path jar : jars.toList()) {
+                String name = jar.getFileName().toString();
+                if (!name.endsWith(".jar")
+                        || !(name.startsWith("org.eclipse.jdt.core_")
+                                || name.startsWith("org.eclipse.core.resources_")
+                                || name.startsWith("org.eclipse.jdt.ls.core_"))) {
+                    continue;
+                }
+                try (var file = new java.util.jar.JarFile(jar.toFile())) {
+                    var manifest = file.getManifest();
+                    String ee = manifest == null
+                            ? null
+                            : manifest.getMainAttributes().getValue("Bundle-RequiredExecutionEnvironment");
+                    var m = ee == null ? null : EXECUTION_ENVIRONMENT.matcher(ee);
+                    while (m != null && m.find()) {
+                        floor = Math.max(floor, Integer.parseInt(m.group(1)));
+                    }
+                } catch (java.io.IOException | RuntimeException e) {
+                    // an unreadable bundle says nothing
+                }
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            return floor;
+        }
+        return floor;
+    }
+
+    private static final java.util.regex.Pattern EXECUTION_ENVIRONMENT =
+            java.util.regex.Pattern.compile("JavaSE-(?:1\\.)?(\\d+)");
+
+    /** {@code command} as a path: itself when it names a file, else the first match on the PATH; null when none. */
+    private static java.nio.file.@Nullable Path onPath(String command) {
+        java.nio.file.Path p = java.nio.file.Path.of(command);
+        if (p.isAbsolute() || p.getNameCount() > 1) {
+            return p;
+        }
+        String path = System.getenv("PATH");
+        for (String dir : path == null ? new String[0] : path.split(java.io.File.pathSeparator)) {
+            java.nio.file.Path exe = java.nio.file.Path.of(dir, command);
+            if (java.nio.file.Files.isExecutable(exe)) {
+                return exe;
+            }
+        }
+        return null;
+    }
 
     /**
      * What jdtls's launcher should be told to run on, given the major version of the Java it would pick itself
@@ -316,13 +394,19 @@ public final class JavaRuntimes {
      * "keeps crashing").
      */
     public static ServerJava serverJava(int launcherMajor, List<Jdk> jdks, @Nullable String preferredHome) {
-        if (launcherMajor <= 0 || launcherMajor >= SERVER_MIN_MAJOR) {
+        return serverJava(launcherMajor, jdks, preferredHome, SERVER_MIN_MAJOR);
+    }
+
+    /** As {@link #serverJava(int, List, String)} for a jdtls that needs Java {@code minMajor} ({@link #serverMinMajor}). */
+    public static ServerJava serverJava(
+            int launcherMajor, List<Jdk> jdks, @Nullable String preferredHome, int minMajor) {
+        if (launcherMajor <= 0 || launcherMajor >= minMajor) {
             return new ServerJava(null, false);
         }
         String preferred = realPath(preferredHome);
         Jdk pick = null;
         for (Jdk j : jdks == null ? List.<Jdk>of() : jdks) {
-            if (j == null || j.major() < SERVER_MIN_MAJOR || j.path() == null) {
+            if (j == null || j.major() < minMajor || j.path() == null) {
                 continue;
             }
             if (j.path().equals(preferred)) {
@@ -351,35 +435,39 @@ public final class JavaRuntimes {
      * on the {@code PATH}, read from that JDK's {@code release} file. 0 when it cannot be told.
      */
     public static int launcherJavaMajor() {
+        java.nio.file.Path exe = launcherJava();
+        return exe == null ? 0 : javaMajor(exe);
+    }
+
+    /**
+     * The {@code java} jdtls's launcher picks by itself, links resolved: {@code JAVA_HOME/bin/java} when it exists,
+     * else the one on the {@code PATH}; null when there is none. A {@code JAVA_HOME} that does not exist is passed
+     * over, as the launcher runs the {@code PATH}'s then (sixth review CV5).
+     */
+    public static java.nio.file.@Nullable Path launcherJava() {
+        boolean windows = java.io.File.separatorChar == '\\';
         String javaHome = System.getenv("JAVA_HOME");
-        java.nio.file.Path home = null;
+        java.nio.file.Path exe = null;
         if (javaHome != null && !javaHome.isBlank()) {
-            home = java.nio.file.Path.of(javaHome);
-        } else {
-            String path = System.getenv("PATH");
-            for (String dir : path == null ? new String[0] : path.split(java.io.File.pathSeparator)) {
-                for (String name : List.of("java", "java.exe")) {
-                    java.nio.file.Path exe = java.nio.file.Path.of(dir, name);
-                    if (java.nio.file.Files.isExecutable(exe)) {
-                        try {
-                            java.nio.file.Path bin = exe.toRealPath().getParent();
-                            home = bin == null ? null : bin.getParent();
-                        } catch (java.io.IOException | RuntimeException e) {
-                            home = null;
-                        }
-                        break;
-                    }
-                }
-                if (home != null) {
-                    break;
-                }
-            }
+            java.nio.file.Path inHome = java.nio.file.Path.of(javaHome, "bin", windows ? "java.exe" : "java");
+            exe = java.nio.file.Files.isRegularFile(inHome) ? inHome : null;
         }
-        if (home == null) {
-            return 0;
+        if (exe == null) {
+            exe = onPath(windows ? "java.exe" : "java");
         }
         try {
-            return majorFromRelease(java.nio.file.Files.readString(home.resolve("release")));
+            return exe == null ? null : exe.toRealPath();
+        } catch (java.io.IOException | RuntimeException e) {
+            return exe;
+        }
+    }
+
+    /** The major version of the JDK whose {@code bin/java} is {@code exe}, from its {@code release} file; 0 if unknown. */
+    public static int javaMajor(java.nio.file.Path exe) {
+        try {
+            java.nio.file.Path bin = exe.toRealPath().getParent();
+            java.nio.file.Path home = bin == null ? null : bin.getParent();
+            return home == null ? 0 : majorFromRelease(java.nio.file.Files.readString(home.resolve("release")));
         } catch (java.io.IOException | RuntimeException e) {
             return 0;
         }

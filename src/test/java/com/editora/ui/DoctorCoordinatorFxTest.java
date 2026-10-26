@@ -454,7 +454,7 @@ class DoctorCoordinatorFxTest {
     void jdtlsSaysWhichJavaItRunsOn() {
         DoctorCheck ok =
                 DoctorCheck.checking("lsp.java", "lsp", "Java", "jdtls").ok("1.63.0 — /x/bin/jdtls");
-        DoctorCheck shown = DoctorCoordinator.jdtlsRuntime(ok, null);
+        DoctorCheck shown = DoctorCoordinator.jdtlsRuntime(ok, null, null);
         if (shown.status() == com.editora.doctor.DoctorStatus.OK) {
             assertTrue(shown.detail().startsWith("1.63.0 — /x/bin/jdtls · "), shown.detail());
             assertTrue(shown.detail().contains("Java") || shown.detail().contains("java"), shown.detail());
@@ -463,6 +463,6 @@ class DoctorCoordinatorFxTest {
         }
         DoctorCheck missing =
                 DoctorCheck.checking("lsp.java", "lsp", "Java", "jdtls").missing("doctor.tip.notConfigured");
-        assertEquals(missing, DoctorCoordinator.jdtlsRuntime(missing, null));
+        assertEquals(missing, DoctorCoordinator.jdtlsRuntime(missing, null, null));
     }
 }

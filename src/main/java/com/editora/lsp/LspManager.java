@@ -1759,15 +1759,17 @@ public final class LspManager {
                             exe -> JavaServerEnvironment.isRemoteJdtlsLauncher(root, exe))
                     : resolvedSpec.command();
             if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && !remote && !startCommand.isEmpty()) {
+                // the Java this jdtls's bundles need: 25 for 1.63, though its launcher only checks for 21 (DS1)
+                int minJava = JavaRuntimes.serverMinMajor(startCommand.get(0));
                 JavaRuntimes.ServerJava serverJava = JavaRuntimes.serverJava(
-                        JavaRuntimes.launcherJavaMajor(), JavaRuntimes.discover(), javaPreferredHome);
+                        JavaRuntimes.launcherJavaMajor(), JavaRuntimes.discover(), javaPreferredHome, minJava);
                 if (serverJava.missing() && JavaServerEnvironment.isJdtlsLauncher(startCommand.get(0))) {
-                    // The launcher would refuse with "jdtls requires at least Java 21" on its stderr, and the
-                    // user would only see a crash loop: say what is missing instead, and do not retry.
+                    // jdtls would fail on an older Java, and the user would only see a crash loop: say what is
+                    // missing instead, and do not retry.
                     endHere(session);
                     dropSession(key, session);
-                    StartRefusal refusal = new StartRefusal(
-                            StartRefusal.Kind.NO_JAVA_FOR_SERVER, String.valueOf(JavaRuntimes.SERVER_MIN_MAJOR));
+                    StartRefusal refusal =
+                            new StartRefusal(StartRefusal.Kind.NO_JAVA_FOR_SERVER, String.valueOf(minJava));
                     Platform.runLater(() -> {
                         if (!closed) {
                             onStartRefused.refused(serverId, root, refusal);
