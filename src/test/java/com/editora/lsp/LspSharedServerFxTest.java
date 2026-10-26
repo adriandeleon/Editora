@@ -394,6 +394,31 @@ class LspSharedServerFxTest {
         }
     }
 
+    /** A window joining a project that did not import hears so, not only "ready" (sixth review CS2). */
+    @Test
+    void aWindowJoiningIsToldHowTheProjectImported() throws Exception {
+        Path f = javaFile("A.java");
+        a.openDocument(f, root, "java", "class A {}");
+        LspTestHooks.languageStatus(a, f, "ProjectStatus", "WARNING");
+        awaitFx(() -> "WARNING".equals(a.sessionForTest(f).lastProjectStatus()), "the outcome kept on the session");
+        List<String> statuses = new CopyOnWriteArrayList<>();
+        LspManager c = new LspManager((file, list) -> {}, (type, msg) -> statuses.add(type + ":" + msg));
+        try {
+            c.setSessionStarterForTest(
+                    session -> session.attachForTest(new FakeLanguageServer(), new ServerCapabilities()));
+            c.configure(true, Map.of("java", "jdtls"));
+            a.shareServersForTest(c);
+            c.openDocument(f, root, "java", "class A {}");
+            awaitFx(() -> statuses.contains("ServiceReady:null"), "ready");
+            assertTrue(
+                    statuses.indexOf("ProjectStatus:WARNING") >= 0
+                            && statuses.indexOf("ProjectStatus:WARNING") < statuses.indexOf("ServiceReady:null"),
+                    statuses.toString());
+        } finally {
+            c.shutdownAll();
+        }
+    }
+
     private static LspClientUi ui(List<String> asked) {
         return new LspClientUi() {
             @Override
@@ -435,5 +460,37 @@ class LspSharedServerFxTest {
         assertTrue(a.isManaged(one), "the other project's server keeps running");
         assertFalse(a.isManaged(two));
         assertTrue(LspManager.isHeldForInstall("java") == false);
+    }
+
+    /** A question the session cancels takes the window's picker down with it (sixth review DV1). */
+    @Test
+    void aCancelledImportQuestionClosesThePicker() throws Exception {
+        CompletableFuture<String> shown = new CompletableFuture<>();
+        java.util.concurrent.atomic.AtomicBoolean up = new java.util.concurrent.atomic.AtomicBoolean();
+        a.setClientUi(new LspClientUi() {
+            @Override
+            public CompletableFuture<String> chooseAction(
+                    String serverId, MessageType type, String message, List<String> actions) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public CompletableFuture<String> inputBox(String serverId, String prompt, String value, String hint) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public CompletableFuture<String> quickPick(String serverId, String placeHolder, List<PickItem> items) {
+                up.set(true);
+                return shown;
+            }
+
+            @Override
+            public void openLocation(String serverId, Path file, int line, int column) {}
+        });
+        CompletableFuture<String> asked = a.clientUiForTest().chooseImport("java", "Date", 3, List.of());
+        awaitFx(up::get, "the question shown");
+        asked.cancel(false);
+        awaitFx(shown::isCancelled, "the picker to be cancelled too");
     }
 }

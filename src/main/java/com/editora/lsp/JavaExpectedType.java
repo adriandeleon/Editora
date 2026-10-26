@@ -65,7 +65,8 @@ public final class JavaExpectedType {
             "return", "new", "throw", "else", "case", "yield", "package", "import", "instanceof", "var", "assert");
 
     /** The expectation at {@code caret}, or null where the code states none. */
-    public static @Nullable Expected at(String text, int caret) {
+    public static @Nullable Expected at(String source, int caret) {
+        String text = blankLiterals(source, caret); // a "(" in a string or a comment is no bracket (sixth AS3)
         int c = Math.max(0, Math.min(caret, text.length()));
         int i = c;
         while (i > 0 && Character.isJavaIdentifierPart(text.charAt(i - 1))) {
@@ -123,6 +124,60 @@ public final class JavaExpectedType {
             }
         }
         return null;
+    }
+
+    /**
+     * {@code text} with what is inside its string, char and text-block literals and its comments before {@code end}
+     * blanked out, offsets kept: the backward scans read only code. Read forward, as only forward can tell a quote
+     * that opens a literal from one inside a comment (sixth review AS3).
+     */
+    static String blankLiterals(String text, int end) {
+        int stop = Math.max(0, Math.min(end, text.length()));
+        StringBuilder out = null;
+        int i = 0;
+        while (i < stop) {
+            char ch = text.charAt(i);
+            int from = -1;
+            int to = -1;
+            if (ch == '/' && i + 1 < stop && text.charAt(i + 1) == '/') {
+                from = i;
+                int nl = text.indexOf('\n', i);
+                to = nl < 0 || nl > stop ? stop : nl;
+            } else if (ch == '/' && i + 1 < stop && text.charAt(i + 1) == '*') {
+                from = i;
+                int close = text.indexOf("*/", i + 2);
+                to = close < 0 || close + 2 > stop ? stop : close + 2;
+            } else if (text.startsWith("\"\"\"", i)) {
+                from = i + 3;
+                int close = text.indexOf("\"\"\"", i + 3);
+                to = close < 0 || close > stop ? stop : close;
+                i = Math.min(stop, to + 3);
+            } else if (ch == '"' || ch == '\'') {
+                from = i + 1;
+                int k = i + 1;
+                while (k < stop && text.charAt(k) != ch && text.charAt(k) != '\n') {
+                    k += text.charAt(k) == '\\' ? 2 : 1;
+                }
+                to = Math.min(k, stop);
+                i = Math.min(stop, to + 1);
+            }
+            if (from < 0) {
+                i++;
+                continue;
+            }
+            if (out == null) {
+                out = new StringBuilder(text);
+            }
+            for (int k = from; k < to; k++) {
+                if (out.charAt(k) != '\n') {
+                    out.setCharAt(k, ' ');
+                }
+            }
+            if (i <= from) {
+                i = Math.max(to, from + 1); // a comment: on past it
+            }
+        }
+        return out == null ? text : out.toString();
     }
 
     /** The type part of a parameter's label from signature help: {@code int n} → {@code int}. */
@@ -236,7 +291,8 @@ public final class JavaExpectedType {
      * own depth. What Smart Type falls back on when jdtls names no active parameter, as when no overload fits the
      * arguments so far (fifth review AV8). Null outside a call's parentheses.
      */
-    public static @Nullable Integer argumentIndex(String text, int caret) {
+    public static @Nullable Integer argumentIndex(String source, int caret) {
+        String text = blankLiterals(source, caret); // the same reading of literals and comments as at() (AS3)
         int depth = 0;
         int commas = 0;
         for (int i = Math.min(caret, text.length()) - 1; i >= 0; i--) {

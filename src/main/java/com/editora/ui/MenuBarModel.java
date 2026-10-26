@@ -222,6 +222,7 @@ final class MenuBarModel {
                                 "lsp.gotoDeclaration",
                                 "lsp.peekDefinition",
                                 "lsp.gotoImplementation",
+                                "lsp.gotoSuperMethod",
                                 "lsp.gotoTypeDefinition",
                                 "lsp.findReferences",
                                 "lsp.copyQualifiedName",

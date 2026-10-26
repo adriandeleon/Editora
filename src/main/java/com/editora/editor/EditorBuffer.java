@@ -3940,7 +3940,7 @@ public class EditorBuffer implements TabContent {
             }
         }
         if (best == null) {
-            return null;
+            return classLevel ? testClassTarget() : null; // above the class line: the class's (sixth review BS3)
         }
         return classLevel
                 ? new com.editora.test.JavaTestScanner.TestTarget(best.line(), best.className(), null, false)
@@ -6982,7 +6982,7 @@ public class EditorBuffer implements TabContent {
         area.setParagraphGraphicFactory(gutterVisible ? folds.gutterFactory(lineNumbersVisible) : null);
         applyNoGutterStyle(area);
         if (area2 != null) { // the same gutter: fold chevrons, bookmark, breakpoint and run markers
-            area2.setParagraphGraphicFactory(area.getParagraphGraphicFactory());
+            area2.setParagraphGraphicFactory(gutterVisible ? folds.gutterFactory(lineNumbersVisible, true) : null);
             applyNoGutterStyle(area2);
         }
     }

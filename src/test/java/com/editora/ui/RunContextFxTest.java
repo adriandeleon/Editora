@@ -57,4 +57,24 @@ class RunContextFxTest {
         });
         assertEquals(tr("status.run.noContext", "Shelf.java"), said);
     }
+
+    /** Above a test class's declaration the class is the context, not a single file to compile (sixth BS3). */
+    @Test
+    void aboveATestClassTheClassIsTheTarget() throws Exception {
+        Path file = Files.writeString(
+                dir.resolve("ShelfTest.java"),
+                "import org.junit.jupiter.api.Test;\n\nclass ShelfTest {\n    @Test\n    void holds() {}\n}\n");
+        var target = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setContent(Files.readString(file));
+            b.setPath(file);
+            FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, b, true);
+            b.setTestGutterEnabled(true);
+            b.settleRunScan();
+            b.getArea().moveTo(0, 0);
+            return b.testTargetAtCaret(true);
+        });
+        org.junit.jupiter.api.Assertions.assertNotNull(target, "the class's tests");
+        org.junit.jupiter.api.Assertions.assertNull(target.methodName());
+    }
 }

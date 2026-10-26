@@ -1915,8 +1915,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     public interface RenameParticipant {
         void willRename(Path from, Path to, Consumer<Boolean> proceed);
 
-        /** A drag-move, or its Undo Move, begins: its renames are one change until {@link #endMove}. */
-        default void beginMove() {}
+        /** A drag-move, or its Undo Move, of {@code count} items begins: its renames are one change until {@link #endMove}. */
+        default void beginMove(int count) {}
 
         /** It is done; {@code undo} when it took the last drag-move back. Runs after the tree's own status. */
         default void endMove(boolean undo) {}
@@ -2514,7 +2514,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         int alreadySkipped = skipped;
         refused[0] = 0;
-        renameParticipant.beginMove();
+        renameParticipant.beginMove(planned.size());
         moveThrough(planned, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             int moved = done.size();
             if (moved > 0) {
@@ -2526,9 +2526,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             onStatus.accept(
                     moved == 0 && refused[0] > 0 && notMoved == 0
                             ? tr("project.moveCancelled") // "No" to moving without edits is no conflict (BV3)
-                            : notMoved == 0
-                                    ? tr("project.moved", moved, targetDir.getFileName())
-                                    : tr("project.movedSome", moved, notMoved));
+                            : notMoved == 0 && refused[0] > 0
+                                    // some moved, the rest kept by that "No": said, not left out (sixth review BV3)
+                                    ? tr("project.movedSomeKept", moved, targetDir.getFileName(), refused[0])
+                                    : notMoved == 0
+                                            ? tr("project.moved", moved, targetDir.getFileName())
+                                            : tr("project.movedSome", moved, notMoved));
             renameParticipant.endMove(false);
         });
     }
@@ -2609,17 +2612,20 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         int alreadyStuck = stuck;
         refused[0] = 0;
-        renameParticipant.beginMove();
+        renameParticipant.beginMove(back.size());
         moveThrough(back, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             if (!done.isEmpty()) {
                 markLocalChange();
                 refreshAfterChange();
             }
-            int notBack = alreadyStuck + failed;
+            // a "No" to moving back without edits is the user's choice, not a conflict (sixth review BV3)
+            int notBack = alreadyStuck + failed - refused[0];
             onStatus.accept(
-                    notBack == 0
-                            ? tr("project.moveUndone", done.size())
-                            : tr("project.moveUndoneSome", done.size(), notBack));
+                    notBack == 0 && refused[0] > 0
+                            ? tr("project.moveUndoneKept", done.size(), refused[0])
+                            : notBack == 0
+                                    ? tr("project.moveUndone", done.size())
+                                    : tr("project.moveUndoneSome", done.size(), notBack));
             renameParticipant.endMove(true);
         });
     }

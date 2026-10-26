@@ -119,6 +119,45 @@ class FoldLevelsFxTest {
         closeActiveTab(b);
     }
 
+    /** A Collapse All then Expand All round trip leaves the caret's line on screen (sixth review ES3). */
+    @Test
+    void aFoldRoundTripKeepsTheCaretLineOnScreen() throws Exception {
+        StringBuilder src = new StringBuilder("class Big {\n");
+        for (int m = 0; m < 30; m++) {
+            src.append("    void m")
+                    .append(m)
+                    .append("() {\n        int x = ")
+                    .append(m)
+                    .append(";\n    }\n");
+        }
+        src.append("}\n");
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setContent(src.toString());
+            FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, buf, true);
+            buf.getFoldManager().setLanguage("java");
+            buf.getFoldManager().recompute();
+            return buf;
+        });
+        CodeArea area = FxTestSupport.field(b, "area");
+        FxTestSupport.runOnFx(() -> {
+            area.moveTo(70, 8);
+            area.requestFollowCaret();
+        });
+        FxTestSupport.drainFx();
+        run("view.foldAll");
+        FxTestSupport.drainFx();
+        run("view.unfoldAll");
+        for (int i = 0; i < 5; i++) {
+            FxTestSupport.drainFx();
+        }
+        int caretLine = FxTestSupport.callOnFx(area::getCurrentParagraph);
+        int first = FxTestSupport.callOnFx(
+                () -> area.allParToVisibleParIndex(caretLine).orElse(-1));
+        assertTrue(first >= 0, "the caret's line " + caretLine + " is on screen");
+        closeActiveTab(b);
+    }
+
     @Test
     void recursiveFoldAndUnfoldCoverTheWholeNest() throws Exception {
         EditorBuffer b = addJavaBuffer();

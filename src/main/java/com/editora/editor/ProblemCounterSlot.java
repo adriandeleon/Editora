@@ -32,6 +32,12 @@ public final class ProblemCounterSlot {
 
     private java.util.function.Function<String, @Nullable String> chords = id -> null;
 
+    /**
+     * Whether the file's server has finished loading its project. jdtls publishes an empty list for an open file
+     * before the project is imported and built, so until then an empty list is no "no problems" (sixth review AS1).
+     */
+    private BooleanSupplier settled = () -> true;
+
     /** {@code possible}: a server checks the file; {@code mount}/{@code unmount} add it to and take it from the row. */
     ProblemCounterSlot(BooleanSupplier possible, Consumer<Node> mount, Consumer<Node> unmount) {
         this.possible = possible;
@@ -59,8 +65,18 @@ public final class ProblemCounterSlot {
         update();
     }
 
+    /** What says the file's server has finished loading its project (see {@link #settled}). */
+    public void setSettled(BooleanSupplier settled) {
+        this.settled = settled == null ? () -> true : settled;
+    }
+
+    /** Shows the state now: the server became ready, or restarted. */
+    public void refresh() {
+        update();
+    }
+
     /** The file is (re)opened on a server, or left one: nothing is known until it publishes again. */
-    void reset() {
+    public void reset() {
         diagnostics = List.of();
         checked = false;
         update();
@@ -105,11 +121,12 @@ public final class ProblemCounterSlot {
             counter.setChords(chords);
         }
         String noteNow = note;
+        boolean known = checked && (!diagnostics.isEmpty() || settled.getAsBoolean());
         counter.show(
                 diagnostics,
                 noteNow != null
                         ? noteNow
-                        : checked ? null : com.editora.i18n.Messages.tr("editor.problemCounter.analyzing"));
+                        : known ? null : com.editora.i18n.Messages.tr("editor.problemCounter.analyzing"));
         mount.accept(counter);
         mounted = true;
     }

@@ -57,3 +57,7 @@
 
 /* Bookmark gutter marker (theme accent). */
 .editor-area .fold-gutter .bookmark-marker { -fx-fill: #e08a33; }
+/* The code-action lightbulb in the editor theme's own colours, told apart from the bookmark: yellow for a quick action,
+   red for a fix to an error (sixth review EV4). */
+.editor-area .fold-gutter .bulb-marker { -fx-fill: #b88a00; }
+.editor-area .fold-gutter .bulb-marker.fix { -fx-fill: #d32f2f; }

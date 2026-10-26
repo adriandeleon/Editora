@@ -3169,6 +3169,16 @@ final class LspCoordinator {
         if (serverId != null && root != null) {
             if ("Launching".equalsIgnoreCase(type)) {
                 saidReady.remove(source); // a new process: its ready line is owed again
+                // and what its files had is not known again until it has checked them (sixth review AS1)
+                Path launched = root;
+                host.forEachBuffer(b -> {
+                    Path p = lspPath(b);
+                    if (p != null
+                            && serverId.equals(serverIdForBuffer(b))
+                            && launched.equals(lspManager.javaSessionRoot(p))) {
+                        b.problemCounter().reset();
+                    }
+                });
             }
             if ("ProjectStatus".equalsIgnoreCase(type) && "OK".equalsIgnoreCase(message)) {
                 // that folder imported: its earlier failure no longer stands (third review CT3)
@@ -3347,11 +3357,29 @@ final class LspCoordinator {
     private String statusServerName(String serverId, @Nullable Path root) {
         String name = serverProgram(serverId);
         long folders = statusSources.values().stream()
-                .filter(src -> src.serverId().equals(serverId) && lspManager.isRunning(serverId, src.root()))
-                .count(); // live servers only: a closed project's name stayed on every later line (CV4)
+                .filter(src -> src.serverId().equals(serverId) && lspManager.hasLiveSession(serverId, src.root()))
+                .count(); // live servers only (CV4), starting ones too: their first lines were unnamed (sixth CS3)
         return root == null || folders < 2 || root.getFileName() == null
                 ? name
                 : tr("status.lsp.serverInFolder", name, root.getFileName().toString());
+    }
+
+    /**
+     * Forgets how the Java project at {@code root} imported (and what no known folder said), as its import runs
+     * again; true when it had failed. Other projects' outcomes stand (sixth review CS1).
+     */
+    private boolean forgetImport(@Nullable Path root) {
+        boolean failed = false;
+        for (String key : root == null
+                ? java.util.List.of(importKey(LspServerRegistry.JAVA_SERVER_ID, null))
+                : java.util.List.of(
+                        importKey(LspServerRegistry.JAVA_SERVER_ID, root),
+                        importKey(LspServerRegistry.JAVA_SERVER_ID, null))) {
+            failed |= importFailed.remove(key);
+            importWarned.remove(key);
+            warnedAtReady.remove(key);
+        }
+        return failed;
     }
 
     private static String importKey(@Nullable String serverId, @Nullable Path root) {
@@ -3411,7 +3439,24 @@ final class LspCoordinator {
         refreshImportNotes();
     }
 
+    /**
+     * Whether {@code b}'s Java server has said its project is loaded: its first empty publish, before the import and
+     * build, read as "no problems" (sixth review AS1). Other servers check a file as they open it.
+     */
+    private boolean serverSettled(EditorBuffer b) {
+        Path p = lspPath(b);
+        if (p == null || !LspServerRegistry.JAVA_SERVER_ID.equals(serverIdForBuffer(b))) {
+            return true;
+        }
+        Path root = lspManager.javaSessionRoot(p);
+        return root == null || saidReady.contains(statusSource(LspServerRegistry.JAVA_SERVER_ID, root));
+    }
+
     private void showStatusLineOnly(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
+        if (line != null && line.ready() && line.serverId() != null && !saidReady.contains(line.serverId())) {
+            saidReady.add(line.serverId());
+            host.forEachBuffer(b -> b.problemCounter().refresh()); // its files' counts are known now (AS1)
+        }
         if (line != null) {
             StatusSource source = line.serverId() == null ? null : statusSources.get(line.serverId());
             String serverId = source != null ? source.serverId() : line.serverId();
@@ -3494,12 +3539,10 @@ final class LspCoordinator {
                 && path.getFileName() != null
                 && JAVA_BUILD_FILES.contains(path.getFileName().toString())) {
             Path root = lspManager.javaSessionRoot(path);
-            if (root != null && importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
+            if (root != null && importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
                 // The build file of a project that did not import was saved, presumably fixed: import it again,
                 // as a saved pom.xml re-syncs a project that did (fourth review CT1).
-                importWarned.clear();
-                warnedAtReady.clear();
-                warnedAtReady.clear();
+                forgetImport(root);
                 restartJavaServer(path);
                 host.setStatus(tr("status.lsp.projectReimporting"));
             }
@@ -3799,6 +3842,7 @@ final class LspCoordinator {
                         () -> ops.executeCommand("tool.problems"),
                         () -> gotoProblem(buffer, false),
                         () -> gotoProblem(buffer, true));
+        buffer.problemCounter().setSettled(() -> serverSettled(buffer));
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
@@ -4727,6 +4771,12 @@ final class LspCoordinator {
         if (path == null) {
             return;
         }
+        if (lspManager.questionOpen(path)) {
+            // jdtls answers a second organize with no edit while the first waits on the user: that said "Imports
+            // already organized" beside the open question (sixth review AS2)
+            host.setStatus(tr("status.lsp.answerImportQuestion"));
+            return;
+        }
         CodeArea area = b.getFocusedArea();
         int lastLine = Math.max(0, area.getParagraphs().size() - 1);
         int lastChar = area.getParagraph(lastLine).length();
@@ -4782,12 +4832,10 @@ final class LspCoordinator {
         // The Java project's root, also from a build-file tab no Java server edits: by that tab's own server it was
         // no root at all, so the failure was missed and the project not imported again (fourth review CT1).
         Path root = path == null ? null : lspManager.javaSessionRoot(path);
-        boolean failed = importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))
-                | importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, null)); // said by no known folder
-        importFailed.clear(); // the import runs again: its outcome is said afresh
+        // This project's import runs again, its outcome said afresh; another project's failure stands: cleared for
+        // the window, it was lost, and its fixed build file no longer re-imported (sixth review CS1)
+        boolean failed = forgetImport(root);
         refreshImportNotes();
-        importWarned.clear();
-        warnedAtReady.clear();
         if (path == null) {
             host.setStatus(tr("status.lsp.unavailable"));
             return;
@@ -4841,10 +4889,8 @@ final class LspCoordinator {
         correctedSourceRoots.clear();
         builtAfterImport.clear(); // the fresh import builds again
         announcedProjectProblems.clear();
-        importFailed.clear(); // the fresh import says its own outcome (third review CT3)
+        forgetImport(lspManager.javaSessionRoot(path)); // its fresh import says its own outcome (CT3); others stand
         refreshImportNotes();
-        importWarned.clear();
-        warnedAtReady.clear();
         java.util.List<EditorBuffer> java = javaBuffersOf(path);
         clearProjectProblems(); // the dead server's "project:1" entries would stay for good
         lspManager.cleanJavaWorkspace(path, deleted -> {
@@ -5580,6 +5626,15 @@ final class LspCoordinator {
                 lspManager::supportsTypeDefinition,
                 lspManager::typeDefinitionAt,
                 (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noTypeDefinition"));
+    }
+
+    /** Go to Super Method ({@code lsp.gotoSuperMethod}, IntelliJ's Ctrl+U): what the method at the caret overrides. */
+    void gotoSuperMethod() {
+        withNavRequest(
+                "status.lsp.superMethodUnsupported",
+                lspManager::supportsSuperMethod,
+                lspManager::superMethodAt,
+                (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noSuperMethod"));
     }
 
     /** Go to Declaration ({@code lsp.gotoDeclaration}, #736). */
@@ -7606,26 +7661,51 @@ final class LspCoordinator {
      */
     void willRenameFile(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
         AppliedEdit previous = lastApplied;
+        renamesInFlight++;
         lspManager.willRenameFile(
                 from,
                 to,
                 ok -> {
-                    proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
-                    AppliedEdit edit = lastApplied;
-                    boolean moved = ok && !java.nio.file.Files.exists(from) && java.nio.file.Files.exists(to);
-                    if (moved && edit != null && edit != previous) {
-                        treeRenamed(edit, from, to);
-                    } else if (moved && moveGroup != null) {
-                        // moved with no edit (not Java, or nothing to change): still part of the drag, so undoing
-                        // the drag as one refactoring takes it back too (fifth review BV1)
-                        moveGroup.add(new AppliedEdit(
-                                java.util.List.of(),
-                                java.util.List.of(new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false)),
-                                java.util.List.of()));
-                        moveGroupWhole &= !java.nio.file.Files.isDirectory(to);
+                    try {
+                        proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
+                        AppliedEdit edit = lastApplied;
+                        boolean moved = ok && !java.nio.file.Files.exists(from) && java.nio.file.Files.exists(to);
+                        if (moved && edit != null && edit != previous) {
+                            treeRenamed(edit, from, to);
+                        } else if (moved && moveGroup != null) {
+                            // moved with no edit (not Java, or nothing to change): still part of the drag, so
+                            // undoing the drag as one refactoring takes it back too (fifth review BV1)
+                            moveGroup.add(new AppliedEdit(
+                                    java.util.List.of(),
+                                    java.util.List.of(
+                                            new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false)),
+                                    java.util.List.of()));
+                            moveGroupWhole &= !java.nio.file.Files.isDirectory(to);
+                        }
+                    } finally {
+                        renameDone();
                     }
                 },
                 this::renameWithoutEdits);
+    }
+
+    /**
+     * Tree renames whose edit is not recorded yet. Saving a tab the move edited runs a nested event loop, which ran
+     * the drag's next move and its end before this move was recorded: the drag ends only once none is in flight
+     * (sixth review BS1).
+     */
+    private int renamesInFlight;
+
+    /** The end of the drag, waiting for a rename still in flight: true for an Undo Move's, null when none waits. */
+    private @Nullable Boolean moveEndWaiting;
+
+    private void renameDone() {
+        renamesInFlight = Math.max(0, renamesInFlight - 1);
+        Boolean undo = moveEndWaiting;
+        if (renamesInFlight == 0 && undo != null) {
+            moveEndWaiting = null;
+            endTreeMove(undo);
+        }
     }
 
     /**
@@ -7640,16 +7720,21 @@ final class LspCoordinator {
             }
 
             @Override
-            public void beginMove() {
+            public void beginMove(int count) {
                 moveGroup = new java.util.ArrayList<>();
                 moveGroupWhole = true;
+                moveCount = count;
                 moveWithoutEdits.clear();
                 moveWithoutEditsAnswer = null;
             }
 
             @Override
             public void endMove(boolean undo) {
-                endTreeMove(undo);
+                if (renamesInFlight > 0) {
+                    moveEndWaiting = undo; // a move's edit is still being recorded (sixth review BS1)
+                } else {
+                    endTreeMove(undo);
+                }
             }
         };
     }
@@ -7659,6 +7744,9 @@ final class LspCoordinator {
 
     /** False once a folder moved in it: a folder cannot be moved back as one, so Undo Move is the way back. */
     private boolean moveGroupWhole;
+
+    /** How many items the drag under way moves, for the one question asked about them all. */
+    private int moveCount;
 
     /** The {@code .java} files of the drag that moved without their package line edited. */
     private final java.util.List<String> moveWithoutEdits = new java.util.ArrayList<>();
@@ -7679,13 +7767,16 @@ final class LspCoordinator {
         if (group == null) {
             return;
         }
+        // Only a drag in which jdtls edited something is a refactoring: a .txt dragged after a rename took the
+        // rename's undo away, and became "Refactoring undone in 0 files" (sixth review BS2).
+        boolean edited = group.stream().anyMatch(e -> !e.files().isEmpty());
         if (undo) {
             // Undo Move took the drag back: it is not a refactoring to undo, and the drag's own edit is gone
-            if (!group.isEmpty() || (lastApplied != null && lastApplied == treeMoveEdit)) {
+            if (edited || (lastApplied != null && lastApplied == treeMoveEdit)) {
                 lastApplied = null;
             }
             treeMoveEdit = null;
-        } else if (!group.isEmpty()) {
+        } else if (edited) {
             lastApplied = moveGroupWhole ? merged(group) : null;
             treeMoveEdit = lastApplied;
         }
@@ -7744,8 +7835,16 @@ final class LspCoordinator {
             return asked; // asked once for the whole drag (fifth review BV3)
         }
         boolean rename = java.util.Objects.equals(from.getParent(), to.getParent());
+        // A drag of several asks once, so it names them all, not only the first (sixth review BV3)
+        boolean many = moveGroup != null && moveCount > 1;
         boolean answer = confirmRenameWithoutEdits.test(
-                tr(rename ? "dialog.lsp.renameWithoutEdits.renameBody" : "dialog.lsp.renameWithoutEdits.body", name));
+                many
+                        ? tr("dialog.lsp.renameWithoutEdits.manyBody", name, moveCount - 1)
+                        : tr(
+                                rename
+                                        ? "dialog.lsp.renameWithoutEdits.renameBody"
+                                        : "dialog.lsp.renameWithoutEdits.body",
+                                name));
         if (moveGroup != null) {
             moveWithoutEditsAnswer = answer;
         }
@@ -7779,11 +7878,8 @@ final class LspCoordinator {
             Path p = e.path().toAbsolutePath().normalize();
             Path now = p.startsWith(f) ? t.resolve(f.relativize(p)) : e.path();
             files.add(new EditedFile(now, e.before(), e.after()));
-            EditorBuffer b = ops.bufferForPath(now);
-            if (b != null && b.isDirty() && b.getContent().equals(e.after())) {
-                ops.saveBuffer(b);
-            }
         }
+        java.util.List<AppliedEdit> group = moveGroup;
         if (java.nio.file.Files.isDirectory(t)) {
             lastApplied = null; // a folder cannot be moved back as one: rename it back, and jdtls edits again
             moveGroupWhole = false;
@@ -7796,11 +7892,18 @@ final class LspCoordinator {
         lspManager.notifyWatchedFiles(java.util.List.of(
                 new com.editora.lsp.LspManager.WatchedFile(from, com.editora.lsp.LspManager.WatchedKind.DELETED),
                 new com.editora.lsp.LspManager.WatchedFile(to, com.editora.lsp.LspManager.WatchedKind.CREATED)));
-        java.util.List<AppliedEdit> group = moveGroup;
-        if (group != null) {
-            if (lastApplied != null) {
-                group.add(lastApplied);
+        if (group != null && lastApplied != null) {
+            group.add(lastApplied);
+        }
+        // Saved only now that the move is recorded: a save can run a nested event loop, which ran the drag's next
+        // move and its end first (sixth review BS1).
+        for (EditedFile e : files) {
+            EditorBuffer b = ops.bufferForPath(e.path());
+            if (b != null && b.isDirty() && b.getContent().equals(e.after())) {
+                ops.saveBuffer(b);
             }
+        }
+        if (group != null) {
             return; // a drag-move: the tree says what moved, not "Renamed to" (fourth review BF3)
         }
         // the saves above said "Saved /the/whole/path"; the rename is what happened (BT7)

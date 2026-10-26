@@ -61,6 +61,11 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Java LSP sixth review (2026-10-26)** — every finding: drag-moves recorded before their saves; jdtls on the
+      Java its bundles need; import outcomes per project; the counter waits for jdtls; bulb in one view, themed; the
+      import picker closes with its request; Go to Super Method. Left open: Paste with imports of an ambiguous name
+      (A11, jdtls skips it); Smart Type after varargs (AN2, upstream); Method Hierarchy, Safe Delete, Shift Shift,
+      Select In; Copy Reference's `#` form.
 - [x] **Java LSP fifth review (2026-10-25) fix-next list** — drag-moves record every file's edit; the counter and
       the bulb are their file's; restart, reload and status per project; the import chooser holds its request;
       formatter profiles reset and watched in project windows; Run Context runs a project main; fold-all keeps

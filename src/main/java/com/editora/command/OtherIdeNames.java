@@ -29,6 +29,7 @@ public final class OtherIdeNames {
             Map.entry("snippets.insert", List.of("Insert Live Template", "Live Template")),
             Map.entry("snippets.surround", List.of("Surround With Live Template")),
             Map.entry("lsp.findReferences", List.of("Find Usages", "Show Usages", "Find All References")),
+            Map.entry("lsp.gotoSuperMethod", List.of("Super Method", "Go to Super Method")),
             Map.entry("lsp.copyQualifiedName", List.of("Copy Reference", "Copy Qualified Name")),
             Map.entry("lsp.callHierarchy", List.of("Show Call Hierarchy", "Call Hierarchy")),
             Map.entry("lsp.typeHierarchy", List.of("Show Type Hierarchy", "Type Hierarchy")),

@@ -204,10 +204,16 @@ public final class JavaProjectSettings {
         return merge(defaults, out);
     }
 
-    /** Whether a change to {@code file} can change what {@link #forRoot} reads: its style or build files. */
+    /**
+     * Whether a change to {@code file} can change what {@link #forRoot} reads: its style or build files, and the
+     * {@code .settings} and {@code config} folders a profile lives in. A checkout writes such a folder and its
+     * profile at once, and only the folder's creation was ever seen (sixth review DN4).
+     */
     public static boolean isStyleSource(java.nio.file.Path file) {
         String name = file.getFileName() == null ? "" : file.getFileName().toString();
         return name.equals(".editorconfig")
+                || name.equals(".settings")
+                || name.equals("config")
                 || name.equals("pom.xml")
                 || name.startsWith("build.gradle")
                 || name.endsWith(".xml") // a formatter profile can be named anything

@@ -44,6 +44,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -164,8 +165,14 @@ class LspWorkspaceEditFxTest {
         final List<Path> saved = new ArrayList<>();
         final List<Path> closed = new ArrayList<>();
 
+        /** Run inside a save, as a save's nested event loop runs whatever is queued (sixth review BS1). */
+        Runnable duringSave = () -> {};
+
         @Override
         public boolean saveBuffer(EditorBuffer buffer) {
+            Runnable during = duringSave;
+            duringSave = () -> {};
+            during.run();
             try {
                 Files.writeString(buffer.getPath(), buffer.getContent());
                 buffer.markClean();
@@ -1820,7 +1827,7 @@ class LspWorkspaceEditFxTest {
         AtomicInteger treeForgot = new AtomicInteger();
         FxTestSupport.runOnFx(() -> coordinator.setOnTreeMoveUndone(treeForgot::incrementAndGet));
 
-        FxTestSupport.runOnFx(participant::beginMove);
+        FxTestSupport.runOnFx(() -> participant.beginMove(2));
         fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*1*/");
         assertTrue(treeMove(participant, big, util.resolve("Big.java")));
         fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*2*/");
@@ -1845,11 +1852,11 @@ class LspWorkspaceEditFxTest {
         assertEquals(1, treeForgot.get(), "Undo Move is no longer offered");
 
         // the other way: Undo Move takes the drag back, and Undo Last Refactoring then has nothing to redo
-        FxTestSupport.runOnFx(participant::beginMove);
+        FxTestSupport.runOnFx(() -> participant.beginMove(2));
         fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*3*/");
         assertTrue(treeMove(participant, big, util.resolve("Big.java")));
         FxTestSupport.runOnFx(() -> participant.endMove(false));
-        FxTestSupport.runOnFx(participant::beginMove);
+        FxTestSupport.runOnFx(() -> participant.beginMove(2));
         fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*back*/");
         assertTrue(treeMove(participant, util.resolve("Big.java"), big));
         FxTestSupport.runOnFx(() -> participant.endMove(true));
@@ -1882,7 +1889,7 @@ class LspWorkspaceEditFxTest {
         Path square = root.resolve("Square.java");
         Files.writeString(square, "class Square {}\n");
         host.error = null;
-        FxTestSupport.runOnFx(participant::beginMove);
+        FxTestSupport.runOnFx(() -> participant.beginMove(2));
         assertTrue(treeMove(participant, square, shapes.resolve("Square.java")));
         assertEquals(null, host.error, "not yet: the tree speaks first");
         FxTestSupport.runOnFx(() -> participant.endMove(false));
@@ -1932,28 +1939,81 @@ class LspWorkspaceEditFxTest {
         assertEquals(2, merged.renames().size());
     }
 
-    /** A file that moves with no edit in a drag is still part of it: undoing the drag takes it back too (BV1). */
+    /**
+     * A file that moves with no edit in a drag is part of a drag jdtls edited for: undoing the drag takes it back too
+     * (fifth review BV1). A drag of such files alone is no refactoring: it leaves the last one undoable (sixth BS2).
+     */
     @Test
-    void aFileMovedWithNoEditIsUndoneWithTheDrag() throws Exception {
+    void aFileMovedWithNoEditIsUndoneWithTheDragAndAloneIsNoRefactoring() throws Exception {
+        Path canvas = root.resolve("Canvas.java");
+        Files.writeString(canvas, "class Canvas {}\n");
+        Files.setLastModifiedTime(
+                canvas, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 60_000));
+        Path big = root.resolve("Big.java");
+        Files.writeString(big, "class Big {}\n");
         Path notes = root.resolve("notes.txt");
         Files.writeString(notes, "notes\n");
         Path docs = Files.createDirectory(root.resolve("docs"));
         serveWillRename();
+        manager.openDocument(canvas, root, "java", "class Canvas {}\n");
         ProjectPanel.RenameParticipant participant = FxTestSupport.callOnFx(coordinator::treeParticipant);
 
-        FxTestSupport.runOnFx(participant::beginMove);
+        FxTestSupport.runOnFx(() -> participant.beginMove(2));
+        fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*1*/");
+        assertTrue(treeMove(participant, big, docs.resolve("Big.java")));
         assertTrue(treeMove(participant, notes, docs.resolve("notes.txt")));
         FxTestSupport.runOnFx(() -> participant.endMove(false));
         var applied = FxTestSupport.callOnFx(coordinator::lastAppliedEdit);
-        assertEquals(
-                List.of(new WorkspaceEditMapper.FileRename(notes, docs.resolve("notes.txt"), false)),
-                applied.renames());
+        assertTrue(applied.renames()
+                .contains(new WorkspaceEditMapper.FileRename(notes, docs.resolve("notes.txt"), false)));
 
         FxTestSupport.runOnFx(coordinator::undoRefactoring);
         for (int i = 0; i < 100 && !Files.exists(notes); i++) {
             Thread.sleep(20);
             FxTestSupport.drainFx();
         }
-        assertTrue(Files.exists(notes), "moved back with the drag");
+        assertTrue(Files.exists(notes) && Files.exists(big), "moved back with the drag");
+
+        // a drag of a text file alone: no refactoring, so it does not replace the last one
+        fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*2*/");
+        FxTestSupport.runOnFx(() -> participant.beginMove(1));
+        assertTrue(treeMove(participant, big, docs.resolve("Big.java")));
+        FxTestSupport.runOnFx(() -> participant.endMove(false));
+        var before = FxTestSupport.callOnFx(coordinator::lastAppliedEdit);
+        FxTestSupport.runOnFx(() -> participant.beginMove(1));
+        assertTrue(treeMove(participant, notes, docs.resolve("notes.txt")));
+        FxTestSupport.runOnFx(() -> participant.endMove(false));
+        assertSame(before, FxTestSupport.callOnFx(coordinator::lastAppliedEdit), "the Java drag stays undoable");
+    }
+
+    /**
+     * Saving a tab the move edited runs a nested event loop, which ran the drag's end before the move was recorded:
+     * the drag then lost its last file, and the rename said "Renamed to" (sixth review BS1).
+     */
+    @Test
+    void aSaveThatEndsTheDragEarlyStillRecordsTheMove() throws Exception {
+        EditorBuffer canvasTab = openBuffer("Canvas.java", "class Canvas {}\n");
+        Path canvas = canvasTab.getPath();
+        Path big = root.resolve("Big.java");
+        Path circle = root.resolve("Circle.java");
+        Files.writeString(big, "class Big {}\n");
+        Files.writeString(circle, "class Circle {}\n");
+        Path util = Files.createDirectory(root.resolve("util"));
+        serveWillRename();
+        manager.openDocument(canvas, root, "java", "class Canvas {}\n");
+        ProjectPanel.RenameParticipant participant = FxTestSupport.callOnFx(coordinator::treeParticipant);
+
+        FxTestSupport.runOnFx(() -> participant.beginMove(2));
+        fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*1*/");
+        assertTrue(treeMove(participant, big, util.resolve("Big.java")));
+        fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*2*/");
+        ops.duringSave = () -> participant.endMove(false); // the tree's finish, run by the save's nested loop
+        host.status = "Moved 2 to util";
+        assertTrue(treeMove(participant, circle, util.resolve("Circle.java")));
+
+        assertTrue(ops.saved.contains(canvas), "the edited tab was saved");
+        assertEquals("Moved 2 to util", host.status, "not \"Renamed to Circle.java\"");
+        var applied = FxTestSupport.callOnFx(coordinator::lastAppliedEdit);
+        assertEquals(2, applied.renames().size(), "both moves, as one refactoring");
     }
 }

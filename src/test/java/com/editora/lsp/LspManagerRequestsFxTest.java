@@ -940,4 +940,18 @@ class LspManagerRequestsFxTest {
             local.shutdownAll();
         }
     }
+
+    /** Go to Super Method asks jdtls's java/findLinks for the super implementation (sixth review E1). */
+    @Test
+    void goToSuperMethodAsksForTheSuperImplementation() throws Exception {
+        FakeLanguageServer fake = open();
+        Path parent = root.resolve("Base.java");
+        fake.rawResponse = com.google.gson.JsonParser.parseString("[{\"uri\":\"" + parent.toUri()
+                + "\",\"range\":{\"start\":{\"line\":3,\"character\":9},\"end\":{\"line\":3,\"character\":13}},"
+                + "\"displayName\":\"area\",\"kind\":\"method\"}]");
+        List<LspManager.Target> targets = await(cb -> manager.superMethodAt(file, null, 0, 6, cb, null));
+        assertEquals("java/findLinks", fake.rawRequests.getLast().method());
+        assertEquals(1, targets.size());
+        assertEquals(3, targets.get(0).line());
+    }
 }

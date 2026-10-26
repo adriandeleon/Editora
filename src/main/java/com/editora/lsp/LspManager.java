@@ -715,6 +715,11 @@ public final class LspManager {
     }
 
     /** {@link #clientUi} reached from a session's reader thread: every call is posted to the FX thread. */
+    /** The client UI sessions are given, which answers on the FX thread (tests). */
+    LspClientUi clientUiForTest() {
+        return fxClientUi;
+    }
+
     private final LspClientUi fxClientUi = new LspClientUi() {
         @Override
         public java.util.concurrent.CompletableFuture<String> chooseAction(
@@ -755,12 +760,20 @@ public final class LspManager {
             var answer = new java.util.concurrent.CompletableFuture<String>();
             Platform.runLater(() -> {
                 LspClientUi ui = clientUi;
-                if (ui == null || closed) {
+                if (ui == null || closed || answer.isDone()) {
                     answer.complete(null);
                     return;
                 }
                 try {
-                    ask.apply(ui).whenComplete((v, e) -> answer.complete(e == null ? v : null));
+                    var shown = ask.apply(ui);
+                    shown.whenComplete((v, e) -> answer.complete(e == null ? v : null));
+                    // The session cancels the question when the request that asked it ends: the picker goes too.
+                    // Cancelling only this wrapper left the picker on screen, answering nothing (sixth review DV1).
+                    answer.whenComplete((v, e) -> {
+                        if (answer.isCancelled()) {
+                            shown.cancel(false);
+                        }
+                    });
                 } catch (RuntimeException e) {
                     LOG.log(java.util.logging.Level.FINE, "server question not shown", e);
                     answer.complete(null);
@@ -769,6 +782,12 @@ public final class LspManager {
             return answer;
         }
     };
+
+    /** Whether {@code file}'s server is waiting on the user's answer to an import question (sixth review AS2). */
+    public boolean questionOpen(Path file) {
+        LanguageServerSession s = file == null ? null : sessionFor(file);
+        return s != null && s.questionOpen();
+    }
 
     /** Restarts {@code serverId} (dispose + drop its cached sessions) so the next {@code openDocument}
      *  re-initializes it — e.g. to reload jdtls with the java-debug bundle. The controller re-opens the
@@ -1274,6 +1293,12 @@ public final class LspManager {
                 || (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && sharedServers.containsKey(key));
     }
 
+    /** Whether this window has a live session of {@code serverId} at {@code root}, started or still starting. */
+    public boolean hasLiveSession(String serverId, Path root) {
+        LanguageServerSession s = sessionsByRoot.get(sessionKey(serverId, root));
+        return s != null && !s.isDisposed();
+    }
+
     public boolean isRunning(String serverId, Path root) {
         String key = sessionKey(serverId, root);
         LanguageServerSession s = sessionsByRoot.get(key);
@@ -1501,6 +1526,9 @@ public final class LspManager {
                 return;
             }
             ServerStatusListener named = onServerStatus;
+            if ("ProjectStatus".equalsIgnoreCase(type) && session.get() != null) {
+                session.get().setLastProjectStatus(msg); // what a window joining later is told (sixth review CS2)
+            }
             if (named != null) {
                 LanguageServerSession said = session.get();
                 named.status(serverId, said == null ? null : said.root(), type, msg);
@@ -1552,7 +1580,12 @@ public final class LspManager {
         ensureRootWatcher(session.root());
         if (session.isInitialized()) {
             // Ready before this window came: it hears so now — its status bar says "Loaded and ready" instead of
-            // a stale progress line, and its documents' gates and data are refreshed (re-review CN5).
+            // a stale progress line, and its documents' gates and data are refreshed (re-review CN5). How the
+            // project imported goes first: a failed import was "Loaded and ready" here (sixth review CS2).
+            String imported = session.lastProjectStatus();
+            if (imported != null) {
+                client.status.accept("ProjectStatus", imported);
+            }
             client.status.accept("ServiceReady", null);
         }
         return session;
@@ -1759,15 +1792,17 @@ public final class LspManager {
                             exe -> JavaServerEnvironment.isRemoteJdtlsLauncher(root, exe))
                     : resolvedSpec.command();
             if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && !remote && !startCommand.isEmpty()) {
+                // the Java this jdtls's bundles need: 25 for 1.63, though its launcher only checks for 21 (DS1)
+                int minJava = JavaRuntimes.serverMinMajor(startCommand.get(0));
                 JavaRuntimes.ServerJava serverJava = JavaRuntimes.serverJava(
-                        JavaRuntimes.launcherJavaMajor(), JavaRuntimes.discover(), javaPreferredHome);
+                        JavaRuntimes.launcherJavaMajor(), JavaRuntimes.discover(), javaPreferredHome, minJava);
                 if (serverJava.missing() && JavaServerEnvironment.isJdtlsLauncher(startCommand.get(0))) {
-                    // The launcher would refuse with "jdtls requires at least Java 21" on its stderr, and the
-                    // user would only see a crash loop: say what is missing instead, and do not retry.
+                    // jdtls would fail on an older Java, and the user would only see a crash loop: say what is
+                    // missing instead, and do not retry.
                     endHere(session);
                     dropSession(key, session);
-                    StartRefusal refusal = new StartRefusal(
-                            StartRefusal.Kind.NO_JAVA_FOR_SERVER, String.valueOf(JavaRuntimes.SERVER_MIN_MAJOR));
+                    StartRefusal refusal =
+                            new StartRefusal(StartRefusal.Kind.NO_JAVA_FOR_SERVER, String.valueOf(minJava));
                     Platform.runLater(() -> {
                         if (!closed) {
                             onStartRefused.refused(serverId, root, refusal);
@@ -2685,6 +2720,20 @@ public final class LspManager {
             return;
         }
         Path at = file.toAbsolutePath().normalize();
+        refreshStyleUnder(at);
+        String name = at.getFileName() == null ? "" : at.getFileName().toString();
+        if (name.equals(".settings") || name.equals("config")) {
+            // the folder came, or went, with its profile: read again once the files in it have landed too (DN4)
+            CompletableFuture.delayedExecutor(1, java.util.concurrent.TimeUnit.SECONDS)
+                    .execute(() -> Platform.runLater(() -> {
+                        if (!closed) {
+                            refreshStyleUnder(at);
+                        }
+                    }));
+        }
+    }
+
+    private void refreshStyleUnder(Path at) {
         for (Map.Entry<String, LanguageServerSession> e : sessionsByRoot.entrySet()) {
             LanguageServerSession s = e.getValue();
             if (e.getKey().startsWith(sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID))
@@ -4126,6 +4175,32 @@ public final class LspManager {
                 LanguageServerSession::typeDefinition,
                 cb,
                 onError);
+    }
+
+    /**
+     * Go to Super Method (IntelliJ's Ctrl+U): the method the one at the caret overrides, or the class a type extends,
+     * through jdtls's {@code java/findLinks} {@code superImplementation} (sixth review E1).
+     */
+    public void superMethodAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
+        requestLocations(
+                javaSessionFor(anchor),
+                documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
+                line,
+                character,
+                (s, u, pos) -> s.findLinks("superImplementation", u, pos),
+                cb,
+                onError);
+    }
+
+    /** Whether {@code file}'s server is jdtls, which answers Go to Super Method. */
+    public boolean supportsSuperMethod(Path file) {
+        return javaSessionFor(file) != null;
     }
 
     /** Go to Declaration ({@code textDocument/declaration}, #736). */
@@ -6022,26 +6097,76 @@ public final class LspManager {
         return into.toAbsolutePath().normalize().endsWith(tail);
     }
 
-    /** Whether {@code dir} is a folder with a {@code .java} file in it, at any depth. */
-    private static boolean holdsJava(Path dir) {
+    /**
+     * Whether {@code dir} is a folder with a {@code .java} file in it, at any depth. Build output, dependency and VCS
+     * folders are not walked: a 40,000-file {@code node_modules} took 61 ms (sixth review BV5).
+     */
+    static boolean holdsJava(Path dir) {
         if (!Files.isDirectory(dir)) {
             return false;
         }
-        try (var files = Files.walk(dir, 32)) {
-            return files.anyMatch(p -> p.toString().endsWith(".java"));
+        boolean[] found = {false};
+        try {
+            Files.walkFileTree(dir, java.util.Set.of(), 32, new java.nio.file.SimpleFileVisitor<>() {
+                @Override
+                public java.nio.file.FileVisitResult preVisitDirectory(
+                        Path d, java.nio.file.attribute.BasicFileAttributes attrs) {
+                    String name = d.getFileName() == null ? "" : d.getFileName().toString();
+                    return !d.equals(dir) && NOT_SOURCES.contains(name)
+                            ? java.nio.file.FileVisitResult.SKIP_SUBTREE
+                            : java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult visitFile(
+                        Path f, java.nio.file.attribute.BasicFileAttributes attrs) {
+                    if (f.toString().endsWith(".java")) {
+                        found[0] = true;
+                        return java.nio.file.FileVisitResult.TERMINATE;
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult visitFileFailed(Path f, java.io.IOException e) {
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+            });
         } catch (java.io.IOException | RuntimeException e) {
-            return false;
+            return found[0];
         }
+        return found[0];
     }
+
+    /** Folders that hold no Java sources a move could need edits for. */
+    private static final java.util.Set<String> NOT_SOURCES =
+            java.util.Set.of("node_modules", ".git", ".svn", ".hg", ".gradle", ".idea", "target", "build", "out");
 
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
         LanguageServerSession s = javaSessionFor(from);
-        // No Java server for the folder: nothing to ask, and no folder walked on the UI thread (fifth review BV5)
-        if (s == null || !(from.toString().endsWith(".java") || holdsJava(from))) {
+        // No Java server for the folder: nothing to ask, and no folder walked (fifth review BV5)
+        if (s == null || (!from.toString().endsWith(".java") && !Files.isDirectory(from))) {
             Platform.runLater(() -> proceed.accept(true));
             return;
         }
+        if (Files.isDirectory(from)) {
+            // A folder is walked for .java files off the UI thread: the drop no longer waits on it (sixth BV5)
+            CompletableFuture.supplyAsync(() -> holdsJava(from))
+                    .whenComplete((java, e) -> Platform.runLater(() -> {
+                        if (Boolean.TRUE.equals(java)) {
+                            askWillRename(s, from, to, proceed, fallback);
+                        } else {
+                            proceed.accept(true);
+                        }
+                    }));
+            return;
+        }
+        askWillRename(s, from, to, proceed, fallback);
+    }
+
+    private void askWillRename(
+            LanguageServerSession s, Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
         Path into = to.getParent();
         if (into != null && !into.equals(from.getParent()) && Files.isDirectory(into)) {
             // jdtls answers null for a package it has not heard of: a folder made a moment ago, before the

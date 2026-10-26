@@ -121,7 +121,23 @@ public final class CodeActionBulb {
     private boolean wanted() {
         CodeArea a = view.getValue();
         // a tab that is not on screen asks nothing: a keystroke in one file probed three hidden ones (AV7)
-        return enabled && probe != null && a != null && a.getScene() != null && possible.getAsBoolean();
+        return enabled && probe != null && a != null && onScreen(a) && possible.getAsBoolean();
+    }
+
+    /**
+     * Whether {@code node} is shown: in a scene and visible all the way up. A tab that is not selected keeps its
+     * scene, its content only hidden, so a keystroke in one file still probed the others (sixth review AV7).
+     */
+    static boolean onScreen(javafx.scene.Node node) {
+        if (node.getScene() == null) {
+            return false;
+        }
+        for (javafx.scene.Node n = node; n != null; n = n.getParent()) {
+            if (!n.isVisible()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** After a caret move, an edit or new problems: asks once the caret has rested. */

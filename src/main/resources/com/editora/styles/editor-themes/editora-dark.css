@@ -72,3 +72,7 @@
 /* Gutter markers — amber "not durable yet", red for a note. */
 .editor-area .fold-gutter .bookmark-marker { -fx-fill: #e3a93c; }
 .editor-area .fold-gutter .note-marker { -fx-fill: #ee7a6e; }
+/* The code-action lightbulb in the editor theme's own colours, told apart from the bookmark: yellow for a quick action,
+   red for a fix to an error (sixth review EV4). */
+.editor-area .fold-gutter .bulb-marker { -fx-fill: #e6c84f; }
+.editor-area .fold-gutter .bulb-marker.fix { -fx-fill: #ff6b6b; }

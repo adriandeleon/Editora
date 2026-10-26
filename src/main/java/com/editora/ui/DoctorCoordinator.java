@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -993,7 +992,7 @@ final class DoctorCoordinator {
      * ran on another JDK and nothing said which), and a warning when the launcher's {@code python3} is missing
      * on Linux or macOS. Probes off the FX thread.
      */
-    static DoctorCheck jdtlsRuntime(DoctorCheck row, @Nullable String defaultJdk) {
+    static DoctorCheck jdtlsRuntime(DoctorCheck row, @Nullable String defaultJdk, @Nullable String launcherPath) {
         if (row.status() != com.editora.doctor.DoctorStatus.OK
                 && row.status() != com.editora.doctor.DoctorStatus.WARN) {
             return row; // an outdated (WARN) install runs on a Java too, and says which (fifth review CV5)
@@ -1002,36 +1001,38 @@ final class DoctorCoordinator {
         if (!windows && DoctorProbes.resolvedPath(List.of("python3")).isEmpty()) {
             return row.warn(row.detail(), "doctor.tip.jdtlsNeedsPython");
         }
-        int launcher = com.editora.lsp.JavaRuntimes.launcherJavaMajor();
+        int min = com.editora.lsp.JavaRuntimes.serverMinMajor(launcherPath);
+        Path launcherJava = com.editora.lsp.JavaRuntimes.launcherJava();
+        int launcher = launcherJava == null ? 0 : com.editora.lsp.JavaRuntimes.javaMajor(launcherJava);
         var java = com.editora.lsp.JavaRuntimes.serverJava(
                 launcher,
                 com.editora.lsp.JavaRuntimes.discover(),
-                com.editora.lsp.JavaRuntimes.preferredHome(defaultJdk, System.getenv("JAVA_HOME")));
+                com.editora.lsp.JavaRuntimes.preferredHome(defaultJdk, System.getenv("JAVA_HOME")),
+                min);
         if (java.missing()) {
-            return row.warn(row.detail(), "doctor.tip.jdtlsNoJava", "21");
+            // the floor the installed jdtls states, not a fixed 21: 1.63 needs 25 (sixth review DS1)
+            return row.warn(row.detail(), "doctor.tip.jdtlsNoJava", String.valueOf(min));
         }
-        String runs = java.executable() != null ? java.executable() : launcherJava(windows);
-        if (runs.isEmpty() && launcher > 0) {
-            runs = tr("doctor.detail.jdtlsLauncherJava", launcher);
-        } else if (java.executable() == null && launcher > 0) {
-            runs = runs + " (Java " + launcher + ")";
+        // the java that runs, links resolved, and its version in every case (sixth review CV5)
+        Path runs = java.executable() != null ? Path.of(java.executable()) : launcherJava;
+        if (runs == null) {
+            return row;
         }
-        return runs.isEmpty() ? row : row.withDetail(row.detail() + " · " + tr("doctor.detail.jdtlsRunsOn", runs));
-    }
-
-    /**
-     * The java jdtls's launcher picks itself, as {@code jdtls.py} does: {@code JAVA_HOME/bin/java} when it exists,
-     * else {@code java} on the PATH; "" when neither is found. A JAVA_HOME that does not exist left the row silent.
-     */
-    private static String launcherJava(boolean windows) {
-        String home = System.getenv("JAVA_HOME");
-        if (home != null && !home.isBlank()) {
-            Path exe = Path.of(home, "bin", windows ? "java.exe" : "java");
-            if (Files.isRegularFile(exe)) {
-                return exe.toString();
-            }
+        try {
+            runs = runs.toRealPath();
+        } catch (java.io.IOException | RuntimeException e) {
+            // shown as named
         }
-        return DoctorProbes.resolvedPath(List.of("java"));
+        int major = com.editora.lsp.JavaRuntimes.javaMajor(runs);
+        String shown = major > 0 ? runs + " (Java " + major + ")" : runs.toString();
+        DoctorCheck named = row.withDetail(row.detail() + " · " + tr("doctor.detail.jdtlsRunsOn", shown));
+        // the project's JDK with no sources: parameters read arg0, and how to fix it is said here (sixth review DF1)
+        var bare = com.editora.lsp.JavaRuntimes.withoutSources(
+                com.editora.lsp.JavaRuntimes.discover(),
+                com.editora.lsp.JavaRuntimes.preferredHome(defaultJdk, System.getenv("JAVA_HOME")));
+        return bare == null || named.status() != com.editora.doctor.DoctorStatus.OK
+                ? named
+                : named.warn(named.detail(), "doctor.tip.jdkNoSources", String.valueOf(bare.major()), bare.path());
     }
 
     /**
@@ -1097,7 +1098,7 @@ final class DoctorCoordinator {
                         ? () -> DoctorProbes.output(withArgs(argv, "--version"))
                         : null;
                 DoctorCheck pinned = pinnedRow(base, pin, config, locations, own, printed, path, true);
-                return own != null ? jdtlsRuntime(pinned, mavenJdk) : pinned;
+                return own != null ? jdtlsRuntime(pinned, mavenJdk, path) : pinned;
             }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
             String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";

@@ -7,6 +7,7 @@ import com.editora.lsp.JavaExpectedType.Source;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -210,5 +211,22 @@ class JavaExpectedTypeTest {
         assertEquals(
                 List.of("Collection<? extends String>"),
                 JavaExpectedType.bindTypeVariables(List.of("Collection<? extends T>"), "String", "T"));
+    }
+
+    /** A bracket in a literal or a comment is no bracket (sixth review AS3). */
+    @Test
+    void literalsAndCommentsAreNotCode() {
+        for (String text : List.of(
+                "String f = String.format(\"(\", n",
+                "log.info(\"done :)\", n",
+                "name.replace('(', c",
+                "foo(\"a\\\"(\", c",
+                "foo(\"\"\"\n  (\n  \"\"\", c")) {
+            assertNotNull(JavaExpectedType.at(text, text.length()), text);
+        }
+        String a = "foo(a, // note (x\n b";
+        assertEquals(1, JavaExpectedType.argumentIndex(a, a.length()));
+        String b = "foo(a, /* it's */ b";
+        assertEquals(1, JavaExpectedType.argumentIndex(b, b.length()));
     }
 }
