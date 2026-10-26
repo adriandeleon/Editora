@@ -444,13 +444,6 @@ public class CommandPalette {
     }
 
     /**
-     * The title as styled runs: the characters the query matched wear {@code palette-match} (accent +
-     * bold — the kit's {@code <mark>}), the rest {@code palette-cell-text}. Reuses the completion popup's
-     * {@code MatchHighlighter} — same substring-else-subsequence semantics as {@link #filter}'s matcher,
-     * and it indexes the label directly (case folded per char) so highlights can't drift on a
-     * length-changing lowercase mapping.
-     */
-    /**
      * The emboldened runs for a row. These are {@link FuzzyMatch}'s <em>own</em> ranges — the same call
      * that scored the row — so the highlight can never point at different characters than the ranking
      * reasoned about, which it could when the two came from separate matchers.

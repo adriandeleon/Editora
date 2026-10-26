@@ -40,10 +40,6 @@ public final class MultiSelectPicker {
 
     private MultiSelectPicker() {}
 
-    /**
-     * Wide enough for the longest row, within {@link #MIN_WIDTH}–{@link #MAX_WIDTH}: a rename preview's paths
-     * were cut off at a fixed 520 px (Java review B10).
-     */
     /** The card width that fits {@code rows} as styled (checkbox, gaps, scrollbar and padding), within bounds. */
     static double fittedWidth(List<CheckBox> rows, double current) {
         double widest = 0;
@@ -54,6 +50,10 @@ public final class MultiSelectPicker {
         return widest <= 0 ? current : Math.max(current, Math.min(MAX_WIDTH, widest + 64));
     }
 
+    /**
+     * Wide enough for the longest row, within {@link #MIN_WIDTH}–{@link #MAX_WIDTH}: a rename preview's paths
+     * were cut off at a fixed 520 px (Java review B10).
+     */
     static <T> double cardWidth(List<Item<T>> items) {
         double widest = 0;
         for (Item<T> it : items) {

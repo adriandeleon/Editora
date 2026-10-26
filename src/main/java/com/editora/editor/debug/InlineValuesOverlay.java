@@ -117,13 +117,13 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
         return values != null && rendering;
     }
 
-    /** Sets the suspended frame's variables (null or empty clears and releases the canvas). */
     /**
      * The lines that may carry a value at all (a {@code .http} file: its script lines — the identifiers of a request
      * body are not the script's); null for every line.
      */
     private java.util.function.@Nullable IntPredicate lineFilter;
 
+    /** Sets the suspended frame's variables (null or empty clears and releases the canvas). */
     public void setValues(
             @Nullable Map<String, String> v, int frameLine, java.util.function.@Nullable IntPredicate lines) {
         this.lineFilter = lines;

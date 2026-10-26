@@ -1197,13 +1197,6 @@ final class EditorSettingsCoordinator {
         buffer.setCharsetOverride(p.charset());
     }
 
-    /**
-     * Resolves the effective indent override for a buffer and pushes it via {@link EditorBuffer#setIndentOverride}.
-     * Precedence: a file's {@code .editorconfig} {@code indent_style} (when present) wins; else the global
-     * {@link Settings#getIndentStyle()} preference ({@code space}/{@code tab}); else {@code null} → per-file
-     * auto-detection ({@code Indenter.detectUnit}). For {@code space}, the size falls back to the global tab size
-     * when {@code .editorconfig} didn't specify {@code indent_size}.
-     */
     /** This window's project scope (the user's values without a project or in an untrusted folder). */
     ProjectScope projectScope() {
         CoordinatorHost h = host.coordinatorHost();
@@ -1220,6 +1213,13 @@ final class EditorSettingsCoordinator {
 
     private @Nullable ProjectScope listenedScope;
 
+    /**
+     * Resolves the effective indent override for a buffer and pushes it via {@link EditorBuffer#setIndentOverride}.
+     * Precedence: a file's {@code .editorconfig} {@code indent_style} (when present) wins; else the global
+     * {@link Settings#getIndentStyle()} preference ({@code space}/{@code tab}); else {@code null} → per-file
+     * auto-detection ({@code Indenter.detectUnit}). For {@code space}, the size falls back to the global tab size
+     * when {@code .editorconfig} didn't specify {@code indent_size}.
+     */
     void applyEffectiveIndent(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties p) {
         Boolean insertSpaces = p.insertSpaces();
         Integer size = p.indentSize();

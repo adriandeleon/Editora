@@ -77,12 +77,6 @@ public final class RelatedFiles {
     }
 
     /**
-     * The subject {@code base} is a test of, or {@code null} when it does not look like a test name.
-     *
-     * <p>The suffix must leave something behind: a file actually named {@code Test.java} is a subject in
-     * its own right, not a test of the empty string.
-     */
-    /**
      * Where the JUnit test of {@code javaFile} goes when it has none: the same package under the matching
      * {@code src/test/java} — {@code src/main/java/com/acme/Shape.java} gives
      * {@code src/test/java/com/acme/ShapeTest.java}. Null for a file that is a test already, is not Java, or is
@@ -122,6 +116,12 @@ public final class RelatedFiles {
         return null;
     }
 
+    /**
+     * The subject {@code base} is a test of, or {@code null} when it does not look like a test name.
+     *
+     * <p>The suffix must leave something behind: a file actually named {@code Test.java} is a subject in
+     * its own right, not a test of the empty string.
+     */
     public static @Nullable String testSubject(String base) {
         if (base == null) {
             return null;

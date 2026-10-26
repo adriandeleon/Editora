@@ -146,14 +146,13 @@ public final class OverlayHost {
     }
 
     /**
-     * Shows {@code content} centered near the top over the backdrop.
+     * Shows {@code content} centered near the top over the backdrop (no anchor).
      *
      * @param content  the card node (should set the {@code editora.ownsKeys} property so its nav chords
      *                 aren't hijacked by the global dispatcher)
      * @param onShown  run after the overlay is laid out — typically {@code input.requestFocus()}
      * @param onHidden run when the overlay is dismissed — typically the component clearing its own flag
      */
-    /** Shows {@code content} centered near the top (no anchor). */
     public void show(Node content, Runnable onShown, Runnable onHidden) {
         show(content, null, false, false, onShown, onHidden);
     }

@@ -26,8 +26,8 @@ public final class DiagramRenderer {
     private static final Duration DETECT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration RENDER_TIMEOUT = Duration.ofSeconds(60);
 
-    /** A render outcome: PNG {@code image} bytes on success, else the tool's {@code error} message. */
-    /** {@code extra} = the number of <em>additional</em> diagrams the tool produced beyond the one shown — a
+    /** A render outcome: PNG {@code image} bytes on success, else the tool's {@code error} message.
+     *  {@code extra} = the number of <em>additional</em> diagrams the tool produced beyond the one shown — a
      *  PlantUML file with several {@code @startuml} blocks writes one image per diagram, but the preview shows
      *  the first; a non-zero count surfaces a "N more diagram(s)" note so the rest aren't silently dropped. */
     public record Render(byte @Nullable [] image, @Nullable String error, int extra) {
@@ -182,20 +182,6 @@ public final class DiagramRenderer {
         return cmd;
     }
 
-    /**
-     * The output the tool actually produced in the single-use temp {@code dir}: {@code out} when it exists,
-     * else the (alphabetically first) other {@code .fmt} file there.
-     *
-     * <p>PlantUML names its output after the diagram, not the input file: {@code @startuml myclassdiagram}
-     * writes {@code myclassdiagram.png}, not {@code diagram.png} — and naming a diagram is idiomatic (it is
-     * required for a multi-diagram file, and used throughout the upstream docs). Reading back a fixed
-     * {@code diagram.<fmt>} meant a perfectly valid named diagram rendered as "render failed", and an export
-     * of one silently produced no file at all while reporting success. The dir is created per render and
-     * holds only the input plus the tool's own output, so finding it is unambiguous.
-     *
-     * <p>A multi-diagram source produces several outputs; we take one (deterministically). That is the
-     * pre-existing single-diagram limitation, not a regression.
-     */
     /** The number of output files the tool produced in {@code dir} (excluding the input), by extension. */
     private static int outputCount(Path dir, Path in, String fmt) throws IOException {
         try (var files = Files.list(dir)) {
@@ -217,6 +203,20 @@ public final class DiagramRenderer {
                 .toList();
     }
 
+    /**
+     * The output the tool actually produced in the single-use temp {@code dir}: {@code out} when it exists,
+     * else the (alphabetically first) other {@code .fmt} file there.
+     *
+     * <p>PlantUML names its output after the diagram, not the input file: {@code @startuml myclassdiagram}
+     * writes {@code myclassdiagram.png}, not {@code diagram.png} — and naming a diagram is idiomatic (it is
+     * required for a multi-diagram file, and used throughout the upstream docs). Reading back a fixed
+     * {@code diagram.<fmt>} meant a perfectly valid named diagram rendered as "render failed", and an export
+     * of one silently produced no file at all while reporting success. The dir is created per render and
+     * holds only the input plus the tool's own output, so finding it is unambiguous.
+     *
+     * <p>A multi-diagram source produces several outputs; we take one (deterministically). That is the
+     * pre-existing single-diagram limitation, not a regression.
+     */
     private static @Nullable Path producedFile(Path dir, Path in, Path out, String fmt) throws IOException {
         if (Files.isRegularFile(out)) {
             return out;

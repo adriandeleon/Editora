@@ -2915,7 +2915,6 @@ public class Settings {
         this.pluginSupport = pluginSupport;
     }
 
-    /** The plugin-registry index URL; falls back to {@link #DEFAULT_PLUGIN_REGISTRY} when blank. */
     /** The registry index URL in force: the configured one, or {@link #DEFAULT_PLUGIN_REGISTRY} when blank. */
     @JsonIgnore
     public String getPluginRegistryUrl() {

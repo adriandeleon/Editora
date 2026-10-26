@@ -1389,14 +1389,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         watchThread.start();
     }
 
+    /** Folders watched only for the project's Java style (DN4): the tree does not show them, so no refresh. */
+    private volatile java.util.Set<Path> styleOnlyDirs = java.util.Set.of();
+
     /**
      * Registers the root + currently-expanded directories with the watcher and cancels watches for
      * directories no longer present/expanded. Runs on the FX thread (it reads the tree). Cheap: the set is
      * just the visible folders.
      */
-    /** Folders watched only for the project's Java style (DN4): the tree does not show them, so no refresh. */
-    private volatile java.util.Set<Path> styleOnlyDirs = java.util.Set.of();
-
     private void syncWatches() {
         if (watchService == null) {
             return;

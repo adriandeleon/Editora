@@ -71,10 +71,10 @@ public final class BreakpointManager implements LineMarks.Carrier {
         area.multiPlainChanges().subscribe(this::onTextChanges);
     }
 
-    /** Notified after any change (toggle/edit-driven shift) for persistence + live re-send to a session. */
     /** See {@link #setLive}. */
     private java.util.@Nullable Map<Integer, Live> live;
 
+    /** Notified after any change (toggle/edit-driven shift) for persistence + live re-send to a session. */
     public void setOnChanged(Runnable onChanged) {
         this.onChanged = onChanged == null ? () -> {} : onChanged;
     }

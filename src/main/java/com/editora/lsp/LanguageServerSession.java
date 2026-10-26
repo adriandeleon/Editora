@@ -1639,12 +1639,6 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
-     * Sends a <b>non-standard</b> request the typed {@link LanguageServer} proxy can't express — e.g. jdtls's
-     * {@code java/classFileContents} (#665) — via the launcher's raw JSON-RPC endpoint. The result is the
-     * gson-decoded payload (lsp4j has no registered response type for an unknown method, so expect a
-     * {@code JsonElement}/{@code JsonPrimitive}). Queued until {@code initialize} completes.
-     */
-    /**
      * TEST SEAM (inert in production, like {@link #attachForTest}): intercepts the custom {@code java/…}
      * traffic, which otherwise goes out through the launcher's raw endpoint and so is invisible to a
      * {@link org.eclipse.lsp4j.services.LanguageServer} test double.
@@ -1664,6 +1658,12 @@ final class LanguageServerSession implements LanguageClient {
         this.rawSinkForTest = sink;
     }
 
+    /**
+     * Sends a <b>non-standard</b> request the typed {@link LanguageServer} proxy can't express — e.g. jdtls's
+     * {@code java/classFileContents} (#665) — via the launcher's raw JSON-RPC endpoint. The result is the
+     * gson-decoded payload (lsp4j has no registered response type for an unknown method, so expect a
+     * {@code JsonElement}/{@code JsonPrimitive}). Queued until {@code initialize} completes.
+     */
     CompletableFuture<Object> rawRequest(String method, Object params) {
         return rawRequest(method, params, REQUEST_TIMEOUT);
     }

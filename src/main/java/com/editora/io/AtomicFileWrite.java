@@ -233,12 +233,6 @@ public final class AtomicFileWrite {
     }
 
     /**
-     * Apache MINA's {@code SftpFileSystemProvider.move(..., REPLACE_EXISTING)} deletes the destination before
-     * issuing its rename request. A lost connection or rejected rename in that gap therefore destroys the
-     * previous remote file. Use a server-side replacement operation instead, where the server supports one,
-     * and fail without touching the destination otherwise.
-     */
-    /**
      * Moves {@code source} over {@code target} in one step, on either kind of filesystem: an atomic rename
      * locally (a plain replacing move where the filesystem has none), and the server-side replacement of
      * {@link #replaceRemote} over SFTP, which never leaves {@code target} missing. For a lock file published
@@ -255,6 +249,12 @@ public final class AtomicFileWrite {
         }
     }
 
+    /**
+     * Apache MINA's {@code SftpFileSystemProvider.move(..., REPLACE_EXISTING)} deletes the destination before
+     * issuing its rename request. A lost connection or rejected rename in that gap therefore destroys the
+     * previous remote file. Use a server-side replacement operation instead, where the server supports one,
+     * and fail without touching the destination otherwise.
+     */
     private static boolean replaceRemote(Path source, Path target) throws IOException {
         if (!(source.getFileSystem() instanceof SftpFileSystem fs)) {
             return false;

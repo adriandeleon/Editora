@@ -560,13 +560,13 @@ public class SharedConfig {
         return flushWrites();
     }
 
-    /** The shared off-thread writer (settings + session state route through it; see {@link ConfigWriter}). */
     /** Drops any queued write for {@code file} (it's about to be deleted — see {@link ConfigWriter#cancel}). */
     public void cancelPendingWrite(Path file) {
         writer.cancel(file);
         sync.forget(file);
     }
 
+    /** The shared off-thread writer (settings + session state route through it; see {@link ConfigWriter}). */
     ConfigWriter writer() {
         return writer;
     }

@@ -1013,12 +1013,6 @@ final class LspCoordinator {
     }
 
     /**
-     * A server's start failed: its command could not be run, or a remote host's connection broke while it
-     * was being started. The buffers it was opened for go inactive and the loading bar stops; the session's
-     * own error status already said why. Not a crash, so nothing is retried here — the same command would
-     * only fail again, and a remote tab comes back through {@link #remoteHostConnected}.
-     */
-    /**
      * A server whose command exists is not running, and starting it again would not help: it refused
      * initialize (its own words are shown), or Editora did not start the TypeScript server because there is no
      * TypeScript it may run. Its tabs go inactive, the reason is an error (so it is not lost when the status line
@@ -1065,6 +1059,12 @@ final class LspCoordinator {
         };
     }
 
+    /**
+     * A server's start failed: its command could not be run, or a remote host's connection broke while it
+     * was being started. The buffers it was opened for go inactive and the loading bar stops; the session's
+     * own error status already said why. Not a crash, so nothing is retried here — the same command would
+     * only fail again, and a remote tab comes back through {@link #remoteHostConnected}.
+     */
     private void onStartFailed(String serverId, Path root) {
         forEachCrashedBuffer(serverId, root, b -> b.setLspActive(false));
         ops.setLspLoading(false);
@@ -1733,7 +1733,6 @@ final class LspCoordinator {
         };
     }
 
-    /** The configured command for a server id (blank ⇒ the server's default). */
     /** This window's project scope: its .editora/settings.json, its trust, and the effective values. */
     private final ProjectScope projectScope = new ProjectScope(this::scopeRoot, this::scopeConfig);
 
@@ -1770,6 +1769,7 @@ final class LspCoordinator {
                 : command.strip();
     }
 
+    /** The configured command for a server id (blank ⇒ the server's default). */
     private String serverCommand(String serverId) {
         return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId), projectTrusted());
     }
@@ -2258,11 +2258,6 @@ final class LspCoordinator {
     }
 
     /**
-     * Requests semantic tokens for {@code buffer}'s visible region (padded by {@link #SEMANTIC_WINDOW_PAD})
-     * and pushes them into the buffer when the response lands — but only if it's still the active buffer
-     * (a background tab's tokens would overlay nothing useful and waste an apply).
-     */
-    /**
      * Inlay hints (#681): requests the server's parameter-name/type hints over the visible window and
      * pushes the per-line aggregate into the buffer's end-of-line overlay. Gated on the (default-off)
      * setting + the server's capability; clears when the gate fails so a toggle-off empties the overlay.
@@ -2434,6 +2429,11 @@ final class LspCoordinator {
         });
     }
 
+    /**
+     * Requests semantic tokens for {@code buffer}'s visible region (padded by {@link #SEMANTIC_WINDOW_PAD})
+     * and pushes them into the buffer when the response lands — but only if it's still the active buffer
+     * (a background tab's tokens would overlay nothing useful and waste an apply).
+     */
     void requestSemanticTokens(EditorBuffer buffer) {
         Path path = lspPath(buffer);
         if (path == null || !buffer.isSemanticActive() || !lspManager.isManaged(path)) {
@@ -3121,7 +3121,6 @@ final class LspCoordinator {
         ops.setProblemsAvailable(available);
     }
 
-    /** The short server name shown in the status bar — the configured command's basename for {@code serverId}. */
     /**
      * The name a status message gives a server: its language as Doctor and Settings name it ("TypeScript /
      * JavaScript"), not its command ("typescript-language-server language server keeps crashing", Node review
@@ -5362,13 +5361,6 @@ final class LspCoordinator {
             @Nullable String uri, @Nullable Path anchor) {}
 
     /**
-     * Opens the source of a JDK/dependency class the server reported under a {@code jdt://} URI: fetched via
-     * jdtls's {@code java/classFileContents} into a read-only, Java-highlighted, path-less buffer (#665).
-     * Before this, such a definition was silently dropped and {@code M-.} on {@code String}/{@code List}
-     * reported "no definition". {@code anchor} is the buffer the navigation started from (it routes the
-     * request to the right session).
-     */
-    /**
      * Opens a {@code jdt://} class-file URI at a line — how a stack-trace frame inside a dependency or the
      * JDK becomes clickable (#744). Reuses the same read-only library-source tab as go-to-definition (#665),
      * so a repeat click re-selects the existing tab rather than opening another.
@@ -5383,6 +5375,13 @@ final class LspCoordinator {
                 anchorPath, new LspManager.Target(null, Math.max(0, line0), 0, jdtUri), () -> true, opened);
     }
 
+    /**
+     * Opens the source of a JDK/dependency class the server reported under a {@code jdt://} URI: fetched via
+     * jdtls's {@code java/classFileContents} into a read-only, Java-highlighted, path-less buffer (#665).
+     * Before this, such a definition was silently dropped and {@code M-.} on {@code String}/{@code List}
+     * reported "no definition". {@code anchor} is the buffer the navigation started from (it routes the
+     * request to the right session).
+     */
     private void openLibraryDefinition(Path anchorPath, LspManager.Target t) {
         openLibraryDefinition(anchorPath, t, () -> true);
     }
@@ -6825,13 +6824,6 @@ final class LspCoordinator {
     }
 
     /**
-     * Applies a workspace edit's per-file batches through undoable buffers (FX thread; registered as the
-     * manager's apply-edit handler — both a picked action's inline edit and a server-initiated
-     * {@code workspace/applyEdit} land here). All-or-nothing: if any touched file can't be opened editable,
-     * nothing is applied — half a refactoring corrupts the workspace. A file with no open tab opens in a
-     * background tab so its change is visible and undoable.
-     */
-    /**
      * Rename the symbol under the caret (#676): validate via {@code prepareRename} when the server supports
      * it (jdtls does — it also supplies the placeholder), prompt pre-filled with the current name, then
      * {@code textDocument/rename} — whose workspace edit (including a class rename's {@code RenameFile})
@@ -7692,8 +7684,16 @@ final class LspCoordinator {
         });
     }
 
-    /** Package-private so {@code LspWorkspaceEditFxTest} can drive it: this is the only LSP path that
-     *  writes and MOVES files on disk, so its all-or-nothing refusals need direct tests. */
+    /**
+     * Applies a workspace edit's per-file batches through undoable buffers (FX thread; registered as the
+     * manager's apply-edit handler — both a picked action's inline edit and a server-initiated
+     * {@code workspace/applyEdit} land here). All-or-nothing: if any touched file can't be opened editable,
+     * nothing is applied — half a refactoring corrupts the workspace. A file with no open tab opens in a
+     * background tab so its change is visible and undoable.
+     *
+     * <p>Package-private so {@code LspWorkspaceEditFxTest} can drive it: this is the only LSP path that
+     * writes and MOVES files on disk, so its all-or-nothing refusals need direct tests.
+     */
     boolean applyWorkspaceEdits(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
         if (!resourceTargetsSafe(mapped)) {
             resourceTargetsBlocked(mapped);
@@ -9330,12 +9330,6 @@ final class LspCoordinator {
     }
 
     /**
-     * Signature help (#674): the overloads + active parameter at the caret. {@code manual} is the
-     * {@code lsp.signatureHelp} command (reports when unavailable); auto-trigger — a typed {@code (} or
-     * {@code ,}, and the typing-pause refresh while the popup is up — stays silent. A response with no
-     * signatures hides the popup, which is also how it closes once the caret leaves the call.
-     */
-    /**
      * Smart Type completion (IntelliJ's Ctrl+Shift+Space, Java only): the completion list cut down to what fits
      * the type expected at the caret. The type comes from the code ({@link com.editora.lsp.JavaExpectedType}),
      * or for a call's argument from signature help; where none is stated the full list opens, and says so.
@@ -9411,6 +9405,12 @@ final class LspCoordinator {
         });
     }
 
+    /**
+     * Signature help (#674): the overloads + active parameter at the caret. {@code manual} is the
+     * {@code lsp.signatureHelp} command (reports when unavailable); auto-trigger — a typed {@code (} or
+     * {@code ,}, and the typing-pause refresh while the popup is up — stays silent. A response with no
+     * signatures hides the popup, which is also how it closes once the caret leaves the call.
+     */
     void signatureHelp(boolean manual) {
         signatureHelp(manual, null);
     }

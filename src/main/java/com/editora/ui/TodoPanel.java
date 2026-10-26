@@ -40,7 +40,6 @@ import static com.editora.i18n.Messages.tr;
  */
 public final class TodoPanel extends VBox implements ToolWindowContent {
 
-    /** Controller callbacks. */
     /** The keywords offered when reopening a DONE item — the configured patterns, minus DONE itself. */
     private List<String> keywords = List.of("TODO");
 
@@ -59,6 +58,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         return keywords;
     }
 
+    /** Controller callbacks. */
     public interface Actions {
         void openMatch(Path file, int line, int col);
 

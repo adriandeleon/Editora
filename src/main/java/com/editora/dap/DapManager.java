@@ -299,6 +299,14 @@ public final class DapManager {
         return chosen != null ? chosen : DapClient.defaultExceptionFilters(exceptionFilterOptions(language));
     }
 
+    /** Where a program Editora starts runs instead of the Debug console (a Terminal tab); null for the console. */
+    private @Nullable ProgramTerminal programTerminal;
+
+    /** Takes effect at the next launch; see {@link ProgramTerminal}. */
+    public void setProgramTerminal(@Nullable ProgramTerminal programTerminal) {
+        this.programTerminal = programTerminal;
+    }
+
     /**
      * Whether the next Java <em>launch</em> runs the program as Editora's own child process, so that it has
      * a standard input ({@link #sendProgramInput}): the launch says {@code console: integratedTerminal} and
@@ -308,14 +316,6 @@ public final class DapManager {
      * (the default here; the window turns it on from the setting), the adapter starts the program as before.
      * An attach, and the Python and JavaScript adapters, are not affected either way.
      */
-    /** Where a program Editora starts runs instead of the Debug console (a Terminal tab); null for the console. */
-    private @Nullable ProgramTerminal programTerminal;
-
-    /** Takes effect at the next launch; see {@link ProgramTerminal}. */
-    public void setProgramTerminal(@Nullable ProgramTerminal programTerminal) {
-        this.programTerminal = programTerminal;
-    }
-
     public void setProgramConsole(boolean programConsole) {
         this.programConsole = programConsole;
     }
@@ -1823,10 +1823,6 @@ public final class DapManager {
     }
 
     /**
-     * Debugs {@code python -m module args} in {@code cwd} — a pytest test, say — under {@code anchor}'s
-     * interpreter, with {@code anchor} naming the session. Restart repeats it.
-     */
-    /**
      * Debugs a pytest run ({@code python -m pytest args}) in {@code cwd}, anchored at test file {@code anchor}.
      * When the interpreter has no pytest, {@code unittestArgs} (non-empty) run under {@code python -m unittest}
      * instead; otherwise the session ends saying pytest is missing for that interpreter.
@@ -1845,6 +1841,10 @@ public final class DapManager {
                 PythonLaunch.Target.module("pytest", pytestArgs, where).orElse(unittest));
     }
 
+    /**
+     * Debugs {@code python -m module args} in {@code cwd} — a pytest test, say — under {@code anchor}'s
+     * interpreter, with {@code anchor} naming the session. Restart repeats it.
+     */
     public void startPythonModule(Path anchor, String module, List<String> args, Path cwd) {
         Path dir = cwd != null ? cwd : anchor.getParent();
         String where = dir == null

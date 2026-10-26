@@ -322,11 +322,6 @@ final class HttpStatusText {
     }
 
     /**
-     * Whether {@code r} is a request that was never sent — refused by the trust prompt, a body file that cannot be
-     * read, an untitled buffer's "save first": its error starts with the UI language's "Not sent:" prefix
-     * ({@code http.notSent.prefix}), which every such message in the six catalogs shares. Pure.
-     */
-    /**
      * Whether {@code r}'s script error is a pre-request script's. A pre-request script that stops with an error keeps
      * its request unsent, and a response handler only runs once a response has arrived, so an error on a request that
      * was not sent is always the pre-request script's. Pure.
@@ -335,6 +330,11 @@ final class HttpStatusText {
         return r != null && r.tests().error() != null && notSent(r);
     }
 
+    /**
+     * Whether {@code r} is a request that was never sent — refused by the trust prompt, a body file that cannot be
+     * read, an untitled buffer's "save first": its error starts with the UI language's "Not sent:" prefix
+     * ({@code http.notSent.prefix}), which every such message in the six catalogs shares. Pure.
+     */
     static boolean notSent(@Nullable HttpResult r) {
         return r != null && r.failed() && notSentReason(r.error()) != null;
     }

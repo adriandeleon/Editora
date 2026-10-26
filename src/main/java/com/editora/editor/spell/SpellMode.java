@@ -72,11 +72,6 @@ public enum SpellMode {
         }
     }
 
-    /**
-     * The 0-based lines that are code as a whole and so never checked, whatever their words are styled as:
-     * Markdown fenced blocks, an HTML page's {@code <script>}, {@code <style>} and {@code <pre>} blocks, and
-     * Typst lines that open with a {@code #} instruction. Empty for prose and code buffers.
-     */
     /** Whether this mode has code lines at all — the only modes whose scan reads the document. */
     public boolean marksCodeLines() {
         return this == MARKDOWN || this == HTML || this == TYPST;
@@ -94,6 +89,11 @@ public enum SpellMode {
         return codeLines(lines.length, i -> lines[i]);
     }
 
+    /**
+     * The 0-based lines that are code as a whole and so never checked, whatever their words are styled as:
+     * Markdown fenced blocks, an HTML page's {@code <script>}, {@code <style>} and {@code <pre>} blocks, and
+     * Typst lines that open with a {@code #} instruction. Empty for prose and code buffers.
+     */
     public BitSet codeLines(int count, IntFunction<String> lineAt) {
         return switch (this) {
             case MARKDOWN -> markdownCodeLines(count, lineAt);

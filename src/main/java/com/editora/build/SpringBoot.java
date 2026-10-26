@@ -15,8 +15,6 @@ public final class SpringBoot {
 
     private SpringBoot() {}
 
-    /** The Gradle task to run for a project whose build script is {@code buildFileText}: {@code bootRun}
-     *  when the Spring Boot plugin is applied, else {@code run}. */
     /**
      * The Gradle build script at {@code root} ({@code build.gradle}, else {@code build.gradle.kts}) as text, for
      * the Spring Boot sniff and the application-plugin main class; {@code ""} when neither is readable.
@@ -38,6 +36,8 @@ public final class SpringBoot {
         return "";
     }
 
+    /** The Gradle task to run for a project whose build script is {@code buildFileText}: {@code bootRun}
+     *  when the Spring Boot plugin is applied, else {@code run}. */
     public static String gradleRunTask(String buildFileText) {
         return isSpringBootGradle(buildFileText) ? "bootRun" : "run";
     }

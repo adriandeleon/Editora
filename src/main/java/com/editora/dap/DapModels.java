@@ -17,11 +17,11 @@ public final class DapModels {
     /** A thread of the debuggee. */
     public record ThreadInfo(int id, String name) {}
 
-    /** One frame of a thread's call stack. {@code file} may be null for frames with no source. */
     /**
-     * One frame of a call stack. {@code sourceUri} is the adapter's own name for a source that is not a file on
-     * this machine — java-debug's {@code jdt://contents/…} for a JDK or library class, whose text jdtls can
-     * supply ({@code java/classFileContents}) — and null for an ordinary file ({@code file}).
+     * One frame of a thread's call stack. {@code file} may be null for frames with no source. {@code sourceUri}
+     * is the adapter's own name for a source that is not a file on this machine — java-debug's
+     * {@code jdt://contents/…} for a JDK or library class, whose text jdtls can supply
+     * ({@code java/classFileContents}) — and null for an ordinary file ({@code file}).
      */
     public record StackFrameInfo(
             int id,
@@ -158,7 +158,6 @@ public final class DapModels {
         }
     }
 
-    /** One call the debugger can step into on the current line ({@code stepInTargets}): its id and label. */
     /**
      * One answer of DAP {@code completions}: {@code label} shown, {@code text} inserted (null: the label), its
      * {@code type} ("method", "field", "variable", … lower case, "" when not said), and the 0-based {@code start}
@@ -173,6 +172,7 @@ public final class DapModels {
         }
     }
 
+    /** One call the debugger can step into on the current line ({@code stepInTargets}): its id and label. */
     public record StepTarget(int id, String label, int line) {
 
         public StepTarget {

@@ -3283,7 +3283,6 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("nav.moveToWindowLine", host.editing()::moveToWindowLine));
     }
 
-    /** Branch, push-variant, remote and work-tree commands ({@link GitBranchCoordinator}); all Git-gated. */
     /**
      * The {@code tool.fileHistory} command: closes the Local History tool window when it is open, otherwise
      * shows it for the active file. {@code show} is the coordinator's own entry point, so a window that
@@ -3293,6 +3292,7 @@ final class WindowCommandRegistrar {
         (open ? close : show).run();
     }
 
+    /** Branch, push-variant, remote and work-tree commands ({@link GitBranchCoordinator}); all Git-gated. */
     private void registerGitBranchCommands() {
         GitBranchCoordinator branches = host.gitWindows().branches;
         // A work tree opens as a project in its own window, like any other folder.

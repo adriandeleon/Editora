@@ -426,7 +426,6 @@ final class Chrome {
     private static final java.util.Set<String> DEBUG_NEEDS_SESSION =
             java.util.Set.of("debug.stop", "debug.restart", "debug.pause");
 
-    /** Debug commands that only mean anything while a thread is suspended at a stop. */
     /**
      * Git commands that must stay enabled <b>outside</b> a repository, because that is where they are
      * needed: creating one ({@code git.clone}, {@code git.init}); stopping a clone, which runs before any
@@ -464,6 +463,7 @@ final class Chrome {
     private static final java.util.Set<String> PRINTS_THE_SELECTION =
             java.util.Set.of("editor.printSelection", "editor.exportSelectionPdf");
 
+    /** Debug commands that only mean anything while a thread is suspended at a stop. */
     private static final java.util.Set<String> DEBUG_NEEDS_SUSPENDED = java.util.Set.of(
             "debug.continue",
             "debug.stepOver",

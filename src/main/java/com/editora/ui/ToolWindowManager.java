@@ -827,8 +827,8 @@ public class ToolWindowManager {
         }
     }
 
-    /** Opens any tool windows the settings file says were open last time. */
-    /** Reopens each side's windows in their stacked order — the first replaces, the rest join it. */
+    /** Opens any tool windows the settings file says were open last time: each side's windows reopen in their
+     *  stacked order — the first replaces, the rest join it. */
     public void restore() {
         // Read FIRST, before a single window is opened: every open persists, and persisting rewrites the
         // floating set from the live one — which is empty until the deferred pass below runs. Reading it

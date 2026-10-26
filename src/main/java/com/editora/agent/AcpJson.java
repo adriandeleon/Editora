@@ -175,8 +175,7 @@ public final class AcpJson {
     }
 
     /** One parsed {@code session/update} notification. {@code planEntries} is non-empty only for
-     *  {@link UpdateKind#PLAN}. */
-    /** {@code sessionId} is null when the agent's notification named none. */
+     *  {@link UpdateKind#PLAN}; {@code sessionId} is null when the agent's notification named none. */
     public record Update(@Nullable String sessionId, UpdateKind kind, String text, List<PlanEntry> planEntries) {}
 
     /** A permission option offered by {@code session/request_permission}. */
@@ -191,8 +190,8 @@ public final class AcpJson {
     /** One plan task: {@code status} is {@code pending}/{@code in_progress}/{@code completed}. */
     public record PlanEntry(String content, String status) {}
 
-    /** The parsed {@code session/new} result: the new session id plus its model/mode catalogs. */
-    /** {@code sessionId} is null when the agent's answer named none. */
+    /** The parsed {@code session/new} result: the new session id plus its model/mode catalogs. {@code sessionId}
+     *  is null when the agent's answer named none. */
     public record SessionInfo(
             @Nullable String sessionId,
             List<ModelInfo> models,

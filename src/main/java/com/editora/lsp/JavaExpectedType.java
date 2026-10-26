@@ -238,13 +238,6 @@ public final class JavaExpectedType {
     }
 
     /**
-     * {@code types} with each type variable bound: to the declared target's single type argument
-     * ({@code List<String> l = List.of(} → {@code String}), to the target itself when it has none
-     * ({@code String r = requireNonNull(} → {@code String}), else to {@code Object}. Signature help names
-     * {@code List.of}'s parameter {@code E}, which no item's type is, so only {@code null} was kept (third
-     * review AT1).
-     */
-    /**
      * {@code types} with each type variable bound by matching the method's {@code returnType} against the declared
      * {@code target}: {@code T[] copyOf(T[], int)} into a {@code String[]} binds {@code T} to {@code String}, not
      * {@code String[]}, so the array argument is a {@code String[]} (fourth review AF1); {@code List<E>} into a
@@ -384,6 +377,13 @@ public final class JavaExpectedType {
         return args;
     }
 
+    /**
+     * {@code types} with each type variable bound: to the declared target's single type argument
+     * ({@code List<String> l = List.of(} → {@code String}), to the target itself when it has none
+     * ({@code String r = requireNonNull(} → {@code String}), else to {@code Object}. Signature help names
+     * {@code List.of}'s parameter {@code E}, which no item's type is, so only {@code null} was kept (third
+     * review AT1).
+     */
     public static List<String> bindTypeVariables(List<String> types, @Nullable String target) {
         String bound = "Object";
         if (target != null) {

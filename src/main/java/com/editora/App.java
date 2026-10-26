@@ -993,12 +993,6 @@ public class App extends Application {
     }
 
     /**
-     * Parses {@code PATH}, {@code PATH:LINE}, or {@code PATH:LINE:COLUMN} into an {@link
-     * com.editora.ui.MainController.OpenTarget} (line/column 1-based, 0 = unspecified). A trailing
-     * {@code :digits[:digits]} is the position; everything before it is the path, so Windows paths like
-     * {@code C:\dir} (no trailing {@code :digits}) and {@code C:\dir:10} parse correctly.
-     */
-    /**
      * The target for a file the <em>OS</em> handed us (the macOS {@code openFiles} Apple Event), which arrives
      * as one string and may carry a {@code :line[:column]} suffix exactly as a command-line argument does.
      *
@@ -1034,6 +1028,12 @@ public class App extends Application {
         return externalTarget(arg, java.nio.file.Files::exists);
     }
 
+    /**
+     * Parses {@code PATH}, {@code PATH:LINE}, or {@code PATH:LINE:COLUMN} into an {@link
+     * com.editora.ui.MainController.OpenTarget} (line/column 1-based, 0 = unspecified). A trailing
+     * {@code :digits[:digits]} is the position; everything before it is the path, so Windows paths like
+     * {@code C:\dir} (no trailing {@code :digits}) and {@code C:\dir:10} parse correctly.
+     */
     static com.editora.ui.MainController.OpenTarget parseTarget(String arg) {
         java.util.regex.Matcher m =
                 java.util.regex.Pattern.compile("^(.+?):(\\d+)(?::(\\d+))?$").matcher(arg);

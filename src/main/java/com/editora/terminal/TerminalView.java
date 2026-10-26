@@ -1998,15 +1998,6 @@ public final class TerminalView extends Region {
     }
 
     /**
-     * Decides between the context menu and the running program.
-     *
-     * <p>Right-click is genuinely contested: a terminal wants it for Copy and Paste, while a
-     * mouse-aware TUI (Midnight Commander, some file pickers) wants it as button 2 — and we report
-     * it as such. The rule is the one that already governs selection: while a program has grabbed
-     * the mouse it wins, and <b>Shift forces the menu</b>. Without that escape hatch there is no way
-     * to copy anything from inside such a program.
-     */
-    /**
      * Whether a context-menu request should open the menu rather than belong to the running program.
      *
      * <p>Extracted and static because it is the whole of the contention rule, and it is the kind of
@@ -2021,6 +2012,15 @@ public final class TerminalView extends Region {
         return mode == MouseMode.MOUSE_REPORTING_NONE;
     }
 
+    /**
+     * Decides between the context menu and the running program.
+     *
+     * <p>Right-click is genuinely contested: a terminal wants it for Copy and Paste, while a
+     * mouse-aware TUI (Midnight Commander, some file pickers) wants it as button 2 — and we report
+     * it as such. The rule is the one that already governs selection: while a program has grabbed
+     * the mouse it wins, and <b>Shift forces the menu</b>. Without that escape hatch there is no way
+     * to copy anything from inside such a program.
+     */
     private void onContextMenuRequested(ContextMenuEvent e) {
         // ContextMenuEvent carries no modifier state — only coordinates and whether a key raised
         // it — so shift is read from the press that triggered it.

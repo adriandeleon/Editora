@@ -380,7 +380,6 @@ final class Icons {
                 + "2v3h19V5c0-1.1-.9-2-2-2zM3 19c0 1.1.9 2 2 2h3V10H3v9z");
     }
 
-    /** Debug: Material "bug_report" — for the Debug tool window + status segment. */
     /**
      * Debug: a bug.
      *
@@ -593,7 +592,6 @@ final class Icons {
                 + "19 17.59 13.41 12z");
     }
 
-    /** A plain page. Same 11-unit height as the other toolbar glyphs — see {@link #newFile()}. */
     /**
      * New From Template: a page that already has content on it.
      *
@@ -604,6 +602,7 @@ final class Icons {
         return line("M4.5 2.5h4.6l2.9 2.9v8.1h-7.5zM9.1 2.5v2.9h2.9M6.3 8.4h4M6.3 10.6h4");
     }
 
+    /** A plain page. Same 11-unit height as the other toolbar glyphs — see {@link #newFile()}. */
     static Node fileSheet() {
         return line("M4.5 2.5h4.6l2.9 2.9v8.1h-7.5zM9.1 2.5v2.9h2.9");
     }
@@ -845,7 +844,6 @@ final class Icons {
         return of("M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z");
     }
 
-    /** Material "check" / done — "Resolve" note context-menu item. */
     /**
      * UI Kit line "plus" — New Branch, on the VCS menu and in the branch dropdown.
      *
@@ -858,6 +856,7 @@ final class Icons {
         return line("M8 3.4v9.2M3.4 8h9.2");
     }
 
+    /** Material "check" / done — "Resolve" note context-menu item. */
     static Node check() {
         return line("M3 8.6l3.2 3.2L13 4.6");
     }

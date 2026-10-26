@@ -407,13 +407,6 @@ public final class ConfigMigrations {
     }
 
     /**
-     * Keeps a copy of a config file we could not parse — overwhelmingly a torn write (a crash, a full disk, or
-     * a kill mid-save). The caller loads defaults, and the next save writes those defaults over the file, so
-     * without this the partially-written bookmarks/notes/projects are gone for good.
-     *
-     * @return the copy's path, or {@code null} when no copy could be made
-     */
-    /**
      * Keeps a copy of {@code file} as {@code <name>.corrupt.bak} (see {@link #keepCorrupt}) for a store that reads
      * its own entries one by one and is about to drop the ones it could not read. Returns the copy, or null.
      */
@@ -421,6 +414,13 @@ public final class ConfigMigrations {
         return keepCorrupt(file);
     }
 
+    /**
+     * Keeps a copy of a config file we could not parse — overwhelmingly a torn write (a crash, a full disk, or
+     * a kill mid-save). The caller loads defaults, and the next save writes those defaults over the file, so
+     * without this the partially-written bookmarks/notes/projects are gone for good.
+     *
+     * @return the copy's path, or {@code null} when no copy could be made
+     */
     private static @Nullable Path keepCorrupt(Path file) {
         try {
             Path existing = identicalBackup(file, ".corrupt.bak");
@@ -506,12 +506,6 @@ public final class ConfigMigrations {
         return o;
     }
 
-    /**
-     * v1 → v2 for {@code projects.json}: seed the new {@code openProjectIds} (the open-window set) from the
-     * single {@code activeProjectId} that pre-multi-window installs tracked, so the previously-active
-     * project reopens as its own window on first launch. No active project ⇒ an empty set (the global
-     * window opens by default).
-     */
     /**
      * v7 → v8 for a session file: seed {@code openToolWindows} from the three single-id fields, which is
      * what a side's open set was before a side could hold two windows.
@@ -660,6 +654,12 @@ public final class ConfigMigrations {
         return o;
     }
 
+    /**
+     * v1 → v2 for {@code projects.json}: seed the new {@code openProjectIds} (the open-window set) from the
+     * single {@code activeProjectId} that pre-multi-window installs tracked, so the previously-active
+     * project reopens as its own window on first launch. No active project ⇒ an empty set (the global
+     * window opens by default).
+     */
     static JsonNode seedOpenProjectIds(JsonNode input) {
         if (!(input instanceof ObjectNode o) || o.has("openProjectIds")) {
             return input;
@@ -711,15 +711,6 @@ public final class ConfigMigrations {
         return o;
     }
 
-    /**
-     * v77 -> v78 for the settings file: split the single {@code aiApiKey} onto per-provider fields. The
-     * key was a single field shared by both AI providers, so switching provider silently sent one provider's
-     * credential to the other's endpoint. {@code aiApiKey} now holds the <em>Anthropic</em> key and
-     * {@code aiApiKeyOpenai} the OpenAI-compatible one. A user whose saved provider was OpenAI had their
-     * OpenAI-endpoint key in {@code aiApiKey}, so move it to {@code aiApiKeyOpenai} and clear {@code aiApiKey}
-     * (else it would be resurrected as an Anthropic key). Anthropic was the default, so the common case — a
-     * key saved under Anthropic — already lands in the right field and is left untouched.
-     */
     /**
      * v80 → v81 for the settings file: split the single {@code keybindings} override map into per-platform
      * maps ({@code keybindings} = Ctrl-based Windows/Linux, {@code keybindingsMac} = Cmd-based macOS), so a config
@@ -919,15 +910,6 @@ public final class ConfigMigrations {
         }
     }
 
-    /**
-     * v126→127: the OpenAI-compatible provider's endpoint, model and inline model move out of the fields it
-     * shared with Anthropic ({@code aiEndpoint}, {@code aiModel}, {@code aiCompletionModel}) into
-     * {@code aiEndpointOpenai}, {@code aiModelOpenai}, {@code aiCompletionModelOpenai}. With the provider set to
-     * OpenAI all three belonged to it, so they move and the Anthropic ones are cleared. Under any other provider
-     * an endpoint of the OpenAI shape ({@code …/chat/completions}) is a leftover from an earlier OpenAI setup —
-     * the very URL the Anthropic key was being sent to — so it moves too; an Anthropic proxy URL stays. Safe to
-     * repeat: nothing moves into a field that already has a value.
-     */
     /** v133→134: a terminal scrollback above the new 50,000-line maximum becomes the maximum. */
     static JsonNode clampTerminalScrollback(JsonNode input) {
         if (input instanceof ObjectNode o) {
@@ -939,6 +921,15 @@ public final class ConfigMigrations {
         return input;
     }
 
+    /**
+     * v126→127: the OpenAI-compatible provider's endpoint, model and inline model move out of the fields it
+     * shared with Anthropic ({@code aiEndpoint}, {@code aiModel}, {@code aiCompletionModel}) into
+     * {@code aiEndpointOpenai}, {@code aiModelOpenai}, {@code aiCompletionModelOpenai}. With the provider set to
+     * OpenAI all three belonged to it, so they move and the Anthropic ones are cleared. Under any other provider
+     * an endpoint of the OpenAI shape ({@code …/chat/completions}) is a leftover from an earlier OpenAI setup —
+     * the very URL the Anthropic key was being sent to — so it moves too; an Anthropic proxy URL stays. Safe to
+     * repeat: nothing moves into a field that already has a value.
+     */
     static JsonNode splitOpenaiEndpoint(JsonNode input) {
         if (!(input instanceof ObjectNode o)) {
             return input;
@@ -984,6 +975,15 @@ public final class ConfigMigrations {
         return input;
     }
 
+    /**
+     * v77 -> v78 for the settings file: split the single {@code aiApiKey} onto per-provider fields. The
+     * key was a single field shared by both AI providers, so switching provider silently sent one provider's
+     * credential to the other's endpoint. {@code aiApiKey} now holds the <em>Anthropic</em> key and
+     * {@code aiApiKeyOpenai} the OpenAI-compatible one. A user whose saved provider was OpenAI had their
+     * OpenAI-endpoint key in {@code aiApiKey}, so move it to {@code aiApiKeyOpenai} and clear {@code aiApiKey}
+     * (else it would be resurrected as an Anthropic key). Anthropic was the default, so the common case — a
+     * key saved under Anthropic — already lands in the right field and is left untouched.
+     */
     static JsonNode splitAiApiKeyByProvider(JsonNode input) {
         if (!(input instanceof ObjectNode o)) {
             return input;

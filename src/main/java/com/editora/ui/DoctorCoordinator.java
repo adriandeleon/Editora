@@ -917,7 +917,6 @@ final class DoctorCoordinator {
 
     // --- rows --------------------------------------------------------------------------------------
 
-    /** A feature-off row: gray, never probed, with a "Turn on" for {@code enableKey} ("" = none offered). */
     /**
      * The Plugins section: what this session runs, then one row per plugin that failed to load or to start,
      * started slowly, or changed since it was enabled — what used to show nowhere but the log. No "Turn on":
@@ -961,6 +960,7 @@ final class DoctorCoordinator {
         return rows;
     }
 
+    /** A feature-off row: gray, never probed, with a "Turn on" for {@code enableKey} ("" = none offered). */
     private static DoctorCheck offRow(DoctorCheck placeholder, String enableKey) {
         // A whole section that is off says so in its label; a tip repeating it would be noise.
         boolean section = placeholder.label().equals(tr("doctor.label.sectionOff"));
@@ -1346,8 +1346,10 @@ final class DoctorCoordinator {
 
     // --- helpers -----------------------------------------------------------------------------------
 
-    /** A standard "present + version, else missing" tool row, asking for the version with {@code versionArg}. */
-    /** As a tool row; {@code latest} is its newest release as Check for Newer Versions found it, or null. */
+    /**
+     * A standard "present + version, else missing" tool row, asking for the version with {@code versionArg};
+     * {@code latest} is its newest release as Check for Newer Versions found it, or null.
+     */
     private static DoctorService.CheckSpec versionedTool(
             DoctorCheck placeholder, List<String> cmd, String toolName, String versionArg, @Nullable String latest) {
         return probe(placeholder, base -> {

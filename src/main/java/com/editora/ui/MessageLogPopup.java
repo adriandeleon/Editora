@@ -186,13 +186,13 @@ public final class MessageLogPopup {
         });
     }
 
-    /** Injects the shared overlay host used to show the message-log card. */
     /** Shows an "Open Doctor" button in the footer that runs {@code action} (null hides it). */
     public void setOnOpenDoctor(Runnable action) {
         onOpenDoctor = action;
         doctor.setVisible(action != null);
     }
 
+    /** Injects the shared overlay host used to show the message-log card. */
     public void setOverlayHost(OverlayHost overlayHost) {
         this.overlayHost = overlayHost;
     }

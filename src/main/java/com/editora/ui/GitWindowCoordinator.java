@@ -431,7 +431,6 @@ final class GitWindowCoordinator {
         host.github().panelContext(panel::setContext); // whose rows these are (the repository is cached)
     }
 
-    /** The {@link GitLogPanel.Actions} the Git Log tool window routes user actions through. */
     /**
      * The working-tree file a commit's {@code repoRel} blob is compared with. A file history lists <em>every</em>
      * file of the selected commit, so the history file is the working side only for its own row; any other row
@@ -457,6 +456,7 @@ final class GitWindowCoordinator {
         return root.resolve(repoRel);
     }
 
+    /** The {@link GitLogPanel.Actions} the Git Log tool window routes user actions through. */
     GitLogPanel.Actions gitLogActions() {
         return new GitLogPanel.Actions() {
             @Override

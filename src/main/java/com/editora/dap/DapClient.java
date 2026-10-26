@@ -171,7 +171,6 @@ public final class DapClient implements IDebugProtocolClient {
     /** The breakpoints to install when the adapter signals {@code initialized} (snapshot taken on the FX
      *  thread at session start, so this never reads UI state off-thread). */
     private volatile List<DapModels.FileBreakpoints> initialBreakpoints = List.of();
-    /** Exception-breakpoint filter ids (e.g. {@code uncaught}/{@code caught}). */
     /** The chosen exception filters; null for the adapter's own defaults ({@link #defaultExceptionFilters}). */
     private volatile @Nullable List<String> exceptionFilters;
     /** True once the adapter's {@code initialized} event installed the configuration (breakpoints +

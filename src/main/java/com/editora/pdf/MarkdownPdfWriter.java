@@ -468,18 +468,18 @@ public final class MarkdownPdfWriter {
         }
     }
 
-    /**
-     * One placed fragment of a laid-out line: a word (or the part of a broken word) at {@code x} from the
-     * line's left edge, {@code width} wide. A {@code space} piece is the gap before a word, drawn as a real
-     * space glyph; its decorations say whether the underline, strike or link of the words around it runs
-     * through. A picture piece is drawn at {@code scale} times its word's size.
-     */
     /** A superscript or subscript is this share of the text size around it. */
     private static final float SCRIPT_SCALE = 0.72f;
 
     /** The marker colour behind {@code ==highlighted==} text (dark text stays readable on it). */
     private static final Color MARK_BG = PdfTheme.hex("#fff3a3");
 
+    /**
+     * One placed fragment of a laid-out line: a word (or the part of a broken word) at {@code x} from the
+     * line's left edge, {@code width} wide. A {@code space} piece is the gap before a word, drawn as a real
+     * space glyph; its decorations say whether the underline, strike or link of the words around it runs
+     * through. A picture piece is drawn at {@code scale} times its word's size.
+     */
     private record Piece(
             Word word,
             String text,

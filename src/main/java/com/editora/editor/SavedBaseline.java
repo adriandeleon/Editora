@@ -76,12 +76,12 @@ final class SavedBaseline {
         text = null;
     }
 
-    /** Whether the text is still held (tests). */
     /** The saved text while it is still held (before sealing), else null. */
     synchronized @Nullable String heldText() {
         return text;
     }
 
+    /** Whether the text is still held (tests). */
     synchronized boolean holdsText() {
         return text != null;
     }

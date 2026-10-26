@@ -1747,22 +1747,6 @@ final class RunCoordinator {
     }
 
     /**
-     * The saved configuration the gutter ▶ should run for {@code targetFqn}, or null to fall back to the
-     * ad-hoc main-class run.
-     *
-     * <p>Preference order, and why:
-     *
-     * <ol>
-     *   <li>a configuration that launches <b>this</b> class — never surprising, and the case a generated
-     *       project lands in;
-     *   <li>otherwise the toolbar's selected configuration, so the ▶ is as capable as the Run button.
-     * </ol>
-     *
-     * <p>Only in a Maven/Gradle project: elsewhere there is no build for a before-launch step to run and the
-     * ad-hoc path is the whole story. A compact source file never reaches here — {@code EditorBuffer} routes
-     * those to their own handler.
-     */
-    /**
      * The configuration a gutter ▶ should launch, or null to keep the ad-hoc main-class run.
      *
      * <p>In a Maven/Gradle project the configuration is the better launch: it carries the before-launch build,

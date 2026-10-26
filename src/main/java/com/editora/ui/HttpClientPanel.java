@@ -1348,7 +1348,6 @@ public final class HttpClientPanel extends VBox {
         bodyArea.scrollToPixel(0, 0);
     }
 
-    /** Shows {@code tab}'s content (the strip's selection changed, by the user or by a run). */
     /**
      * Only the shown child of {@code stack} counts in its size. A hidden empty state (a row per request) or tab used to
      * ask for its full height, and the panel took that room from the Run All list above the tabs.
@@ -1359,6 +1358,7 @@ public final class HttpClientPanel extends VBox {
         }
     }
 
+    /** Shows {@code tab}'s content (the strip's selection changed, by the user or by a run). */
     private void showTab(HttpResponseTab tab) {
         tabContent.forEach((t, node) -> node.setVisible(t == tab));
     }

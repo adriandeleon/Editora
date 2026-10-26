@@ -445,11 +445,6 @@ public final class SearchService {
         return abs.getFileName().toString();
     }
 
-    /**
-     * The open buffers' paths that can name a file on disk, normalized. Remote paths are left out: they can
-     * never equal a local result, and hashing them beside local ones is what invites a cross-provider
-     * {@code equals}.
-     */
     /** The open buffers' paths that are on {@code root}'s filesystem (all local ones when there is no root). */
     private static Set<Path> keysOn(List<Map.Entry<Path, String>> open, @Nullable Path root) {
         Set<Path> keys = new HashSet<>();

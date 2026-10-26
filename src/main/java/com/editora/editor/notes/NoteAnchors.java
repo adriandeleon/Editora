@@ -82,15 +82,6 @@ public final class NoteAnchors {
         return start + Math.min(offset - start, regionLength);
     }
 
-    /**
-     * Locates the anchor's text in {@code doc}. Returns {@code {start,end}} (end exclusive) or {@code null}
-     * if it can't be relocated (the note should be marked orphaned). The span runs from the match to
-     * {@code start + length} (clamped to the document): {@code length} is the note's <em>full</em> original
-     * selection length, so a note taken on more than {@link com.editora.config.TextAnchor#MAX_TEXT} characters
-     * highlights the whole selection rather than just the capped {@code needle} used to find it (#454). A
-     * {@code length} shorter than the needle (an old note with no saved length, or a bad value) falls back to
-     * the needle length.
-     */
     /** As {@link #relocate(String, int, int, String, String, String, int)} with {@code length} defaulting to
      *  the {@code selectedText} length (the span = the captured text). */
     public static int @Nullable [] relocate(
@@ -105,6 +96,15 @@ public final class NoteAnchors {
                 selectedText == null ? 0 : selectedText.length());
     }
 
+    /**
+     * Locates the anchor's text in {@code doc}. Returns {@code {start,end}} (end exclusive) or {@code null}
+     * if it can't be relocated (the note should be marked orphaned). The span runs from the match to
+     * {@code start + length} (clamped to the document): {@code length} is the note's <em>full</em> original
+     * selection length, so a note taken on more than {@link com.editora.config.TextAnchor#MAX_TEXT} characters
+     * highlights the whole selection rather than just the capped {@code needle} used to find it (#454). A
+     * {@code length} shorter than the needle (an old note with no saved length, or a bad value) falls back to
+     * the needle length.
+     */
     public static int @Nullable [] relocate(
             String doc, int savedStart, int savedEnd, String selectedText, String prefix, String suffix, int length) {
         if (doc == null) {

@@ -673,20 +673,6 @@ public final class Indenter {
     }
 
     /**
-     * How many characters Backspace should delete in one press when the caret sits in a line's leading
-     * whitespace. Counting backward from the caret:
-     * <ul>
-     *   <li><b>Blank line</b> (everything before and after the caret is whitespace) with a line above it:
-     *       the leading whitespace <em>plus the preceding newline</em> — so one press jumps back to the
-     *       end of the previous line (undoing an auto-indented Enter, "back to where you hit Enter").</li>
-     *   <li><b>Indented content line</b> (whitespace before the caret, real text after): just the leading
-     *       whitespace — clears the indent back to column 1 without joining lines.</li>
-     *   <li>Otherwise {@code 0} (caret not in leading-only whitespace) — let a normal Backspace run.</li>
-     * </ul>
-     * {@code beforeCaret}/{@code afterCaret} are the line text on each side of the caret;
-     * {@code hasPreviousLine} is whether a line exists above the current one.
-     */
-    /**
      * How many characters Backspace deletes with the caret in a line's leading whitespace, for
      * {@code language}: in Python and YAML, whose indentation is syntax, back to the previous indent stop (one
      * level, never joining the line above); elsewhere as {@link #smartBackspaceCount(String, String, boolean)}.
@@ -700,7 +686,22 @@ public final class Indenter {
         return smartBackspaceCount(beforeCaret, afterCaret, hasPreviousLine);
     }
 
-    /** As {@link #smartBackspaceCount(String, String, boolean, String, String, int)} for the other languages. */
+    /**
+     * How many characters Backspace should delete in one press when the caret sits in a line's leading
+     * whitespace. Counting backward from the caret:
+     * <ul>
+     *   <li><b>Blank line</b> (everything before and after the caret is whitespace) with a line above it:
+     *       the leading whitespace <em>plus the preceding newline</em> — so one press jumps back to the
+     *       end of the previous line (undoing an auto-indented Enter, "back to where you hit Enter").</li>
+     *   <li><b>Indented content line</b> (whitespace before the caret, real text after): just the leading
+     *       whitespace — clears the indent back to column 1 without joining lines.</li>
+     *   <li>Otherwise {@code 0} (caret not in leading-only whitespace) — let a normal Backspace run.</li>
+     * </ul>
+     * {@code beforeCaret}/{@code afterCaret} are the line text on each side of the caret;
+     * {@code hasPreviousLine} is whether a line exists above the current one.
+     *
+     * <p>As {@link #smartBackspaceCount(String, String, boolean, String, String, int)} for the other languages.
+     */
     public static int smartBackspaceCount(String beforeCaret, String afterCaret, boolean hasPreviousLine) {
         if (beforeCaret.isEmpty() || !beforeCaret.isBlank()) {
             return 0;

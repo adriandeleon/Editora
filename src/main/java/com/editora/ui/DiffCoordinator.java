@@ -232,12 +232,6 @@ final class DiffCoordinator {
         });
     }
 
-    /**
-     * Opens a diff tab comparing two re-fetchable sides (diff computed off-thread); reports identical /
-     * too-large. {@code headerLeft}/{@code headerRight} label the panes; the clean {@code leftName}/
-     * {@code rightName} (real file names) drive grammar + patch labels. The pane's refresher re-fetches both
-     * sides and re-renders only when the content changed.
-     */
     /** Off-thread diff compute passthrough (used by the embedded Local History window's live re-diff). */
     void computeDiff(
             String left,
@@ -247,6 +241,12 @@ final class DiffCoordinator {
         diffService.compute(left, right, opts, cb);
     }
 
+    /**
+     * Opens a diff tab comparing two re-fetchable sides (diff computed off-thread); reports identical /
+     * too-large. {@code headerLeft}/{@code headerRight} label the panes; the clean {@code leftName}/
+     * {@code rightName} (real file names) drive grammar + patch labels. The pane's refresher re-fetches both
+     * sides and re-renders only when the content changed.
+     */
     void openDiff(
             String title,
             String headerLeft,

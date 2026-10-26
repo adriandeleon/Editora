@@ -166,11 +166,6 @@ public final class CodePrintLayout {
     }
 
     /**
-     * Where each page starts, as {@code {source line, visual line within it}}: {@code perPage} visual
-     * lines per page, a source line wrapped at {@code cols} counting as several. Always at least one page,
-     * so an empty document still previews and prints a blank sheet. Pure.
-     */
-    /**
      * {@code lines} without the empty last line a file that ends in a newline splits into. An editor shows
      * that line because the caret can sit on it; on paper it is a line number beside nothing, and when the
      * file's last real line is the last one on a page it costs a whole sheet holding just that number.
@@ -188,6 +183,11 @@ public final class CodePrintLayout {
         return lines.subList(0, lines.size() - 1);
     }
 
+    /**
+     * Where each page starts, as {@code {source line, visual line within it}}: {@code perPage} visual
+     * lines per page, a source line wrapped at {@code cols} counting as several. Always at least one page,
+     * so an empty document still previews and prints a blank sheet. Pure.
+     */
     static int[][] pageStarts(List<List<PdfText.Run>> lines, int cols, int perPage) {
         List<int[]> starts = new ArrayList<>();
         int onPage = perPage; // "full", so the first visual line opens page 1
