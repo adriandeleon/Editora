@@ -6406,7 +6406,9 @@ public final class LspManager {
         /** The file's server has no way to organize imports. */
         UNSUPPORTED,
         /** The server failed or gave up (jdtls cancels the whole operation when it cannot ask about a name). */
-        FAILED
+        FAILED,
+        /** The file changed while the server worked (an import question was open): its edit no longer applies. */
+        STALE
     }
 
     /**
@@ -6559,8 +6561,17 @@ public final class LspManager {
                 } else if (edit == null || !changesText(edit)) {
                     cb.accept(OrganizeOutcome.UNCHANGED);
                 } else {
-                    applyWorkspaceEdit(
-                            edit, expected, ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.FAILED));
+                    applyWorkspaceEdit(edit, expected, ok -> {
+                        // refused because the file changed under the question, not because the server gave up
+                        // (seventh review AR1)
+                        String then = expected.documents().get(file);
+                        boolean changed = then != null
+                                && !then.equals(expectedDocuments(s).get(file));
+                        cb.accept(
+                                ok
+                                        ? OrganizeOutcome.ORGANIZED
+                                        : changed ? OrganizeOutcome.STALE : OrganizeOutcome.FAILED);
+                    });
                 }
             });
         });

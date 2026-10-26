@@ -3608,7 +3608,9 @@ final class LspCoordinator {
             });
         };
         Runnable organizeThenRest = () -> {
-            if (!organize || buffer.isDisposed()) {
+            // while an import question is open the explicit Organize Imports owns the imports: a save's organize
+            // changed the file under it, and the answer was dropped (seventh review AR1)
+            if (!organize || buffer.isDisposed() || lspManager.questionOpen(path)) {
                 formatThenSave.run();
                 return;
             }
@@ -3650,7 +3652,7 @@ final class LspCoordinator {
                         switch (outcome) {
                             case ORGANIZED -> "status.lsp.cleanedUp";
                             case UNCHANGED -> "status.lsp.cleanupNothing";
-                            case UNSUPPORTED, FAILED -> "status.lsp.cleanupFailed";
+                            case UNSUPPORTED, FAILED, STALE -> "status.lsp.cleanupFailed";
                         })));
     }
 
@@ -4795,6 +4797,7 @@ final class LspCoordinator {
                         case ORGANIZED -> "status.lsp.importsOrganized";
                         case UNCHANGED -> "status.lsp.importsUnchanged";
                         case UNSUPPORTED, FAILED -> "status.lsp.importsUnsupported";
+                        case STALE -> "status.lsp.importsStale"; // the file changed under the question (AR1)
                     }));
         });
     }
