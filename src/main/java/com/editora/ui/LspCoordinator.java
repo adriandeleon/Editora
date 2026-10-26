@@ -5876,21 +5876,30 @@ final class LspCoordinator {
      */
     void libraryTypeItems(
             String query, java.util.function.Consumer<List<com.editora.search.SearchEverywhere.Item>> cb) {
-        libraryTypes(query, matches -> {
-            List<com.editora.search.SearchEverywhere.Item> out = new java.util.ArrayList<>();
-            for (LspManager.WorkspaceSymbolMatch m : matches) {
-                int score = SymbolRanking.score(m, query);
-                if (score != com.editora.search.FuzzyMatch.NO_SCORE) {
-                    out.add(new com.editora.search.SearchEverywhere.Item(
-                            com.editora.search.SearchEverywhere.Kind.SYMBOL,
-                            m.name(),
-                            m.container().isEmpty() ? LspManager.classFileTitle(m.libraryUri()) : m.container(),
-                            score - 1,
-                            m));
-                }
+        libraryTypes(query, matches -> cb.accept(libraryRows(matches, query)));
+    }
+
+    /**
+     * {@code matches} as Search Everywhere rows, in Ctrl+N's tie order: Search Everywhere keeps the arrival order of
+     * rows with an equal score and label, so "Entry" listed {@code Map.Entry} 16th, past its group (fifth review EV3).
+     */
+    static List<com.editora.search.SearchEverywhere.Item> libraryRows(
+            List<LspManager.WorkspaceSymbolMatch> matches, String query) {
+        List<LspManager.WorkspaceSymbolMatch> ordered = new java.util.ArrayList<>(matches);
+        ordered.sort(SymbolRanking.TIE_BREAK);
+        List<com.editora.search.SearchEverywhere.Item> out = new java.util.ArrayList<>();
+        for (LspManager.WorkspaceSymbolMatch m : ordered) {
+            int score = SymbolRanking.score(m, query);
+            if (score != com.editora.search.FuzzyMatch.NO_SCORE) {
+                out.add(new com.editora.search.SearchEverywhere.Item(
+                        com.editora.search.SearchEverywhere.Kind.SYMBOL,
+                        m.name(),
+                        m.container().isEmpty() ? LspManager.classFileTitle(m.libraryUri()) : m.container(),
+                        score - 1,
+                        m));
             }
-            cb.accept(out);
-        });
+        }
+        return out;
     }
 
     /** Opens a {@link #libraryTypes} match. */

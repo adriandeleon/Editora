@@ -1084,6 +1084,8 @@ public final class FoldManager {
     public void foldAll() {
         settleRegions();
         int topPar = firstVisiblePar();
+        int keptCaret = area.getCaretPosition();
+        int keptAnchor = area.getAnchor();
         int lines = area.getParagraphs().size();
         for (Region r : regions) {
             if (wholeFileBody(r, lines)) {
@@ -1094,10 +1096,34 @@ public final class FoldManager {
                 shadeHeader(r.startLine(), true);
             }
         }
+        keepCaret(keptCaret, keptAnchor);
         restoreViewport(topPar);
         if (!restoring) {
             foldStateChanged();
         }
+    }
+
+    /**
+     * Puts the caret back where it was before a bulk fold or unfold: each region folded or unfolded moved it to that
+     * region's header, so Fold All left it in another method, off screen (fifth review EV2). A caret a fold now
+     * hides goes to the end of the header of the outermost fold hiding it, as IntelliJ's Collapse All leaves it.
+     */
+    private void keepCaret(int caret, int anchor) {
+        int at = Math.min(caret, area.getLength());
+        int line = area.offsetToPosition(at, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                .getMajor();
+        if (!area.isFolded(line)) {
+            int from = Math.min(anchor, area.getLength());
+            int fromLine = area.offsetToPosition(from, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                    .getMajor();
+            area.selectRange(area.isFolded(fromLine) ? at : from, at);
+            return;
+        }
+        int header = line;
+        while (header > 0 && area.isFolded(header)) {
+            header--;
+        }
+        area.moveTo(header, area.getParagraphLength(header));
     }
 
     /**
@@ -1128,6 +1154,8 @@ public final class FoldManager {
             return; // nothing folded: skip firstVisiblePar() (a forced VirtualFlow layout) and the shade sweep
         }
         int topPar = firstVisiblePar();
+        int keptCaret = area.getCaretPosition();
+        int keptAnchor = area.getAnchor();
         int n = area.getParagraphs().size();
         for (int p = 0; p + 1 < n; p++) {
             if (!area.isFolded(p) && area.isFolded(p + 1)) {
@@ -1137,6 +1165,7 @@ public final class FoldManager {
         for (Region r : regions) {
             shadeHeader(r.startLine(), false);
         }
+        keepCaret(keptCaret, keptAnchor);
         restoreViewport(topPar);
         if (!restoring) {
             foldStateChanged();
@@ -1165,6 +1194,8 @@ public final class FoldManager {
     public void foldAllExcept(int line) {
         settleRegions();
         int topPar = firstVisiblePar();
+        int keptCaret = area.getCaretPosition();
+        int keptAnchor = area.getAnchor();
         for (Region r : regions) {
             if (r.startLine() <= line && line <= r.endLine()) {
                 continue; // an ancestor of the caret — stays open
@@ -1185,6 +1216,7 @@ public final class FoldManager {
                 shadeHeader(r.startLine(), true);
             }
         }
+        keepCaret(keptCaret, keptAnchor);
         restoreViewport(topPar);
         if (!restoring) {
             foldStateChanged();
@@ -1199,6 +1231,8 @@ public final class FoldManager {
     public void unfoldAllExcept(int line) {
         settleRegions();
         int topPar = firstVisiblePar();
+        int keptCaret = area.getCaretPosition();
+        int keptAnchor = area.getAnchor();
         boolean changed = false;
         for (Integer s : collapsedStartLines()) {
             // collapsedStartLines also reports regions merely HIDDEN inside a folded ancestor (that is
@@ -1216,6 +1250,7 @@ public final class FoldManager {
             shadeHeader(s, false);
             changed = true;
         }
+        keepCaret(keptCaret, keptAnchor);
         restoreViewport(topPar);
         if (changed && !restoring) {
             foldStateChanged();
@@ -1248,6 +1283,8 @@ public final class FoldManager {
     public int unfoldAllMarkerRegions() {
         settleRegions();
         int topPar = firstVisiblePar();
+        int keptCaret = area.getCaretPosition();
+        int keptAnchor = area.getAnchor();
         int n = 0;
         for (Region r : FoldRegions.markers(textSnapshot.get(), language)) {
             // Same phantom-header guard as unfoldAllExcept: a marker region hidden inside a folded
@@ -1258,6 +1295,7 @@ public final class FoldManager {
                 n++;
             }
         }
+        keepCaret(keptCaret, keptAnchor);
         restoreViewport(topPar);
         if (n > 0 && !restoring) {
             foldStateChanged();
@@ -1268,6 +1306,8 @@ public final class FoldManager {
     /** Folds exactly the given regions (a kind-specific detector's output), skipping collapsed ones. */
     private int foldExactly(List<Region> toFold) {
         int topPar = firstVisiblePar();
+        int keptCaret = area.getCaretPosition();
+        int keptAnchor = area.getAnchor();
         int n = 0;
         for (Region r : toFold) {
             if (!isCollapsed(r.startLine())) {
@@ -1276,6 +1316,7 @@ public final class FoldManager {
                 n++;
             }
         }
+        keepCaret(keptCaret, keptAnchor);
         restoreViewport(topPar);
         if (n > 0 && !restoring) {
             foldStateChanged();
@@ -1350,11 +1391,14 @@ public final class FoldManager {
     public void foldLevel(int level) {
         settleRegions();
         int topPar = firstVisiblePar();
+        int keptCaret = area.getCaretPosition();
+        int keptAnchor = area.getAnchor();
         unfoldEverythingNoFire();
         for (Region r : FoldTree.atLevel(regions, level)) {
             area.foldParagraphs(r.startLine(), r.endLine());
             shadeHeader(r.startLine(), true);
         }
+        keepCaret(keptCaret, keptAnchor);
         restoreViewport(topPar);
         if (!restoring) {
             foldStateChanged();
@@ -1369,6 +1413,8 @@ public final class FoldManager {
             return;
         }
         int topPar = firstVisiblePar();
+        int keptCaret = area.getCaretPosition();
+        int keptAnchor = area.getAnchor();
         // Deepest-first: each region is still visible (its parent not yet folded) when we collapse it, so
         // the nested folds are genuinely recorded — unlike foldAll, which only truly folds the outermost.
         List<Region> toFold = new ArrayList<>(FoldTree.descendantsOf(regions, target));
@@ -1380,6 +1426,7 @@ public final class FoldManager {
                 shadeHeader(r.startLine(), true);
             }
         }
+        keepCaret(keptCaret, keptAnchor);
         restoreViewport(topPar);
         if (!restoring) {
             foldStateChanged();
@@ -1406,6 +1453,8 @@ public final class FoldManager {
             return;
         }
         int topPar = firstVisiblePar();
+        int keptCaret = area.getCaretPosition();
+        int keptAnchor = area.getAnchor();
         // Shallowest-first: revealing the parent exposes each child header, which is then itself a visible
         // collapsed header we can unfold (the detector lists regions innermost-first, so we must re-order).
         Region root = target;
@@ -1418,6 +1467,7 @@ public final class FoldManager {
                 shadeHeader(r.startLine(), false);
             }
         }
+        keepCaret(keptCaret, keptAnchor);
         restoreViewport(topPar);
         if (!restoring) {
             foldStateChanged();
