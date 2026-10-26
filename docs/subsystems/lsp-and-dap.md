@@ -424,7 +424,9 @@ hides them. While jdtls's `chooseImports` question is open, no request on that s
 can run a nested event loop), and the drag's end waits for any rename still in flight (`renamesInFlight`). jdtls is
 launched on the Java its installed bundles require (`JavaRuntimes.serverMinMajor`, from their
 `Bundle-RequiredExecutionEnvironment`), not on its launcher's own floor. A shared session keeps jdtls's last
-`ProjectStatus` and replays it to a window that joins.
+`ProjectStatus` and its project-level diagnostics, and replays them to a window that joins. Every `java/*` request
+sent through `rawRequest` must be declared on `JdtLanguageServer`: LSP4J types a response by that registry and
+turns an undeclared method's answer into null (`JdtLanguageServerProtocolTest` checks every literal).
 
 ### jdtls preferences
 
