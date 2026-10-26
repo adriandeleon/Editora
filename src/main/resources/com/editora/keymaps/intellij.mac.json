@@ -118,5 +118,8 @@
   "Cmd-j": "snippets.insert",
   "Cmd-S--": "view.foldAll",
   "M-Cmd-S-c": "lsp.copyQualifiedName",
-  "M-Cmd-f7": "lsp.findReferences"
+  "M-Cmd-f7": "lsp.findReferences",
+  "Cmd-u": "lsp.gotoSuperMethod",
+  "Cmd-S-subtract": "view.foldAll",
+  "Cmd-S-add": "view.unfoldAll"
 }

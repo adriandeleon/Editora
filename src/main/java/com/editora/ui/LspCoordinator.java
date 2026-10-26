@@ -5628,6 +5628,15 @@ final class LspCoordinator {
                 (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noTypeDefinition"));
     }
 
+    /** Go to Super Method ({@code lsp.gotoSuperMethod}, IntelliJ's Ctrl+U): what the method at the caret overrides. */
+    void gotoSuperMethod() {
+        withNavRequest(
+                "status.lsp.superMethodUnsupported",
+                lspManager::supportsSuperMethod,
+                lspManager::superMethodAt,
+                (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noSuperMethod"));
+    }
+
     /** Go to Declaration ({@code lsp.gotoDeclaration}, #736). */
     void gotoDeclaration() {
         withNavRequest(

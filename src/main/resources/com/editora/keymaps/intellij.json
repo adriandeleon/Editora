@@ -116,5 +116,8 @@
   "C-S--": "view.foldAll",
   "C-i": "lsp.overrideMethods",
   "C-M-S-c": "lsp.copyQualifiedName",
-  "C-M-f7": "lsp.findReferences"
+  "C-M-f7": "lsp.findReferences",
+  "C-u": "lsp.gotoSuperMethod",
+  "C-S-subtract": "view.foldAll",
+  "C-S-add": "view.unfoldAll"
 }

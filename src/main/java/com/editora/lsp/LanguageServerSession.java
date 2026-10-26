@@ -2173,6 +2173,32 @@ final class LanguageServerSession implements LanguageClient {
 
     /** The declaration of the <em>type</em> of the symbol at a position ({@code textDocument/typeDefinition})
      *  — from a variable to its type, as opposed to definition's "to the variable" (#736). */
+    /**
+     * jdtls's {@code java/findLinks} of {@code type} ({@code superImplementation}: the method or type the one at
+     * {@code pos} overrides or extends), as locations. Empty from a server without it.
+     */
+    CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> findLinks(
+            String type, String uri, Position pos) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+        }
+        Map<String, Object> params =
+                Map.of("type", type, "position", new org.eclipse.lsp4j.TextDocumentPositionParams(doc(uri), pos));
+        return rawRequest("java/findLinks", params).thenApply(result -> {
+            List<Location> out = new ArrayList<>();
+            com.google.gson.JsonElement json = LspManager.asJson(result);
+            if (json != null && json.isJsonArray()) {
+                for (com.google.gson.JsonElement e : json.getAsJsonArray()) {
+                    Location l = new com.google.gson.Gson().fromJson(e, Location.class);
+                    if (l != null && l.getUri() != null && l.getRange() != null) {
+                        out.add(l);
+                    }
+                }
+            }
+            return Either.forLeft(out);
+        });
+    }
+
     CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> typeDefinition(
             String uri, Position pos) {
         if (!ready()) {

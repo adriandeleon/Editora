@@ -4177,6 +4177,32 @@ public final class LspManager {
                 onError);
     }
 
+    /**
+     * Go to Super Method (IntelliJ's Ctrl+U): the method the one at the caret overrides, or the class a type extends,
+     * through jdtls's {@code java/findLinks} {@code superImplementation} (sixth review E1).
+     */
+    public void superMethodAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<Target>> cb,
+            @Nullable Consumer<String> onError) {
+        requestLocations(
+                javaSessionFor(anchor),
+                documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
+                line,
+                character,
+                (s, u, pos) -> s.findLinks("superImplementation", u, pos),
+                cb,
+                onError);
+    }
+
+    /** Whether {@code file}'s server is jdtls, which answers Go to Super Method. */
+    public boolean supportsSuperMethod(Path file) {
+        return javaSessionFor(file) != null;
+    }
+
     /** Go to Declaration ({@code textDocument/declaration}, #736). */
     public void declaration(Path file, int line, int character, Consumer<List<Target>> cb) {
         declarationAt(file, null, line, character, cb);

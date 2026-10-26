@@ -2273,6 +2273,8 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of("lsp.gotoDeclaration", () -> host.ifLsp(host.lspCoordinator()::gotoDeclaration)));
         host.registry()
+                .register(Command.of("lsp.gotoSuperMethod", () -> host.ifLsp(host.lspCoordinator()::gotoSuperMethod)));
+        host.registry()
                 .register(Command.of("lsp.gotoSymbol", () -> host.ifLsp(host.lspCoordinator()::gotoSymbolInWorkspace)));
         host.registry().register(Command.of("lsp.hover", () -> host.ifLsp(host.lspCoordinator()::showHover)));
         host.registry()
