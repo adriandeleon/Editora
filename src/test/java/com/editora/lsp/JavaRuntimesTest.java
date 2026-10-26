@@ -376,4 +376,34 @@ class JavaRuntimesTest {
         assertEquals(8, JavaRuntimes.statedRelease(dir));
         assertEquals(0, JavaRuntimes.statedRelease(dir.resolve("none")));
     }
+
+    /** Spring Boot's java.version, a ${property}, comments, release before source, Kotlin and a reactor (CP2). */
+    @Test
+    void theStatedReleaseReadsCommonBuildFiles(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path boot = java.nio.file.Files.createDirectories(dir.resolve("boot"));
+        java.nio.file.Files.writeString(
+                boot.resolve("pom.xml"), "<properties><java.version>17</java.version></properties>");
+        assertEquals(17, JavaRuntimes.statedRelease(boot));
+        java.nio.file.Path prop = java.nio.file.Files.createDirectories(dir.resolve("prop"));
+        java.nio.file.Files.writeString(
+                prop.resolve("pom.xml"),
+                "<properties><jdk>21</jdk>" + "<maven.compiler.release>${jdk}</maven.compiler.release></properties>");
+        assertEquals(21, JavaRuntimes.statedRelease(prop));
+        java.nio.file.Path order = java.nio.file.Files.createDirectories(dir.resolve("order"));
+        java.nio.file.Files.writeString(
+                order.resolve("pom.xml"),
+                "<!-- <maven.compiler.release>8</maven.compiler.release> -->"
+                        + "<maven.compiler.source>1.8</maven.compiler.source><maven.compiler.release>17</maven.compiler.release>");
+        assertEquals(17, JavaRuntimes.statedRelease(order), "release before source; the comment left out");
+        java.nio.file.Path kotlin = java.nio.file.Files.createDirectories(dir.resolve("kotlin"));
+        java.nio.file.Files.writeString(kotlin.resolve("build.gradle.kts"), "kotlin {\n    jvmToolchain(17)\n}\n");
+        assertEquals(17, JavaRuntimes.statedRelease(kotlin));
+        java.nio.file.Path reactor = java.nio.file.Files.createDirectories(dir.resolve("reactor/app"));
+        java.nio.file.Files.writeString(
+                reactor.getParent().resolve("pom.xml"), "<modules><module>app</module></modules>");
+        java.nio.file.Files.writeString(
+                reactor.resolve("pom.xml"), "<maven.compiler.release>11</maven.compiler.release>");
+        assertEquals(11, JavaRuntimes.statedRelease(reactor.getParent()));
+    }
 }

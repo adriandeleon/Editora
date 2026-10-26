@@ -147,6 +147,11 @@ final class TerminalCoordinator {
         return panel;
     }
 
+    /** Whether a terminal is open: the commands that act on one are grayed in the palette without (ninth review EP4). */
+    boolean hasTerminals() {
+        return panel != null && panel.hasTerminals();
+    }
+
     void registerCommands(CommandRegistry registry) {
         registry.register(Command.of("tool.terminal", this::toggle));
         registry.register(Command.of("terminal.new", this::newTerminal));

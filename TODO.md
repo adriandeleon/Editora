@@ -61,6 +61,14 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Java LSP ninth review (2026-10-26)** — Go to Super Method: findLinks first plus the hierarchy walk for what it
+      misses; override-equivalent matches only (no static, private or overloads); fields, initializers, enum constants,
+      diamond and project-class anonymous classes, library-tab anonymous classes, `this(...)` chains, switch rules;
+      the nearer of two supers; cached library outlines. Focus after a close, split or other click; the save recheck
+      across windows; whole one-word palette titles and terminal commands grayed without a terminal; one error per
+      failed import and per repeated refusal; Doctor reads more build files; ten more orphan Javadocs. Left open:
+      Method Hierarchy, Safe Delete, Shift Shift, Select In; A11, AN2 (upstream), intention preview, C17; the
+      owner's deferred list.
 - [x] **Java LSP eighth review (2026-10-26)** — Go to Super Method from anywhere in a member (annotations, Javadoc,
       anonymous classes, lambdas, constructors), up the type hierarchy, from library tabs, superclass first; other
       open files rechecked after a save; focus follows the chosen tab; one-word palette queries; a joining window

@@ -833,7 +833,6 @@ final class PreviewCoordinator {
         host.setStatus(tr(now ? "status.markdown.formatBar.on" : "status.markdown.formatBar.off"));
     }
 
-    /** Pushes the (global) Markdown preview theme to every open buffer's preview + its toggle glyph. */
     // --- the preview's settings, and previews in a tab of their own ------------------------------------
 
     /**
@@ -965,6 +964,7 @@ final class PreviewCoordinator {
         host.setStatus(tr(target.isLocked() ? "status.markdown.previewLocked" : "status.markdown.previewFollowing"));
     }
 
+    /** Pushes the (global) Markdown preview theme to every open buffer's preview + its toggle glyph. */
     void applyMarkdownPreviewTheme() {
         String mode = host.config().getSettings().getMarkdownPreviewTheme();
         sidePreviews().forEach(pane -> pane.applyTheme(mode));

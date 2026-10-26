@@ -3597,12 +3597,26 @@ public final class LspManager {
             return;
         }
         String document = libraryUri != null ? libraryUri : uri(file != null ? file : anchor);
+        Map<String, List<MemberSpan>> cache =
+                libraryUri == null ? null : libraryOutlines.computeIfAbsent(s, k -> new ConcurrentHashMap<>());
+        List<MemberSpan> cached = cache == null ? null : cache.get(libraryUri);
+        if (cached != null) {
+            Platform.runLater(() -> cb.accept(cached));
+            return;
+        }
         s.documentSymbol(document).whenComplete((result, error) -> {
             List<MemberSpan> members =
                     error == null && result != null ? DocumentSymbolMapper.members(result) : List.of();
+            if (cache != null && !members.isEmpty()) {
+                cache.put(libraryUri, members); // a class file does not change while its server runs (BP5)
+            }
             Platform.runLater(() -> cb.accept(members));
         });
     }
+
+    /** Library class files' outlines per session, read once: a Go to Super Method walk reads many (ninth review BP5). */
+    private final Map<LanguageServerSession, Map<String, List<MemberSpan>>> libraryOutlines =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
     /**
      * {@link #documentSymbols} for a caller that only ever wants the latest outline (the Structure window,
@@ -6315,6 +6329,15 @@ public final class LspManager {
     /** Whether a jdtls serves {@code file}'s project, whichever server edits the file itself. */
     public boolean hasJavaSession(@Nullable Path file) {
         return javaSessionFor(file) != null;
+    }
+
+    /**
+     * Whether another Java file is open on {@code saved}'s jdtls, in this window or another sharing it: a save there
+     * can break it, and nothing else rechecks it (eighth review AQ1, ninth review CP1).
+     */
+    public boolean otherJavaDocumentOpen(@Nullable Path saved) {
+        LanguageServerSession s = javaSessionFor(saved);
+        return s != null && saved != null && s.otherJavaDocumentOpen(uri(saved));
     }
 
     /** Whether {@code a} and {@code b} are served by one running jdtls (a save in one can break the other). */

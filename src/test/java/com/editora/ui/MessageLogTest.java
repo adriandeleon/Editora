@@ -60,7 +60,11 @@ class MessageLogTest {
         assertEquals(2, log.size(), "said again later: recorded again");
         log.add("other", MessageLog.Severity.INFO, 9_000);
         log.add("jdtls needs Java 25", MessageLog.Severity.ERROR, 9_100);
-        assertEquals(4, log.size(), "not the latest entry: recorded");
+        assertEquals(4, log.size(), "the last one said long ago: recorded");
+        log.add("Opened App.java", MessageLog.Severity.INFO, 9_200);
+        log.add("jdtls needs Java 25", MessageLog.Severity.ERROR, 9_300);
+        assertEquals(5, log.size(), "a status between them does not split the repeat (ninth review DQ3)");
+        assertEquals(3, log.unreadErrors());
     }
 
     @Test

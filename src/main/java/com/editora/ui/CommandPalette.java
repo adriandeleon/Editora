@@ -391,16 +391,17 @@ public class CommandPalette {
     /**
      * The score of {@code command} when the query is most of its own title, from the start of what follows its
      * category ("LSP: "): above any other IDE's name, so "go to declaration" lists Go to Declaration before Go to
-     * Definition, whose VS Code name is "Go to Declaration or Usages" (seventh review ER4). Only for a query of two
-     * words or more: one word is no phrase, and "rename" or "find" chose the terminal's Rename Tab and Find over
-     * Rename Symbol and Find in Files (eighth review EQ3).
+     * Definition, whose VS Code name is "Go to Declaration or Usages" (seventh review ER4). One word only when it is
+     * the whole title: "rename" no longer chooses the terminal's Rename Tab over Rename Symbol (eighth review EQ3), and
+     * "project" or "terminal" still open their tool windows (ninth review EP4).
      */
     static int titlePhraseScore(Command command, String query) {
         String title = command.title();
         int colon = title.indexOf(": ");
         String bare = (colon < 0 ? title : title.substring(colon + 2)).toLowerCase(java.util.Locale.ROOT);
         String q = query.strip().toLowerCase(java.util.Locale.ROOT);
-        if (q.indexOf(' ') < 0 || !bare.startsWith(q) || q.length() * 5 < bare.length() * 3) {
+        boolean word = q.indexOf(' ') < 0;
+        if (word ? !bare.equals(q) : !bare.startsWith(q) || q.length() * 5 < bare.length() * 3) {
             return FuzzyMatch.NO_SCORE;
         }
         int score = FuzzyMatch.scoreOf(title, query);

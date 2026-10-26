@@ -161,4 +161,23 @@ class CommandPaletteRankTest {
                         != com.editora.search.FuzzyMatch.NO_SCORE,
                 "a phrase still does");
     }
+
+    /** One word that is a whole title still leads: "project" opens the Project tool window (ninth review EP4). */
+    @Test
+    void aWholeOneWordTitleLeads() {
+        var project = com.editora.command.Command.of("tool.project", () -> {});
+        var lein = com.editora.command.Command.of("lein.refresh", () -> {});
+        assertTrue(
+                CommandPalette.titlePhraseScore(project, "project") != com.editora.search.FuzzyMatch.NO_SCORE,
+                project.title());
+        assertEquals(
+                project,
+                CommandPalette.orderedMatches(List.of(lein, project), "project").get(0));
+        var terminal = com.editora.command.Command.of("tool.terminal", () -> {});
+        var find = com.editora.command.Command.of("terminal.find", () -> {});
+        assertEquals(
+                terminal,
+                CommandPalette.orderedMatches(List.of(find, terminal), "terminal")
+                        .get(0));
+    }
 }

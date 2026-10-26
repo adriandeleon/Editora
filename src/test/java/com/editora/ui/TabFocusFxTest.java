@@ -55,6 +55,11 @@ class TabFocusFxTest {
                 () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {}));
     }
 
+    /** The active buffer, called on the FX thread. */
+    private EditorBuffer activeNow() {
+        return (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+    }
+
     private Node focusOwner() throws Exception {
         return FxTestSupport.callOnFx(() -> active().getArea().getScene().getFocusOwner());
     }
@@ -63,9 +68,12 @@ class TabFocusFxTest {
     void nextTabFocusesItsEditor() throws Exception {
         EditorBuffer before = active();
         FxTestSupport.runOnFx(() -> before.getArea().getParent().requestFocus()); // focus off the text
-        FxTestSupport.runOnFx(() -> reg.run("buffer.next"));
-        settle();
-        EditorBuffer now = active();
+        EditorBuffer now = null;
+        for (int i = 0; i < 6 && (now == null || now == before); i++) { // past the Welcome tab, if it is next
+            FxTestSupport.runOnFx(() -> reg.run("buffer.next"));
+            settle();
+            now = active();
+        }
         assertTrue(now != before, "another tab");
         assertSame(now.getFocusedArea(), focusOwner());
     }
@@ -74,14 +82,17 @@ class TabFocusFxTest {
     void aTabHeaderClickFocusesItsEditor() throws Exception {
         EditorBuffer before = active();
         Node header = FxTestSupport.callOnFx(() -> {
-            Node selectedHeader = null;
-            for (Node n : before.getArea().getScene().getRoot().lookupAll(".tab")) {
-                if (TabFocus.onTabHeader(n)
-                        && !n.getPseudoClassStates().toString().contains("selected")) {
-                    selectedHeader = n;
+            Node other = null;
+            for (Node n : before.getArea().getScene().getRoot().lookupAll(".editor-group .tab")) {
+                EditorBuffer of =
+                        n.getProperties().get(javafx.scene.control.Tab.class) instanceof javafx.scene.control.Tab tab
+                                ? MainController.bufferOf(tab)
+                                : null;
+                if (TabFocus.onTabHeader(n) && of != null && of != before) {
+                    other = n;
                 }
             }
-            return selectedHeader;
+            return other;
         });
         assertTrue(header != null, "another tab's header");
         FxTestSupport.runOnFx(() -> {

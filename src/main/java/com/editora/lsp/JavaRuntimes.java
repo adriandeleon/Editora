@@ -327,39 +327,115 @@ public final class JavaRuntimes {
                 .toList();
     }
 
-    private static final java.util.regex.Pattern RELEASE = java.util.regex.Pattern.compile(
-            "<maven\\.compiler\\.(?:release|source)>\\s*(?:1\\.)?(\\d+)"
-                    + "|<release>\\s*(\\d+)\\s*</release>"
-                    + "|languageVersion(?:\\.set)?\\s*[(=]\\s*JavaLanguageVersion\\.of\\(\\s*(\\d+)"
-                    + "|(?:source|target)Compatibility\\s*=\\s*(?:JavaVersion\\.VERSION_(?:1_)?(\\d+)|['\"]?(?:1\\.)?(\\d+))");
-
     /**
-     * The Java release the build file in {@code root} states (a pom's {@code maven.compiler.release} or
-     * {@code <release>}, a Gradle toolchain or {@code sourceCompatibility}), or 0 when it states none or there is none.
+     * The Java release the build file in {@code root} states, or 0 when it states none or there is none. A pom's
+     * {@code maven.compiler.release} or compiler {@code <release>} comes before its {@code source}, and Spring Boot's
+     * {@code java.version} counts; a {@code ${property}} is read from the pom's own properties; a reactor's first
+     * module that states one answers for it. A Gradle build's {@code jvmToolchain(n)}, toolchain language version,
+     * {@code release} or {@code sourceCompatibility}. Comments are left out (ninth review CP2).
      */
     static int statedRelease(java.nio.file.@Nullable Path root) {
-        if (root == null) {
+        return statedRelease(root, 0);
+    }
+
+    private static int statedRelease(java.nio.file.@Nullable Path root, int depth) {
+        if (root == null || depth > 2) {
             return 0;
         }
-        for (String name : List.of("pom.xml", "build.gradle.kts", "build.gradle")) {
-            java.nio.file.Path file = root.resolve(name);
-            try {
-                if (!java.nio.file.Files.isRegularFile(file) || java.nio.file.Files.size(file) > 1_000_000) {
-                    continue;
+        String pom = buildFile(root.resolve("pom.xml"));
+        if (pom != null) {
+            String xml = pom.replaceAll("(?s)<!--.*?-->", "");
+            java.util.Map<String, String> properties = new java.util.HashMap<>();
+            java.util.regex.Matcher block = java.util.regex.Pattern.compile("(?s)<properties>(.*?)</properties>")
+                    .matcher(xml);
+            while (block.find()) {
+                java.util.regex.Matcher p = java.util.regex.Pattern.compile("<([\\w.-]+)>\\s*([^<]*?)\\s*</\\1>")
+                        .matcher(block.group(1));
+                while (p.find()) {
+                    properties.putIfAbsent(p.group(1), p.group(2));
                 }
-                java.util.regex.Matcher m = RELEASE.matcher(java.nio.file.Files.readString(file));
-                if (m.find()) {
-                    for (int g = 1; g <= m.groupCount(); g++) {
-                        if (m.group(g) != null) {
-                            return Integer.parseInt(m.group(g));
-                        }
+            }
+            for (String pattern : List.of(
+                    "<maven\\.compiler\\.release>\\s*([^<]+?)\\s*<",
+                    "<release>\\s*([^<]+?)\\s*</release>",
+                    "<java\\.version>\\s*([^<]+?)\\s*<",
+                    "<maven\\.compiler\\.source>\\s*([^<]+?)\\s*<",
+                    "<source>\\s*([^<]+?)\\s*</source>")) {
+                java.util.regex.Matcher m =
+                        java.util.regex.Pattern.compile(pattern).matcher(xml);
+                while (m.find()) {
+                    int release = javaRelease(resolve(m.group(1), properties));
+                    if (release > 0) {
+                        return release;
                     }
                 }
-            } catch (java.io.IOException | RuntimeException e) {
-                // unreadable: as if it stated none
+            }
+            java.util.regex.Matcher module = java.util.regex.Pattern.compile("<module>\\s*([^<]+?)\\s*</module>")
+                    .matcher(xml);
+            while (module.find()) {
+                int release = statedRelease(root.resolve(module.group(1)), depth + 1);
+                if (release > 0) {
+                    return release;
+                }
+            }
+            return 0;
+        }
+        for (String name : List.of("build.gradle.kts", "build.gradle")) {
+            String gradle = buildFile(root.resolve(name));
+            if (gradle == null) {
+                continue;
+            }
+            String code = gradle.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\n]*", "");
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("jvmToolchain\\s*\\(\\s*(\\d+)"
+                            + "|JavaLanguageVersion\\.of\\(\\s*(\\d+)"
+                            + "|release(?:\\.set)?\\s*[(=]\\s*(\\d+)"
+                            + "|(?:source|target)Compatibility\\s*=\\s*(?:JavaVersion\\.VERSION_(?:1_)?(\\d+)"
+                            + "|['\"]?(?:1\\.)?(\\d+))")
+                    .matcher(code);
+            if (m.find()) {
+                for (int g = 1; g <= m.groupCount(); g++) {
+                    if (m.group(g) != null) {
+                        return Integer.parseInt(m.group(g));
+                    }
+                }
             }
         }
         return 0;
+    }
+
+    /** A build file's text, or null when there is none or it is too large or unreadable. */
+    private static @Nullable String buildFile(java.nio.file.Path file) {
+        try {
+            return java.nio.file.Files.isRegularFile(file) && java.nio.file.Files.size(file) <= 1_000_000
+                    ? java.nio.file.Files.readString(file)
+                    : null;
+        } catch (java.io.IOException | RuntimeException e) {
+            return null; // unreadable: as if it stated none
+        }
+    }
+
+    /** {@code value} with {@code ${name}} replaced from {@code properties}, a few levels deep. */
+    private static String resolve(String value, java.util.Map<String, String> properties) {
+        String out = value;
+        for (int i = 0; i < 5 && out.contains("${"); i++) {
+            java.util.regex.Matcher m =
+                    java.util.regex.Pattern.compile("\\$\\{([^}]+)}").matcher(out);
+            StringBuilder sb = new StringBuilder();
+            while (m.find()) {
+                m.appendReplacement(
+                        sb, java.util.regex.Matcher.quoteReplacement(properties.getOrDefault(m.group(1), "")));
+            }
+            m.appendTail(sb);
+            out = sb.toString();
+        }
+        return out;
+    }
+
+    /** {@code 17} of "17", "1.8" → 8; 0 when it is no release. */
+    private static int javaRelease(String value) {
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("^\\s*(?:1\\.)?(\\d+)\\s*$").matcher(value);
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
     }
 
     /** Whether the JDK at {@code home} has its sources ({@code lib/src.zip}, or {@code src.zip} for Java 8). */

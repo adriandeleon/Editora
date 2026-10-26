@@ -296,7 +296,44 @@ final class Chrome {
             boolean exportablePreview,
             boolean printableTab,
             boolean selection,
-            boolean projectMap) {
+            boolean projectMap,
+            boolean terminalOpen) {
+
+        /** A context with a terminal open: the neutral value for callers that are not asking about the terminal. */
+        PaletteContext(
+                boolean hasBuffer,
+                boolean inRepo,
+                boolean markdownLike,
+                boolean csvFile,
+                boolean httpFile,
+                boolean typstFile,
+                boolean hasPreview,
+                boolean debugActive,
+                boolean debugSuspended,
+                boolean debugRestartable,
+                boolean gitOperation,
+                boolean exportablePreview,
+                boolean printableTab,
+                boolean selection,
+                boolean projectMap) {
+            this(
+                    hasBuffer,
+                    inRepo,
+                    markdownLike,
+                    csvFile,
+                    httpFile,
+                    typstFile,
+                    hasPreview,
+                    debugActive,
+                    debugSuspended,
+                    debugRestartable,
+                    gitOperation,
+                    exportablePreview,
+                    printableTab,
+                    selection,
+                    projectMap,
+                    true);
+        }
 
         /**
          * A context with nothing but a buffer to print — the active tab can be printed when it is one —
@@ -422,6 +459,16 @@ final class Chrome {
         }
     }
 
+    /** Terminal commands that act on an open terminal. */
+    private static final java.util.Set<String> TERMINAL_NEEDS_ONE = java.util.Set.of(
+            "terminal.close",
+            "terminal.find",
+            "terminal.next",
+            "terminal.previous",
+            "terminal.rename",
+            "terminal.moveTabLeft",
+            "terminal.moveTabRight");
+
     /** Debug commands that drive a live session (as opposed to starting/attaching/setting breakpoints). */
     private static final java.util.Set<String> DEBUG_NEEDS_SESSION =
             java.util.Set.of("debug.stop", "debug.restart", "debug.pause");
@@ -543,6 +590,11 @@ final class Chrome {
                 return new DisabledReason("palette.disabled.needsPrintableTab", null);
             }
             return c.selection() ? null : new DisabledReason("palette.disabled.needsSelection", null);
+        }
+        // Find, Rename Tab and the rest act on an open terminal: lit without one, "find" ran the terminal's Find over
+        // Find in Files (ninth review EP4). New Terminal and the tool-window toggle open one.
+        if (TERMINAL_NEEDS_ONE.contains(id)) {
+            return c.terminalOpen() ? null : new DisabledReason("palette.disabled.needsTerminal", null);
         }
         if (id.startsWith("projectMap.")) {
             return c.projectMap() ? null : new DisabledReason("palette.disabled.needsProjectMap", null);

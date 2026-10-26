@@ -167,8 +167,6 @@ final class RunConfigurationCoordinator {
     /** Width of the toolbar's run-configuration selector — see {@code setupRunConfigCombo}. */
     static final double RUN_CONFIG_COMBO_WIDTH = 150;
 
-    /** Toolbar run-configuration selector + its Run/Debug/Stop buttons (#765). */
-
     /**
      * A configuration's detail line in the pickers: what it actually launches.
      *

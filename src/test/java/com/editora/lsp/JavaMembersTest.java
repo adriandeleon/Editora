@@ -114,7 +114,7 @@ class JavaMembersTest {
                 span("remove(int)", "method", 4, 4, 4),
                 span("go", "field", 5, 5, 5));
         assertEquals(List.of(members.get(0)), JavaMembers.overridden(members, "go()"));
-        assertEquals(List.of(members.get(1)), JavaMembers.overridden(members, "go(String)"), "same count, one choice");
+        assertTrue(JavaMembers.overridden(members, "go(String)").isEmpty(), "go(int) is another overload");
         assertEquals(List.of(members.get(3)), JavaMembers.overridden(members, "remove(int)"), "the exact one of two");
         assertEquals(List.of("Map<String, Integer>", "int"), JavaMembers.parameters("put(Map<String, Integer>, int)"));
         assertEquals("label", JavaMembers.methodName("label() : String"));
@@ -125,5 +125,95 @@ class JavaMembersTest {
         assertEquals("Poly", JavaMembers.typeAt(OUTLINE, 0).name());
         assertEquals("new Runnable() {...}", JavaMembers.typeAt(OUTLINE, 4).name());
         assertNull(JavaMembers.typeAt(OUTLINE, 3), "a method's line");
+    }
+
+    /** A switch rule with several labels is no lambda (ninth review BP1). */
+    @Test
+    void aSwitchRulesLabelsRunOnAcrossCommas() {
+        String text = "int f(int k) {\n    return switch (k) {\n        case 1, 2 -> {\n            go();\n"
+                + "            yield 1;\n        }\n        default -> 0;\n    };\n}\n";
+        assertEquals(-1, JavaMembers.lambdaArrow(text, 0, text.indexOf("go()")));
+        String lambda = "void f() {\n    call(1, x -> use(x));\n}\n";
+        assertEquals(lambda.indexOf("->"), JavaMembers.lambdaArrow(lambda, 0, lambda.indexOf("use")), "an argument");
+    }
+
+    /** A constructor chained with this(...) (ninth review BP3). */
+    @Test
+    void aChainedConstructorsThisCallIsFound() {
+        String text = "Ctors() {\n    this(\"default\"); // chained\n}\n";
+        assertEquals(text.indexOf("this("), JavaMembers.thisCall(text, 0, text.length()));
+        assertEquals(-1, JavaMembers.thisCall("Ctors() {\n    this.x = 1;\n}\n", 0, 30));
+    }
+
+    /** The modifiers before a method's name; annotations and their arguments are not modifiers (ninth review DP1). */
+    @Test
+    void aDeclarationsModifiersAreRead() {
+        String text =
+                "    /** private, as docs say */\n    @SuppressWarnings(\"static\")\n    private static void util() {}\n";
+        assertEquals(java.util.Set.of("private", "static"), JavaMembers.modifiers(text, 0, text.indexOf("util")));
+        String plain = "    @Override\n    public String label() {}\n";
+        assertEquals(java.util.Set.of("public"), JavaMembers.modifiers(plain, 0, plain.indexOf("label")));
+    }
+
+    /** In a library source an anonymous class's method is found in the text (ninth review BP2). */
+    @Test
+    void anAnonymousClassesMethodIsFoundInTheText() {
+        String text = "public ListIterator<E> listIterator(int index) {\n    return new ListIterator<E>() {\n"
+                + "        int cursor;\n        public boolean hasNext() {\n            return cursor != size;\n"
+                + "        }\n    };\n}\n";
+        int[] found = JavaMembers.anonymousMethod(text, 0, text.indexOf("cursor != size"));
+        assertEquals(text.indexOf("ListIterator<E>() {"), found[0], "the instantiated type");
+        assertEquals(text.indexOf("hasNext"), found[1], "the method");
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("int cursor")), "in its body, not a method");
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("return new")), "outside it");
+    }
+
+    /** Only an override-equivalent method is a super method: no other overload (ninth review DP1, EP2). */
+    @Test
+    void anOverloadIsNoSuperMethod() {
+        List<MemberSpan> object = List.of(span("equals(Object)", "method", 1, 1, 1));
+        assertTrue(JavaMembers.overridden(object, "equals(Circle)").isEmpty());
+        List<MemberSpan> box = List.of(span("put(T)", "method", 1, 1, 1), span("put(int)", "method", 2, 2, 2));
+        assertEquals(List.of(box.get(1)), JavaMembers.overridden(box, "put(int)"), "the exact one; T is no int");
+        assertEquals(List.of(box.get(0)), JavaMembers.overridden(box, "put(String)"), "T stands for String");
+        List<MemberSpan> gen = List.of(span("put(String, int)", "method", 1, 1, 1));
+        assertTrue(JavaMembers.overridden(gen, "put(int, String)").isEmpty(), "the order counts");
+        List<MemberSpan> qualified = List.of(span("addAll(java.util.Collection<? extends E>)", "method", 1, 1, 1));
+        assertEquals(qualified, JavaMembers.overridden(qualified, "addAll(Collection<? extends E>)"));
+    }
+
+    /** A field holding an anonymous class is part of the chain, so the class is found (ninth review DP2). */
+    @Test
+    void aFieldsAnonymousClassIsFound() {
+        List<MemberSpan> outline = List.of(span(
+                "Circle",
+                "class",
+                0,
+                9,
+                0,
+                span(
+                        "BY_LEN",
+                        "field",
+                        1,
+                        5,
+                        1,
+                        span(
+                                "new Comparator<>() {...}",
+                                "class",
+                                1,
+                                5,
+                                1,
+                                span("compare(String, String)", "method", 2, 4, 3)))));
+        List<MemberSpan> chain = JavaMembers.enclosing(outline, 3);
+        assertEquals("compare(String, String)", last(chain));
+        assertTrue(chain.get(chain.size() - 2).isAnonymous());
+        assertEquals("field", chain.get(1).kind());
+    }
+
+    /** A type found by its name when the hierarchy's line is not its outline's (ninth review DP3). */
+    @Test
+    void aTypeIsFoundByNameWhenTheLineDiffers() {
+        assertEquals("Poly", JavaMembers.typeAt(OUTLINE, 7, "Poly").name());
+        assertNull(JavaMembers.typeAt(OUTLINE, 7, "Missing"));
     }
 }

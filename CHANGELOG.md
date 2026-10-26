@@ -24,21 +24,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Find Action knows other IDEs' names.** The command palette also finds commands by what IntelliJ IDEA and VS Code
   call them: Optimize Imports, Show Context Actions, Reformat Code, Find Usages, Parameter Info, Insert Live
   Template, Go to Test, Copy Reference, Show Call Hierarchy, Find Action, Super Method and others. The whole of
-  such a name leads the titles it only fuzzily matches, so "go to test" finds Related File first.
+  such a name leads the titles it only fuzzily matches, so "go to test" finds Related File first. A command's own
+  title, typed, comes before another command's other-IDE name.
 - **Go to Super Method** (`lsp.gotoSuperMethod`; Ctrl+U / ⌘U in the IntelliJ keymaps, in Navigate and the editor's
-  LSP submenu): from anywhere in a method (its `@Override` and Javadoc too, an anonymous class's method included),
-  the method it overrides or implements, found up the type hierarchy, so an interface's default method and a method
-  two interfaces declare go to each; in a lambda, its functional interface's method; in a constructor, the super
-  constructor it calls; on a type, its supertypes, the superclass first and each named by its type; a picker when
-  there are several. It works the same in a library source tab. A command's own title, typed, comes before another command's other-IDE name.
+  LSP submenu): from anywhere in a method (its `@Override` and Javadoc too, an anonymous class's method included,
+  in a method, a field, an initializer or an enum constant), the method it overrides or implements: jdtls's answer,
+  and the type hierarchy for what it misses, so an interface's default method and a method two interfaces declare
+  go to each, and of two where one overrides the other, the nearer alone. A static or private method, or another
+  overload, has none. In a lambda, its functional interface's method; in a constructor, the super constructor it
+  calls, through `this(...)` too; on a type, its supertypes, the superclass first and each named by its type; a
+  picker when there are several. It works the same in a library source tab, and says it is looking when a deep
+  hierarchy takes a moment.
 - **More IntelliJ and VS Code chords.** IntelliJ keymaps: Ctrl+I implements methods on Linux, Ctrl+Shift+= / - (⌘⇧= /
   ⌘⇧-, and the numpad's Ctrl+Shift++ / -) expand and collapse all folds, Ctrl+Alt+Shift+C copies the qualified name,
   Ctrl+Alt+F7 finds usages, and menus name Alt+Enter for Code Actions. VS
   Code keymaps: Ctrl+F12 Go to Implementation, Alt+F12 Peek Definition,
   Ctrl+T Go to Symbol in Workspace.
 - **Doctor names the Java jdtls runs on**, with its version, and warns when its launcher's `python3` is missing, when
-  no Java new enough for the installed jdtls is found, and when the JDK the window's project gets (its stated
-  release's, else the default) has no sources (`arg0` parameters), naming each and the package that adds them.
+  no Java new enough for the installed jdtls is found, and when the JDK the window's project gets (the release its
+  build file states, `${…}` properties, Spring Boot's `java.version`, a Kotlin `jvmToolchain` and a reactor's
+  modules read, else the default) has no sources (`arg0` parameters), naming each and the package that adds them.
 - Navigate lists Go to Declaration, Peek Definition and Copy Qualified Name; the editor's LSP submenu lists Call and
   Type Hierarchy.
 - **Code-action lightbulb in the gutter** (IntelliJ's intention bulb). When the caret rests on a line where the
@@ -316,7 +321,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name a folder only while two servers run (starting ones included), and a failed import's reason is named by its
   folder too. Reload or Clean in one project keeps another project's failed import and Problems entries, so fixing
   that one's build file still imports it again; a second window on a project that did not import says so and lists
-  the project's own problems; one that joins while jdtls is still importing waits for it to be ready, rather than
+  the project's own problems; a failed import is one error, in the project's own words; one that joins while jdtls
+  is still importing waits for it to be ready, rather than
   saying "Loaded and ready" over files not yet checked; and a fix saved in one window clears the old build error in
   the others.
 - **Java: jdtls starts when `JAVA_HOME` is a JDK 21.** jdtls 1.63 needs Java 25 though its launcher checks for 21,
@@ -329,11 +335,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   none of its on-save actions (clean-up, organize, format) under it, and an answer the file has changed under says so instead of "the server gave up".
 - **Java: an open file sees an API changed in another.** Rename a method in one file and save: another open file
   that calls it showed no error, its counter included, until it was typed in. A Java save now rechecks the project
-  quietly when another of its files is open, as it did only while Problems showed the whole project.
-- **A tab chosen by its header or by Window ▸ Next Tab has the keyboard focus in its editor.** It stayed on the tab
-  pane or the breadcrumbs, so the first keys went nowhere and the arrows switched tabs.
-- **Command palette: one word is no phrase.** "rename" and "find" in a Java file chose the terminal's Rename Tab and
-  Find over Rename Symbol and Find in Files.
+  quietly when another of its files is open, in this window or another sharing its jdtls, as it did only while
+  Problems showed the whole project.
+- **A tab chosen by its header or by Window ▸ Next Tab has the keyboard focus in its editor**, and so has the tab
+  shown when the focused one is closed or split off, or after a right- or middle-click on a header. It stayed on the
+  tab pane, the breadcrumbs or the toolbar's New button, so the first keys went nowhere, the arrows switched tabs and
+  a Space opened a new buffer.
+- **Command palette: one word leads only as a whole title.** "rename" and "find" in a Java file chose the
+  terminal's Rename Tab and Find over Rename Symbol and Find in Files, while "project" and "terminal" still open
+  their tool windows. The terminal's own commands are grayed while no terminal is open.
 - **A jump into a file already open says nothing**, rather than "Already open: Shapes.java".
 - **Java: navigation from a library source tab opens library targets.** Go to Super Method, Go to Type Definition
   and a row picked among implementations did nothing from a `jdt://` tab when the target was another library class.

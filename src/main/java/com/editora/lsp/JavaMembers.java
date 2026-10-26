@@ -15,8 +15,9 @@ public final class JavaMembers {
     private JavaMembers() {}
 
     /**
-     * The types and methods whose whole range (annotations and Javadoc included) holds {@code line}, outermost first;
-     * the last is the innermost. Empty when the line is outside every type.
+     * The symbols whose whole range (annotations and Javadoc included) holds {@code line}, outermost first; the last is
+     * the innermost. Fields, constants and enum constants count, so an anonymous class or a lambda they hold is found
+     * (ninth review DP2). Empty when the line is outside every symbol.
      */
     public static List<MemberSpan> enclosing(List<MemberSpan> members, int line) {
         List<MemberSpan> chain = new ArrayList<>();
@@ -25,7 +26,7 @@ public final class JavaMembers {
         while (descended) {
             descended = false;
             for (MemberSpan m : level) {
-                if (m.startLine() <= line && line <= m.endLine() && (m.isType() || m.isCallable())) {
+                if (m.startLine() <= line && line <= m.endLine() && !m.kind().equals("package")) {
                     chain.add(m);
                     level = m.children();
                     descended = true;
@@ -118,7 +119,9 @@ public final class JavaMembers {
                 arrowBeforeBrace = -1;
             } else if (c == ',' || c == ';') {
                 top.pending()[0] = -1;
-                top.switchLabel()[0] = false;
+                if (c == ';') { // a rule's labels run on across commas: case 1, 2 -> (ninth review BP1)
+                    top.switchLabel()[0] = false;
+                }
                 arrowBeforeBrace = -1;
             } else if (Character.isJavaIdentifierStart(c)
                     && (i == 0 || !Character.isJavaIdentifierPart(code.charAt(i - 1)))) {
@@ -162,6 +165,80 @@ public final class JavaMembers {
         return m.find() ? m.start() : -1;
     }
 
+    /**
+     * The offset of the {@code this} of the {@code this(...)} call between {@code from} and {@code to} (a constructor
+     * chained to another), outside comments and strings; -1 when it calls none.
+     */
+    public static int thisCall(String text, int from, int to) {
+        String code = code(text);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?<![\\w.])this\\s*\\(")
+                .matcher(code)
+                .region(Math.max(0, from), Math.min(to, code.length()));
+        return m.find() ? m.start() : -1;
+    }
+
+    /**
+     * The modifiers written before a declaration's name, from {@code from} (its first line) to {@code name}: the words
+     * outside comments, strings and annotations. A static or private method overrides nothing (ninth review DP1).
+     */
+    public static java.util.Set<String> modifiers(String text, int from, int name) {
+        String code = code(text);
+        String head = code.substring(Math.max(0, from), Math.max(Math.max(0, from), Math.min(name, code.length())));
+        head = head.replaceAll("@[\\w.]+\\s*(\\([^()]*\\))?", " ");
+        java.util.Set<String> out = new java.util.HashSet<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                        "\\b(public|protected|private|static|abstract|final|default|synchronized|native|strictfp)\\b")
+                .matcher(head);
+        while (m.find()) {
+            out.add(m.group(1));
+        }
+        return out;
+    }
+
+    /**
+     * In a library source, whose outline has no anonymous classes: the offsets of the instantiated type's name and of
+     * the method's name when the caret, after {@code from} (the enclosing member's start), is in a method of an
+     * anonymous class ({@code new X() { ... void m() { | } }}); else null (ninth review BP2).
+     */
+    public static int @Nullable [] anonymousMethod(String text, int from, int caret) {
+        String code = code(text);
+        int end = Math.min(caret, code.length());
+        java.util.ArrayDeque<int[]> braces = new java.util.ArrayDeque<>(); // {offset of '{', anonymous type name or -1}
+        java.util.regex.Pattern anonymous =
+                java.util.regex.Pattern.compile("new\\s+([\\w.]+)\\s*(<[^{};]*?>)?\\s*\\([^{};]*\\)\\s*$");
+        for (int i = Math.max(0, from); i < end; i++) {
+            char c = code.charAt(i);
+            if (c == '{') {
+                java.util.regex.Matcher m = anonymous.matcher(code.substring(Math.max(from, i - 300), i));
+                int type = m.find() ? Math.max(from, i - 300) + m.start(1) : -1;
+                braces.push(new int[] {i, type});
+            } else if (c == '}' && !braces.isEmpty()) {
+                braces.pop();
+            }
+        }
+        // innermost: a method body directly inside an anonymous class body
+        List<int[]> open = new ArrayList<>(braces); // innermost first
+        for (int k = 0; k + 1 < open.size(); k++) {
+            if (open.get(k)[1] >= 0) {
+                return null; // in an anonymous class's body, outside its methods
+            }
+            int[] body = open.get(k + 1);
+            if (body[1] < 0) {
+                continue;
+            }
+            int bodyStart = body[0];
+            int methodBrace = open.get(k)[0];
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "([\\w$]+)\\s*\\([^(){};]*\\)\\s*(throws\\s+[\\w.,\\s]+)?\\s*$")
+                    .matcher(code.substring(bodyStart + 1, methodBrace));
+            if (m.find()) {
+                return new int[] {body[1], bodyStart + 1 + m.start(1)};
+            }
+            return null;
+        }
+        return null;
+    }
+
     /** A method symbol's simple name: {@code label} of {@code label()} or {@code map(T) : R}. */
     public static String methodName(String symbol) {
         int paren = symbol.indexOf('(');
@@ -194,29 +271,86 @@ public final class JavaMembers {
     }
 
     /**
-     * The methods among {@code members} that {@code method} (a symbol name) may override: the same name and number of
-     * parameters, and of several such, those whose parameter types are written the same.
+     * The methods among {@code members} that {@code method} (a symbol name) may override: the same name and parameter
+     * types, as written without type arguments or package; a type variable ({@code T}, {@code E}) of the super method
+     * matches any. An overload of another type does not (ninth review DP1).
      */
     public static List<MemberSpan> overridden(List<MemberSpan> members, String method) {
         String name = methodName(method);
         List<String> params = parameters(method);
-        List<MemberSpan> same = new ArrayList<>();
+        List<MemberSpan> out = new ArrayList<>();
+        List<MemberSpan> exact = new ArrayList<>();
         for (MemberSpan m : members) {
-            if (m.kind().equals("method")
-                    && methodName(m.name()).equals(name)
-                    && parameters(m.name()).size() == params.size()) {
-                same.add(m);
+            if (m.kind().equals("method") && methodName(m.name()).equals(name)) {
+                List<String> theirs = parameters(m.name());
+                boolean same = theirs.size() == params.size();
+                boolean equal = same;
+                for (int i = 0; same && i < params.size(); i++) {
+                    same = sameParameter(params.get(i), theirs.get(i));
+                    equal = equal && bare(params.get(i)).equals(bare(theirs.get(i)));
+                }
+                if (same) {
+                    out.add(m);
+                }
+                if (equal) {
+                    exact.add(m);
+                }
             }
         }
-        if (same.size() > 1) {
-            List<MemberSpan> exact = same.stream()
-                    .filter(m -> parameters(m.name()).equals(params))
-                    .toList();
-            if (!exact.isEmpty()) {
-                return exact;
+        return exact.isEmpty() ? out : exact; // put(int) overrides put(int), not put(T)
+    }
+
+    /** Whether {@code mine} may override a super method's parameter {@code theirs}. */
+    static boolean sameParameter(String mine, String theirs) {
+        String a = bare(mine);
+        String b = bare(theirs);
+        if (a.equals(b)) {
+            return true;
+        }
+        String array = b.replaceAll("[\\[\\]]|\\.\\.\\.", "");
+        boolean primitive = dims(a) == dims(b)
+                && a.replaceAll("[\\[\\]]", "").matches("boolean|byte|char|short|int|long|float|double");
+        boolean typeVariable = !primitive && array.matches("[A-Z][A-Z0-9]?");
+        return typeVariable && a.replaceAll("[\\[\\]]|\\.\\.\\.", "").length() > 0 && dims(a) >= dims(b);
+    }
+
+    /** A parameter type without type arguments, package or annotations; varargs as an array. */
+    private static String bare(String type) {
+        String t = type.replaceAll("@[\\w.]+", "")
+                .replaceAll("<.*>", "")
+                .replace("...", "[]")
+                .replaceAll("\\s", "");
+        int dot = t.lastIndexOf('.', t.indexOf('[') < 0 ? t.length() : t.indexOf('['));
+        return dot < 0 ? t : t.substring(dot + 1);
+    }
+
+    private static int dims(String type) {
+        return (int) type.chars().filter(c -> c == '[').count();
+    }
+
+    /**
+     * The type {@code name}d whose name is on {@code line} among {@code members} and their children; else the first
+     * type of that name: jdtls's hierarchy item for an anonymous class's type gives a line apart from its outline's
+     * (ninth review DP3).
+     */
+    public static @Nullable MemberSpan typeAt(List<MemberSpan> members, int line, String name) {
+        MemberSpan at = typeAt(members, line);
+        return at != null ? at : typeNamed(members, name.replaceAll("<.*", "").strip());
+    }
+
+    private static @Nullable MemberSpan typeNamed(List<MemberSpan> members, String name) {
+        for (MemberSpan m : members) {
+            if (m.isType() && m.name().replaceAll("<.*", "").strip().equals(name)) {
+                return m;
             }
         }
-        return same;
+        for (MemberSpan m : members) {
+            MemberSpan inner = typeNamed(m.children(), name);
+            if (inner != null) {
+                return inner;
+            }
+        }
+        return null;
     }
 
     /** The type whose name is on {@code line} among {@code members} and their children, or null. */

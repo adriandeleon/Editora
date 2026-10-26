@@ -1426,6 +1426,18 @@ final class LanguageServerSession implements LanguageClient {
         didOpen(uri, languageId, text, primary);
     }
 
+    /** Whether a Java document other than {@code uri} is open on this session, in any window (ninth review CP1). */
+    boolean otherJavaDocumentOpen(String uri) {
+        for (var e : openers.entrySet()) {
+            if (!e.getKey().equals(uri)
+                    && e.getKey().endsWith(".java")
+                    && !e.getValue().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Opens {@code uri} for {@code opener} (a window). A document another window already has open is not opened
      * again: the server gets this window's text as a change, so it holds what the window it last heard from

@@ -144,6 +144,10 @@ final class NewMavenProjectSession {
      * Modal consent for an archetype Editora did not vet: third-party code that runs while it generates.
      * Names the repository it will be downloaded from when the catalog gave one — the one fact that
      * matters for trust — and offers to remember the answer for the rest of the session.
+     *
+     * <p>{@code archetype:generate} downloads and executes third-party Maven plugin code, and the workspace-trust
+     * gate cannot cover it: that only fires when a repo ships an {@code mvnw}, and a brand-new empty directory
+     * has none. Dismissing never grants consent.
      */
     static MavenProjectCoordinator.Consent confirmArchetype(Stage stage, com.editora.maven.MavenArchetype archetype) {
         ButtonType proceed = new ButtonType(tr("dialog.mavenProject.trustAccept"), ButtonBar.ButtonData.OK_DONE);
