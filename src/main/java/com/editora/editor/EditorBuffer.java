@@ -3940,7 +3940,7 @@ public class EditorBuffer implements TabContent {
             }
         }
         if (best == null) {
-            return null;
+            return classLevel ? testClassTarget() : null; // above the class line: the class's (sixth review BS3)
         }
         return classLevel
                 ? new com.editora.test.JavaTestScanner.TestTarget(best.line(), best.className(), null, false)

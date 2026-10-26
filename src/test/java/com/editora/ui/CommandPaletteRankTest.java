@@ -120,4 +120,16 @@ class CommandPaletteRankTest {
                 CommandPalette.otherIdeScore(organize, "ports"),
                 "the first word must begin a word of the name");
     }
+
+    /** The whole of another IDE's name leads fuzzy title matches: "go to test" is Related File (sixth review ES1). */
+    @Test
+    void anotherIdesWholeNameLeadsFuzzyTitles() {
+        var related = com.editora.command.Command.of("nav.relatedFile", () -> {});
+        var goSupport = com.editora.command.Command.of("view.toggleGoSupport", () -> {});
+        var definition = com.editora.command.Command.of("lsp.gotoDefinition", () -> {});
+        var all = java.util.List.of(goSupport, definition, related);
+        assertEquals(related, CommandPalette.orderedMatches(all, "go to test").get(0));
+        assertEquals(related, CommandPalette.orderedMatches(all, "Go to Test").get(0));
+        assertEquals(definition, CommandPalette.orderedMatches(all, "go to def").get(0), "a title still leads its own");
+    }
 }

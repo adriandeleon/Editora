@@ -2028,6 +2028,9 @@ final class WindowCommandRegistrar {
             } else if (main != null) {
                 // A project class's main, as its ▶ runs it: Run File knows only single files (fifth review BV2)
                 host.runCoordinator().runMainClassNamed(main.fqn());
+            } else if (b != null && b.testClassTarget() != null) {
+                // a test class's imports or package line: its tests, not a single-file compile (sixth review BS3)
+                host.runTestAtCaret(true, false);
             } else if (b != null && b.getPath() != null && "java".equals(b.getLanguage()) && !b.isRunnable()) {
                 host.setStatus(
                         tr("status.run.noContext", b.getPath().getFileName().toString())); // EV7

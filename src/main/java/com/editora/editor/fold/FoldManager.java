@@ -1112,7 +1112,11 @@ public final class FoldManager {
      * region's header, so Fold All left it in another method, off screen (fifth review EV2). A caret a fold now
      * hides goes to the end of the header of the outermost fold hiding it, as IntelliJ's Collapse All leaves it.
      */
+    /** A bulk fold put the caret back: the viewport restored next keeps it on screen. */
+    private boolean revealCaret;
+
     private void keepCaret(int caret, int anchor) {
+        revealCaret = true;
         int at = Math.min(caret, area.getLength());
         int line = area.offsetToPosition(at, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
                 .getMajor();
@@ -1505,9 +1509,16 @@ public final class FoldManager {
             return;
         }
         int target = nearestVisible(topPar);
+        boolean reveal = revealCaret;
+        revealCaret = false;
         Platform.runLater(() -> {
             try {
                 area.showParagraphAtTop(target);
+                if (reveal) {
+                    // the view kept, but the kept caret on screen too: a Collapse All then Expand All left its line
+                    // just below the view (sixth review ES3)
+                    area.requestFollowCaret();
+                }
             } catch (RuntimeException ignored) {
                 // Viewport not ready; ignore.
             }

@@ -305,6 +305,7 @@ public class CommandPalette {
             if (score == FuzzyMatch.NO_SCORE) {
                 score = otherIdeScore(command, q);
             }
+            score = Math.max(score, otherIdePhraseScore(command, q));
             if (score != FuzzyMatch.NO_SCORE) {
                 scored.add(new Scored(command, score));
             }
@@ -362,6 +363,26 @@ public class CommandPalette {
             int score = FuzzyMatch.scoreOf(name, query);
             if (score != FuzzyMatch.NO_SCORE) {
                 best = Math.max(best, score - KEYWORD_PENALTY);
+            }
+        }
+        return best;
+    }
+
+    /**
+     * The score of {@code command} when the query is most of what IntelliJ or VS Code call it, from its start: above
+     * every fuzzy title match. "go to test" is a fuzzy match of dozens of titles, so Related File, which IntelliJ
+     * calls Go to Test, came 73rd of 73 (sixth review ES1).
+     */
+    static int otherIdePhraseScore(Command command, String query) {
+        String q = query.toLowerCase(java.util.Locale.ROOT);
+        int best = FuzzyMatch.NO_SCORE;
+        for (String name : com.editora.command.OtherIdeNames.of(command.id())) {
+            String lower = name.toLowerCase(java.util.Locale.ROOT);
+            if (lower.startsWith(q) && q.length() * 5 >= lower.length() * 3) {
+                int score = FuzzyMatch.scoreOf(name, query);
+                if (score != FuzzyMatch.NO_SCORE) {
+                    best = Math.max(best, score + KEYWORD_PENALTY);
+                }
             }
         }
         return best;
