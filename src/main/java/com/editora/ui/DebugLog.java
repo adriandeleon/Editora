@@ -6,6 +6,7 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.text.MessageFormat;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -25,7 +26,8 @@ import org.jspecify.annotations.Nullable;
  * packaged build (DMG / MSI / DEB) — where stderr and the console aren't visible — can still show a
  * debug log <em>in-app</em> (the {@code view.debugLog} command and the Settings → Advanced button, both
  * surfaced through {@link DebugLogWindow}). The same records are also mirrored to a session file in the
- * config dir ({@code editora-session.log}) so they survive a crash and can be attached to a bug report.
+ * config dir ({@code editora-session.log}, the one before kept as {@code editora-session.prev.log}) so they
+ * survive a crash and can go into a problem report ({@code help.reportProblem}, {@code editora --report}).
  *
  * <p>Install once from {@code App.main} (after the headless property) via {@link #install()}; call
  * {@link #attachFile(Path)} from {@code App.start} once the config dir is known. All operations are
@@ -35,6 +37,9 @@ public final class DebugLog {
 
     /** Max retained records (each may be multi-line, e.g. a stack trace); oldest evicted past this. */
     static final int MAX_RECORDS = 2000;
+
+    static final String SESSION_FILE = "editora-session.log";
+    static final String PREVIOUS_SESSION_FILE = "editora-session.prev.log";
 
     private static final DateTimeFormatter TIME =
             DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
@@ -129,9 +134,10 @@ public final class DebugLog {
     }
 
     /**
-     * Begins mirroring captured records to {@code <configDir>/editora-session.log} (truncating any prior
-     * session's file first, then flushing everything captured so far). Best-effort: I/O errors disable
-     * the mirror without affecting in-memory capture.
+     * Begins mirroring captured records to {@code <configDir>/editora-session.log}, then flushes everything
+     * captured so far. The prior session's file is kept first as {@code editora-session.prev.log}: a crash is
+     * reported from the launch after it, and that launch must not erase the log that recorded it. Best-effort:
+     * I/O errors disable the mirror (or skip the copy) without affecting in-memory capture.
      */
     public static void attachFile(Path configDir) {
         if (configDir == null) {
@@ -139,7 +145,8 @@ public final class DebugLog {
         }
         synchronized (LOCK) {
             try {
-                Path path = configDir.resolve("editora-session.log");
+                Path path = configDir.resolve(SESSION_FILE);
+                keepPreviousSession(path, configDir.resolve(PREVIOUS_SESSION_FILE));
                 // Owner-only, like everything else in the config dir: this records the user's file paths,
                 // project names and error text. newBufferedWriter truncates and keeps the mode.
                 com.editora.config.ConfigWriter.createOwnerOnly(path);
@@ -151,6 +158,17 @@ public final class DebugLog {
             } catch (IOException | RuntimeException e) {
                 file = null;
             }
+        }
+    }
+
+    /** Moves a non-empty prior session log aside; an empty one (a session that logged nothing) is not worth it. */
+    private static void keepPreviousSession(Path current, Path previous) {
+        try {
+            if (Files.isRegularFile(current) && Files.size(current) > 0) {
+                Files.move(current, previous, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException | RuntimeException e) {
+            // the new session is still logged; only the old one is overwritten, as before
         }
     }
 
@@ -180,7 +198,12 @@ public final class DebugLog {
 
     /** The session log file path under {@code configDir}, for display in the viewer. */
     public static @Nullable Path sessionFile(Path configDir) {
-        return configDir == null ? null : configDir.resolve("editora-session.log");
+        return configDir == null ? null : configDir.resolve(SESSION_FILE);
+    }
+
+    /** The previous session's log under {@code configDir}, kept by {@link #attachFile} for a problem report. */
+    public static @Nullable Path previousSessionFile(Path configDir) {
+        return configDir == null ? null : configDir.resolve(PREVIOUS_SESSION_FILE);
     }
 
     /** The full captured log as one newline-joined string (oldest first). */

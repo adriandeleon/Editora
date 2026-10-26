@@ -47,6 +47,8 @@ public final class PreviewScrollSync {
     private double pendingLine = -1;
     /** A line-accurate follow is queued behind the editor's layout (see {@link #previewFollowsEditor}). */
     private boolean followQueued;
+    /** The queued follow is a mode switch's hand-over, which happens with scroll sync off too. */
+    private boolean queuedFollowForced;
 
     /**
      * @param pane the preview scroll pane, or null while it has not been created
@@ -209,10 +211,19 @@ public final class PreviewScrollSync {
         return topLine;
     }
 
-    /** editor → preview: bring the editor's top line to the top of the preview. */
+    /**
+     * editor → preview: bring the editor's top line to the top of the preview — while scroll sync is on. A
+     * follow queued while it was on and run after it was switched off does nothing: the reader turned it off
+     * to keep the preview still.
+     */
     void previewFollowsEditor() {
+        follow(false);
+    }
+
+    /** {@link #previewFollowsEditor}, or with {@code evenWhenOff} a mode switch handing the position over. */
+    private void follow(boolean evenWhenOff) {
         ScrollPane p = pane.get();
-        if (p == null) {
+        if (p == null || !(enabled || evenWhenOff)) {
             return;
         }
         double scrollable = editorScrollableHeight();
@@ -234,13 +245,16 @@ public final class PreviewScrollSync {
         }
         // The editor reports its new scroll offset before it has laid out the lines that are now visible,
         // so its first visible line is only right after that layout: follow it one pulse later.
+        queuedFollowForced |= evenWhenOff;
         if (!followQueued) {
             followQueued = true;
             Platform.runLater(() -> {
                 followQueued = false;
+                boolean forced = queuedFollowForced;
+                queuedFollowForced = false;
                 MarkdownPreview now = lines();
                 int top = ScrollAnchor.firstVisibleLine(area);
-                if (now == null || top < 0 || !(mode.get() == MarkdownViewMode.SPLIT)) {
+                if (now == null || top < 0 || !(mode.get() == MarkdownViewMode.SPLIT) || !(enabled || forced)) {
                     return;
                 }
                 double target = previewTarget(editorScrollY(), editorScrollableHeight(), top);
@@ -340,7 +354,7 @@ public final class PreviewScrollSync {
             pendingLine = line; // the render requested by this switch comes up there
         }
         if (to == MarkdownViewMode.SPLIT) {
-            Platform.runLater(this::previewFollowsEditor); // (metrics settle first)
+            Platform.runLater(() -> follow(true)); // (metrics settle first)
         }
     }
 }

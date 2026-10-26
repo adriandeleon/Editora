@@ -281,6 +281,37 @@ class JavaRuntimesTest {
         assertNull(out.get(1).get("javadoc"), "no javadoc url: JDT already has the release's docs");
     }
 
+    /**
+     * The preferred JDK is recognised through a symlink or an alias: on macOS a temp folder is {@code /var/…}
+     * while its real path is {@code /private/var/…}, and on Windows an 8.3 short name differs from the long one.
+     * Comparing the resolved preferred home with each JDK's unresolved path lost the default on both.
+     */
+    @Test
+    void thePreferredJdkIsFoundThroughASymlink(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path real = java.nio.file.Files.createDirectories(dir.resolve("jdk21/lib"));
+        java.nio.file.Files.writeString(real.resolve("src.zip"), "zip");
+        java.nio.file.Path newer = java.nio.file.Files.createDirectories(dir.resolve("jdk25/lib"));
+        java.nio.file.Files.writeString(newer.resolve("src.zip"), "zip");
+        java.nio.file.Path link;
+        try {
+            link = java.nio.file.Files.createSymbolicLink(dir.resolve("linked21"), real.getParent());
+        } catch (UnsupportedOperationException | java.io.IOException e) {
+            org.junit.jupiter.api.Assumptions.abort("no symlinks here: " + e);
+            return;
+        }
+        List<JavaRuntimes.Jdk> jdks = List.of(
+                new JavaRuntimes.Jdk(21, link.toString()),
+                new JavaRuntimes.Jdk(25, newer.getParent().toString()));
+
+        List<Map<String, Object>> out =
+                JavaRuntimes.runtimes(jdks, real.getParent().toString());
+
+        assertEquals(link.toString(), out.get(1).get("path"));
+        assertEquals(true, out.get(1).get("default"), "the JDK listed through the link is the preferred one");
+        assertNull(out.get(0).get("default"));
+    }
+
     /** Doctor's hint: the default JDK has no sources and no JDK of its version has them (sixth review DF1). */
     @Test
     void aDefaultJdkWithNoSourcesAnywhereIsNamed(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)

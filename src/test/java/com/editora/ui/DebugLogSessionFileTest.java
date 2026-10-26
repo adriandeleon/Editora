@@ -72,6 +72,32 @@ class DebugLogSessionFileTest {
         DebugLog.attachFile(configDir);
 
         assertEquals(List.of("this session"), Files.readAllLines(file));
+        assertEquals(
+                List.of("left over from the previous run"),
+                Files.readAllLines(DebugLog.previousSessionFile(configDir)),
+                "the session before is kept: a crash is reported from the launch after it");
+    }
+
+    @Test
+    void anEmptyPreviousSessionDoesNotReplaceTheOneBeforeIt(@TempDir Path configDir) throws Exception {
+        Path previous = DebugLog.previousSessionFile(configDir);
+        Files.writeString(previous, "the session that crashed\n");
+        Files.writeString(DebugLog.sessionFile(configDir), "");
+        DebugLog.clear();
+
+        DebugLog.attachFile(configDir);
+
+        assertEquals(List.of("the session that crashed"), Files.readAllLines(previous));
+    }
+
+    @Test
+    void theFirstSessionHasNoPreviousLog(@TempDir Path configDir) throws Exception {
+        DebugLog.clear();
+        DebugLog.append("first run");
+
+        DebugLog.attachFile(configDir);
+
+        assertFalse(Files.exists(DebugLog.previousSessionFile(configDir)));
     }
 
     @Test

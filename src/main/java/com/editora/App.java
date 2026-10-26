@@ -393,6 +393,10 @@ public class App extends Application {
             if ("--check-terminal".equals(a)) {
                 System.exit(com.editora.terminal.TerminalImageCheck.runAndReport(System.out));
             }
+            // A problem report from the session logs, without starting the editor — which may be the problem.
+            if ("--report".equals(a)) {
+                System.exit(report(java.util.List.of(args)));
+            }
         }
         // Force-kill any LSP/DAP server we spawn if the JVM exits without going through a window-close
         // teardown — a plain `kill`/SIGTERM, an OS quit, or most crashes. Without this, killing the app
@@ -612,6 +616,18 @@ public class App extends Application {
      */
     private static com.editora.ipc.SingleInstance.@Nullable Result singleInstance;
 
+    /** {@code --report}: the problem report for this launch's config dir, written to the current folder. */
+    private static int report(java.util.List<String> args) {
+        java.nio.file.Path configDir = ConfigManager.configDirFor(configDirArg(args), devFlag(args));
+        return com.editora.report.ReportCommand.run(
+                configDir,
+                java.util.Objects.requireNonNull(com.editora.ui.DebugLog.sessionFile(configDir)),
+                java.util.Objects.requireNonNull(com.editora.ui.DebugLog.previousSessionFile(configDir)),
+                java.nio.file.Path.of(""),
+                true,
+                System.out);
+    }
+
     static String helpText() {
         return """
                 %s — a keyboard-driven, cross-platform programmer's text editor.
@@ -636,6 +652,8 @@ public class App extends Application {
                   --simple              Start in Simple UI mode (minimal chrome; session only)
                   --disable-plugins     Start with every plugin switched off (session only): a way out
                                         of a plugin that hangs or breaks Editora at startup
+                  --report              Write a problem report (system details and the last two session
+                                        logs, redacted) to the current folder and open a GitHub issue for it
                   --version, -V         Print the version and exit
                   --help, -h            Print this help and exit
 

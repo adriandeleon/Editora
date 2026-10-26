@@ -393,6 +393,8 @@ final class WindowCommandRegistrar {
 
         void showDebugLog();
 
+        void showReportProblem();
+
         void exportConfig();
 
         void importConfig();
@@ -1849,6 +1851,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("view.doctor", host::showDoctor));
         host.registry().register(Command.of("view.messageLog", host.statusBar()::showMessageLog));
         host.registry().register(Command.of("view.debugLog", host::showDebugLog));
+        host.registry().register(Command.of("help.reportProblem", host::showReportProblem));
         host.registry().register(Command.of("view.openAsHex", host::openActiveAsHex));
         host.registry().register(Command.of("view.openAsText", host::openActiveAsText));
         host.registry().register(Command.of("tool.project", () -> {

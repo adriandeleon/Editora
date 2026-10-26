@@ -147,13 +147,16 @@ editora --diff-ui LEFT RIGHT
   --zen                 Start in Zen (distraction-free) mode (session only)
   --expert              Start in Expert mode: like Zen, but keeps the editor view (session only)
   --simple              Start in Simple UI mode (minimal chrome; session only)
+  --disable-plugins     Start with every plugin switched off (session only)
+  --report              Write a redacted problem report to the current folder and open a GitHub issue for it
   --version, -V         Print the version and exit
   --help, -h            Print help and exit
 ```
 
 File and `--project` arguments are additive: the previous session restores, then the given files
 open on top and the caret jumps to any `LINE:COLUMN`. A second launch hands its files to the running
-instance unless `--new-instance` is given. The command-line page in the
+instance unless `--new-instance` is given. When something goes wrong, **Help → Report a Problem…** (or
+`editora --report` when Editora will not start) prepares the debug log for a bug report. The command-line page in the
 [user docs](https://editora-project.dev/docs/) has the details and the launcher's location per package.
 
 ## Configuration

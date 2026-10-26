@@ -206,6 +206,7 @@ class ConfigExporterTest {
                 "mcp-endpoint.json",
                 "spawned-servers.txt",
                 "editora-session.log",
+                "editora-session.prev.log",
                 ".settings.json-1234.tmp")) {
             Files.createDirectories(cfg.resolve(skipped).getParent());
             Files.writeString(cfg.resolve(skipped), "skipped");

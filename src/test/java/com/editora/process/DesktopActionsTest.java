@@ -26,6 +26,15 @@ class DesktopActionsTest {
     }
 
     @Test
+    void aUrlOpensWithoutAShellSoItsAmpersandsStayInTheUrl() {
+        String url = "https://github.com/o/r/issues/new?template=t.yml&report=a%20b";
+        assertEquals(List.of("open", url), DesktopActions.openUrlArgv(Os.MAC, url));
+        assertEquals(List.of("xdg-open", url), DesktopActions.openUrlArgv(Os.LINUX, url));
+        assertEquals(
+                List.of("rundll32", "url.dll,FileProtocolHandler", url), DesktopActions.openUrlArgv(Os.WINDOWS, url));
+    }
+
+    @Test
     void revealDirectoryOpensTheDirectory() {
         assertEquals(List.of("open", "-R", DIR.toString()), DesktopActions.revealArgv(Os.MAC, DIR, true, DIR));
         assertEquals(List.of("explorer", DIR.toString()), DesktopActions.revealArgv(Os.WINDOWS, DIR, true, DIR));

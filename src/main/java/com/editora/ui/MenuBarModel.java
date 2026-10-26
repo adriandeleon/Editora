@@ -560,6 +560,7 @@ final class MenuBarModel {
                                 "help.checkForUpdates",
                                 "view.messageLog",
                                 "view.debugLog",
+                                "help.reportProblem",
                                 SEPARATOR,
                                 "help.about")));
     }

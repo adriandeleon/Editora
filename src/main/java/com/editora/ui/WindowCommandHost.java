@@ -22,6 +22,8 @@ import org.jspecify.annotations.Nullable;
 final class WindowCommandHost implements WindowCommandRegistrar.Host {
 
     private final MainController mc;
+    /** Help → Report a Problem, built on first use. */
+    private @Nullable ReportProblemWindow reportProblem;
 
     WindowCommandHost(MainController mc) {
         this.mc = mc;
@@ -870,6 +872,17 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     @Override
     public void showDebugLog() {
         mc.showDebugLog();
+    }
+
+    @Override
+    public void showReportProblem() {
+        ReportProblemWindow window = reportProblem;
+        if (window == null) {
+            window = ReportProblemWindow.forConfigDir(
+                    mc.config.getConfigDir(), () -> mc.pluginManager, mc::openExternalUrl);
+            reportProblem = window;
+        }
+        window.show(mc.stage);
     }
 
     @Override
