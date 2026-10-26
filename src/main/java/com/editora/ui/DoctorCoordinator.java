@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -993,8 +994,9 @@ final class DoctorCoordinator {
      * on Linux or macOS. Probes off the FX thread.
      */
     static DoctorCheck jdtlsRuntime(DoctorCheck row, @Nullable String defaultJdk) {
-        if (row.status() != com.editora.doctor.DoctorStatus.OK) {
-            return row;
+        if (row.status() != com.editora.doctor.DoctorStatus.OK
+                && row.status() != com.editora.doctor.DoctorStatus.WARN) {
+            return row; // an outdated (WARN) install runs on a Java too, and says which (fifth review CV5)
         }
         boolean windows = java.io.File.separatorChar == '\\';
         if (!windows && DoctorProbes.resolvedPath(List.of("python3")).isEmpty()) {
@@ -1008,14 +1010,31 @@ final class DoctorCoordinator {
         if (java.missing()) {
             return row.warn(row.detail(), "doctor.tip.jdtlsNoJava", "21");
         }
-        String runs = java.executable() != null
-                ? java.executable()
-                : launcher > 0 ? tr("doctor.detail.jdtlsLauncherJava", launcher) : "";
+        String runs = java.executable() != null ? java.executable() : launcherJava(windows);
+        if (runs.isEmpty() && launcher > 0) {
+            runs = tr("doctor.detail.jdtlsLauncherJava", launcher);
+        } else if (java.executable() == null && launcher > 0) {
+            runs = runs + " (Java " + launcher + ")";
+        }
         return runs.isEmpty() ? row : row.withDetail(row.detail() + " · " + tr("doctor.detail.jdtlsRunsOn", runs));
     }
 
     /**
-     * One language server: its resolved path    /**
+     * The java jdtls's launcher picks itself, as {@code jdtls.py} does: {@code JAVA_HOME/bin/java} when it exists,
+     * else {@code java} on the PATH; "" when neither is found. A JAVA_HOME that does not exist left the row silent.
+     */
+    private static String launcherJava(boolean windows) {
+        String home = System.getenv("JAVA_HOME");
+        if (home != null && !home.isBlank()) {
+            Path exe = Path.of(home, "bin", windows ? "java.exe" : "java");
+            if (Files.isRegularFile(exe)) {
+                return exe.toString();
+            }
+        }
+        return DoctorProbes.resolvedPath(List.of("java"));
+    }
+
+    /**
      * One language server: its resolved path (and Pyright's npm version) when found. Missing, it is a problem
      * only when something in this window needs it (review A1); otherwise it is "not installed", Install… kept.
      */

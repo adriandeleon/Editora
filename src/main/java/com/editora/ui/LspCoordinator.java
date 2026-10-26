@@ -912,6 +912,9 @@ final class LspCoordinator {
      * documents on it reopen on the new one, with no crash notice — this window did nothing wrong.
      */
     private void sharedServerEnded(String serverId, Path root) {
+        if (LspManager.isHeldForInstall(serverId)) {
+            return; // an install stopped it: the files stay paused, and reopen when it is released (fifth review CF1)
+        }
         forEachCrashedBuffer(serverId, root, b -> {
             b.setLspActive(false);
             clearDiagnostics(lspPath(b));
@@ -1305,7 +1308,7 @@ final class LspCoordinator {
                     && !reason.equals(saidImportReason.put(failedKey, reason))) { // once, not per publish
                 host.setError(tr(
                         "status.lsp.importProblemWhy",
-                        serverProgram(LspServerRegistry.JAVA_SERVER_ID),
+                        statusServerName(LspServerRegistry.JAVA_SERVER_ID, project), // named with its folder (CV4)
                         reason.replaceFirst("[.\\s]+$", "")));
             }
         }
@@ -3171,7 +3174,7 @@ final class LspCoordinator {
                 // that folder imported: its earlier failure no longer stands (third review CT3)
                 String key = importKey(serverId, root);
                 boolean was = importFailed.remove(key) | importWarned.remove(key) | warnedAtReady.remove(key);
-                if (was && saidReady.contains(source)) {
+                if ((was && saidReady.contains(source)) || reloadOwed.remove(source)) {
                     // a fixed build file re-imported cleanly: say so, or "Updating…" was the last word (CF4)
                     host.setStatus(tr("status.lsp.ready", statusServerName(serverId, root)));
                 }
@@ -3323,6 +3326,9 @@ final class LspCoordinator {
 
     private final Map<String, StatusSource> statusSources = new java.util.HashMap<>();
 
+    /** The sources a Reload Project Configuration owes a ready line once their project reports OK (CV3). */
+    private final java.util.Set<String> reloadOwed = new java.util.HashSet<>();
+
     /** The sources whose ready line was said since their server last launched. */
     private final java.util.Set<String> saidReady = new java.util.HashSet<>();
 
@@ -3341,8 +3347,8 @@ final class LspCoordinator {
     private String statusServerName(String serverId, @Nullable Path root) {
         String name = serverProgram(serverId);
         long folders = statusSources.values().stream()
-                .filter(src -> src.serverId().equals(serverId))
-                .count();
+                .filter(src -> src.serverId().equals(serverId) && lspManager.isRunning(serverId, src.root()))
+                .count(); // live servers only: a closed project's name stayed on every later line (CV4)
         return root == null || folders < 2 || root.getFileName() == null
                 ? name
                 : tr("status.lsp.serverInFolder", name, root.getFileName().toString());
@@ -4788,6 +4794,10 @@ final class LspCoordinator {
             return;
         }
         if (lspManager.reloadProjectConfiguration(path)) {
+            String source = statusSource(LspServerRegistry.JAVA_SERVER_ID, root);
+            if (source != null) {
+                reloadOwed.add(source); // the update ends on ready, not on "Updating project configurations…"
+            }
             host.setStatus(tr("status.lsp.projectReloading"));
         } else {
             host.setStatus(tr("status.lsp.unavailable"));
@@ -4842,10 +4852,20 @@ final class LspCoordinator {
 
     /** Restarts {@code path}'s Java server in this window, its open Java files reopened on the new one. */
     private void restartJavaServer(Path path) {
-        java.util.List<EditorBuffer> java = javaBuffersOf(path);
-        statusNarrator.forget(LspServerRegistry.JAVA_SERVER_ID);
-        clearProjectProblems();
-        stopServer(LspServerRegistry.JAVA_SERVER_ID);
+        Path root = lspManager.javaSessionRoot(path);
+        java.util.List<EditorBuffer> java = javaBuffersOf(path, root);
+        if (root == null) {
+            statusNarrator.forget(LspServerRegistry.JAVA_SERVER_ID);
+            clearProjectProblems(null);
+            stopServer(LspServerRegistry.JAVA_SERVER_ID);
+        } else {
+            // only the project being re-imported: another project's server keeps running (fifth review CV2)
+            String source = statusSource(LspServerRegistry.JAVA_SERVER_ID, root);
+            statusNarrator.forget(source == null ? LspServerRegistry.JAVA_SERVER_ID : source);
+            clearProjectProblems(root);
+            java.forEach(b -> clearDiagnostics(lspPath(b)));
+            lspManager.shutdownServerAt(LspServerRegistry.JAVA_SERVER_ID, root);
+        }
         applyGating();
         reopenNow(java);
     }
@@ -4855,11 +4875,17 @@ final class LspCoordinator {
      * the {@code .java} files under the build file's folder.
      */
     private java.util.List<EditorBuffer> javaBuffersOf(Path path) {
+        return javaBuffersOf(path, null);
+    }
+
+    /** As above, only the files of the project at {@code root} (null: every Java file). */
+    private java.util.List<EditorBuffer> javaBuffersOf(Path path, @Nullable Path root) {
         java.util.List<EditorBuffer> out = new java.util.ArrayList<>();
         Path dir = path.getParent();
+        Path only = root == null ? null : root.toAbsolutePath().normalize();
         host.forEachBuffer(b -> {
             Path p = lspPath(b);
-            if (p == null) {
+            if (p == null || (only != null && !p.toAbsolutePath().normalize().startsWith(only))) {
                 return;
             }
             boolean served = LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(p));
@@ -4883,8 +4909,16 @@ final class LspCoordinator {
 
     /** Drops the Problems entries of projects (rather than files): their server is going away. */
     private void clearProjectProblems() {
+        clearProjectProblems(null);
+    }
+
+    /** As above, those of the project at {@code root} only (null: every project's). */
+    private void clearProjectProblems(@Nullable Path root) {
+        Path only = root == null ? null : root.toAbsolutePath().normalize();
         for (Path p : java.util.List.copyOf(problems.keySet())) {
-            if (LspManager.projectLevel(p) && bufferForLspPath(p) == null) {
+            if (LspManager.projectLevel(p)
+                    && bufferForLspPath(p) == null
+                    && (only == null || p.toAbsolutePath().normalize().startsWith(only))) {
                 clearDiagnostics(p);
             }
         }

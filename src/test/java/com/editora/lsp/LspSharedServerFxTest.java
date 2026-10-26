@@ -418,4 +418,22 @@ class LspSharedServerFxTest {
             public void openLocation(String serverId, Path file, int line, int column) {}
         };
     }
+
+    /** One project's server stops alone: another project's keeps running (fifth review CV2). */
+    @Test
+    void oneRootsServerStopsWithoutTheOthers() throws Exception {
+        Path other = java.nio.file.Files.createDirectories(root.resolve("other"));
+        Path one = javaFile("A.java");
+        Path two = other.resolve("B.java");
+        java.nio.file.Files.writeString(two, "class B {}");
+        a.openDocument(one, root, "java", "class A {}");
+        a.openDocument(two, other, "java", "class B {}");
+        assertTrue(a.isManaged(one) && a.isManaged(two));
+
+        a.shutdownServerAt("java", other);
+
+        assertTrue(a.isManaged(one), "the other project's server keeps running");
+        assertFalse(a.isManaged(two));
+        assertTrue(LspManager.isHeldForInstall("java") == false);
+    }
 }

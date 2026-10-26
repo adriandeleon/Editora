@@ -1785,7 +1785,9 @@ class LspCoordinatorCommandsFxTest {
                 null,
                 "jdtls");
         fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause)));
-        Path other = root.resolve("other-project");
+        Path other = java.nio.file.Files.createDirectories(root.resolve("other-project"));
+        Path otherFile = java.nio.file.Files.writeString(other.resolve("B.java"), "class B {}");
+        fx.run(() -> fx.manager.openDocument(otherFile, other, "java", "class B {}")); // a live server there
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
         awaitError(tr(
                 "status.lsp.importProblemWhy",
@@ -1961,5 +1963,18 @@ class LspCoordinatorCommandsFxTest {
                         .toAbsolutePath()
                         .normalize(),
                 "not src/demo, where jdtls expected the default package (re-review C6)");
+    }
+
+    /** Reload Project Configuration on a project that imported ends on "Loaded and ready" (fifth review CV3). */
+    @Test
+    void aReloadEndsOnReady() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        Path sessionRoot = LspTestHooks.sessionRoot(fx.manager, b.getPath());
+        fx.run(() -> fx.coordinator.onServerStatus("java", sessionRoot, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.ready", "jdtls"));
+        fx.run(() -> fx.coordinator.reloadProject());
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.onServerStatus("java", sessionRoot, "ProjectStatus", "OK"));
+        assertTrue(fx.host.statuses.contains(tr("status.lsp.ready", "jdtls")), fx.host.statuses.toString());
     }
 }

@@ -125,6 +125,11 @@ public final class LspManager {
         });
     }
 
+    /** Whether an install holds {@code serverId} stopped in every window right now. */
+    public static boolean isHeldForInstall(String serverId) {
+        return HELD_FOR_INSTALL.contains(serverId);
+    }
+
     /**
      * Lets {@code serverId} start again after its install, and tells every window, whose documents on it were left
      * with no server: only the window that ran the install re-applied its tool support (fourth review CF1).
@@ -5392,11 +5397,22 @@ public final class LspManager {
     }
 
     public void shutdownServer(String serverId) {
+        shutdownServerAt(serverId, null);
+    }
+
+    /**
+     * Stops {@code serverId}'s session on {@code root} only (null: on every root). Re-importing one project that did
+     * not import restarted every Java server in the window, the healthy projects' too (fifth review CV2).
+     */
+    public void shutdownServerAt(String serverId, @Nullable Path root) {
         String prefix = sessionKeyPrefix(serverId);
+        Path only = root == null ? null : root.toAbsolutePath().normalize();
         var it = sessionsByRoot.entrySet().iterator();
         while (it.hasNext()) {
             var e = it.next();
-            if (e.getKey().startsWith(prefix)) {
+            if (e.getKey().startsWith(prefix)
+                    && (only == null
+                            || only.equals(e.getValue().root().toAbsolutePath().normalize()))) {
                 LanguageServerSession s = e.getValue();
                 it.remove(); // before it stops: this window's own drop must not read as another's
                 sessionByDocUri.values().removeIf(v -> v == s);
