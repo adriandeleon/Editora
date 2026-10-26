@@ -240,7 +240,7 @@ class ProjectPanelMoveFxTest {
             }
 
             @Override
-            public void beginMove() {
+            public void beginMove(int count) {
                 events.add("begin");
             }
 

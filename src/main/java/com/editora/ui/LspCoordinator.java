@@ -7606,26 +7606,51 @@ final class LspCoordinator {
      */
     void willRenameFile(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
         AppliedEdit previous = lastApplied;
+        renamesInFlight++;
         lspManager.willRenameFile(
                 from,
                 to,
                 ok -> {
-                    proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
-                    AppliedEdit edit = lastApplied;
-                    boolean moved = ok && !java.nio.file.Files.exists(from) && java.nio.file.Files.exists(to);
-                    if (moved && edit != null && edit != previous) {
-                        treeRenamed(edit, from, to);
-                    } else if (moved && moveGroup != null) {
-                        // moved with no edit (not Java, or nothing to change): still part of the drag, so undoing
-                        // the drag as one refactoring takes it back too (fifth review BV1)
-                        moveGroup.add(new AppliedEdit(
-                                java.util.List.of(),
-                                java.util.List.of(new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false)),
-                                java.util.List.of()));
-                        moveGroupWhole &= !java.nio.file.Files.isDirectory(to);
+                    try {
+                        proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
+                        AppliedEdit edit = lastApplied;
+                        boolean moved = ok && !java.nio.file.Files.exists(from) && java.nio.file.Files.exists(to);
+                        if (moved && edit != null && edit != previous) {
+                            treeRenamed(edit, from, to);
+                        } else if (moved && moveGroup != null) {
+                            // moved with no edit (not Java, or nothing to change): still part of the drag, so
+                            // undoing the drag as one refactoring takes it back too (fifth review BV1)
+                            moveGroup.add(new AppliedEdit(
+                                    java.util.List.of(),
+                                    java.util.List.of(
+                                            new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false)),
+                                    java.util.List.of()));
+                            moveGroupWhole &= !java.nio.file.Files.isDirectory(to);
+                        }
+                    } finally {
+                        renameDone();
                     }
                 },
                 this::renameWithoutEdits);
+    }
+
+    /**
+     * Tree renames whose edit is not recorded yet. Saving a tab the move edited runs a nested event loop, which ran
+     * the drag's next move and its end before this move was recorded: the drag ends only once none is in flight
+     * (sixth review BS1).
+     */
+    private int renamesInFlight;
+
+    /** The end of the drag, waiting for a rename still in flight: true for an Undo Move's, null when none waits. */
+    private @Nullable Boolean moveEndWaiting;
+
+    private void renameDone() {
+        renamesInFlight = Math.max(0, renamesInFlight - 1);
+        Boolean undo = moveEndWaiting;
+        if (renamesInFlight == 0 && undo != null) {
+            moveEndWaiting = null;
+            endTreeMove(undo);
+        }
     }
 
     /**
@@ -7640,16 +7665,21 @@ final class LspCoordinator {
             }
 
             @Override
-            public void beginMove() {
+            public void beginMove(int count) {
                 moveGroup = new java.util.ArrayList<>();
                 moveGroupWhole = true;
+                moveCount = count;
                 moveWithoutEdits.clear();
                 moveWithoutEditsAnswer = null;
             }
 
             @Override
             public void endMove(boolean undo) {
-                endTreeMove(undo);
+                if (renamesInFlight > 0) {
+                    moveEndWaiting = undo; // a move's edit is still being recorded (sixth review BS1)
+                } else {
+                    endTreeMove(undo);
+                }
             }
         };
     }
@@ -7659,6 +7689,9 @@ final class LspCoordinator {
 
     /** False once a folder moved in it: a folder cannot be moved back as one, so Undo Move is the way back. */
     private boolean moveGroupWhole;
+
+    /** How many items the drag under way moves, for the one question asked about them all. */
+    private int moveCount;
 
     /** The {@code .java} files of the drag that moved without their package line edited. */
     private final java.util.List<String> moveWithoutEdits = new java.util.ArrayList<>();
@@ -7679,13 +7712,16 @@ final class LspCoordinator {
         if (group == null) {
             return;
         }
+        // Only a drag in which jdtls edited something is a refactoring: a .txt dragged after a rename took the
+        // rename's undo away, and became "Refactoring undone in 0 files" (sixth review BS2).
+        boolean edited = group.stream().anyMatch(e -> !e.files().isEmpty());
         if (undo) {
             // Undo Move took the drag back: it is not a refactoring to undo, and the drag's own edit is gone
-            if (!group.isEmpty() || (lastApplied != null && lastApplied == treeMoveEdit)) {
+            if (edited || (lastApplied != null && lastApplied == treeMoveEdit)) {
                 lastApplied = null;
             }
             treeMoveEdit = null;
-        } else if (!group.isEmpty()) {
+        } else if (edited) {
             lastApplied = moveGroupWhole ? merged(group) : null;
             treeMoveEdit = lastApplied;
         }
@@ -7744,8 +7780,16 @@ final class LspCoordinator {
             return asked; // asked once for the whole drag (fifth review BV3)
         }
         boolean rename = java.util.Objects.equals(from.getParent(), to.getParent());
+        // A drag of several asks once, so it names them all, not only the first (sixth review BV3)
+        boolean many = moveGroup != null && moveCount > 1;
         boolean answer = confirmRenameWithoutEdits.test(
-                tr(rename ? "dialog.lsp.renameWithoutEdits.renameBody" : "dialog.lsp.renameWithoutEdits.body", name));
+                many
+                        ? tr("dialog.lsp.renameWithoutEdits.manyBody", name, moveCount - 1)
+                        : tr(
+                                rename
+                                        ? "dialog.lsp.renameWithoutEdits.renameBody"
+                                        : "dialog.lsp.renameWithoutEdits.body",
+                                name));
         if (moveGroup != null) {
             moveWithoutEditsAnswer = answer;
         }
@@ -7779,11 +7823,8 @@ final class LspCoordinator {
             Path p = e.path().toAbsolutePath().normalize();
             Path now = p.startsWith(f) ? t.resolve(f.relativize(p)) : e.path();
             files.add(new EditedFile(now, e.before(), e.after()));
-            EditorBuffer b = ops.bufferForPath(now);
-            if (b != null && b.isDirty() && b.getContent().equals(e.after())) {
-                ops.saveBuffer(b);
-            }
         }
+        java.util.List<AppliedEdit> group = moveGroup;
         if (java.nio.file.Files.isDirectory(t)) {
             lastApplied = null; // a folder cannot be moved back as one: rename it back, and jdtls edits again
             moveGroupWhole = false;
@@ -7796,11 +7837,18 @@ final class LspCoordinator {
         lspManager.notifyWatchedFiles(java.util.List.of(
                 new com.editora.lsp.LspManager.WatchedFile(from, com.editora.lsp.LspManager.WatchedKind.DELETED),
                 new com.editora.lsp.LspManager.WatchedFile(to, com.editora.lsp.LspManager.WatchedKind.CREATED)));
-        java.util.List<AppliedEdit> group = moveGroup;
-        if (group != null) {
-            if (lastApplied != null) {
-                group.add(lastApplied);
+        if (group != null && lastApplied != null) {
+            group.add(lastApplied);
+        }
+        // Saved only now that the move is recorded: a save can run a nested event loop, which ran the drag's next
+        // move and its end first (sixth review BS1).
+        for (EditedFile e : files) {
+            EditorBuffer b = ops.bufferForPath(e.path());
+            if (b != null && b.isDirty() && b.getContent().equals(e.after())) {
+                ops.saveBuffer(b);
             }
+        }
+        if (group != null) {
             return; // a drag-move: the tree says what moved, not "Renamed to" (fourth review BF3)
         }
         // the saves above said "Saved /the/whole/path"; the rename is what happened (BT7)

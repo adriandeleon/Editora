@@ -6022,26 +6022,76 @@ public final class LspManager {
         return into.toAbsolutePath().normalize().endsWith(tail);
     }
 
-    /** Whether {@code dir} is a folder with a {@code .java} file in it, at any depth. */
-    private static boolean holdsJava(Path dir) {
+    /**
+     * Whether {@code dir} is a folder with a {@code .java} file in it, at any depth. Build output, dependency and VCS
+     * folders are not walked: a 40,000-file {@code node_modules} took 61 ms (sixth review BV5).
+     */
+    static boolean holdsJava(Path dir) {
         if (!Files.isDirectory(dir)) {
             return false;
         }
-        try (var files = Files.walk(dir, 32)) {
-            return files.anyMatch(p -> p.toString().endsWith(".java"));
+        boolean[] found = {false};
+        try {
+            Files.walkFileTree(dir, java.util.Set.of(), 32, new java.nio.file.SimpleFileVisitor<>() {
+                @Override
+                public java.nio.file.FileVisitResult preVisitDirectory(
+                        Path d, java.nio.file.attribute.BasicFileAttributes attrs) {
+                    String name = d.getFileName() == null ? "" : d.getFileName().toString();
+                    return !d.equals(dir) && NOT_SOURCES.contains(name)
+                            ? java.nio.file.FileVisitResult.SKIP_SUBTREE
+                            : java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult visitFile(
+                        Path f, java.nio.file.attribute.BasicFileAttributes attrs) {
+                    if (f.toString().endsWith(".java")) {
+                        found[0] = true;
+                        return java.nio.file.FileVisitResult.TERMINATE;
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult visitFileFailed(Path f, java.io.IOException e) {
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+            });
         } catch (java.io.IOException | RuntimeException e) {
-            return false;
+            return found[0];
         }
+        return found[0];
     }
+
+    /** Folders that hold no Java sources a move could need edits for. */
+    private static final java.util.Set<String> NOT_SOURCES =
+            java.util.Set.of("node_modules", ".git", ".svn", ".hg", ".gradle", ".idea", "target", "build", "out");
 
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
         LanguageServerSession s = javaSessionFor(from);
-        // No Java server for the folder: nothing to ask, and no folder walked on the UI thread (fifth review BV5)
-        if (s == null || !(from.toString().endsWith(".java") || holdsJava(from))) {
+        // No Java server for the folder: nothing to ask, and no folder walked (fifth review BV5)
+        if (s == null || (!from.toString().endsWith(".java") && !Files.isDirectory(from))) {
             Platform.runLater(() -> proceed.accept(true));
             return;
         }
+        if (Files.isDirectory(from)) {
+            // A folder is walked for .java files off the UI thread: the drop no longer waits on it (sixth BV5)
+            CompletableFuture.supplyAsync(() -> holdsJava(from))
+                    .whenComplete((java, e) -> Platform.runLater(() -> {
+                        if (Boolean.TRUE.equals(java)) {
+                            askWillRename(s, from, to, proceed, fallback);
+                        } else {
+                            proceed.accept(true);
+                        }
+                    }));
+            return;
+        }
+        askWillRename(s, from, to, proceed, fallback);
+    }
+
+    private void askWillRename(
+            LanguageServerSession s, Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
         Path into = to.getParent();
         if (into != null && !into.equals(from.getParent()) && Files.isDirectory(into)) {
             // jdtls answers null for a package it has not heard of: a folder made a moment ago, before the
