@@ -24,9 +24,9 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * A simple modeless window that displays {@link DebugLog}'s captured log (java.util.logging output +
- * uncaught exceptions) in a read-only monospace area, with Refresh / Copy / Clear / Export. Opened by
- * the {@code view.debugLog} command and the Settings → Advanced "Show Debug Log" button — the way to
- * see logs in a packaged build where stderr isn't visible.
+ * uncaught exceptions) in a read-only monospace area, with Refresh / Copy / Clear / Export / Report a
+ * Problem. Opened by the {@code view.debugLog} command and the Settings → Advanced "Show Debug Log" button — the
+ * way to see logs in a packaged build where stderr isn't visible.
  */
 public final class DebugLogWindow {
 
@@ -35,10 +35,16 @@ public final class DebugLogWindow {
     private @Nullable TextArea area;
     private @Nullable Label fileLabel;
     private @Nullable Path sessionFile;
+    private @Nullable Runnable onReport;
 
     /** The session log file path to show in the footer (from {@code DebugLog.sessionFile(configDir)}). */
     public void setSessionFile(@Nullable Path sessionFile) {
         this.sessionFile = sessionFile;
+    }
+
+    /** What the Report a Problem… button does (the {@code help.reportProblem} command); no button without it. */
+    public void setOnReport(@Nullable Runnable onReport) {
+        this.onReport = onReport;
     }
 
     public void show(Window owner) {
@@ -89,8 +95,16 @@ public final class DebugLogWindow {
         Button close = new Button(tr("debuglog.close"));
         close.setOnAction(e -> stage.hide());
 
-        HBox buttons = new HBox(8, refresh, copy, clear, export, new javafx.scene.layout.Region(), close);
-        HBox.setHgrow(buttons.getChildren().get(4), Priority.ALWAYS); // spacer pushes Close to the right
+        javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS); // pushes Close to the right
+        HBox buttons = new HBox(8, refresh, copy, clear, export);
+        Runnable onReport = this.onReport;
+        if (onReport != null) {
+            Button report = new Button(tr("debuglog.report"));
+            report.setOnAction(e -> onReport.run());
+            buttons.getChildren().add(report);
+        }
+        buttons.getChildren().addAll(spacer, close);
         buttons.setAlignment(Pos.CENTER_LEFT);
 
         fileLabel.getStyleClass().add("debug-log-file");

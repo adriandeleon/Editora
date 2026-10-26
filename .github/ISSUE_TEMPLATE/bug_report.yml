@@ -1,0 +1,31 @@
+name: Bug report
+description: Something in Editora went wrong. Help → Report a Problem (or `editora --report`) fills in the details.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what Editora did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If you can make it happen again, how?
+      placeholder: |
+        1. Open …
+        2. Run …
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Editora version, Java, OS. Filled in when you report from Editora; otherwise copy it from About → Copy details.
+      render: text
+  - type: textarea
+    id: report
+    attributes:
+      label: Problem report
+      description: The debug log from Editora, redacted. Read it before you submit — anything left in it becomes public.
+      render: text

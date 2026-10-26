@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Help → Report a Problem…** (`help.reportProblem`, also a button in the Debug Log window) and **`editora
+  --report`**: a problem report from the debug log (this session's and the one before), with the version, Java,
+  OS and plugins. Paths in the home folder, the user name, e-mail addresses, credentials in URLs, authentication
+  headers and token-shaped values are replaced first, and the report is shown, editable, before anything leaves
+  the machine. **Open GitHub Issue** copies it and opens a new issue with it filled in (a report too long for the
+  link is pasted from the clipboard instead); Copy and Save… are there for any other channel. `--report` writes
+  the file to the current folder and opens the issue, for when Editora will not start. Nothing is sent by Editora
+  itself: the user submits the issue. A new bug-report issue form (`.github/ISSUE_TEMPLATE/bug_report.yml`) has
+  the fields the link fills.
 - **Run: Run Context at Caret** (`run.context`; Ctrl+Shift+F10 / ⌃⇧R in the IntelliJ keymaps, as IntelliJ's Run
   Context Configuration): runs the test at the caret (the whole test class above its declaration), else the class's
   `main` as its ▶ does, else the file; a Java class with neither says so. The chord used to rerun the last Maven goal.
@@ -284,6 +293,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   works on RichTextFX types. Internal-only — no behavior, dependency, or `module-info` change.
 
 ### Fixed
+
+- **A crash's log is no longer erased by the launch after it.** Each start truncated `editora-session.log`, so the
+  log that recorded a crash was gone by the time Editora was reopened to report it. The previous session's file is
+  now kept as `editora-session.prev.log` (left out of config exports, like the session log).
 
 - **Java: a jdtls Update no longer leaves other windows without a server.** Doctor's Update stopped jdtls in every
   window but started it again only in the one that ran it. Every window now says the server is paused while it is

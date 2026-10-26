@@ -204,7 +204,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     SnippetCoordinator snippetCoordinator;
 
     /** Shared across windows (owned by WindowManager); plugin classes load once, instances are per-window. */
-    private com.editora.plugin.@Nullable PluginManager pluginManager;
+    com.editora.plugin.@Nullable PluginManager pluginManager;
     /** Plugin support (discovery/apply/install + the per-window PluginContext); see {@link PluginCoordinator}. */
     PluginCoordinator pluginCoordinator;
 
@@ -924,6 +924,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
+        debugLogWindow.setOnReport(() -> registry.run("help.reportProblem"));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(editorArea.tabs()), // list files in tab order
                 () -> editorArea.selectedTab(),
@@ -1693,7 +1694,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Opens a link through the {@link ExternalLinks} allowlist (http/https/mailto) — never a bare showDocument. */
-    private void openExternalUrl(String url) {
+    void openExternalUrl(String url) {
         ExternalLinks.open(url, null, null, hostServices, fileWorkflows::openPath, this::setStatus);
     }
 

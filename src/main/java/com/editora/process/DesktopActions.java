@@ -125,6 +125,42 @@ public final class DesktopActions {
     }
 
     /**
+     * The browser launcher for {@code url}: {@code open} / {@code xdg-open}, and on Windows
+     * {@code rundll32 url.dll,FileProtocolHandler} — not {@code cmd /c start}, whose shell would read the
+     * {@code &} between query parameters as a command separator.
+     */
+    public static List<String> openUrlArgv(Os os, String url) {
+        return switch (os) {
+            case MAC -> List.of("open", url);
+            case WINDOWS -> List.of("rundll32", "url.dll,FileProtocolHandler", url);
+            case LINUX -> List.of("xdg-open", url);
+        };
+    }
+
+    /**
+     * Opens {@code url} in the default browser <em>now</em>, on the calling thread — for the command line, which
+     * exits straight after (the {@link #reveal} executor's daemon thread could be cut off first). The app itself
+     * opens links through {@code HostServices}. Returns whether the launcher started.
+     */
+    public static boolean openUrlNow(String url) {
+        return startNow(openUrlArgv(currentOs(), url));
+    }
+
+    /** {@link #reveal} for a file, started on the calling thread; whether the file manager started. */
+    public static boolean revealNow(Path file) {
+        return startNow(revealArgv(currentOs(), file, false, containingDir(file, false)));
+    }
+
+    private static boolean startNow(List<String> argv) {
+        try {
+            BusyExecutable.start(processBuilder(argv, null));
+            return true;
+        } catch (Exception e) {
+            return false; // no desktop (a server over SSH), or no launcher installed
+        }
+    }
+
+    /**
      * The file manager / terminal process, before it is started. It gets the user's own environment (plus the
      * augmented PATH), <em>not</em> the parse-stable {@code LC_ALL=C}: a terminal opened from the editor is
      * the user's shell, and one forced into the C locale shows their file names as {@code ?} and breaks

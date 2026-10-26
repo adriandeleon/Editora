@@ -122,6 +122,7 @@ final class MenuBarIcons {
         add("run.rerun", Icons::refresh);
         add("help.checkForUpdates", Icons::refresh);
         add("help.documentation", Icons::about);
+        add("help.reportProblem", Icons::github); // it opens a GitHub issue
         add("git.fetch", Icons::refresh);
         add("run.stop", Icons::stopSquare);
         add("debug.start", Icons::debug);

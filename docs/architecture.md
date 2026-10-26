@@ -21,7 +21,10 @@ themed by AtlantaFX.
 1. **`App.main`** ([`App.java`](../src/main/java/com/editora/App.java)) sets
    `java.awt.headless=true` as its very first statement (the SVG-rasterization guard — see
    the note below), installs the debug-log handler + uncaught-exception handler, and handles
-   `--version`/`--help` before the toolkit starts. It then starts the `config-prefetch` thread,
+   `--version`/`--help`/`--report` before the toolkit starts. `--report` (`com.editora.report`) writes the
+   redacted problem report from the session logs — `editora-session.log` and the
+   `editora-session.prev.log` that `DebugLog.attachFile` keeps from the launch before — so it works when the
+   editor itself will not start; Help → Report a Problem shows the same report in `ReportProblemWindow`. It then starts the `config-prefetch` thread,
    probes the single-instance endpoint (a launch may be handed to a running editor and exit), opens
    the prefetch's gate and starts the toolkit. The prefetch only warms (read-only) until the gate
    opens; after it, it loads the shared config, the message catalog, the plugin manifests, the

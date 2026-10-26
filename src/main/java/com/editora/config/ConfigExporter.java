@@ -73,7 +73,8 @@ public final class ConfigExporter {
             "instance.properties",
             "mcp-endpoint.json",
             "spawned-servers.txt",
-            "editora-session.log");
+            "editora-session.log",
+            "editora-session.prev.log");
 
     /**
      * Whether the file at {@code relative} (its path inside the config dir, forward-slash separated) belongs
