@@ -235,4 +235,34 @@ class CompleteStatementTest {
                 java("    String s = name.|\n    int other = 1;\n"));
         assertEquals("    int x = a +\n    |\n    return x;\n", java("    int x = a +|\n    return x;\n"));
     }
+
+    /**
+     * A line at the statement's own indent is the next statement, a further-indented one goes on: `System.out
+     * .println(s);` below a half-typed `String s = name.` was jumped (third review AT3), and `this.ready;` below
+     * `ready &&` got a blank line inside the expression (fourth review AF3).
+     */
+    @Test
+    void indentationTellsAContinuationFromTheNextStatement() {
+        assertEquals(
+                "    String s = name.\n    |\n    System.out.println(s);\n",
+                java("    String s = name.|\n    System.out.println(s);\n"));
+        assertEquals("    int x = a +\n    |\n    count++;\n", java("    int x = a +|\n    count++;\n"));
+        assertEquals(
+                "    boolean same = ready &&\n            this.ready;\n    |\n",
+                java("    boolean same = ready &&|\n            this.ready;\n"));
+    }
+
+    /** A block that ends a declaration closes with `};`, one in a condition with `})) {` (fourth review AF4). */
+    @Test
+    void aBlockClosesAsWhatOpenedItEnds() {
+        assertEquals("    Runnable r = () -> {\n        |\n    };\n", java("    Runnable r = () -> {|\n"));
+        assertEquals("    Object o = new Object() {\n        |\n    };\n", java("    Object o = new Object() {|\n"));
+        assertEquals(
+                "    if (names.stream().anyMatch(x -> {\n        |\n    })) {\n    }\n",
+                java("    if (names.stream().anyMatch(x -> {|\n"));
+        assertEquals(
+                "    for (int i = 0; i < n; i++) {\n        |\n    }\n",
+                java("    for (int i = 0; i < n; i++) {|\n"),
+                "a header's = is no declaration");
+    }
 }
