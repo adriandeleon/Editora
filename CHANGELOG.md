@@ -285,13 +285,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java: Smart Type** binds a type variable by the method's return type (`names.toArray(` into a `String[]` wants a
   `String[]`, not `String[][]`), leaves it open inside another call's argument, and reads the parameter of every
   overload (`System.out.println(` offers an `int`).
-- **Java: a JDK with its sources is preferred.** Of two JDKs of one version jdtls gets the one with `src.zip`; a
-  JDK without one (a distro JDK whose `src.zip` links to an uninstalled package) gets the online API docs, so JDK
-  parameters are no longer `arg0`.
+- **Java: a JDK with its sources is preferred.** Of two JDKs of one version jdtls gets the one with `src.zip`, even
+  when the other is the Default JDK or `JAVA_HOME`. A JDK with no sources at all (a distro JDK whose `src.zip` links
+  to an uninstalled package, such as Debian's without `openjdk-21-source`) still gives JDK parameters as `arg0`.
 - **Java: formatter profiles.** The content-addressed copies are kept in a private folder of this process, checked
   before use and removed when replaced, instead of a shared temporary folder; a server in a container or WSL gets
-  the project's own profile; removing a profile, or editing one in `.settings` outside Editora, applies without a
-  restart. The project's code style now does follow `.editorconfig` and formatter-profile changes without one.
+  the project's own profile; removing a profile (in this session or while Editora was closed), or editing one in
+  `.settings` or `config` outside Editora, applies without a restart, in a project window as in one without a
+  project. The project's code style now does follow `.editorconfig` and formatter-profile changes without one.
+  jdtls still writes its compiler settings into a `.settings` folder the project already has (an Eclipse project's
+  committed `org.eclipse.jdt.core.prefs`); a project without one gets none.
 - **Java: Add all missing imports asks** which class an ambiguous name means, as Organize Imports does.
 - **Complete Statement** reads indentation: a line at the statement's own indent is the next statement, a further
   indented `this.x` goes on. A block that ends a declaration closes with `};`, one in an `if (…(x -> {` condition

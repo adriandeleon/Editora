@@ -1394,6 +1394,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * directories no longer present/expanded. Runs on the FX thread (it reads the tree). Cheap: the set is
      * just the visible folders.
      */
+    /** Folders watched only for the project's Java style (DN4): the tree does not show them, so no refresh. */
+    private volatile java.util.Set<Path> styleOnlyDirs = java.util.Set.of();
+
     private void syncWatches() {
         if (watchService == null) {
             return;
@@ -1412,6 +1415,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (isMapShowing()) {
             desired.addAll(mapView.expandedDirectories());
         }
+        // The folders the project's Java style is read from, open in the tree or not: an outside edit to a profile
+        // in .settings went unseen in a project window (fifth review DN4). Their changes refresh no tree.
+        java.util.Set<Path> style = new java.util.HashSet<>();
+        if (root != null && !com.editora.vfs.Vfs.isRemote(root)) {
+            for (Path dir : com.editora.lsp.JavaProjectSettings.styleFolders(root)) {
+                if (desired.add(dir)) {
+                    style.add(dir);
+                }
+            }
+        }
+        styleOnlyDirs = java.util.Set.copyOf(style);
         watchKeys.entrySet().removeIf(entry -> {
             if (!desired.contains(entry.getValue())) {
                 entry.getKey().cancel();
@@ -1496,6 +1510,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 }
                 if (!watchEventsWarrantRefresh(names, overflow)) {
                     continue; // only Editora's own temp files changed — no tree rebuild
+                }
+                if (watchedDir != null && styleOnlyDirs.contains(watchedDir)) {
+                    continue; // watched for the Java style only: the tree does not show it
                 }
                 boolean lost = overflow;
                 Platform.runLater(() -> {

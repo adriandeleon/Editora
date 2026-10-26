@@ -213,7 +213,45 @@ final class LanguageServerSession implements LanguageClient {
 
     /** Bounds an ordinary server request with the shared {@link #REQUEST_TIMEOUT}. */
     private <T> CompletableFuture<T> bounded(CompletableFuture<T> request) {
-        return track(bounded(request, REQUEST_TIMEOUT));
+        return track(bounded(request, REQUEST_TIMEOUT, this));
+    }
+
+    /**
+     * The questions the server asked the user ({@link #CHOOSE_IMPORTS}) that are still open. While one is, the
+     * server is waiting on the user, so no request on this session times out (fifth review DV1).
+     */
+    private final java.util.Set<CompletableFuture<?>> openQuestions = ConcurrentHashMap.newKeySet();
+
+    /** When the last question was answered: a request's time runs again from then. */
+    private volatile long questionAnsweredAt;
+
+    /** Asks the user {@code question}, holding back request timeouts until it is answered. */
+    private <T> CompletableFuture<T> asking(CompletableFuture<T> question) {
+        openQuestions.add(question);
+        question.whenComplete((answer, error) -> {
+            questionAnsweredAt = System.nanoTime();
+            openQuestions.remove(question);
+        });
+        if (disposed) {
+            closeQuestions();
+        }
+        return question;
+    }
+
+    /** Takes down every open question: what it asked for is gone (the request ended, or the server did). */
+    private void closeQuestions() {
+        for (CompletableFuture<?> question : List.copyOf(openQuestions)) {
+            question.cancel(false);
+        }
+    }
+
+    /** How much longer a request that has run out of {@code timeout} may wait: the user may be answering. */
+    private long holdMillis(java.time.Duration timeout) {
+        if (!openQuestions.isEmpty()) {
+            return timeout.toMillis();
+        }
+        long since = (System.nanoTime() - questionAnsweredAt) / 1_000_000;
+        return questionAnsweredAt != 0 && since < timeout.toMillis() ? timeout.toMillis() - since : 0;
     }
 
     /**
@@ -264,6 +302,7 @@ final class LanguageServerSession implements LanguageClient {
      * {@code $/cancelRequest} to a pipe nobody reads any more. Completing the future also drops its timer.
      */
     private void failInFlight() {
+        closeQuestions();
         var failure = new IllegalStateException("language server not available");
         for (CompletableFuture<?> request : List.copyOf(inFlight)) {
             request.completeExceptionally(failure);
@@ -280,18 +319,39 @@ final class LanguageServerSession implements LanguageClient {
      * {@code timeout}, and the timer is dropped as soon as the request completes on its own.
      */
     static <T> CompletableFuture<T> bounded(CompletableFuture<T> request, java.time.Duration timeout) {
+        return bounded(request, timeout, null);
+    }
+
+    /**
+     * {@link #bounded(CompletableFuture, java.time.Duration)} that waits on while {@code owner} has a question
+     * open to the user, and for the whole {@code timeout} again once it is answered (fifth review DV1).
+     */
+    static <T> CompletableFuture<T> bounded(
+            CompletableFuture<T> request, java.time.Duration timeout, @Nullable LanguageServerSession owner) {
         if (request.isDone()) {
             return request;
         }
-        var timer = REQUEST_TIMER.schedule(
-                () -> {
-                    if (!request.isDone()) {
-                        request.cancel(true);
+        var timer = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.ScheduledFuture<?>>();
+        Runnable expire = new Runnable() {
+            @Override
+            public void run() {
+                if (request.isDone()) {
+                    return;
+                }
+                long hold = owner == null ? 0 : owner.holdMillis(timeout);
+                if (hold > 0) {
+                    timer.set(REQUEST_TIMER.schedule(this, hold, java.util.concurrent.TimeUnit.MILLISECONDS));
+                    if (request.isDone()) {
+                        timer.get().cancel(false);
                     }
-                },
-                Math.max(1, timeout.toMillis()),
-                java.util.concurrent.TimeUnit.MILLISECONDS);
-        request.whenComplete((result, error) -> timer.cancel(false));
+                } else {
+                    request.cancel(true);
+                }
+            }
+        };
+        timer.set(REQUEST_TIMER.schedule(
+                expire, Math.max(1, timeout.toMillis()), java.util.concurrent.TimeUnit.MILLISECONDS));
+        request.whenComplete((result, error) -> timer.get().cancel(false));
         return request;
     }
 
@@ -1613,7 +1673,7 @@ final class LanguageServerSession implements LanguageClient {
                         return;
                     }
                     try {
-                        track(bounded(l.getRemoteEndpoint().request(method, params), timeout))
+                        track(bounded(l.getRemoteEndpoint().request(method, params), timeout, this))
                                 .whenComplete((r, e) -> {
                                     if (e != null) {
                                         out.completeExceptionally(e);
@@ -3072,7 +3132,7 @@ final class LanguageServerSession implements LanguageClient {
         for (ImportChoice choice : choices) {
             chain = chain.thenCompose(ignored -> disposed
                     ? CompletableFuture.completedFuture(null)
-                    : ui.chooseImport(serverId, choice.simpleName(), choice.line(), choice.items())
+                    : asking(ui.chooseImport(serverId, choice.simpleName(), choice.line(), choice.items()))
                             .thenAccept(id -> {
                                 Object candidate =
                                         id == null ? null : choice.candidates().get(id);
@@ -3081,7 +3141,14 @@ final class LanguageServerSession implements LanguageClient {
                                 }
                             }));
         }
-        return chain.handle((ignored, error) -> List.copyOf(chosen));
+        CompletableFuture<Object> answer = chain.handle((ignored, error) -> List.copyOf(chosen));
+        // The server gave up on the request that asked: the picker still open asks for nothing (DV1).
+        answer.whenComplete((value, error) -> {
+            if (answer.isCancelled()) {
+                closeQuestions();
+            }
+        });
+        return answer;
     }
 
     /**

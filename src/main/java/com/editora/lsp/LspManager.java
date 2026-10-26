@@ -6408,23 +6408,20 @@ public final class LspManager {
                 range,
                 new org.eclipse.lsp4j.CodeActionContext(List.of()));
         EditBasis expected = editBasis(s);
-        s.rawRequest("java/organizeImports", params)
-                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .whenComplete((r, e) -> {
-                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
-                    Platform.runLater(() -> {
-                        if (e != null) {
-                            cb.accept(OrganizeOutcome.FAILED);
-                        } else if (edit == null || !changesText(edit)) {
-                            cb.accept(OrganizeOutcome.UNCHANGED);
-                        } else {
-                            applyWorkspaceEdit(
-                                    edit,
-                                    expected,
-                                    ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.FAILED));
-                        }
-                    });
-                });
+        // Bounded by the session, which waits while an import question is open (fifth review DV1).
+        s.rawRequest("java/organizeImports", params).whenComplete((r, e) -> {
+            org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
+            Platform.runLater(() -> {
+                if (e != null) {
+                    cb.accept(OrganizeOutcome.FAILED);
+                } else if (edit == null || !changesText(edit)) {
+                    cb.accept(OrganizeOutcome.UNCHANGED);
+                } else {
+                    applyWorkspaceEdit(
+                            edit, expected, ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.FAILED));
+                }
+            });
+        });
     }
 
     /**

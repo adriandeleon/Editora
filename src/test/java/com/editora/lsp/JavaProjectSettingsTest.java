@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.editora.editorconfig.EditorConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -137,14 +138,17 @@ class JavaProjectSettingsTest {
         assertEquals(JavaProjectSettings.EMPTY_NAME, settings.get("profile"));
         String empty = Files.readString(Path.of(java.net.URI.create((String) settings.get("url"))));
         assertTrue(empty.contains("CodeFormatterProfile") && !empty.contains("<setting"), empty);
-        assertTrue(
-                JavaProjectSettings.forRoot(root.resolve("never-profiled")).isEmpty(),
-                "a project that never had one is sent nothing");
+        assertEquals(
+                settings,
+                ((Map<?, ?>) JavaProjectSettings.forRoot(root.resolve("never-profiled"))
+                                .get("format"))
+                        .get("settings"),
+                "a project with none gets the defaults too: jdtls keeps a profile removed while Editora was closed (DV2)");
     }
 
     @Test
     void aConventionalProfileCountsOnlyWhenItIsOneAndNothingIsSentForAPlainProject() throws Exception {
-        assertTrue(JavaProjectSettings.forRoot(root).isEmpty(), "nothing stated: jdtls's defaults");
+        assertEquals(Set.of("format"), JavaProjectSettings.forRoot(root).keySet(), "nothing stated: jdtls's defaults");
         Files.writeString(root.resolve("formatter.xml"), "<formatter>not Eclipse's</formatter>");
         assertNull(JavaProjectSettings.formatterProfile(root));
         Files.writeString(root.resolve("eclipse-formatter.xml"), PROFILE);

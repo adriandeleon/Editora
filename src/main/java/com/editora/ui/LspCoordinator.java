@@ -3925,6 +3925,12 @@ final class LspCoordinator {
             picker.setPreview(item -> {}, () -> answer.complete(null));
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
+            // Cancelled: the request that asked has ended, so the question goes too (fifth review DV1).
+            answer.whenComplete((value, error) -> {
+                if (answer.isCancelled()) {
+                    Platform.runLater(picker::hide);
+                }
+            });
             return answer;
         }
 
