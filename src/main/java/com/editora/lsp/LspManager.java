@@ -6340,6 +6340,17 @@ public final class LspManager {
         return s != null && saved != null && s.otherJavaDocumentOpen(uri(saved));
     }
 
+    /**
+     * Has jdtls recheck the other Java files open on {@code saved}'s server against what was just saved, without a
+     * build (tenth review CO1).
+     */
+    public void revalidateOtherJavaDocuments(@Nullable Path saved) {
+        LanguageServerSession s = javaSessionFor(saved);
+        if (s != null && saved != null) {
+            s.revalidateOtherJavaDocuments(uri(saved));
+        }
+    }
+
     /** Whether {@code a} and {@code b} are served by one running jdtls (a save in one can break the other). */
     public boolean sameJavaSession(@Nullable Path a, @Nullable Path b) {
         LanguageServerSession s = javaSessionFor(a);

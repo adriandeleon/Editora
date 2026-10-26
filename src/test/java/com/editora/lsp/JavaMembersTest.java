@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -180,6 +181,43 @@ class JavaMembersTest {
         assertTrue(JavaMembers.overridden(gen, "put(int, String)").isEmpty(), "the order counts");
         List<MemberSpan> qualified = List.of(span("addAll(java.util.Collection<? extends E>)", "method", 1, 1, 1));
         assertEquals(qualified, JavaMembers.overridden(qualified, "addAll(Collection<? extends E>)"));
+    }
+
+    /**
+     * A type variable is any name the super method's type, or a type around it, declares, not only a one-letter
+     * one: {@code Store<Item>.add(Item)} is overridden by {@code add(String)} (tenth review EO1).
+     */
+    @Test
+    void aTypeVariableIsWhatTheTypeDeclares() {
+        assertEquals(List.of("Key", "Val"), JavaMembers.typeParameters("KeyStore<Key, Val>"));
+        assertEquals(List.of("K", "V"), JavaMembers.typeParameters("EnumMap<K extends Enum<K>, V>"));
+        assertEquals(List.of("Req"), JavaMembers.typeParameters("Handler<@NonNull Req>"));
+        assertTrue(JavaMembers.typeParameters("new Store<String>() {...}").isEmpty(), "type arguments, not variables");
+        MemberSpan add = span("add(Item)", "method", 2, 2, 2);
+        MemberSpan in = span("In", "class", 3, 5, 3, span("take(Elem)", "method", 4, 4, 4));
+        MemberSpan store = span("Store<Item>", "interface", 1, 2, 1, add);
+        MemberSpan outer = span("Outer<Elem>", "class", 3, 6, 3, in);
+        List<MemberSpan> outline = List.of(store, outer);
+        java.util.Set<String> vars = JavaMembers.typeParameters(outline, store);
+        assertEquals(java.util.Set.of("Item"), vars);
+        assertTrue(JavaMembers.overridden(store.children(), "add(String)").isEmpty(), "by shape alone, Item is a type");
+        assertEquals(List.of(add), JavaMembers.overridden(store.children(), "add(String)", vars));
+        assertTrue(JavaMembers.overridden(store.children(), "add(int)", vars).isEmpty(), "no primitive");
+        assertEquals(java.util.Set.of("Elem"), JavaMembers.typeParameters(outline, in), "the outer class's");
+        assertEquals(
+                in.children(),
+                JavaMembers.overridden(in.children(), "take(String)", JavaMembers.typeParameters(outline, in)));
+    }
+
+    /** {@code @Override} before a method's name, by its simple or qualified name, not in a comment. */
+    @Test
+    void anOverrideAnnotationIsRead() {
+        String text = "    @Override\n    public void take(String t) {}\n";
+        assertTrue(JavaMembers.annotated(text, 0, text.indexOf("take"), "Override"));
+        String qualified = "    @java.lang.Override void take(String t) {}\n";
+        assertTrue(JavaMembers.annotated(qualified, 0, qualified.indexOf("take"), "Override"));
+        String comment = "    /** Not an @Override. */\n    @Overrides void take(String t) {}\n";
+        assertFalse(JavaMembers.annotated(comment, 0, comment.indexOf("take"), "Override"));
     }
 
     /** A field holding an anonymous class is part of the chain, so the class is found (ninth review DP2). */

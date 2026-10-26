@@ -3752,11 +3752,12 @@ final class LspCoordinator {
     private final java.util.Set<Path> pendingProjectRecheck = new java.util.LinkedHashSet<>();
 
     /**
-     * While Problems shows the whole project, or another file of the project is open, a Java save is followed by an
-     * incremental build (debounced): with autobuild off nothing else rechecks the other files, so an error fixed in
-     * one file stayed listed for the files that use it until Build Project was run by hand (Java review C7), and an
-     * open file calling a method just renamed elsewhere showed no error until it was typed in (eighth review AQ1).
-     * Quiet: no status.
+     * While Problems shows the whole project, or another file of the project is open, a Java save is followed by a
+     * recheck (debounced): with autobuild off nothing else rechecks the other files, so an error fixed in one file
+     * stayed listed for the files that use it until Build Project was run by hand (Java review C7), and an open file
+     * calling a method just renamed elsewhere showed no error until it was typed in (eighth review AQ1). The whole
+     * project needs an incremental build; open files outside a Maven project are only re-sent, since jdtls compiles a
+     * Gradle project into Buildship's bin/ (re-review CN3, tenth review CO1). Quiet: no status.
      */
     private final javafx.animation.PauseTransition projectRecheck = projectRecheck();
 
@@ -3771,7 +3772,13 @@ final class LspCoordinator {
                         && (projectWideProblems || lspManager.otherJavaDocumentOpen(path))
                         && ops.lspFeatureEnabled()) {
                     built.add(path);
-                    lspManager.buildJavaWorkspace(path, false, outcome -> {});
+                    Path root = lspManager.javaSessionRoot(path);
+                    if (projectWideProblems
+                            || (root != null && java.nio.file.Files.isRegularFile(root.resolve("pom.xml")))) {
+                        lspManager.buildJavaWorkspace(path, false, outcome -> {});
+                    } else {
+                        lspManager.revalidateOtherJavaDocuments(path);
+                    }
                 }
             }
         });
@@ -5804,16 +5811,28 @@ final class LspCoordinator {
             host.setStatus(tr("status.lsp.noSuperMethod")); // neither overrides anything (ninth review DP1)
             return;
         }
-        superMethodsOf(ask, member, type);
+        superMethodsOf(
+                ask,
+                member,
+                type,
+                com.editora.lsp.JavaMembers.annotated(
+                        text,
+                        offsetOf(text, member.startLine()),
+                        offsetOf(text, member.nameLine()) + member.nameColumn(),
+                        "Override"));
     }
 
     /**
      * A method's super methods: jdtls's {@code findLinks} first, which is exact for a class's method; the type hierarchy
      * then finds the branches it misses (an interface's methods, a second interface, an anonymous class written with
-     * {@code <>} or extending a project class). A class's method findLinks finds nothing for overrides nothing.
+     * {@code <>} or extending a project class). A class's method findLinks finds nothing for overrides nothing, unless
+     * it is marked {@code @Override}: findLinks misses an inner class of a generic class.
      */
     private void superMethodsOf(
-            SuperAsk ask, com.editora.lsp.MemberSpan method, com.editora.lsp.@Nullable MemberSpan type) {
+            SuperAsk ask,
+            com.editora.lsp.MemberSpan method,
+            com.editora.lsp.@Nullable MemberSpan type,
+            boolean override) {
         javafx.animation.PauseTransition slow = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
         slow.setOnFinished(e -> {
             if (ask.current().getAsBoolean()) {
@@ -5831,7 +5850,13 @@ final class LspCoordinator {
                         slow.stop();
                         return;
                     }
-                    if (type == null || !(type.kind().equals("interface") || type.isAnonymous() || !linked.isEmpty())) {
+                    // findLinks misses an inner class of a generic class: a method marked @Override has one, so the
+                    // hierarchy is walked before "none" is said (tenth review EO1)
+                    if (type == null
+                            || !(type.kind().equals("interface")
+                                    || type.isAnonymous()
+                                    || !linked.isEmpty()
+                                    || override)) {
                         slow.stop();
                         openOneOrPick(ask, labelled(linked), "picker.superMethod.title", "status.lsp.noSuperMethod");
                         return;
@@ -6096,7 +6121,10 @@ final class LspCoordinator {
                         com.editora.lsp.JavaMembers.typeAt(members, type.line(), type.name());
                 List<com.editora.lsp.MemberSpan> hits = declared == null
                         ? List.of()
-                        : com.editora.lsp.JavaMembers.overridden(declared.children(), method);
+                        : com.editora.lsp.JavaMembers.overridden(
+                                declared.children(),
+                                method,
+                                com.editora.lsp.JavaMembers.typeParameters(members, declared));
                 for (int i = 0; i < hits.size(); i++) {
                     com.editora.lsp.MemberSpan hit = hits.get(i);
                     found.put(
