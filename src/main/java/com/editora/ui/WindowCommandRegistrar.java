@@ -2019,8 +2019,18 @@ final class WindowCommandRegistrar {
         // review E1). The chord started Maven's Rerun Last.
         host.registry().register(Command.of("run.context", () -> {
             EditorBuffer b = host.activeBuffer();
+            if (b != null) {
+                b.settleRunScan(); // the load's scan runs off FX; the answer is needed now
+            }
+            var main = b == null ? null : b.mainTargetAtCaret();
             if (b != null && b.testTargetAtCaret(false) != null) {
                 host.runTestAtCaret(false, false);
+            } else if (main != null) {
+                // A project class's main, as its ▶ runs it: Run File knows only single files (fifth review BV2)
+                host.runCoordinator().runMainClassNamed(main.fqn());
+            } else if (b != null && b.getPath() != null && "java".equals(b.getLanguage()) && !b.isRunnable()) {
+                host.setStatus(
+                        tr("status.run.noContext", b.getPath().getFileName().toString())); // EV7
             } else {
                 host.runCoordinator().runActiveFile();
             }

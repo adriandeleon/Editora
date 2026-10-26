@@ -1876,7 +1876,7 @@ class LspWorkspaceEditFxTest {
         assertTrue(
                 fakes.get(0).fileEvents().stream().anyMatch(e -> e.startsWith("Created ") && e.contains("/shapes")),
                 fakes.get(0).fileEvents().toString());
-        assertEquals(tr("status.lsp.moveWithoutPackageEdit", "Circle.java"), host.error);
+        assertEquals(tr("status.lsp.moveWithoutPackageEdit", "Circle.java", 1), host.error);
 
         // in a drag of several, said once at the end, after the tree's own status
         Path square = root.resolve("Square.java");
@@ -1886,7 +1886,15 @@ class LspWorkspaceEditFxTest {
         assertTrue(treeMove(participant, square, shapes.resolve("Square.java")));
         assertEquals(null, host.error, "not yet: the tree speaks first");
         FxTestSupport.runOnFx(() -> participant.endMove(false));
-        assertEquals(tr("status.lsp.moveWithoutPackageEdit", "Square.java"), host.error);
+        assertEquals(tr("status.lsp.moveWithoutPackageEdit", "Square.java", 1), host.error);
+
+        // a file whose package line already fits its new folder (main → test, the same package) is no warning (BV4)
+        Path mainDemo = Files.createDirectories(root.resolve("main/demo"));
+        Path testDemo = Files.createDirectories(root.resolve("test/demo"));
+        Files.writeString(mainDemo.resolve("Helper.java"), "package demo;\n\nclass Helper {}\n");
+        host.error = null;
+        assertTrue(treeMove(participant, mainDemo.resolve("Helper.java"), testDemo.resolve("Helper.java")));
+        assertEquals(null, host.error, "nothing is wrong with it");
 
         List<String> asked = new ArrayList<>();
         FxTestSupport.runOnFx(() -> coordinator.confirmRenameWithoutEdits = body -> {
@@ -1922,5 +1930,30 @@ class LspWorkspaceEditFxTest {
                 merged.files(),
                 "A was edited, then moved, then edited again: one entry at its last place, first to last text");
         assertEquals(2, merged.renames().size());
+    }
+
+    /** A file that moves with no edit in a drag is still part of it: undoing the drag takes it back too (BV1). */
+    @Test
+    void aFileMovedWithNoEditIsUndoneWithTheDrag() throws Exception {
+        Path notes = root.resolve("notes.txt");
+        Files.writeString(notes, "notes\n");
+        Path docs = Files.createDirectory(root.resolve("docs"));
+        serveWillRename();
+        ProjectPanel.RenameParticipant participant = FxTestSupport.callOnFx(coordinator::treeParticipant);
+
+        FxTestSupport.runOnFx(participant::beginMove);
+        assertTrue(treeMove(participant, notes, docs.resolve("notes.txt")));
+        FxTestSupport.runOnFx(() -> participant.endMove(false));
+        var applied = FxTestSupport.callOnFx(coordinator::lastAppliedEdit);
+        assertEquals(
+                List.of(new WorkspaceEditMapper.FileRename(notes, docs.resolve("notes.txt"), false)),
+                applied.renames());
+
+        FxTestSupport.runOnFx(coordinator::undoRefactoring);
+        for (int i = 0; i < 100 && !Files.exists(notes); i++) {
+            Thread.sleep(20);
+            FxTestSupport.drainFx();
+        }
+        assertTrue(Files.exists(notes), "moved back with the drag");
     }
 }

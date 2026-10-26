@@ -261,4 +261,23 @@ class LspCompletionFlowFxTest {
         }
         assertFalse(BufferCompletion.isCloserChar('('));
     }
+
+    /** Undoing a rename puts the old name back at the caret: that is no word typed, so no list (fifth review BF2). */
+    @Test
+    void anUndoOpensNoList() throws Exception {
+        EditorBuffer b = lspBuffer("int box", List.of(Completion.lsp("boxed", "boxed", "int")));
+        EditorFx.onFx(() -> {
+            var area = b.getArea();
+            area.getUndoManager().preventMerge();
+            area.replaceText(4, 7, "boxy"); // what a rename applies
+            area.getUndoManager().preventMerge();
+            b.cancelCompletion();
+        });
+        Thread.sleep(600);
+        EditorFx.onFx(() -> b.getArea().undo());
+        Thread.sleep(800); // past the typing pause
+        EditorFx.drain();
+        assertEquals("int box", EditorFx.callFx(() -> b.getArea().getText()));
+        assertFalse(EditorFx.callFx(b::completionShowing), "no list after Ctrl+Z");
+    }
 }

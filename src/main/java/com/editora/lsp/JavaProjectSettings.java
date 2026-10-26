@@ -80,9 +80,7 @@ public final class JavaProjectSettings {
             java.put("sources", Map.of("organizeImports", organize));
         }
         Path formatter = formatterProfile(root);
-        Path project = root.toAbsolutePath().normalize();
         if (formatter != null) {
-            PROFILED.add(project);
             Map<String, Object> settings = new HashMap<>();
             settings.put(
                     "url",
@@ -94,9 +92,10 @@ public final class JavaProjectSettings {
                 settings.put("profile", profile);
             }
             java.put("format", Map.of("settings", settings));
-        } else if (toWire == null && PROFILED.contains(project)) {
-            // The project's profile was removed. jdtls ignores an empty url and kept formatting with the old one
-            // until a restart (re-review DN4); a profile with no settings puts its own defaults back.
+        } else if (toWire == null) {
+            // No profile: always a profile with no settings, which is jdtls's own defaults. jdtls ignores an empty
+            // url and keeps the last profile in its workspace, even across restarts, so one removed in this session
+            // (re-review DN4) or while Editora was closed (fifth review DV2) kept formatting the old way.
             Path empty = contentAddressed(emptyProfile(), "default");
             if (empty != null) {
                 java.put(
@@ -109,9 +108,6 @@ public final class JavaProjectSettings {
     private static byte[] emptyProfile() {
         return EMPTY_PROFILE.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
-
-    /** The project folders a formatter profile was pushed for: one removed later is replaced by jdtls's defaults. */
-    private static final java.util.Set<Path> PROFILED = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     static final String EMPTY_NAME = "Editora default";
 
@@ -285,6 +281,23 @@ public final class JavaProjectSettings {
             }
         }
         return null;
+    }
+
+    /**
+     * The folders under {@code root} that a Java style is read from and that a project window must watch even when
+     * the tree has them collapsed or hidden: {@code .settings}, {@code config}, and the folder of the profile the
+     * build names (fifth review DN4). Only folders that exist; never {@code root} itself.
+     */
+    public static List<Path> styleFolders(Path root) {
+        java.util.Set<Path> out = new java.util.LinkedHashSet<>();
+        out.add(root.resolve(".settings"));
+        out.add(root.resolve("config"));
+        Path profile = formatterProfile(root);
+        if (profile != null && profile.getParent() != null) {
+            out.add(profile.getParent());
+        }
+        out.remove(root);
+        return out.stream().filter(Files::isDirectory).toList();
     }
 
     /** Whether {@code file} is an Eclipse formatter export (a {@code <profiles>} of JDT formatter settings). */

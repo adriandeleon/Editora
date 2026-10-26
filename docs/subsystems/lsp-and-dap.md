@@ -415,7 +415,12 @@ file back and reverts the edit together. A folder rename is applied but not undo
 the server does not have open (a deferred tab) sends `didChangeWatchedFiles` CHANGED. A formatter profile is
 pushed as a content-addressed copy (`JavaProjectSettings.contentAddressed`), since jdtls reads
 `java.format.settings.url` again only when it changes. `LspManager.holdForInstall` stops a server in every window
-while Doctor's Update swaps its folder, and no window starts it until `releaseAfterInstall`.
+while Doctor's Update swaps its folder, and no window starts it until `releaseAfterInstall`. A project with no formatter
+profile is always sent an empty one, since jdtls keeps the last profile in its workspace across restarts; a project
+window watches `.settings`, `config` and the profile's folder (`JavaProjectSettings.styleFolders`) though the tree
+hides them. While jdtls's `chooseImports` question is open, no request on that session times out
+(`LanguageServerSession.holdMillis`), and the request's end closes the picker. Restart stops one project's server
+(`LspManager.shutdownServerAt`), not every server of that language.
 
 ### jdtls preferences
 

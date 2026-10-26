@@ -1394,6 +1394,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * directories no longer present/expanded. Runs on the FX thread (it reads the tree). Cheap: the set is
      * just the visible folders.
      */
+    /** Folders watched only for the project's Java style (DN4): the tree does not show them, so no refresh. */
+    private volatile java.util.Set<Path> styleOnlyDirs = java.util.Set.of();
+
     private void syncWatches() {
         if (watchService == null) {
             return;
@@ -1412,6 +1415,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (isMapShowing()) {
             desired.addAll(mapView.expandedDirectories());
         }
+        // The folders the project's Java style is read from, open in the tree or not: an outside edit to a profile
+        // in .settings went unseen in a project window (fifth review DN4). Their changes refresh no tree.
+        java.util.Set<Path> style = new java.util.HashSet<>();
+        if (root != null && !com.editora.vfs.Vfs.isRemote(root)) {
+            for (Path dir : com.editora.lsp.JavaProjectSettings.styleFolders(root)) {
+                if (desired.add(dir)) {
+                    style.add(dir);
+                }
+            }
+        }
+        styleOnlyDirs = java.util.Set.copyOf(style);
         watchKeys.entrySet().removeIf(entry -> {
             if (!desired.contains(entry.getValue())) {
                 entry.getKey().cancel();
@@ -1496,6 +1510,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 }
                 if (!watchEventsWarrantRefresh(names, overflow)) {
                     continue; // only Editora's own temp files changed — no tree rebuild
+                }
+                if (watchedDir != null && styleOnlyDirs.contains(watchedDir)) {
+                    continue; // watched for the Java style only: the tree does not show it
                 }
                 boolean lost = overflow;
                 Platform.runLater(() -> {
@@ -2496,6 +2513,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             planned.add(new Move(src, targetDir.resolve(src.getFileName())));
         }
         int alreadySkipped = skipped;
+        refused[0] = 0;
         renameParticipant.beginMove();
         moveThrough(planned, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             int moved = done.size();
@@ -2504,11 +2522,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 markLocalChange();
                 refreshAfterChange();
             }
-            int notMoved = alreadySkipped + failed;
+            int notMoved = alreadySkipped + failed - refused[0];
             onStatus.accept(
-                    notMoved == 0
-                            ? tr("project.moved", moved, targetDir.getFileName())
-                            : tr("project.movedSome", moved, notMoved));
+                    moved == 0 && refused[0] > 0 && notMoved == 0
+                            ? tr("project.moveCancelled") // "No" to moving without edits is no conflict (BV3)
+                            : notMoved == 0
+                                    ? tr("project.moved", moved, targetDir.getFileName())
+                                    : tr("project.movedSome", moved, notMoved));
             renameParticipant.endMove(false);
         });
     }
@@ -2534,6 +2554,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         renameParticipant.willRename(m.from(), m.to(), ok -> {
             if (!ok) {
                 failed[0]++;
+                refused[0]++;
             } else {
                 try {
                     Files.move(m.from(), m.to());
@@ -2545,9 +2566,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     failed[0]++;
                 }
             }
-            moveThrough(moves, i + 1, done, failed, finish);
+            // On the next pulse: the participant records what this move did once this callback returns, and the
+            // last move's finish ends the drag. Run inline, the drag ended before its last file's edit was
+            // recorded, and undoing it left that file in the wrong package (fifth review BV1).
+            javafx.application.Platform.runLater(() -> moveThrough(moves, i + 1, done, failed, finish));
         });
     }
+
+    /** The moves of the drag under way that the participant refused (the user said not to move without edits). */
+    private final int[] refused = {0};
 
     /** Whether there is a drag-move to take back (the tree menu offers "Undo Move" while there is). */
     boolean canUndoMove() {
@@ -2581,6 +2608,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         }
         int alreadyStuck = stuck;
+        refused[0] = 0;
         renameParticipant.beginMove();
         moveThrough(back, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             if (!done.isEmpty()) {

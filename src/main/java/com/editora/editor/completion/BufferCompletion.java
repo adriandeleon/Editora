@@ -1586,6 +1586,14 @@ public final class BufferCompletion {
         if (codeActionsShowing()) hideCodeActions(); // computed for the text as it was
         queueLocalSync();
         if (!autocompleteEnabled || !host.lspActive()) return;
+        CodeArea undone = host.getFocusedArea();
+        if (undone != null && undone.getUndoManager().isPerformingAction()) {
+            // An undo or redo is not typing: undoing a rename put the old name back at the caret, and the list
+            // opened for it as for a word typed (fifth review BF2).
+            suppressCompletionAtVersion = host.docVersion();
+            hideCompletion();
+            return;
+        }
         lastEditNanos = CompletionTrace.now();
         if (session != null)
             session.changed(change.getPosition(), change.getRemoved(), change.getInserted(), host.docVersion());

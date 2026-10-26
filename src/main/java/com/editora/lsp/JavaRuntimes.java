@@ -227,27 +227,31 @@ public final class JavaRuntimes {
                         && !j.path().isBlank())
                 .sorted(Comparator.comparingInt(Jdk::major)
                         .reversed()
-                        // the preferred JDK holds its major's slot against another install of the same major
-                        .thenComparing(j -> !j.path().equals(preferred))
-                        // then one with its sources: a distro JDK without them (Debian's openjdk-21-jdk with no
-                        // -source package) gave JDK parameters as arg0 and signature help no docs (fourth review DF1)
-                        .thenComparing(j -> local && !hasSources(j.path())))
+                        // one with its sources first: a distro JDK without them (Debian's openjdk-21-jdk with no
+                        // -source package) gives JDK parameters as arg0 and signature help no docs (fourth review
+                        // DF1), even as the preferred JDK, which then yields to its twin (fifth review DF1)
+                        .thenComparing(j -> local && !hasSources(j.path()))
+                        // then the preferred JDK holds its major's slot against another install of the same major
+                        .thenComparing(j -> !j.path().equals(preferred)))
                 .forEach(j -> byMajor.putIfAbsent(j.major(), j.path()));
 
         if (byMajor.isEmpty()) {
             return List.of();
         }
-        String chosen = byMajor.containsValue(preferred)
-                ? preferred
+        // The default is the preferred JDK's major: its twin with sources stands in for it.
+        Integer preferredMajor = jdks.stream()
+                .filter(j -> j != null && j.path() != null && j.path().equals(preferred))
+                .map(Jdk::major)
+                .findFirst()
+                .orElse(null);
+        String chosen = preferredMajor != null && byMajor.containsKey(preferredMajor)
+                ? byMajor.get(preferredMajor)
                 : byMajor.values().iterator().next();
         List<Map<String, Object>> out = new ArrayList<>(byMajor.size());
         for (Map.Entry<Integer, String> e : byMajor.entrySet()) {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("name", executionEnvironment(e.getKey()));
             entry.put("path", e.getValue());
-            if (local && !hasSources(e.getValue())) {
-                entry.put("javadoc", apiDocs(e.getKey())); // jdtls reads parameter names and docs from it then
-            }
             if (e.getValue().equals(chosen)) {
                 entry.put("default", true);
             }
@@ -266,13 +270,6 @@ public final class JavaRuntimes {
         } catch (RuntimeException e) {
             return false;
         }
-    }
-
-    /** The online API documentation of Java {@code major}, for a JDK without sources. */
-    static String apiDocs(int major) {
-        return major <= 8
-                ? "https://docs.oracle.com/javase/8/docs/api/"
-                : "https://docs.oracle.com/en/java/javase/" + major + "/docs/api/";
     }
 
     /** The path of the runtime {@link #runtimes} marked default, or null when there is none. */

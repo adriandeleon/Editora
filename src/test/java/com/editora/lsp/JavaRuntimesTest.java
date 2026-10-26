@@ -213,25 +213,28 @@ class JavaRuntimesTest {
      * signature-help docs (fourth review DF1).
      */
     @Test
-    void aJdkWithItsSourcesIsPreferredAndOneWithoutGetsTheApiDocs(
+    void aJdkWithItsSourcesIsPreferredEvenOverThePreferredJdkOfTheSameVersion(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
         java.nio.file.Path distro = java.nio.file.Files.createDirectories(dir.resolve("distro21/lib"));
         java.nio.file.Files.createSymbolicLink(distro.resolve("src.zip"), dir.resolve("not-installed/src.zip"));
         java.nio.file.Path sdk = java.nio.file.Files.createDirectories(dir.resolve("sdk21/lib"));
         java.nio.file.Files.writeString(sdk.resolve("src.zip"), "zip");
+        java.nio.file.Path newer = java.nio.file.Files.createDirectories(dir.resolve("sdk25/lib"));
         String distroHome = distro.getParent().toString();
         String sdkHome = sdk.getParent().toString();
+        String newerHome = newer.getParent().toString();
 
         List<Map<String, Object>> out = JavaRuntimes.runtimes(
-                List.of(new JavaRuntimes.Jdk(21, distroHome), new JavaRuntimes.Jdk(21, sdkHome)), null);
+                List.of(
+                        new JavaRuntimes.Jdk(21, distroHome),
+                        new JavaRuntimes.Jdk(21, sdkHome),
+                        new JavaRuntimes.Jdk(25, newerHome)),
+                distroHome);
 
-        assertEquals(sdkHome, out.get(0).get("path"));
-        assertNull(out.get(0).get("javadoc"), "its sources say it all");
-
-        List<Map<String, Object>> only = JavaRuntimes.runtimes(List.of(new JavaRuntimes.Jdk(21, distroHome)), null);
-        assertEquals(
-                "https://docs.oracle.com/en/java/javase/21/docs/api/",
-                only.get(0).get("javadoc"));
-        assertEquals("https://docs.oracle.com/javase/8/docs/api/", JavaRuntimes.apiDocs(8));
+        assertEquals(newerHome, out.get(0).get("path"));
+        assertEquals(sdkHome, out.get(1).get("path"), "the twin with sources stands in for the preferred JDK");
+        assertEquals(true, out.get(1).get("default"), "and is the default in its place (fifth review DF1)");
+        assertNull(out.get(0).get("default"));
+        assertNull(out.get(1).get("javadoc"), "no javadoc url: JDT already has the release's docs");
     }
 }

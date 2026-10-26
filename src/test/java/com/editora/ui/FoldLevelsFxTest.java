@@ -97,6 +97,28 @@ class FoldLevelsFxTest {
         closeActiveTab(b);
     }
 
+    /** Fold All and Unfold All leave the caret on its line, or on the fold that hides it (fifth review EV2). */
+    @Test
+    void foldAllAndUnfoldAllKeepTheCaret() throws Exception {
+        EditorBuffer b = addJavaBuffer();
+        CodeArea area = FxTestSupport.field(b, "area");
+        FxTestSupport.runOnFx(() -> area.moveTo(0, 5));
+        run("view.foldAll");
+        assertEquals(5, FxTestSupport.callOnFx(area::getCaretPosition).intValue(), "visible: it stays");
+        run("view.unfoldAll");
+        assertEquals(5, FxTestSupport.callOnFx(area::getCaretPosition).intValue());
+
+        FxTestSupport.runOnFx(() -> area.moveTo(3, 12)); // in y();
+        run("view.foldAll");
+        assertEquals(1, FxTestSupport.callOnFx(area::getCurrentParagraph).intValue(), "on the fold that hides it");
+        assertEquals(
+                "    void m() {".length(),
+                FxTestSupport.callOnFx(area::getCaretColumn).intValue());
+        run("view.unfoldAll");
+        assertEquals(1, FxTestSupport.callOnFx(area::getCurrentParagraph).intValue(), "not the last fold's header");
+        closeActiveTab(b);
+    }
+
     @Test
     void recursiveFoldAndUnfoldCoverTheWholeNest() throws Exception {
         EditorBuffer b = addJavaBuffer();

@@ -258,6 +258,11 @@ class CompleteStatementTest {
         assertEquals("    Runnable r = () -> {\n        |\n    };\n", java("    Runnable r = () -> {|\n"));
         assertEquals("    Object o = new Object() {\n        |\n    };\n", java("    Object o = new Object() {|\n"));
         assertEquals(
+                "    return () -> {\n        |\n    };\n",
+                java("    return () -> {|\n"),
+                "a returned one too (fifth AF4)");
+        assertEquals("    returned(() -> {\n        |\n    });\n", java("    returned(() -> {|\n"));
+        assertEquals(
                 "    if (names.stream().anyMatch(x -> {\n        |\n    })) {\n    }\n",
                 java("    if (names.stream().anyMatch(x -> {|\n"));
         assertEquals(

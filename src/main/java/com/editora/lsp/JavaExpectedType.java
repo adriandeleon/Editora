@@ -209,7 +209,7 @@ public final class JavaExpectedType {
         for (String t : types) {
             String type = t.strip();
             if (!isTypeVariable(type)) {
-                out.add(t);
+                out.add(substitute(t, bound));
                 continue;
             }
             boolean array = type.endsWith("[]");
@@ -218,6 +218,52 @@ public final class JavaExpectedType {
             out.add(array ? to + "[]" : to);
         }
         return out;
+    }
+
+    /** {@code type} with each bound type variable in it replaced: {@code Collection<? extends String>}, not {@code T}. */
+    private static String substitute(String type, Map<String, String> bound) {
+        String out = type;
+        for (Map.Entry<String, String> e : bound.entrySet()) {
+            out = out.replaceAll(
+                    "\\b" + java.util.regex.Pattern.quote(e.getKey()) + "\\b",
+                    java.util.regex.Matcher.quoteReplacement(e.getValue()));
+        }
+        return out;
+    }
+
+    /**
+     * Which argument of the call around {@code caret} the caret is in (0-based): the commas before it at the call's
+     * own depth. What Smart Type falls back on when jdtls names no active parameter, as when no overload fits the
+     * arguments so far (fifth review AV8). Null outside a call's parentheses.
+     */
+    public static @Nullable Integer argumentIndex(String text, int caret) {
+        int depth = 0;
+        int commas = 0;
+        for (int i = Math.min(caret, text.length()) - 1; i >= 0; i--) {
+            char ch = text.charAt(i);
+            if (ch == '"' || ch == '\'') {
+                int q = i - 1;
+                while (q >= 0 && (text.charAt(q) != ch || (q > 0 && text.charAt(q - 1) == '\\'))) {
+                    q--;
+                }
+                if (q < 0) {
+                    return null;
+                }
+                i = q;
+            } else if (ch == ')' || ch == ']' || ch == '}') {
+                depth++;
+            } else if (ch == '(' || ch == '[' || ch == '{') {
+                if (depth == 0) {
+                    return ch == '(' ? commas : null;
+                }
+                depth--;
+            } else if (ch == ',' && depth == 0) {
+                commas++;
+            } else if (ch == ';' && depth == 0) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private static final Map<String, String> BOXED = Map.of(

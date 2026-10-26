@@ -114,5 +114,7 @@
   "C-M-insert": "file.new",
   "C-j": "snippets.insert",
   "C-S--": "view.foldAll",
-  "C-i": "lsp.overrideMethods"
+  "C-i": "lsp.overrideMethods",
+  "C-M-S-c": "lsp.copyQualifiedName",
+  "C-M-f7": "lsp.findReferences"
 }

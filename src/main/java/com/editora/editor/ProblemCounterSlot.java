@@ -25,6 +25,12 @@ public final class ProblemCounterSlot {
     private Runnable previous = () -> {};
     private Runnable next = () -> {};
     private List<LspDiagnostic> diagnostics = List.of();
+    /** Whether the server has published this file's diagnostics since it was (re)opened on it. */
+    private boolean checked;
+    /** Why the file is not checked although a server has it (its project did not import), or null. */
+    private @Nullable String note;
+
+    private java.util.function.Function<String, @Nullable String> chords = id -> null;
 
     /** {@code possible}: a server checks the file; {@code mount}/{@code unmount} add it to and take it from the row. */
     ProblemCounterSlot(BooleanSupplier possible, Consumer<Node> mount, Consumer<Node> unmount) {
@@ -46,10 +52,43 @@ public final class ProblemCounterSlot {
         this.next = next == null ? () -> {} : next;
     }
 
-    /** The file's diagnostics changed (an empty list when no server checks it any more). */
+    /** The server published the file's diagnostics. */
     void show(List<LspDiagnostic> latest) {
         diagnostics = List.copyOf(latest);
+        checked = true;
         update();
+    }
+
+    /** The file is (re)opened on a server, or left one: nothing is known until it publishes again. */
+    void reset() {
+        diagnostics = List.of();
+        checked = false;
+        update();
+    }
+
+    /** Why the file is not checked although a server has it (its project did not import), or null to clear it. */
+    public void setNote(@Nullable String reason) {
+        if (!java.util.Objects.equals(note, reason)) {
+            note = reason;
+            update();
+        }
+    }
+
+    /** The active keymap's chords for command ids, for the arrows' tooltips. */
+    public void setChords(java.util.function.Function<String, @Nullable String> chords) {
+        this.chords = chords == null ? id -> null : chords;
+        if (counter != null) {
+            counter.setChords(this.chords);
+        }
+    }
+
+    /** {@link #update()}, first forgetting what was checked when {@code reset}. */
+    void update(boolean reset) {
+        if (reset) {
+            reset();
+        } else {
+            update();
+        }
     }
 
     /** Mounts or unmounts it for the buffer's state now. */
@@ -63,8 +102,14 @@ public final class ProblemCounterSlot {
         }
         if (counter == null) {
             counter = new ProblemCounter(() -> open.run(), () -> previous.run(), () -> next.run());
+            counter.setChords(chords);
         }
-        counter.show(diagnostics);
+        String noteNow = note;
+        counter.show(
+                diagnostics,
+                noteNow != null
+                        ? noteNow
+                        : checked ? null : com.editora.i18n.Messages.tr("editor.problemCounter.analyzing"));
         mount.accept(counter);
         mounted = true;
     }

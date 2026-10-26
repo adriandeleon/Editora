@@ -4,7 +4,6 @@ import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 
 import javafx.animation.PauseTransition;
 
@@ -31,13 +30,17 @@ public final class CodeActionBulb {
     /** How long the caret rests before the server is asked: moving through a file asks nothing. */
     static final double DELAY_MILLIS = 350;
 
-    private final Supplier<@Nullable CodeArea> view;
+    private final javafx.beans.value.ObservableValue<CodeArea> view;
     private final BooleanSupplier possible;
     private final LongSupplier version;
     private final IntConsumer repaintLine;
     private final PauseTransition timer = new PauseTransition(javafx.util.Duration.millis(DELAY_MILLIS));
 
     private @Nullable Probe probe;
+    /** The document version the shown bulb answers for. */
+    private long shownVersion = -1;
+
+    private java.util.function.Function<String, @Nullable String> chords = id -> null;
     private boolean enabled = true;
     private int line = -1;
     private @Nullable String kind;
@@ -48,7 +51,7 @@ public final class CodeActionBulb {
      * redraws one gutter row.
      */
     CodeActionBulb(
-            Supplier<@Nullable CodeArea> view,
+            javafx.beans.value.ObservableValue<CodeArea> view,
             BooleanSupplier possible,
             LongSupplier version,
             IntConsumer repaintLine) {
@@ -57,11 +60,43 @@ public final class CodeActionBulb {
         this.version = version;
         this.repaintLine = repaintLine;
         timer.setOnFinished(e -> probe());
+        view.addListener((o, was, now) -> schedule()); // the other split view's caret counts now (fifth review AV3)
     }
 
     public void setProbe(@Nullable Probe probe) {
         this.probe = probe;
         schedule();
+    }
+
+    /** The active keymap's chords for command ids, for the tooltip. */
+    public void setChords(java.util.function.Function<String, @Nullable String> chords) {
+        this.chords = chords == null ? id -> null : chords;
+    }
+
+    /** The bulb's tooltip and accessible name: what it offers, and the chord that opens the same list. */
+    public String tooltip() {
+        String text = com.editora.i18n.Messages.tr("fix".equals(kind) ? "editor.bulb.fix" : "editor.bulb.assist");
+        String chord = chords.apply("lsp.codeActions");
+        return chord == null || chord.isBlank() ? text : text + " (" + chord + ")";
+    }
+
+    /**
+     * The bulb on {@code row} was clicked: the list for that line. The view that was clicked may have its caret
+     * elsewhere (a split view), so the caret goes to the line first (fifth review AV3/AV11).
+     */
+    public void click(int row, Runnable codeActions) {
+        CodeArea a = view.getValue();
+        if (a != null
+                && a.getCurrentParagraph() != row
+                && row < a.getParagraphs().size()) {
+            String text = a.getParagraph(row).getText();
+            int indent = 0;
+            while (indent < text.length() && Character.isWhitespace(text.charAt(indent))) {
+                indent++;
+            }
+            a.moveTo(row, indent);
+        }
+        codeActions.run();
     }
 
     public void setEnabled(boolean on) {
@@ -84,14 +119,17 @@ public final class CodeActionBulb {
     }
 
     private boolean wanted() {
-        return enabled && probe != null && possible.getAsBoolean();
+        CodeArea a = view.getValue();
+        // a tab that is not on screen asks nothing: a keystroke in one file probed three hidden ones (AV7)
+        return enabled && probe != null && a != null && a.getScene() != null && possible.getAsBoolean();
     }
 
     /** After a caret move, an edit or new problems: asks once the caret has rested. */
     void schedule() {
-        CodeArea a = view.get();
+        CodeArea a = view.getValue();
         int at = a == null ? -1 : a.getCurrentParagraph();
-        if (line >= 0 && (at != line || !wanted())) {
+        // gone when the caret leaves the line, and while the line is edited: the answer was for other text (AV5)
+        if (line >= 0 && (at != line || !wanted() || version.getAsLong() != shownVersion)) {
             set(-1, null);
         }
         if (!wanted()) {
@@ -104,7 +142,7 @@ public final class CodeActionBulb {
     /** Asks now: what {@link #schedule} runs when the caret has rested. */
     public void probe() {
         Probe p = probe;
-        CodeArea a = view.get();
+        CodeArea a = view.getValue();
         if (p == null || a == null || !wanted()) {
             return;
         }
@@ -112,10 +150,11 @@ public final class CodeActionBulb {
         int column = a.getCaretColumn();
         long asked = version.getAsLong();
         p.probe(at, column, answer -> {
-            CodeArea now = view.get();
+            CodeArea now = view.getValue();
             if (now == null || asked != version.getAsLong() || now.getCurrentParagraph() != at || !wanted()) {
                 return; // typed or moved since: a fresher answer is on its way
             }
+            shownVersion = asked;
             set(answer == null ? -1 : at, answer);
         });
     }

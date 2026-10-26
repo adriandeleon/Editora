@@ -326,4 +326,36 @@ class LanguageServerSessionPromptsTest {
                         .join(),
                 "jdtls's bundle question gets the list it expects (CN6)");
     }
+
+    /**
+     * A request waits while the user picks an import (fifth review DV1): its time runs again from the answer, and a
+     * request the server gives up on takes its open picker with it.
+     */
+    @Test
+    void anOpenImportQuestionHoldsTheTimeoutAndTheRequestsEndClosesIt() throws Exception {
+        LanguageServerSession s = jdtls();
+        ScriptedUi ui = new ScriptedUi();
+        s.setClientUi(ui);
+        CompletableFuture<Object> reply = s.executeClientCommand(
+                new ExecuteCommandParams(LanguageServerSession.CHOOSE_IMPORTS, chooseImportsArguments()));
+        CompletableFuture<Object> request = new CompletableFuture<>();
+        LanguageServerSession.bounded(request, java.time.Duration.ofMillis(40), s);
+        Thread.sleep(250);
+        assertFalse(request.isDone(), "the user is still choosing");
+
+        ui.answer.complete(null);
+        assertTrue(reply.isDone());
+        long until = System.currentTimeMillis() + 5_000;
+        while (!request.isDone() && System.currentTimeMillis() < until) {
+            Thread.sleep(10);
+        }
+        assertTrue(request.isCancelled(), "answered: the request's own time runs out again");
+
+        ScriptedUi again = new ScriptedUi();
+        s.setClientUi(again);
+        CompletableFuture<Object> asking = s.executeClientCommand(
+                new ExecuteCommandParams(LanguageServerSession.CHOOSE_IMPORTS, chooseImportsArguments()));
+        asking.cancel(true);
+        assertTrue(again.answer.isCancelled(), "the server gave up: the picker goes");
+    }
 }

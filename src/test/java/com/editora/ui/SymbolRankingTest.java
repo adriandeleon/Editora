@@ -109,4 +109,26 @@ class SymbolRankingTest {
         assertTrue(SymbolRanking.shadedLibraryType(shaded));
         assertFalse(SymbolRanking.shadedLibraryType(map));
     }
+
+    /** Search Everywhere's library rows tie as Ctrl+N's do: Map.Entry in the 8-row group for "Entry" (EV3). */
+    @Test
+    void searchEverywhereListsMapEntryAmongTheFirstEntryRows() {
+        List<WorkspaceSymbolMatch> matches = new java.util.ArrayList<>();
+        for (String c : List.of(
+                "java.util.Hashtable",
+                "java.util.IdentityHashMap.EntryIterator",
+                "java.lang.ConditionalSpecialCasing",
+                "java.util.LinkedHashMap",
+                "javax.swing.RowFilter",
+                "java.security.KeyStore",
+                "org.junit.jupiter.params.shadow.de.siegmar.fastcsv.reader.CsvRecord",
+                "org.junit.platform.launcher.core.MutableExtensionRegistry",
+                "java.lang.ref.FinalizerHistogram")) {
+            matches.add(library("Entry", c));
+        }
+        var mapEntry = library("Entry", "java.util.Map");
+        matches.add(mapEntry);
+        var groups = com.editora.search.SearchEverywhere.merge(LspCoordinator.libraryRows(matches, "Entry"));
+        assertEquals(mapEntry, groups.get(0).items().get(0).payload());
+    }
 }

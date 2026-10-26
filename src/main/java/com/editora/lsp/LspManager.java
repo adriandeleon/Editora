@@ -125,6 +125,11 @@ public final class LspManager {
         });
     }
 
+    /** Whether an install holds {@code serverId} stopped in every window right now. */
+    public static boolean isHeldForInstall(String serverId) {
+        return HELD_FOR_INSTALL.contains(serverId);
+    }
+
     /**
      * Lets {@code serverId} start again after its install, and tells every window, whose documents on it were left
      * with no server: only the window that ran the install re-applied its tool support (fourth review CF1).
@@ -4332,6 +4337,21 @@ public final class LspManager {
      */
     public void codeActions(
             Path file, int startLine, int startChar, int endLine, int endChar, Consumer<List<CodeActionItem>> cb) {
+        codeActions(file, startLine, startChar, endLine, endChar, null, cb);
+    }
+
+    /**
+     * As above, asking only for actions of the {@code only} kinds (null: all): the gutter lightbulb wants quick fixes
+     * and quick assists, and every rest computed jdtls's generators and refactorings too (fifth review AV7).
+     */
+    public void codeActions(
+            Path file,
+            int startLine,
+            int startChar,
+            int endLine,
+            int endChar,
+            @Nullable List<String> only,
+            Consumer<List<CodeActionItem>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -4342,7 +4362,7 @@ public final class LspManager {
         EditBasis basis = editBasis(s);
         Map<Path, String> expected = basis.documents();
         long sentAt = basis.sentAtMillis();
-        s.codeAction(uri(file), range, context).whenComplete((result, error) -> {
+        s.codeAction(uri(file), range, context, only).whenComplete((result, error) -> {
             List<CodeActionItem> items = new ArrayList<>();
             if (error == null && result != null) {
                 for (var either : result) {
@@ -5377,11 +5397,22 @@ public final class LspManager {
     }
 
     public void shutdownServer(String serverId) {
+        shutdownServerAt(serverId, null);
+    }
+
+    /**
+     * Stops {@code serverId}'s session on {@code root} only (null: on every root). Re-importing one project that did
+     * not import restarted every Java server in the window, the healthy projects' too (fifth review CV2).
+     */
+    public void shutdownServerAt(String serverId, @Nullable Path root) {
         String prefix = sessionKeyPrefix(serverId);
+        Path only = root == null ? null : root.toAbsolutePath().normalize();
         var it = sessionsByRoot.entrySet().iterator();
         while (it.hasNext()) {
             var e = it.next();
-            if (e.getKey().startsWith(prefix)) {
+            if (e.getKey().startsWith(prefix)
+                    && (only == null
+                            || only.equals(e.getValue().root().toAbsolutePath().normalize()))) {
                 LanguageServerSession s = e.getValue();
                 it.remove(); // before it stops: this window's own drop must not read as another's
                 sessionByDocUri.values().removeIf(v -> v == s);
@@ -5972,6 +6003,25 @@ public final class LspManager {
         boolean renameWithoutEdits(Path from, Path to, boolean answered);
     }
 
+    private static final java.util.regex.Pattern PACKAGE_LINE =
+            java.util.regex.Pattern.compile("^\\s*package\\s+([\\w.]+)\\s*;", java.util.regex.Pattern.MULTILINE);
+
+    /** Whether {@code file}'s {@code package} line is what the folder {@code into} implies: it ends with the package. */
+    static boolean packageFits(Path file, Path into) {
+        String text;
+        try (var in = Files.newInputStream(file)) {
+            text = new String(in.readNBytes(16_384), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
+        var m = PACKAGE_LINE.matcher(text);
+        if (!m.find()) {
+            return false; // the default package: whether the folder is a source root is not known here
+        }
+        Path tail = Path.of(m.group(1).replace('.', '/'));
+        return into.toAbsolutePath().normalize().endsWith(tail);
+    }
+
     /** Whether {@code dir} is a folder with a {@code .java} file in it, at any depth. */
     private static boolean holdsJava(Path dir) {
         if (!Files.isDirectory(dir)) {
@@ -5987,8 +6037,8 @@ public final class LspManager {
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
         LanguageServerSession s = javaSessionFor(from);
-        boolean java = from.toString().endsWith(".java") || holdsJava(from);
-        if (s == null || !java) {
+        // No Java server for the folder: nothing to ask, and no folder walked on the UI thread (fifth review BV5)
+        if (s == null || !(from.toString().endsWith(".java") || holdsJava(from))) {
             Platform.runLater(() -> proceed.accept(true));
             return;
         }
@@ -6000,9 +6050,13 @@ public final class LspManager {
             s.didChangeWatchedFiles(
                     eventsUnderRoot(List.of(new WatchedFile(into, WatchedKind.CREATED)), s.root(), s.uris()));
         }
+        // A .java file moved to another folder whose package line does not fit it: the case where an empty answer
+        // means jdtls left it wrong. Moved main → test in the same package, or back by Undo Move, nothing is wrong
+        // (fifth review BV4).
         boolean moved = into != null
                 && !into.equals(from.getParent())
-                && from.toString().endsWith(".java");
+                && from.toString().endsWith(".java")
+                && !packageFits(from, into);
         EditBasis expected = editBasis(s);
         s.willRenameFiles(s.uris().toWire(uri(from)), s.uris().toWire(uri(to)))
                 .whenComplete((edit, e) -> Platform.runLater(() -> {
@@ -6354,23 +6408,20 @@ public final class LspManager {
                 range,
                 new org.eclipse.lsp4j.CodeActionContext(List.of()));
         EditBasis expected = editBasis(s);
-        s.rawRequest("java/organizeImports", params)
-                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .whenComplete((r, e) -> {
-                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
-                    Platform.runLater(() -> {
-                        if (e != null) {
-                            cb.accept(OrganizeOutcome.FAILED);
-                        } else if (edit == null || !changesText(edit)) {
-                            cb.accept(OrganizeOutcome.UNCHANGED);
-                        } else {
-                            applyWorkspaceEdit(
-                                    edit,
-                                    expected,
-                                    ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.FAILED));
-                        }
-                    });
-                });
+        // Bounded by the session, which waits while an import question is open (fifth review DV1).
+        s.rawRequest("java/organizeImports", params).whenComplete((r, e) -> {
+            org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
+            Platform.runLater(() -> {
+                if (e != null) {
+                    cb.accept(OrganizeOutcome.FAILED);
+                } else if (edit == null || !changesText(edit)) {
+                    cb.accept(OrganizeOutcome.UNCHANGED);
+                } else {
+                    applyWorkspaceEdit(
+                            edit, expected, ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.FAILED));
+                }
+            });
+        });
     }
 
     /**

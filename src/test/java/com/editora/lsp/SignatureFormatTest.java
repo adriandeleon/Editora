@@ -121,4 +121,23 @@ class SignatureFormatTest {
                 SignatureFormat.parametersAtCaret(help),
                 "past the last parameter only varargs takes more");
     }
+
+    /** With no active parameter from jdtls, the argument counted from the text picks each overload's (AV8). */
+    @Test
+    void withNoActiveParameterTheCountedArgumentIsRead() {
+        var help = new SignatureHelp(
+                List.of(
+                        sig("valueOf(double d) : String", "double d"),
+                        sig(
+                                "valueOf(char[] data, int offset, int count) : String",
+                                "char[] data",
+                                "int offset",
+                                "int count")),
+                null,
+                null);
+        assertEquals(
+                List.of(new SignatureFormat.Parameter("int offset", "String")),
+                SignatureFormat.parametersAtCaret(help, 1),
+                "the second argument: valueOf(double) takes none");
+    }
 }

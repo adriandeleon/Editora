@@ -1085,6 +1085,10 @@ final class EditorSettingsCoordinator {
         buffer.setLspPasteImportsEnabled(s.isLspPasteImports()); // #742 (inert without a jdtls session)
         buffer.codeActionBulb().setEnabled(s.isLspLightbulb()); // inert until a server offers code actions
         buffer.problemCounter().setEnabled(s.isProblemCounter()); // shown only while a server checks the file
+        buffer.problemCounter()
+                .setChords(id -> host.keymap() == null ? null : host.keymap().displayChord(id));
+        buffer.codeActionBulb()
+                .setChords(id -> host.keymap() == null ? null : host.keymap().displayChord(id));
         buffer.setSmartSemicolonEnabled(s.isLspSmartSemicolon()); // #746 (inert without a jdtls session)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
         buffer.setFillColumn(s.getFillColumn());

@@ -57,6 +57,15 @@ public final class SignatureFormat {
      * offered nothing for {@code println(count)} (fourth review AF2). A varargs parameter covers every later index.
      */
     public static List<Parameter> parametersAtCaret(@Nullable SignatureHelp help) {
+        return parametersAtCaret(help, null);
+    }
+
+    /**
+     * As {@link #parametersAtCaret(SignatureHelp)}; {@code argument}: the argument the caret is in, counted from the
+     * text, for when jdtls names no active parameter. It names none when no overload fits the arguments so far, and
+     * the first parameter of every overload was read for the second argument (fifth review AV8).
+     */
+    public static List<Parameter> parametersAtCaret(@Nullable SignatureHelp help, @Nullable Integer argument) {
         if (help == null || help.getSignatures() == null || help.getSignatures().isEmpty()) {
             return List.of();
         }
@@ -74,7 +83,7 @@ public final class SignatureFormat {
             String label = sig.getLabel();
             List<ParameterInformation> params = sig.getParameters();
             Integer at = sig.getActiveParameter() != null ? sig.getActiveParameter() : help.getActiveParameter();
-            int idx = at == null ? 0 : at;
+            int idx = at != null ? at : argument != null ? argument : 0;
             int last = params.size() - 1;
             int[] span = activeParamSpan(sig, Math.min(idx, last), label);
             if (span[1] <= span[0]) {
