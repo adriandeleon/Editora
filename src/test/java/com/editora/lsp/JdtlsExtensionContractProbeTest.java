@@ -171,6 +171,9 @@ class JdtlsExtensionContractProbeTest {
             var actionJson = gson.toJsonTree(actionParams);
             Object organized = get(s.rawRequest("java/organizeImports", actionJson));
             record("organizeImports", organized);
+            var links = get(s.findLinks("superImplementation", uri, pos(SOURCE, "void run()", 5)));
+            record("findLinks superImplementation", links);
+            assertFalse(links.getLeft().isEmpty(), "Runnable.run, through LSP4J's registry (seventh review BR1)");
             assertUsableWorkspaceEdit(gson, organized, "organize imports");
             for (var kind : JdtlsGenerate.Kind.values()) {
                 if (kind == JdtlsGenerate.Kind.ACCESSORS || kind == JdtlsGenerate.Kind.DELEGATE_METHODS) {
