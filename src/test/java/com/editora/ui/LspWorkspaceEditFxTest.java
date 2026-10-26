@@ -1878,6 +1878,16 @@ class LspWorkspaceEditFxTest {
                 fakes.get(0).fileEvents().toString());
         assertEquals(tr("status.lsp.moveWithoutPackageEdit", "Circle.java"), host.error);
 
+        // in a drag of several, said once at the end, after the tree's own status
+        Path square = root.resolve("Square.java");
+        Files.writeString(square, "class Square {}\n");
+        host.error = null;
+        FxTestSupport.runOnFx(participant::beginMove);
+        assertTrue(treeMove(participant, square, shapes.resolve("Square.java")));
+        assertEquals(null, host.error, "not yet: the tree speaks first");
+        FxTestSupport.runOnFx(() -> participant.endMove(false));
+        assertEquals(tr("status.lsp.moveWithoutPackageEdit", "Square.java"), host.error);
+
         List<String> asked = new ArrayList<>();
         FxTestSupport.runOnFx(() -> coordinator.confirmRenameWithoutEdits = body -> {
             asked.add(body);
