@@ -3347,11 +3347,29 @@ final class LspCoordinator {
     private String statusServerName(String serverId, @Nullable Path root) {
         String name = serverProgram(serverId);
         long folders = statusSources.values().stream()
-                .filter(src -> src.serverId().equals(serverId) && lspManager.isRunning(serverId, src.root()))
-                .count(); // live servers only: a closed project's name stayed on every later line (CV4)
+                .filter(src -> src.serverId().equals(serverId) && lspManager.hasLiveSession(serverId, src.root()))
+                .count(); // live servers only (CV4), starting ones too: their first lines were unnamed (sixth CS3)
         return root == null || folders < 2 || root.getFileName() == null
                 ? name
                 : tr("status.lsp.serverInFolder", name, root.getFileName().toString());
+    }
+
+    /**
+     * Forgets how the Java project at {@code root} imported (and what no known folder said), as its import runs
+     * again; true when it had failed. Other projects' outcomes stand (sixth review CS1).
+     */
+    private boolean forgetImport(@Nullable Path root) {
+        boolean failed = false;
+        for (String key : root == null
+                ? java.util.List.of(importKey(LspServerRegistry.JAVA_SERVER_ID, null))
+                : java.util.List.of(
+                        importKey(LspServerRegistry.JAVA_SERVER_ID, root),
+                        importKey(LspServerRegistry.JAVA_SERVER_ID, null))) {
+            failed |= importFailed.remove(key);
+            importWarned.remove(key);
+            warnedAtReady.remove(key);
+        }
+        return failed;
     }
 
     private static String importKey(@Nullable String serverId, @Nullable Path root) {
@@ -3494,12 +3512,10 @@ final class LspCoordinator {
                 && path.getFileName() != null
                 && JAVA_BUILD_FILES.contains(path.getFileName().toString())) {
             Path root = lspManager.javaSessionRoot(path);
-            if (root != null && importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
+            if (root != null && importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
                 // The build file of a project that did not import was saved, presumably fixed: import it again,
                 // as a saved pom.xml re-syncs a project that did (fourth review CT1).
-                importWarned.clear();
-                warnedAtReady.clear();
-                warnedAtReady.clear();
+                forgetImport(root);
                 restartJavaServer(path);
                 host.setStatus(tr("status.lsp.projectReimporting"));
             }
@@ -4782,12 +4798,10 @@ final class LspCoordinator {
         // The Java project's root, also from a build-file tab no Java server edits: by that tab's own server it was
         // no root at all, so the failure was missed and the project not imported again (fourth review CT1).
         Path root = path == null ? null : lspManager.javaSessionRoot(path);
-        boolean failed = importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))
-                | importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, null)); // said by no known folder
-        importFailed.clear(); // the import runs again: its outcome is said afresh
+        // This project's import runs again, its outcome said afresh; another project's failure stands: cleared for
+        // the window, it was lost, and its fixed build file no longer re-imported (sixth review CS1)
+        boolean failed = forgetImport(root);
         refreshImportNotes();
-        importWarned.clear();
-        warnedAtReady.clear();
         if (path == null) {
             host.setStatus(tr("status.lsp.unavailable"));
             return;
@@ -4841,10 +4855,8 @@ final class LspCoordinator {
         correctedSourceRoots.clear();
         builtAfterImport.clear(); // the fresh import builds again
         announcedProjectProblems.clear();
-        importFailed.clear(); // the fresh import says its own outcome (third review CT3)
+        forgetImport(lspManager.javaSessionRoot(path)); // its fresh import says its own outcome (CT3); others stand
         refreshImportNotes();
-        importWarned.clear();
-        warnedAtReady.clear();
         java.util.List<EditorBuffer> java = javaBuffersOf(path);
         clearProjectProblems(); // the dead server's "project:1" entries would stay for good
         lspManager.cleanJavaWorkspace(path, deleted -> {

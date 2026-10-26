@@ -2973,6 +2973,18 @@ final class LanguageServerSession implements LanguageClient {
         return lastErrorLog;
     }
 
+    /** jdtls's last {@code ProjectStatus} ("OK", "WARNING"), for a window that joins the session later (CS2). */
+    private volatile @Nullable String lastProjectStatus;
+
+    void setLastProjectStatus(@Nullable String status) {
+        lastProjectStatus = status;
+    }
+
+    @Nullable
+    String lastProjectStatus() {
+        return lastProjectStatus;
+    }
+
     /** {@code text}'s first non-blank line (jdtls's log lines carry a date prefix, kept off), at most 300 chars. */
     static String firstLine(String text) {
         String line = text.strip()

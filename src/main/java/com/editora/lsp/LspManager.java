@@ -1274,6 +1274,12 @@ public final class LspManager {
                 || (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && sharedServers.containsKey(key));
     }
 
+    /** Whether this window has a live session of {@code serverId} at {@code root}, started or still starting. */
+    public boolean hasLiveSession(String serverId, Path root) {
+        LanguageServerSession s = sessionsByRoot.get(sessionKey(serverId, root));
+        return s != null && !s.isDisposed();
+    }
+
     public boolean isRunning(String serverId, Path root) {
         String key = sessionKey(serverId, root);
         LanguageServerSession s = sessionsByRoot.get(key);
@@ -1501,6 +1507,9 @@ public final class LspManager {
                 return;
             }
             ServerStatusListener named = onServerStatus;
+            if ("ProjectStatus".equalsIgnoreCase(type) && session.get() != null) {
+                session.get().setLastProjectStatus(msg); // what a window joining later is told (sixth review CS2)
+            }
             if (named != null) {
                 LanguageServerSession said = session.get();
                 named.status(serverId, said == null ? null : said.root(), type, msg);
@@ -1552,7 +1561,12 @@ public final class LspManager {
         ensureRootWatcher(session.root());
         if (session.isInitialized()) {
             // Ready before this window came: it hears so now — its status bar says "Loaded and ready" instead of
-            // a stale progress line, and its documents' gates and data are refreshed (re-review CN5).
+            // a stale progress line, and its documents' gates and data are refreshed (re-review CN5). How the
+            // project imported goes first: a failed import was "Loaded and ready" here (sixth review CS2).
+            String imported = session.lastProjectStatus();
+            if (imported != null) {
+                client.status.accept("ProjectStatus", imported);
+            }
             client.status.accept("ServiceReady", null);
         }
         return session;

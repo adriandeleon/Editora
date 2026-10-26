@@ -1977,4 +1977,22 @@ class LspCoordinatorCommandsFxTest {
         fx.run(() -> fx.coordinator.onServerStatus("java", sessionRoot, "ProjectStatus", "OK"));
         assertTrue(fx.host.statuses.contains(tr("status.lsp.ready", "jdtls")), fx.host.statuses.toString());
     }
+
+    /** Reload in one project keeps another project's failed import: it was cleared for the window (sixth CS1). */
+    @Test
+    void aReloadKeepsAnotherProjectsFailedImport() throws Exception {
+        fx.open("A.java", SOURCE);
+        Path other = java.nio.file.Files.createDirectories(root.resolve("other-project"));
+        Path otherFile = java.nio.file.Files.writeString(other.resolve("B.java"), "class B {}");
+        fx.run(() -> fx.manager.openDocument(otherFile, other, "java", "class B {}"));
+        LspTestHooks.logError(fx.manager, otherFile, "Could not fetch model of type 'Map'");
+        fx.run(() -> fx.coordinator.onServerStatus("java", other, "ProjectStatus", "WARNING"));
+        java.util.Set<String> failed = FxTestSupport.field(fx.coordinator, "importFailed");
+        assertTrue(FxTestSupport.callOnFx(() -> failed.stream().anyMatch(k -> k.endsWith("other-project"))));
+
+        fx.run(() -> fx.coordinator.reloadProject()); // from A.java's project
+        assertTrue(
+                FxTestSupport.callOnFx(() -> failed.stream().anyMatch(k -> k.endsWith("other-project"))),
+                "the other project's failure stands");
+    }
 }

@@ -122,8 +122,13 @@ public final class LspTestHooks {
 
     /** Plays jdtls's {@code language/status} notification (for instance {@code ServiceReady}) for {@code file}. */
     public static void languageStatus(LspManager manager, java.nio.file.Path file, String type) {
+        languageStatus(manager, file, type, null);
+    }
+
+    public static void languageStatus(LspManager manager, java.nio.file.Path file, String type, String message) {
         var status = new LanguageServerSession.LanguageStatus();
         status.type = type;
+        status.message = message;
         manager.sessionForTest(file).languageStatus(status);
     }
 
