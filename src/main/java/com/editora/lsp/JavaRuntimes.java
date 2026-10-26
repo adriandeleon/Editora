@@ -207,6 +207,14 @@ public final class JavaRuntimes {
      * it supports, and every Gradle import failed (Java review C4).
      */
     public static List<Map<String, Object>> runtimes(List<Jdk> jdks, @Nullable String preferredHome) {
+        return runtimes(jdks, preferredHome, true);
+    }
+
+    /**
+     * As {@link #runtimes(List, String)}; {@code local}: the JDKs are on this machine, so whether each has its
+     * sources can be read here. A remote host's are not looked for on this machine's disk.
+     */
+    public static List<Map<String, Object>> runtimes(List<Jdk> jdks, @Nullable String preferredHome, boolean local) {
         if (jdks == null || jdks.isEmpty()) {
             return List.of();
         }
@@ -223,7 +231,7 @@ public final class JavaRuntimes {
                         .thenComparing(j -> !j.path().equals(preferred))
                         // then one with its sources: a distro JDK without them (Debian's openjdk-21-jdk with no
                         // -source package) gave JDK parameters as arg0 and signature help no docs (fourth review DF1)
-                        .thenComparing(j -> !hasSources(j.path())))
+                        .thenComparing(j -> local && !hasSources(j.path())))
                 .forEach(j -> byMajor.putIfAbsent(j.major(), j.path()));
 
         if (byMajor.isEmpty()) {
@@ -237,7 +245,7 @@ public final class JavaRuntimes {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("name", executionEnvironment(e.getKey()));
             entry.put("path", e.getValue());
-            if (!hasSources(e.getValue())) {
+            if (local && !hasSources(e.getValue())) {
                 entry.put("javadoc", apiDocs(e.getKey())); // jdtls reads parameter names and docs from it then
             }
             if (e.getValue().equals(chosen)) {

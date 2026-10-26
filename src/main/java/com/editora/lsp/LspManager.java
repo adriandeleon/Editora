@@ -4829,7 +4829,8 @@ public final class LspManager {
         Map<String, Object> java = new java.util.HashMap<>(LspServerSettings.javaSettings(onTypeFormatting));
         java.put("autobuild", Map.of("enabled", false));
         List<Map<String, Object>> runtimes =
-                JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks, preferredHome);
+                // jdks given: a remote host's, whose sources are not on this machine's disk to look for
+                JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks, preferredHome, jdks == null);
         if (!runtimes.isEmpty()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> configuration =

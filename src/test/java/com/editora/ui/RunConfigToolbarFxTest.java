@@ -402,6 +402,17 @@ class RunConfigToolbarFxTest {
      * and nothing opened. {@code combo.setValue} (the test above) never goes through the list, so it missed
      * this.
      */
+    /** Whether {@code e} came out of the headless Glass window's pixel upload ({@code HeadlessWindow.blit}). */
+    private static boolean headlessBlit(Throwable e) {
+        for (StackTraceElement frame : e.getStackTrace()) {
+            if (frame.getClassName().startsWith("com.sun.glass.ui.headless.")
+                    && frame.getMethodName().equals("blit")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** The trace of {@code e}, for a failure message that says where it came from (CI only shows the message). */
     private static String stackOf(Throwable e) {
         var out = new java.io.StringWriter();
@@ -430,7 +441,11 @@ class RunConfigToolbarFxTest {
         java.util.List<Throwable> uncaught = new java.util.concurrent.CopyOnWriteArrayList<>();
         Thread fxThread = FxTestSupport.callOnFx(Thread::currentThread);
         Thread.UncaughtExceptionHandler was = fxThread.getUncaughtExceptionHandler();
-        fxThread.setUncaughtExceptionHandler((t, e) -> uncaught.add(e));
+        fxThread.setUncaughtExceptionHandler((t, e) -> {
+            if (!headlessBlit(e)) { // the headless platform's own pixel upload, racing a window's resize: not ours
+                uncaught.add(e);
+            }
+        });
         try {
             @SuppressWarnings("unchecked")
             javafx.scene.control.ListView<RunConfiguration> popup = FxTestSupport.callOnFx(() -> {
