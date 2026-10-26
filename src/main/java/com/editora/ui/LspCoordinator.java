@@ -8656,22 +8656,22 @@ final class LspCoordinator {
                     || caret != area.getCaretPosition()) {
                 return;
             }
-            var active = com.editora.lsp.SignatureFormat.resolve(help);
-            List<String> parameter = active == null
-                            || active.paramStart() < 0
-                            || active.paramEnd() > active.label().length()
-                    ? List.of()
-                    : com.editora.lsp.JavaExpectedType.parameterTypes(
-                            active.label().substring(active.paramStart(), active.paramEnd()));
-            if (parameter.isEmpty()) {
+            // Every overload's parameter here, the active one's first: println(count) fits println(int) although
+            // jdtls lists println(char[]) first (fourth review AF2). Each binds its type variables from its own
+            // return type against what the line declares (AF1).
+            String target = com.editora.lsp.JavaExpectedType.declaredTarget(area.getText(), caret);
+            java.util.LinkedHashSet<String> types = new java.util.LinkedHashSet<>();
+            for (var parameter : com.editora.lsp.SignatureFormat.parametersAtCaret(help)) {
+                types.addAll(com.editora.lsp.JavaExpectedType.bindTypeVariables(
+                        com.editora.lsp.JavaExpectedType.parameterTypes(parameter.label()),
+                        target,
+                        parameter.returnType()));
+            }
+            if (types.isEmpty()) {
                 host.setStatus(tr("status.lsp.smartTypeUnknown"));
                 b.triggerCompletion();
             } else {
-                showSmartType(
-                        b,
-                        com.editora.lsp.JavaExpectedType.bindTypeVariables(
-                                parameter, com.editora.lsp.JavaExpectedType.declaredTarget(area.getText(), caret)),
-                        expected.afterNew());
+                showSmartType(b, List.copyOf(types), expected.afterNew());
             }
         });
     }
@@ -8679,7 +8679,11 @@ final class LspCoordinator {
     /** {@code types}: what the argument may be, the first named in the status (a varargs element, then its array). */
     private void showSmartType(EditorBuffer b, List<String> types, boolean afterNew) {
         String type = types.get(0);
-        host.setStatus(tr("status.lsp.smartType", type));
+        long others = types.stream()
+                .filter(t -> !t.equals(type) && !t.equals(type + "[]"))
+                .count();
+        host.setStatus(
+                others == 0 ? tr("status.lsp.smartType", type) : tr("status.lsp.smartTypeOverloads", type, others));
         b.triggerCompletion(items -> {
             List<com.editora.completion.Completion> kept =
                     com.editora.lsp.SmartTypeFilter.filter(items, types, afterNew);

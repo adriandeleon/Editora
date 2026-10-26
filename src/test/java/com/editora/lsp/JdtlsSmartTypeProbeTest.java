@@ -47,6 +47,7 @@ class JdtlsSmartTypeProbeTest {
                 CharSequence chars = "c";
                 Circle circle = new Circle();
                 Label caption = new Label();
+                String[] words = {};
 
                 void take(int n) {}
 
@@ -57,6 +58,8 @@ class JdtlsSmartTypeProbeTest {
                     String t = name.t
                     String f = String.format("%d", c
                     List<String> l = List.of(n
+                    String[] arr = names.toArray(w
+                    System.out.println(c
                     return s;
                 }
             }
@@ -70,6 +73,19 @@ class JdtlsSmartTypeProbeTest {
         int at = SMART.indexOf(marker) + marker.length();
         int line = (int) SMART.substring(0, at).chars().filter(c -> c == '\n').count();
         return new Position(line, at - SMART.lastIndexOf('\n', at - 1) - 1);
+    }
+
+    /** What Smart Type expects at {@code marker}: every overload's parameter, bound against {@code line}'s target. */
+    private static List<String> expectedAt(LanguageServerSession s, String uri, String marker, String line)
+            throws Exception {
+        var help = get(s.signatureHelp(uri, position(marker), null, false, null));
+        String target = JavaExpectedType.declaredTarget(line, line.length());
+        var types = new java.util.LinkedHashSet<String>();
+        for (var parameter : SignatureFormat.parametersAtCaret(help)) {
+            types.addAll(JavaExpectedType.bindTypeVariables(
+                    JavaExpectedType.parameterTypes(parameter.label()), target, parameter.returnType()));
+        }
+        return List.copyOf(types);
     }
 
     private static List<String> kept(LanguageServerSession s, String uri, String marker, String type) throws Exception {
@@ -185,6 +201,19 @@ class JdtlsSmartTypeProbeTest {
             assertEquals("String", bound.get(0), raw + " → " + bound);
             List<String> generic = kept(s, uri, "List.of(n", bound);
             assertTrue(generic.contains("name"), "not only null: " + generic);
+
+            // An array target binds T to its element: toArray(T[]) wants a String[], not a String[][] (fourth
+            // review AF1).
+            List<String> toArray = expectedAt(s, uri, "names.toArray(w", "        String[] arr = names.toArray(w");
+            assertTrue(toArray.contains("String[]") && !toArray.contains("String[][]"), toArray.toString());
+            List<String> arrays = kept(s, uri, "names.toArray(w", toArray);
+            assertTrue(arrays.contains("words"), arrays.toString());
+
+            // Every overload: println(c fits println(int) whichever overload jdtls lists first (AF2).
+            List<String> println = expectedAt(s, uri, "println(c", "        System.out.println(c");
+            assertTrue(println.contains("int"), println.toString());
+            List<String> printable = kept(s, uri, "println(c", println);
+            assertTrue(printable.contains("count"), printable.toString());
 
             // return: the enclosing method's type.
             assertEquals(

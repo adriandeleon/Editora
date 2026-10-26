@@ -1,6 +1,7 @@
 package com.editora.lsp;
 
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -162,11 +163,23 @@ public final class JavaExpectedType {
     private static final java.util.regex.Pattern DECLARATION = java.util.regex.Pattern.compile(
             "^\\s*(?:final\\s+)?([A-Za-z_][\\w.]*(?:<.*>)?(?:\\[\\])*)\\s+[A-Za-z_]\\w*\\s*=[^;=]*$");
 
-    /** The declared type of the variable the caret's line assigns ({@code List<String> l = List.of(}), or null. */
+    /**
+     * The declared type of the variable the caret's line assigns ({@code List<String> l = List.of(}), or null —
+     * also when the caret's call is an argument of another call ({@code boolean b = names.contains(requireNonNull(}),
+     * whose result is not what the declaration receives (fourth review AF1).
+     */
     public static @Nullable String declaredTarget(String text, int caret) {
         int from = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
-        var m = DECLARATION.matcher(text.substring(from, Math.min(caret, text.length())));
-        return m.find() ? m.group(1).strip() : null;
+        String line = text.substring(from, Math.min(caret, text.length()));
+        var m = DECLARATION.matcher(line);
+        if (!m.find()) {
+            return null;
+        }
+        int open = 0;
+        for (char ch : line.substring(line.indexOf('=') + 1).toCharArray()) {
+            open += ch == '(' ? 1 : ch == ')' ? -1 : 0;
+        }
+        return open > 1 ? null : m.group(1).strip();
     }
 
     /**
@@ -176,6 +189,99 @@ public final class JavaExpectedType {
      * {@code List.of}'s parameter {@code E}, which no item's type is, so only {@code null} was kept (third
      * review AT1).
      */
+    /**
+     * {@code types} with each type variable bound by matching the method's {@code returnType} against the declared
+     * {@code target}: {@code T[] copyOf(T[], int)} into a {@code String[]} binds {@code T} to {@code String}, not
+     * {@code String[]}, so the array argument is a {@code String[]} (fourth review AF1); {@code List<E>} into a
+     * {@code List<String>} binds {@code E} to {@code String}. A variable the match does not bind is {@code Object}.
+     * With no return type to match, as {@link #bindTypeVariables(List, String)}.
+     */
+    public static List<String> bindTypeVariables(
+            List<String> types, @Nullable String target, @Nullable String returnType) {
+        if (returnType == null || returnType.isBlank()) {
+            return bindTypeVariables(types, target);
+        }
+        Map<String, String> bound = new java.util.HashMap<>();
+        if (target != null) {
+            unify(returnType.strip(), target.strip(), bound);
+        }
+        java.util.List<String> out = new java.util.ArrayList<>(types.size());
+        for (String t : types) {
+            String type = t.strip();
+            if (!isTypeVariable(type)) {
+                out.add(t);
+                continue;
+            }
+            boolean array = type.endsWith("[]");
+            String name = array ? type.substring(0, type.length() - 2) : type;
+            String to = bound.getOrDefault(name, "Object");
+            out.add(array ? to + "[]" : to);
+        }
+        return out;
+    }
+
+    private static final Map<String, String> BOXED = Map.of(
+            "boolean",
+            "Boolean",
+            "byte",
+            "Byte",
+            "char",
+            "Character",
+            "short",
+            "Short",
+            "int",
+            "Integer",
+            "long",
+            "Long",
+            "float",
+            "Float",
+            "double",
+            "Double");
+
+    /** Binds the type variables of {@code declared} (a method's return type) by its shape against {@code actual}. */
+    private static void unify(String declared, String actual, Map<String, String> bound) {
+        if (isTypeVariable(declared) && !declared.endsWith("[]")) {
+            if (!actual.startsWith("?")) {
+                bound.putIfAbsent(declared, BOXED.getOrDefault(actual, actual));
+            }
+            return;
+        }
+        if (declared.endsWith("[]")) {
+            if (actual.endsWith("[]")) {
+                unify(declared.substring(0, declared.length() - 2), actual.substring(0, actual.length() - 2), bound);
+            }
+            return;
+        }
+        List<String> d = typeArguments(declared);
+        List<String> a = typeArguments(actual);
+        if (!d.isEmpty() && d.size() == a.size()) {
+            for (int i = 0; i < d.size(); i++) {
+                unify(d.get(i), a.get(i), bound);
+            }
+        }
+    }
+
+    /** The top-level type arguments of {@code type} ({@code Map<String, List<Integer>>} → both), or none. */
+    private static List<String> typeArguments(String type) {
+        int lt = type.indexOf('<');
+        if (lt < 0 || !type.endsWith(">")) {
+            return List.of();
+        }
+        java.util.List<String> args = new java.util.ArrayList<>();
+        int depth = 0;
+        int start = lt + 1;
+        for (int i = start; i < type.length() - 1; i++) {
+            char ch = type.charAt(i);
+            depth += ch == '<' ? 1 : ch == '>' ? -1 : 0;
+            if (ch == ',' && depth == 0) {
+                args.add(type.substring(start, i).strip());
+                start = i + 1;
+            }
+        }
+        args.add(type.substring(start, type.length() - 1).strip());
+        return args;
+    }
+
     public static List<String> bindTypeVariables(List<String> types, @Nullable String target) {
         String bound = "Object";
         if (target != null) {

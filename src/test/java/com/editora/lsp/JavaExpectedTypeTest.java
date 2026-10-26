@@ -157,4 +157,37 @@ class JavaExpectedTypeTest {
         org.junit.jupiter.api.Assertions.assertTrue(JavaExpectedType.isTypeVariable("E"));
         org.junit.jupiter.api.Assertions.assertFalse(JavaExpectedType.isTypeVariable("Item"));
     }
+
+    /**
+     * A type variable is bound by matching the method's return type against the declaration, so an array target
+     * strips its {@code []} and a call nested in another call is not bound by the outer declaration (fourth review
+     * AF1): {@code toArray(} looked for {@code String[][]}, {@code contains(requireNonNull(} for {@code boolean}.
+     */
+    @Test
+    void aTypeVariableIsBoundByTheReturnTypeItFillsIn() {
+        assertEquals(
+                List.of("String[]"),
+                JavaExpectedType.bindTypeVariables(List.of("T[]"), "String[]", "T[]"),
+                "names.toArray(");
+        assertEquals(
+                List.of("String[]", "int"),
+                JavaExpectedType.bindTypeVariables(List.of("T[]", "int"), "String[]", "T[]"),
+                "Arrays.copyOf(");
+        assertEquals(List.of("String"), JavaExpectedType.bindTypeVariables(List.of("E"), "List<String>", "List<E>"));
+        assertEquals(
+                List.of("Integer"),
+                JavaExpectedType.bindTypeVariables(List.of("V"), "Map<String, Integer>", "Map<K, V>"),
+                "the second argument binds the second variable");
+        assertEquals(List.of("Integer"), JavaExpectedType.bindTypeVariables(List.of("T"), "int", "T"), "boxed");
+        assertEquals(
+                List.of("Object"),
+                JavaExpectedType.bindTypeVariables(List.of("T"), "String[]", "List<T>"),
+                "a shape that does not match binds nothing");
+        assertEquals(List.of("Object"), JavaExpectedType.bindTypeVariables(List.of("T"), null, "T"));
+
+        String nested = "    boolean has = names.contains(java.util.Objects.requireNonNull(n";
+        assertEquals(null, JavaExpectedType.declaredTarget(nested, nested.length()), "the outer call takes it");
+        String closed = "    String s = String.valueOf(1) + java.util.Objects.requireNonNull(n";
+        assertEquals("String", JavaExpectedType.declaredTarget(closed, closed.length()), "a closed call is not");
+    }
 }
