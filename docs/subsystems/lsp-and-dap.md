@@ -420,7 +420,11 @@ profile is always sent an empty one, since jdtls keeps the last profile in its w
 window watches `.settings`, `config` and the profile's folder (`JavaProjectSettings.styleFolders`) though the tree
 hides them. While jdtls's `chooseImports` question is open, no request on that session times out
 (`LanguageServerSession.holdMillis`), and the request's end closes the picker. Restart stops one project's server
-(`LspManager.shutdownServerAt`), not every server of that language.
+(`LspManager.shutdownServerAt`), not every server of that language. A tree rename records its edit before it saves the tabs the edit changed (a save
+can run a nested event loop), and the drag's end waits for any rename still in flight (`renamesInFlight`). jdtls is
+launched on the Java its installed bundles require (`JavaRuntimes.serverMinMajor`, from their
+`Bundle-RequiredExecutionEnvironment`), not on its launcher's own floor. A shared session keeps jdtls's last
+`ProjectStatus` and replays it to a window that joins.
 
 ### jdtls preferences
 
