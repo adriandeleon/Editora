@@ -91,4 +91,22 @@ class SymbolRankingTest {
                 LspCoordinator.initializeScopeLabel("Current method"));
         assertEquals("Something new", LspCoordinator.initializeScopeLabel("Something new"));
     }
+
+    /**
+     * A shaded copy ranks as a nested type does, and equal names put the JDK's own and the shorter container first:
+     * Map.Entry was 11th of 16 exact "Entry" matches, behind a shaded JUnit Entry and JDK internals (fourth review
+     * ET4).
+     */
+    @Test
+    void mapEntryLeadsTheExactEntryMatches() {
+        var shaded = library("Entry", "org.junit.jupiter.params.shadow.com.univocity.parsers.common");
+        var finalizer = library("Entry", "java.lang.ref.FinalizerHistogram");
+        var treeMap = library("Entry", "java.util.TreeMap");
+        var map = library("Entry", "java.util.Map");
+        assertEquals(
+                List.of(map, treeMap, finalizer, shaded),
+                WorkspaceSymbolPopup.rankByName(List.of(shaded, finalizer, treeMap, map), "Entry"));
+        assertTrue(SymbolRanking.shadedLibraryType(shaded));
+        assertFalse(SymbolRanking.shadedLibraryType(map));
+    }
 }

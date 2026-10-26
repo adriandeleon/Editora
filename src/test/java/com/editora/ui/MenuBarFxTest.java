@@ -54,6 +54,30 @@ class MenuBarFxTest {
         return FxTestSupport.callOnFx(() -> menuBar.node());
     }
 
+    /**
+     * Two rows that would read the same without their prefixes keep them: "Rerun Last" twice in Run, and "Find in
+     * Files" in both Find and Window (fourth review EF1). Other rows still drop theirs.
+     */
+    @Test
+    void rowsThatWouldReadTheSameKeepTheirPrefixes() throws Exception {
+        java.util.Map<String, String> titles = FxTestSupport.callOnFx(
+                () -> new java.util.HashMap<String, String>(FxTestSupport.field(menuBar, "menuTitles")));
+        assertEquals(com.editora.i18n.Messages.tr("command.run.rerun"), titles.get("run.rerun"));
+        assertEquals(com.editora.i18n.Messages.tr("command.maven.rerunLast"), titles.get("maven.rerunLast"));
+        assertEquals(com.editora.i18n.Messages.tr("command.tool.search"), titles.get("tool.search"));
+        java.util.Map<String, Long> counts = titles.values().stream()
+                .collect(java.util.stream.Collectors.groupingBy(t -> t, java.util.stream.Collectors.counting()));
+        assertTrue(
+                counts.entrySet().stream()
+                        .filter(e -> e.getValue() > 1)
+                        .allMatch(e -> e.getKey().contains(":")),
+                "a shortened title is never shared: " + counts);
+        assertEquals(
+                com.editora.editor.MenuTitles.of(com.editora.i18n.Messages.tr("command.lsp.formatDocument")),
+                titles.get("lsp.formatDocument"),
+                "a row with no twin still drops its prefix");
+    }
+
     @Test
     void theMenuBarIsBuiltAndInTheWindow() throws Exception {
         assertNotNull(menuBar, "the controller built a menu bar");

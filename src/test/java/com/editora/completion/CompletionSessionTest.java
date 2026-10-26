@@ -70,6 +70,28 @@ class CompletionSessionTest {
         assertEquals(4, CompletionEngine.matchTier(hashCode, "hCd"), "three letters: a loose match still counts");
     }
 
+    /** A postfix row is matched past the qualifier both share (fourth review AF5). */
+    @Test
+    void aPostfixRowIsMatchedPastTheQualifier() {
+        var cast = Completion.lsp("cast", "cast", "").withProtocol(new Completion.Protocol("items.cast", null, null));
+        assertEquals(
+                CompletionEngine.NO_MATCH_TIER, CompletionEngine.matchTier(cast, "items.st"), "st is no part of cast");
+        assertEquals(0, CompletionEngine.matchTier(cast, "items.ca"));
+        assertEquals(0, CompletionEngine.matchTier(cast, "items."), "every postfix row right after the dot");
+    }
+
+    /** A long text of many short words is matched in bounded time (fourth review AF7): 378 ms for one item before. */
+    @Test
+    void camelHumpMatchingIsNotExponential() {
+        var many = Completion.lsp("a", "a", "").withProtocol(new Completion.Protocol("a_".repeat(60), null, null));
+        long start = System.nanoTime();
+        for (int i = 0; i < 20; i++) {
+            assertEquals(CompletionEngine.NO_MATCH_TIER, CompletionEngine.matchTier(many, "aaaaaaz"));
+        }
+        long ms = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(ms < 500, "20 matches took " + ms + " ms");
+    }
+
     @Test
     void missingSortTextUsesLabelAndEqualKeysKeepServerOrder() {
         var first = Completion.lsp("zebra", "zebra", "", null, CompletionIconKind.CLASS, "same", false, false, null);

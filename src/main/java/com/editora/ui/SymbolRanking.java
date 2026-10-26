@@ -37,8 +37,34 @@ final class SymbolRanking {
         if (score == FuzzyMatch.NO_SCORE) {
             return score;
         }
-        return score + exactNameBonus(m.name(), query) - (nestedLibraryType(m) ? NESTED_LIBRARY_PENALTY : 0);
+        return score
+                + exactNameBonus(m.name(), query)
+                - (nestedLibraryType(m) || shadedLibraryType(m) ? NESTED_LIBRARY_PENALTY : 0);
     }
+
+    /**
+     * A library class copied into another library's package ({@code org.junit.jupiter.params.shadow.…Entry}): it
+     * ranks as a nested type does, not first for "Entry" (fourth review ET4). Still listed: Excluded types decides
+     * what is left out (owner decision BT3).
+     */
+    static boolean shadedLibraryType(WorkspaceSymbolMatch m) {
+        String c = m.container();
+        return m.isLibrary()
+                && (c.contains(".shadow.")
+                        || c.contains(".shaded.")
+                        || c.contains(".repackaged.")
+                        || c.contains(".internal."));
+    }
+
+    /**
+     * Between equal scores: the JDK's own types first, then the shorter container, so {@code Map.Entry} leads the
+     * exact "Entry" matches instead of arriving 11th in index order behind {@code FinalizerHistogram.Entry}
+     * (fourth review ET4). Project symbols are ordered before this applies.
+     */
+    static final java.util.Comparator<WorkspaceSymbolMatch> TIE_BREAK = java.util.Comparator.comparing(
+                    (WorkspaceSymbolMatch m) ->
+                            !(m.container().startsWith("java.") || m.container().startsWith("javax.")))
+            .thenComparingInt(m -> m.container().length());
 
     /** {@code Map.Entry} for {@code Entry} in {@code java.util.Map}; {@code List} for one in a package. */
     static String qualifiedTail(WorkspaceSymbolMatch m) {

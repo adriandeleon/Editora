@@ -323,12 +323,27 @@ final class MainMenuBar {
      */
     void refresh() {
         Map<String, String> chords = chordsByCommand.get();
+        menuTitles.clear();
+        Map<String, Integer> shortened = new java.util.HashMap<>();
+        for (String id : items.keySet()) {
+            shortened.merge(
+                    com.editora.editor.MenuTitles.of(
+                            registry.get(id).map(Command::title).orElse(id)),
+                    1,
+                    Integer::sum);
+        }
+        for (String id : items.keySet()) {
+            String full = registry.get(id).map(Command::title).orElse(id);
+            String bare = com.editora.editor.MenuTitles.of(full);
+            // Two rows that would read the same keep their prefixes: "Rerun Last" twice in Run, "Find in Files"
+            // in both Find and Window, where the prefix was all that told them apart (fourth review EF1).
+            menuTitles.put(id, shortened.getOrDefault(bare, 0) > 1 ? full : bare);
+        }
         for (Map.Entry<String, Row> e : items.entrySet()) {
             String id = e.getKey();
             Row row = e.getValue();
             MenuItem item = row.item();
-            String title = com.editora.editor.MenuTitles.of(
-                    registry.get(id).map(Command::title).orElse(id));
+            String title = menuTitles.get(id);
             String chord = chords.get(id);
             boolean bound = chord != null && !chord.isBlank();
             // No accelerators (see the class javadoc), so the chord is written by hand — into its own
@@ -373,6 +388,9 @@ final class MainMenuBar {
         }
     }
 
+    /** Each row's title as {@link #refresh} chose it: without its category prefix unless another row's would match. */
+    private final Map<String, String> menuTitles = new java.util.HashMap<>();
+
     /** The mark a {@link Command.Toggle} that is on carries in front of its title. */
     static final String CHECK = "✓ ";
 
@@ -387,7 +405,7 @@ final class MainMenuBar {
         }
         String mark = toggle.isOn() ? CHECK : "\u2002\u2002"; // two en spaces ≈ the mark's width
         if (row.title() != null) {
-            row.title().setText(mark + com.editora.editor.MenuTitles.of(command.title()));
+            row.title().setText(mark + menuTitles.getOrDefault(id, com.editora.editor.MenuTitles.of(command.title())));
         } else {
             String text = row.item().getText();
             String bare = text.startsWith(CHECK) || text.startsWith("\u2002\u2002") ? text.substring(2) : text;

@@ -5395,6 +5395,9 @@ final class LspCoordinator {
                             .filter(t -> t.file() != null
                                     || !SymbolRanking.excluded(
                                             libraryPackage(t) + "." + implementationLabel(t), excluded))
+                            // by class and line, so a class's own rows sit together in order (fourth review BN4)
+                            .sorted(java.util.Comparator.comparing(LspCoordinator::implementationLabel)
+                                    .thenComparingInt(LspManager.Target::line))
                             .toList();
                     pickOne(
                             symbol == null
@@ -6459,7 +6462,7 @@ final class LspCoordinator {
                         "status.lsp.renameIntroducedErrors",
                         added.size(),
                         first.substring(first.indexOf('\u0000') + 1),
-                        tr("command.lsp.undoRefactoring")));
+                        com.editora.editor.MenuTitles.of(tr("command.lsp.undoRefactoring"))));
             }
         });
         check.play();
