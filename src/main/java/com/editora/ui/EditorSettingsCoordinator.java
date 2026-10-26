@@ -1083,6 +1083,8 @@ final class EditorSettingsCoordinator {
         buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
         buffer.setOnTypeFormattingEnabled(s.isLspOnTypeFormatting()); // #740 (inert without an LSP trigger set)
         buffer.setLspPasteImportsEnabled(s.isLspPasteImports()); // #742 (inert without a jdtls session)
+        buffer.codeActionBulb().setEnabled(s.isLspLightbulb()); // inert until a server offers code actions
+        buffer.problemCounter().setEnabled(s.isProblemCounter()); // shown only while a server checks the file
         buffer.setSmartSemicolonEnabled(s.isLspSmartSemicolon()); // #746 (inert without a jdtls session)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
         buffer.setFillColumn(s.getFillColumn());

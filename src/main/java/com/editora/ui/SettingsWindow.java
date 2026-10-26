@@ -266,6 +266,8 @@ public class SettingsWindow {
     private CheckBox semanticHighlightCheck;
     private CheckBox inlayHintsCheck;
     private CheckBox codeLensCheck;
+    private CheckBox lightbulbCheck;
+    private CheckBox problemCounterCheck;
     private ComboBox<String> inlayHintModeCombo;
     private CheckBox onTypeFormattingCheck;
     private CheckBox javaOrganizeImportsOnSaveCheck;
@@ -1328,6 +1330,8 @@ public class SettingsWindow {
         semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
         inlayHintsCheck = viewCheck(tr("settings.inlayHints"), Settings::setInlayHints);
         codeLensCheck = viewCheck(tr("settings.codeLens"), Settings::setCodeLens);
+        lightbulbCheck = viewCheck(tr("settings.lspLightbulb"), Settings::setLspLightbulb);
+        problemCounterCheck = viewCheck(tr("settings.problemCounter"), Settings::setProblemCounter);
         inlayHintModeCombo = new ComboBox<>();
         inlayHintModeCombo.getItems().setAll("literals", "all");
         inlayHintModeCombo.setConverter(new StringConverter<>() {
@@ -4055,6 +4059,18 @@ public class SettingsWindow {
                 codeLensCheck,
                 tr("settings.codeLens.note"),
                 "code lens vision references usages implementations count lsp");
+        checkRow(
+                lsp,
+                Category.COMPLETION,
+                lightbulbCheck,
+                tr("settings.lspLightbulb.note"),
+                "lightbulb bulb gutter quick fix intention code actions alt enter lsp");
+        checkRow(
+                lsp,
+                Category.COMPLETION,
+                problemCounterCheck,
+                tr("settings.problemCounter.note"),
+                "problem counter errors warnings count widget inspection next previous lsp");
         controlRow(
                 lsp,
                 Category.COMPLETION,
@@ -8848,6 +8864,8 @@ public class SettingsWindow {
             semanticHighlightCheck.setSelected(settings.isSemanticHighlight());
             inlayHintsCheck.setSelected(settings.isInlayHints());
             codeLensCheck.setSelected(settings.isCodeLens());
+            lightbulbCheck.setSelected(settings.isLspLightbulb());
+            problemCounterCheck.setSelected(settings.isProblemCounter());
             inlayHintModeCombo.setValue(settings.getInlayHintMode());
             onTypeFormattingCheck.setSelected(settings.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(settings.isLspPasteImports());
@@ -9443,6 +9461,8 @@ public class SettingsWindow {
             semanticHighlightCheck.setSelected(s.isSemanticHighlight());
             inlayHintsCheck.setSelected(s.isInlayHints());
             codeLensCheck.setSelected(s.isCodeLens());
+            lightbulbCheck.setSelected(s.isLspLightbulb());
+            problemCounterCheck.setSelected(s.isProblemCounter());
             inlayHintModeCombo.setValue(s.getInlayHintMode());
             onTypeFormattingCheck.setSelected(s.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(s.isLspPasteImports());

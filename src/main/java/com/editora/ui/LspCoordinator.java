@@ -3751,6 +3751,21 @@ final class LspCoordinator {
         });
         // Paste auto-import (#742): ask jdtls what the pasted code needs; only jdtls advertises the
         // command, so any other server (or language) drops out inside handlePasteEvent's capability gate.
+        // The gutter lightbulb (IntelliJ's intention bulb): once the caret rests, what the server offers there — a
+        // quick fix lights it as a fix, a quick action as an assist; refactorings and source actions, offered
+        // nearly everywhere, do not. Clicking it is Alt+Enter.
+        buffer.codeActionBulb().setProbe((line, column, answer) -> {
+            Path path = lspPath(buffer);
+            if (path == null || !lspManager.isManaged(path) || !lspManager.supportsCodeActions(path)) {
+                answer.accept(null);
+                return;
+            }
+            buffer.sendLspChange(); // the server must have the text the caret is in
+            lspManager.codeActions(path, line, column, line, column, all -> answer.accept(bulbKind(all)));
+        });
+        buffer.problemCounter()
+                .setActions(
+                        () -> ops.executeCommand("tool.problems"), () -> gotoProblem(false), () -> gotoProblem(true));
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
@@ -6052,6 +6067,20 @@ final class LspCoordinator {
                     items.stream().map(LspCoordinator::codeActionRow).toList(),
                     chosen -> applyChosenAction(path, items, chosen));
         });
+    }
+
+    /** The lightbulb for {@code actions}: {@code fix} with a quick fix among them, {@code assist} with a quick action. */
+    static @Nullable String bulbKind(List<LspManager.CodeActionItem> actions) {
+        boolean assist = false;
+        for (LspManager.CodeActionItem a : actions) {
+            var group = com.editora.lsp.CodeActionKinds.group(a.kind());
+            if (group == com.editora.lsp.CodeActionKinds.Group.FIX) {
+                return "fix";
+            }
+            assist |= group == com.editora.lsp.CodeActionKinds.Group.ASSIST
+                    && !com.editora.lsp.CodeActionKinds.isJavaGeneratorAssist(a);
+        }
+        return assist ? "assist" : null;
     }
 
     /** An action's title without the "…" of a row that asks more: "Applied: Move 'Strings'" (BT7). */

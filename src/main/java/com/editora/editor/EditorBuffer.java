@@ -905,6 +905,17 @@ public class EditorBuffer implements TabContent {
     private boolean lspFormatAvailable;
     /** Whether this buffer's server advertises code actions (quick fixes) — gates the menu item (#670). */
     private boolean lspCodeActionsAvailable;
+
+    /** The code-action lightbulb on the caret line (the coordinator gives it its probe). */
+    private final CodeActionBulb bulb = new CodeActionBulb(
+            () -> focusedArea,
+            () -> lspActive && lspCodeActionsAvailable && !largeFile && isEditable(),
+            this::docVersion,
+            this::refreshGutterLine);
+
+    /** The file's problem counts at the top right of the editor. */
+    private final ProblemCounterSlot problemCounter =
+            new ProblemCounterSlot(() -> lspActive && !largeFile, this::placeCornerControl, this::removeCornerControl);
     /** Whether this buffer's server advertises rename — gates the menu item (#676). */
     private boolean lspRenameAvailable;
     /** Whether this buffer's server advertises {@code textDocument/implementation} — gates the item (#735). */
@@ -1112,6 +1123,10 @@ public class EditorBuffer implements TabContent {
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked);
+        folds.setBulbHooks(
+                bulb::kindAt,
+                line -> lspCodeActionsAction.run(), // the bulb is on the caret line: Alt+Enter's list there
+                () -> tr("fix".equals(bulb.kind()) ? "editor.bulb.fix" : "editor.bulb.assist"));
         folds.setSplitViews(() -> focusedArea, () -> area2);
         // Personal-Notes markers are drawn inline at each note's start by noteOverlay (no gutter slot): a change
         // to the note set repaints the overlay, never the gutter (the overlay follows edits on its own).
@@ -1180,8 +1195,8 @@ public class EditorBuffer implements TabContent {
             completionActions.documentChanged(c);
             if (!completionEditTrackers.isEmpty()) {
                 int[] start = LspEditPlacement.position(area, c.getPosition());
-                int[] before = completionChangeEnd(start, c.getRemoved());
-                int[] after = completionChangeEnd(start, c.getInserted());
+                int[] before = LspEditPlacement.endAfter(start, c.getRemoved());
+                int[] after = LspEditPlacement.endAfter(start, c.getInserted());
                 var change = new LspEditShift.Change(start[0], start[1], before[0], before[1], after[0], after[1]);
                 for (var tracker : completionEditTrackers)
                     tracker.changed(
@@ -1268,6 +1283,7 @@ public class EditorBuffer implements TabContent {
         area.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
             scheduleBraceMatch();
+            bulb.schedule();
         });
         area.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
@@ -4127,6 +4143,7 @@ public class EditorBuffer implements TabContent {
         // The minimap stripes only draw while LSP is active for this file, regardless of any stale list.
         minimap.setDiagnosticsEnabled(this.lspActive);
         if (!this.lspActive) {
+            problemCounter.show(java.util.List.of());
             if (lspOverlay != null) {
                 lspOverlay.setDiagnostics(java.util.List.of());
             }
@@ -4136,6 +4153,8 @@ public class EditorBuffer implements TabContent {
             }
         }
         updateDiagnosticStripe();
+        problemCounter.update();
+        bulb.schedule();
     }
 
     public boolean isLspActive() {
@@ -4147,6 +4166,8 @@ public class EditorBuffer implements TabContent {
         if (lspActive || lspOverlay != null) {
             lspOverlay().setDiagnostics(diagnostics);
         }
+        problemCounter.show(lspActive ? diagnostics : java.util.List.of());
+        bulb.schedule(); // a problem that arrived on the caret line may bring a fix
         minimap.setDiagnostics(diagnostics);
         if (lspActive || diagnosticStripe != null) {
             diagnosticStripe().setDiagnostics(diagnostics);
@@ -4358,6 +4379,17 @@ public class EditorBuffer implements TabContent {
     /** Whether to offer "Code Actions" in the right-click menu (the server's codeAction capability, #670). */
     public void setLspCodeActionsAvailable(boolean available) {
         this.lspCodeActionsAvailable = available;
+        bulb.schedule();
+    }
+
+    /** The code-action lightbulb shown in the gutter on the caret line. */
+    public CodeActionBulb codeActionBulb() {
+        return bulb;
+    }
+
+    /** The problem counter at the top right of the editor. */
+    public ProblemCounterSlot problemCounter() {
+        return problemCounter;
     }
 
     /** Whether to offer "Rename" in the right-click menu (the server's rename capability, #676). */
@@ -6648,6 +6680,7 @@ public class EditorBuffer implements TabContent {
         area2.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
             scheduleBraceMatch();
+            bulb.schedule();
         });
         area2.focusedProperty().addListener((obs, was, now) -> {
             CodeArea split = area2;
@@ -9214,18 +9247,6 @@ public class EditorBuffer implements TabContent {
 
     public int markRingSize() {
         return markRing.size();
-    }
-
-    private static int[] completionChangeEnd(int[] start, String text) {
-        int line = start[0];
-        int col = start[1];
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                line++;
-                col = 0;
-            } else col++;
-        }
-        return new int[] {line, col};
     }
 
     /** Capture the acceptance independently of future completions and track safe typing until resolve lands. */

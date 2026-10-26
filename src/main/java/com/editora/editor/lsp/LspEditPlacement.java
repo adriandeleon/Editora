@@ -7,6 +7,22 @@ import org.jspecify.annotations.Nullable;
 
 /** Resolves LSP text edits to document ranges and applies them; the pure-ish half of {@link EditorBuffer}'s LSP edits. */
 public final class LspEditPlacement {
+
+    /** The {line, column} just past {@code text} inserted at {@code start} ({line, column}), columns in chars. */
+    public static int[] endAfter(int[] start, String text) {
+        int line = start[0];
+        int col = start[1];
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+                col = 0;
+            } else {
+                col++;
+            }
+        }
+        return new int[] {line, col};
+    }
+
     private LspEditPlacement() {}
 
     /** Edits resolved to absolute, ascending, non-overlapping {@code {start, end}} ranges and their texts. */
