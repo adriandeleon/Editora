@@ -84,4 +84,11 @@ interface JdtLanguageServer extends LanguageServer {
     /** The clean-ups in {@code java.cleanup.actions} for one document: a {@code WorkspaceEdit}. */
     @JsonRequest("java/cleanup")
     CompletableFuture<JsonElement> cleanup(Object params);
+
+    /**
+     * Links of a {@code type} from a position, {@code superImplementation} for Go to Super Method: a list of
+     * {@code {uri, range, displayName, kind}}. Undeclared, its answer reached the session as null (seventh review BR1).
+     */
+    @JsonRequest("java/findLinks")
+    CompletableFuture<JsonElement> findLinks(Object params);
 }

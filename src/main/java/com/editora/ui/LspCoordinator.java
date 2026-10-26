@@ -3878,6 +3878,7 @@ final class LspCoordinator {
                 case "lsp.generate" -> generateActions();
                 case "lsp.callHierarchy" -> callHierarchy();
                 case "lsp.typeHierarchy" -> typeHierarchy();
+                case "lsp.gotoSuperMethod" -> gotoSuperMethod();
                 default -> {}
             }
         });
@@ -5630,11 +5631,140 @@ final class LspCoordinator {
 
     /** Go to Super Method ({@code lsp.gotoSuperMethod}, IntelliJ's Ctrl+U): what the method at the caret overrides. */
     void gotoSuperMethod() {
-        withNavRequest(
-                "status.lsp.superMethodUnsupported",
-                lspManager::supportsSuperMethod,
-                lspManager::superMethodAt,
-                (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noSuperMethod"));
+        NavOrigin origin = navOrigin();
+        if (origin == null) {
+            return;
+        }
+        Path path = origin.anchor();
+        if (!lspManager.supportsSuperMethod(path)) {
+            host.setStatus(tr("status.lsp.superMethodUnsupported"));
+            return;
+        }
+        EditorBuffer b = origin.buffer();
+        CodeArea area = b.getFocusedArea();
+        int line = area.getCurrentParagraph();
+        int column = area.getCaretColumn();
+        long version = b.docVersion();
+        long generation = ++navigationRequestGeneration;
+        syncForRequest(origin);
+        java.util.function.BooleanSupplier current =
+                () -> navigationRequestCurrent(b, origin.ownPath(), version, generation);
+        if (origin.libraryUri() != null) {
+            superMethods(path, origin.libraryUri(), line, column, current); // a class file has no outline here
+            return;
+        }
+        // jdtls answers only on a method's name: the caret anywhere in a method asks for that method, and on a type
+        // for its supertypes, as IntelliJ's Ctrl+U does (seventh review BR2)
+        lspManager.documentSymbols(path, symbols -> {
+            if (!current.getAsBoolean()) {
+                return;
+            }
+            com.editora.lsp.SymbolNode member = enclosingMember(symbols, line);
+            if (member == null) {
+                superMethods(path, null, line, column, current);
+                return;
+            }
+            int at = nameColumn(area.getParagraph(member.line()).getText(), member.name());
+            if (TYPE_KINDS.contains(member.kind())) {
+                superTypes(path, member.line(), at, current);
+            } else {
+                superMethods(path, null, member.line(), at, current);
+            }
+        });
+    }
+
+    /** The symbol kinds Go to Super Method treats as a type: it goes to their supertypes. */
+    private static final java.util.Set<String> TYPE_KINDS = java.util.Set.of("class", "interface", "enum", "struct");
+
+    /** The innermost method, constructor or type around {@code line}, or null. */
+    static com.editora.lsp.@Nullable SymbolNode enclosingMember(List<com.editora.lsp.SymbolNode> symbols, int line) {
+        com.editora.lsp.SymbolNode found = null;
+        for (com.editora.lsp.SymbolNode s : symbols) {
+            if (s.line() <= line && line <= s.endLine()) {
+                if (TYPE_KINDS.contains(s.kind())
+                        || s.kind().equals("method")
+                        || s.kind().equals("constructor")) {
+                    found = s;
+                }
+                com.editora.lsp.SymbolNode inner = enclosingMember(s.children(), line);
+                if (inner != null) {
+                    return inner;
+                }
+                return found;
+            }
+        }
+        return found;
+    }
+
+    /** Where {@code name} (a symbol's name, {@code area()} or {@code area(int)} for a method) starts in {@code text}. */
+    static int nameColumn(String text, String name) {
+        int paren = name.indexOf('(');
+        String id = (paren < 0 ? name : name.substring(0, paren)).strip();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(id) + "\\b")
+                .matcher(text);
+        return m.find()
+                ? m.start()
+                : Math.max(0, text.length() - text.stripLeading().length());
+    }
+
+    private void superMethods(
+            Path path, @Nullable String libraryUri, int line, int column, java.util.function.BooleanSupplier current) {
+        lspManager.superMethodAt(
+                path,
+                libraryUri,
+                line,
+                column,
+                targets -> {
+                    if (current.getAsBoolean()) {
+                        openOneOrPick(path, targets, "status.lsp.noSuperMethod");
+                    }
+                },
+                why -> {
+                    if (current.getAsBoolean()) {
+                        host.setError(
+                                "timeout".equals(why)
+                                        ? tr("status.lsp.navigationTimedOut")
+                                        : tr("status.lsp.navigationFailed", why));
+                    }
+                });
+    }
+
+    private void superTypes(Path path, int line, int column, java.util.function.BooleanSupplier current) {
+        lspManager.prepareTypeHierarchy(path, line, column, roots -> {
+            if (!current.getAsBoolean()) {
+                return;
+            }
+            if (roots.isEmpty()) {
+                host.setStatus(tr("status.lsp.noSuperType"));
+                return;
+            }
+            lspManager.typeHierarchyChildren(path, roots.get(0).raw(), true, supers -> {
+                if (current.getAsBoolean()) {
+                    openOneOrPick(
+                            path,
+                            supers.stream()
+                                    .map(n -> new LspManager.Target(n.file(), n.line(), n.col(), n.libraryUri()))
+                                    .toList(),
+                            "status.lsp.noSuperType");
+                }
+            });
+        });
+    }
+
+    /** Opens the one target, or lets the user pick among several (IntelliJ's chooser); says {@code emptyKey} if none. */
+    private void openOneOrPick(Path anchor, List<LspManager.Target> targets, String emptyKey) {
+        if (targets.size() <= 1) {
+            openFirstTarget(anchor, targets, emptyKey);
+            return;
+        }
+        java.nio.file.Path base = ops.lspProjectRoot();
+        pickOne(
+                tr("picker.superMethod.title"),
+                tr("picker.superMethod.prompt"),
+                targets,
+                LspCoordinator::implementationLabel,
+                t -> implementationDetail(t, base),
+                chosen -> openTarget(anchor, chosen));
     }
 
     /** Go to Declaration ({@code lsp.gotoDeclaration}, #736). */
