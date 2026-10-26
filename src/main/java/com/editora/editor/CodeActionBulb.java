@@ -60,7 +60,29 @@ public final class CodeActionBulb {
         this.version = version;
         this.repaintLine = repaintLine;
         timer.setOnFinished(e -> probe());
-        view.addListener((o, was, now) -> schedule()); // the other split view's caret counts now (fifth review AV3)
+        watchFocus(view.getValue());
+        view.addListener((o, was, now) -> {
+            watchFocus(now);
+            if (line >= 0) {
+                // the same line in the other view: its gutter draws the bulb now, and this one no longer does, though
+                // the answer is the same (seventh review AV3)
+                repaintLine.accept(line);
+            }
+            schedule(); // the other split view's caret counts now (fifth review AV3)
+        });
+    }
+
+    /** The views whose focus is watched: a tab shown again (its editor focused) asks again (seventh review AR2). */
+    private final java.util.Set<CodeArea> watched = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    private void watchFocus(@Nullable CodeArea a) {
+        if (a != null && watched.add(a)) {
+            a.focusedProperty().addListener((o, was, now) -> {
+                if (now) {
+                    schedule();
+                }
+            });
+        }
     }
 
     public void setProbe(@Nullable Probe probe) {
@@ -121,7 +143,12 @@ public final class CodeActionBulb {
     private boolean wanted() {
         CodeArea a = view.getValue();
         // a tab that is not on screen asks nothing: a keystroke in one file probed three hidden ones (AV7)
-        return enabled && probe != null && a != null && onScreen(a) && possible.getAsBoolean();
+        return ready() && a != null && onScreen(a);
+    }
+
+    /** Whether a bulb can be shown at all, on screen or not. */
+    private boolean ready() {
+        return enabled && probe != null && view.getValue() != null && possible.getAsBoolean();
     }
 
     /**
@@ -144,8 +171,9 @@ public final class CodeActionBulb {
     void schedule() {
         CodeArea a = view.getValue();
         int at = a == null ? -1 : a.getCurrentParagraph();
-        // gone when the caret leaves the line, and while the line is edited: the answer was for other text (AV5)
-        if (line >= 0 && (at != line || !wanted() || version.getAsLong() != shownVersion)) {
+        // gone when the caret leaves the line, and while the line is edited: the answer was for other text (AV5).
+        // Kept while the tab is only hidden: it came back with no bulb on the error under the caret (AR2).
+        if (line >= 0 && (at != line || !ready() || version.getAsLong() != shownVersion)) {
             set(-1, null);
         }
         if (!wanted()) {

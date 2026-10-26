@@ -507,6 +507,7 @@ final class LanguageServerSession implements LanguageClient {
         this.primary = new Client(onDiagnostics, onStatus);
         clients.add(primary);
         this.onDiagnostics = params -> {
+            keepProjectDiagnostics(params);
             for (Client c : clients) {
                 c.diagnostics.accept(params);
             }
@@ -2171,8 +2172,6 @@ final class LanguageServerSession implements LanguageClient {
                         .implementation(new org.eclipse.lsp4j.ImplementationParams(doc(uri), pos)));
     }
 
-    /** The declaration of the <em>type</em> of the symbol at a position ({@code textDocument/typeDefinition})
-     *  — from a variable to its type, as opposed to definition's "to the variable" (#736). */
     /**
      * jdtls's {@code java/findLinks} of {@code type} ({@code superImplementation}: the method or type the one at
      * {@code pos} overrides or extends), as locations. Empty from a server without it.
@@ -2199,6 +2198,8 @@ final class LanguageServerSession implements LanguageClient {
         });
     }
 
+    /** The declaration of the <em>type</em> of the symbol at a position ({@code textDocument/typeDefinition})
+     *  — from a variable to its type, as opposed to definition's "to the variable" (#736). */
     CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> typeDefinition(
             String uri, Position pos) {
         if (!ready()) {
@@ -3002,6 +3003,38 @@ final class LanguageServerSession implements LanguageClient {
     @Nullable
     String lastErrorLog() {
         return lastErrorLog;
+    }
+
+    /**
+     * The latest diagnostics of the project itself (its folder, its build files), by URI, for a window that joins
+     * later: it heard the import's verdict but not the problems behind it (seventh review CR2).
+     */
+    private final Map<String, PublishDiagnosticsParams> projectDiagnostics = new ConcurrentHashMap<>();
+
+    private void keepProjectDiagnostics(PublishDiagnosticsParams params) {
+        String uri = params == null ? null : params.getUri();
+        if (uri == null || !uri.startsWith("file:")) {
+            return;
+        }
+        Path file;
+        try {
+            file = Path.of(java.net.URI.create(uri));
+        } catch (RuntimeException e) {
+            return;
+        }
+        if (!LspManager.projectLevel(file)) {
+            return;
+        }
+        if (params.getDiagnostics() == null || params.getDiagnostics().isEmpty()) {
+            projectDiagnostics.remove(uri);
+        } else {
+            projectDiagnostics.put(uri, params);
+        }
+    }
+
+    /** What {@link #keepProjectDiagnostics} kept, to replay to a window that joins. */
+    List<PublishDiagnosticsParams> projectDiagnostics() {
+        return List.copyOf(projectDiagnostics.values());
     }
 
     /** jdtls's last {@code ProjectStatus} ("OK", "WARNING"), for a window that joins the session later (CS2). */

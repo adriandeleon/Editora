@@ -2268,6 +2268,7 @@ public class EditorBuffer implements TabContent {
                 items.add(lspCommandItem("lsp.generate", MenuIcons.add(), offset));
                 items.add(lspCommandItem("lsp.callHierarchy", MenuIcons.find(), offset));
                 items.add(lspCommandItem("lsp.typeHierarchy", MenuIcons.find(), offset));
+                items.add(lspCommandItem("lsp.gotoSuperMethod", MenuIcons.gotoImplementation(), offset)); // ER3
             }
         }
         if (lspFormatAvailable) {

@@ -1027,7 +1027,7 @@ final class DoctorCoordinator {
         String shown = major > 0 ? runs + " (Java " + major + ")" : runs.toString();
         DoctorCheck named = row.withDetail(row.detail() + " · " + tr("doctor.detail.jdtlsRunsOn", shown));
         // the project's JDK with no sources: parameters read arg0, and how to fix it is said here (sixth review DF1)
-        var bare = com.editora.lsp.JavaRuntimes.withoutSources(
+        var bare = com.editora.lsp.JavaRuntimes.withoutSources( // the default's, else any project JDK's (DR2)
                 com.editora.lsp.JavaRuntimes.discover(),
                 com.editora.lsp.JavaRuntimes.preferredHome(defaultJdk, System.getenv("JAVA_HOME")));
         return bare == null || named.status() != com.editora.doctor.DoctorStatus.OK

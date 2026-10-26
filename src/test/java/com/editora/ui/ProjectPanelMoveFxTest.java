@@ -258,4 +258,41 @@ class ProjectPanelMoveFxTest {
         settle();
         assertEquals(List.of("begin", "recorded B.java", "recorded A.java", "end true"), events);
     }
+
+    /**
+     * A move whose Java edit failed is said as a failure, not as the user's No; and a second drop while a drag is
+     * under way waits instead of sharing the first's state (seventh review BR4).
+     */
+    @Test
+    void aFailedEditIsNoCancelAndASecondDropWaits(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("A.java"), "package x;");
+        Files.writeString(root.resolve("C.java"), "package x;");
+        Path sub = Files.createDirectory(root.resolve("sub"));
+        Panel p = panel(root);
+        List<String> statuses = new ArrayList<>();
+        List<java.util.function.Consumer<Boolean>> pending = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            p.panel().setOnStatus(statuses::add);
+            p.panel().setRenameParticipant(new ProjectPanel.RenameParticipant() {
+                @Override
+                public void willRename(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
+                    pending.add(proceed); // jdtls has not answered yet
+                }
+
+                @Override
+                public boolean refusedByUser() {
+                    return false;
+                }
+            });
+        });
+        move(p.panel(), List.of(root.resolve("A.java")), sub);
+        move(p.panel(), List.of(root.resolve("C.java")), sub);
+        assertEquals(List.of(tr("project.moveInProgress")), statuses, "the second drop waits");
+        assertEquals(1, pending.size());
+
+        FxTestSupport.runOnFx(() -> pending.get(0).accept(false)); // the edit no longer applied
+        settle();
+        assertEquals(tr("project.moveEditFailed", 0, 1), statuses.getLast());
+        assertTrue(Files.exists(root.resolve("A.java")));
+    }
 }

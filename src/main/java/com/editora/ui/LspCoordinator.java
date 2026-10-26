@@ -915,6 +915,9 @@ final class LspCoordinator {
         if (LspManager.isHeldForInstall(serverId)) {
             return; // an install stopped it: the files stay paused, and reopen when it is released (fifth review CF1)
         }
+        // the ended server's project problems go too: another window restarted it, and its "The supplied phased
+        // action failed" stayed here after the project imported (seventh review CR3)
+        clearProjectProblems(root);
         forEachCrashedBuffer(serverId, root, b -> {
             b.setLspActive(false);
             clearDiagnostics(lspPath(b));
@@ -1037,7 +1040,15 @@ final class LspCoordinator {
             }
         });
         ops.setLspLoading(false);
-        host.setError(startRefusedMessage(serverLabel(serverId), refusal));
+        // the server's own name ("jdtls needs Java 25"), not the language's ("Java needs Java 25"); said again on the
+        // next pulse too, as the file's own "Opened …" status landed over it (seventh review DR3)
+        String said = startRefusedMessage(
+                refusal.kind() == com.editora.lsp.StartRefusal.Kind.NO_JAVA_FOR_SERVER
+                        ? serverProgram(serverId)
+                        : serverLabel(serverId),
+                refusal);
+        host.setError(said);
+        Platform.runLater(() -> host.setError(said));
         updateStatusBar();
     }
 
@@ -1233,10 +1244,10 @@ final class LspCoordinator {
         }
     }
 
-    /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
     /** Project-level problems already said in the status line, by folder and message. */
     private final java.util.Set<String> announcedProjectProblems = new java.util.HashSet<>();
 
+    /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
     void onDiagnostics(Path file, List<LspDiagnostic> diagnostics) {
         if (!ops.lspFeatureEnabled()) {
             return;
@@ -3605,7 +3616,9 @@ final class LspCoordinator {
             });
         };
         Runnable organizeThenRest = () -> {
-            if (!organize || buffer.isDisposed()) {
+            // while an import question is open the explicit Organize Imports owns the imports: a save's organize
+            // changed the file under it, and the answer was dropped (seventh review AR1)
+            if (!organize || buffer.isDisposed() || lspManager.questionOpen(path)) {
                 formatThenSave.run();
                 return;
             }
@@ -3647,7 +3660,7 @@ final class LspCoordinator {
                         switch (outcome) {
                             case ORGANIZED -> "status.lsp.cleanedUp";
                             case UNCHANGED -> "status.lsp.cleanupNothing";
-                            case UNSUPPORTED, FAILED -> "status.lsp.cleanupFailed";
+                            case UNSUPPORTED, FAILED, STALE -> "status.lsp.cleanupFailed";
                         })));
     }
 
@@ -3878,6 +3891,7 @@ final class LspCoordinator {
                 case "lsp.generate" -> generateActions();
                 case "lsp.callHierarchy" -> callHierarchy();
                 case "lsp.typeHierarchy" -> typeHierarchy();
+                case "lsp.gotoSuperMethod" -> gotoSuperMethod();
                 default -> {}
             }
         });
@@ -4791,6 +4805,7 @@ final class LspCoordinator {
                         case ORGANIZED -> "status.lsp.importsOrganized";
                         case UNCHANGED -> "status.lsp.importsUnchanged";
                         case UNSUPPORTED, FAILED -> "status.lsp.importsUnsupported";
+                        case STALE -> "status.lsp.importsStale"; // the file changed under the question (AR1)
                     }));
         });
     }
@@ -4886,13 +4901,18 @@ final class LspCoordinator {
             return;
         }
         host.setStatus(tr("status.lsp.javaWorkspaceCleaning"));
-        correctedSourceRoots.clear();
-        builtAfterImport.clear(); // the fresh import builds again
-        announcedProjectProblems.clear();
-        forgetImport(lspManager.javaSessionRoot(path)); // its fresh import says its own outcome (CT3); others stand
+        // this project's only: Clean in one project emptied another's build error from Problems (seventh review CR4)
+        Path cleaned = lspManager.javaSessionRoot(path);
+        Path under = cleaned == null ? null : cleaned.toAbsolutePath().normalize();
+        correctedSourceRoots.removeIf(
+                r -> under == null || r.toAbsolutePath().normalize().startsWith(under));
+        builtAfterImport.removeIf(
+                r -> under == null || r.toAbsolutePath().normalize().startsWith(under));
+        announcedProjectProblems.removeIf(k -> under == null || k.startsWith(under.toString()));
+        forgetImport(cleaned); // its fresh import says its own outcome (CT3); others stand
         refreshImportNotes();
         java.util.List<EditorBuffer> java = javaBuffersOf(path);
-        clearProjectProblems(); // the dead server's "project:1" entries would stay for good
+        clearProjectProblems(cleaned); // the dead server's "project:1" entries would stay for good
         lspManager.cleanJavaWorkspace(path, deleted -> {
             host.setStatus(tr(deleted ? "status.lsp.javaWorkspaceCleaned" : "status.lsp.javaWorkspaceKept"));
             applyGating();
@@ -4967,10 +4987,18 @@ final class LspCoordinator {
     /** As above, those of the project at {@code root} only (null: every project's). */
     private void clearProjectProblems(@Nullable Path root) {
         Path only = root == null ? null : root.toAbsolutePath().normalize();
+        // a project nested in this one has its own problems: they are not this one's to clear (seventh review CR4)
+        java.util.List<Path> nested = only == null
+                ? java.util.List.of()
+                : statusSources.values().stream()
+                        .map(StatusSource::root)
+                        .filter(r -> r.startsWith(only) && !r.equals(only))
+                        .toList();
         for (Path p : java.util.List.copyOf(problems.keySet())) {
+            Path at = p.toAbsolutePath().normalize();
             if (LspManager.projectLevel(p)
                     && bufferForLspPath(p) == null
-                    && (only == null || p.toAbsolutePath().normalize().startsWith(only))) {
+                    && (only == null || (at.startsWith(only) && nested.stream().noneMatch(at::startsWith)))) {
                 clearDiagnostics(p);
             }
         }
@@ -5630,11 +5658,140 @@ final class LspCoordinator {
 
     /** Go to Super Method ({@code lsp.gotoSuperMethod}, IntelliJ's Ctrl+U): what the method at the caret overrides. */
     void gotoSuperMethod() {
-        withNavRequest(
-                "status.lsp.superMethodUnsupported",
-                lspManager::supportsSuperMethod,
-                lspManager::superMethodAt,
-                (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noSuperMethod"));
+        NavOrigin origin = navOrigin();
+        if (origin == null) {
+            return;
+        }
+        Path path = origin.anchor();
+        if (!lspManager.supportsSuperMethod(path)) {
+            host.setStatus(tr("status.lsp.superMethodUnsupported"));
+            return;
+        }
+        EditorBuffer b = origin.buffer();
+        CodeArea area = b.getFocusedArea();
+        int line = area.getCurrentParagraph();
+        int column = area.getCaretColumn();
+        long version = b.docVersion();
+        long generation = ++navigationRequestGeneration;
+        syncForRequest(origin);
+        java.util.function.BooleanSupplier current =
+                () -> navigationRequestCurrent(b, origin.ownPath(), version, generation);
+        if (origin.libraryUri() != null) {
+            superMethods(path, origin.libraryUri(), line, column, current); // a class file has no outline here
+            return;
+        }
+        // jdtls answers only on a method's name: the caret anywhere in a method asks for that method, and on a type
+        // for its supertypes, as IntelliJ's Ctrl+U does (seventh review BR2)
+        lspManager.documentSymbols(path, symbols -> {
+            if (!current.getAsBoolean()) {
+                return;
+            }
+            com.editora.lsp.SymbolNode member = enclosingMember(symbols, line);
+            if (member == null) {
+                superMethods(path, null, line, column, current);
+                return;
+            }
+            int at = nameColumn(area.getParagraph(member.line()).getText(), member.name());
+            if (TYPE_KINDS.contains(member.kind())) {
+                superTypes(path, member.line(), at, current);
+            } else {
+                superMethods(path, null, member.line(), at, current);
+            }
+        });
+    }
+
+    /** The symbol kinds Go to Super Method treats as a type: it goes to their supertypes. */
+    private static final java.util.Set<String> TYPE_KINDS = java.util.Set.of("class", "interface", "enum", "struct");
+
+    /** The innermost method, constructor or type around {@code line}, or null. */
+    static com.editora.lsp.@Nullable SymbolNode enclosingMember(List<com.editora.lsp.SymbolNode> symbols, int line) {
+        com.editora.lsp.SymbolNode found = null;
+        for (com.editora.lsp.SymbolNode s : symbols) {
+            if (s.line() <= line && line <= s.endLine()) {
+                if (TYPE_KINDS.contains(s.kind())
+                        || s.kind().equals("method")
+                        || s.kind().equals("constructor")) {
+                    found = s;
+                }
+                com.editora.lsp.SymbolNode inner = enclosingMember(s.children(), line);
+                if (inner != null) {
+                    return inner;
+                }
+                return found;
+            }
+        }
+        return found;
+    }
+
+    /** Where {@code name} (a symbol's name, {@code area()} or {@code area(int)} for a method) starts in {@code text}. */
+    static int nameColumn(String text, String name) {
+        int paren = name.indexOf('(');
+        String id = (paren < 0 ? name : name.substring(0, paren)).strip();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(id) + "\\b")
+                .matcher(text);
+        return m.find()
+                ? m.start()
+                : Math.max(0, text.length() - text.stripLeading().length());
+    }
+
+    private void superMethods(
+            Path path, @Nullable String libraryUri, int line, int column, java.util.function.BooleanSupplier current) {
+        lspManager.superMethodAt(
+                path,
+                libraryUri,
+                line,
+                column,
+                targets -> {
+                    if (current.getAsBoolean()) {
+                        openOneOrPick(path, targets, "status.lsp.noSuperMethod");
+                    }
+                },
+                why -> {
+                    if (current.getAsBoolean()) {
+                        host.setError(
+                                "timeout".equals(why)
+                                        ? tr("status.lsp.navigationTimedOut")
+                                        : tr("status.lsp.navigationFailed", why));
+                    }
+                });
+    }
+
+    private void superTypes(Path path, int line, int column, java.util.function.BooleanSupplier current) {
+        lspManager.prepareTypeHierarchy(path, line, column, roots -> {
+            if (!current.getAsBoolean()) {
+                return;
+            }
+            if (roots.isEmpty()) {
+                host.setStatus(tr("status.lsp.noSuperType"));
+                return;
+            }
+            lspManager.typeHierarchyChildren(path, roots.get(0).raw(), true, supers -> {
+                if (current.getAsBoolean()) {
+                    openOneOrPick(
+                            path,
+                            supers.stream()
+                                    .map(n -> new LspManager.Target(n.file(), n.line(), n.col(), n.libraryUri()))
+                                    .toList(),
+                            "status.lsp.noSuperType");
+                }
+            });
+        });
+    }
+
+    /** Opens the one target, or lets the user pick among several (IntelliJ's chooser); says {@code emptyKey} if none. */
+    private void openOneOrPick(Path anchor, List<LspManager.Target> targets, String emptyKey) {
+        if (targets.size() <= 1) {
+            openFirstTarget(anchor, targets, emptyKey);
+            return;
+        }
+        java.nio.file.Path base = ops.lspProjectRoot();
+        pickOne(
+                tr("picker.superMethod.title"),
+                tr("picker.superMethod.prompt"),
+                targets,
+                LspCoordinator::implementationLabel,
+                t -> implementationDetail(t, base),
+                chosen -> openTarget(anchor, chosen));
     }
 
     /** Go to Declaration ({@code lsp.gotoDeclaration}, #736). */
@@ -7661,6 +7818,7 @@ final class LspCoordinator {
      */
     void willRenameFile(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
         AppliedEdit previous = lastApplied;
+        lastRenameRefused = false;
         renamesInFlight++;
         lspManager.willRenameFile(
                 from,
@@ -7699,12 +7857,22 @@ final class LspCoordinator {
     /** The end of the drag, waiting for a rename still in flight: true for an Undo Move's, null when none waits. */
     private @Nullable Boolean moveEndWaiting;
 
+    /** What the tree said when the drag ended, said again once it is recorded: a save's status landed over it (BF3). */
+    private @Nullable String moveEndStatus;
+
+    /** Whether the last refused tree rename was the user's No; false for a failed edit (seventh review BR4). */
+    private boolean lastRenameRefused;
+
     private void renameDone() {
         renamesInFlight = Math.max(0, renamesInFlight - 1);
         Boolean undo = moveEndWaiting;
         if (renamesInFlight == 0 && undo != null) {
             moveEndWaiting = null;
+            String said = moveEndStatus;
             endTreeMove(undo);
+            if (said != null) {
+                host.setStatus(said); // the tree's "Moved 1 to geo", not the save's "Saved /the/whole/path"
+            }
         }
     }
 
@@ -7730,11 +7898,22 @@ final class LspCoordinator {
 
             @Override
             public void endMove(boolean undo) {
+                endMove(undo, null);
+            }
+
+            @Override
+            public void endMove(boolean undo, @Nullable String status) {
+                moveEndStatus = status;
                 if (renamesInFlight > 0) {
                     moveEndWaiting = undo; // a move's edit is still being recorded (sixth review BS1)
                 } else {
                     endTreeMove(undo);
                 }
+            }
+
+            @Override
+            public boolean refusedByUser() {
+                return lastRenameRefused;
             }
         };
     }
@@ -7779,7 +7958,12 @@ final class LspCoordinator {
         } else if (edited) {
             lastApplied = moveGroupWhole ? merged(group) : null;
             treeMoveEdit = lastApplied;
+        } else {
+            // a drag with no edit is the tree's newest move: an older drag's refactoring no longer ends it, nor does
+            // its Undo Move take that refactoring's undo away (seventh review BS2)
+            treeMoveEdit = null;
         }
+        moveEndStatus = null;
         if (!moveWithoutEdits.isEmpty()) {
             host.setError(tr(
                     "status.lsp.moveWithoutPackageEdit", String.join(", ", moveWithoutEdits), moveWithoutEdits.size()));
@@ -7832,6 +8016,7 @@ final class LspCoordinator {
         }
         Boolean asked = moveWithoutEditsAnswer;
         if (moveGroup != null && asked != null) {
+            lastRenameRefused = !asked;
             return asked; // asked once for the whole drag (fifth review BV3)
         }
         boolean rename = java.util.Objects.equals(from.getParent(), to.getParent());
@@ -7848,6 +8033,7 @@ final class LspCoordinator {
         if (moveGroup != null) {
             moveWithoutEditsAnswer = answer;
         }
+        lastRenameRefused = !answer;
         return answer;
     }
 

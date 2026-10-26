@@ -305,7 +305,7 @@ public class CommandPalette {
             if (score == FuzzyMatch.NO_SCORE) {
                 score = otherIdeScore(command, q);
             }
-            score = Math.max(score, otherIdePhraseScore(command, q));
+            score = Math.max(score, Math.max(otherIdePhraseScore(command, q), titlePhraseScore(command, q)));
             if (score != FuzzyMatch.NO_SCORE) {
                 scored.add(new Scored(command, score));
             }
@@ -386,6 +386,23 @@ public class CommandPalette {
             }
         }
         return best;
+    }
+
+    /**
+     * The score of {@code command} when the query is most of its own title, from the start of what follows its
+     * category ("LSP: "): above any other IDE's name, so "go to declaration" lists Go to Declaration before Go to
+     * Definition, whose VS Code name is "Go to Declaration or Usages" (seventh review ER4).
+     */
+    static int titlePhraseScore(Command command, String query) {
+        String title = command.title();
+        int colon = title.indexOf(": ");
+        String bare = (colon < 0 ? title : title.substring(colon + 2)).toLowerCase(java.util.Locale.ROOT);
+        String q = query.toLowerCase(java.util.Locale.ROOT);
+        if (!bare.startsWith(q) || q.length() * 5 < bare.length() * 3) {
+            return FuzzyMatch.NO_SCORE;
+        }
+        int score = FuzzyMatch.scoreOf(title, query);
+        return score == FuzzyMatch.NO_SCORE ? score : score + 2 * KEYWORD_PENALTY;
     }
 
     /** Selects the first <em>enabled</em> result (the cursor never rests on a grayed-out command). */

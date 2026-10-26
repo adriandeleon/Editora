@@ -954,4 +954,24 @@ class LspManagerRequestsFxTest {
         assertEquals(1, targets.size());
         assertEquals(3, targets.get(0).line());
     }
+
+    /** An organize whose edit was refused because the file changed under it is STALE, not FAILED (seventh AR1). */
+    @Test
+    void anOrganizeRefusedAfterTheFileChangedIsStale() throws Exception {
+        FakeLanguageServer fake = open();
+        String uri = file.toUri().toString();
+        fake.rawHandler = raw -> {
+            if (raw.method().equals("java/organizeImports")) {
+                manager.changeDocument(file, "class A { int typedMeanwhile; }"); // typed while the question was open
+                return com.google.gson.JsonParser.parseString("{\"changes\":{\"" + uri
+                        + "\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,"
+                        + "\"character\":0}},\"newText\":\"import java.util.Date;\\n\"}]}}");
+            }
+            return null;
+        };
+        manager.setApplyEditHandler((mapped, done) -> done.accept(false));
+        LspManager.OrganizeOutcome outcome =
+                this.<LspManager.OrganizeOutcome>await(cb -> manager.organizeImportsAny(file, 0, 10, cb));
+        assertEquals(LspManager.OrganizeOutcome.STALE, outcome);
+    }
 }

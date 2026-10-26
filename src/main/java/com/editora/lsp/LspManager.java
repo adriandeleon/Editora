@@ -714,12 +714,12 @@ public final class LspManager {
         this.clientUi = ui;
     }
 
-    /** {@link #clientUi} reached from a session's reader thread: every call is posted to the FX thread. */
     /** The client UI sessions are given, which answers on the FX thread (tests). */
     LspClientUi clientUiForTest() {
         return fxClientUi;
     }
 
+    /** {@link #clientUi} reached from a session's reader thread: every call is posted to the FX thread. */
     private final LspClientUi fxClientUi = new LspClientUi() {
         @Override
         public java.util.concurrent.CompletableFuture<String> chooseAction(
@@ -1582,6 +1582,8 @@ public final class LspManager {
             // Ready before this window came: it hears so now — its status bar says "Loaded and ready" instead of
             // a stale progress line, and its documents' gates and data are refreshed (re-review CN5). How the
             // project imported goes first: a failed import was "Loaded and ready" here (sixth review CS2).
+            // the project's own problems first, so its verdict can name them (seventh review CR2)
+            session.projectDiagnostics().forEach(client.diagnostics::accept);
             String imported = session.lastProjectStatus();
             if (imported != null) {
                 client.status.accept("ProjectStatus", imported);
@@ -6112,7 +6114,7 @@ public final class LspManager {
                 public java.nio.file.FileVisitResult preVisitDirectory(
                         Path d, java.nio.file.attribute.BasicFileAttributes attrs) {
                     String name = d.getFileName() == null ? "" : d.getFileName().toString();
-                    return !d.equals(dir) && NOT_SOURCES.contains(name)
+                    return !d.equals(dir) && notSources(d, name)
                             ? java.nio.file.FileVisitResult.SKIP_SUBTREE
                             : java.nio.file.FileVisitResult.CONTINUE;
                 }
@@ -6138,9 +6140,24 @@ public final class LspManager {
         return found[0];
     }
 
-    /** Folders that hold no Java sources a move could need edits for. */
+    /** Folders that hold no Java sources a move could need edits for, whatever their place. */
     private static final java.util.Set<String> NOT_SOURCES =
-            java.util.Set.of("node_modules", ".git", ".svn", ".hg", ".gradle", ".idea", "target", "build", "out");
+            java.util.Set.of("node_modules", ".git", ".svn", ".hg", ".gradle", ".idea");
+
+    /** Build output folders, skipped only beside a build file: elsewhere they are packages (seventh review BR3). */
+    private static final java.util.Set<String> BUILD_OUTPUTS = java.util.Set.of("target", "build", "out");
+
+    private static boolean notSources(Path folder, String name) {
+        if (NOT_SOURCES.contains(name)) {
+            return true;
+        }
+        Path module = folder.getParent();
+        return BUILD_OUTPUTS.contains(name)
+                && module != null
+                && (Files.exists(module.resolve("pom.xml"))
+                        || Files.exists(module.resolve("build.gradle"))
+                        || Files.exists(module.resolve("build.gradle.kts")));
+    }
 
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
@@ -6389,7 +6406,9 @@ public final class LspManager {
         /** The file's server has no way to organize imports. */
         UNSUPPORTED,
         /** The server failed or gave up (jdtls cancels the whole operation when it cannot ask about a name). */
-        FAILED
+        FAILED,
+        /** The file changed while the server worked (an import question was open): its edit no longer applies. */
+        STALE
     }
 
     /**
@@ -6542,8 +6561,17 @@ public final class LspManager {
                 } else if (edit == null || !changesText(edit)) {
                     cb.accept(OrganizeOutcome.UNCHANGED);
                 } else {
-                    applyWorkspaceEdit(
-                            edit, expected, ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.FAILED));
+                    applyWorkspaceEdit(edit, expected, ok -> {
+                        // refused because the file changed under the question, not because the server gave up
+                        // (seventh review AR1)
+                        String then = expected.documents().get(file);
+                        boolean changed = then != null
+                                && !then.equals(expectedDocuments(s).get(file));
+                        cb.accept(
+                                ok
+                                        ? OrganizeOutcome.ORGANIZED
+                                        : changed ? OrganizeOutcome.STALE : OrganizeOutcome.FAILED);
+                    });
                 }
             });
         });

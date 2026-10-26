@@ -266,26 +266,35 @@ public final class JavaRuntimes {
      * DF1). The default is {@code preferredHome}'s when it is among {@code jdks}, else the newest.
      */
     public static @Nullable Jdk withoutSources(List<Jdk> jdks, @Nullable String preferredHome) {
-        String preferred = realPath(preferredHome);
-        Jdk chosen = null;
-        for (Jdk j : jdks == null ? List.<Jdk>of() : jdks) {
-            if (j == null || j.path() == null || j.major() <= 0) {
+        List<Jdk> all = allWithoutSources(jdks, preferredHome);
+        return all.isEmpty() ? null : all.get(0);
+    }
+
+    /**
+     * Every JDK jdtls is given for a release ({@link #runtimes}) that has no sources, the default first: a release-21
+     * project on a distro JDK 21 showed {@code arg0} while the default JDK 25 had its sources (seventh review DR2).
+     * {@link #runtimes} already prefers a twin with sources, so a JDK listed here has none.
+     */
+    public static List<Jdk> allWithoutSources(List<Jdk> jdks, @Nullable String preferredHome) {
+        List<Jdk> out = new ArrayList<>();
+        for (Map<String, Object> entry : runtimes(jdks, preferredHome)) {
+            String path = String.valueOf(entry.get("path"));
+            if (hasSources(path)) {
                 continue;
             }
-            if (j.path().equals(preferred)) {
-                chosen = j;
-                break;
-            }
-            if (chosen == null || j.major() > chosen.major()) {
-                chosen = j;
+            int major = jdks.stream()
+                    .filter(j -> j != null && path.equals(j.path()))
+                    .mapToInt(Jdk::major)
+                    .findFirst()
+                    .orElse(0);
+            Jdk bare = new Jdk(major, path);
+            if (Boolean.TRUE.equals(entry.get("default"))) {
+                out.add(0, bare);
+            } else {
+                out.add(bare);
             }
         }
-        if (chosen == null) {
-            return null;
-        }
-        int major = chosen.major();
-        boolean any = jdks.stream().anyMatch(j -> j != null && j.major() == major && hasSources(j.path()));
-        return any ? null : chosen;
+        return out;
     }
 
     /** Whether the JDK at {@code home} has its sources ({@code lib/src.zip}, or {@code src.zip} for Java 8). */
@@ -335,9 +344,6 @@ public final class JavaRuntimes {
     /** jdtls's launcher's own floor, which is what is known when its bundles cannot be read. */
     static final int SERVER_MIN_MAJOR = 21;
 
-    /** The floor each jdtls install's bundles state, by its {@code plugins} folder. */
-    private static final java.util.Map<String, Integer> BUNDLE_FLOORS = new java.util.concurrent.ConcurrentHashMap<>();
-
     /**
      * The oldest Java the jdtls whose launcher is {@code launcher} runs on: the newest
      * {@code Bundle-RequiredExecutionEnvironment} of its core bundles, never below {@link #SERVER_MIN_MAJOR}. jdtls
@@ -359,8 +365,9 @@ public final class JavaRuntimes {
         if (plugins == null || !java.nio.file.Files.isDirectory(plugins)) {
             return SERVER_MIN_MAJOR;
         }
-        java.nio.file.Path dir = plugins;
-        return BUNDLE_FLOORS.computeIfAbsent(dir.toString(), k -> Math.max(SERVER_MIN_MAJOR, bundleFloor(dir)));
+        // read at every start, not kept: an Update replaces the folder's bundles in place, and a kept floor started
+        // the new jdtls on the old Java (seventh review CR1); three manifests cost next to nothing
+        return Math.max(SERVER_MIN_MAJOR, bundleFloor(plugins));
     }
 
     /** The newest {@code JavaSE-N} the core bundles in {@code plugins} require; 0 when none says. */

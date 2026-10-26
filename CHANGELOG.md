@@ -16,16 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call them: Optimize Imports, Show Context Actions, Reformat Code, Find Usages, Parameter Info, Insert Live
   Template, Go to Test, Copy Reference, Show Call Hierarchy, Find Action, Super Method and others. The whole of
   such a name leads the titles it only fuzzily matches, so "go to test" finds Related File first.
-- **Go to Super Method** (`lsp.gotoSuperMethod`; Ctrl+U / ⌘U in the IntelliJ keymaps, in Navigate): the method the
-  one at the caret overrides or implements, or the class a type extends, from jdtls.
+- **Go to Super Method** (`lsp.gotoSuperMethod`; Ctrl+U / ⌘U in the IntelliJ keymaps, in Navigate and the editor's
+  LSP submenu): from anywhere in a method, the method it overrides or implements; on a type, its supertypes; a
+  picker when there are several. A command's own title, typed, comes before another command's other-IDE name.
 - **More IntelliJ and VS Code chords.** IntelliJ keymaps: Ctrl+I implements methods on Linux, Ctrl+Shift+= / - (⌘⇧= /
   ⌘⇧-, and the numpad's Ctrl+Shift++ / -) expand and collapse all folds, Ctrl+Alt+Shift+C copies the qualified name,
   Ctrl+Alt+F7 finds usages, and menus name Alt+Enter for Code Actions. VS
   Code keymaps: Ctrl+F12 Go to Implementation, Alt+F12 Peek Definition,
   Ctrl+T Go to Symbol in Workspace.
 - **Doctor names the Java jdtls runs on**, with its version, and warns when its launcher's `python3` is missing, when
-  no Java new enough for the installed jdtls is found, and when the project's JDK has no sources (`arg0` parameters),
-  naming the package that adds them.
+  no Java new enough for the installed jdtls is found, and when a JDK a project may get has no sources (`arg0`
+  parameters), naming the package that adds them.
 - Navigate lists Go to Declaration, Peek Definition and Copy Qualified Name; the editor's LSP submenu lists Call and
   Type Hierarchy.
 - **Code-action lightbulb in the gutter** (IntelliJ's intention bulb). When the caret rests on a line where the
@@ -33,7 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actions, a warning's included. Refactorings, source actions and Add Javadoc, which servers offer nearly
   everywhere, light nothing. Click it for the list Alt+Enter shows, for its own line; its tooltip names the chord.
   It goes as soon as the caret leaves the line or the line is edited, shows only in the focused view of a split and
-  never asks for a tab that is not on screen, takes its colours from the editor theme, and
+  never asks for a tab that is not on screen (it keeps its bulb, and asks again when shown), takes its colours from
+  the editor theme (accent and danger in themes without their own), and
   never shifts the text: it uses the bookmark column. Settings ▸ Code Completion ▸ Language server features, on by
   default.
 - **Problem counter at the top right of the editor** (IntelliJ's inspection widget): the file's errors and warnings
@@ -290,13 +292,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java: Restart restarts only this project's jdtls.** With two projects on one server each, Restart stopped both
   and cleared both projects' problems. Reload Project Configuration now ends on "Loaded and ready", status lines
   name a folder only while two servers run (starting ones included), and a failed import's reason is named by its
-  folder too. Reload or Clean in one project keeps another project's failed import, so fixing that one's build
-  file still imports it again, and a second window on a project that did not import says so.
+  folder too. Reload or Clean in one project keeps another project's failed import and Problems entries, so fixing
+  that one's build file still imports it again; a second window on a project that did not import says so and lists
+  the project's own problems; and a fix saved in one window clears the old build error in the others.
 - **Java: jdtls starts when `JAVA_HOME` is a JDK 21.** jdtls 1.63 needs Java 25 though its launcher checks for 21,
-  so it crash-looped; Editora reads what the installed jdtls needs and runs it on a newer JDK it found.
+  so it crash-looped; Editora reads what the installed jdtls needs at every start (an Update in place included) and
+  runs it on a newer JDK it found. With none, the status says "jdtls needs Java 25…", and it stays said.
 - **Java: the import chooser waits for you.** Organize Imports and Add all missing imports gave up after 30 s while
   the chooser was still open, and the answer imported nothing; no request times out while it asks, and it closes
-  when the server ends (a restart). A second Organize Imports while it asks says to answer it first.
+  when the server ends (a restart). A second Organize Imports while it asks says to answer it first, a save does
+  not organize under it, and an answer the file has changed under says so instead of "the server gave up".
 - **Fold All, Unfold All and the other fold-everything commands keep the caret** on its line, or on the fold that
   hides it, and on screen. Each region folded moved it to that region's header, so it ended in another method, off screen.
 - **Search Everywhere lists library classes as Go to Symbol does**: `Map.Entry` among the first rows for "Entry",
@@ -309,8 +314,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java: refactorings keep jdtls in step.** A refactoring that edits a tab jdtls never opened opens it there, so a
   second refactoring before a save no longer skips it. A drag-move of several files is one refactoring: Undo Move
   and Undo Last Refactoring each take all of it back, every file's edit included (also when a file the move edits
-  is open in a tab), and either ends the other; the status says what moved and what was kept. A drag jdtls edits
-  nothing for, such as a text file, is no refactoring, so it leaves the last one undoable. jdtls is told about the destination folder first, a `.java` move it has no package edit
+  is open in a tab), and either ends the other; the status says what moved and what was kept, not the save's "Saved"
+  line, and a move whose edit failed as a failure. A drag jdtls edits nothing for, such as a text file, is no
+  refactoring, so it leaves the last one (and its own Undo Move) undoable. One drag at a time: a drop while one is
+  under way waits. A Java package named `build`, `out` or `target` moves with its classes. jdtls is told about the destination folder first, a `.java` move it has no package edit
   for says so (not when the destination is the same package, as from main to test), and while it is still loading
   Editora asks once per drag before moving Java files plainly, naming them all. Folders an undo removes are reported
   to it, and a moved folder is checked for Java files off the UI thread.

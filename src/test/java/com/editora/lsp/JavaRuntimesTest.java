@@ -136,6 +136,14 @@ class JavaRuntimesTest {
             out.closeEntry();
         }
         assertEquals(25, JavaRuntimes.serverMinMajor(launcher.toString()));
+        // an Update in place: read again, not kept from before (seventh review CR1)
+        manifest.getMainAttributes().putValue("Bundle-RequiredExecutionEnvironment", "JavaSE-27");
+        try (var out = new java.util.jar.JarOutputStream(
+                java.nio.file.Files.newOutputStream(plugins.resolve("org.eclipse.jdt.core_3.48.0.jar")), manifest)) {
+            out.putNextEntry(new java.util.jar.JarEntry("a.txt"));
+            out.closeEntry();
+        }
+        assertEquals(27, JavaRuntimes.serverMinMajor(launcher.toString()), "the updated bundles' floor");
         assertEquals(
                 21, JavaRuntimes.serverMinMajor(dir.resolve("none/bin/jdtls").toString()), "unknown: 21");
 
@@ -287,5 +295,18 @@ class JavaRuntimesTest {
                 JavaRuntimes.withoutSources(
                         List.of(bare, new JavaRuntimes.Jdk(21, sdk.getParent().toString())), distroHome),
                 "a twin with sources stands in");
+    }
+
+    /** Every JDK a project may get is checked for sources, not only the default (seventh review DR2). */
+    @Test
+    void aProjectJdkWithoutSourcesIsNamedThoughTheDefaultHasThem(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path distro = java.nio.file.Files.createDirectories(dir.resolve("distro21/lib"));
+        java.nio.file.Path sdk25 = java.nio.file.Files.createDirectories(dir.resolve("sdk25/lib"));
+        java.nio.file.Files.writeString(sdk25.resolve("src.zip"), "zip");
+        var jdk21 = new JavaRuntimes.Jdk(21, distro.getParent().toString());
+        var jdk25 = new JavaRuntimes.Jdk(25, sdk25.getParent().toString());
+        assertEquals(List.of(jdk21), JavaRuntimes.allWithoutSources(List.of(jdk21, jdk25), jdk25.path()));
+        assertEquals(jdk21, JavaRuntimes.withoutSources(List.of(jdk21, jdk25), jdk25.path()));
     }
 }

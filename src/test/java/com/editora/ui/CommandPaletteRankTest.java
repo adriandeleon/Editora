@@ -132,4 +132,15 @@ class CommandPaletteRankTest {
         assertEquals(related, CommandPalette.orderedMatches(all, "Go to Test").get(0));
         assertEquals(definition, CommandPalette.orderedMatches(all, "go to def").get(0), "a title still leads its own");
     }
+
+    /** A command's own title, typed, still leads another command's alias (seventh review ER4). */
+    @Test
+    void anExactTitleLeadsAnotherCommandsAlias() {
+        var definition = com.editora.command.Command.of("lsp.gotoDefinition", () -> {});
+        var declaration = com.editora.command.Command.of("lsp.gotoDeclaration", () -> {});
+        assertEquals(
+                declaration,
+                CommandPalette.orderedMatches(java.util.List.of(definition, declaration), "go to declaration")
+                        .get(0));
+    }
 }

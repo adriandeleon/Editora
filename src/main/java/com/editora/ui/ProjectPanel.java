@@ -1920,6 +1920,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         /** It is done; {@code undo} when it took the last drag-move back. Runs after the tree's own status. */
         default void endMove(boolean undo) {}
+
+        /**
+         * As {@link #endMove(boolean)}, with the tree's {@code status}: a save the move made can land after it, and the
+         * participant says it again once the drag is recorded (seventh review BF3).
+         */
+        default void endMove(boolean undo, String status) {
+            endMove(undo);
+        }
+
+        /** Whether the last {@code willRename} that answered false was the user's No, not a failure (BR4). */
+        default boolean refusedByUser() {
+            return true;
+        }
     }
 
     private RenameParticipant renameParticipant = (from, to, proceed) -> proceed.accept(true);
@@ -2494,6 +2507,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (sources.isEmpty() || targetDir == null || !Files.isDirectory(targetDir)) {
             return;
         }
+        if (moving) {
+            // one drag at a time: a second drop during the first's jdtls answer shared its state, and lost a move
+            // that it reported as cancelled (seventh review BR4)
+            onStatus.accept(tr("project.moveInProgress"));
+            return;
+        }
         int skipped = 0;
         List<Path> movable = new ArrayList<>();
         for (Path src : sources) {
@@ -2514,7 +2533,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         int alreadySkipped = skipped;
         refused[0] = 0;
-        renameParticipant.beginMove(planned.size());
+        editFailed[0] = 0;
+        moving = true;
+        renameParticipant.beginMove(javaItems(planned)); // the question is about the Java items only (BV3)
         moveThrough(planned, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             int moved = done.size();
             if (moved > 0) {
@@ -2523,16 +2544,20 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 refreshAfterChange();
             }
             int notMoved = alreadySkipped + failed - refused[0];
-            onStatus.accept(
-                    moved == 0 && refused[0] > 0 && notMoved == 0
+            String status = editFailed[0] > 0
+                    // the Java server's edit no longer applied: a failure, not the user's No (seventh review BR4)
+                    ? tr("project.moveEditFailed", moved, editFailed[0])
+                    : moved == 0 && refused[0] > 0 && notMoved == 0
                             ? tr("project.moveCancelled") // "No" to moving without edits is no conflict (BV3)
                             : notMoved == 0 && refused[0] > 0
                                     // some moved, the rest kept by that "No": said, not left out (sixth review BV3)
                                     ? tr("project.movedSomeKept", moved, targetDir.getFileName(), refused[0])
                                     : notMoved == 0
                                             ? tr("project.moved", moved, targetDir.getFileName())
-                                            : tr("project.movedSome", moved, notMoved));
-            renameParticipant.endMove(false);
+                                            : tr("project.movedSome", moved, notMoved);
+            onStatus.accept(status);
+            moving = false;
+            renameParticipant.endMove(false, status);
         });
     }
 
@@ -2557,7 +2582,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         renameParticipant.willRename(m.from(), m.to(), ok -> {
             if (!ok) {
                 failed[0]++;
-                refused[0]++;
+                if (renameParticipant.refusedByUser()) {
+                    refused[0]++;
+                } else {
+                    editFailed[0]++;
+                }
             } else {
                 try {
                     Files.move(m.from(), m.to());
@@ -2579,6 +2608,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** The moves of the drag under way that the participant refused (the user said not to move without edits). */
     private final int[] refused = {0};
 
+    /** The moves of the drag under way whose Java edit failed to apply: not the user's choice (BR4). */
+    private final int[] editFailed = {0};
+
+    /** Whether a drag-move or its Undo Move is under way; another drop waits for it to end (BR4). */
+    private boolean moving;
+
+    /** The Java items among {@code moves}: {@code .java} files and folders, which the participant may ask about. */
+    private static int javaItems(List<Move> moves) {
+        return (int) moves.stream()
+                .filter(m -> m.from().toString().endsWith(".java") || Files.isDirectory(m.from()))
+                .count();
+    }
+
     /** Whether there is a drag-move to take back (the tree menu offers "Undo Move" while there is). */
     boolean canUndoMove() {
         return !lastMove.isEmpty();
@@ -2591,6 +2633,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * to undo until the next move.
      */
     void undoLastMove() {
+        if (moving) {
+            onStatus.accept(tr("project.moveInProgress"));
+            return;
+        }
         List<Move> moves = lastMove;
         lastMove = List.of();
         if (moves.isEmpty()) {
@@ -2612,7 +2658,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         int alreadyStuck = stuck;
         refused[0] = 0;
-        renameParticipant.beginMove(back.size());
+        editFailed[0] = 0;
+        moving = true;
+        renameParticipant.beginMove(javaItems(back));
         moveThrough(back, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             if (!done.isEmpty()) {
                 markLocalChange();
@@ -2620,13 +2668,16 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
             // a "No" to moving back without edits is the user's choice, not a conflict (sixth review BV3)
             int notBack = alreadyStuck + failed - refused[0];
-            onStatus.accept(
-                    notBack == 0 && refused[0] > 0
+            String status = editFailed[0] > 0
+                    ? tr("project.moveEditFailed", done.size(), editFailed[0])
+                    : notBack == 0 && refused[0] > 0
                             ? tr("project.moveUndoneKept", done.size(), refused[0])
                             : notBack == 0
                                     ? tr("project.moveUndone", done.size())
-                                    : tr("project.moveUndoneSome", done.size(), notBack));
-            renameParticipant.endMove(true);
+                                    : tr("project.moveUndoneSome", done.size(), notBack);
+            onStatus.accept(status);
+            moving = false;
+            renameParticipant.endMove(true, status);
         });
     }
 

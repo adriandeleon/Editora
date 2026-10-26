@@ -1984,6 +1984,12 @@ class LspWorkspaceEditFxTest {
         assertTrue(treeMove(participant, notes, docs.resolve("notes.txt")));
         FxTestSupport.runOnFx(() -> participant.endMove(false));
         assertSame(before, FxTestSupport.callOnFx(coordinator::lastAppliedEdit), "the Java drag stays undoable");
+
+        // and the text file's Undo Move does not take the Java drag's undo away either (seventh review BS2)
+        FxTestSupport.runOnFx(() -> participant.beginMove(0));
+        assertTrue(treeMove(participant, docs.resolve("notes.txt"), notes));
+        FxTestSupport.runOnFx(() -> participant.endMove(true));
+        assertSame(before, FxTestSupport.callOnFx(coordinator::lastAppliedEdit), "still the Java drag's");
     }
 
     /**
@@ -2007,12 +2013,15 @@ class LspWorkspaceEditFxTest {
         fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*1*/");
         assertTrue(treeMove(participant, big, util.resolve("Big.java")));
         fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*2*/");
-        ops.duringSave = () -> participant.endMove(false); // the tree's finish, run by the save's nested loop
-        host.status = "Moved 2 to util";
+        ops.duringSave = () -> {
+            host.status = "Moved 2 to util"; // the tree's finish, run by the save's nested loop
+            participant.endMove(false, "Moved 2 to util");
+            host.status = "Saved /the/whole/path"; // then the save's own status
+        };
         assertTrue(treeMove(participant, circle, util.resolve("Circle.java")));
 
         assertTrue(ops.saved.contains(canvas), "the edited tab was saved");
-        assertEquals("Moved 2 to util", host.status, "not \"Renamed to Circle.java\"");
+        assertEquals("Moved 2 to util", host.status, "not \"Renamed to Circle.java\" or the save's (seventh BF3)");
         var applied = FxTestSupport.callOnFx(coordinator::lastAppliedEdit);
         assertEquals(2, applied.renames().size(), "both moves, as one refactoring");
     }

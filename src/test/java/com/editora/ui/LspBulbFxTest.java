@@ -332,4 +332,18 @@ class LspBulbFxTest {
         assertFalse(FxTestSupport.callOnFx(() -> com.editora.editor.CodeActionBulbTestHooks.onScreen(b.getArea())));
         FxTestSupport.runOnFx(() -> b.getArea().getParent().setVisible(true));
     }
+
+    /** A bulb is kept while its tab is hidden: the tab came back with none on the error under the caret (AR2). */
+    @Test
+    void aHiddenTabKeepsItsBulb() throws Exception {
+        EditorBuffer b = open();
+        fx.server().codeActionResponse = List.of(action("Remove 'x'", "quickfix"));
+        fx.caret(b, 2, 12);
+        probe(b);
+        assertEquals(2, FxTestSupport.callOnFx(() -> b.codeActionBulb().line()).intValue());
+        FxTestSupport.runOnFx(() -> b.getArea().getParent().setVisible(false)); // another tab is shown
+        FxTestSupport.runOnFx(() -> b.setLspDiagnostics(List.of())); // problems published meanwhile
+        assertEquals(2, FxTestSupport.callOnFx(() -> b.codeActionBulb().line()).intValue(), "kept while hidden");
+        FxTestSupport.runOnFx(() -> b.getArea().getParent().setVisible(true));
+    }
 }

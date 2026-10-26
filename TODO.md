@@ -61,6 +61,12 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Java LSP seventh review (2026-10-26)** — Go to Super Method works (java/findLinks declared; enclosing method;
+      supertypes); drag-move status, failures and build packages; the Java floor read at every start; project
+      problems across windows; the import answer and a changing file; bulb on hidden tabs and in plain themes.
+      Left open: Method Hierarchy, Safe Delete, Shift Shift, Select In; A11 (ambiguous paste), AN2 (upstream),
+      intention preview, C17 narration timing; the bulb's second probe after typing is kept (fixes need the new
+      diagnostics).
 - [x] **Java LSP sixth review (2026-10-26)** — every finding: drag-moves recorded before their saves; jdtls on the
       Java its bundles need; import outcomes per project; the counter waits for jdtls; bulb in one view, themed; the
       import picker closes with its request; Go to Super Method. Left open: Paste with imports of an ambiguous name

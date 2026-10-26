@@ -493,4 +493,28 @@ class LspSharedServerFxTest {
         asked.cancel(false);
         awaitFx(shown::isCancelled, "the picker to be cancelled too");
     }
+
+    /** A window joining hears the project's own problems, which its verdict line names (seventh review CR2). */
+    @Test
+    void aWindowJoiningHearsTheProjectsProblems() throws Exception {
+        Path f = javaFile("A.java");
+        a.openDocument(f, root, "java", "class A {}");
+        var params = new PublishDiagnosticsParams(
+                root.toUri().toString(),
+                List.of(new Diagnostic(new Range(new Position(0, 0), new Position(0, 1)), "Missing artifact x:y:1")));
+        LspTestHooks.publishDiagnostics(a, f, params);
+        awaitFx(() -> !a.sessionForTest(f).projectDiagnostics().isEmpty(), "kept on the session");
+        List<String> heard = new CopyOnWriteArrayList<>();
+        LspManager c = new LspManager((file, list) -> heard.add(file.getFileName() + ":" + list.size()), (t, m) -> {});
+        try {
+            c.setSessionStarterForTest(
+                    session -> session.attachForTest(new FakeLanguageServer(), new ServerCapabilities()));
+            c.configure(true, Map.of("java", "jdtls"));
+            a.shareServersForTest(c);
+            c.openDocument(f, root, "java", "class A {}");
+            awaitFx(() -> heard.contains(root.getFileName() + ":1"), "the project's problem replayed: " + heard);
+        } finally {
+            c.shutdownAll();
+        }
+    }
 }
