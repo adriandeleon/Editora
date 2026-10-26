@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Doctor names the Java jdtls runs on**, and warns when its launcher's `python3` or a Java 21+ is missing.
 - Navigate lists Go to Declaration, Peek Definition and Copy Qualified Name; the editor's LSP submenu lists Call and
   Type Hierarchy.
+- **Code-action lightbulb in the gutter** (IntelliJ's intention bulb). When the caret rests on a line where the
+  language server has a quick fix, a red bulb shows in the gutter; an amber one for other quick actions.
+  Refactorings and source actions, which servers offer nearly everywhere, light nothing. Click it for the list
+  Alt+Enter shows. It goes as soon as the caret leaves the line, and never shifts the text: it uses the bookmark
+  column. Settings ▸ Code Completion ▸ Language server features, on by default.
+- **Problem counter at the top right of the editor** (IntelliJ's inspection widget): the file's errors and warnings
+  with their glyphs, or a green check when the server found none, and previous/next arrows. Click the counts to
+  open Problems. Shown while a language server checks the file; a setting beside the lightbulb's turns it off.
+  Settings schema 146→147, additive.
 
 - **Doctor: Check for Newer Versions.** A button in Doctor's header asks npm, the Go module proxy, GitHub and
   HashiCorp for the latest release of each working language server or tool that Editora installs at its latest
