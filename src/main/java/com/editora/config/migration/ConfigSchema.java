@@ -322,7 +322,10 @@ public enum ConfigSchema {
                     Map.entry(144, (Migration) ConfigMigrations::identity),
                     // v145→146: + syncKeybindings (on): settings sync carries the key-binding overrides. Additive:
                     // absent is on, like the other sync categories, and does nothing until sync is connected.
-                    Map.entry(145, (Migration) ConfigMigrations::identity)),
+                    Map.entry(145, (Migration) ConfigMigrations::identity),
+                    // v146→147: + lspLightbulb and problemCounter (both on), the gutter lightbulb and the editor's
+                    // problem counts. Additive: absent is on.
+                    Map.entry(146, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
