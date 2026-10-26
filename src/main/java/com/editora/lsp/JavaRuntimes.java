@@ -207,6 +207,14 @@ public final class JavaRuntimes {
      * it supports, and every Gradle import failed (Java review C4).
      */
     public static List<Map<String, Object>> runtimes(List<Jdk> jdks, @Nullable String preferredHome) {
+        return runtimes(jdks, preferredHome, true);
+    }
+
+    /**
+     * As {@link #runtimes(List, String)}; {@code local}: the JDKs are on this machine, so whether each has its
+     * sources can be read here. A remote host's are not looked for on this machine's disk.
+     */
+    public static List<Map<String, Object>> runtimes(List<Jdk> jdks, @Nullable String preferredHome, boolean local) {
         if (jdks == null || jdks.isEmpty()) {
             return List.of();
         }
@@ -220,7 +228,10 @@ public final class JavaRuntimes {
                 .sorted(Comparator.comparingInt(Jdk::major)
                         .reversed()
                         // the preferred JDK holds its major's slot against another install of the same major
-                        .thenComparing(j -> !j.path().equals(preferred)))
+                        .thenComparing(j -> !j.path().equals(preferred))
+                        // then one with its sources: a distro JDK without them (Debian's openjdk-21-jdk with no
+                        // -source package) gave JDK parameters as arg0 and signature help no docs (fourth review DF1)
+                        .thenComparing(j -> local && !hasSources(j.path())))
                 .forEach(j -> byMajor.putIfAbsent(j.major(), j.path()));
 
         if (byMajor.isEmpty()) {
@@ -234,12 +245,34 @@ public final class JavaRuntimes {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("name", executionEnvironment(e.getKey()));
             entry.put("path", e.getValue());
+            if (local && !hasSources(e.getValue())) {
+                entry.put("javadoc", apiDocs(e.getKey())); // jdtls reads parameter names and docs from it then
+            }
             if (e.getValue().equals(chosen)) {
                 entry.put("default", true);
             }
             out.add(Map.copyOf(entry));
         }
         return List.copyOf(out);
+    }
+
+    /** Whether the JDK at {@code home} has its sources ({@code lib/src.zip}, or {@code src.zip} for Java 8). */
+    static boolean hasSources(String home) {
+        try {
+            java.nio.file.Path h = java.nio.file.Path.of(home);
+            // Files.exists follows the link: a distro JDK's src.zip is a link to a package not installed
+            return java.nio.file.Files.exists(h.resolve("lib").resolve("src.zip"))
+                    || java.nio.file.Files.exists(h.resolve("src.zip"));
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** The online API documentation of Java {@code major}, for a JDK without sources. */
+    static String apiDocs(int major) {
+        return major <= 8
+                ? "https://docs.oracle.com/javase/8/docs/api/"
+                : "https://docs.oracle.com/en/java/javase/" + major + "/docs/api/";
     }
 
     /** The path of the runtime {@link #runtimes} marked default, or null when there is none. */

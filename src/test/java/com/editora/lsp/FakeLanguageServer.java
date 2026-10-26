@@ -554,9 +554,15 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     /** What {@code workspace/willRenameFiles} answers (null: no edit). */
     public volatile org.eclipse.lsp4j.WorkspaceEdit willRenameResponse;
 
+    /** Whether {@code workspace/willRenameFiles} fails, as a timed-out or refused request does. */
+    public volatile boolean willRenameFails;
+
     @Override
     public CompletableFuture<org.eclipse.lsp4j.WorkspaceEdit> willRenameFiles(
             org.eclipse.lsp4j.RenameFilesParams params) {
+        if (willRenameFails) {
+            return CompletableFuture.failedFuture(new IllegalStateException("no answer"));
+        }
         return CompletableFuture.completedFuture(willRenameResponse);
     }
 

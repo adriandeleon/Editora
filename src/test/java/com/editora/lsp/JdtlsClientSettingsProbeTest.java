@@ -206,11 +206,14 @@ class JdtlsClientSettingsProbeTest {
         Files.writeString(src.resolve("Helper.java"), HELPER);
         Files.writeString(src.resolve("Broken.java"), BROKEN);
         Files.writeString(src.resolve("Ambig.java"), AMBIGUOUS);
-        Files.writeString(project.resolve("pom.xml"), """
+        // The running JDK's release: a JDK 21 from distro packages has no sources, and its parameter docs were
+        // missing for that reason alone (fourth review DF1).
+        Files.writeString(
+                project.resolve("pom.xml"), """
                 <project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
                 <groupId>demo</groupId><artifactId>settings-probe</artifactId><version>1</version>
-                <properties><maven.compiler.release>21</maven.compiler.release></properties></project>
-                """);
+                <properties><maven.compiler.release>%d</maven.compiler.release></properties></project>
+                """.formatted(Runtime.version().feature()));
         String app = src.resolve("App.java").toUri().toString();
         String broken = src.resolve("Broken.java").toUri().toString();
         String ambiguous = src.resolve("Ambig.java").toUri().toString();
@@ -454,6 +457,38 @@ class JdtlsClientSettingsProbeTest {
             assertTrue(
                     askedNames.stream().anyMatch(n -> n.startsWith("Date")), "A3: the ambiguous Date is asked about");
             assertTrue(organized.contains("import java."), "A3: the chosen imports are written: " + organized);
+
+            // D6 (fourth review): "Add all missing imports" is jdtls's Organize Imports client command, which asks.
+            org.eclipse.lsp4j.Diagnostic unresolved = null;
+            for (int attempt = 0; attempt < 40 && unresolved == null; attempt++) {
+                for (PublishDiagnosticsParams p : List.copyOf(diagnostics)) {
+                    if (p.getUri().equals(ambiguous)) {
+                        for (var d : p.getDiagnostics()) {
+                            if (String.valueOf(d.getMessage()).contains("Date")) {
+                                unresolved = d;
+                            }
+                        }
+                    }
+                }
+                if (unresolved == null) {
+                    Thread.sleep(250);
+                }
+            }
+            assertNotNull(unresolved, "D6: Date is reported unresolved");
+            var importFixes = get(s.codeAction(ambiguous, unresolved.getRange(), List.of(unresolved)));
+            org.eclipse.lsp4j.CodeAction addAll = importFixes.stream()
+                    .filter(f -> f.isRight() && f.getRight().getTitle().equals("Add all missing imports"))
+                    .map(f -> f.getRight())
+                    .findFirst()
+                    .orElse(null);
+            assertNotNull(addAll, "D6: " + importFixes);
+            int asked = askedNames.size();
+            var resolvedAddAll = get(s.resolveCodeAction(addAll));
+            record("D6 add all", resolvedAddAll);
+            assertTrue(askedNames.size() > asked, "D6: resolving it asks which Date is meant: " + askedNames);
+            assertTrue(
+                    String.valueOf(resolvedAddAll.getEdit()).contains("import java.sql.Date;"),
+                    "D6: the answer is imported: " + resolvedAddAll.getEdit());
 
             // B15: renaming Helper.java in the Project tree renames the class and its uses with it.
             String helper = src.resolve("Helper.java").toUri().toString();

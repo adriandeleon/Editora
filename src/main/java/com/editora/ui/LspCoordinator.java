@@ -509,6 +509,7 @@ final class LspCoordinator {
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setOnSharedServerEnded(this::sharedServerEnded);
+        lspManager.setOnInstallHold(this::installHold);
         lspManager.setWindowFocused(() -> {
             javafx.stage.Window w = host.window();
             return w != null && w.isFocused();
@@ -920,6 +921,39 @@ final class LspCoordinator {
             syncBuffer(b);
         });
         updateStatusBar();
+    }
+
+    /**
+     * An install stopped {@code serverId} in every window while its folder is swapped ({@code held}), or is done.
+     * Held, this window's documents on it go inactive and the status says why; released, they reopen on a fresh
+     * server. The window that ran the install re-applies its tool support first, so this runs after it, and a
+     * document that is already open again is left alone (fourth review CF1).
+     */
+    private void installHold(String serverId, boolean held) {
+        if (!ops.lspFeatureEnabled() || !serverEnabled(serverId)) {
+            return;
+        }
+        if (held) {
+            host.forEachBuffer(b -> {
+                if (serverId.equals(serverIdForBuffer(b))) {
+                    b.setLspActive(false);
+                    clearDiagnostics(lspPath(b));
+                }
+            });
+            host.setStatus(tr("status.lsp.heldForInstall", serverProgram(serverId)));
+            updateStatusBar();
+            return;
+        }
+        Platform.runLater(() -> {
+            host.forEachBuffer(b -> {
+                Path p = lspPath(b);
+                if (p != null && serverId.equals(serverIdForBuffer(b)) && !lspManager.isManaged(p)) {
+                    deferredLsp.remove(b);
+                    syncBuffer(b);
+                }
+            });
+            updateStatusBar();
+        });
     }
 
     /** The crash-history key of one server on one root; a remote root by its URI, which names its host. */
@@ -3128,23 +3162,30 @@ final class LspCoordinator {
         if (!ops.lspFeatureEnabled()) {
             return;
         }
+        String source = statusSource(serverId, root);
         if (serverId != null && root != null) {
-            statusRoot.put(serverId, root); // whose import the next narrated line is about
+            if ("Launching".equalsIgnoreCase(type)) {
+                saidReady.remove(source); // a new process: its ready line is owed again
+            }
             if ("ProjectStatus".equalsIgnoreCase(type) && "OK".equalsIgnoreCase(message)) {
                 // that folder imported: its earlier failure no longer stands (third review CT3)
-                importFailed.remove(importKey(serverId, root));
-                importWarned.remove(importKey(serverId, root));
+                String key = importKey(serverId, root);
+                boolean was = importFailed.remove(key) | importWarned.remove(key) | warnedAtReady.remove(key);
+                if (was && saidReady.contains(source)) {
+                    // a fixed build file re-imported cleanly: say so, or "Updating…" was the last word (CF4)
+                    host.setStatus(tr("status.lsp.ready", statusServerName(serverId, root)));
+                }
             }
         }
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // lemminx-maven answers initialize long before it can answer a request: its ready line waits for
             // the "Maven initialization done" progress end (Maven review C18).
             for (var status : mavenReadyGate.onStatus(type, message)) {
-                narrateServerStatus(serverId, status.type(), status.message());
+                narrateServerStatus(source, status.type(), status.message());
             }
             return;
         }
-        narrateServerStatus(serverId, type, message);
+        narrateServerStatus(source, type, message);
         if ("ProjectStatus".equalsIgnoreCase(type)
                 && "OK".equalsIgnoreCase(message)
                 && (serverId == null || LspServerRegistry.JAVA_SERVER_ID.equals(serverId))) {
@@ -3266,11 +3307,45 @@ final class LspCoordinator {
     /** Projects that imported with build problems (a missing dependency): ready, but said so. */
     private final java.util.Set<String> importWarned = new java.util.HashSet<>();
 
+    /** Of those, the ones whose ready line said so: a later clean import of the folder says ready again (CF4). */
+    private final java.util.Set<String> warnedAtReady = new java.util.HashSet<>();
+
     /** The project reason last said for each failed import, so a re-published error is not said again. */
     private final Map<String, String> saidImportReason = new java.util.HashMap<>();
 
-    /** The folder of the session each server last spoke from, which the narrated lines that follow are about. */
-    private final Map<String, Path> statusRoot = new java.util.HashMap<>();
+    /**
+     * The server and folder behind each narrated source. Each folder of a server is narrated on its own: in a window
+     * of two Java projects their progress interleaved in one stream, and the failed one's verdict gave way to the
+     * other's "Loaded and ready" (fourth review CF2).
+     */
+    private record StatusSource(String serverId, Path root) {}
+
+    private final Map<String, StatusSource> statusSources = new java.util.HashMap<>();
+
+    /** The sources whose ready line was said since their server last launched. */
+    private final java.util.Set<String> saidReady = new java.util.HashSet<>();
+
+    /** The narrator's id for {@code serverId}'s statuses from {@code root}: the server id alone when no folder. */
+    private @Nullable String statusSource(@Nullable String serverId, @Nullable Path root) {
+        if (serverId == null || root == null) {
+            return serverId;
+        }
+        Path r = root.toAbsolutePath().normalize();
+        String key = serverId + '\u0000' + r;
+        statusSources.putIfAbsent(key, new StatusSource(serverId, r));
+        return key;
+    }
+
+    /** The server's program name, and the project's folder when the window narrates more than one of its folders. */
+    private String statusServerName(String serverId, @Nullable Path root) {
+        String name = serverProgram(serverId);
+        long folders = statusSources.values().stream()
+                .filter(src -> src.serverId().equals(serverId))
+                .count();
+        return root == null || folders < 2 || root.getFileName() == null
+                ? name
+                : tr("status.lsp.serverInFolder", name, root.getFileName().toString());
+    }
 
     private static String importKey(@Nullable String serverId, @Nullable Path root) {
         return serverId + "\u0000" + (root == null ? "" : root.toAbsolutePath().normalize());
@@ -3309,17 +3384,24 @@ final class LspCoordinator {
 
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
         if (line != null) {
-            String server = line.serverId() == null ? "LSP" : serverProgram(line.serverId());
-            Path root = line.serverId() == null ? null : statusRoot.get(line.serverId());
-            String key = importKey(line.serverId(), root);
+            StatusSource source = line.serverId() == null ? null : statusSources.get(line.serverId());
+            String serverId = source != null ? source.serverId() : line.serverId();
+            Path root = source != null ? source.root() : null;
+            String server = serverId == null ? "LSP" : statusServerName(serverId, root);
+            String key = importKey(serverId, root);
+            if (line.ready() && line.serverId() != null) {
+                saidReady.add(line.serverId());
+            }
             if (line.problem()) {
                 // jdtls says WARNING both for an import that threw (a Gradle build that does not run: it logs the
                 // exception) and for one that worked with build problems (a missing Maven artifact: nothing
                 // logged). Only the first is "did not import" (re-review CN2, third review CT2).
-                String logged = lspManager.lastServerError(line.serverId(), root);
+                String logged = serverId == null ? null : lspManager.lastServerError(serverId, root);
                 if (logged == null) {
                     importWarned.add(key);
-                    host.setStatus(tr("status.lsp.importProblem", server));
+                    if (saidReady.contains(line.serverId())) {
+                        host.setStatus(tr("status.lsp.importProblem", server)); // a later edit broke the build
+                    } // else said once, by the ready line: mid-import it came twice in two wordings (CF4)
                 } else {
                     importFailed.add(key);
                     String reason = projectReason(root);
@@ -3331,6 +3413,7 @@ final class LspCoordinator {
             } else if (line.ready() && importFailed.contains(key)) {
                 host.setError(tr("status.lsp.readyImportFailed", server)); // not "Loaded and ready" over it
             } else if (line.ready() && importWarned.remove(key)) {
+                warnedAtReady.add(key);
                 host.setStatus(tr("status.lsp.readyWithProblems", server));
             } else {
                 host.setStatus(
@@ -3356,6 +3439,7 @@ final class LspCoordinator {
         failingServers.clear();
         importFailed.clear();
         importWarned.clear();
+        warnedAtReady.clear();
         statusNarrator.forget(null);
         lspManager.restartAll(); // a Java server shared with another window restarts for both
         clearAllDiagnostics();
@@ -3376,6 +3460,20 @@ final class LspCoordinator {
             lspManager.projectStyleChanged(buffer.getPath()); // .editorconfig, a formatter profile, the build (AN5)
         }
         Path path = buffer == null ? null : lspPath(buffer);
+        if (path != null
+                && path.getFileName() != null
+                && JAVA_BUILD_FILES.contains(path.getFileName().toString())) {
+            Path root = lspManager.javaSessionRoot(path);
+            if (root != null && importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
+                // The build file of a project that did not import was saved, presumably fixed: import it again,
+                // as a saved pom.xml re-syncs a project that did (fourth review CT1).
+                importWarned.clear();
+                warnedAtReady.clear();
+                warnedAtReady.clear();
+                restartJavaServer(path);
+                host.setStatus(tr("status.lsp.projectReimporting"));
+            }
+        }
         if (buffer != null && path != null && lspManager.isManaged(path)) {
             // Flush the current open-document state first. savedText may be an older snapshot when the user
             // continued typing during I/O; includeText still describes the bytes that actually reached disk.
@@ -3701,6 +3799,8 @@ final class LspCoordinator {
                 case "lsp.peekDefinition" -> peekDefinition();
                 case "lsp.refactorThis" -> refactorActions();
                 case "lsp.generate" -> generateActions();
+                case "lsp.callHierarchy" -> callHierarchy();
+                case "lsp.typeHierarchy" -> typeHierarchy();
                 default -> {}
             }
         });
@@ -4640,11 +4740,14 @@ final class LspCoordinator {
     void reloadProject() {
         EditorBuffer b = host.activeBuffer(); // a pom.xml tab counts, whichever server (if any) edits it
         Path path = b == null ? null : lspPath(b);
-        Path root = path == null ? null : lspManager.sessionRoot(path);
+        // The Java project's root, also from a build-file tab no Java server edits: by that tab's own server it was
+        // no root at all, so the failure was missed and the project not imported again (fourth review CT1).
+        Path root = path == null ? null : lspManager.javaSessionRoot(path);
         boolean failed = importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))
                 | importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, null)); // said by no known folder
         importFailed.clear(); // the import runs again: its outcome is said afresh
         importWarned.clear();
+        warnedAtReady.clear();
         if (path == null) {
             host.setStatus(tr("status.lsp.unavailable"));
             return;
@@ -4696,6 +4799,7 @@ final class LspCoordinator {
         announcedProjectProblems.clear();
         importFailed.clear(); // the fresh import says its own outcome (third review CT3)
         importWarned.clear();
+        warnedAtReady.clear();
         java.util.List<EditorBuffer> java = javaBuffersOf(path);
         clearProjectProblems(); // the dead server's "project:1" entries would stay for good
         lspManager.cleanJavaWorkspace(path, deleted -> {
@@ -5308,6 +5412,9 @@ final class LspCoordinator {
                             .filter(t -> t.file() != null
                                     || !SymbolRanking.excluded(
                                             libraryPackage(t) + "." + implementationLabel(t), excluded))
+                            // by class and line, so a class's own rows sit together in order (fourth review BN4)
+                            .sorted(java.util.Comparator.comparing(LspCoordinator::implementationLabel)
+                                    .thenComparingInt(LspManager.Target::line))
                             .toList();
                     pickOne(
                             symbol == null
@@ -6386,7 +6493,7 @@ final class LspCoordinator {
                         "status.lsp.renameIntroducedErrors",
                         added.size(),
                         first.substring(first.indexOf('\u0000') + 1),
-                        tr("command.lsp.undoRefactoring")));
+                        com.editora.editor.MenuTitles.of(tr("command.lsp.undoRefactoring"))));
             }
         });
         check.play();
@@ -7285,6 +7392,9 @@ final class LspCoordinator {
         for (EditorBuffer b : buffers) {
             if (b != null && !b.isDisposed()) {
                 touched.add(b);
+                // An applied edit is not typing: the auto-popup read a rename or inline at the caret as an
+                // identifier typed, and its list took the next Enter (fourth review BF2).
+                b.cancelCompletion();
             }
         }
         boolean resources = !mapped.renames().isEmpty()
@@ -7310,11 +7420,18 @@ final class LspCoordinator {
         java.util.List<com.editora.lsp.LspManager.WatchedFile> written = new java.util.ArrayList<>();
         for (EditorBuffer b : touched) {
             boolean opened = openBefore != null && !openBefore.contains(b);
-            if (!resources && !opened) {
-                continue; // an open file the user can see stays as it is: they save it
-            }
             Path path = b.getPath();
             boolean unmanaged = path != null && !lspManager.isManaged(path); // a background tab is never opened on it
+            if (!resources && !opened) {
+                if (unmanaged) {
+                    // An open file the user can see stays as it is: they save it. But the server must hear its new
+                    // text now: one never opened there kept its old text, so a second refactoring before a save
+                    // skipped it and left the project broken (fourth review, BT2's remainder).
+                    deferredLsp.remove(b);
+                    syncBuffer(b);
+                }
+                continue;
+            }
             boolean saved = b.isDirty() && ops.saveBuffer(b);
             if (saved && unmanaged && path != null) {
                 written.add(new com.editora.lsp.LspManager.WatchedFile(
@@ -7339,17 +7456,148 @@ final class LspCoordinator {
      */
     void willRenameFile(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
         AppliedEdit previous = lastApplied;
-        lspManager.willRenameFile(from, to, ok -> {
-            proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
-            AppliedEdit edit = lastApplied;
-            if (ok
-                    && edit != null
-                    && edit != previous
-                    && !java.nio.file.Files.exists(from)
-                    && java.nio.file.Files.exists(to)) {
-                treeRenamed(edit, from, to);
+        lspManager.willRenameFile(
+                from,
+                to,
+                ok -> {
+                    proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
+                    AppliedEdit edit = lastApplied;
+                    if (ok
+                            && edit != null
+                            && edit != previous
+                            && !java.nio.file.Files.exists(from)
+                            && java.nio.file.Files.exists(to)) {
+                        treeRenamed(edit, from, to);
+                    }
+                },
+                this::renameWithoutEdits);
+    }
+
+    /**
+     * The Project tree's participant: a rename or a drag-move goes through jdtls (B15, BT1), and the moves of one
+     * drag, or of its Undo Move, are one change (fourth review BF1).
+     */
+    ProjectPanel.RenameParticipant treeParticipant() {
+        return new ProjectPanel.RenameParticipant() {
+            @Override
+            public void willRename(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
+                willRenameFile(from, to, proceed);
             }
-        });
+
+            @Override
+            public void beginMove() {
+                moveGroup = new java.util.ArrayList<>();
+                moveGroupWhole = true;
+                moveWithoutEdits.clear();
+            }
+
+            @Override
+            public void endMove(boolean undo) {
+                endTreeMove(undo);
+            }
+        };
+    }
+
+    /** The edits of the drag-move under way, one per moved file; null when none is. */
+    private java.util.@Nullable List<AppliedEdit> moveGroup;
+
+    /** False once a folder moved in it: a folder cannot be moved back as one, so Undo Move is the way back. */
+    private boolean moveGroupWhole;
+
+    /** The {@code .java} files of the drag that moved without their package line edited. */
+    private final java.util.List<String> moveWithoutEdits = new java.util.ArrayList<>();
+
+    /** The edit Undo Last Refactoring would revert when it came from a drag-move, so reverting it ends Undo Move. */
+    private @Nullable AppliedEdit treeMoveEdit;
+
+    /** Told when Undo Last Refactoring took back a drag-move, which the tree must no longer offer to undo. */
+    private Runnable onTreeMoveUndone = () -> {};
+
+    void setOnTreeMoveUndone(Runnable action) {
+        onTreeMoveUndone = action == null ? () -> {} : action;
+    }
+
+    private void endTreeMove(boolean undo) {
+        java.util.List<AppliedEdit> group = moveGroup;
+        moveGroup = null;
+        if (group == null) {
+            return;
+        }
+        if (undo) {
+            // Undo Move took the drag back: it is not a refactoring to undo, and the drag's own edit is gone
+            if (!group.isEmpty() || (lastApplied != null && lastApplied == treeMoveEdit)) {
+                lastApplied = null;
+            }
+            treeMoveEdit = null;
+        } else if (!group.isEmpty()) {
+            lastApplied = moveGroupWhole ? merged(group) : null;
+            treeMoveEdit = lastApplied;
+        }
+        if (!moveWithoutEdits.isEmpty()) {
+            host.setError(tr("status.lsp.moveWithoutPackageEdit", String.join(", ", moveWithoutEdits)));
+            moveWithoutEdits.clear();
+        }
+    }
+
+    /** One edit made of several, in order: a file edited twice keeps its first text, a later move renames it. */
+    static AppliedEdit merged(java.util.List<AppliedEdit> edits) {
+        Map<Path, EditedFile> files = new java.util.LinkedHashMap<>();
+        java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames = new java.util.ArrayList<>();
+        java.util.List<Path> created = new java.util.ArrayList<>();
+        for (AppliedEdit e : edits) {
+            for (var r : e.renames()) {
+                Path f = r.from().toAbsolutePath().normalize();
+                Path t = r.to().toAbsolutePath().normalize();
+                Map<Path, EditedFile> moved = new java.util.LinkedHashMap<>();
+                files.forEach((p, ef) -> {
+                    Path n = p.toAbsolutePath().normalize();
+                    Path now = n.startsWith(f) ? t.resolve(f.relativize(n)) : p;
+                    moved.put(now, new EditedFile(now, ef.before(), ef.after()));
+                });
+                files = moved;
+            }
+            for (EditedFile f : e.files()) {
+                files.merge(f.path(), f, (old, now) -> new EditedFile(old.path(), old.before(), now.after()));
+            }
+            renames.addAll(e.renames());
+            created.addAll(e.created());
+        }
+        return new AppliedEdit(
+                java.util.List.copyOf(files.values()), java.util.List.copyOf(renames), java.util.List.copyOf(created));
+    }
+
+    /**
+     * jdtls had no edit for a rename. When it could not say (still importing, or no answer), the file would move
+     * with its package line and its users' imports as they were, with no word (fourth review BF5): ask first. When
+     * it answered with nothing for a {@code .java} file moved to another folder, move it and say so (DF3).
+     */
+    private boolean renameWithoutEdits(Path from, Path to, boolean answered) {
+        String name = PathDisplay.fileName(from);
+        if (answered) {
+            if (moveGroup != null) {
+                moveWithoutEdits.add(name);
+            } else {
+                host.setError(tr("status.lsp.moveWithoutPackageEdit", name));
+            }
+            return true;
+        }
+        return confirmRenameWithoutEdits.test(tr("dialog.lsp.renameWithoutEdits.body", name));
+    }
+
+    /** Asks whether to rename a file jdtls could not edit for; a field so a test can answer. */
+    java.util.function.Predicate<String> confirmRenameWithoutEdits = this::askRenameWithoutEdits;
+
+    private boolean askRenameWithoutEdits(String body) {
+        javafx.scene.control.Alert confirm = Dialogs.styled(new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                body,
+                javafx.scene.control.ButtonType.OK,
+                javafx.scene.control.ButtonType.CANCEL));
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("dialog.lsp.renameWithoutEdits.title"));
+        confirm.setHeaderText(null);
+        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
+                == javafx.scene.control.ButtonType.OK;
     }
 
     private void treeRenamed(AppliedEdit edit, Path from, Path to) {
@@ -7367,6 +7615,7 @@ final class LspCoordinator {
         }
         if (java.nio.file.Files.isDirectory(t)) {
             lastApplied = null; // a folder cannot be moved back as one: rename it back, and jdtls edits again
+            moveGroupWhole = false;
         } else {
             java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames =
                     new java.util.ArrayList<>(edit.renames());
@@ -7376,6 +7625,13 @@ final class LspCoordinator {
         lspManager.notifyWatchedFiles(java.util.List.of(
                 new com.editora.lsp.LspManager.WatchedFile(from, com.editora.lsp.LspManager.WatchedKind.DELETED),
                 new com.editora.lsp.LspManager.WatchedFile(to, com.editora.lsp.LspManager.WatchedKind.CREATED)));
+        java.util.List<AppliedEdit> group = moveGroup;
+        if (group != null) {
+            if (lastApplied != null) {
+                group.add(lastApplied);
+            }
+            return; // a drag-move: the tree says what moved, not "Renamed to" (fourth review BF3)
+        }
         // the saves above said "Saved /the/whole/path"; the rename is what happened (BT7)
         host.setStatus(tr("status.renamedTo", PathDisplay.fileName(to)));
     }
@@ -7516,9 +7772,18 @@ final class LspCoordinator {
             undoingEdit = false;
             if (ok) {
                 lastApplied = null;
+                if (edit == treeMoveEdit) {
+                    treeMoveEdit = null;
+                    onTreeMoveUndone.run(); // the drag is taken back: Undo Move has nothing left (BF1)
+                }
                 Path[] made = newPackageFolders.remove(edit);
                 if (made != null) {
-                    removeEmptyFolders(made[0], made[1]); // Move ▸ New package's folder goes with it (BT4)
+                    // Move ▸ New package's folder goes with it (BT4), and jdtls hears it is gone: the next Move
+                    // still offered the package (fourth review BF4)
+                    lspManager.notifyWatchedFiles(removeEmptyFolders(made[0], made[1]).stream()
+                            .map(f -> new com.editora.lsp.LspManager.WatchedFile(
+                                    f, com.editora.lsp.LspManager.WatchedKind.DELETED))
+                            .toList());
                 }
             }
             reportEdit(ok, tr("status.lsp.refactoringUndone", files), tr("status.lsp.refactoringUndoFailed"));
@@ -7528,21 +7793,27 @@ final class LspCoordinator {
     /** Folders Move ▸ New package created, by the refactoring that filled them, with their source root. */
     private final Map<AppliedEdit, Path[]> newPackageFolders = new java.util.IdentityHashMap<>();
 
-    /** Deletes {@code folder} and its parents up to (not including) {@code root} while they are empty. */
-    static void removeEmptyFolders(Path folder, Path root) {
+    /**
+     * Deletes {@code folder} and its parents up to (not including) {@code root} while they are empty, and returns
+     * the folders it deleted.
+     */
+    static java.util.List<Path> removeEmptyFolders(Path folder, Path root) {
+        java.util.List<Path> deleted = new java.util.ArrayList<>();
         @Nullable Path at = folder.toAbsolutePath().normalize();
         Path stop = root.toAbsolutePath().normalize();
         while (at != null && at.startsWith(stop) && !at.equals(stop)) {
             try (var entries = java.nio.file.Files.list(at)) {
                 if (entries.findAny().isPresent()) {
-                    return;
+                    break;
                 }
                 java.nio.file.Files.delete(at);
+                deleted.add(at);
             } catch (java.io.IOException | RuntimeException e) {
-                return;
+                break;
             }
             at = at.getParent();
         }
+        return deleted;
     }
 
     /** The position just past the end of {@code text}, in LSP's UTF-16 units. */
@@ -8419,22 +8690,22 @@ final class LspCoordinator {
                     || caret != area.getCaretPosition()) {
                 return;
             }
-            var active = com.editora.lsp.SignatureFormat.resolve(help);
-            List<String> parameter = active == null
-                            || active.paramStart() < 0
-                            || active.paramEnd() > active.label().length()
-                    ? List.of()
-                    : com.editora.lsp.JavaExpectedType.parameterTypes(
-                            active.label().substring(active.paramStart(), active.paramEnd()));
-            if (parameter.isEmpty()) {
+            // Every overload's parameter here, the active one's first: println(count) fits println(int) although
+            // jdtls lists println(char[]) first (fourth review AF2). Each binds its type variables from its own
+            // return type against what the line declares (AF1).
+            String target = com.editora.lsp.JavaExpectedType.declaredTarget(area.getText(), caret);
+            java.util.LinkedHashSet<String> types = new java.util.LinkedHashSet<>();
+            for (var parameter : com.editora.lsp.SignatureFormat.parametersAtCaret(help)) {
+                types.addAll(com.editora.lsp.JavaExpectedType.bindTypeVariables(
+                        com.editora.lsp.JavaExpectedType.parameterTypes(parameter.label()),
+                        target,
+                        parameter.returnType()));
+            }
+            if (types.isEmpty()) {
                 host.setStatus(tr("status.lsp.smartTypeUnknown"));
                 b.triggerCompletion();
             } else {
-                showSmartType(
-                        b,
-                        com.editora.lsp.JavaExpectedType.bindTypeVariables(
-                                parameter, com.editora.lsp.JavaExpectedType.declaredTarget(area.getText(), caret)),
-                        expected.afterNew());
+                showSmartType(b, List.copyOf(types), expected.afterNew());
             }
         });
     }
@@ -8442,7 +8713,11 @@ final class LspCoordinator {
     /** {@code types}: what the argument may be, the first named in the status (a varargs element, then its array). */
     private void showSmartType(EditorBuffer b, List<String> types, boolean afterNew) {
         String type = types.get(0);
-        host.setStatus(tr("status.lsp.smartType", type));
+        long others = types.stream()
+                .filter(t -> !t.equals(type) && !t.equals(type + "[]"))
+                .count();
+        host.setStatus(
+                others == 0 ? tr("status.lsp.smartType", type) : tr("status.lsp.smartTypeOverloads", type, others));
         b.triggerCompletion(items -> {
             List<com.editora.completion.Completion> kept =
                     com.editora.lsp.SmartTypeFilter.filter(items, types, afterNew);

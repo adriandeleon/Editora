@@ -47,6 +47,16 @@ public final class JavaProjectSettings {
 
     /** The nested {@code java} preferences {@code root} states (empty when it states none). */
     public static Map<String, Object> forRoot(@Nullable Path root) {
+        return forRoot(root, null);
+    }
+
+    /**
+     * As {@link #forRoot(Path)} for a server that names this machine's files by {@code toWire} (one run in a
+     * container or WSL), or null for a server on this machine. Such a server cannot read a copy in this machine's
+     * temporary folder (fourth review DF2): it is given the project's own profile, by its own name for it.
+     */
+    public static Map<String, Object> forRoot(
+            @Nullable Path root, java.util.function.@Nullable UnaryOperator<String> toWire) {
         if (root == null || com.editora.vfs.Vfs.isRemote(root)) {
             return Map.of();
         }
@@ -70,17 +80,44 @@ public final class JavaProjectSettings {
             java.put("sources", Map.of("organizeImports", organize));
         }
         Path formatter = formatterProfile(root);
+        Path project = root.toAbsolutePath().normalize();
         if (formatter != null) {
+            PROFILED.add(project);
             Map<String, Object> settings = new HashMap<>();
-            settings.put("url", contentAddressed(formatter).toUri().toString());
+            settings.put(
+                    "url",
+                    toWire != null
+                            ? toWire.apply(formatter.toUri().toString())
+                            : contentAddressed(formatter).toUri().toString());
             String profile = profileName(formatter);
             if (profile != null) {
                 settings.put("profile", profile);
             }
             java.put("format", Map.of("settings", settings));
+        } else if (toWire == null && PROFILED.contains(project)) {
+            // The project's profile was removed. jdtls ignores an empty url and kept formatting with the old one
+            // until a restart (re-review DN4); a profile with no settings puts its own defaults back.
+            Path empty = contentAddressed(emptyProfile(), "default");
+            if (empty != null) {
+                java.put(
+                        "format", Map.of("settings", Map.of("url", empty.toUri().toString(), "profile", EMPTY_NAME)));
+            }
         }
         return java;
     }
+
+    private static byte[] emptyProfile() {
+        return EMPTY_PROFILE.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** The project folders a formatter profile was pushed for: one removed later is replaced by jdtls's defaults. */
+    private static final java.util.Set<Path> PROFILED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    static final String EMPTY_NAME = "Editora default";
+
+    private static final String EMPTY_PROFILE = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            + "<profiles version=\"1\"><profile kind=\"CodeFormatterProfile\" name=\"" + EMPTY_NAME
+            + "\" version=\"1\"/></profiles>\n";
 
     /**
      * A copy of {@code profile} named by its content, or {@code profile} itself when it cannot be made. jdtls
@@ -90,15 +127,29 @@ public final class JavaProjectSettings {
      */
     static Path contentAddressed(Path profile) {
         try {
-            byte[] bytes = java.nio.file.Files.readAllBytes(profile);
+            Path copy = contentAddressed(java.nio.file.Files.readAllBytes(profile), profile.toString());
+            return copy != null ? copy : profile;
+        } catch (java.io.IOException | RuntimeException e) {
+            return profile;
+        }
+    }
+
+    /**
+     * The copy of {@code bytes} in this process's own folder, or null when it cannot be made. The folder is private
+     * to this user and process and goes when it exits, and a copy is checked before it is used: one in a shared
+     * temporary folder could belong to another user, unreadable or planted, and they piled up (fourth review DF2).
+     * The copy {@code source} had before is deleted when its content changes.
+     */
+    static @Nullable Path contentAddressed(byte[] bytes, String source) {
+        try {
             String hash = java.util.HexFormat.of()
                     .formatHex(
                             java.security.MessageDigest.getInstance("SHA-256").digest(bytes))
                     .substring(0, 16);
-            Path dir = Path.of(System.getProperty("java.io.tmpdir"), "editora-formatter-profiles");
-            java.nio.file.Files.createDirectories(dir);
+            Path dir = copiesDir();
             Path copy = dir.resolve(hash + ".xml");
-            if (!java.nio.file.Files.exists(copy)) {
+            if (!java.nio.file.Files.exists(copy)
+                    || !java.util.Arrays.equals(java.nio.file.Files.readAllBytes(copy), bytes)) {
                 Path part = java.nio.file.Files.createTempFile(dir, hash, ".part");
                 java.nio.file.Files.write(part, bytes);
                 java.nio.file.Files.move(
@@ -106,11 +157,32 @@ public final class JavaProjectSettings {
                         copy,
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                         java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                copy.toFile().deleteOnExit();
+            }
+            Path before = COPY_OF.put(source, copy);
+            if (before != null && !before.equals(copy) && !COPY_OF.containsValue(before)) {
+                java.nio.file.Files.deleteIfExists(before);
             }
             return copy;
         } catch (java.io.IOException | java.security.NoSuchAlgorithmException | RuntimeException e) {
-            return profile;
+            return null;
         }
+    }
+
+    /** Each profile's current copy, by the profile's path. */
+    private static final Map<String, Path> COPY_OF = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static @Nullable Path copies;
+
+    /** This process's folder of profile copies: owner-only, under a name no one can guess, deleted at exit. */
+    static synchronized Path copiesDir() throws java.io.IOException {
+        Path dir = copies;
+        if (dir == null || !java.nio.file.Files.isDirectory(dir)) {
+            dir = java.nio.file.Files.createTempDirectory("editora-formatter-profiles-");
+            dir.toFile().deleteOnExit(); // registered first, so deleted after the copies in it
+            copies = dir;
+        }
+        return dir;
     }
 
     /** jdtls 1.63's own import order and on-demand thresholds ({@code Preferences}), for a key a project dropped. */

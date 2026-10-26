@@ -119,12 +119,23 @@ public final class LspManager {
         synchronized (MANAGERS) {
             all = java.util.List.copyOf(MANAGERS);
         }
-        all.forEach(m -> m.shutdownServer(serverId));
+        all.forEach(m -> {
+            m.shutdownServer(serverId);
+            m.onInstallHold.accept(serverId, true);
+        });
     }
 
-    /** Lets {@code serverId} start again after its install. */
+    /**
+     * Lets {@code serverId} start again after its install, and tells every window, whose documents on it were left
+     * with no server: only the window that ran the install re-applied its tool support (fourth review CF1).
+     */
     public static void releaseAfterInstall(String serverId) {
         HELD_FOR_INSTALL.remove(serverId);
+        java.util.List<LspManager> all;
+        synchronized (MANAGERS) {
+            all = java.util.List.copyOf(MANAGERS);
+        }
+        all.forEach(m -> m.onInstallHold.accept(serverId, false));
     }
 
     private volatile Map<String, LanguageServerSession> sharedServers = SHARED_SERVERS;
@@ -147,6 +158,13 @@ public final class LspManager {
 
     public void setOnSharedServerEnded(java.util.function.BiConsumer<String, Path> handler) {
         onSharedServerEnded = handler == null ? (serverId, root) -> {} : handler;
+    }
+
+    /** Told (on the FX thread) when an install stops a server in every window ({@code true}) and when it is done. */
+    private volatile java.util.function.BiConsumer<String, Boolean> onInstallHold = (serverId, held) -> {};
+
+    public void setOnInstallHold(java.util.function.BiConsumer<String, Boolean> handler) {
+        onInstallHold = handler == null ? (serverId, held) -> {} : handler;
     }
 
     /** Lets {@code other} share this manager's servers, as two windows do (tests only). */
@@ -556,6 +574,15 @@ public final class LspManager {
     /** The workspace root of the session serving {@code file}, or null when none does. */
     public @Nullable Path sessionRoot(Path file) {
         LanguageServerSession s = sessionFor(file);
+        return s == null ? null : s.root();
+    }
+
+    /**
+     * The workspace root of the jdtls session {@code file} belongs to: its own, else the deepest whose root holds
+     * it, as for a {@code build.gradle} no Java server edits. Null when no jdtls serves its folder.
+     */
+    public @Nullable Path javaSessionRoot(@Nullable Path file) {
+        LanguageServerSession s = javaSessionFor(file);
         return s == null ? null : s.root();
     }
 
@@ -4802,7 +4829,8 @@ public final class LspManager {
         Map<String, Object> java = new java.util.HashMap<>(LspServerSettings.javaSettings(onTypeFormatting));
         java.put("autobuild", Map.of("enabled", false));
         List<Map<String, Object>> runtimes =
-                JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks, preferredHome);
+                // jdks given: a remote host's, whose sources are not on this machine's disk to look for
+                JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks, preferredHome, jdks == null);
         if (!runtimes.isEmpty()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> configuration =
@@ -4866,6 +4894,9 @@ public final class LspManager {
         // refactorings (variable, constant, method, field) into that same command; each is one
         // java/getRefactorEdit away.
         caps.put("extractInterfaceSupport", true);
+        // Resolving "Add all missing imports" then asks about each ambiguous name (chooseImports), as Organize
+        // Imports does; without it Date was skipped silently (Java review D6).
+        caps.put("advancedOrganizeImportsSupport", true);
         caps.put("advancedExtractRefactoringSupport", true);
         caps.put("moveRefactoringSupport", true);
         // jdtls 1.61+: a move with problems answers a confirmationToken instead of applying anyway; the
@@ -4917,7 +4948,9 @@ public final class LspManager {
         if (!LspServerRegistry.JAVA_SERVER_ID.equals(serverId) || !(options instanceof Map<?, ?> map) || root == null) {
             return options;
         }
-        Map<String, Object> project = JavaProjectSettings.forRoot(root);
+        com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
+        Map<String, Object> project = JavaProjectSettings.forRoot(
+                root, target.isLocal() ? null : WireUris.mapped(target)::toWire); // a container or WSL (DF2)
         Object settings = map.get("settings");
         if (project.isEmpty() || !(settings instanceof Map<?, ?> s) || !(s.get("java") instanceof Map<?, ?> java)) {
             return options;
@@ -5927,16 +5960,56 @@ public final class LspManager {
      * made, {@code proceed} runs at once with true (Java review B15).
      */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed) {
+        willRenameFile(from, to, proceed, (f, t, answered) -> true);
+    }
+
+    /**
+     * What a rename does when jdtls has no edit for it. {@code answered} false: it could not say (still importing,
+     * or the request failed), so the package line and imports would silently stay as they were; true: it answered
+     * with nothing for a {@code .java} file moved to another folder. Returns whether to rename the file anyway.
+     */
+    public interface RenameFallback {
+        boolean renameWithoutEdits(Path from, Path to, boolean answered);
+    }
+
+    /** Whether {@code dir} is a folder with a {@code .java} file in it, at any depth. */
+    private static boolean holdsJava(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return false;
+        }
+        try (var files = Files.walk(dir, 32)) {
+            return files.anyMatch(p -> p.toString().endsWith(".java"));
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
+    public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
         LanguageServerSession s = javaSessionFor(from);
-        if (s == null) {
+        boolean java = from.toString().endsWith(".java") || holdsJava(from);
+        if (s == null || !java) {
             Platform.runLater(() -> proceed.accept(true));
             return;
         }
+        Path into = to.getParent();
+        if (into != null && !into.equals(from.getParent()) && Files.isDirectory(into)) {
+            // jdtls answers null for a package it has not heard of: a folder made a moment ago, before the
+            // watcher's batch reached it, or any new folder of an SSH project (fourth review DF3). Saying it
+            // exists is idempotent, and goes out before the request on the same channel.
+            s.didChangeWatchedFiles(
+                    eventsUnderRoot(List.of(new WatchedFile(into, WatchedKind.CREATED)), s.root(), s.uris()));
+        }
+        boolean moved = into != null
+                && !into.equals(from.getParent())
+                && from.toString().endsWith(".java");
         EditBasis expected = editBasis(s);
         s.willRenameFiles(s.uris().toWire(uri(from)), s.uris().toWire(uri(to)))
                 .whenComplete((edit, e) -> Platform.runLater(() -> {
-                    if (e != null || edit == null || !changesText(edit)) {
-                        proceed.accept(true);
+                    if (e != null || edit == null) {
+                        proceed.accept(fallback.renameWithoutEdits(from, to, false));
+                    } else if (!changesText(edit)) {
+                        proceed.accept(!moved || fallback.renameWithoutEdits(from, to, true));
                     } else {
                         applyWorkspaceEdit(edit, expected, proceed);
                     }

@@ -2261,22 +2261,13 @@ public class EditorBuffer implements TabContent {
         if (lspRenameAvailable) { // rename the right-clicked symbol
             items.add(lspItem("command.lsp.rename", MenuIcons.rename(), offset, lspRenameAction));
         }
-        items.add(
-                1,
-                lspItem(
-                        "command.lsp.peekDefinition",
-                        MenuIcons.find(),
-                        offset,
-                        () -> lspCommand.accept("lsp.peekDefinition")));
-        if (lspCodeActionsAvailable) { // Refactor and Generate had no right-click entry (Java review B14)
-            items.add(lspItem(
-                    "command.lsp.refactorThis",
-                    MenuIcons.codeAction(),
-                    offset,
-                    () -> lspCommand.accept("lsp.refactorThis")));
+        items.add(1, lspCommandItem("lsp.peekDefinition", MenuIcons.find(), offset));
+        if (lspCodeActionsAvailable) { // Refactor, Generate, the hierarchies had no right-click entry (Java review B14)
+            items.add(lspCommandItem("lsp.refactorThis", MenuIcons.codeAction(), offset));
             if ("java".equals(language)) {
-                items.add(lspItem(
-                        "command.lsp.generate", MenuIcons.add(), offset, () -> lspCommand.accept("lsp.generate")));
+                items.add(lspCommandItem("lsp.generate", MenuIcons.add(), offset));
+                items.add(lspCommandItem("lsp.callHierarchy", MenuIcons.find(), offset));
+                items.add(lspCommandItem("lsp.typeHierarchy", MenuIcons.find(), offset));
             }
         }
         if (lspFormatAvailable) {
@@ -2286,6 +2277,11 @@ public class EditorBuffer implements TabContent {
             items.add(format);
         }
         return items;
+    }
+
+    /** A row that runs command {@code id} through the coordinator, at the right-clicked spot. */
+    private MenuItem lspCommandItem(String id, Node icon, int offset) {
+        return lspItem("command." + id, icon, offset, () -> lspCommand.accept(id));
     }
 
     private MenuItem lspItem(String titleKey, Node icon, int offset, Runnable action) {

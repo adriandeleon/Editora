@@ -117,6 +117,7 @@ final class MenuBarIcons {
         add("file.run", Icons::run);
         add("file.runWithArgs", Icons::run);
         add("run.trace", Icons::run);
+        add("run.context", Icons::run);
         add("debug.continue", Icons::run);
         add("run.rerun", Icons::refresh);
         add("help.checkForUpdates", Icons::refresh);

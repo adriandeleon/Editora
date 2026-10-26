@@ -82,14 +82,64 @@ class JavaProjectSettingsTest {
     @Test
     void anEditedProfileIsSentUnderANewNameAndAnUnchangedOneUnderTheSame() throws Exception {
         Path profile = root.resolve("eclipse-formatter.xml");
-        Files.writeString(profile, PROFILE);
+        String own = PROFILE.replace("Acme", "AcmeEdited"); // no other test's profile shares its copy
+        Files.writeString(profile, own);
         Path first = JavaProjectSettings.contentAddressed(profile);
         assertEquals(first, JavaProjectSettings.contentAddressed(profile), "unchanged: the same name");
-        assertEquals(PROFILE, Files.readString(first));
+        assertEquals(own, Files.readString(first));
         Files.writeString(profile, PROFILE.replace("Acme", "Acme2"));
         Path second = JavaProjectSettings.contentAddressed(profile);
         assertTrue(!second.equals(first), "edited: a new name");
         assertTrue(Files.readString(second).contains("Acme2"));
+        assertTrue(!Files.exists(first), "the old copy goes: they piled up (fourth review DF2)");
+    }
+
+    /**
+     * The copies are this process's own: a private folder no other user can guess or write, and a copy that does
+     * not hold what its name says is written again (fourth review DF2).
+     */
+    @Test
+    void theCopiesArePrivateAndCheckedBeforeUse() throws Exception {
+        Path profile = root.resolve("eclipse-formatter.xml");
+        Files.writeString(profile, PROFILE);
+        Path copy = JavaProjectSettings.contentAddressed(profile);
+        Path dir = copy.getParent();
+        assertTrue(dir.getFileName().toString().startsWith("editora-formatter-profiles-"), dir.toString());
+        assertTrue(!dir.getFileName().toString().equals("editora-formatter-profiles"), "not the shared name");
+        if (dir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            assertEquals(
+                    java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"),
+                    Files.getPosixFilePermissions(dir));
+        }
+        Files.writeString(copy, "<profiles>planted</profiles>");
+        assertEquals(copy, JavaProjectSettings.contentAddressed(profile));
+        assertEquals(PROFILE, Files.readString(copy), "rewritten from the profile");
+    }
+
+    /**
+     * A server in a container or WSL gets the project's own profile by its name for it (it cannot read this
+     * machine's temporary folder, DF2), and a profile removed is replaced by an empty one, which puts jdtls's
+     * defaults back (DN4).
+     */
+    @Test
+    void aMappedServerGetsTheProfileByItsOwnNameAndARemovedProfileGivesTheDefaults() throws Exception {
+        Path profile = root.resolve("eclipse-formatter.xml");
+        Files.writeString(profile, PROFILE);
+        Map<String, Object> mapped = JavaProjectSettings.forRoot(root, uri -> uri.replace("file:///", "file:///work/"));
+        assertEquals(
+                profile.toUri().toString().replace("file:///", "file:///work/"),
+                ((Map<?, ?>) ((Map<?, ?>) mapped.get("format")).get("settings")).get("url"));
+
+        JavaProjectSettings.forRoot(root);
+        Files.delete(profile);
+        Map<?, ?> settings =
+                (Map<?, ?>) ((Map<?, ?>) JavaProjectSettings.forRoot(root).get("format")).get("settings");
+        assertEquals(JavaProjectSettings.EMPTY_NAME, settings.get("profile"));
+        String empty = Files.readString(Path.of(java.net.URI.create((String) settings.get("url"))));
+        assertTrue(empty.contains("CodeFormatterProfile") && !empty.contains("<setting"), empty);
+        assertTrue(
+                JavaProjectSettings.forRoot(root.resolve("never-profiled")).isEmpty(),
+                "a project that never had one is sent nothing");
     }
 
     @Test

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run: Run Context at Caret** (`run.context`; Ctrl+Shift+F10 / ⌃⇧R in the IntelliJ keymaps, as IntelliJ's Run
+  Context Configuration): runs the test at the caret, else the file. The chord used to rerun the last Maven goal.
+- **Find Action knows other IDEs' names.** The command palette also finds commands by what IntelliJ IDEA and VS Code
+  call them: Optimize Imports, Show Context Actions, Reformat Code, Find Usages, Parameter Info, Insert Live
+  Template and others.
+- **More IntelliJ and VS Code chords.** IntelliJ keymaps: Ctrl+I implements methods on Linux, Ctrl+Shift+= / - (⌘⇧= /
+  ⌘⇧-) expand and collapse all folds. VS Code keymaps: Ctrl+F12 Go to Implementation, Alt+F12 Peek Definition,
+  Ctrl+T Go to Symbol in Workspace.
+- **Doctor names the Java jdtls runs on**, and warns when its launcher's `python3` or a Java 21+ is missing.
+- Navigate lists Go to Declaration, Peek Definition and Copy Qualified Name; the editor's LSP submenu lists Call and
+  Type Hierarchy.
 - **Code-action lightbulb in the gutter** (IntelliJ's intention bulb). When the caret rests on a line where the
   language server has a quick fix, a red bulb shows in the gutter; an amber one for other quick actions.
   Refactorings and source actions, which servers offer nearly everywhere, light nothing. Click it for the list
@@ -257,6 +268,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   works on RichTextFX types. Internal-only — no behavior, dependency, or `module-info` change.
 
 ### Fixed
+
+- **Java: a jdtls Update no longer leaves other windows without a server.** Doctor's Update stopped jdtls in every
+  window but started it again only in the one that ran it. Every window now says the server is paused while it is
+  updated, and reopens its Java files when it is done (failed or not).
+- **Java: Reload after a failed Gradle import works from `build.gradle`.** Run from the build file's tab, which the
+  failure message points to, it updated a project that did not exist. Saving the fixed build file now imports the
+  project again too.
+- **Java: refactorings keep jdtls in step.** A refactoring that edits a tab jdtls never opened opens it there, so a
+  second refactoring before a save no longer skips it. A drag-move of several files is one refactoring: Undo Move
+  and Undo Last Refactoring each take all of it back, and either ends the other; the status says what moved.
+  jdtls is told about the destination folder first, a `.java` move it has no package edit for says so, and while
+  it is still loading Editora asks before moving a Java file plainly. Folders an undo removes are reported to it.
+- **Java: no completion list after a rename or inline.** An applied edit opened the list at the caret, and the next
+  Enter took its first row.
+- **Java: Smart Type** binds a type variable by the method's return type (`names.toArray(` into a `String[]` wants a
+  `String[]`, not `String[][]`), leaves it open inside another call's argument, and reads the parameter of every
+  overload (`System.out.println(` offers an `int`).
+- **Java: a JDK with its sources is preferred.** Of two JDKs of one version jdtls gets the one with `src.zip`; a
+  JDK without one (a distro JDK whose `src.zip` links to an uninstalled package) gets the online API docs, so JDK
+  parameters are no longer `arg0`.
+- **Java: formatter profiles.** The content-addressed copies are kept in a private folder of this process, checked
+  before use and removed when replaced, instead of a shared temporary folder; a server in a container or WSL gets
+  the project's own profile; removing a profile, or editing one in `.settings` outside Editora, applies without a
+  restart. The project's code style now does follow `.editorconfig` and formatter-profile changes without one.
+- **Java: Add all missing imports asks** which class an ambiguous name means, as Organize Imports does.
+- **Complete Statement** reads indentation: a line at the statement's own indent is the next statement, a further
+  indented `this.x` goes on. A block that ends a declaration closes with `};`, one in an `if (…(x -> {` condition
+  with `})) {`, and an annotation leaves the caret at its own indent.
+- **Two Java projects in one window** each get their own status line, named by folder, so one's failed import is no
+  longer followed by the other's "Loaded and ready". A Maven project's missing dependency is said once, at ready,
+  and a fixed `pom.xml` ends on ready.
+- Menu rows keep their prefix when two would otherwise read the same ("Rerun Last" twice in Run, "Find in Files" in
+  Find and Window). Go to Class puts `Map.Entry` first for "Entry", ranking shaded copies as nested types.
+  Implementation rows are sorted by class and line. Refactor This puts what acts on the selection before Extract
+  Interface. Postfix completion rows match past the shared qualifier, and the camel-hump matcher no longer slows
+  down on long many-word texts. Settings no longer logs an error after an install when its Mermaid page was never
+  opened.
 
 - **Java: a failed import names the real cause** (a Gradle build's "Could not find method …", not the generic
   "Could not fetch model"), and belongs to its own project: in a window of several projects one failed import no

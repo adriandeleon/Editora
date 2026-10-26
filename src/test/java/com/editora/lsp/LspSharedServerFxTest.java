@@ -137,14 +137,21 @@ class LspSharedServerFxTest {
         Path two = javaFile("B.java");
         a.openDocument(one, root, "java", "class A {}");
         b.openDocument(two, root, "java", "class B {}");
+        List<String> told = new java.util.concurrent.CopyOnWriteArrayList<>();
+        a.setOnInstallHold((id, held) -> told.add("a " + id + " " + held));
+        b.setOnInstallHold((id, held) -> told.add("b " + id + " " + held));
         try {
             LspManager.holdForInstall("java");
+            assertTrue(told.containsAll(List.of("a java true", "b java true")), "every window is told: " + told);
             assertFalse(a.isManaged(one) || b.isManaged(two), "stopped in both windows");
             a.openDocument(one, root, "java", "class A {}");
             assertFalse(a.isManaged(one), "nothing starts on a folder being replaced");
         } finally {
             LspManager.releaseAfterInstall("java");
         }
+        assertTrue(
+                told.containsAll(List.of("a java false", "b java false")),
+                "every window is told it is done, not only the one that installed (fourth review CF1): " + told);
         a.openDocument(one, root, "java", "class A {}");
         assertTrue(a.isManaged(one), "starts again once the install is done");
     }

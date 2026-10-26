@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -40,6 +41,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -1726,5 +1728,199 @@ class LspWorkspaceEditFxTest {
         assertTrue(Files.exists(from) && !Files.exists(to), "Undo moves the file back");
         assertEquals("class Circle {}\n", Files.readString(from));
         assertEquals("class Canvas { Circle c; }\n", Files.readString(canvas));
+    }
+
+    // --- fourth review: sync through refactorings, drag-moves as one change ---------------------------
+
+    /**
+     * A refactoring that edits an open tab the server never opened opens it there with its new text: before, a
+     * second refactoring before a save skipped the tab and left the project broken (fourth review, BT2's rest).
+     */
+    @Test
+    void aRefactoringOfATabTheServerNeverOpenedOpensItThere() throws Exception {
+        EditorBuffer a = openBuffer("A.java", "class A {}\n");
+        manager.openDocument(a.getPath(), root, "java", "class A {}\n");
+        EditorBuffer b = openBuffer("B.java", "class B { void grow() {} }\n");
+        FxTestSupport.runOnFx(() -> host.active = a);
+        assertFalse(manager.isManaged(b.getPath()), "precondition: a deferred tab");
+        var we = new WorkspaceEdit();
+        we.setDocumentChanges(List.of(Either.forLeft(edit(b.getPath(), 0, 15, 19, "widen"))));
+
+        assertTrue(apply(we));
+
+        assertTrue(manager.isManaged(b.getPath()), "the server has the tab now");
+        assertEquals(
+                "class B { void widen() {} }\n",
+                fakes.get(0)
+                        .opened
+                        .get(fakes.get(0).opened.size() - 1)
+                        .getTextDocument()
+                        .getText(),
+                "with the refactored text, not the file's");
+        assertTrue(FxTestSupport.callOnFx(b::isDirty), "a tab the user can see is still theirs to save");
+    }
+
+    private void serveWillRename() throws Exception {
+        ops.host = host;
+        var caps = LspTestHooks.caps();
+        var fileOps = new org.eclipse.lsp4j.FileOperationsServerCapabilities();
+        fileOps.setWillRename(new org.eclipse.lsp4j.FileOperationOptions(List.of(
+                new org.eclipse.lsp4j.FileOperationFilter(new org.eclipse.lsp4j.FileOperationPattern("**/*.java")))));
+        var workspace = new org.eclipse.lsp4j.WorkspaceServerCapabilities();
+        workspace.setFileOperations(fileOps);
+        caps.setWorkspace(workspace);
+        fakes = LspTestHooks.useFakeSessions(manager, caps);
+    }
+
+    /** What the Project tree does for one move: asks the participant, then moves the file and its tab. */
+    private boolean treeMove(ProjectPanel.RenameParticipant participant, Path from, Path to) throws Exception {
+        var proceeded = new CompletableFuture<Boolean>();
+        FxTestSupport.runOnFx(() -> participant.willRename(from, to, ok -> {
+            if (ok) {
+                try {
+                    Files.createDirectories(to.getParent());
+                    Files.move(from, to);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+                ops.fileRenamed(from, to);
+            }
+            proceeded.complete(ok);
+        }));
+        boolean ok = proceeded.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        FxTestSupport.drainFx();
+        return ok;
+    }
+
+    private WorkspaceEdit canvasEdit(Path canvas, int col, String text) {
+        var we = new WorkspaceEdit();
+        we.setDocumentChanges(List.of(Either.forLeft(edit(canvas, 0, col, col, text))));
+        return we;
+    }
+
+    /**
+     * The moves of one drag are one refactoring, and each way back ends the other: Undo Last Refactoring took back
+     * only the last file and left Undo Move armed, and after Undo Move it moved the file out again (fourth review
+     * BF1). The tree, not the rename, says what moved (BF3).
+     */
+    @Test
+    void aDragMoveIsOneRefactoringAndEachUndoEndsTheOther() throws Exception {
+        Path canvas = root.resolve("Canvas.java");
+        Files.writeString(canvas, "class Canvas {}\n");
+        Files.setLastModifiedTime(
+                canvas, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 60_000));
+        Path big = root.resolve("Big.java");
+        Path circle = root.resolve("Circle.java");
+        Files.writeString(big, "class Big {}\n");
+        Files.writeString(circle, "class Circle {}\n");
+        Path util = Files.createDirectory(root.resolve("util"));
+        serveWillRename();
+        manager.openDocument(canvas, root, "java", "class Canvas {}\n");
+        ProjectPanel.RenameParticipant participant = FxTestSupport.callOnFx(coordinator::treeParticipant);
+        AtomicInteger treeForgot = new AtomicInteger();
+        FxTestSupport.runOnFx(() -> coordinator.setOnTreeMoveUndone(treeForgot::incrementAndGet));
+
+        FxTestSupport.runOnFx(participant::beginMove);
+        fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*1*/");
+        assertTrue(treeMove(participant, big, util.resolve("Big.java")));
+        fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*2*/");
+        assertTrue(treeMove(participant, circle, util.resolve("Circle.java")));
+        host.status = "Moved 2 items into util";
+        FxTestSupport.runOnFx(() -> participant.endMove(false));
+
+        assertEquals("Moved 2 items into util", host.status, "not \"Renamed to Circle.java\"");
+        var applied = FxTestSupport.callOnFx(coordinator::lastAppliedEdit);
+        assertEquals(2, applied.renames().size(), "both moves, as one refactoring");
+        assertEquals(
+                List.of(canvas), applied.files().stream().map(f -> f.path()).toList());
+        assertEquals("class Canvas {}\n", applied.files().get(0).before(), "the text before the whole drag");
+
+        FxTestSupport.runOnFx(coordinator::undoRefactoring);
+        for (int i = 0; i < 100 && !Files.exists(big); i++) {
+            Thread.sleep(20);
+            FxTestSupport.drainFx();
+        }
+        assertTrue(Files.exists(big) && Files.exists(circle), "both files went back");
+        assertEquals("class Canvas {}\n", Files.readString(canvas));
+        assertEquals(1, treeForgot.get(), "Undo Move is no longer offered");
+
+        // the other way: Undo Move takes the drag back, and Undo Last Refactoring then has nothing to redo
+        FxTestSupport.runOnFx(participant::beginMove);
+        fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*3*/");
+        assertTrue(treeMove(participant, big, util.resolve("Big.java")));
+        FxTestSupport.runOnFx(() -> participant.endMove(false));
+        FxTestSupport.runOnFx(participant::beginMove);
+        fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*back*/");
+        assertTrue(treeMove(participant, util.resolve("Big.java"), big));
+        FxTestSupport.runOnFx(() -> participant.endMove(true));
+        assertEquals(null, FxTestSupport.callOnFx(coordinator::lastAppliedEdit), "the back-move is not recorded");
+    }
+
+    /**
+     * A {@code .java} file moved to another folder: jdtls is told the folder exists before it is asked, as it
+     * answers nothing for a package it has not heard of (fourth review DF3); when it still has no edit, the move is
+     * made and said; when it cannot answer, the user is asked first (BF5).
+     */
+    @Test
+    void aMoveJdtlsHasNoEditForIsSaidOrAsked() throws Exception {
+        Path circle = root.resolve("Circle.java");
+        Files.writeString(circle, "class Circle {}\n");
+        Path shapes = Files.createDirectory(root.resolve("shapes"));
+        serveWillRename();
+        manager.openDocument(circle, root, "java", "class Circle {}\n");
+        ProjectPanel.RenameParticipant participant = FxTestSupport.callOnFx(coordinator::treeParticipant);
+        fakes.get(0).willRenameResponse = new WorkspaceEdit();
+
+        assertTrue(treeMove(participant, circle, shapes.resolve("Circle.java")));
+
+        assertTrue(
+                fakes.get(0).fileEvents().stream().anyMatch(e -> e.startsWith("Created ") && e.contains("/shapes")),
+                fakes.get(0).fileEvents().toString());
+        assertEquals(tr("status.lsp.moveWithoutPackageEdit", "Circle.java"), host.error);
+
+        // in a drag of several, said once at the end, after the tree's own status
+        Path square = root.resolve("Square.java");
+        Files.writeString(square, "class Square {}\n");
+        host.error = null;
+        FxTestSupport.runOnFx(participant::beginMove);
+        assertTrue(treeMove(participant, square, shapes.resolve("Square.java")));
+        assertEquals(null, host.error, "not yet: the tree speaks first");
+        FxTestSupport.runOnFx(() -> participant.endMove(false));
+        assertEquals(tr("status.lsp.moveWithoutPackageEdit", "Square.java"), host.error);
+
+        List<String> asked = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> coordinator.confirmRenameWithoutEdits = body -> {
+            asked.add(body);
+            return false;
+        });
+        fakes.get(0).willRenameFails = true;
+        Path moved = shapes.resolve("Circle.java");
+        assertFalse(treeMove(participant, moved, root.resolve("Circle.java")), "refused: not moved plainly");
+        assertEquals(List.of(tr("dialog.lsp.renameWithoutEdits.body", "Circle.java")), asked);
+        assertTrue(Files.exists(moved));
+    }
+
+    @Test
+    void mergedEditsKeepTheFirstTextAndFollowLaterMoves() {
+        Path a = root.resolve("A.java");
+        Path b = root.resolve("B.java");
+        Path util = root.resolve("util");
+        var first = new LspCoordinator.AppliedEdit(
+                List.of(new LspCoordinator.EditedFile(a, "0", "1")),
+                List.of(new WorkspaceEditMapper.FileRename(b, util.resolve("B.java"), false)),
+                List.of());
+        var second = new LspCoordinator.AppliedEdit(
+                List.of(new LspCoordinator.EditedFile(util.resolve("A.java"), "1", "2")),
+                List.of(new WorkspaceEditMapper.FileRename(a, util.resolve("A.java"), false)),
+                List.of());
+
+        var merged = LspCoordinator.merged(List.of(first, second));
+
+        assertEquals(
+                List.of(new LspCoordinator.EditedFile(
+                        util.resolve("A.java").toAbsolutePath().normalize(), "0", "2")),
+                merged.files(),
+                "A was edited, then moved, then edited again: one entry at its last place, first to last text");
+        assertEquals(2, merged.renames().size());
     }
 }

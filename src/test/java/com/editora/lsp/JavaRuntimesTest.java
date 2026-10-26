@@ -206,4 +206,32 @@ class JavaRuntimesTest {
         assertFalse(JavaRuntimes.hasCompiler(null));
         assertFalse(JavaRuntimes.hasCompiler(tmp.resolve("nope")));
     }
+
+    /**
+     * Within a major a JDK with its sources is preferred, and one without gets the online API docs: a distro
+     * JDK whose {@code src.zip} links to a package not installed gave jdtls JDK parameters as {@code arg0} and no
+     * signature-help docs (fourth review DF1).
+     */
+    @Test
+    void aJdkWithItsSourcesIsPreferredAndOneWithoutGetsTheApiDocs(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path distro = java.nio.file.Files.createDirectories(dir.resolve("distro21/lib"));
+        java.nio.file.Files.createSymbolicLink(distro.resolve("src.zip"), dir.resolve("not-installed/src.zip"));
+        java.nio.file.Path sdk = java.nio.file.Files.createDirectories(dir.resolve("sdk21/lib"));
+        java.nio.file.Files.writeString(sdk.resolve("src.zip"), "zip");
+        String distroHome = distro.getParent().toString();
+        String sdkHome = sdk.getParent().toString();
+
+        List<Map<String, Object>> out = JavaRuntimes.runtimes(
+                List.of(new JavaRuntimes.Jdk(21, distroHome), new JavaRuntimes.Jdk(21, sdkHome)), null);
+
+        assertEquals(sdkHome, out.get(0).get("path"));
+        assertNull(out.get(0).get("javadoc"), "its sources say it all");
+
+        List<Map<String, Object>> only = JavaRuntimes.runtimes(List.of(new JavaRuntimes.Jdk(21, distroHome)), null);
+        assertEquals(
+                "https://docs.oracle.com/en/java/javase/21/docs/api/",
+                only.get(0).get("javadoc"));
+        assertEquals("https://docs.oracle.com/javase/8/docs/api/", JavaRuntimes.apiDocs(8));
+    }
 }

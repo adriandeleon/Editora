@@ -219,9 +219,12 @@ final class MenuBarModel {
                                 "nav.forward",
                                 SEPARATOR,
                                 "lsp.gotoDefinition",
+                                "lsp.gotoDeclaration",
+                                "lsp.peekDefinition",
                                 "lsp.gotoImplementation",
                                 "lsp.gotoTypeDefinition",
                                 "lsp.findReferences",
+                                "lsp.copyQualifiedName",
                                 "nav.relatedFile", // test ⇄ subject, palette-only before (Java review B21)
                                 SEPARATOR,
                                 "nav.aceJump",
@@ -276,6 +279,7 @@ final class MenuBarModel {
                         List.of(
                                 "file.run",
                                 "file.runWithArgs",
+                                "run.context",
                                 "run.trace",
                                 "run.rerun",
                                 "run.stop",

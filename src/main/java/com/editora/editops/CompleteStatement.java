@@ -139,7 +139,13 @@ public final class CompleteStatement {
                 }
                 open++;
             }
-            int end = continuedTo(text, le, open, endsUnfinished(text, s.lastCode));
+            int first = s.firstCode < 0 ? ls : TextNav.lineStart(text, s.firstCode);
+            int end = continuedTo(
+                    text,
+                    le,
+                    open,
+                    endsUnfinished(text, s.lastCode),
+                    leading(text, first).length());
             if (end > le) {
                 return edit(text, end, end, style, unit, enterAt, true);
             }
@@ -189,9 +195,11 @@ public final class CompleteStatement {
             }
             default -> {
                 if (closers.length() > 0 && ANNOTATIONS.matcher(h).matches()) { // `@SuppressWarnings("x"` (AN9)
-                    Indenter.EnterEdit enter = enterAt.apply(end);
-                    int at = end + closers.length() + enter.caretOffset();
-                    return new Indenter.TabEdit(end, end, closers + enter.insert(), at, at);
+                    // the next line at the annotation's own indent: Enter there read the open ( as a continuation
+                    // and went one level deeper (fourth review, AN9's rest)
+                    String insert = closers + "\n" + indent;
+                    int at = end + insert.length();
+                    return new Indenter.TabEdit(end, end, insert, at, at);
                 }
                 return atStatementEnd ? lineAfter(le, indent) : newLine(text, caret, enterAt);
             }
@@ -225,7 +233,7 @@ public final class CompleteStatement {
      * starts with one ({@code .map(…)}, {@code : "b"}, {@code && ready}). A line that opens a block ends it; a
      * {@code ;} reached with brackets still open means they never close, and nothing is continued.
      */
-    private static int continuedTo(String text, int le, int open, boolean unfinished) {
+    private static int continuedTo(String text, int le, int open, boolean unfinished, int indent) {
         Lexer lx = new Lexer(text, text.length());
         int depth = open;
         int braces = 0;
@@ -240,10 +248,22 @@ public final class CompleteStatement {
             if (depth == 0 && braces == 0 && !pending && CONTINUES.indexOf(text.charAt(next)) < 0) {
                 return last;
             }
-            if (depth == 0 && braces == 0 && CONTINUES.indexOf(text.charAt(next)) < 0 && startsStatement(text, next)) {
-                // `String s = name.` above `int other = 1;`: a half-typed line, not one the next statement goes
-                // on — completing past it lost the user's place (third review AT3)
-                return last;
+            if (depth == 0 && braces == 0 && CONTINUES.indexOf(text.charAt(next)) < 0) {
+                // `String s = name.` above `int other = 1;` or `System.out.println(s);`: a half-typed line, not one
+                // the next statement goes on, and completing past it lost the user's place (third review AT3). A line
+                // that goes on is indented further; one at the statement's own indent is the next statement. A
+                // further-indented `this.ready;` after `ready &&` goes on (fourth review AF3).
+                int lineAt = TextNav.lineStart(text, next);
+                boolean deeper =
+                        next - lineAt > indent && text.substring(lineAt, next).isBlank();
+                if (!deeper
+                        || (startsStatement(text, next)
+                                && !OPERAND_START
+                                        .matcher(text)
+                                        .region(next, text.length())
+                                        .lookingAt())) {
+                    return last;
+                }
             }
             int lineEnd = text.indexOf('\n', next);
             lineEnd = lineEnd < 0 ? text.length() : lineEnd;
@@ -300,6 +320,10 @@ public final class CompleteStatement {
     private static final java.util.regex.Pattern STATEMENT_START = java.util.regex.Pattern.compile(
             "(?:(?:return|throw|if|for|while|do|switch|try|var|final|this|super|yield|assert|break|continue)\\b"
                     + "|[A-Za-z_][\\w.]*(?:<[^;=]*>)?(?:\\[\\])*\\s+[A-Za-z_]\\w*\\s*[=;])");
+
+    /** A line that starts an operand rather than a statement after an operator: {@code this.x}, {@code super.x}. */
+    private static final java.util.regex.Pattern OPERAND_START =
+            java.util.regex.Pattern.compile("(?:this|super)\\s*\\.");
 
     /** Whether the line starting at {@code at} is a statement of its own: a keyword one, or a declaration. */
     private static boolean startsStatement(String text, int at) {
@@ -395,8 +419,19 @@ public final class CompleteStatement {
                 }
                 call.append(o.ch == '(' ? ')' : ']');
             }
-            if (call.length() > 0 && style == Style.SEMICOLON) {
+            String head = top.savedHead().strip();
+            if (call.length() > 0 && CONDITION_HEAD.matcher(head).lookingAt()) {
+                // a lambda in an `if (…(x -> {` condition: the call and the condition close, then the if's own
+                // block opens: `})) {`, not `}));` (fourth review AF4)
+                call.append(" {\n").append(top.indent).append('}');
+            } else if (call.length() > 0 && style == Style.SEMICOLON) {
                 call.append(';');
+            } else if (call.length() == 0
+                    && style == Style.SEMICOLON
+                    && !top.blockHeader()
+                    && ASSIGNED.matcher(head).find()) {
+                call.append(
+                        ';'); // `Runnable r = () -> {`, `Object o = new Object() {`: the declaration ends `};` (AF4)
             }
             String close = closedLater(text, le, top.indent) ? "" : "\n" + top.indent + "}" + call;
             int at = le + body.length();
@@ -409,6 +444,13 @@ public final class CompleteStatement {
         }
         return newLine(text, caret, enterAt);
     }
+
+    /** A statement head that is a condition's: its brackets close before the statement's own block. */
+    private static final java.util.regex.Pattern CONDITION_HEAD =
+            java.util.regex.Pattern.compile("(?:\\}\\s*else\\s+)?(?:if|while|for|switch)\\s*\\(");
+
+    /** An assignment ({@code =}, not {@code ==}, {@code !=}, {@code <=}, {@code >=}, {@code ->}) in a head. */
+    private static final java.util.regex.Pattern ASSIGNED = java.util.regex.Pattern.compile("(?<![=!<>])=(?![=>])");
 
     /**
      * Whether a `}` after {@code from} closes the brace just before it: the first one left unmatched, at that

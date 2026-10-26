@@ -183,6 +183,7 @@ final class WorkspaceSymbolPopup {
         scored.sort(java.util.Comparator.comparingInt((Scored s) -> s.score())
                 .reversed()
                 .thenComparing((Scored s) -> s.match().isLibrary())
+                .thenComparing(Scored::match, SymbolRanking.TIE_BREAK)
                 .thenComparingInt(Scored::index));
         return scored.stream().map(Scored::match).toList();
     }

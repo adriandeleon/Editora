@@ -95,4 +95,30 @@ class SignatureFormatTest {
         var second = SignatureFormat.resolve(new SignatureHelp(List.of(si), 0, 1));
         assertEquals("Greets someone several times.", second.documentation(), "times has none (re-review D2)");
     }
+
+    /** Every overload's parameter at the caret, the active one first (fourth review AF2). */
+    @Test
+    void everyOverloadsParameterAtTheCaretIsListed() {
+        var help = new SignatureHelp(
+                List.of(
+                        sig("println(char[] x) : void", "char[] x"),
+                        sig("println(int x) : void", "int x"),
+                        sig("println() : void"),
+                        sig("printf(String format, Object... args) : PrintStream", "String format", "Object... args")),
+                1,
+                0);
+
+        assertEquals(
+                List.of(
+                        new SignatureFormat.Parameter("int x", "void"),
+                        new SignatureFormat.Parameter("char[] x", "void"),
+                        new SignatureFormat.Parameter("String format", "PrintStream")),
+                SignatureFormat.parametersAtCaret(help));
+
+        help.setActiveParameter(3);
+        assertEquals(
+                List.of(new SignatureFormat.Parameter("Object... args", "PrintStream")),
+                SignatureFormat.parametersAtCaret(help),
+                "past the last parameter only varargs takes more");
+    }
 }

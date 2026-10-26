@@ -48,6 +48,49 @@ public final class SignatureFormat {
         return new Active(label, span[0], span[1], doc, index, sigs.size());
     }
 
+    /** One overload's parameter at the caret: its label text ({@code T[] a}) and the overload's return type. */
+    public record Parameter(String label, @Nullable String returnType) {}
+
+    /**
+     * The parameter at the caret in every overload that has one, the active overload first: before an argument is
+     * typed, which overload jdtls calls active is arbitrary ({@code println(char[])}), so Smart Type read only it and
+     * offered nothing for {@code println(count)} (fourth review AF2). A varargs parameter covers every later index.
+     */
+    public static List<Parameter> parametersAtCaret(@Nullable SignatureHelp help) {
+        if (help == null || help.getSignatures() == null || help.getSignatures().isEmpty()) {
+            return List.of();
+        }
+        List<SignatureInformation> sigs = help.getSignatures();
+        int active = clamp(help.getActiveSignature() == null ? 0 : help.getActiveSignature(), sigs.size());
+        java.util.List<Parameter> out = new java.util.ArrayList<>();
+        for (int k = 0; k < sigs.size(); k++) {
+            SignatureInformation sig = sigs.get(k == 0 ? active : k <= active ? k - 1 : k);
+            if (sig == null
+                    || sig.getLabel() == null
+                    || sig.getParameters() == null
+                    || sig.getParameters().isEmpty()) {
+                continue;
+            }
+            String label = sig.getLabel();
+            List<ParameterInformation> params = sig.getParameters();
+            Integer at = sig.getActiveParameter() != null ? sig.getActiveParameter() : help.getActiveParameter();
+            int idx = at == null ? 0 : at;
+            int last = params.size() - 1;
+            int[] span = activeParamSpan(sig, Math.min(idx, last), label);
+            if (span[1] <= span[0]) {
+                continue;
+            }
+            String text = label.substring(span[0], span[1]);
+            if (idx > last && !text.contains("...")) {
+                continue; // the caret is past this overload's last parameter
+            }
+            int colon = label.lastIndexOf(" : ");
+            out.add(new Parameter(
+                    text, colon < 0 ? null : label.substring(colon + 3).strip()));
+        }
+        return out;
+    }
+
     /** The active parameter's own documentation, or "". */
     private static String activeParamDocumentation(SignatureInformation sig, @Nullable Integer helpActiveParam) {
         List<ParameterInformation> params = sig.getParameters();

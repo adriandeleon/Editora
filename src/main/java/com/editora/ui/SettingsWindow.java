@@ -7728,8 +7728,8 @@ public class SettingsWindow {
     }
 
     private void refreshMermaidStatus() {
-        if (mermaidService == null) {
-            return;
+        if (mermaidService == null || mermaidCheck == null) {
+            return; // its page was never built: an install's refresh reached a Settings never shown (fourth review CF3)
         }
         mmdcStatus.checking();
         maidStatus.checking();

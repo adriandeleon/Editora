@@ -159,6 +159,25 @@ public record DoctorCheck(
     }
 
     /** Copy without an install action (its fix is something else, such as turning on another feature). */
+    /** This row with {@code detail} in place of its own, its outcome unchanged. */
+    public DoctorCheck withDetail(String detail) {
+        return new DoctorCheck(
+                id,
+                sectionKey,
+                label,
+                command,
+                status,
+                detail,
+                tipKey,
+                tipArgs,
+                install,
+                installArg,
+                settingsKey,
+                enableKey,
+                helpUrl,
+                update);
+    }
+
     public DoctorCheck withoutInstall() {
         return withInstall(Install.NONE, "");
     }

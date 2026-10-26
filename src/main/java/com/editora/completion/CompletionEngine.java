@@ -199,14 +199,22 @@ public final class CompletionEngine {
      * tier put {@code CASE_INSENSITIVE_ORDER} first for {@code vO} and {@code hashCode} under {@code ad} (third
      * review AT2). filterText is authoritative when supplied; a decorated label must not exclude a valid candidate.
      */
-    public static int matchTier(Completion item, String prefix) {
+    public static int matchTier(Completion item, String typed) {
         String text = item.filterText();
         if (text == null) return NO_MATCH_TIER;
+        String prefix = typed;
+        int dot = typed.lastIndexOf('.');
+        if (dot >= 0 && text.startsWith(typed.substring(0, dot + 1))) {
+            // A postfix row's filterText starts with the qualifier typed (`items.cast` for `items.st`): matched on
+            // what follows it, or the qualifier's own letters counted toward every rule (fourth review AF5)
+            text = text.substring(dot + 1);
+            prefix = typed.substring(dot + 1);
+        }
         if (text.startsWith(prefix)) return 0;
         if (text.regionMatches(true, 0, prefix, 0, prefix.length())) return 1;
         if (prefix.isEmpty() || text.length() > 200) return NO_MATCH_TIER;
-        if (humps(text, 0, prefix, 0, false, true)) return 2;
-        if (humps(text, 0, prefix, 0, false, false)) return 3;
+        if (humps(text, 0, prefix, 0, false, true, new java.util.BitSet())) return 2;
+        if (humps(text, 0, prefix, 0, false, false, new java.util.BitSet())) return 3;
         if (prefix.length() < 3) return NO_MATCH_TIER;
         int matched = 0;
         for (int i = 0; i < text.length() && matched < prefix.length(); i++) {
@@ -217,11 +225,18 @@ public final class CompletionEngine {
 
     /**
      * Whether {@code q[qi…]} matches {@code t[ti…]} with every character at a word or hump start, or right after the
-     * character before it matched; {@code fromStart}: the first one at index 0.
+     * character before it matched; {@code fromStart}: the first one at index 0. {@code failed} remembers the states
+     * already known not to match: without it a long text of many short words took exponential time, 378 ms for one
+     * item (fourth review AF7).
      */
-    private static boolean humps(String t, int ti, String q, int qi, boolean contiguous, boolean fromStart) {
+    private static boolean humps(
+            String t, int ti, String q, int qi, boolean contiguous, boolean fromStart, java.util.BitSet failed) {
         if (qi == q.length()) {
             return true;
+        }
+        int state = ((ti * (q.length() + 1)) + qi) * 2 + (contiguous ? 1 : 0);
+        if (failed.get(state)) {
+            return false;
         }
         for (int i = ti; i < t.length(); i++) {
             if (fromStart && qi == 0 && i > 0) {
@@ -234,10 +249,11 @@ public final class CompletionEngine {
                     || (Character.isUpperCase(c) && !Character.isUpperCase(prev));
             if ((start || (contiguous && i == ti))
                     && Character.toLowerCase(c) == Character.toLowerCase(q.charAt(qi))
-                    && humps(t, i + 1, q, qi + 1, true, fromStart)) {
+                    && humps(t, i + 1, q, qi + 1, true, fromStart, failed)) {
                 return true;
             }
         }
+        failed.set(state);
         return false;
     }
 

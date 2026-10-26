@@ -1897,6 +1897,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     public interface RenameParticipant {
         void willRename(Path from, Path to, Consumer<Boolean> proceed);
+
+        /** A drag-move, or its Undo Move, begins: its renames are one change until {@link #endMove}. */
+        default void beginMove() {}
+
+        /** It is done; {@code undo} when it took the last drag-move back. Runs after the tree's own status. */
+        default void endMove(boolean undo) {}
     }
 
     private RenameParticipant renameParticipant = (from, to, proceed) -> proceed.accept(true);
@@ -2490,6 +2496,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             planned.add(new Move(src, targetDir.resolve(src.getFileName())));
         }
         int alreadySkipped = skipped;
+        renameParticipant.beginMove();
         moveThrough(planned, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             int moved = done.size();
             if (moved > 0) {
@@ -2502,6 +2509,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     notMoved == 0
                             ? tr("project.moved", moved, targetDir.getFileName())
                             : tr("project.movedSome", moved, notMoved));
+            renameParticipant.endMove(false);
         });
     }
 
@@ -2573,6 +2581,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         }
         int alreadyStuck = stuck;
+        renameParticipant.beginMove();
         moveThrough(back, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             if (!done.isEmpty()) {
                 markLocalChange();
@@ -2583,7 +2592,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     notBack == 0
                             ? tr("project.moveUndone", done.size())
                             : tr("project.moveUndoneSome", done.size(), notBack));
+            renameParticipant.endMove(true);
         });
+    }
+
+    /** Undo Last Refactoring took the last drag-move back: there is nothing left for Undo Move (fourth review BF1). */
+    void forgetLastMove() {
+        lastMove = List.of();
     }
 
     /** The files to act on for a cell action: the whole multi-selection when {@code clicked} is part of it,

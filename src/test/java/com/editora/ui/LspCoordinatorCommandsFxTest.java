@@ -163,7 +163,7 @@ class LspCoordinatorCommandsFxTest {
         fx.run(() -> fx.coordinator.gotoImplementation());
         assertEquals(3, FxTestSupport.callOnFx(fx::pickerRows).size());
         assertEquals(1, fx.ops.referencesWindowOpened, "not the References window, which would drop it");
-        FxTestSupport.runOnFx(() -> fx.choose(2));
+        FxTestSupport.runOnFx(() -> fx.choose(1)); // rows by class: Impl, Other, String (fourth review BN4)
         fx.settle();
         assertEquals(new LspCoordinatorFixture.Jump(other, 0, 6), fx.ops.jumps.get(fx.ops.jumps.size() - 1));
 
@@ -205,7 +205,7 @@ class LspCoordinatorCommandsFxTest {
                 "IdentityArrayList",
                 LspCoordinator.implementationLabel(new com.editora.lsp.LspManager.Target(
                         null, 1, 0, "jdt://contents/java.desktop/sun.awt.util/IdentityArrayList.java?=x")));
-        FxTestSupport.runOnFx(() -> fx.choose(0));
+        FxTestSupport.runOnFx(() -> fx.choose(1)); // rows by class: Other, then String (fourth review BN4)
         fx.settle();
 
         assertEquals(0, fx.ops.referencesWindowOpened);
@@ -1793,7 +1793,12 @@ class LspCoordinatorCommandsFxTest {
                 "Could not find method thisIsNotAConfiguration() for arguments [x]"));
 
         fx.run(() -> fx.coordinator.onServerStatus("java", other, "ServiceReady", "ServiceReady"));
-        awaitStatus(tr("status.lsp.ready", "jdtls")); // another folder's import is not this one's failure
+        // another folder's import is not this one's failure, and with two folders each is named (fourth review CF2)
+        awaitStatus(tr("status.lsp.ready", tr("status.lsp.serverInFolder", "jdtls", "other-project")));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitError(tr(
+                "status.lsp.readyImportFailed",
+                tr("status.lsp.serverInFolder", "jdtls", root.getFileName().toString())));
 
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "OK"));
         fx.run(() -> fx.coordinator.reloadProject());
@@ -1827,10 +1832,84 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void anImportWithBuildProblemsIsLoadedNotFailed() throws Exception {
         fx.open("A.java", SOURCE);
-        fx.run(() -> fx.coordinator.onServerStatus("java", "ProjectStatus", "WARNING")); // a missing artifact: no log
-        awaitStatus(tr("status.lsp.importProblem", "jdtls"));
-        fx.run(() -> fx.coordinator.onServerStatus("java", "ServiceReady", "ServiceReady"));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING")); // a missing artifact
+        fx.settle();
+        assertFalse(
+                fx.host.statuses.contains(tr("status.lsp.importProblem", "jdtls")),
+                "said once, at ready: mid-import it came twice in two wordings (fourth review CF4)");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         awaitStatus(tr("status.lsp.readyWithProblems", "jdtls")); // not "did not import" (third review CT2)
+
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "OK")); // the pom was fixed
+        assertEquals(tr("status.lsp.ready", "jdtls"), fx.host.lastStatus(), "the fix ends on ready (CF4)");
+
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING")); // broken again
+        awaitStatus(tr("status.lsp.importProblem", "jdtls"));
+    }
+
+    /**
+     * Reload run from the build.gradle tab, which the fix and the failure message point the user to, and saving that
+     * file, both import a project that failed again (fourth review CT1): the build file has no server of its own, so
+     * its folder's failure was missed and an update went to a project that does not exist.
+     */
+    @Test
+    void reloadOrSaveFromTheBuildFileImportsAFailedProjectAgain() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        Path sessionRoot = LspTestHooks.sessionRoot(fx.manager, b.getPath());
+        Path buildFile = java.nio.file.Files.writeString(root.resolve("build.gradle"), "plugins { id 'java' }\n");
+        EditorBuffer build = FxTestSupport.callOnFx(EditorBuffer::new); // no server edits it
+        FxTestSupport.runOnFx(() -> {
+            build.setPath(buildFile);
+            build.setContent("plugins { id 'java' }\n");
+            fx.show(build);
+        });
+        LspTestHooks.logError(fx.manager, b.getPath(), "Could not fetch model of type 'Map'");
+        fx.run(() -> fx.coordinator.onServerStatus("java", sessionRoot, "ProjectStatus", "WARNING"));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not fetch model of type 'Map'"));
+        FxTestSupport.runOnFx(() -> fx.host.active = build);
+        int notified = fx.server().rawNotifications.size();
+
+        fx.run(() -> fx.coordinator.reloadProject());
+
+        assertEquals(tr("status.lsp.projectReimporting"), fx.host.lastStatus());
+        assertTrue(
+                fx.server().rawNotifications.stream()
+                        .skip(notified)
+                        .noneMatch(r -> r.method().equals("java/projectConfigurationUpdate")),
+                "no update of a project that does not exist");
+
+        LspTestHooks.logError(fx.manager, b.getPath(), "Could not fetch model again");
+        Path again = LspTestHooks.sessionRoot(fx.manager, b.getPath());
+        fx.run(() -> fx.coordinator.onServerStatus("java", again, "ProjectStatus", "WARNING"));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not fetch model again"));
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(build, build.getContent()));
+        assertEquals(tr("status.lsp.projectReimporting"), fx.host.lastStatus(), "saving the fixed build file");
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(build, build.getContent()));
+        assertFalse(
+                fx.host.statuses.contains(tr("status.lsp.projectReimporting")),
+                "an import that did not fail is not started over on every save");
+    }
+
+    /** Doctor's Update stops the server in every window; when it is done this window's files reopen (CF1). */
+    @Test
+    void afterAnInstallThisWindowsFilesReopenOnTheNewServer() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        assertTrue(fx.manager.isManaged(b.getPath()));
+        try {
+            FxTestSupport.runOnFx(() -> com.editora.lsp.LspManager.holdForInstall("java"));
+            assertFalse(fx.manager.isManaged(b.getPath()));
+            assertEquals(tr("status.lsp.heldForInstall", "jdtls"), fx.host.lastStatus());
+        } finally {
+            FxTestSupport.runOnFx(() -> com.editora.lsp.LspManager.releaseAfterInstall("java"));
+        }
+        for (int i = 0; i < 200 && !fx.manager.isManaged(b.getPath()); i++) {
+            Thread.sleep(10);
+            fx.settle();
+        }
+        assertTrue(fx.manager.isManaged(b.getPath()), "reopened without a Restart Language Servers");
     }
 
     @Test

@@ -139,9 +139,9 @@ final class InstallCoordinator {
                 return;
             }
             installing.add(lang);
-            host.setStatus(tr("status.install.installing", langName(lang)));
             List<String> replaced = runningServersOf(plan.runnable());
             stopWhileReplaced(replaced);
+            host.setStatus(tr("status.install.installing", langName(lang)));
             service.install(
                     plan.runnable(),
                     ops.configDir(),
@@ -233,9 +233,9 @@ final class InstallCoordinator {
                 return;
             }
             installingServers.add(serverId);
-            host.setStatus(tr("status.install.installing", serverName(serverId)));
             List<String> replaced = runningServersOf(steps);
             stopWhileReplaced(replaced);
+            host.setStatus(tr("status.install.installing", serverName(serverId)));
             service.install(
                     steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
                         installingServers.remove(serverId);
