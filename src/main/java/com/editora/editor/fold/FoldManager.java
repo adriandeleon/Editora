@@ -205,7 +205,11 @@ public final class FoldManager {
     public void setSplitViews(Supplier<CodeArea> focused, Supplier<CodeArea> second) {
         this.caretLine = () -> focused.get().getCurrentParagraph();
         this.secondView = second;
+        this.focusedView = focused;
     }
+
+    /** The view whose caret the lightbulb follows: only its gutter draws the bulb (sixth review AV3). */
+    private @Nullable Supplier<CodeArea> focusedView;
 
     private void foldStateChanged() {
         CodeArea view = secondView.get();
@@ -1608,8 +1612,13 @@ public final class FoldManager {
      * that begin a foldable region. Clicking the chevron toggles that region.
      */
     public IntFunction<Node> gutterFactory(boolean showLineNumbers) {
+        return gutterFactory(showLineNumbers, false);
+    }
+
+    /** {@link #gutterFactory(boolean)} for the main view, or for the split's {@code second} one. */
+    public IntFunction<Node> gutterFactory(boolean showLineNumbers, boolean second) {
         lastLineDigits = digits(lineCount());
-        return idx -> buildGutter(idx, showLineNumbers);
+        return idx -> buildGutter(idx, showLineNumbers, second);
     }
 
     /**
@@ -1669,7 +1678,7 @@ public final class FoldManager {
     /** The padded line-number strings of this gutter's rows (see {@link LineNumberText}). FX-thread only. */
     private final LineNumberText lineNumberText = new LineNumberText();
 
-    private Node buildGutter(int idx, boolean showLineNumbers) {
+    private Node buildGutter(int idx, boolean showLineNumbers, boolean second) {
         HBox box = new GutterRow();
         // The gutter itself is deliberately NOT clickable: a whole-gutter click used to toggle a bookmark,
         // which misfired constantly on the narrow breakpoint / Run targets sitting inside it (a slightly-off
@@ -1727,7 +1736,12 @@ public final class FoldManager {
         // bare Region, not a Pane: a StackPane's children list, alignment and margin bookkeeping would be
         // built for every row only to stay empty.
         javafx.scene.layout.Region bookmarkSlot;
-        String bulb = bulbClass.apply(idx);
+        Supplier<CodeArea> follows = focusedView;
+        CodeArea followed = follows == null ? null : follows.get();
+        // drawn in the view whose caret it follows only: both views of a split drew it (sixth review AV3)
+        String bulb = followed != null && (second ? followed == area : followed == secondView.get())
+                ? null
+                : bulbClass.apply(idx);
         if (bulb != null) {
             Node marker = bulbMarker(bulb);
             StackPane slot = new StackPane(marker);
@@ -1959,8 +1973,8 @@ public final class FoldManager {
         svg.setContent("fix".equals(kind) ? bulb + "M11 5h2v5.5h-2zM11 11.5h2v2h-2z" : bulb);
         svg.setFillRule(javafx.scene.shape.FillRule.EVEN_ODD);
         svg.getStyleClass().addAll("bulb-marker", kind);
-        svg.setScaleX(0.55);
-        svg.setScaleY(0.55);
+        svg.setScaleX(0.6); // as large as the 12 px bookmark column allows: 8 by 11 was hard to see (EV4)
+        svg.setScaleY(0.6);
         return new Group(svg);
     }
 

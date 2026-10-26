@@ -289,4 +289,47 @@ class LspBulbFxTest {
                         .intValue(),
                 "its own file");
     }
+
+    /**
+     * jdtls publishes an empty list for an open file before its project is built: that is no green check until the
+     * server has said it is ready, and a list with problems counts at once (sixth review AS1).
+     */
+    @Test
+    void anEmptyListBeforeTheServerIsReadyIsNoCheck() throws Exception {
+        EditorBuffer b = open();
+        java.util.concurrent.atomic.AtomicBoolean ready = new java.util.concurrent.atomic.AtomicBoolean();
+        FxTestSupport.runOnFx(() -> b.problemCounter().setSettled(ready::get));
+        FxTestSupport.runOnFx(() -> b.setLspDiagnostics(List.of()));
+        fx.layout();
+        Node counter = FxTestSupport.callOnFx(() -> b.problemCounter().counter());
+        assertNotNull(counter);
+        assertNull(FxTestSupport.callOnFx(() -> counter.lookup(".problem-counter-ok")), "not checked yet");
+
+        ready.set(true);
+        FxTestSupport.runOnFx(() -> b.problemCounter().refresh());
+        assertNotNull(FxTestSupport.callOnFx(() -> counter.lookup(".problem-counter-ok")), "the server is ready");
+
+        FxTestSupport.runOnFx(() -> b.problemCounter().reset()); // the server restarts
+        ready.set(false);
+        var error = new LspDiagnostic(2, 8, 2, 11, LspDiagnostic.Severity.ERROR, "bad", null, "jdtls");
+        FxTestSupport.runOnFx(() -> b.setLspDiagnostics(List.of(error)));
+        assertEquals(
+                com.editora.i18n.Messages.tr("editor.problemCounter.summary", 1, 0),
+                FxTestSupport.callOnFx(() -> ((javafx.scene.layout.HBox) counter)
+                        .getChildren()
+                        .get(0)
+                        .getAccessibleText()),
+                "problems count before ready");
+    }
+
+    /** A tab that is not on screen asks nothing, though it keeps its scene (sixth review AV7). */
+    @Test
+    void aHiddenTabIsNotOnScreen() throws Exception {
+        EditorBuffer b = open();
+        fx.layout();
+        assertTrue(FxTestSupport.callOnFx(() -> com.editora.editor.CodeActionBulbTestHooks.onScreen(b.getArea())));
+        FxTestSupport.runOnFx(() -> b.getArea().getParent().setVisible(false));
+        assertFalse(FxTestSupport.callOnFx(() -> com.editora.editor.CodeActionBulbTestHooks.onScreen(b.getArea())));
+        FxTestSupport.runOnFx(() -> b.getArea().getParent().setVisible(true));
+    }
 }

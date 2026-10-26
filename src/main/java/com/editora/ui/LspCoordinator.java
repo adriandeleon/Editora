@@ -3169,6 +3169,16 @@ final class LspCoordinator {
         if (serverId != null && root != null) {
             if ("Launching".equalsIgnoreCase(type)) {
                 saidReady.remove(source); // a new process: its ready line is owed again
+                // and what its files had is not known again until it has checked them (sixth review AS1)
+                Path launched = root;
+                host.forEachBuffer(b -> {
+                    Path p = lspPath(b);
+                    if (p != null
+                            && serverId.equals(serverIdForBuffer(b))
+                            && launched.equals(lspManager.javaSessionRoot(p))) {
+                        b.problemCounter().reset();
+                    }
+                });
             }
             if ("ProjectStatus".equalsIgnoreCase(type) && "OK".equalsIgnoreCase(message)) {
                 // that folder imported: its earlier failure no longer stands (third review CT3)
@@ -3429,7 +3439,24 @@ final class LspCoordinator {
         refreshImportNotes();
     }
 
+    /**
+     * Whether {@code b}'s Java server has said its project is loaded: its first empty publish, before the import and
+     * build, read as "no problems" (sixth review AS1). Other servers check a file as they open it.
+     */
+    private boolean serverSettled(EditorBuffer b) {
+        Path p = lspPath(b);
+        if (p == null || !LspServerRegistry.JAVA_SERVER_ID.equals(serverIdForBuffer(b))) {
+            return true;
+        }
+        Path root = lspManager.javaSessionRoot(p);
+        return root == null || saidReady.contains(statusSource(LspServerRegistry.JAVA_SERVER_ID, root));
+    }
+
     private void showStatusLineOnly(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
+        if (line != null && line.ready() && line.serverId() != null && !saidReady.contains(line.serverId())) {
+            saidReady.add(line.serverId());
+            host.forEachBuffer(b -> b.problemCounter().refresh()); // its files' counts are known now (AS1)
+        }
         if (line != null) {
             StatusSource source = line.serverId() == null ? null : statusSources.get(line.serverId());
             String serverId = source != null ? source.serverId() : line.serverId();
@@ -3815,6 +3842,7 @@ final class LspCoordinator {
                         () -> ops.executeCommand("tool.problems"),
                         () -> gotoProblem(buffer, false),
                         () -> gotoProblem(buffer, true));
+        buffer.problemCounter().setSettled(() -> serverSettled(buffer));
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
